@@ -41,6 +41,7 @@ appimage-builder-cache/
 .flatpak-builder/
 build-dir/
 .eggs/
+.venv/
 
 # Installer logs
 pip-log.txt

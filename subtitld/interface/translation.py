@@ -3,7 +3,7 @@
 import os
 import i18n
 
-from subtitld.modules.paths import PATH_SUBTITLD
+from subtitld.modules.globals import PATH_SUBTITLD
 
 i18n.set('file_format', 'json')
 i18n.load_path.append(os.path.join(PATH_SUBTITLD, 'locale'))

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QPushButton, QLabel, QGraphicsOpacityEffect, QList
 from PySide6.QtCore import QPropertyAnimation, Qt, QSize
 
 from subtitld.modules import file_io
-from subtitld.modules.paths import PATH_SUBTITLD_DATA_THUMBNAILS, VERSION_NUMBER
+from subtitld.modules.globals import PATH_SUBTITLD_DATA_THUMBNAILS, VERSION_NUMBER
 from subtitld.interface.translation import _
 
 

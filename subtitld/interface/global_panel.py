@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QFrame, QStacked
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QSize
 
 from subtitld.interface import global_panel_general, global_panel_import, global_panel_interface, global_panel_keyboardshortcuts, global_panel_qualitycontrol, global_panel_translation, global_panel_transcription, global_panel_export
+from subtitld.modules import globals
 
 # from azure.cognitiveservices.speech import AudioDataStream, SpeechConfig, SpeechSynthesizer, SpeechSynthesisOutputFormat
 # from azure.cognitiveservices.speech.audio import AudioOutputConfig
@@ -80,7 +81,7 @@ def load(self):
 def resized(self):
     """Function on resizing widgets"""
     x = - self.width()
-    if (self.subtitles_list or self.video_metadata):
+    if (globals.SESSION['segments'] or self.video_metadata):
         if self.subtitles_panel_toggle_button.isChecked():
             x = 0
         else:

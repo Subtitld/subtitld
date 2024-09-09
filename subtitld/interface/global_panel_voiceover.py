@@ -6,7 +6,7 @@ import subprocess
 from PySide6.QtWidgets import QPushButton, QWidget
 from PySide6.QtCore import QThread, Signal
 
-from subtitld.modules.paths import STARTUPINFO
+from subtitld.modules.globals import STARTUPINFO
 from subtitld.modules import utils
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
@@ -74,7 +74,7 @@ def global_subtitlesvideo_autovoiceover_button_clicked(self):
     # audio_pieces = []
     # parser = 0
     # first = True
-    # for subtitle in self.subtitles_list:
+    # for subtitle in globals.SESSION['segments']:
     #     # print(subtitle)
 
     #     ssml_content = '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="pt-BR-AntonioNeural">'

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QFrame, QTextEdit, QVBoxLayout, QPushButton
 from PySide6.QtGui import QTextCursor
 
 from subtitld.interface import subtitles_panel
-from subtitld.modules import utils
+from subtitld.modules import utils, globals
 
 
 def add_widgets(self):
@@ -47,10 +47,10 @@ def subtitles_panel_markdown_qtextedit_cursorpositionchanged(self):
     # print(position)
     cursor = 0
     # # markdown_text = ''
-    for subtitle in sorted(self.subtitles_list):
+    for subtitle in sorted(globals.SESSION['segments']):
         cursor += len(str("{:.3f}".format(subtitle[0])))
-        next_index = self.subtitles_list.index(subtitle) + 1
-        if not next_index >= len(self.subtitles_list) and not self.subtitles_list[next_index][0] - 0.001 == subtitle[0] + subtitle[1]:
+        next_index = globals.SESSION['segments'].index(subtitle) + 1
+        if not next_index >= len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index][0] - 0.001 == subtitle[0] + subtitle[1]:
             cursor += len(' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1])))
         cursor += len('\n')
 
@@ -117,7 +117,7 @@ def subtitles_panel_markdown_qtextedit_update_subtitles_list(self):
 
     # Sanitize subtitles so there is no overlaping subtitles?
 
-    self.subtitles_list = sorted(sub_list)
+    globals.SESSION['segments'] = sorted(sub_list)
 
     self.timeline.update(self)
 
@@ -129,13 +129,13 @@ def update_subtitles_panel_markdown(self, selection=False):
     selected_subtitle_found = False
     position = 0
     markdown_text = ''
-    for subtitle in sorted(self.subtitles_list):
+    for subtitle in sorted(globals.SESSION['segments']):
         markdown_text += '<small><b>' + str("{:.3f}".format(subtitle[0]))
         if not selected_subtitle_found:
             position += len(str("{:.3f}".format(subtitle[0])))
 
-        next_index = self.subtitles_list.index(subtitle) + 1
-        if next_index < len(self.subtitles_list) and not self.subtitles_list[next_index][0] - 0.001 == subtitle[0] + subtitle[1] or (next_index == len(self.subtitles_list) and not self.video_metadata['duration'] - 0.001 == subtitle[0] + subtitle[1]):
+        next_index = globals.SESSION['segments'].index(subtitle) + 1
+        if next_index < len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index][0] - 0.001 == subtitle[0] + subtitle[1] or (next_index == len(globals.SESSION['segments']) and not self.video_metadata['duration'] - 0.001 == subtitle[0] + subtitle[1]):
             markdown_text += ' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1]))
             if not selected_subtitle_found:
                 position += len(' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1])))

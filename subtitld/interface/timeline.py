@@ -16,6 +16,7 @@ from subtitld.modules import history
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
 from subtitld.modules import utils
+from subtitld.modules import globals
 from subtitld.interface import subtitles_panel
 
 
@@ -181,11 +182,11 @@ class Timeline(QWidget):
 
                         painter.drawPolygon(polygon)
 
-        if widget.main_self.subtitles_list:
+        if globals.SESSION['segments']:
             painter.setOpacity(1)
             # painter.setPen(QPen(QColor.fromRgb(240, 240, 240, 200), 1, Qt.SolidLine))
 
-            for subtitle in sorted(widget.main_self.subtitles_list):
+            for subtitle in sorted(globals.SESSION['segments']):
                 if (subtitle[0] / widget.main_self.video_metadata.get('duration', 0.01)) > ((scroll_position + scroll_width) / widget.width()):
                     break
                 elif (subtitle[0] + subtitle[1]) / widget.main_self.video_metadata.get('duration', 0.01) < (scroll_position / widget.width()):
@@ -379,7 +380,7 @@ class Timeline(QWidget):
         widget.is_cursor_pressing = True
         widget.main_self.selected_subtitle = False
 
-        for subtitle in sorted(widget.main_self.subtitles_list):
+        for subtitle in sorted(globals.SESSION['segments']):
             if (subtitle[0] / widget.main_self.video_metadata.get('duration', 0.01)) > ((scroll_position + scroll_width) / widget.width()):
                 break
             elif (subtitle[0] + subtitle[1]) / widget.main_self.video_metadata.get('duration', 0.01) < (scroll_position / widget.width()):
@@ -409,7 +410,7 @@ class Timeline(QWidget):
             # update_timecode_label(widget.parent)
 
         if (widget.subtitle_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked):
-            history.history_append(widget.main_self.subtitles_list)
+            history.history_append(globals.SESSION['segments'])
             widget.main_self.unsaved = True
 
         widget.update()
@@ -432,9 +433,9 @@ class Timeline(QWidget):
 
         widget.show_limiters = bool(event.pos().y() > widget.subtitle_y and event.pos().y() < (widget.subtitle_height + widget.subtitle_y))
 
-        for subtitle in sorted(widget.main_self.subtitles_list):
-            last = widget.main_self.subtitles_list[widget.main_self.subtitles_list.index(subtitle) - 1] if widget.main_self.subtitles_list.index(subtitle) > 0 else [0, 0, '']
-            nextsub = widget.main_self.subtitles_list[widget.main_self.subtitles_list.index(subtitle) + 1] if widget.main_self.subtitles_list.index(subtitle) < len(widget.main_self.subtitles_list) - 1 else [widget.main_self.video_metadata['duration'], 0, '']
+        for subtitle in sorted(globals.SESSION['segments']):
+            last = globals.SESSION['segments'][globals.SESSION['segments'].index(subtitle) - 1] if globals.SESSION['segments'].index(subtitle) > 0 else [0, 0, '']
+            nextsub = globals.SESSION['segments'][globals.SESSION['segments'].index(subtitle) + 1] if globals.SESSION['segments'].index(subtitle) < len(globals.SESSION['segments']) - 1 else [widget.main_self.video_metadata['duration'], 0, '']
 
             if subtitle[0] + subtitle[1] > event.pos().x() / widget.width_proportion > (subtitle[0] + subtitle[1]) - (4 / widget.width_proportion) and nextsub[0] < (subtitle[0] + subtitle[1] + .02):
                 widget.show_tug_of_war = subtitle[0] + subtitle[1] + .0005
@@ -446,9 +447,9 @@ class Timeline(QWidget):
                 widget.show_tug_of_war = False
 
         if widget.main_self.selected_subtitle:
-            i = widget.main_self.subtitles_list.index(widget.main_self.selected_subtitle)
-            last = widget.main_self.subtitles_list[widget.main_self.subtitles_list.index(widget.main_self.selected_subtitle) - 1] if widget.main_self.subtitles_list.index(widget.main_self.selected_subtitle) > 0 else [0, 0, '']
-            nextsub = widget.main_self.subtitles_list[widget.main_self.subtitles_list.index(widget.main_self.selected_subtitle) + 1] if widget.main_self.subtitles_list.index(widget.main_self.selected_subtitle) < len(widget.main_self.subtitles_list) - 1 else [widget.main_self.video_metadata['duration'], 0, '']
+            i = globals.SESSION['segments'].index(widget.main_self.selected_subtitle)
+            last = globals.SESSION['segments'][globals.SESSION['segments'].index(widget.main_self.selected_subtitle) - 1] if globals.SESSION['segments'].index(widget.main_self.selected_subtitle) > 0 else [0, 0, '']
+            nextsub = globals.SESSION['segments'][globals.SESSION['segments'].index(widget.main_self.selected_subtitle) + 1] if globals.SESSION['segments'].index(widget.main_self.selected_subtitle) < len(globals.SESSION['segments']) - 1 else [widget.main_self.video_metadata['duration'], 0, '']
             scenes_list = widget.main_self.video_metadata['scenes'] if len(widget.main_self.video_metadata['scenes']) > 1 else [0.0]
             scenes_list.append(widget.main_self.video_metadata['duration'])
             start_position = (event.pos().x() - widget.offset) / widget.width_proportion
@@ -456,74 +457,74 @@ class Timeline(QWidget):
             next_scene = scenes_list[bisect(scenes_list, start_position)]
 
             if widget.subtitle_start_is_clicked:
-                end = widget.main_self.subtitles_list[i][0] + widget.main_self.subtitles_list[i][1]
+                end = globals.SESSION['segments'][i][0] + globals.SESSION['segments'][i][1]
                 if not start_position > (end - widget.main_self.settings['default_values'].get('minimum_subtitle_width', 1)):
                     if not (bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(last[0] + last[1] + .001, 3) == round(widget.main_self.selected_subtitle[0], 3)) and widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings['timeline'].get('snap_limits', True) and (last[0] + last[1] + widget.main_self.settings['timeline'].get('snap_value', .1)) > start_position:
-                        subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=last[0] + last[1] + 0.001, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                        subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=last[0] + last[1] + 0.001, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                     elif widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings['timeline'].get('snap_grid', False):
                         if widget.main_self.settings['timeline'].get('grid_type', False) == 'frames':
                             difference = start_position % (1.0 / widget.main_self.video_metadata['framerate'])
-                            subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, amount=difference, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, amount=difference, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds' and float(start_position) > float(float(int(start_position) + 1) - float(widget.main_self.settings['timeline'].get('snap_value', .1))):
-                            subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(start_position) + 1), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(start_position) + 1), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds' and float(start_position) < float(float(int(start_position)) + float(widget.main_self.settings['timeline'].get('snap_value', .1))):
-                            subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(start_position)), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(start_position)), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and start_position > next_scene - widget.main_self.settings['timeline'].get('snap_value', .1):
-                            subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=next_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=next_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and start_position < last_scene + widget.main_self.settings['timeline'].get('snap_value', .1):
-                            subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=last_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=last_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         else:
-                            subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=start_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=start_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                     else:
-                        subtitles.move_start_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=start_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                        subtitles.move_start_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=start_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                 if widget.tug_of_war_pressed:
                     widget.show_tug_of_war = widget.main_self.selected_subtitle[0]
             elif widget.subtitle_end_is_clicked:
                 end_position = (event.pos().x() + widget.offset) / widget.width_proportion
-                if not end_position < (widget.main_self.subtitles_list[i][0] + widget.main_self.settings['default_values'].get('minimum_subtitle_width', 1)):
+                if not end_position < (globals.SESSION['segments'][i][0] + widget.main_self.settings['default_values'].get('minimum_subtitle_width', 1)):
                     if not (bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(end_position, 3) >= round(nextsub[0] - 0.001, 3)) and widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings['timeline'].get('snap_limits', True) and (nextsub[0] - widget.main_self.settings['timeline'].get('snap_value', .1)) < end_position:
-                        # widget.main_self.subtitles_list[i][1] = (nextsub[0] - 0.001) - widget.main_self.subtitles_list[i][0]
-                        subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=(nextsub[0] - 0.001), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                        # globals.SESSION['segments'][i][1] = (nextsub[0] - 0.001) - globals.SESSION['segments'][i][0]
+                        subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=(nextsub[0] - 0.001), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                     elif widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings['timeline'].get('snap_grid', False):
                         if widget.main_self.settings['timeline'].get('grid_type', False) == 'frames':
                             difference = end_position % (1.0 / widget.main_self.video_metadata['framerate'])
-                            subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, amount=difference, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, amount=difference, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds' and float(end_position) > float(float(int(end_position) + 1) - float(widget.main_self.settings['timeline'].get('snap_value', .1))):
-                            subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(end_position) + 1), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(end_position) + 1), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds' and float(end_position) < float(float(int(end_position)) + float(widget.main_self.settings['timeline'].get('snap_value', .1))):
-                            subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(end_position)), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=float(int(end_position)), move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and end_position > next_scene - widget.main_self.settings['timeline'].get('snap_value', .1):
-                            subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=next_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=next_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         elif widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and end_position < last_scene + widget.main_self.settings['timeline'].get('snap_value', .1):
-                            subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=last_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=last_scene, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                         else:
-                            subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=end_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                            subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=end_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                     else:
-                        subtitles.move_end_subtitle(subtitles=widget.main_self.subtitles_list, selected_subtitle=widget.main_self.selected_subtitle, absolute_time=end_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
+                        subtitles.move_end_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=widget.main_self.selected_subtitle, absolute_time=end_position, move_nereast=bool(widget.main_self.settings['timeline'].get('snap_move_nereast', False) or widget.tug_of_war_pressed))
                 if widget.tug_of_war_pressed:
                     widget.show_tug_of_war = widget.main_self.selected_subtitle[0] + widget.main_self.selected_subtitle[1]
             elif widget.subtitle_is_clicked:
-                if widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings.get('timeline', {}).get('snap_moving', True) and ((nextsub[0] - widget.main_self.settings['timeline'].get('snap_value', .1)) < (start_position + widget.main_self.subtitles_list[i][1]) or (last[0] + last[1] + widget.main_self.settings['timeline'].get('snap_value', .1)) > start_position):
-                    if (nextsub[0] - widget.main_self.settings['timeline'].get('snap_value', .1)) < (start_position + widget.main_self.subtitles_list[i][1]):
-                        widget.main_self.subtitles_list[i][0] = nextsub[0] - widget.main_self.subtitles_list[i][1] - 0.001
+                if widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings.get('timeline', {}).get('snap_moving', True) and ((nextsub[0] - widget.main_self.settings['timeline'].get('snap_value', .1)) < (start_position + globals.SESSION['segments'][i][1]) or (last[0] + last[1] + widget.main_self.settings['timeline'].get('snap_value', .1)) > start_position):
+                    if (nextsub[0] - widget.main_self.settings['timeline'].get('snap_value', .1)) < (start_position + globals.SESSION['segments'][i][1]):
+                        globals.SESSION['segments'][i][0] = nextsub[0] - globals.SESSION['segments'][i][1] - 0.001
                     else:
-                        widget.main_self.subtitles_list[i][0] = last[0] + last[1] + 0.001
+                        globals.SESSION['segments'][i][0] = last[0] + last[1] + 0.001
                 elif widget.main_self.settings['timeline'].get('snap', True) and widget.main_self.settings['timeline'].get('snap_grid', False):
                     if widget.main_self.settings['timeline'].get('grid_type', False) == 'frames':
                         difference = start_position % (1.0 / widget.main_self.video_metadata['framerate'])
-                        widget.main_self.subtitles_list[i][0] = start_position - difference
+                        globals.SESSION['segments'][i][0] = start_position - difference
                     elif widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds' and float(start_position) > float(float(int(start_position) + 1) - float(widget.main_self.settings['timeline'].get('snap_value', .1))):
-                        widget.main_self.subtitles_list[i][0] = float(int(start_position) + 1)
+                        globals.SESSION['segments'][i][0] = float(int(start_position) + 1)
                     elif widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds' and float(start_position) < float(float(int(start_position)) + float(widget.main_self.settings['timeline'].get('snap_value', .1))):
-                        widget.main_self.subtitles_list[i][0] = float(int(start_position))
+                        globals.SESSION['segments'][i][0] = float(int(start_position))
                     elif widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and start_position > next_scene - widget.main_self.settings['timeline'].get('snap_value', .1):
-                        widget.main_self.subtitles_list[i][0] = next_scene
+                        globals.SESSION['segments'][i][0] = next_scene
                     elif widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and start_position < last_scene + widget.main_self.settings['timeline'].get('snap_value', .1):
-                        widget.main_self.subtitles_list[i][0] = last_scene
+                        globals.SESSION['segments'][i][0] = last_scene
                     else:
-                        widget.main_self.subtitles_list[i][0] = start_position
+                        globals.SESSION['segments'][i][0] = start_position
                 else:
-                    widget.main_self.subtitles_list[i][0] = start_position
+                    globals.SESSION['segments'][i][0] = start_position
 
         if widget.is_cursor_pressing and not (widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked or widget.subtitle_is_clicked):
             # widget.seek.emit((event.pos().x() / widget.width()) * widget.main_self.video_metadata['duration'])

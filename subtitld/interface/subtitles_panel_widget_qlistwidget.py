@@ -7,6 +7,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import utils
 from subtitld.modules import quality_check
 from subtitld.modules import subtitles
+from subtitld.modules import globals
 
 
 class subtitles_panel_qlistwidget_model(QAbstractListModel):
@@ -16,7 +17,7 @@ class subtitles_panel_qlistwidget_model(QAbstractListModel):
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
-            return self.subtitles[index.row()][-1]
+            return self.subtitles[index.row()][2]
 
         # if role == Qt.DecorationRole:
         #     status, _ = self.subtitles[index.row()]
@@ -335,10 +336,10 @@ def subtitles_panel_markdown_qtextedit_cursorpositionchanged(self):
 
     cursor = 0
     # markdown_text = ''
-    for subtitle in sorted(self.subtitles_list):
+    for subtitle in sorted(globals.SESSION['segments']):
         cursor += len(str("{:.3f}".format(subtitle[0])))
-        next_index = self.subtitles_list.index(subtitle) + 1
-        if not next_index >= len(self.subtitles_list) and not self.subtitles_list[next_index][0] - 0.001 == subtitle[0] + subtitle[1]:
+        next_index = globals.SESSION['segments'].index(subtitle) + 1
+        if not next_index >= len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index][0] - 0.001 == subtitle[0] + subtitle[1]:
             cursor += len(' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1])))
         cursor += len('\n')
 
@@ -408,7 +409,7 @@ def subtitles_panel_markdown_qtextedit_update_subtitles_list(self):
 
     # Sanitize subtitles so there is no overlaping subtitles?
 
-    self.subtitles_list = sorted(sub_list)
+    globals.SESSION['segments'] = sorted(sub_list)
 
     self.timeline.update(self)
 
@@ -416,11 +417,11 @@ def subtitles_panel_markdown_qtextedit_update_subtitles_list(self):
 def update_subtitles_panel_qlistwidget(self):
     """Function to update subtitles list widgets"""
 
-    current_sub, index = subtitles.subtitle_under_current_position(subtitles=self.subtitles_list, position=self.player_widget.position)
+    current_sub, index = subtitles.subtitle_under_current_position(subtitles=globals.SESSION['segments'], position=self.player_widget.position)
     if current_sub and not (self.subtitles_panel_qlistwidget.verticalScrollBar().value() + self.subtitles_panel_qlistwidget.verticalScrollBar().pageStep() > index > self.subtitles_panel_qlistwidget.verticalScrollBar().value()):
         self.subtitles_panel_qlistwidget.verticalScrollBar().setValue(index - 1)
 
-    self.subtitles_panel_qlistwidget_model.subtitles = sorted(self.subtitles_list)
+    self.subtitles_panel_qlistwidget_model.subtitles = sorted(globals.SESSION['segments'])
     self.subtitles_panel_qlistwidget_model.layoutChanged.emit()
 
     if self.selected_subtitle:
@@ -434,7 +435,7 @@ def subtitles_panel_qlistwidget_item_clicked(self):
     """Function to call when a subtitle item on the list is clicked"""
     if self.subtitles_panel_qlistwidget.currentIndex():
         sub_index = self.subtitles_panel_qlistwidget.currentIndex().row()
-        self.selected_subtitle = self.subtitles_list[sub_index]
+        self.selected_subtitle = globals.SESSION['segments'][sub_index]
 
     if self.selected_subtitle:
         self.properties_textedit.blockSignals(True)
@@ -452,7 +453,7 @@ def send_text_to_next_subtitle_button_clicked(self):
     pos = self.properties_textedit.textCursor().position()
     last_text = self.properties_textedit.toPlainText()[:pos].strip()
     next_text = self.properties_textedit.toPlainText()[pos:].strip()
-    subtitles.send_text_to_next_subtitle(subtitles=self.subtitles_list, selected_subtitle=self.selected_subtitle, last_text=last_text, next_text=next_text)
+    subtitles.send_text_to_next_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=self.selected_subtitle, last_text=last_text, next_text=next_text)
     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
     self.timeline.update(self)
 
@@ -464,8 +465,8 @@ def send_text_to_last_subtitle_and_slice_button_clicked(self):
     position = self.player_widget.position
     if not self.selected_subtitle[0] + self.selected_subtitle[1] > self.player_widget.position > self.selected_subtitle[0]:
         position = self.selected_subtitle[0] + (self.selected_subtitle[1] * .5)
-    subtitles.subtitle_start_to_current_position(subtitles=self.subtitles_list, position=position)
-    subtitles.last_end_to_current_position(subtitles=self.subtitles_list, position=position - .001)
+    subtitles.subtitle_start_to_current_position(subtitles=globals.SESSION['segments'], position=position)
+    subtitles.last_end_to_current_position(subtitles=globals.SESSION['segments'], position=position - .001)
     send_text_to_last_subtitle_button_clicked(self)
 
 
@@ -474,8 +475,8 @@ def send_text_to_next_subtitle_and_slice_button_clicked(self):
     position = self.player_widget.position
     if not self.selected_subtitle[0] + self.selected_subtitle[1] > self.player_widget.position > self.selected_subtitle[0]:
         position = self.selected_subtitle[0] + (self.selected_subtitle[1] * .5)
-    subtitles.subtitle_end_to_current_position(subtitles=self.subtitles_list, position=position)
-    subtitles.next_start_to_current_position(subtitles=self.subtitles_list, position=position + .001)
+    subtitles.subtitle_end_to_current_position(subtitles=globals.SESSION['segments'], position=position)
+    subtitles.next_start_to_current_position(subtitles=globals.SESSION['segments'], position=position + .001)
     send_text_to_next_subtitle_button_clicked(self)
 
 
@@ -484,7 +485,7 @@ def send_text_to_last_subtitle_button_clicked(self):
     pos = self.properties_textedit.textCursor().position()
     last_text = self.properties_textedit.toPlainText()[:pos].strip()
     next_text = self.properties_textedit.toPlainText()[pos:].strip()
-    subtitles.send_text_to_last_subtitle(subtitles=self.subtitles_list, selected_subtitle=self.selected_subtitle, last_text=last_text, next_text=next_text)
+    subtitles.send_text_to_last_subtitle(subtitles=globals.SESSION['segments'], selected_subtitle=self.selected_subtitle, last_text=last_text, next_text=next_text)
     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
     self.timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -494,8 +495,8 @@ def properties_textedit_changed(self):
     """Function to call when properties textedit is changed"""
     old_selected_subtitle = self.selected_subtitle
     if old_selected_subtitle and old_selected_subtitle[2] != self.properties_textedit.toPlainText():
-        counter = self.subtitles_list.index(old_selected_subtitle)
-        subtitles.change_subtitle_text(subtitles=self.subtitles_list, selected_subtitle=self.subtitles_list[counter], text=self.properties_textedit.toPlainText())
+        counter = globals.SESSION['segments'].index(old_selected_subtitle)
+        subtitles.change_subtitle_text(subtitles=globals.SESSION['segments'], selected_subtitle=globals.SESSION['segments'][counter], text=self.properties_textedit.toPlainText())
         self.unsaved = True
         subtitles_panel.update_topbar_status(self)
         self.timeline.update(self)
@@ -511,26 +512,26 @@ def update_properties_information(self):
         if self.settings['quality_check'].get('enabled', False):
             _, reasons, issues = quality_check.check_subtitle(self.selected_subtitle, self.settings['quality_check'])
 
-        n_words = len(self.selected_subtitle[2].replace('\n', ' ').split(' '))
-        n_char = len(self.selected_subtitle[2].replace('\n', '').replace(' ', ''))
+            n_words = len(self.selected_subtitle[2].replace('\n', ' ').split(' '))
+            n_char = len(self.selected_subtitle[2].replace('\n', '').replace(' ', ''))
 
-        self.properties_information_word_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'wpm' not in issues else '#aa9e1a1a') + '}')
-        self.properties_information_wpm.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'wpm' not in issues else '#bb9e1a1a') + '}')
-        self.properties_information_character_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'cps' not in issues else '#aa9e1a1a') + '}')
-        self.properties_information_cps.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cps' not in issues else '#bb9e1a1a') + '}')
-        self.properties_information_sub_duration.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'duration' not in issues else '#bb9e1a1a') + '}')
-        self.properties_information_number_of_lines.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'number_of_lines' not in issues else '#bb9e1a1a') + '}')
-        self.properties_information_cpl.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cpl' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_word_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'wpm' not in issues else '#aa9e1a1a') + '}')
+            self.properties_information_wpm.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'wpm' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_character_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'cps' not in issues else '#aa9e1a1a') + '}')
+            self.properties_information_cps.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cps' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_sub_duration.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'duration' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_number_of_lines.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'number_of_lines' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_cpl.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cpl' not in issues else '#bb9e1a1a') + '}')
 
-        self.properties_information_word_counter.setText(str(n_words))
-        self.properties_information_wpm.setText(str(int(n_words / (self.selected_subtitle[1] / 60))))
-        self.properties_information_character_counter.setText(str(n_char))
-        self.properties_information_cps.setText(str(int(n_char / (self.selected_subtitle[1]))))
-        self.properties_information_sub_duration.setText(str(round(self.selected_subtitle[1], 3)))
-        self.properties_information_number_of_lines.setText(str(int(len(self.selected_subtitle[2].split('\n')))))
+            self.properties_information_word_counter.setText(str(n_words))
+            self.properties_information_wpm.setText(str(int(n_words / (self.selected_subtitle[1] / 60))))
+            self.properties_information_character_counter.setText(str(n_char))
+            self.properties_information_cps.setText(str(int(n_char / (self.selected_subtitle[1]))))
+            self.properties_information_sub_duration.setText(str(round(self.selected_subtitle[1], 3)))
+            self.properties_information_number_of_lines.setText(str(int(len(self.selected_subtitle[2].split('\n')))))
 
-        self.properties_information_reason.setVisible(bool(reasons))
-        self.properties_information_reason.setText('\n'.join(reasons))
+            self.properties_information_reason.setVisible(bool(reasons))
+            self.properties_information_reason.setText('\n'.join(reasons))
 
 
 def update_properties_widget(self):

@@ -10,7 +10,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QFontDatabase, QPainter, QPen, 
 from subtitld.interface import global_panel, subtitles_panel
 from subtitld.interface.translation import _
 
-from subtitld.modules.paths import LIST_OF_SUPPORTED_EXPORT_EXTENSIONS, STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp
+from subtitld.modules.globals import LIST_OF_SUPPORTED_EXPORT_EXTENSIONS, STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp
 from subtitld.modules.shortcuts import shortcuts_dict
 from subtitld.modules import file_io, utils, subtitles
 
@@ -503,7 +503,7 @@ def global_panel_export_video_ffmpeg_export_button_clicked(self):
     generated_video_filepath = QFileDialog.getSaveFileName(parent=self, caption=_('global_panel_export.select_subtitle_file'), dir=os.path.join(suggested_path, suggested_name), filter=save_formats)[0]
 
     if generated_video_filepath:
-        file_io.save_file(os.path.join(path_tmp, 'subtitle.srt'), self.subtitles_list, subtitle_format='SRT', language='en')
+        file_io.save_file(os.path.join(path_tmp, 'subtitle.srt'), subtitle_format='SRT', language='en')
 
         self.thread_generated_burned_video.original_file = self.video_metadata['filepath']
         self.thread_generated_burned_video.final_file = generated_video_filepath
@@ -568,43 +568,34 @@ def global_subtitlesvideo_video_generate_transparent_video_button_clicked(self):
 
         i = 0
         last_position = .0
-        # if not self.subtitles_list[0][0] == .0:
-        #     filename = os.path.join(path_tmp, 'empty.png')
-        #     layer.subtitle_text = ''
-        #     layer.grab().save(filename, 'PNG')
 
-        #     final_text += "file '" + filename + "'\n"
-        #     final_text += 'duration {}\n'.format(self.subtitles_list[0][0])
-
-        #     i += 1
-
-        for subtitle in self.subtitles_list:
-            if not last_position + .001 > subtitle[0] - .001:
+        for segment in globals.SESSION['segments']:
+            if not last_position + .001 > segment[0] - .001:
                 filename = os.path.join(path_tmp, 'empty.png')
                 layer.subtitle_text = ''
                 layer.grab().save(filename, 'PNG')
 
                 final_text += "file '" + filename + "'\n"
-                final_text += 'duration {}\n'.format(subtitle[0] - last_position)
+                final_text += 'duration {}\n'.format(segment[0] - last_position)
 
             filename = os.path.join(path_tmp, '{}.png'.format(i))
-            layer.subtitle_text = subtitle[2]
+            layer.subtitle_text = segment[2]
             layer.grab().save(filename, 'PNG')
 
             final_text += "file '" + filename + "'\n"
-            final_text += 'duration {}\n'.format(subtitle[1])
+            final_text += 'duration {}\n'.format(segment[1])
 
-            last_position = subtitle[0] + subtitle[1]
+            last_position = segment[0] + segment[1]
             i += 1
             print(i)
 
-        if not self.subtitles_list[-1][0] + self.subtitles_list[-1][1] == self.video_metadata.get('duration', 60.0):
+        if not globals.SESSION['segments'][-1][0] + globals.SESSION['segments'][-1][1] == self.video_metadata.get('duration', 60.0):
             filename = os.path.join(path_tmp, 'empty.png')
             layer.subtitle_text = ''
             layer.grab().save(filename, 'PNG')
 
             final_text += "file '" + filename + "'\n"
-            final_text += 'duration {}\n'.format(self.subtitles_list[0][0])
+            final_text += 'duration {}\n'.format(globals.SESSION['segments'][0][0])
             final_text += "file '" + filename + "'\n"
 
         open(os.path.join(path_tmp, 'subtitles.txt'), 'w').write(final_text)
@@ -630,7 +621,7 @@ def global_subtitlesvideo_export_button_clicked(self):
             filename += exts[0]
         format_to_export = filedialog[1].rsplit('(', 1)[-1].split(')', 1)[0]
 
-        file_io.export_file(filename=filename, subtitles_list=self.subtitles_list, export_format=format_to_export)
+        file_io.export_file(filename=filename, export_format=format_to_export)
 
 
 def update_widgets(self):
@@ -706,9 +697,9 @@ def global_panel_export_video_ffmpeg_command_qlineedit_textedited(self):
 
 def update_preview(self):
     if self.global_panel_export_video_ffmpeg_panel.isVisible():
-        file_io.save_file(os.path.join(path_tmp, 'subtitle.srt'), self.subtitles_list, subtitle_format='SRT', language='en')
+        file_io.save_file(os.path.join(path_tmp, 'subtitle.srt'), subtitle_format='SRT', language='en')
         self.thread_generated_burned_video.original_file = self.video_metadata['filepath']
-        self.thread_generated_burned_video.is_preview = self.player_widget.position if subtitles.is_current_position_above_subtitle(self.subtitles_list, self.player_widget.position) else self.subtitles_list[0][0] + (self.subtitles_list[0][1]/2)
+        self.thread_generated_burned_video.is_preview = self.player_widget.position if subtitles.is_current_position_above_subtitle(globals.SESSION['segments'], self.player_widget.position) else globals.SESSION['segments'][0][0] + (globals.SESSION['segments'][0][1]/2)
         self.thread_generated_burned_video.is_burned = True
         self.thread_generated_burned_video.burnedin_options = self.settings['export']
         self.thread_generated_burned_video.start()

@@ -10,13 +10,13 @@ from PySide6.QtCore import Qt, QRect, QPropertyAnimation, QTimer
 
 from subtitld.modules import config, file_io
 from subtitld.modules.history import history_redo, history_undo
-from subtitld.modules.paths import PATH_SUBTITLD_DATA_THUMBNAILS, PATH_SUBTITLD_GRAPHICS, PATH_SUBTITLD_USER_CONFIG_FILE, ACTUAL_OS, LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, LIST_OF_SUPPORTED_VIDEO_EXTENSIONS, PATH_SUBTITLD_DATA_BACKUP
+from subtitld.modules.globals import PATH_SUBTITLD_DATA_THUMBNAILS, PATH_SUBTITLD_GRAPHICS, PATH_SUBTITLD_USER_CONFIG_FILE, ACTUAL_OS, LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, LIST_OF_SUPPORTED_VIDEO_EXTENSIONS, PATH_SUBTITLD_DATA_BACKUP
 from subtitld.interface import translation, startscreen
 
 from subtitld import resources_rc
 
 if ACTUAL_OS == 'darwin':
-    from subtitld.modules.paths import NSURL
+    from subtitld.modules.globals import NSURL
 
 list_of_supported_subtitle_extensions = []
 for t in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
@@ -41,7 +41,6 @@ class Subtitld(QWidget):
 
         # Setting some default values
         self.update_accuracy = 200
-        self.subtitles_list = []
         self.video_metadata = {}
 
         self.actual_subtitle_file = ''
@@ -227,9 +226,9 @@ class Subtitld(QWidget):
 
         if event.key() == Qt.Key_Z:
             if event.modifiers() == Qt.ControlModifier | Qt.ShiftModifier:
-                history_redo(actual_subtitles=self.subtitles_list)
+                history_redo()
             elif event.modifiers() == Qt.ControlModifier:
-                history_undo(actual_subtitles=self.subtitles_list)
+                history_undo()
             self.selected_subtitle = False
             self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
             # self.properties.update_properties_widget(self)
@@ -266,7 +265,7 @@ def autosave_timer_timeout(self):
     filename = os.path.basename(self.actual_subtitle_file).rsplit('.', 1)[0]
     if not filename:
         filename = os.path.basename(self.video_metadata['filepath']).rsplit('.', 1)[0]
-    self.file_io.save_file(os.path.join(PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0])), self.subtitles_list, self.settings['default_values'].get('subtitle_format', 'USF'))
+    self.file_io.save_file(os.path.join(PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0])), self.settings['default_values'].get('subtitle_format', 'USF'))
 
 
 def main():

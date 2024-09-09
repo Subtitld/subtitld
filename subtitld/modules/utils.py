@@ -1,7 +1,7 @@
 import ctypes
 import platform
 
-from subtitld.modules.paths import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
+from subtitld.modules.globals import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
 
 
 def is_float(element: str) -> bool:

@@ -14,12 +14,12 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont
 from subtitld.interface import global_panel, subtitles_panel, player
 from subtitld.interface.translation import _
 
-from subtitld.modules.paths import LANGUAGE_DICT_LIST, STARTUPINFO, path_tmp, FFMPEG_EXECUTABLE
 from subtitld.modules import file_io
 from subtitld.modules import utils
+from subtitld.modules import globals
 from subtitld import autosub
 
-LANGUAGE_DESCRIPTIONS = LANGUAGE_DICT_LIST.keys()
+LANGUAGE_DESCRIPTIONS = globals.LANGUAGE_DICT_LIST.keys()
 
 
 class global_panel_transcription_autosubtitles_thread(QThread):
@@ -32,11 +32,11 @@ class global_panel_transcription_autosubtitles_thread(QThread):
         if self.original_file:
             autosub.generate_subtitles(
                 self.original_file,
-                output=os.path.join(path_tmp, 'subtitle.json'),
+                output=os.path.join(globals.path_tmp, 'subtitle.json'),
                 src_language=self.language,
                 dst_language=self.language,
                 subtitle_file_format='json',
-                ffmpeg_executable=FFMPEG_EXECUTABLE
+                ffmpeg_executable=globals.FFMPEG_EXECUTABLE
             )
             self.response.emit('end')
 
@@ -61,21 +61,21 @@ class global_panel_transcription_transcript_thread(QThread):
                 self.result.emit('{}/{}'.format(int(actual_split / 60), total_steps))
                 subprocess.run(
                     [
-                        FFMPEG_EXECUTABLE,
+                        globals.FFMPEG_EXECUTABLE,
                         '-y',
                         '-i',
                         self.metadata['filepath'],
                         '-ss', str(actual_split),
                         '-t', '60',
-                        os.path.join(path_tmp, 'transcribe.wav')
+                        os.path.join(globals.path_tmp, 'transcribe.wav')
                     ]
                 )
 
                 r = sr.Recognizer()
-                with sr.AudioFile(os.path.join(path_tmp, 'transcribe.wav')) as source:
+                with sr.AudioFile(os.path.join(globals.path_tmp, 'transcribe.wav')) as source:
                     audio = r.record(source)
 
-                language = LANGUAGE_DICT_LIST[self.selected_language].split('-')[0]
+                language = globals.LANGUAGE_DICT_LIST[self.selected_language].split('-')[0]
 
                 try:
                     final_text += r.recognize_google(audio, language=language)
@@ -212,7 +212,7 @@ class ThreadGeneratedBurnedVideo(QThread):
     def run(self):
         """Run function of thread to generate burned video"""
         if self.commands:
-            proc = subprocess.Popen(self.commands, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, startupinfo=STARTUPINFO, bufsize=4096)
+            proc = subprocess.Popen(self.commands, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, startupinfo=globals.STARTUPINFO, bufsize=4096)
             number_of_steps = 0.001
             current_step = 0.0
             while proc.poll() is None:
@@ -310,10 +310,10 @@ def load_widgets(self):
 
     def global_panel_transcription_autosubtitles_thread_ended(response):
         if 'end' in response:
-            if os.path.isfile(os.path.join(path_tmp, 'subtitle.json')):
-                final_subtitles = read_json_transcribed_subtitles(filename=os.path.join(path_tmp, 'subtitle.json'), transcribed=True)
-                if final_subtitles:
-                    self.subtitles_list = final_subtitles
+            if os.path.isfile(os.path.join(globals.path_tmp, 'subtitle.json')):
+                globals.SESSION['segments'] = read_json_transcribed_subtitles(filename=os.path.join(globals.path_tmp, 'subtitle.json'), transcribed=True)
+                if globals.SESSION['segments']:
+                    globals.SESSION['segments'] = globals.SESSION['segments']
             subtitles_panel.update_processing_status(self, show_widgets=False, value=0)
             self.global_panel_transcription_autosubtitle_button.setEnabled(True)
             player.update_timelines(self)
@@ -414,7 +414,7 @@ def global_subtitlesvideo_autosync_button_clicked(self):
     """Function to run autosync"""
     run_command = False
 
-    if bool(self.subtitles_list):
+    if bool(globals.SESSION['segments']):
         are_you_sure_message = QMessageBox(self)
         are_you_sure_message.setWindowTitle('Are you sure?')
         are_you_sure_message.setText('This will overwrite your actual subtitle set. New timings will be applied. Are you sure you want to replace your actual subtitles?')
@@ -428,10 +428,10 @@ def global_subtitlesvideo_autosync_button_clicked(self):
         run_command = True
 
     if run_command:
-        file_io.save_file(os.path.join(path_tmp, 'subtitle_original.srt'), self.subtitles_list, 'SRT')
-        sub = os.path.join(path_tmp, 'subtitle_final.srt')
+        file_io.save_file(os.path.join(globals.path_tmp, 'subtitle_original.srt'), globals.SESSION['segments'], 'SRT')
+        sub = os.path.join(globals.path_tmp, 'subtitle_final.srt')
 
-        # unparsed_args = [self.video_metadata['filepath'], "-i", os.path.join(path_tmp, 'subtitle_original.srt'), "-o", sub]
+        # unparsed_args = [self.video_metadata['filepath'], "-i", os.path.join(globals.path_tmp, 'subtitle_original.srt'), "-o", sub]
 
         # parser = ffsubsync.make_parser()
         # args = parser.parse_args(unparsed_args)
@@ -439,7 +439,7 @@ def global_subtitlesvideo_autosync_button_clicked(self):
         # ffsubsync.run(args)
 
         if os.path.isfile(sub):
-            self.subtitles_list = file_io.process_subtitles_file(sub)[0]
+            globals.SESSION['segments'] = file_io.process_subtitles_file(sub)[0]
             # update_widgets(self)
 
 
@@ -447,7 +447,7 @@ def global_panel_transcription_autosubtitle_button_clicked(self):
     """Function to run autosub"""
     run_command = False
 
-    if bool(self.subtitles_list):
+    if bool(globals.SESSION['segments']):
         are_you_sure_message = QMessageBox(self)
         are_you_sure_message.setWindowTitle('Are you sure?')
         are_you_sure_message.setText('This will overwrite your actual subtitle set. New timings will be applied. Are you sure you want to replace your actual subtitles?')
@@ -462,7 +462,7 @@ def global_panel_transcription_autosubtitle_button_clicked(self):
 
     if run_command:
 
-        language = LANGUAGE_DICT_LIST[self.global_panel_transcription_language_combobox.currentText()]
+        language = globals.LANGUAGE_DICT_LIST[self.global_panel_transcription_language_combobox.currentText()]
 
         self.global_panel_transcription_autosubtitles_thread.original_file = self.video_metadata['filepath']
         self.global_panel_transcription_autosubtitles_thread.language = language
@@ -476,7 +476,7 @@ def global_panel_transcription_transcript_apply_transcript_button_clicked(self):
     """Function to transcribe using google speech"""
     run_command = False
 
-    if bool(self.subtitles_list):
+    if bool(globals.SESSION['segments']):
         are_you_sure_message = QMessageBox(self)
         are_you_sure_message.setWindowTitle(_('alert.are_you_sure'))
         are_you_sure_message.setText(_('alert.overwrite_warning'))
@@ -491,28 +491,28 @@ def global_panel_transcription_transcript_apply_transcript_button_clicked(self):
 
     if run_command and self.global_panel_transcription_transcript_preview.text:
         if self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 0:
-            self.subtitles_list = []
+            globals.SESSION['segments'] = []
             ns = len(self.global_panel_transcription_transcript_preview.text.split('. '))
             ts = self.video_metadata['duration'] / ns
             c = 0.0
             for sub in self.global_panel_transcription_transcript_preview.text.split('. '):
-                self.subtitles_list.append([c, ts, sub + '.'])
+                globals.SESSION['segments'].append([c, ts, sub + '.'])
                 c += ts
         elif self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 1:
-            self.subtitles_list = []
+            globals.SESSION['segments'] = []
             ns = len(self.global_panel_transcription_transcript_preview.text)
             c = 0.0
             for sub in self.global_panel_transcription_transcript_preview.text.split('. '):
                 ts = (len(sub + '.') / ns) * self.video_metadata['duration']
-                self.subtitles_list.append([c, ts, sub + '.'])
+                globals.SESSION['segments'].append([c, ts, sub + '.'])
                 c += ts
         elif self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 2:
-            self.subtitles_list = []
+            globals.SESSION['segments'] = []
             ns = len(self.global_panel_transcription_transcript_preview.text)
             c = 0.0
             for sub in self.global_panel_transcription_transcript_preview.text.split(' '):
                 ts = (len(sub + ' ') / ns) * self.video_metadata['duration']
-                self.subtitles_list.append([c, ts, sub])
+                globals.SESSION['segments'].append([c, ts, sub])
                 c += ts
 
 

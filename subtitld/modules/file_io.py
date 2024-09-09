@@ -2,6 +2,7 @@ import os
 import datetime
 import hashlib
 from docx import Document
+import json
 
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import QThread, Signal
@@ -19,12 +20,12 @@ import pysubs2
 from subtitld import timecode  # , captionstransformer
 
 from subtitld.modules import waveform, usf
-from subtitld.modules.paths import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, LIST_OF_SUPPORTED_VIDEO_EXTENSIONS, REAL_PATH_HOME
+from subtitld.modules import globals
 from subtitld.interface.translation import _
 
 list_of_supported_subtitle_extensions = []
-for exttype in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-    for ext in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']:
+for exttype in globals.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+    for ext in globals.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']:
         list_of_supported_subtitle_extensions.append(ext)
 
 
@@ -133,38 +134,36 @@ def load(self):
 def open_filepath(self, files_to_open=False, update_interface=False):
     """Open subtitle or video and performs some checks"""
     supported_subtitle_files = _('file_io.subtitle_files') + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in list_of_supported_subtitle_extensions]))
-    supported_video_files = _('file_io.video_files') + ' ({})'.format(" ".join(["*{}".format(fo) for fo in LIST_OF_SUPPORTED_VIDEO_EXTENSIONS]))
+    supported_video_files = _('file_io.video_files') + ' ({})'.format(" ".join(["*{}".format(fo) for fo in globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS]))
 
     if not files_to_open:
-        files_to_open = [QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_or_subtitle'), dir=REAL_PATH_HOME, filter=supported_subtitle_files + ';;' + supported_video_files)[0]]
+        files_to_open = [QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_or_subtitle'), dir=globals.REAL_PATH_HOME, filter=supported_subtitle_files + ';;' + supported_video_files)[0]]
 
     for filepath in files_to_open:
         if os.path.isfile(filepath):
-            if not self.subtitles_list and filepath.lower().endswith(tuple(list_of_supported_subtitle_extensions)):
-                self.subtitles_list, self.format_to_save = process_subtitles_file(filepath)
+            if not globals.SESSION['segments'] and filepath.lower().endswith(tuple(list_of_supported_subtitle_extensions)):
+                globals.SESSION['segments'], self.format_to_save = process_subtitles_file(filepath)
                 self.actual_subtitle_file = filepath
-
-            elif not self.video_metadata and filepath.lower().endswith(LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
+            elif not self.video_metadata and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
                 self.video_metadata = process_video_file(filepath)
-
-            if not self.video_metadata and self.subtitles_list:
+            
+            if not self.video_metadata and globals.SESSION['segments']:
                 for filename in os.listdir(os.path.dirname(filepath)):
-                    if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
+                    if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
                         self.video_metadata = process_video_file(os.path.join(os.path.dirname(filepath), filename))
                         break
-
-            elif self.video_metadata and not self.subtitles_list:
+            elif self.video_metadata and not globals.SESSION['segments']:
                 for filename in os.listdir(os.path.dirname(filepath)):
                     if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(tuple(list_of_supported_subtitle_extensions)):
-                        self.subtitles_list, self.format_to_save = process_subtitles_file(os.path.join(os.path.dirname(filepath), filename))
+                        globals.SESSION['segments'], self.format_to_save = process_subtitles_file(os.path.join(os.path.dirname(filepath), filename))
                         self.actual_subtitle_file = os.path.join(os.path.dirname(filepath), filename)
                         break
 
             if not self.video_metadata:
-                filepath = QFileDialog.getOpenFileName(parent=self.parent(), caption=_('file_io.select_video_file'), dir=REAL_PATH_HOME, filter=supported_video_files)[0]
-                if filepath and os.path.isfile(filepath) and filepath.lower().endswith(LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
+                filepath = QFileDialog.getOpenFileName(parent=self.parent(), caption=_('file_io.select_video_file'), dir=globals.REAL_PATH_HOME, filter=supported_video_files)[0]
+                if filepath and os.path.isfile(filepath) and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
                     self.video_metadata = process_video_file(filepath)
-
+            
     if self.video_metadata:
         self.actual_video_file = self.video_metadata['filepath']
         if self.video_metadata['audio_is_present']:
@@ -181,7 +180,7 @@ def open_filepath(self, files_to_open=False, update_interface=False):
 
         if not self.actual_subtitle_file:
             if self.video_metadata.get('subtitles', ''):
-                self.subtitles_list, self.format_to_save = process_subtitles_file(self.video_metadata['subtitles'])
+                globals.SESSION['segments'], self.format_to_save = process_subtitles_file(self.video_metadata['subtitles'])
         self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
         self.subtitles_panel.update_topbar_status(self)
         self.settings['recent_files'][self.actual_subtitle_file] = {
@@ -207,7 +206,7 @@ def open_filepath(self, files_to_open=False, update_interface=False):
 
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
-    final_subtitles = []
+    globals.SESSION['segments'] = []
 
     if subtitle_file and os.path.isfile(subtitle_file):
         if subtitle_file.lower().endswith(('.srt')):
@@ -223,7 +222,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 language = languages[0]
                 captions = srt_reader.get_captions(language)
                 for caption in captions:
-                    final_subtitles.append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
+                    globals.SESSION['segments'].append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
 
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
@@ -234,7 +233,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     language = languages[0]
                     captions = vtt_reader.get_captions(language)
                     for caption in captions:
-                        final_subtitles.append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
+                        globals.SESSION['segments'].append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
                 except CaptionReadSyntaxError:
                     with open(subtitle_file, encoding='utf-8') as fileobj:
                         subfile = pysubs2.SSAFile.from_string(fileobj.read())
@@ -243,7 +242,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         start = event.start / 1000.0
                         duration = event.duration / 1000.0
                         text = event.plaintext
-                        final_subtitles.append([start, duration, text])
+                        globals.SESSION['segments'].append([start, duration, text])
                 except CaptionReadNoCaptions:
                     pass
 
@@ -256,7 +255,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             #     with open(subtitle_file, encoding='utf-8') as xml_file:
             #         captions = captionstransformer.transcript.Reader(xml_file).read()
             #         for caption in captions:
-            #             final_subtitles.append([(caption.start - datetime.datetime(1900, 1, 1)).total_seconds(), caption.duration.total_seconds(), html.unescape(caption.text)])
+            #             globals.SESSION['segments'].append([(caption.start - datetime.datetime(1900, 1, 1)).total_seconds(), caption.duration.total_seconds(), html.unescape(caption.text)])
             # else:
             if '<tt ' in open(subtitle_file).read():
                 subtitle_format = 'TTML'
@@ -269,7 +268,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 language = languages[0]
                 captions = dfxp_reader.get_captions(language)
                 for caption in captions:
-                    final_subtitles.append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
+                    globals.SESSION['segments'].append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
 
         elif subtitle_file.lower().endswith(('.smi', '.sami')):
             subtitle_format = 'SAMI'
@@ -279,7 +278,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 language = languages[0]
                 captions = sami_reader.get_captions(language)
                 for caption in captions:
-                    final_subtitles.append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
+                    globals.SESSION['segments'].append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
 
         # elif subtitle_file.lower().endswith(('.sbv')):
         #     subtitle_format = 'SBV'
@@ -287,7 +286,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         #         from captionstransformer.sbv import Reader
         #         captions = Reader(sbv_file).read()
         #         for caption in captions:
-        #             final_subtitles.append([(caption.start - datetime.datetime(1900, 1, 1)).total_seconds(), caption.duration.total_seconds(), caption.text.strip()])
+        #             globals.SESSION['segments'].append([(caption.start - datetime.datetime(1900, 1, 1)).total_seconds(), caption.duration.total_seconds(), caption.text.strip()])
 
         elif subtitle_file.lower().endswith(('.ass', '.ssa', '.sub')):
             if subtitle_file.lower().endswith(('.ass', '.ssa')):
@@ -303,7 +302,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 start = event.start / 1000.0
                 duration = event.duration / 1000.0
                 text = event.plaintext
-                final_subtitles.append([start, duration, text])
+                globals.SESSION['segments'].append([start, duration, text])
 
         elif subtitle_file.lower().endswith(('.scc')):
             subtitle_format = 'SCC'
@@ -314,13 +313,27 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 language = languages[0]
                 captions = scc_reader.get_captions(language)
                 for caption in captions:
-                    final_subtitles.append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
+                    globals.SESSION['segments'].append([caption.start / 1000000, (caption.end / 1000000) - caption.start / 1000000, caption.get_text()])
 
         elif subtitle_file.lower().endswith(('.usf')):
             subtitle_format = 'USF'
-            final_subtitles = usf.USFReader().read(open(subtitle_file).read())
+            globals.SESSION['segments'] = usf.USFReader().read(open(subtitle_file).read())
 
-    return final_subtitles, subtitle_format
+        elif subtitle_file.lower().endswith(('.json')):
+            subtitle_format = 'JSON'
+
+            with open(subtitle_file, encoding='utf-8') as json_file:
+                source_content = json.load(json_file)
+
+                for segment in source_content['segments']:
+                    globals.SESSION['segments'].append([
+                        segment['start'],
+                        segment['end'] - segment['start'],
+                        segment['text'],
+                        # {'speaker': segment.get('speaker', 'A')}
+                    ])
+
+    return globals.SESSION['segments'], subtitle_format
 
 
 def process_video_file(video_file=False):
@@ -349,7 +362,7 @@ def process_video_file(video_file=False):
 
 def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False, length=.01, distribute_fixed_duration=False):
     """Function to import file into the subtitle project."""
-    final_subtitles = []
+    globals.SESSION['segments'] = []
     if filename:
         if filename.lower().endswith(('.txt')):
             subtitle_format = 'TXT'
@@ -379,12 +392,12 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
                 txt_content = txt_file.read()
                 pos = 0.0
                 for phrase in txt_content.split('. '):
-                    final_subtitles.append([pos, 5.0, phrase + '.'])
+                    globals.SESSION['segments'].append([pos, 5.0, phrase + '.'])
                     pos += 5.0
 
         elif filename.lower().endswith(('.srt')):
             subtitle_format = 'SRT'
-            final_subtitles += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
+            globals.SESSION['segments'] += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
 
         elif filename.lower().endswith(('.docx')):
             subtitle_format = 'DOCX'
@@ -396,20 +409,20 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
 
             pos = 0.0
             for phrase in txt_content.split('. '):
-                final_subtitles.append([pos, 5.0, phrase + '.'])
+                globals.SESSION['segments'].append([pos, 5.0, phrase + '.'])
                 pos += 5.0
 
-            final_subtitles += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
+            globals.SESSION['segments'] += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
 
-    return final_subtitles, subtitle_format
+    return globals.SESSION['segments'], subtitle_format
 
 
-def export_file(filename=False, subtitles_list=False, export_format='TXT', options=False):
+def export_file(filename=False, export_format='TXT', options=False):
     """Function to export file. A filepath and a subtitle dict is given."""
-    if subtitles_list and filename:
+    if globals.SESSION['segments'] and filename:
         if export_format in ['.txt']:
             final_txt = ''
-            for sub in subtitles_list:
+            for sub in globals.SESSION['segments']:
                 final_txt += sub[2].replace('\n', ' ') + ' '
             if options:
                 if options.get('new_line', False):
@@ -422,7 +435,7 @@ def export_file(filename=False, subtitles_list=False, export_format='TXT', optio
             final_xml = '''<?xml version='1.0' encoding='utf-8'?><mlt LC_NUMERIC="C" producer="main_bin" version="6.26.1" root="/home/jonata"><profile frame_rate_num="25" sample_aspect_num="1" display_aspect_den="9" colorspace="709" progressive="1" description="HD 1080p 25 fps" display_aspect_num="16" frame_rate_den="1" width="1920" height="1080" sample_aspect_den="1"/>'''
 
             i = 0
-            for sub in subtitles_list:
+            for sub in globals.SESSION['segments']:
                 final_xml += '''<producer id="producer{i}" in="{zerotime}" out="{out}">
                                 <property name="length">{length}</property>
                                 <property name="eof">pause</property>
@@ -482,7 +495,7 @@ def export_file(filename=False, subtitles_list=False, export_format='TXT', optio
                             <property name="xml_retain">1</property>\n'''
 
             i = 0
-            for sub in subtitles_list:
+            for sub in globals.SESSION['segments']:
                 final_xml += '''<entry producer="producer{i}" in="{zerotime}" out="{out}"/>\n'''.format(i=i, zerotime=str(timecode.Timecode('1000', start_seconds=0.001, fractional=True)), out=str(timecode.Timecode('1000', start_seconds=sub[1], fractional=True)))
                 i += 1
 
@@ -538,7 +551,7 @@ def export_file(filename=False, subtitles_list=False, export_format='TXT', optio
                             <playlist id="playlist6">'''
             i = 0
             last_intime = 0
-            for sub in subtitles_list:
+            for sub in globals.SESSION['segments']:
                 last_intime = sub[0] - last_intime
                 if last_intime:
                     final_xml += '''
@@ -575,15 +588,15 @@ def export_file(filename=False, subtitles_list=False, export_format='TXT', optio
                 txt_file.write(final_xml)
 
 
-def save_file(final_file, subtitles_list, subtitle_format='SRT', language='en'):
+def save_file(final_file, subtitle_format='SRT', language='en'):
     """Function to save the subtitle project. A subtitles dict and the format is given."""
-    if subtitles_list:
+    if globals.SESSION['segments']:
         # if not final_file.lower().endswith('.' + format.lower()):
         #     final_file += '.' + format.lower()
 
         if subtitle_format in ['SRT', 'DFXP', 'TTML', 'SAMI', 'SCC', 'VTT']:
             captions = pycaption.CaptionList()
-            for sub in subtitles_list:
+            for sub in globals.SESSION['segments']:
                 # skip extra blank lines
                 nodes = [pycaption.CaptionNode.create_text(sub[2])]
                 caption = pycaption.Caption(start=sub[0] * 1000000, end=(sub[0] + sub[1]) * 1000000, nodes=nodes)
@@ -605,7 +618,7 @@ def save_file(final_file, subtitles_list, subtitle_format='SRT', language='en'):
             if subtitle_format in ['ASS', 'SUB']:
                 assfile = pysubs2.SSAFile()
                 index = 0
-                for sub in reversed(sorted(subtitles_list)):
+                for sub in reversed(sorted(globals.SESSION['segments'])):
                     assfile.insert(index, pysubs2.SSAEvent(start=int(sub[0] * 1000), end=int((sub[0] * 1000) + (sub[1] * 1000)), text=sub[2].replace('\n', ' ')))
                 if subtitle_format == 'SUB':
                     assfile.save(final_file, subtitle_format='microdvd')
@@ -618,7 +631,7 @@ def save_file(final_file, subtitles_list, subtitle_format='SRT', language='en'):
             #         from captionstransformer.transcript import Writer
             #     writer = Writer(open(final_file, mode='w', encoding='utf-8'))
             #     captions = []
-            #     for cap in subtitles_list:
+            #     for cap in globals.SESSION['segments']:
             #         caption = captionstransformer.core.Caption()
             #         caption.start = captionstransformer.core.get_date(second=int(cap[0] // 1), millisecond=int((cap[0] % 1) * 1000))
             #         caption.duration = captionstransformer.core.get_date(second=int(cap[1] // 1), millisecond=int((cap[1] % 1) * 1000)) - captionstransformer.core.get_date()
@@ -627,6 +640,22 @@ def save_file(final_file, subtitles_list, subtitle_format='SRT', language='en'):
             #     writer.set_captions(captions)
             #     writer.write()
 
+        elif subtitle_format in ['JSON']:
+            subtitles_dict = {
+                'segments': []
+            }
+
+            for subtitle in globals.SESSION['segments']:
+                subtitles_dict['segments'].append({
+                    'start': subtitle[0],
+                    'end': subtitle[0] + subtitle[1],
+                    'text': subtitle[2],
+                    # 'speaker': subtitle[-1].get('speaker', 'A')
+                })
+
+            open(final_file, mode='w', encoding='utf-8').write(json.dumps(subtitles_dict))
+
+
         elif subtitle_format in ['USF']:
-            open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(subtitles_list))
+            open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(globals.SESSION['segments']))
 

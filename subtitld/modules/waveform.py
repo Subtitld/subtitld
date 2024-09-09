@@ -11,7 +11,7 @@ import numpy
 import ffms2
 import asyncio
 
-from subtitld.modules.paths import STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp, FFPROBE_EXECUTABLE
+from subtitld.modules.globals import STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp, FFPROBE_EXECUTABLE
 
 
 def return_audio_numpy(self, audionp):

@@ -104,7 +104,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
     'XML': {'description': 'XML Subtitle format', 'extensions': ['xml']},
-    'USF': {'description': 'Universal Subtitle Format', 'extensions': ['usf']}
+    'USF': {'description': 'Universal Subtitle Format', 'extensions': ['usf']},
+    'JSON': {'description': 'JSON format', 'extensions': ['json']},
 }
 
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
@@ -239,4 +240,8 @@ LANGUAGE_DICT_LIST = {
     'Vietnamese (Vietnam)': 'vi-vn',
     'Chinese, Cantonese (Traditional, Hong Kong)': 'yue-hant-hk',
     'Zulu (South Africa)': 'zu-za'
+}
+
+SESSION = {
+    'segments': []
 }

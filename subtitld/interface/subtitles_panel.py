@@ -14,7 +14,8 @@ from subtitld.interface import subtitles_panel_widget_markdown, subtitles_panel_
 from subtitld.interface.translation import _
 from subtitld.modules import file_io
 from subtitld.modules import subtitles
-from subtitld.modules.paths import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
+from subtitld.modules import globals
+from subtitld.modules.globals import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
 from subtitld.modules.utils import get_subtitle_format, get_format_from_extension
 
 
@@ -275,12 +276,12 @@ def load(self):
 def resized(self):
     """Function to call when resizing subtitles list"""
     x = int(-((self.width() * self.subtitles_panel_width_proportion) - 15))
-    if (self.subtitles_list or self.video_metadata) and not self.subtitles_panel_toggle_button.isChecked():
+    if (globals.SESSION['segments'] or self.video_metadata) and not self.subtitles_panel_toggle_button.isChecked():
         x = 0
     self.subtitles_panel_widget.setGeometry(x, 0, int((self.width() * self.subtitles_panel_width_proportion) - 15), int(self.height()))
 
     # x = self.subtitles_panel_widget.x() + self.subtitles_panel_widget.width()
-    # if (self.subtitles_list or self.video_metadata) and self.subtitles_panel_toggle_button.isChecked():
+    # if (globals.SESSION['segments'] or self.video_metadata) and self.subtitles_panel_toggle_button.isChecked():
     #     x = self.global_panel_widget.x() + self.global_panel_widget.width() - self.subtitles_panel_toggle_button.width()
     # x -= self.subtitles_panel_toggle_button.width()
 
@@ -374,23 +375,23 @@ def toppanel_save_button_clicked(self):
                     'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
                     'video_filepath': self.video_metadata['filepath']
                 }
-                file_io.save_file(self.actual_subtitle_file, self.subtitles_list, selected_format, self.selected_language)
+                file_io.save_file(self.actual_subtitle_file, selected_format, self.selected_language)
                 if self.settings['default_values'].get('save_automatic_copy', False) and not subtitle_format == self.settings['default_values'].get('subtitle_format', 'USF'):
-                    file_io.save_file(self.actual_subtitle_file.rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.subtitles_list, self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
+                    file_io.save_file(self.actual_subtitle_file.rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
                 update_subtitles_panel_format_label(self)
                 update_toppanel_subtitle_file_info_label(self)
                 self.unsaved = False
 
             if Qt.AltModifier in self.toppanel_save_button.key_modifiers:
-                file_io.save_file(filepath, self.subtitles_list, selected_format, self.selected_language)
+                file_io.save_file(filepath, selected_format, self.selected_language)
 
             if Qt.ControlModifier in self.toppanel_save_button.key_modifiers:
-                file_io.save_file(filepath, self.subtitles_list, selected_format, self.selected_language)
+                file_io.save_file(filepath, selected_format, self.selected_language)
 
     elif self.actual_subtitle_file:
-        file_io.save_file(self.actual_subtitle_file, self.subtitles_list, subtitle_format, self.selected_language)
+        file_io.save_file(self.actual_subtitle_file, subtitle_format, self.selected_language)
         if self.settings['default_values'].get('save_automatic_copy', False) and not subtitle_format == self.settings['default_values'].get('subtitle_format', 'USF'):
-            file_io.save_file(self.actual_subtitle_file.rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.subtitles_list, self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
+            file_io.save_file(self.actual_subtitle_file.rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
         update_subtitles_panel_format_label(self)
         update_toppanel_subtitle_file_info_label(self)
         self.unsaved = False
@@ -448,7 +449,7 @@ def subtitles_panel_findandreplace_replaceandfindnext_button_clicked(self):
 
 def subtitles_panel_findandreplace_replace_button_clicked(self):
     if self.selected_subtitle:
-        subtitles.change_subtitle_text(subtitles=self.subtitles_list, selected_subtitle=self.selected_subtitle, text=self.selected_subtitle[2][:self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1]] + self.subtitles_panel_findandreplace_replace_field.text() + self.selected_subtitle[2][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2]:])
+        subtitles.change_subtitle_text(subtitles=globals.SESSION['segments'], selected_subtitle=self.selected_subtitle, text=self.selected_subtitle[2][:self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1]] + self.subtitles_panel_findandreplace_replace_field.text() + self.selected_subtitle[2][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2]:])
         self.unsaved = True
         update_topbar_status(self)
 
@@ -479,11 +480,11 @@ def subtitles_panel_findandreplace_perform_search(self):
     self.subtitles_panel_findandreplace_index = 0
 
     text_to_search = self.subtitles_panel_findandreplace_find_field.text() if self.subtitles_panel_findandreplace_casesensitive.isChecked() else self.subtitles_panel_findandreplace_find_field.text().lower()
-    for subtitle in self.subtitles_list:
+    for subtitle in globals.SESSION['segments']:
         if text_to_search in (subtitle[2] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle[2].lower()):
             s = 0
             for _ in range((subtitle[2] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle[2].lower()).count(text_to_search)):
-                self.subtitles_panel_findandreplace_list.append([self.subtitles_list.index(subtitle), subtitle[2].find(text_to_search, s), len(text_to_search)])
+                self.subtitles_panel_findandreplace_list.append([globals.SESSION['segments'].index(subtitle), subtitle[2].find(text_to_search, s), len(text_to_search)])
                 s += subtitle[2].find(text_to_search, s) + len(text_to_search)
 
 
@@ -503,7 +504,7 @@ def subtitles_panel_findandreplace_findnext_field_clicked(self):
 
 def subtitles_panel_findandreplace_update(self):
     if self.subtitles_panel_findandreplace_list:
-        self.selected_subtitle = self.subtitles_list[self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][0]]
+        self.selected_subtitle = globals.SESSION['segments'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][0]]
 
         if not self.selected_subtitle[0] < self.player_widget.position < self.selected_subtitle[0] + self.selected_subtitle[1]:
             self.player_widget.seek(self.selected_subtitle[0] + (self.selected_subtitle[1] * .5))

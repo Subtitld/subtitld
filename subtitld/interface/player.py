@@ -7,7 +7,7 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from subtitld.modules.utils import GetProcAddressGetter
-from subtitld.modules.paths import ACTUAL_OS
+from subtitld.modules import globals
 from subtitld.interface import playercontrols, subtitles_panel
 
 
@@ -69,8 +69,8 @@ class MpvWidget(QOpenGLWidget):
             # "gpu-context": "x11egl"
         }
 
-        if not ACTUAL_OS == 'windows':
-            options["gpu-hwdec-interop"] = "vaapi-egl"
+        # if not globals.ACTUAL_OS == 'windows':
+        #     options["gpu-hwdec-interop"] = "vaapi-egl"
 
         for key, value in options.items():
             setattr(widget.mpv, key, value)
@@ -451,8 +451,8 @@ def update_safety_margins_subtitle_layer(self):
 
 # def player_subtitle_textedit_changed(self):
 #     old_selected_subtitle = self.selected_subtitle
-#     counter = self.subtitles_list.index(old_selected_subtitle)
-#     self.subtitles_list[counter][2] = self.player_subtitle_textedit.toPlainText()
+#     counter = globals.SESSION['segments'].index(old_selected_subtitle)
+#     globals.SESSION['segments'][counter][2] = self.player_subtitle_textedit.toPlainText()
 #     self.subtitles_panel.update_subtitles_panel_qlistwidget(self)
 #     self.timeline.update(self)
 #     update_subtitle_layer(self)
@@ -472,7 +472,7 @@ def update_speed(self):
 def update_subtitle_layer(self):
     """Function to update subtitle layer"""
     text = ''
-    for subtitle in self.subtitles_list:
+    for subtitle in globals.SESSION['segments']:
         if self.player_widget.position and (self.player_widget.position > subtitle[0] and self.player_widget.position < subtitle[0] + subtitle[1]):
             text = subtitle[2]
             break

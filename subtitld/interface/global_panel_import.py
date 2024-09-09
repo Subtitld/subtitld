@@ -2,7 +2,7 @@ import os
 
 from PySide6.QtWidgets import QPushButton, QFileDialog, QWidget
 
-from subtitld.modules.paths import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
+from subtitld.modules.globals import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
 from subtitld.modules import file_io
@@ -56,8 +56,8 @@ def global_subtitlesvideo_import_button_clicked(self):
     supported_import_files = 'Text files' + ' ({})'.format(" ".join([" * .{}".format(fo) for fo in list_of_supported_import_extensions]))
     file_to_open = QFileDialog.getOpenFileName(parent=self, caption='Select the file to import', dir=os.path.expanduser("~"), filter=supported_import_files)[0]
     if file_to_open:
-        self.subtitles_list += file_io.import_file(filename=file_to_open)[0]
-        self.subtitles_list.sort()
+        globals.SESSION['segments'] += file_io.import_file(filename=file_to_open)[0]
+        globals.SESSION['segments'].sort()
         # update_widgets(self)
 
 

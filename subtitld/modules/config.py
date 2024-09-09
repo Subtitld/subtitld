@@ -5,7 +5,7 @@
 import os
 import json
 
-from subtitld.modules.paths import PATH_SUBTITLD_USER_CONFIG_FILE
+from subtitld.modules.globals import PATH_SUBTITLD_USER_CONFIG_FILE
 
 
 def load(config_file_path=False):

@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QLabel, QComboBox, QPushButton, QWidget, QVBoxLayout, QCheckBox, QDoubleSpinBox, QHBoxLayout
 from PySide6.QtCore import Qt
 
-from subtitld.modules.paths import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
+from subtitld.modules.globals import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
 
