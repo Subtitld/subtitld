@@ -214,7 +214,7 @@ class Subtitld(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Space:
-            self.player_widget.pause()
+            self.player_widget.is_paused()
             self.playercontrols_playpause_button.setChecked(not self.playercontrols_playpause_button.isChecked())
             # self.playercontrols.playercontrols_playpause_button_update(self)
 

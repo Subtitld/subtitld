@@ -657,7 +657,7 @@ def update(self):
                 if not len(self.repeat_duration_tmp):
                     for i in range(self.repeat_times):
                         self.repeat_duration_tmp.append([last_pos, last_pos + self.repeat_duration])
-    if not self.player_widget.mpv.pause:
+    if not self.player_widget.is_paused():
         current_position_in_timeline_widget = (self.player_widget.position * (self.timeline_widget.width() / self.video_metadata.get('duration', 0.01)))
         if self.settings['timeline'].get('scrolling', 'page') == 'follow':
             update_scrollbar(self, position='middle')

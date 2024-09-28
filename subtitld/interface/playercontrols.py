@@ -993,12 +993,12 @@ def playercontrols_stop_button_clicked(self):
 
 def playercontrols_playpause_button_clicked(self):
     """Function to call when play/pause button is clicked"""
-    self.player_widget.pause()
+    self.player_widget.play()
     if self.repeat_activated:
         self.repeat_duration_tmp = []
-    if not self.player_widget.mpv.pause and not self.playercontrols_playpause_button.isChecked():
+    if not self.player_widget.is_paused() and not self.playercontrols_playpause_button.isChecked():
         self.playercontrols_playpause_button.setChecked(True)
-    elif self.player_widget.mpv.pause and self.playercontrols_playpause_button.isChecked():
+    elif self.player_widget.is_paused() and self.playercontrols_playpause_button.isChecked():
         self.playercontrols_playpause_button.setChecked(False)
     # playercontrols_playpause_button_update(self)
 

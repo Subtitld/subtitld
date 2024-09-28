@@ -602,7 +602,6 @@ def update_scrollbar(self, position=0):
         offset = self.subtitles_panel_timeline_widget.height() * position
     elif isinstance(position, int):
         offset = position
-    # self.subtitles_panel_timeline_widget.verticalScrollBar().setValue(self.player_widget.mpv.time_pos * (self.timeline_widget.width()/self.video_metadata.get('duration', 0.01)) - offset)
     self.subtitles_panel_timeline_widget.verticalScrollBar().setValue(int(self.player_widget.position * (self.subtitles_panel_timeline_widget_timeline.height() / self.video_metadata.get('duration', 0.01)) - offset))
 
 

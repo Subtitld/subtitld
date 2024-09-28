@@ -1,5 +1,7 @@
 import os
-from mpv import MPV, MpvRenderContext, MpvGlGetProcAddressFn
+# from mpv import MPV, MpvRenderContext, MpvGlGetProcAddressFn
+
+from pyvidplayer2 import VideoPySide
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGraphicsOpacityEffect
 from PySide6.QtCore import Signal, Qt, QRect, QPropertyAnimation, QEasingCurve, QMargins
@@ -11,187 +13,53 @@ from subtitld.modules import globals
 from subtitld.interface import playercontrols, subtitles_panel
 
 
-class MpvWidget(QOpenGLWidget):
-    """Main MPV widget class"""
-    positionChanged = Signal(float, int)
-    eofReached = Signal()
+class VidPlayer(QWidget):
+    def __init__(widget):
+        super().__init__()
+        widget.filepath = ''
+        widget.video = None  # VideoPySide()  # widget.filepath
+        widget.position = 0
+    
+    def resizeEvent(widget, event):
+        if widget.video is not None:
+            widget.video.change_resolution(widget.height())
+        event.accept()
 
-    def __init__(widget, parent=None):
-        super().__init__(parent)
+    def is_paused(widget):
+        return widget.video is not None and widget.video.paused
 
-        widget.mpv = MPV(
-            # ytdl=False,
-            loglevel='info',
-            log_handler=print
-        )
+    def loadfile(widget, filepath):
+        print('loadfile')
+        # if widget.video is None:
+        widget.video = VideoPySide(filepath)
+        # widget.video.change_resolution(widget.height())
+        widget.video.play()
+        widget.video.pause()
+        widget.video.change_resolution(widget.height())
+    
+    def seek(widget, position):
+        if widget.video is not None:
+            widget.video.seek(position)
 
-        widget.mpv_gl = None
-        widget.get_proc_addr_c = MpvGlGetProcAddressFn(GetProcAddressGetter().wrap)
-        widget.frameSwapped.connect(
-            widget.swapped, Qt.ConnectionType.DirectConnection
-        )
+    def paintEvent(widget, _):
+        if widget.video is not None:
+            widget.video.draw(widget, (0, 0))
 
-        options = {
-            # "config": False,
-            'osd_level': 0,
-            'sub_auto': False,
-            'sub_ass': False,
-            'sub_visibility': False,
-            'keep_open': True,
-            'cursor_autohide': False,
-            'input_cursor': False,
-            'input_default_bindings': False,
-            'stop_playback_on_init_failure': False,
-            'audio_file_auto': False,
-            'input_vo_keyboard': False,
-            'sid': False,
-            "quiet": True,
-            "msg-level": "all=info",
-            "osc": False,
-            "osd-bar": False,
-            "input-cursor": False,
-            "input-vo-keyboard": False,
-            "input-default-bindings": False,
-            # "ytdl": False,
-            "sub-auto": False,
-            "audio-file-auto": False,
-            "vo": "libmpv",
-            "hwdec": "auto",
-            "pause": True,
-            "idle": True,
-            "blend-subtitles": "video",
-            "video-sync": "display-vdrop",
-            "keepaspect": True,
-            "stop-playback-on-init-failure": False,
-            "keep-open": True,
-            # "track-auto-selection": False,
-            # "hwdec": "vaapi",
-            # "gpu-context": "x11egl"
-        }
-
-        # if not globals.ACTUAL_OS == 'windows':
-        #     options["gpu-hwdec-interop"] = "vaapi-egl"
-
-        for key, value in options.items():
-            setattr(widget.mpv, key, value)
-
-        widget.position = 0.0
-        widget.mpv.observe_property('time-pos', widget.position_changed)
-        widget.mpv.observe_property('eof-reached', widget.eof_reached)
-
-    def initializeGL(widget):
-        widget.mpv_gl = MpvRenderContext(
-            widget.mpv,
-            api_type="opengl",
-            opengl_init_params={"get_proc_address": widget.get_proc_addr_c},
-        )
-        widget.mpv_gl.update_cb = widget.on_update
-
-    def paintGL(widget):
-        if widget.mpv_gl:
-            ratio = widget.devicePixelRatioF()
-            w = int(widget.width() * ratio)
-            h = int(widget.height() * ratio)
-            fbo = widget.defaultFramebufferObject()
-            widget.mpv_gl.render(
-                flip_y=True,
-                opengl_fbo={
-                    "fbo": fbo,
-                    "w": w,
-                    "h": h,
-                },
-            )
-
-    # @Slot()
-    # def maybe_update(widget):
-    #     """Maybeupdate function"""
-    #     if widget.window().isMinimized():
-    #         widget.makeCurrent()
-    #         widget.paintGL()
-    #         widget.context().swapBuffers(widget.context().surface())
-    #         widget.swapped()
-    #         widget.doneCurrent()
-    #     else:
-    #         widget.update()
-
-    def on_update(widget, ctx=None):
-        widget.update()
-        #  print(widget.width())
-        #  print(widget.height())
-
-    def on_update_fake(widget, ctx=None):
-        pass
-
-    def swapped(widget):
-        if widget.mpv_gl:
-            widget.mpv_gl.report_swap()
-
-    def closeEvent(widget, _):
-        widget.makeCurrent()
-        if widget.mpv_gl:
-            widget.mpv_gl.update_cb = widget.on_update_fake
-            widget.mpv_gl.free()
-
-    def position_changed(widget, _, pos):
-        """Position changed function. It calls update timeline paint."""
-        if pos:
-            widget.position = pos
-        if pos is not None:
-            widget.positionChanged.emit(pos, 1)
-            #  widget.parent.parent().timeline.update(widget.parent.parent())
-
-    def eof_reached(widget, _, property):
-        widget.eofReached.emit()
-
-    def loadfile(widget, filepath) -> None:
-        """Function to load a media file"""
-        if os.path.isfile(filepath):
-            widget.mpv.command('loadfile', filepath, 'replace')
-            widget.mpv.wait_for_property('seekable')
-        widget.mpv.pause = True
-
-    def frameStep(widget) -> None:
-        """Function to move forward one step (frame)"""
-        widget.mpv.command('frame-step')
-
-    def frameBackStep(widget) -> None:
-        """Function to move backward one step (frame)"""
-        widget.mpv.command('frame-back-step')
-
-    def seek(widget, pos=0.0, method='absolute+exact') -> None:
-        """Function to seek at some position"""
-        widget.mpv.seek(pos, method)
-        widget.position = pos
+    def set_speed(widget, speed):
+        if widget.video is not None:
+            widget.video.speed = speed
 
     def stop(widget) -> None:
-        """Function to stop playback (fake stop, it is pause + position 0)"""
-        widget.mpv.pause = True
-        # print(dir(widget.mpv))
-        if widget.mpv.filename:
-            widget.position = 0.0
-            widget.seek()
+        if widget.video is not None:
+            widget.video.stop()
 
     def pause(widget) -> None:
-        """Function to pause playback (fake pause, it just changes actual playback status)"""
-        widget.mpv.pause = not widget.mpv.pause
+        if widget.video is not None:
+            widget.video.pause()
 
     def play(widget) -> None:
-        """Function to play (fake play, it just changes actual playback status)"""
-        if widget.mpv.pause:
-            widget.mpv.pause = False
-
-    def mute(widget) -> None:
-        """Function to mute"""
-        widget.property('mute', not widget.property('mute'))
-
-    def volume(widget, vol: int) -> None:
-        """Function to change volume"""
-        widget.property('volume', vol)
-
-    # def resizeEvent(widget, event):
-    #    event.accept()
-    #    #print(widget.width())
-    #    #print(widget.height())
+        if widget.video is not None:
+            widget.video.play()
 
 
 class PlayerSubtitleLayer(QLabel):
@@ -335,7 +203,7 @@ def load(self):
     # # self.videoinfo_label.setSizePolicy(sizePolicy)
     # # layer_player.layout().addWidget(self.videoinfo_label)
 
-    self.player_widget = MpvWidget()
+    self.player_widget = VidPlayer()
     # sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     # sizePolicy.setWidthForHeight(self.player_widget.sizePolicy().hasWidthForHeight())
     # self.player_widget.setSizePolicy(sizePolicy)
@@ -346,8 +214,8 @@ def load(self):
     # self.player_widget_transparency.setOpacity(1)
     # self.player_widget_animation = QPropertyAnimation(self.player_widget, b'geometry')
     # self.player_widget_animation.setEasingCurve(QEasingCurve.OutCirc)
-    self.player_widget.positionChanged.connect(lambda: update_timelines(self))
-    self.player_widget.eofReached.connect(lambda: eof_reached(self))
+    # self.player_widget.positionChanged.connect(lambda: update_timelines(self))
+    # self.player_widget.eofReached.connect(lambda: eof_reached(self))
     self.player_widget.setLayout(QVBoxLayout(self.player_widget))
 
     self.player_subtitle_layer = PlayerSubtitleLayer()
@@ -459,14 +327,14 @@ def update_safety_margins_subtitle_layer(self):
 
 
 def eof_reached(self):
-    self.player_widget.mpv.pause = True
+    # self.player_widget.is_paused() = True
     self.playercontrols_playpause_button.setChecked(False)
     # playercontrols.playercontrols_playpause_button_update(self)
 
 
 def update_speed(self):
     """Function to change playback speed"""
-    self.player_widget.mpv.speed = self.playback_speed if self.change_playback_speed.isChecked() else 1.0
+    self.player_widget.set_speed(self.playback_speed if self.change_playback_speed.isChecked() else 1.0)
 
 
 def update_subtitle_layer(self):
