@@ -452,7 +452,7 @@ def update_safety_margins_subtitle_layer(self):
 # def player_subtitle_textedit_changed(self):
 #     old_selected_subtitle = self.selected_subtitle
 #     counter = globals.SESSION['segments'].index(old_selected_subtitle)
-#     globals.SESSION['segments'][counter][2] = self.player_subtitle_textedit.toPlainText()
+#     globals.SESSION['segments'][counter]['text'] = self.player_subtitle_textedit.toPlainText()
 #     self.subtitles_panel.update_subtitles_panel_qlistwidget(self)
 #     self.timeline.update(self)
 #     update_subtitle_layer(self)
@@ -473,8 +473,8 @@ def update_subtitle_layer(self):
     """Function to update subtitle layer"""
     text = ''
     for subtitle in globals.SESSION['segments']:
-        if self.player_widget.position and (self.player_widget.position > subtitle[0] and self.player_widget.position < subtitle[0] + subtitle[1]):
-            text = subtitle[2]
+        if self.player_widget.position and (self.player_widget.position > subtitle['start'] and self.player_widget.position < subtitle['end']):
+            text = subtitle['text']
             break
     self.player_subtitle_layer.setSubtitleText(text)
     self.player_subtitle_layer.update()

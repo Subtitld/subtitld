@@ -48,10 +48,10 @@ def subtitles_panel_markdown_qtextedit_cursorpositionchanged(self):
     cursor = 0
     # # markdown_text = ''
     for subtitle in sorted(globals.SESSION['segments']):
-        cursor += len(str("{:.3f}".format(subtitle[0])))
+        cursor += len(str("{:.3f}".format(subtitle['start'])))
         next_index = globals.SESSION['segments'].index(subtitle) + 1
-        if not next_index >= len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index][0] - 0.001 == subtitle[0] + subtitle[1]:
-            cursor += len(' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1])))
+        if not next_index >= len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index]['start'] - 0.001 == subtitle['end']:
+            cursor += len(' - ' + str("{:.3f}".format(subtitle['end'])))
         cursor += len('\n')
 
         cursor += len(str(subtitle[2]) + '\n\n')
@@ -130,15 +130,15 @@ def update_subtitles_panel_markdown(self, selection=False):
     position = 0
     markdown_text = ''
     for subtitle in sorted(globals.SESSION['segments']):
-        markdown_text += '<small><b>' + str("{:.3f}".format(subtitle[0]))
+        markdown_text += '<small><b>' + str("{:.3f}".format(subtitle['start']))
         if not selected_subtitle_found:
-            position += len(str("{:.3f}".format(subtitle[0])))
+            position += len(str("{:.3f}".format(subtitle['start'])))
 
         next_index = globals.SESSION['segments'].index(subtitle) + 1
-        if next_index < len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index][0] - 0.001 == subtitle[0] + subtitle[1] or (next_index == len(globals.SESSION['segments']) and not self.video_metadata['duration'] - 0.001 == subtitle[0] + subtitle[1]):
-            markdown_text += ' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1]))
+        if next_index < len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index]['start'] - 0.001 == subtitle['end'] or (next_index == len(globals.SESSION['segments']) and not self.video_metadata['duration'] - 0.001 == subtitle['end']):
+            markdown_text += ' - ' + str("{:.3f}".format(subtitle['end']))
             if not selected_subtitle_found:
-                position += len(' - ' + str("{:.3f}".format(subtitle[0] + subtitle[1])))
+                position += len(' - ' + str("{:.3f}".format(subtitle['end'])))
 
         markdown_text += '</b></small><br/>'
         if not selected_subtitle_found:
@@ -151,7 +151,7 @@ def update_subtitles_panel_markdown(self, selection=False):
             # position -= 2
 
         if not selected_subtitle_found:
-            position += len(str(subtitle[2]) + '\n\n')
+            position += len(str(subtitle['text']) + '\n\n')
 
     self.subtitles_panel_markdown_qtextedit.blockSignals(True)
 

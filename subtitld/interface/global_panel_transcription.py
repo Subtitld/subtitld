@@ -496,7 +496,11 @@ def global_panel_transcription_transcript_apply_transcript_button_clicked(self):
             ts = self.video_metadata['duration'] / ns
             c = 0.0
             for sub in self.global_panel_transcription_transcript_preview.text.split('. '):
-                globals.SESSION['segments'].append([c, ts, sub + '.'])
+                globals.SESSION['segments'].append({
+                    'start': c,
+                    'end': c + ts,
+                    'text': sub + '.'
+                })
                 c += ts
         elif self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 1:
             globals.SESSION['segments'] = []
@@ -504,7 +508,11 @@ def global_panel_transcription_transcript_apply_transcript_button_clicked(self):
             c = 0.0
             for sub in self.global_panel_transcription_transcript_preview.text.split('. '):
                 ts = (len(sub + '.') / ns) * self.video_metadata['duration']
-                globals.SESSION['segments'].append([c, ts, sub + '.'])
+                globals.SESSION['segments'].append({
+                    'start': c,
+                    'end': c + ts,
+                    'text': sub + '.'
+                })
                 c += ts
         elif self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 2:
             globals.SESSION['segments'] = []
@@ -512,7 +520,11 @@ def global_panel_transcription_transcript_apply_transcript_button_clicked(self):
             c = 0.0
             for sub in self.global_panel_transcription_transcript_preview.text.split(' '):
                 ts = (len(sub + ' ') / ns) * self.video_metadata['duration']
-                globals.SESSION['segments'].append([c, ts, sub])
+                globals.SESSION['segments'].append({
+                    'start': c,
+                    'end': c + ts,
+                    'text': sub + ' '
+                })
                 c += ts
 
 

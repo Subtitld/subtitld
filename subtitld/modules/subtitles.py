@@ -3,276 +3,290 @@
 """
 
 from bisect import bisect
-from subtitld.modules import history
+from subtitld.modules import history, globals
 
 
-def add_subtitle(subtitles=[], position=0.0, duration=5.0, text='', from_last_subtitle=False):
+def add_subtitle(position=0.0, duration=5.0, text='', from_last_subtitle=False):
     """Function to add a subtitle to the main subtitle list"""
-    history.history_append(subtitles)
+    history.history_append(globals.SESSION['segments'])
 
-    subt = [item[0] for item in subtitles]
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
 
     if index:
-        if subtitles[index - 1][0] + subtitles[index - 1][1] > position:
-            subtitles[index - 1][1] -= (subtitles[index - 1][0] + subtitles[index - 1][1]) - position
+        if globals.SESSION['segments'][index - 1]['end'] > position:
+            globals.SESSION['segments'][index - 1]['end'] -= (globals.SESSION['segments'][index - 1]['end']) - position
         elif from_last_subtitle:
-            position = (subtitles[index - 1][0] + subtitles[index - 1][1]) + .001
+            position = (globals.SESSION['segments'][index - 1]['end']) + .001
 
-    if len(subtitles) - 1 > index and subtitles[index][0] - position < duration:
-        duration = subtitles[index][0] - position
+    if len(globals.SESSION['segments']) - 1 > index and globals.SESSION['segments'][index]['start'] - position < duration:
+        duration = globals.SESSION['segments'][index]['start'] - position
 
-    subtitles.insert(index, [position, duration, text])
+    globals.SESSION['segments'].insert(index, {
+        'start': position,
+        'end': position + duration,
+        'text': text
+    })
 
-    return subtitles[subtitles.index([position, duration, text])]
+    # return globals.SESSION['segments'][globals.SESSION['segments'].index([position, duration, text])]
 
 
-def remove_subtitle(subtitles=[], selected_subtitle=False):
+def remove_subtitle(selected_subtitle=False):
     """Function to add a subtitle to the main subtitle list"""
     if selected_subtitle:
-        history.history_append(subtitles)
+        history.history_append(globals.SESSION['segments'])
 
-        subtitles.remove(selected_subtitle)
-    return subtitles
+        globals.SESSION['segments'].remove(selected_subtitle)
+    return globals.SESSION['segments']
 
 
-def slice_subtitle(subtitles=[], selected_subtitle=False, position=0.0, last_text='', next_text='', strip_text=True):
+def slice_subtitle(selected_subtitle=False, position=0.0, last_text='', next_text='', strip_text=True):
     """Function to slice a subtitle in the main subtitle list"""
-    if selected_subtitle and position > selected_subtitle[0] and position < (selected_subtitle[0] + selected_subtitle[1]):
-        history.history_append(subtitles)
+    if selected_subtitle: # and position > selected_subtitle['start'] and position < selected_subtitle['end']:
+        history.history_append(globals.SESSION['segments'])
 
-        index = subtitles.index(selected_subtitle)
+        index = globals.SESSION['segments'].index(selected_subtitle)
 
-        if position > subtitles[index][0] and position < (subtitles[index][0] + subtitles[index][1]):
+        if position > globals.SESSION['segments'][index]['start'] and position < globals.SESSION['segments'][index]['end']:
             position_to_cut = position
         else:
-            position_to_cut = (subtitles[index][0] + subtitles[index][1]) / 2
+            position_to_cut = globals.SESSION['segments'][index]['start'] + ((globals.SESSION['segments'][index]['end'] - globals.SESSION['segments'][index]['start']) / 2)
 
-        new_duration = (subtitles[index][0] + subtitles[index][1]) - position_to_cut
+        new_duration = globals.SESSION['segments'][index]['end'] - position_to_cut
 
-        subtitles[index][1] = position_to_cut - subtitles[index][0] - 0.001
-        subtitles[index][2] = last_text
+        globals.SESSION['segments'][index]['end'] = position_to_cut - 0.001
+        globals.SESSION['segments'][index]['text'] = last_text
+
         if strip_text:
-            subtitles[index][2] = subtitles[index][2].strip()
+            globals.SESSION['segments'][index]['text'] = globals.SESSION['segments'][index]['text'].strip()
             next_text = next_text.strip()
 
-        return add_subtitle(subtitles=subtitles, position=position_to_cut, duration=new_duration, text=next_text)
+        add_subtitle(position=position_to_cut, duration=new_duration, text=next_text)
 
 
-def merge_back_subtitle(subtitles=[], selected_subtitle=False):
-    """Function to merge a subtitle to the last in the main subtitle list"""
-    if selected_subtitle and subtitles.index(selected_subtitle):
-        history.history_append(subtitles)
+def merge_back_subtitle(selected_subtitle=False):
+    """Function to merge a subtitle to one subtitle back in the main subtitle list"""
+    if selected_subtitle and globals.SESSION['segments'].index(selected_subtitle):
+        history.history_append(globals.SESSION['segments'])
 
-        index = subtitles.index(selected_subtitle)
-        subtitles[index - 1][1] = selected_subtitle[0] + selected_subtitle[1] - subtitles[index - 1][0]
-        subtitles[index - 1][2] += ' ' + subtitles[index][2]
+        subt = sorted([subtitle['end'] for subtitle in globals.SESSION['segments'] if subtitle['end'] <= selected_subtitle['start']])
+        nearest_subttile = [subtitle for subtitle in globals.SESSION['segments'] if subtitle['end'] == subt[-1]][0]
+        
+        nearest_subttile['end'] = selected_subtitle['end']
+        nearest_subttile['text'] += ' ' + selected_subtitle['text']
 
-        remove_subtitle(subtitles=subtitles, selected_subtitle=subtitles[index])
+        remove_subtitle(selected_subtitle=selected_subtitle)
 
-        return subtitles[index - 1]
-
-
-def merge_next_subtitle(subtitles=[], selected_subtitle=False):
-    """Function to merge a subtitle to the next in the main subtitle list"""
-    result = False
-    if selected_subtitle and subtitles.index(selected_subtitle) < len(subtitles) - 1:
-        history.history_append(subtitles)
-
-        index = subtitles.index(selected_subtitle)
-        subtitles[index][1] = subtitles[index + 1][0] + subtitles[index + 1][1] - selected_subtitle[0]
-        subtitles[index][2] += ' ' + subtitles[index + 1][2]
-
-        remove_subtitle(subtitles=subtitles, selected_subtitle=subtitles[index + 1])
-
-        result = subtitles[index]
-    return result
+        return nearest_subttile
 
 
-def move_subtitle(subtitles=[], selected_subtitle=False, amount=0.0):
+def merge_next_subtitle(selected_subtitle=False):
+    """Function to merge a subtitle to the next subtitle in the main subtitle list"""
+    if selected_subtitle and globals.SESSION['segments'].index(selected_subtitle) < len(globals.SESSION['segments']) - 1:
+        history.history_append(globals.SESSION['segments'])
+
+        subt = sorted([item['start'] for item in globals.SESSION['segments'] if item['start'] >= selected_subtitle['end']])
+        nearest_subttile = [subtitle for subtitle in globals.SESSION['segments'] if subtitle['start'] == subt[0]][0]
+
+        selected_subtitle['end'] = nearest_subttile['end']
+        selected_subtitle['text'] += ' ' + nearest_subttile['text']
+
+        remove_subtitle(selected_subtitle=nearest_subttile)
+        
+        return selected_subtitle
+
+
+def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False):
     """Function to move a subtitle in the main subtitle list"""
     if selected_subtitle:
-        history.history_append(subtitles)
-        selected_subtitle[0] += amount
+        history.history_append(globals.SESSION['segments'])
+        if absolute_time:
+            duration = selected_subtitle['end'] - selected_subtitle['start']
+            selected_subtitle['start'] = absolute_time
+            selected_subtitle['end'] = absolute_time + duration
+        else:
+            selected_subtitle['start'] += amount
+            selected_subtitle['end'] += amount
 
 
-def move_start_subtitle(subtitles=[], selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False):
+def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False):
     """Function to move the start a subtitle in the main subtitle list"""
     if selected_subtitle:
-        history.history_append(subtitles)
+        history.history_append(globals.SESSION['segments'])
         if move_nereast:
-            if subtitles.index(selected_subtitle) - 1 >= 0 and round(subtitles[subtitles.index(selected_subtitle) - 1][0] + subtitles[subtitles.index(selected_subtitle) - 1][1], 3) == round(selected_subtitle[0] - .001, 3):
+            subt = [item['end'] for item in globals.SESSION['segments']]
+            nearest = bisect(subt, selected_subtitle['start']) - 1
+            if round(globals.SESSION['segments'][nearest]['end'], 3) == round(selected_subtitle['start'] - .001, 3):
                 if absolute_time:
-                    subtitles[subtitles.index(selected_subtitle) - 1][1] = absolute_time - subtitles[subtitles.index(selected_subtitle) - 1][0] - 0.001
+                    globals.SESSION['segments'][nearest]['end'] = absolute_time - 0.001
                 else:
-                    subtitles[subtitles.index(selected_subtitle) - 1][1] -= amount
+                    globals.SESSION['segments'][nearest]['end'] -= amount
         if absolute_time:
-            selected_subtitle[1] = selected_subtitle[0] + selected_subtitle[1] - absolute_time
-            selected_subtitle[0] = absolute_time
+            selected_subtitle['start'] = absolute_time
         else:
-            selected_subtitle[0] += amount
-            selected_subtitle[1] -= amount
+            selected_subtitle['start'] += amount
 
 
-def move_end_subtitle(subtitles=[], selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False):
+def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False):
     """Function to move the end of a subtitle in the main subtitle list"""
     if selected_subtitle:
-        history.history_append(subtitles)
+        history.history_append(globals.SESSION['segments'])
         if move_nereast:
-            if subtitles.index(selected_subtitle) + 1 <= len(subtitles) and round(subtitles[subtitles.index(selected_subtitle) + 1][0] - .001, 3) <= round(selected_subtitle[0] + selected_subtitle[1], 3):
+            subt = [item['start'] for item in globals.SESSION['segments']]
+            nearest = bisect(subt, selected_subtitle['end'])
+            if round(globals.SESSION['segments'][nearest]['start'], 3) == round(selected_subtitle['end'] + .001, 3):
                 if absolute_time:
-                    subtitles[subtitles.index(selected_subtitle) + 1][1] = subtitles[subtitles.index(selected_subtitle) + 1][0] + subtitles[subtitles.index(selected_subtitle) + 1][1] - absolute_time
-                    subtitles[subtitles.index(selected_subtitle) + 1][0] = absolute_time
+                    globals.SESSION['segments'][nearest]['start'] = absolute_time + 0.001
                 else:
-                    subtitles[subtitles.index(selected_subtitle) + 1][0] -= amount
-                    subtitles[subtitles.index(selected_subtitle) + 1][1] -= amount
+                    globals.SESSION['segments'][nearest]['start'] += amount
         if absolute_time:
-            selected_subtitle[1] = absolute_time - selected_subtitle[0]
+            selected_subtitle['end'] = absolute_time
         else:
-            selected_subtitle[1] += amount
+            selected_subtitle['end'] += amount
 
 
-def next_start_to_current_position(subtitles=[], position=0.0):
+def next_start_to_current_position(position=0.0):
     """Function to set next start to position of a subtitle in the main subtitle list"""
-    history.history_append(subtitles)
-    subt = [item[0] for item in subtitles]
+    history.history_append(globals.SESSION['segments'])
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
     if index < len(subt):
-        end = subtitles[index][0] + subtitles[index][1]
-        subtitles[index][0] = position
-        subtitles[index][1] = end - position
-    if index and subtitles[index - 1][0] + subtitles[index - 1][1] > position:
-        last_end_to_current_position(subtitles=subtitles, position=position - 0.001)
+        end = globals.SESSION['segments'][index]['end']
+        globals.SESSION['segments'][index]['start'] = position
+        globals.SESSION['segments'][index]['end'] = end - position
+    if index and globals.SESSION['segments'][index - 1]['end'] > position:
+        last_end_to_current_position(position=position - 0.001)
 
 
-def subtitle_start_to_current_position(subtitles=[], position=0.0):
+def subtitle_start_to_current_position(position=0.0):
     """Function to set start to position of a subtitle in the main subtitle list"""
-    history.history_append(subtitles)
-    subt = [item[0] for item in subtitles]
+    history.history_append(globals.SESSION['segments'])
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
-    if index and position < (subtitles[index - 1][0] + subtitles[index - 1][1]):
-        end = subtitles[index - 1][0] + subtitles[index - 1][1]
-        subtitles[index - 1][0] = position
-        subtitles[index - 1][1] = end - position
+    if index and position < (globals.SESSION['segments'][index - 1]['end']):
+        end = globals.SESSION['segments'][index - 1]['end']
+        globals.SESSION['segments'][index - 1]['start'] = position
+        globals.SESSION['segments'][index - 1]['end'] = end - position
     else:
-        end = subtitles[index][0] + subtitles[index][1]
-        subtitles[index][0] = position
-        subtitles[index][1] = end - position
+        end = globals.SESSION['segments'][index]['end']
+        globals.SESSION['segments'][index]['start'] = position
+        globals.SESSION['segments'][index]['end'] = end - position
 
 
-def subtitle_end_to_current_position(subtitles=[], position=0.0):
+def subtitle_end_to_current_position(position=0.0):
     """Function to set end to position of a subtitle in the main subtitle list"""
-    history.history_append(subtitles)
-    subt = [item[0] for item in subtitles]
+    history.history_append(globals.SESSION['segments'])
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
     if index:
-        if position < (subtitles[index - 1][0] + subtitles[index - 1][1]):
-            subtitles[index - 1][1] = position - subtitles[index - 1][0]
+        if position < (globals.SESSION['segments'][index - 1]['end']):
+            globals.SESSION['segments'][index - 1]['end'] = position - globals.SESSION['segments'][index - 1]['start']
         else:
-            subtitles[index - 1][1] = position - subtitles[index - 1][0]
+            globals.SESSION['segments'][index - 1]['end'] = position - globals.SESSION['segments'][index - 1]['start']
 
 
-def subtitle_under_current_position(subtitles=[], position=0.0):
+def subtitle_under_current_position(position=0.0):
     """Function to return subtitle under position"""
     current_subtitle = False
-    subt = [item[0] for item in subtitles]
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
-    if index - 1 > -1 and position > subtitles[index - 1][0] and position < (subtitles[index - 1][0] + subtitles[index - 1][1]):
-        current_subtitle = subtitles[index - 1]
+    if index - 1 > -1 and position > globals.SESSION['segments'][index - 1]['start'] and position < (globals.SESSION['segments'][index - 1]['end']):
+        current_subtitle = globals.SESSION['segments'][index - 1]
     return current_subtitle, index - 1
 
 
-def last_subtitle_current_position(subtitles=[], position=0.0):
+def last_subtitle_current_position(position=0.0):
     """Function to return the last subtitle of position"""
     last_subtitle = False
-    subt = [item[0] for item in subtitles]
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
     if index:
-        if position > (subtitles[index - 1][0] + subtitles[index - 1][1]):
-            last_subtitle = subtitles[index - 1]
+        if position > (globals.SESSION['segments'][index - 1]['end']):
+            last_subtitle = globals.SESSION['segments'][index - 1]
     return last_subtitle
 
 
-def next_subtitle_current_position(subtitles=[], position=0.0):
+def next_subtitle_current_position(position=0.0):
     """Function to return the next subtitle of position"""
     next_subtitle = False
-    subt = [item[0] for item in subtitles]
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
     if index < len(subt):
-        next_subtitle = subtitles[index]
+        next_subtitle = globals.SESSION['segments'][index]
     return next_subtitle
 
 
-def next_end_to_current_position(subtitles=[], position=0.0):
+def next_end_to_current_position(position=0.0):
     """Function set next end to position"""
-    history.history_append(subtitles)
-    subt = [item[0] for item in subtitles]
+    history.history_append(globals.SESSION['segments'])
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
     if index:
-        end = subtitles[index - 1][0] + subtitles[index - 1][1]
+        end = globals.SESSION['segments'][index - 1]['end']
         if end > position:
-            subtitles[index - 1][1] = position - subtitles[index - 1][0]
+            globals.SESSION['segments'][index - 1]['end'] = position - globals.SESSION['segments'][index - 1]['start']
 
 
-def last_end_to_current_position(subtitles=[], position=0.0):
+def last_end_to_current_position(position=0.0):
     """Function set last end to position"""
-    history.history_append(subtitles)
-    subt = [item[0] for item in subtitles]
+    history.history_append(globals.SESSION['segments'])
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
 
     if index - 1 < len(subt) - 1:
-        subtitles[index - 1][1] = position - subtitles[index - 1][0]
+        globals.SESSION['segments'][index - 1]['end'] = position - globals.SESSION['segments'][index - 1]['start']
 
 
-def last_start_to_current_position(subtitles=[], position=0.0):
+def last_start_to_current_position(position=0.0):
     """Function set last start to position"""
-    history.history_append(subtitles)
-    subt = [item[0] for item in subtitles]
+    history.history_append(globals.SESSION['segments'])
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
-    if index and subtitles[index - 1][0] < position and not (subtitles[index - 1][0] + subtitles[index - 1][1]) < position:
-        end = subtitles[index - 1][0] + subtitles[index - 1][1]
-        subtitles[index - 1][0] = position
-        subtitles[index - 1][1] = end - position
+    if index and globals.SESSION['segments'][index - 1]['start'] < position and not (globals.SESSION['segments'][index - 1]['end']) < position:
+        end = globals.SESSION['segments'][index - 1]['end']
+        globals.SESSION['segments'][index - 1]['start'] = position
+        globals.SESSION['segments'][index - 1]['end'] = end - position
 
 
-def send_text_to_next_subtitle(subtitles=[], selected_subtitle=False, last_text='', next_text=''):
+def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the next subtitle"""
-    if selected_subtitle and subtitles.index(selected_subtitle) + 1 < len(subtitles):
-        history.history_append(subtitles)
-        index = subtitles.index(selected_subtitle)
-        subtitles[index][2] = last_text
-        subtitles[index + 1][2] = next_text + ' ' + subtitles[index + 1][2]
+    if selected_subtitle and globals.SESSION['segments'].index(selected_subtitle) + 1 < len(globals.SESSION['segments']):
+        history.history_append(globals.SESSION['segments'])
+        index = globals.SESSION['segments'].index(selected_subtitle)
+        globals.SESSION['segments'][index]['text'] = last_text
+        globals.SESSION['segments'][index + 1]['text'] = next_text + ' ' + globals.SESSION['segments'][index + 1]['text']
 
 
-def send_text_to_last_subtitle(subtitles=[], selected_subtitle=False, last_text='', next_text=''):
+def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
-    if selected_subtitle and subtitles.index(selected_subtitle):
-        history.history_append(subtitles)
-        index = subtitles.index(selected_subtitle)
-        subtitles[index][2] = next_text
-        subtitles[index - 1][2] += ' ' + last_text
+    if selected_subtitle and globals.SESSION['segments'].index(selected_subtitle):
+        history.history_append(globals.SESSION['segments'])
+        index = globals.SESSION['segments'].index(selected_subtitle)
+        globals.SESSION['segments'][index]['text'] = next_text
+        globals.SESSION['segments'][index - 1]['text'] += ' ' + last_text
 
 
-def set_gap(subtitles=[], position=0.0, gap=0.0):
+def set_gap(position=0.0, gap=0.0):
     """Function to set gap in subtitles"""
-    history.history_append(subtitles)
-    for subtitle in subtitles:
-        if subtitle[0] > position:
-            subtitle[0] += gap
+    history.history_append(globals.SESSION['segments'])
+    for subtitle in globals.SESSION['segments']:
+        if subtitle['start'] > position:
+            subtitle['start'] += gap
+            subtitle['end'] += gap
 
 
-def change_subtitle_text(subtitles=[], selected_subtitle=False, text=''):
+def change_subtitle_text(selected_subtitle=False, text=''):
     """Function to change text of selected subtitle"""
     if selected_subtitle:
-        history.history_append(subtitles)
-        subtitles[subtitles.index(selected_subtitle)][2] = text
+        history.history_append(globals.SESSION['segments'])
+        globals.SESSION['segments'][globals.SESSION['segments'].index(selected_subtitle)]['text'] = text
 
 
-def is_current_position_above_subtitle(subtitles=[], position=0.0):
-    subt = [item[0] for item in subtitles]
+def is_current_position_above_subtitle(position=0.0):
+    subt = [item['start'] for item in globals.SESSION['segments']]
     index = bisect(subt, position)
 
-    if position < subtitles[index - 1][0] + subtitles[index - 1][1]:
+    if position < globals.SESSION['segments'][index - 1]['end']:
         return True
 
     return False

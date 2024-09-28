@@ -449,7 +449,7 @@ def subtitles_panel_findandreplace_replaceandfindnext_button_clicked(self):
 
 def subtitles_panel_findandreplace_replace_button_clicked(self):
     if self.selected_subtitle:
-        subtitles.change_subtitle_text(subtitles=globals.SESSION['segments'], selected_subtitle=self.selected_subtitle, text=self.selected_subtitle[2][:self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1]] + self.subtitles_panel_findandreplace_replace_field.text() + self.selected_subtitle[2][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2]:])
+        subtitles.change_subtitle_text(selected_subtitle=self.selected_subtitle, text=self.selected_subtitle['text'][:self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1]] + self.subtitles_panel_findandreplace_replace_field.text() + self.selected_subtitle['text'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2]:])
         self.unsaved = True
         update_topbar_status(self)
 
@@ -481,11 +481,11 @@ def subtitles_panel_findandreplace_perform_search(self):
 
     text_to_search = self.subtitles_panel_findandreplace_find_field.text() if self.subtitles_panel_findandreplace_casesensitive.isChecked() else self.subtitles_panel_findandreplace_find_field.text().lower()
     for subtitle in globals.SESSION['segments']:
-        if text_to_search in (subtitle[2] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle[2].lower()):
+        if text_to_search in (subtitle['text'] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle['text'].lower()):
             s = 0
-            for _ in range((subtitle[2] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle[2].lower()).count(text_to_search)):
-                self.subtitles_panel_findandreplace_list.append([globals.SESSION['segments'].index(subtitle), subtitle[2].find(text_to_search, s), len(text_to_search)])
-                s += subtitle[2].find(text_to_search, s) + len(text_to_search)
+            for _ in range((subtitle['text'] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle['text'].lower()).count(text_to_search)):
+                self.subtitles_panel_findandreplace_list.append([globals.SESSION['segments'].index(subtitle), subtitle['text'].find(text_to_search, s), len(text_to_search)])
+                s += subtitle['text'].find(text_to_search, s) + len(text_to_search)
 
 
 def subtitles_panel_findandreplace_findback_field_clicked(self):
@@ -506,8 +506,8 @@ def subtitles_panel_findandreplace_update(self):
     if self.subtitles_panel_findandreplace_list:
         self.selected_subtitle = globals.SESSION['segments'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][0]]
 
-        if not self.selected_subtitle[0] < self.player_widget.position < self.selected_subtitle[0] + self.selected_subtitle[1]:
-            self.player_widget.seek(self.selected_subtitle[0] + (self.selected_subtitle[1] * .5))
+        if not self.selected_subtitle['start'] < self.player_widget.position < self.selected_subtitle['end']:
+            self.player_widget.seek(self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5))
             timeline.update_scrollbar(self, position='middle')
 
         update_subtitles_panel_widget_vision_content(self)

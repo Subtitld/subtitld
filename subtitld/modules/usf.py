@@ -34,7 +34,7 @@ class USFReader():
         for subtitles in soup.select("subtitles"):
             for element in subtitles:
                 if element.name == 'subtitle':
-                    subtitle = []
+                    subtitle = {}
                     text = ''
 
                     for subelement in element:
@@ -43,9 +43,9 @@ class USFReader():
                             continue
 
                     if 'start' in element.attrs and 'stop' in element.attrs and text:
-                        subtitle.append(timecode.Timecode('1000', element.attrs['start']).float)
-                        subtitle.append(timecode.Timecode('1000', element.attrs['stop']).float - timecode.Timecode('1000', element.attrs['start']).float)
-                        subtitle.append(text.strip())
+                        subtitle['start'] = timecode.Timecode('1000', element.attrs['start']).float
+                        subtitle['end'] = timecode.Timecode('1000', element.attrs['stop']).float - timecode.Timecode('1000', element.attrs['start']).float
+                        subtitle['text'] = text.strip()
 
                     if subtitle:
                         subtitles_list.append(subtitle)
@@ -75,9 +75,9 @@ class USFWriter():
         usf.find('styles').append(new_style)
 
         for subtitle in subtitles:
-            new_sub = usf.new_tag('subtitle', start=str(timecode.Timecode('1000', start_seconds=subtitle[0], fractional=True)), stop=str(timecode.Timecode('1000', start_seconds=subtitle[1] + subtitle[0], fractional=True)))
+            new_sub = usf.new_tag('subtitle', start=str(timecode.Timecode('1000', start_seconds=subtitle['start'], fractional=True)), stop=str(timecode.Timecode('1000', start_seconds=subtitle['end'], fractional=True)))
             new_text = usf.new_tag('text')
-            new_text.string = subtitle[2]
+            new_text.string = subtitle['text']
             new_sub.append(new_text)
             usf.find('subtitles').append(new_sub)
 

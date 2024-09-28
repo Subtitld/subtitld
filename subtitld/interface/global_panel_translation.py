@@ -21,10 +21,8 @@ class global_panel_translation_thread(QThread):
         if self.subtitles_list and self.language_from and self.language_to:
             translator = Translator(from_lang=self.language_from, to_lang=self.language_to)
 
-            i = 0
-            for _ in self.subtitles_list:
-                self.response.emit({i : translator.translate(self.subtitles_list[i][2].replace('\n', ' ').replace('  ', ' '))})
-                i += 1
+            for subtitle in self.subtitles_list:
+                self.response.emit({i : translator.translate(subtitle['text'].replace('\n', ' ').replace('  ', ' '))})
 
             self.response.emit({'status' : 'end'})
 
@@ -71,7 +69,7 @@ def load_widgets(self):
         else:
             for sub in response:
                 subtitles_panel.update_processing_status(self, show_widgets=True, value=int((sub / len(globals.SESSION['segments'])) * 100))
-                globals.SESSION['segments'][sub][2] = response[sub]
+                globals.SESSION['segments'][sub]['text'] = response[sub]
 
         player.update_timelines(self)
 
