@@ -606,4 +606,4 @@ def translate_widgets(self):
 
 def update_speakers_list(self):
     self.speaker_combobox.clear()
-    self.speaker_combobox.addItems(sorted(set([subtitle['speaker'] for subtitle in globals.SESSION['segments'] if subtitle['speaker']])))
+    self.speaker_combobox.addItems(sorted(set([subtitle['speaker'] for subtitle in globals.SESSION['segments'] if 'speaker' in subtitle and subtitle['speaker']])))
