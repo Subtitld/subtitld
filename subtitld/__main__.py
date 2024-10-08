@@ -4,11 +4,11 @@ import datetime
 import argparse
 import locale
 
-from PySide6.QtWidgets import QApplication, QWidget, QLabel, QGraphicsOpacityEffect, QMessageBox
+from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QGraphicsOpacityEffect, QMessageBox
 from PySide6.QtGui import QIcon, QFont, QFontDatabase
 from PySide6.QtCore import Qt, QRect, QPropertyAnimation, QTimer
 
-from subtitld.modules import config, file_io
+from subtitld.modules import config, file_io, globals
 from subtitld.modules.history import history_redo, history_undo
 from subtitld.modules.globals import PATH_SUBTITLD_DATA_THUMBNAILS, PATH_SUBTITLD_GRAPHICS, PATH_SUBTITLD_USER_CONFIG_FILE, ACTUAL_OS, LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, LIST_OF_SUPPORTED_VIDEO_EXTENSIONS, PATH_SUBTITLD_DATA_BACKUP
 from subtitld.interface import translation, startscreen
@@ -30,7 +30,7 @@ parser.add_argument('--version', help='Prints the actual version of Subtitld.', 
 args = parser.parse_args()
 
 
-class Subtitld(QWidget):
+class Subtitld(QMainWindow):
     """The main window (QWidget) class"""
     def __init__(self):
         super().__init__()
@@ -42,8 +42,7 @@ class Subtitld(QWidget):
         # Setting some default values
         self.update_accuracy = 200
         self.video_metadata = {}
-
-        self.actual_subtitle_file = ''
+        
         self.actual_video_file = ''
 
         self.settings = config.load(PATH_SUBTITLD_USER_CONFIG_FILE)
@@ -141,11 +140,18 @@ class Subtitld(QWidget):
         self.autosave_timer.timeout.connect(lambda: autosave_timer_timeout(self))
 
         self.translate_widgets()
-
         # Maybe implement saving window position...? Useful?
         # self.setGeometry(0, 0, QDesktopWidget().screenGeometry().width(), QDesktopWidget().screenGeometry().height())
+
+
         self.showMaximized()
         # self.setFixedSize(QSize(1280, 720))
+        # self.show()
+
+        if globals.SESSION.get('subtitle_filepath', False) and globals.SESSION.get('video_filepath', False):
+            file_io.open_filepath(self, update_interface=True)
+       
+        
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls and len(event.mimeData().urls()) > 0:
@@ -204,9 +210,9 @@ class Subtitld(QWidget):
         # self.thread_extract_scene_time_positions.quit()
         self.thread_generated_burned_video.quit()
         self.thread_extract_waveform.quit()
-        if self.actual_subtitle_file and 'hash' in self.video_metadata:
+        if globals.SESSION.get('subtitle_filepath', False) and 'hash' in self.video_metadata:
             self.player_widget.grab().save(os.path.join(PATH_SUBTITLD_DATA_THUMBNAILS, self.video_metadata['hash'] + '.png'))
-            self.settings['recent_files'][self.actual_subtitle_file]['last_position'] = self.player_widget.position
+            self.settings['recent_files'][globals.SESSION['subtitle_filepath']]['last_position'] = self.player_widget.position
         config.save(self.settings, PATH_SUBTITLD_USER_CONFIG_FILE)
         self.player_widget.close()
 
@@ -262,13 +268,21 @@ class Subtitld(QWidget):
 
 
 def autosave_timer_timeout(self):
-    filename = os.path.basename(self.actual_subtitle_file).rsplit('.', 1)[0]
+    filename = os.path.basename(globals.SESSION['subtitle_filepath']).rsplit('.', 1)[0]
     if not filename:
         filename = os.path.basename(self.video_metadata['filepath']).rsplit('.', 1)[0]
     self.file_io.save_file(os.path.join(PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0])), self.settings['default_values'].get('subtitle_format', 'USF'))
 
 
 def main():
+    if args.file:
+        print(args.file)
+        for filepath in args.file:
+            if os.path.abspath(filepath.name).lower().endswith(tuple(list_of_supported_subtitle_extensions)):
+                globals.SESSION['subtitle_filepath'] = os.path.abspath(filepath.name)
+            elif os.path.abspath(filepath.name).lower().endswith(tuple(LIST_OF_SUPPORTED_VIDEO_EXTENSIONS)):
+                globals.SESSION['video_filepath'] = os.path.abspath(filepath.name)
+
     app = QApplication(sys.argv)
     # command to update ts files: pylupdate5 subtitld.py modules/*.py -ts locale/en_US.ts
     # if os.path.isfile(os.path.join(PATH_LOCALE, 'en_US.qm')):
@@ -297,13 +311,6 @@ def main():
     app.setFont(QFont('Ubuntu', 10))
 
     app.main = Subtitld()
-    app.main.show()
-
-    if args.file:
-        files_list = []
-        for filepath in args.file:
-            files_list.append(filepath.name)
-            app.main.file_io.open_filepath(app.main, files_to_open=files_list)
 
     sys.exit(app.exec())
 

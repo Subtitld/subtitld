@@ -125,45 +125,52 @@ def load(self):
     def thread_generate_hash_of_video(response):
         if self.video_metadata.get('filepath', '') == response[0] and 'hash' not in self.video_metadata:
             self.video_metadata['hash'] = response[1]
-            if self.actual_subtitle_file in self.settings['recent_files']:
-                self.settings['recent_files'][self.actual_subtitle_file]['video_hash'] = self.video_metadata['hash']
+            if globals.SESSION['subtitle_filepath'] in self.settings['recent_files']:
+                self.settings['recent_files'][globals.SESSION['subtitle_filepath']]['video_hash'] = self.video_metadata['hash']
 
     self.thread_generate_hash_of_video = ThreadGenerateHashOfVideo(self)
     self.thread_generate_hash_of_video.response.connect(thread_generate_hash_of_video)
 
 
-def open_filepath(self, files_to_open=False, update_interface=False):
+def open_filepath(self, files_to_open=[], update_interface=False):
     """Open subtitle or video and performs some checks"""
     supported_subtitle_files = _('file_io.subtitle_files') + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in list_of_supported_subtitle_extensions]))
     supported_video_files = _('file_io.video_files') + ' ({})'.format(" ".join(["*{}".format(fo) for fo in globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS]))
+    
+    if globals.SESSION.get('subtitle_filepath', False):
+        files_to_open.append(globals.SESSION['subtitle_filepath'])
+    
+    if globals.SESSION.get('video_filepath', False):
+        files_to_open.append(globals.SESSION['video_filepath'])
 
     if not files_to_open:
-        files_to_open = [QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_or_subtitle'), dir=globals.REAL_PATH_HOME, filter=supported_subtitle_files + ';;' + supported_video_files)[0]]
+        files_to_open.append(QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_or_subtitle'), dir=globals.REAL_PATH_HOME, filter=supported_subtitle_files + ';;' + supported_video_files)[0])
 
     for filepath in files_to_open:
         if os.path.isfile(filepath):
             if not globals.SESSION['segments'] and filepath.lower().endswith(tuple(list_of_supported_subtitle_extensions)):
+                globals.SESSION['subtitle_filepath'] = filepath
                 globals.SESSION['segments'], self.format_to_save = process_subtitles_file(filepath)
-                self.actual_subtitle_file = filepath
-            elif not self.video_metadata and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
-                self.video_metadata = process_video_file(filepath)
+            # elif not self.video_metadata and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
+            #     self.video_metadata = process_video_file(filepath)
             
-            if not self.video_metadata and globals.SESSION['segments']:
+            if not self.video_metadata:
                 for filename in os.listdir(os.path.dirname(filepath)):
                     if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
                         self.video_metadata = process_video_file(os.path.join(os.path.dirname(filepath), filename))
                         break
-            elif self.video_metadata and not globals.SESSION['segments']:
-                for filename in os.listdir(os.path.dirname(filepath)):
-                    if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(tuple(list_of_supported_subtitle_extensions)):
-                        globals.SESSION['segments'], self.format_to_save = process_subtitles_file(os.path.join(os.path.dirname(filepath), filename))
-                        self.actual_subtitle_file = os.path.join(os.path.dirname(filepath), filename)
-                        break
+                    
+            # elif self.video_metadata and not globals.SESSION['segments']:
+            #     for filename in os.listdir(os.path.dirname(filepath)):
+            #         if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(tuple(list_of_supported_subtitle_extensions)):
+            #             globals.SESSION['segments'], self.format_to_save = process_subtitles_file(os.path.join(os.path.dirname(filepath), filename))
+            #             globals.SESSION['subtitle_filepath'] = os.path.join(os.path.dirname(filepath), filename)
+            #             break
 
-            if not self.video_metadata:
-                filepath = QFileDialog.getOpenFileName(parent=self.parent(), caption=_('file_io.select_video_file'), dir=globals.REAL_PATH_HOME, filter=supported_video_files)[0]
-                if filepath and os.path.isfile(filepath) and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
-                    self.video_metadata = process_video_file(filepath)
+    if not self.video_metadata:
+        filepath = QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_file'), dir=globals.REAL_PATH_HOME, filter=supported_video_files)[0]
+        if filepath and os.path.isfile(filepath) and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
+            self.video_metadata = process_video_file(filepath)
             
     if self.video_metadata:
         self.actual_video_file = self.video_metadata['filepath']
@@ -173,18 +180,18 @@ def open_filepath(self, files_to_open=False, update_interface=False):
             # self.videoinfo_label.setText('Extracting audio...')
 
         self.player_widget.loadfile(self.video_metadata['filepath'])
-        if self.actual_subtitle_file:
+        if globals.SESSION['subtitle_filepath']:
             self.thread_generate_hash_of_video.filepath = self.video_metadata['filepath']
             self.thread_generate_hash_of_video.start()
-            if self.actual_subtitle_file in self.settings['recent_files']:
-                self.player_widget.seek(self.settings['recent_files'][self.actual_subtitle_file].get('last_position', 0))
+            if globals.SESSION['subtitle_filepath'] in self.settings['recent_files']:
+                self.player_widget.seek(self.settings['recent_files'][globals.SESSION['subtitle_filepath']].get('last_position', 0))
 
-        if not self.actual_subtitle_file:
+        if not globals.SESSION['subtitle_filepath']:
             if self.video_metadata.get('subtitles', ''):
                 globals.SESSION['segments'], self.format_to_save = process_subtitles_file(self.video_metadata['subtitles'])
         self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
         self.subtitles_panel.update_topbar_status(self)
-        self.settings['recent_files'][self.actual_subtitle_file] = {
+        self.settings['recent_files'][globals.SESSION['subtitle_filepath']] = {
             'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
             'video_filepath': self.video_metadata['filepath']
         }

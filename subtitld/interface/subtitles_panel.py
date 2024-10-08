@@ -307,7 +307,7 @@ def update_subtitles_panel_widget_vision_content(self):
 
 
 def update_subtitles_panel_format_label(self):
-    self.toppanel_format_label_text.setText(get_subtitle_format(self.actual_subtitle_file) or self.settings['default_values'].get('subtitle_format', 'USF'))
+    self.toppanel_format_label_text.setText(get_subtitle_format(globals.SESSION['subtitle_filepath']) or self.settings['default_values'].get('subtitle_format', 'USF'))
 
 
 def show(self):
@@ -333,9 +333,9 @@ def toppanel_save_button_clicked(self):
     """Function to call when save button on subtitles list panel is clicked"""
 
     actual_subtitle_file = False
-    subtitle_format = get_subtitle_format(self.actual_subtitle_file)
+    subtitle_format = get_subtitle_format(globals.SESSION['subtitle_filepath'])
     if subtitle_format:
-        actual_subtitle_file = self.actual_subtitle_file
+        actual_subtitle_file = globals.SESSION['subtitle_filepath']
     else:
         subtitle_format = self.settings['default_values'].get('subtitle_format', 'USF')
 
@@ -343,7 +343,7 @@ def toppanel_save_button_clicked(self):
         suggested_path = os.path.dirname(self.video_metadata['filepath'])
         suggested_filename = os.path.basename(self.video_metadata['filepath']).rsplit('.', 1)[0] + '.' + LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[subtitle_format]['extensions'][0]
 
-        self.actual_subtitle_file = os.path.join(suggested_path, suggested_filename)
+        globals.SESSION['subtitle_filepath'] = os.path.join(suggested_path, suggested_filename)
 
     if self.toppanel_save_button.key_modifiers:
         if Qt.ShiftModifier in self.toppanel_save_button.key_modifiers:
@@ -357,7 +357,7 @@ def toppanel_save_button_clicked(self):
         for exttype in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
             supported_subtitle_files += LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['description'] + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']])) + ';;'
 
-        filedialog = QFileDialog.getSaveFileName(parent=self, caption=filedialog_title, dir=os.path.dirname(self.actual_subtitle_file), filter=supported_subtitle_files)
+        filedialog = QFileDialog.getSaveFileName(parent=self, caption=filedialog_title, dir=os.path.dirname(globals.SESSION['subtitle_filepath']), filter=supported_subtitle_files)
 
         if filedialog[0] and filedialog[1]:
             filepath = filedialog[0]
@@ -370,14 +370,14 @@ def toppanel_save_button_clicked(self):
             selected_format = get_format_from_extension(selected_extension)
 
             if Qt.ShiftModifier in self.toppanel_save_button.key_modifiers:
-                self.actual_subtitle_file = filepath
-                self.settings['recent_files'][self.actual_subtitle_file] = {
+                globals.SESSION['subtitle_filepath'] = filepath
+                self.settings['recent_files'][globals.SESSION['subtitle_filepath']] = {
                     'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
                     'video_filepath': self.video_metadata['filepath']
                 }
-                file_io.save_file(self.actual_subtitle_file, selected_format, self.selected_language)
+                file_io.save_file(globals.SESSION['subtitle_filepath'], selected_format, self.selected_language)
                 if self.settings['default_values'].get('save_automatic_copy', False) and not subtitle_format == self.settings['default_values'].get('subtitle_format', 'USF'):
-                    file_io.save_file(self.actual_subtitle_file.rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
+                    file_io.save_file(globals.SESSION['subtitle_filepath'].rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
                 update_subtitles_panel_format_label(self)
                 update_toppanel_subtitle_file_info_label(self)
                 self.unsaved = False
@@ -388,10 +388,10 @@ def toppanel_save_button_clicked(self):
             if Qt.ControlModifier in self.toppanel_save_button.key_modifiers:
                 file_io.save_file(filepath, selected_format, self.selected_language)
 
-    elif self.actual_subtitle_file:
-        file_io.save_file(self.actual_subtitle_file, subtitle_format, self.selected_language)
+    elif globals.SESSION['subtitle_filepath']:
+        file_io.save_file(globals.SESSION['subtitle_filepath'], subtitle_format, self.selected_language)
         if self.settings['default_values'].get('save_automatic_copy', False) and not subtitle_format == self.settings['default_values'].get('subtitle_format', 'USF'):
-            file_io.save_file(self.actual_subtitle_file.rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
+            file_io.save_file(globals.SESSION['subtitle_filepath'].rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
         update_subtitles_panel_format_label(self)
         update_toppanel_subtitle_file_info_label(self)
         self.unsaved = False
@@ -531,8 +531,8 @@ def subtitles_panel_findandreplace_update(self):
 def update_toppanel_subtitle_file_info_label(self):
     """Function to update top information on subtitles list panel"""
     text = 'Actual video does not have saved subtitle file.'
-    if self.actual_subtitle_file:
-        text = '<b><small>' + 'Actual project:'.upper() + '</small></b><br><big>' + os.path.basename(self.actual_subtitle_file) + '</big>'
+    if globals.SESSION['subtitle_filepath']:
+        text = '<b><small>' + 'Actual project:'.upper() + '</small></b><br><big>' + os.path.basename(globals.SESSION['subtitle_filepath']) + '</big>'
     self.toppanel_subtitle_file_info_label.setText(text)
 
 
