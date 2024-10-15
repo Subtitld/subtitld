@@ -212,7 +212,7 @@ class Subtitld(QMainWindow):
         self.thread_extract_waveform.quit()
         if globals.SESSION.get('subtitle_filepath', False) and 'hash' in self.video_metadata:
             self.player_widget.grab().save(os.path.join(PATH_SUBTITLD_DATA_THUMBNAILS, self.video_metadata['hash'] + '.png'))
-            self.settings['recent_files'][globals.SESSION['subtitle_filepath']]['last_position'] = self.player_widget.position
+            self.settings['recent_files'][globals.SESSION['subtitle_filepath']]['last_position'] = self.player_widget.position()
         config.save(self.settings, PATH_SUBTITLD_USER_CONFIG_FILE)
         self.player_widget.close()
 
@@ -220,7 +220,7 @@ class Subtitld(QMainWindow):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Space:
-            self.player_widget.pause()
+            self.player_widget.playpause()
             self.playercontrols_playpause_button.setChecked(not self.playercontrols_playpause_button.isChecked())
             # self.playercontrols.playercontrols_playpause_button_update(self)
 

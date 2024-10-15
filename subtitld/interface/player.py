@@ -1,198 +1,270 @@
 import os
-from mpv import MPV, MpvRenderContext, MpvGlGetProcAddressFn
+import mlt7 as mlt
+import datetime
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGraphicsOpacityEffect
-from PySide6.QtCore import Signal, Qt, QRect, QPropertyAnimation, QEasingCurve, QMargins
+from PySide6.QtCore import QThread, Qt, QRect, QPropertyAnimation, QEasingCurve, QMargins
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-from subtitld.modules.utils import GetProcAddressGetter
 from subtitld.modules import globals
 from subtitld.interface import playercontrols, subtitles_panel
 
+from PIL import Image, ImageDraw, ImageFont
 
-class MpvWidget(QOpenGLWidget):
+
+# Function to create an image subtitle
+def create_subtitle_image(text, filename, width=640, height=480):
+    # Create a blank image with transparent background
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Load a font (adjust path if needed)
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+    except IOError:
+        # Fallback to a default font if not found
+        font = ImageFont.load_default()
+
+    # Calculate text size and position using textbbox (newer versions of PIL)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]  # Calculate the width from the bounding box
+    text_height = bbox[3] - bbox[1]  # Calculate the height from the bounding box
+
+    # Center the text horizontally and position it near the bottom
+    x = (width - text_width) // 2
+    y = height - 200  # Place the text at the bottom of the screen
+
+    # Draw the text on the image
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+
+    # Save the image
+    img.save(filename)
+
+class fill_mlt_playlist_thread(QThread):
+    subtitles = []
+    playlist_sub = None
+    profile = None
+    subtitles_mlt_objects_dict = {}
+    style = {}
+
+    def run(self):
+        if self.playlist_sub is not None:
+            self.playlist_sub.clear()
+            
+            last_time_parse = 0
+            bi = 0
+            for i, subtitle in enumerate(globals.SESSION['segments']):
+                if not last_time_parse == subtitle['start']:
+                    self.playlist_sub.insert_blank(bi + i, int((subtitle['start'] - last_time_parse) * self.profile.fps()) - 1)
+                    bi += 1
+                
+                image_producer = mlt.Producer(self.profile, 'color')
+                image_producer.set('resource', '#00000000')
+                image_producer.set('mlt_image_format', "rgba")
+
+
+                image_producer_filter = mlt.Filter(self.profile, 'text')
+
+                image_producer_filter.set('argument', subtitle['text'])
+                image_producer_filter.set('family', self.style.get('font_family', 'Ubuntu'))
+                image_producer_filter.set('size', self.style.get('font_size', 40))
+                image_producer_filter.set('style', 'normal')
+                image_producer_filter.set('fgcolour', self.style.get('color', '#ffffffff'))
+                image_producer_filter.set('bgcolour', self.style.get('backgroundbox_color', '#55000000'))
+                image_producer_filter.set('olcolour', '#aa000000')
+                image_producer_filter.set('halign', 'center')
+                image_producer_filter.set('valign', 'bottom')
+                image_producer_filter.set('pad', self.style.get('backgroundbox_padding', 10))
+                image_producer_filter.set('outline', '3')
+                image_producer_filter.set('opacity', '1.0')
+
+                image_producer.attach(image_producer_filter)
+                
+                image_producer.set('out', int((subtitle['end'] - subtitle['start']) * self.profile.fps()))
+
+                self.playlist_sub.append(image_producer)
+                last_time_parse = subtitle['end']
+
+
+class MltWidget(QOpenGLWidget):
     """Main MPV widget class"""
-    positionChanged = Signal(float, int)
-    eofReached = Signal()
-
     def __init__(widget, parent=None):
         super().__init__(parent)
+        mlt.Factory().init()
+        widget.profile = mlt.Profile('cif_15') #hdv_720_30p
+        widget.producer = None
+        widget.consumer = mlt.Consumer(widget.profile, 'sdl2')
+        widget.consumer.set('window_id', widget.winId())
 
-        widget.mpv = MPV(
-            # ytdl=False,
-            loglevel='info',
-            log_handler=print
-        )
+        widget.consumer.set("real_time", 1)
+        widget.consumer.set("rescale", "bilinear") # MLT options "nearest", "bilinear", "bicubic", "hyper"
+        # widget.consumer.set("resize", 0)
+        # widget.consumer.set("display_ratio", "1.0")
+        # widget.consumer.set("progressive", 1)
+        # widget.consumer.set('preview_enabled', 1)
+        
+        # widget.consumer.set('preview_format', )
+        widget.playlist = mlt.Playlist(widget.profile)
+        widget.playlist_sub = mlt.Playlist(widget.profile)
 
-        widget.mpv_gl = None
-        widget.get_proc_addr_c = MpvGlGetProcAddressFn(GetProcAddressGetter().wrap)
-        widget.frameSwapped.connect(
-            widget.swapped, Qt.ConnectionType.DirectConnection
-        )
+        widget.tractor = mlt.Tractor()
+        multitrack = widget.tractor.multitrack()
 
-        options = {
-            # "config": False,
-            'osd_level': 0,
-            'sub_auto': False,
-            'sub_ass': False,
-            'sub_visibility': False,
-            'keep_open': True,
-            'cursor_autohide': False,
-            'input_cursor': False,
-            'input_default_bindings': False,
-            'stop_playback_on_init_failure': False,
-            'audio_file_auto': False,
-            'input_vo_keyboard': False,
-            'sid': False,
-            "quiet": True,
-            "msg-level": "all=info",
-            "osc": False,
-            "osd-bar": False,
-            "input-cursor": False,
-            "input-vo-keyboard": False,
-            "input-default-bindings": False,
-            # "ytdl": False,
-            "sub-auto": False,
-            "audio-file-auto": False,
-            "vo": "libmpv",
-            "hwdec": "auto",
-            "pause": True,
-            "idle": True,
-            "blend-subtitles": "video",
-            "video-sync": "display-vdrop",
-            "keepaspect": True,
-            "stop-playback-on-init-failure": False,
-            "keep-open": True,
-            # "track-auto-selection": False,
-            # "hwdec": "vaapi",
-            # "gpu-context": "x11egl"
-        }
+        multitrack.connect(widget.playlist, 0)
+        multitrack.connect(widget.playlist_sub, 1)
 
-        # if not globals.ACTUAL_OS == 'windows':
-        #     options["gpu-hwdec-interop"] = "vaapi-egl"
+        widget.transition = mlt.Transition(widget.profile, "composite")
+        widget.transition.set("0", "1.0")  # Blend amount (between 0.0 and 1.0)
+        widget.transition.set("1", "normal")  # Blend amount (between 0.0 and 1.0)
+        widget.transition.set('in', 0)
+        widget.transition.set("a_track", 0)  # Blend video track
+        widget.transition.set("b_track", 1)  # With subtitle track
 
-        for key, value in options.items():
-            setattr(widget.mpv, key, value)
+        def fill_mlt_playlist_thread_finished():
+            widget.fill_mlt_playlist_thread.style = widget.window().player_subtitle_layer.style
 
-        widget.position = 0.0
-        widget.mpv.observe_property('time-pos', widget.position_changed)
-        widget.mpv.observe_property('eof-reached', widget.eof_reached)
+        widget.fill_mlt_playlist_thread = fill_mlt_playlist_thread(parent=widget)
+        widget.fill_mlt_playlist_thread.setTerminationEnabled(True)
+        widget.fill_mlt_playlist_thread.finished.connect(fill_mlt_playlist_thread_finished)
+        # widget.fill_mlt_playlist_thread.subtitles_mlt_objects_dict = widget.subtitles_mlt_objects_dict
+        # widget.fill_mlt_playlist_thread.finished.connect(fill_mlt_playlist_thread_finished)
+        # widget.transition.set("length", 500)  # Transition length (adjust based on your preference)
 
-    def initializeGL(widget):
-        widget.mpv_gl = MpvRenderContext(
-            widget.mpv,
-            api_type="opengl",
-            opengl_init_params={"get_proc_address": widget.get_proc_addr_c},
-        )
-        widget.mpv_gl.update_cb = widget.on_update
 
-    def paintGL(widget):
-        if widget.mpv_gl:
-            ratio = widget.devicePixelRatioF()
-            w = int(widget.width() * ratio)
-            h = int(widget.height() * ratio)
-            fbo = widget.defaultFramebufferObject()
-            widget.mpv_gl.render(
-                flip_y=True,
-                opengl_fbo={
-                    "fbo": fbo,
-                    "w": w,
-                    "h": h,
-                },
-            )
+        # widget.transition.set("length", 25)  # Duration of the transition (adjust as needed)
+        # widget.transition.set("start", 0)  # Start time of the transition
+        # widget.transition.set("in", 0)
+        # widget.transition.set("0", 1)  # Blend amount (between 0.0 and 1.0)
+        # widget.transition.set("1", "normal")  # Blend amount (between 0.0 and 1.0)
+        
+        # field = mlt.Field()
+        
+        # widget.tractor.insert_track(field, 2)
 
-    # @Slot()
-    # def maybe_update(widget):
-    #     """Maybeupdate function"""
-    #     if widget.window().isMinimized():
-    #         widget.makeCurrent()
-    #         widget.paintGL()
-    #         widget.context().swapBuffers(widget.context().surface())
-    #         widget.swapped()
-    #         widget.doneCurrent()
-    #     else:
-    #         widget.update()
+        # widget.tractor.plant_transition(widget.tractor.field(), widget.transition)
+                
+        widget.tractor.plant_transition(widget.transition, 0, 1)
+        
+        widget.consumer.connect(widget.tractor)
 
-    def on_update(widget, ctx=None):
-        widget.update()
-        #  print(widget.width())
-        #  print(widget.height())
+        widget.consumer_xml = mlt.Consumer(widget.profile, 'xml')
+        widget.consumer_xml.set('resource', '/tmp/test.mlt')
+        widget.consumer_xml.connect(widget.tractor)
 
-    def on_update_fake(widget, ctx=None):
-        pass
+        widget.playback_speed = 1.0
 
-    def swapped(widget):
-        if widget.mpv_gl:
-            widget.mpv_gl.report_swap()
-
-    def closeEvent(widget, _):
-        widget.makeCurrent()
-        if widget.mpv_gl:
-            widget.mpv_gl.update_cb = widget.on_update_fake
-            widget.mpv_gl.free()
-
-    def position_changed(widget, _, pos):
-        """Position changed function. It calls update timeline paint."""
-        if pos:
-            widget.position = pos
-        if pos is not None:
-            widget.positionChanged.emit(pos, 1)
-            #  widget.parent.parent().timeline.update(widget.parent.parent())
-
-    def eof_reached(widget, _, property):
-        widget.eofReached.emit()
+        widget.is_paused = True
+        widget.filepath = False
+        widget.duration_in_frames = 60*30
+        widget.duration = 60
+        
+    def fix_size(widget):
+        """Function to resize player widget (to accomodate video ratio inside screen space)"""
+        None
+        # widget.resize(widget.size())
+        # widget.consumer.set('window_width', widget.width())
+        # widget.consumer.set('window_height', widget.height())
+        # widget.consumer.set('window_y', 500)
+        # widget.consumer.set('rect_x', 0)
+        # widget.consumer.set('rect_y', 0)
 
     def loadfile(widget, filepath) -> None:
         """Function to load a media file"""
         if os.path.isfile(filepath):
-            widget.mpv.command('loadfile', filepath, 'replace')
-            widget.mpv.wait_for_property('seekable')
-        widget.mpv.pause = True
+            widget.filepath = filepath
+            widget.producer = mlt.Producer(widget.profile, widget.filepath)
+            widget.profile.from_producer(widget.producer)
+            widget.producer = mlt.Producer(widget.profile, widget.filepath)
+
+            widget.playlist.append(widget.producer)
+
+            # blank = widget.playlist_sub.blank(0)
+            # widget.playlist_sub.insert_blank(0, int((globals.SESSION['segments'][0]['start'] - 0.001) * widget.profile.fps()))
+            # widget.playlist_sub.append(blank)
+
+            widget.fill_mlt_playlist_thread.playlist_sub = widget.playlist_sub
+            widget.fill_mlt_playlist_thread.profile = widget.profile
+            widget.fill_mlt_playlist_thread.subtitles = globals.SESSION['segments']
+            widget.fill_mlt_playlist_thread.start()
+            
+            widget.transition.set('out', widget.tractor.get_length())
+
+            widget.consumer.start()
+            widget.pause()
+
+            widget.consumer_xml.start()
+
 
     def frameStep(widget) -> None:
         """Function to move forward one step (frame)"""
-        widget.mpv.command('frame-step')
+        None
+
+    def resizeEvent(widget, event):
+        widget.consumer.set('window_width', widget.width())
+        widget.consumer.set('window_height', widget.height())
+        event.accept()
 
     def frameBackStep(widget) -> None:
         """Function to move backward one step (frame)"""
-        widget.mpv.command('frame-back-step')
+        None
 
-    def seek(widget, pos=0.0, method='absolute+exact') -> None:
+    def seek(widget, pos=0.0, method='absolute') -> None:
         """Function to seek at some position"""
-        widget.mpv.seek(pos, method)
-        widget.position = pos
+        if method == 'absolute':
+            widget.tractor.seek(int(pos * widget.profile.fps()))
+        elif method == 'relative':
+            widget.tractor.seek(int((pos * widget.duration) * widget.profile.fps()))
+        
 
     def stop(widget) -> None:
         """Function to stop playback (fake stop, it is pause + position 0)"""
-        widget.mpv.pause = True
-        # print(dir(widget.mpv))
-        if widget.mpv.filename:
-            widget.position = 0.0
-            widget.seek()
+        if not widget.consumer.is_stopped():
+            widget.consumer.stop()
+
+    def playpause(widget):
+        if widget.is_paused:
+            widget.tractor.set_speed(widget.playback_speed)
+            widget.consumer.set('volume', 1)
+            # widget.tractor.play()
+        else:
+            widget.consumer.set('volume', 0)
+            widget.tractor.pause()
+            # widget.tractor.seek(widget.tractor.position())
+            # widget.consumer.purge()
+            # widget.consumer.start()
+        widget.is_paused = not widget.is_paused
 
     def pause(widget) -> None:
         """Function to pause playback (fake pause, it just changes actual playback status)"""
-        widget.mpv.pause = not widget.mpv.pause
+        widget.consumer.set('volume', 0)
+        widget.tractor.pause()
 
     def play(widget) -> None:
         """Function to play (fake play, it just changes actual playback status)"""
-        if widget.mpv.pause:
-            widget.mpv.pause = False
+        widget.tractor.set_speed(widget.playback_speed)
 
     def mute(widget) -> None:
         """Function to mute"""
-        widget.property('mute', not widget.property('mute'))
+        None
 
     def volume(widget, vol: int) -> None:
         """Function to change volume"""
-        widget.property('volume', vol)
+        None
 
-    # def resizeEvent(widget, event):
-    #    event.accept()
-    #    #print(widget.width())
-    #    #print(widget.height())
+    def position(widget):
+        # print(widget.consumer.frames_to_time(widget.tractor.position()))
+        # print(widget.tractor.frames_to_time(widget.tractor.position()))
+        return widget.tractor.position() / widget.profile.fps()
 
+    def set_position(widget, position):
+        widget.tractor.seek(position * widget.profile.fps())
+
+    def closeEvent(widget, event):
+        """Function to call when player widget is closed"""
+        if widget.consumer:
+            widget.consumer.stop()
+        event.accept()
 
 class PlayerSubtitleLayer(QLabel):
     """Lass of subtitle layer"""
@@ -335,7 +407,7 @@ def load(self):
     # # self.videoinfo_label.setSizePolicy(sizePolicy)
     # # layer_player.layout().addWidget(self.videoinfo_label)
 
-    self.player_widget = MpvWidget()
+    self.player_widget = MltWidget()
     # sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     # sizePolicy.setWidthForHeight(self.player_widget.sizePolicy().hasWidthForHeight())
     # self.player_widget.setSizePolicy(sizePolicy)
@@ -346,8 +418,8 @@ def load(self):
     # self.player_widget_transparency.setOpacity(1)
     # self.player_widget_animation = QPropertyAnimation(self.player_widget, b'geometry')
     # self.player_widget_animation.setEasingCurve(QEasingCurve.OutCirc)
-    self.player_widget.positionChanged.connect(lambda: update_timelines(self))
-    self.player_widget.eofReached.connect(lambda: eof_reached(self))
+    # self.player_widget.positionChanged.connect(lambda: update_timelines(self))
+    # self.player_widget.eofReached.connect(lambda: eof_reached(self))
     self.player_widget.setLayout(QVBoxLayout(self.player_widget))
 
     self.player_subtitle_layer = PlayerSubtitleLayer()
@@ -381,6 +453,7 @@ def load(self):
     self.player_border_transparency.setOpacity(0)
     self.player_border_animation = QPropertyAnimation(self.player_border, b'geometry')
     self.player_border_animation.setEasingCurve(QEasingCurve.OutCirc)
+    self.player_border_animation.finished.connect(lambda: self.player_widget.fix_size())
 
     self.player_border.setObjectName('player_border')
     self.player_border.setLayout(QVBoxLayout(self.player_border))
@@ -458,26 +531,29 @@ def update_safety_margins_subtitle_layer(self):
 #     update_subtitle_layer(self)
 
 
-def eof_reached(self):
-    self.player_widget.mpv.pause = True
-    self.playercontrols_playpause_button.setChecked(False)
-    # playercontrols.playercontrols_playpause_button_update(self)
+# def eof_reached(self):
+#     self.player_widget.playpause()
+#     self.playercontrols_playpause_button.setChecked(False)
+#     # playercontrols.playercontrols_playpause_button_update(self)
 
 
 def update_speed(self):
     """Function to change playback speed"""
-    self.player_widget.mpv.speed = self.playback_speed if self.change_playback_speed.isChecked() else 1.0
+    self.player_widget.playback_speed = self.playback_speed if self.change_playback_speed.isChecked() else 1.0
+    self.player_widget.play()
 
 
 def update_subtitle_layer(self):
     """Function to update subtitle layer"""
-    text = ''
-    for subtitle in globals.SESSION['segments']:
-        if self.player_widget.position and (self.player_widget.position > subtitle['start'] and self.player_widget.position < subtitle['end']):
-            text = subtitle['text']
-            break
-    self.player_subtitle_layer.setSubtitleText(text)
-    self.player_subtitle_layer.update()
+    None
+
+    # text = ''
+    # for subtitle in globals.SESSION['segments']:
+    #     if self.player_widget.position() and (self.player_widget.position() > subtitle['start'] and self.player_widget.position() < subtitle['end']):
+    #         text = subtitle['text']
+    #         break
+    # self.player_subtitle_layer.setSubtitleText(text)
+    # self.player_subtitle_layer.update()
 
 
 def resize_player_widget(self, just_get_qrect=False):
@@ -532,3 +608,15 @@ def update_timelines(self):
     self.timeline.update(self)
     if not self.subtitles_panel_findandreplace_panel.isVisible():
         subtitles_panel.update_subtitles_panel_widget_vision_content(self)
+
+
+def update_subtitle_text(self, subtitle=None, text=None):
+    if subtitle is None:
+        subtitle = self.selected_subtitle
+    if text is None:
+        text = self.properties_textedit.toPlainText()
+    if subtitle and text is not None:
+        producer = self.player_widget.playlist_sub.get_clip_at(int(subtitle['start'] * self.player_widget.profile.fps()) + 1)
+        for i in range(producer.parent().filter_count()):
+            if producer.parent().filter(i).get('argument'):
+                producer.parent().filter(i).set('argument', text)

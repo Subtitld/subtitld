@@ -180,6 +180,8 @@ def open_filepath(self, files_to_open=[], update_interface=False):
             # self.videoinfo_label.setText('Extracting audio...')
 
         self.player_widget.loadfile(self.video_metadata['filepath'])
+        self.player_widget.duration_in_frames = self.video_metadata['duration_in_frames']
+        self.player_widget.duration = self.video_metadata['duration']
         if globals.SESSION['subtitle_filepath']:
             self.thread_generate_hash_of_video.filepath = self.video_metadata['filepath']
             self.thread_generate_hash_of_video.start()
@@ -208,7 +210,7 @@ def open_filepath(self, files_to_open=[], update_interface=False):
             self.global_panel.hide_global_panel(self)
             player_qrect = self.player.resize_player_widget(self, just_get_qrect=True)
             original_qrect = [self.start_screen_thumbnail_background.x(), self.start_screen_thumbnail_background.y(), self.start_screen_thumbnail_background.width(), self.start_screen_thumbnail_background.height()]
-            self.generate_effect(self.start_screen_thumbnail_background_transparency_animation, 'opacity', 200, 1.0, 0.0)
+            self.generate_effect(self.start_screen_thumbnail_background_transparency_animation, 'opacity', 200, 1.0, 1.0)
             self.generate_effect(self.player_border_animation, 'geometry', 700, original_qrect, player_qrect)
             self.generate_effect(self.player_border_transparency_animation, 'opacity', 700, 0.5, 1.0)
 
@@ -375,6 +377,7 @@ def process_video_file(video_file=False):
             video_metadata['width'] = int(stream.get('width', 640))
             video_metadata['height'] = int(stream.get('height', 480))
             video_metadata['framerate'] = int(stream.get('r_frame_rate', '1/30').split('/', 1)[0]) / int(stream.get('r_frame_rate', '1/30').split('/', 1)[-1])
+            video_metadata['duration_in_frames'] = int(stream.get('nb_frames', (video_metadata['duration'] * video_metadata['framerate'])))
         elif stream.get('codec_type', '') in ['subtitle'] and not video_metadata.get('subtitles', False):
             video_metadata['subtitles'] = waveform.ffmpeg_extract_subtitle(video_file, stream.get('index', 2))
             # TODO: select what language if multiple embedded subtitles

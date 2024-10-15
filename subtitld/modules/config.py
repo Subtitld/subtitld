@@ -15,7 +15,10 @@ def load(config_file_path=False):
     config = {}
     if config_file_path and os.path.isfile(config_file_path):
         with open(config_file_path) as fileobj:
-            config = json.load(fileobj)
+            try:
+                config = json.load(fileobj)
+            except json.decoder.JSONDecodeError:
+                config = {}
 
     if not config.get('recent_files', False):
         config['recent_files'] = {}

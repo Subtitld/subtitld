@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QSizePolicy, QTe
 from PySide6.QtGui import QFontMetrics, QFont, QColor
 from PySide6.QtCore import Qt, QSize, QAbstractListModel, QRect, QMargins
 
-from subtitld.interface import subtitles_panel
+from subtitld.interface import subtitles_panel, player
 from subtitld.interface.translation import _
 from subtitld.modules import utils
 from subtitld.modules import quality_check
@@ -355,7 +355,7 @@ def subtitles_panel_markdown_qtextedit_cursorpositionchanged(self):
             break
 
     if self.selected_subtitle:
-        if not (self.player_widget.position > self.selected_subtitle['start'] and self.player_widget.position < self.selected_subtitle['end']):
+        if not (self.player_widget.position() > self.selected_subtitle['start'] and self.player_widget.position() < self.selected_subtitle['end']):
             self.player_widget.seek(self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5))
 
     self.timeline.update(self)
@@ -423,7 +423,7 @@ def subtitles_panel_markdown_qtextedit_update_subtitles_list(self):
 def update_subtitles_panel_qlistwidget(self):
     """Function to update subtitles list widgets"""
 
-    current_sub, index = subtitles.subtitle_under_current_position(position=self.player_widget.position)
+    current_sub, index = subtitles.subtitle_under_current_position(position=self.player_widget.position())
     if current_sub and not (self.subtitles_panel_qlistwidget.verticalScrollBar().value() + self.subtitles_panel_qlistwidget.verticalScrollBar().pageStep() > index > self.subtitles_panel_qlistwidget.verticalScrollBar().value()):
         self.subtitles_panel_qlistwidget.verticalScrollBar().setValue(index - 1)
 
@@ -448,7 +448,7 @@ def subtitles_panel_qlistwidget_item_clicked(self):
         update_properties_widget(self)
         self.properties_textedit.blockSignals(False)
 
-        if not self.selected_subtitle['start'] < self.player_widget.position < self.selected_subtitle['end']:
+        if not self.selected_subtitle['start'] < self.player_widget.position() < self.selected_subtitle['end']:
             self.player_widget.seek(self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5))
 
         self.timeline.update_scrollbar(self, position='middle')
@@ -473,8 +473,8 @@ def speaker_combobox_current_index_changed(self):
 
 def send_text_to_last_subtitle_and_slice_button_clicked(self):
     """Function to send text to the last subtitle and slice at the same time"""
-    position = self.player_widget.position
-    if not self.selected_subtitle['end'] > self.player_widget.position > self.selected_subtitle['start']:
+    position = self.player_widget.position()
+    if not self.selected_subtitle['end'] > self.player_widget.position() > self.selected_subtitle['start']:
         position = self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5)
     subtitles.subtitle_start_to_current_position(position=position)
     subtitles.last_end_to_current_position(position=position - .001)
@@ -483,8 +483,8 @@ def send_text_to_last_subtitle_and_slice_button_clicked(self):
 
 def send_text_to_next_subtitle_and_slice_button_clicked(self):
     """Function to send text to the next subtitle and slice at the same time"""
-    position = self.player_widget.position
-    if not self.selected_subtitle['end'] > self.player_widget.position > self.selected_subtitle['start']:
+    position = self.player_widget.position()
+    if not self.selected_subtitle['end'] > self.player_widget.position() > self.selected_subtitle['start']:
         position = self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5)
     subtitles.subtitle_end_to_current_position(position=position)
     subtitles.next_start_to_current_position(position=position + .001)
@@ -504,14 +504,14 @@ def send_text_to_last_subtitle_button_clicked(self):
 
 def properties_textedit_changed(self):
     """Function to call when properties textedit is changed"""
-    old_selected_subtitle = self.selected_subtitle
-    if old_selected_subtitle and old_selected_subtitle['text'] != self.properties_textedit.toPlainText():
-        counter = globals.SESSION['segments'].index(old_selected_subtitle)
-        subtitles.change_subtitle_text(selected_subtitle=globals.SESSION['segments'][counter], text=self.properties_textedit.toPlainText())
+    if self.selected_subtitle and self.selected_subtitle['text'] != self.properties_textedit.toPlainText():
+        subtitles.change_subtitle_text(selected_subtitle=self.selected_subtitle, text=self.properties_textedit.toPlainText())
         self.unsaved = True
         subtitles_panel.update_topbar_status(self)
         self.timeline.update(self)
-        self.player.update_subtitle_layer(self)
+
+        player.update_subtitle_text(self)
+
         update_properties_information(self)
 
 

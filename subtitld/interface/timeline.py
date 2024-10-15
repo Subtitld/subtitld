@@ -7,7 +7,7 @@ from bisect import bisect
 
 from PySide6.QtGui import QPainter, QPen, QColor, QPolygonF, QFont, QPixmap, QPainterPath, QLinearGradient, QFontMetrics
 from PySide6.QtWidgets import QWidget, QScrollArea
-from PySide6.QtCore import Qt, QRectF, QPointF, QThread, Signal, QMarginsF
+from PySide6.QtCore import Qt, QRectF, QPointF, QThread, Signal, QMarginsF, QTimer
 
 from subtitld import timecode
 
@@ -117,6 +117,10 @@ class Timeline(QWidget):
         widget.waveformsize = .7
         widget.main_self = self
         widget.width_proportion = widget.width() / widget.main_self.video_metadata.get('duration', 0.01)
+        widget.timer = QTimer()
+        widget.timer.setInterval(int(1000/24))
+        widget.timer.timeout.connect(lambda: update(widget.window()))
+
 
     def paintEvent(widget, event):
         """Function for paintEvent of Timeline"""
@@ -284,37 +288,38 @@ class Timeline(QWidget):
 
             painter.setOpacity(1)
 
-        grid_pen = QPen(QColor(widget.main_self.settings['timeline'].get('grid_color', '#336a7483')), 1, Qt.SolidLine)
-        painter.setFont(QFont('Ubuntu Mono', 8))
-        xpos = 0
-        for sec in range(int(widget.main_self.video_metadata['duration'])):
-            if xpos >= scroll_position and xpos <= (scroll_position + widget.main_self.timeline_scroll.width()):
-                if (widget.main_self.mediaplayer_zoom > 75) or (widget.main_self.mediaplayer_zoom > 50 and widget.main_self.mediaplayer_zoom <= 75 and not int((sec % 2))) or (widget.main_self.mediaplayer_zoom > 25 and widget.main_self.mediaplayer_zoom <= 50 and not int((sec % 4))) or (widget.main_self.mediaplayer_zoom <= 25 and not int((sec % 8))):
-                    lim_rect = QRectF(
-                        xpos + 3,
-                        27,
-                        50,
-                        20
-                    )
-                    painter.setPen(QColor(widget.main_self.settings['timeline'].get('time_text_color', '#806a7483')))
-                    painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
-                if widget.main_self.settings['timeline'].get('show_grid', False) and widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds':
-                    painter.setPen(grid_pen)
-                    painter.drawLine(xpos, 0, xpos, widget.height())
-            xpos += widget.width_proportion
-        if widget.main_self.settings['timeline'].get('show_grid', False) and widget.main_self.settings['timeline'].get('grid_type', False) == 'frames':
-            painter.setPen(grid_pen)
-            xpos = 0.0
-            for _ in range(int(widget.main_self.video_metadata['duration'] * widget.main_self.video_metadata['framerate'])):
+        if 'duration' in widget.main_self.video_metadata:
+            grid_pen = QPen(QColor(widget.main_self.settings['timeline'].get('grid_color', '#336a7483')), 1, Qt.SolidLine)
+            painter.setFont(QFont('Ubuntu Mono', 8))
+            xpos = 0
+            for sec in range(int(widget.main_self.video_metadata['duration'])):
                 if xpos >= scroll_position and xpos <= (scroll_position + widget.main_self.timeline_scroll.width()):
-                    painter.drawLine(xpos, 0, xpos, widget.height())
-                xpos += widget.width_proportion / widget.main_self.video_metadata['framerate']
-        elif widget.main_self.settings['timeline'].get('show_grid', False) and widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and widget.main_self.video_metadata['scenes']:
-            painter.setPen(grid_pen)
-            for scene in widget.main_self.video_metadata['scenes']:
-                xpos = (scene * widget.width_proportion)
-                if xpos >= scroll_position and xpos <= (scroll_position + widget.main_self.timeline_scroll.width()):
-                    painter.drawLine(xpos, 0, xpos, widget.height())
+                    if (widget.main_self.mediaplayer_zoom > 75) or (widget.main_self.mediaplayer_zoom > 50 and widget.main_self.mediaplayer_zoom <= 75 and not int((sec % 2))) or (widget.main_self.mediaplayer_zoom > 25 and widget.main_self.mediaplayer_zoom <= 50 and not int((sec % 4))) or (widget.main_self.mediaplayer_zoom <= 25 and not int((sec % 8))):
+                        lim_rect = QRectF(
+                            xpos + 3,
+                            27,
+                            50,
+                            20
+                        )
+                        painter.setPen(QColor(widget.main_self.settings['timeline'].get('time_text_color', '#806a7483')))
+                        painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
+                    if widget.main_self.settings['timeline'].get('show_grid', False) and widget.main_self.settings['timeline'].get('grid_type', False) == 'seconds':
+                        painter.setPen(grid_pen)
+                        painter.drawLine(xpos, 0, xpos, widget.height())
+                xpos += widget.width_proportion
+            if widget.main_self.settings['timeline'].get('show_grid', False) and widget.main_self.settings['timeline'].get('grid_type', False) == 'frames':
+                painter.setPen(grid_pen)
+                xpos = 0.0
+                for _ in range(int(widget.main_self.video_metadata['duration'] * widget.main_self.video_metadata['framerate'])):
+                    if xpos >= scroll_position and xpos <= (scroll_position + widget.main_self.timeline_scroll.width()):
+                        painter.drawLine(xpos, 0, xpos, widget.height())
+                    xpos += widget.width_proportion / widget.main_self.video_metadata['framerate']
+            elif widget.main_self.settings['timeline'].get('show_grid', False) and widget.main_self.settings['timeline'].get('grid_type', False) == 'scenes' and widget.main_self.video_metadata['scenes']:
+                painter.setPen(grid_pen)
+                for scene in widget.main_self.video_metadata['scenes']:
+                    xpos = (scene * widget.width_proportion)
+                    if xpos >= scroll_position and xpos <= (scroll_position + widget.main_self.timeline_scroll.width()):
+                        painter.drawLine(xpos, 0, xpos, widget.height())
 
         if bool(widget.show_tug_of_war):
             tug_of_war_pen = QPen(QColor(widget.main_self.settings['timeline'].get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap)
@@ -331,12 +336,12 @@ class Timeline(QWidget):
                 # painter.drawLine(xpos, widget.subtitle_y + 8 + y_tug_pos, xpos + 8, widget.subtitle_y + widget.subtitle_height - 8)
                 y_tug_pos += (widget.subtitle_height - 8) / 6
 
-        if widget.main_self.player_widget.position is not None:
+        if widget.main_self.player_widget.position() is not None:
             painter.setPen(QPen(QColor(widget.main_self.settings['timeline'].get('cursor_color', '#ccff0000')), 2, Qt.SolidLine))
-            cursor_pos = int(widget.main_self.player_widget.position * widget.width_proportion)
+            cursor_pos = int(widget.main_self.player_widget.position() * widget.width_proportion)
             painter.drawLine(cursor_pos, 0, cursor_pos, widget.height())
 
-            if (widget.main_self.repeat_duration_tmp and widget.main_self.player_widget.position > widget.main_self.repeat_duration_tmp[0][0]) or (widget.main_self.change_playback_speed.isChecked()):
+            if (widget.main_self.repeat_duration_tmp and widget.main_self.player_widget.position() > widget.main_self.repeat_duration_tmp[0][0]) or (widget.main_self.change_playback_speed.isChecked()):
                 cfont = QFont('Ubuntu Mono', 10)
                 cfont.setBold(True)
 
@@ -375,7 +380,7 @@ class Timeline(QWidget):
         scroll_position = widget.main_self.timeline_scroll.horizontalScrollBar().value()
         scroll_width = widget.main_self.timeline_scroll.width()
 
-        cursor_is_out_of_view = bool(widget.main_self.player_widget.position * widget.width_proportion < widget.main_self.timeline_scroll.horizontalScrollBar().value() or widget.main_self.player_widget.position * widget.width_proportion > widget.main_self.timeline_scroll.width() + widget.main_self.timeline_scroll.horizontalScrollBar().value())
+        cursor_is_out_of_view = bool(widget.main_self.player_widget.position() * widget.width_proportion < widget.main_self.timeline_scroll.horizontalScrollBar().value() or widget.main_self.player_widget.position() * widget.width_proportion > widget.main_self.timeline_scroll.width() + widget.main_self.timeline_scroll.horizontalScrollBar().value())
 
         widget.is_cursor_pressing = True
         widget.main_self.selected_subtitle = False
@@ -402,11 +407,11 @@ class Timeline(QWidget):
                     break
 
         if not (widget.subtitle_end_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_is_clicked):# or cursor_is_out_of_view:
-            # widget.main_self.player_widget.position = (event.pos().x() / widget.width()) * widget.main_self.video_metadata['duration']
+            # widget.main_self.player_widget.position() = (event.pos().x() / widget.width()) * widget.main_self.video_metadata['duration']
             widget.main_self.player_widget.seek((event.pos().x() / widget.width()) * widget.main_self.video_metadata['duration'])
             if widget.main_self.repeat_activated:
                 widget.main_self.repeat_duration_tmp = []
-            widget.seek.emit(widget.main_self.player_widget.position)
+            widget.seek.emit(widget.main_self.player_widget.position())
             # update_timecode_label(widget.parent)
 
         if (widget.subtitle_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked):
@@ -524,6 +529,7 @@ class Timeline(QWidget):
                         subtitles.move_subtitle(selected_subtitle=widget.main_self.selected_subtitle, absolute_time=start_position)
                 else:
                     subtitles.move_subtitle(selected_subtitle=widget.main_self.selected_subtitle, absolute_time=start_position)
+                widget.main_self.player.update_subtitle_layer(widget.main_self)
 
 
         if widget.is_cursor_pressing and not (widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked or widget.subtitle_is_clicked):
@@ -531,7 +537,7 @@ class Timeline(QWidget):
             widget.main_self.player_widget.seek((event.pos().x() / widget.width()) * widget.main_self.video_metadata['duration'])
             # if widget.main_self.repeat_activated:
             #     widget.main_self.repeat_duration_tmp = []
-            widget.seek.emit(widget.main_self.player_widget.position)
+            widget.seek.emit(widget.main_self.player_widget.position())
             # update_timecode_label(widget.parent)
         widget.update()
 
@@ -623,7 +629,7 @@ def update_timeline(self):
 
 def update_scrollbar(self, position=0):
     """Function to update scrollbar of timeline"""
-    current_position_in_timeline_widget = (self.player_widget.position / self.video_metadata.get('duration', 0.01)) * self.timeline_widget.width()
+    current_position_in_timeline_widget = (self.player_widget.position() / self.video_metadata.get('duration', 0.01)) * self.timeline_widget.width()
     offset = 0
 
     if position == 'middle':
@@ -644,27 +650,27 @@ def update_timecode_label(self, position):
 
 def update(self):
     """Function to update timeline"""
-    self.player.update_subtitle_layer(self)
+    # self.player.update_subtitle_layer(self)
     if self.repeat_activated:
         if not self.repeat_duration_tmp:
-            self.repeat_duration_tmp = [[self.player_widget.position, self.player_widget.position + self.repeat_duration] for i in range(self.repeat_times)]
+            self.repeat_duration_tmp = [[self.player_widget.position(), self.player_widget.position() + self.repeat_duration] for i in range(self.repeat_times)]
         else:
             last_pos = self.repeat_duration_tmp[0][1]
-            if self.player_widget.position > last_pos:
-                self.player_widget.position = self.repeat_duration_tmp[0][0]
-                self.player_widget.seek(self.player_widget.position)
+            if self.player_widget.position() > last_pos:
+                self.player_widget.set_position(self.repeat_duration_tmp[0][0])
+                self.player_widget.seek(self.player_widget.position())
                 del self.repeat_duration_tmp[0]
                 if not len(self.repeat_duration_tmp):
                     for i in range(self.repeat_times):
                         self.repeat_duration_tmp.append([last_pos, last_pos + self.repeat_duration])
-    if not self.player_widget.mpv.pause:
-        current_position_in_timeline_widget = (self.player_widget.position * (self.timeline_widget.width() / self.video_metadata.get('duration', 0.01)))
+    if not self.player_widget.is_paused:
+        current_position_in_timeline_widget = (self.player_widget.position() * (self.timeline_widget.width() / self.video_metadata.get('duration', 0.01)))
         if self.settings['timeline'].get('scrolling', 'page') == 'follow':
             update_scrollbar(self, position='middle')
         elif self.settings['timeline'].get('scrolling', 'page') == 'page' and current_position_in_timeline_widget > self.timeline_scroll.width() + self.timeline_scroll.horizontalScrollBar().value():
             update_scrollbar(self)
     self.timeline_widget.update()
-    update_timecode_label(self, self.player_widget.position)
+    update_timecode_label(self, self.player_widget.position())
 
 
 def zoom_update_waveform(self):

@@ -993,12 +993,17 @@ def playercontrols_stop_button_clicked(self):
 
 def playercontrols_playpause_button_clicked(self):
     """Function to call when play/pause button is clicked"""
-    self.player_widget.pause()
+    self.player_widget.playpause()
+    if not self.player_widget.is_paused:
+        self.timeline_widget.timer.start()
+    else:
+        self.timeline_widget.timer.stop()
+
     if self.repeat_activated:
         self.repeat_duration_tmp = []
-    if not self.player_widget.mpv.pause and not self.playercontrols_playpause_button.isChecked():
+    if not self.player_widget.is_paused and not self.playercontrols_playpause_button.isChecked():
         self.playercontrols_playpause_button.setChecked(True)
-    elif self.player_widget.mpv.pause and self.playercontrols_playpause_button.isChecked():
+    elif self.player_widget.is_paused and self.playercontrols_playpause_button.isChecked():
         self.playercontrols_playpause_button.setChecked(False)
     # playercontrols_playpause_button_update(self)
 
@@ -1048,7 +1053,7 @@ def zoom_buttons_update(self):
     """Function to update zoom buttons"""
     self.zoomout_button.setEnabled(True if self.mediaplayer_zoom - 5.0 > 0.0 else False)
     self.zoomin_button.setEnabled(True if self.mediaplayer_zoom + 5.0 < 500.0 else False)
-    proportion = ((self.player_widget.position * self.timeline_widget.width_proportion) - self.timeline_scroll.horizontalScrollBar().value()) / self.timeline_scroll.width()
+    proportion = ((self.player_widget.position() * self.timeline_widget.width_proportion) - self.timeline_scroll.horizontalScrollBar().value()) / self.timeline_scroll.width()
     self.timeline_widget.setGeometry(0, 0, int(round(self.video_metadata.get('duration', 0.01) * self.mediaplayer_zoom)), self.timeline_scroll.height() - 20)
     # self.timeline.zoom_update_waveform(self)
     self.timeline.update_scrollbar(self, position=proportion)
@@ -1135,7 +1140,7 @@ def add_subtitle_and_play_clicked(self):
 
 def gap_add_subtitle_button_clicked(self):
     """Function to call when add gap button is clicked"""
-    subtitles.set_gap(position=self.player_widget.position, gap=self.gap_subtitle_duration.value())
+    subtitles.set_gap(position=self.player_widget.position(), gap=self.gap_subtitle_duration.value())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.selected_subtitle = False
@@ -1145,7 +1150,7 @@ def gap_add_subtitle_button_clicked(self):
 
 def gap_remove_subtitle_button_clicked(self):
     """Function to call when remove gap button is clicked"""
-    subtitles.set_gap(position=self.player_widget.position, gap=-(self.gap_subtitle_duration.value()))
+    subtitles.set_gap(position=self.player_widget.position(), gap=-(self.gap_subtitle_duration.value()))
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.selected_subtitle = False
@@ -1208,7 +1213,7 @@ def update_grid_buttons(self):
 def playercontrols_play_from_last_start_button_clicked(self):
     """Function to call when stop button is clicked"""
     subt = [item['start'] for item in globals.SESSION['segments']]
-    last_subtitle = globals.SESSION['segments'][bisect(subt, self.player_widget.position) - 1]
+    last_subtitle = globals.SESSION['segments'][bisect(subt, self.player_widget.position()) - 1]
     self.player_widget.seek(last_subtitle[0])
     self.player_widget.play()
     # self.timeline.update_scrollbar(self)
@@ -1221,7 +1226,7 @@ def playercontrols_play_from_last_start_button_clicked(self):
 def playercontrols_play_from_next_start_button_clicked(self):
     """Function to call when play from next subtitle button is clicked"""
     subt = [item['start'] for item in globals.SESSION['segments']]
-    i = bisect(subt, self.player_widget.position)
+    i = bisect(subt, self.player_widget.position())
     if i < len(globals.SESSION['segments']):
         last_subtitle = globals.SESSION['segments'][i]
         self.player_widget.seek(last_subtitle[0])
@@ -1236,7 +1241,7 @@ def playercontrols_play_from_next_start_button_clicked(self):
 def add_subtitle_button_clicked(self):
     """Function to call when add subtitle button is clicked"""
     # start_position = False
-    self.selected_subtitle = subtitles.add_subtitle(position=self.player_widget.position, duration=self.default_new_subtitle_duration, from_last_subtitle=self.add_subtitle_starting_from_last.isChecked())
+    self.selected_subtitle = subtitles.add_subtitle(position=(self.player_widget.position()), duration=self.default_new_subtitle_duration, from_last_subtitle=self.add_subtitle_starting_from_last.isChecked())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1265,7 +1270,7 @@ def slice_selected_subtitle_button_clicked(self):
         pos = self.properties_textedit.textCursor().position()
         last_text = self.properties_textedit.toPlainText()[:pos]
         next_text = self.properties_textedit.toPlainText()[pos:]
-        self.selected_subtitle = subtitles.slice_subtitle(selected_subtitle=self.selected_subtitle, position=self.player_widget.position, next_text=next_text, last_text=last_text)
+        self.selected_subtitle = subtitles.slice_subtitle(selected_subtitle=self.selected_subtitle, position=self.player_widget.position(), next_text=next_text, last_text=last_text)
         self.unsaved = True
         subtitles_panel.update_topbar_status(self)
         self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1276,7 +1281,7 @@ def slice_selected_subtitle_button_clicked(self):
 
 def select_subtitle_in_current_position(self):
     """Function to call when actual subtitle under cursor need to be selected"""
-    subtitle, _ = subtitles.subtitle_under_current_position(position=self.player_widget.position)
+    subtitle, _ = subtitles.subtitle_under_current_position(position=self.player_widget.position())
     if subtitle:
         self.selected_subtitle = subtitle
         self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1286,7 +1291,7 @@ def select_subtitle_in_current_position(self):
 
 def select_next_subtitle_over_current_position(self):
     """Function to call when next subtitle under cursor need to be selected"""
-    subtitle = subtitles.next_subtitle_current_position(position=self.player_widget.position)
+    subtitle = subtitles.next_subtitle_current_position(position=self.player_widget.position())
     if subtitle:
         self.selected_subtitle = subtitle
         self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1296,7 +1301,7 @@ def select_next_subtitle_over_current_position(self):
 
 def select_last_subtitle_over_current_position(self):
     """Function to call when last subtitle under cursor need to be selected"""
-    subtitle = subtitles.last_subtitle_current_position(position=self.player_widget.position)
+    subtitle = subtitles.last_subtitle_current_position(position=self.player_widget.position())
     if subtitle:
         self.selected_subtitle = subtitle
         self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1438,7 +1443,7 @@ def timeline_cursor_next_frame_clicked(self):
 
 def next_start_to_current_position_button_clicked(self):
     """Function to move cursor one frame backward"""
-    subtitles.next_start_to_current_position(position=self.player_widget.position)
+    subtitles.next_start_to_current_position(position=self.player_widget.position())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1449,7 +1454,7 @@ def next_start_to_current_position_button_clicked(self):
 
 def last_end_to_current_position_button_clicked(self):
     """Function to move last ending position of selected subtitle to current cursor position"""
-    subtitles.last_end_to_current_position(position=self.player_widget.position)
+    subtitles.last_end_to_current_position(position=self.player_widget.position())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1460,7 +1465,7 @@ def last_end_to_current_position_button_clicked(self):
 
 def last_start_to_current_position_button_clicked(self):
     """Function to move last starting position subtitle to current cursor position"""
-    subtitles.last_start_to_current_position(position=self.player_widget.position)
+    subtitles.last_start_to_current_position(position=self.player_widget.position())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1471,7 +1476,7 @@ def last_start_to_current_position_button_clicked(self):
 
 def last_start_last_end_to_current_position_button_clicked(self):
     """Function to move starting position subtitle to current cursor position"""
-    subtitles.subtitle_start_to_current_position(position=self.player_widget.position)
+    subtitles.subtitle_start_to_current_position(position=self.player_widget.position())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1482,7 +1487,7 @@ def last_start_last_end_to_current_position_button_clicked(self):
 
 def next_start_next_end_to_current_position_button_clicked(self):
     """Function to move ending position subtitle to current cursor position"""
-    subtitles.subtitle_end_to_current_position(position=self.player_widget.position)
+    subtitles.subtitle_end_to_current_position(position=self.player_widget.position())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
@@ -1493,7 +1498,7 @@ def next_start_next_end_to_current_position_button_clicked(self):
 
 def next_end_to_current_position_button_clicked(self):
     """Function to move next ending position to current cursor position"""
-    subtitles.next_end_to_current_position(position=self.player_widget.position)
+    subtitles.next_end_to_current_position(position=self.player_widget.position())
     self.unsaved = True
     subtitles_panel.update_topbar_status(self)
     self.subtitles_panel.update_subtitles_panel_widget_vision_content(self)
