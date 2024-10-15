@@ -149,7 +149,8 @@ install_requires = [
     'pysrt',
     'certifi',
     'python-i18n',
-    'google-cloud-core'
+    'google-cloud-core',
+    'pyvidplayer2'
 ]
 
 # --------------------------------------------------------------------------- #

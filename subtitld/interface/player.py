@@ -31,19 +31,22 @@ class VidPlayer(QWidget):
     def loadfile(widget, filepath):
         print('loadfile')
         # if widget.video is None:
-        widget.video = VideoPySide(filepath)
+        widget.video = VideoPySide(filepath, chunk_size=10, max_threads=10, max_chunks=1)
         # widget.video.change_resolution(widget.height())
-        widget.video.play()
-        widget.video.pause()
+        print(dir(widget.video))
+        # widget.video._preload_frames()
+        # widget.video.play()
+        # widget.video.pause()
         widget.video.change_resolution(widget.height())
     
     def seek(widget, position):
         if widget.video is not None:
             widget.video.seek(position)
 
-    def paintEvent(widget, _):
+    def paintEvent(widget, event):
         if widget.video is not None:
             widget.video.draw(widget, (0, 0))
+        event.accept()
 
     def set_speed(widget, speed):
         if widget.video is not None:
