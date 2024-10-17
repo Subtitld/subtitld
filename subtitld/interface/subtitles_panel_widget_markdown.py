@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QFrame, QTextEdit, QVBoxLayout, QPushButton
 from PySide6.QtGui import QTextCursor
 
 from subtitld.interface import subtitles_panel
-from subtitld.modules import utils, globals
+from subtitld.modules import session, utils
 
 
 def add_widgets(self):
@@ -47,23 +47,23 @@ def subtitles_panel_markdown_qtextedit_cursorpositionchanged(self):
     # print(position)
     cursor = 0
     # # markdown_text = ''
-    for subtitle in sorted(globals.SESSION['segments']):
+    for subtitle in sorted(session.SUBTITLE['segments']):
         cursor += len(str("{:.3f}".format(subtitle['start'])))
-        next_index = globals.SESSION['segments'].index(subtitle) + 1
-        if not next_index >= len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index]['start'] - 0.001 == subtitle['end']:
+        next_index = session.SUBTITLE['segments'].index(subtitle) + 1
+        if not next_index >= len(session.SUBTITLE['segments']) and not session.SUBTITLE['segments'][next_index]['start'] - 0.001 == subtitle['end']:
             cursor += len(' - ' + str("{:.3f}".format(subtitle['end'])))
         cursor += len('\n')
 
         cursor += len(str(subtitle[2]) + '\n\n')
         if cursor > position:
-            self.selected_subtitle = subtitle
+            session.SUBTITLE['selected'] = subtitle
             break
 
-    if self.selected_subtitle:
-        if not self.selected_subtitle[0] < self.player_widget.position < self.selected_subtitle[0] + self.selected_subtitle[1]:
-            self.player_widget.seek(self.selected_subtitle[0] + (self.selected_subtitle[1] * .5))
+    if session.SUBTITLE['selected']:
+        if not session.SUBTITLE['selected'][0] < session.SUBTITLE.get('position', 0) < session.SUBTITLE['selected'][0] + session.SUBTITLE['selected'][1]:
+            self.player_widget.seek(session.SUBTITLE['selected'][0] + (session.SUBTITLE['selected'][1] * .5))
 
-            self.timeline.update_scrollbar(self, position='middle')
+            timeline.update_scrollbar(self, position='middle')
 
 
 def subtitles_panel_markdown_qtextedit_textchanged(self):
@@ -113,13 +113,13 @@ def subtitles_panel_markdown_qtextedit_update_subtitles_list(self):
         )
         last_text = ''
 
-    self.selected_subtitle = False
+    session.SUBTITLE['selected'] = False
 
     # Sanitize subtitles so there is no overlaping subtitles?
 
-    globals.SESSION['segments'] = sorted(sub_list)
+    session.SUBTITLE['segments'] = sorted(sub_list)
 
-    self.timeline.update(self)
+    timeline.update(self)
 
 
 def update_subtitles_panel_markdown(self, selection=False):
@@ -129,13 +129,13 @@ def update_subtitles_panel_markdown(self, selection=False):
     selected_subtitle_found = False
     position = 0
     markdown_text = ''
-    for subtitle in sorted(globals.SESSION['segments']):
+    for subtitle in sorted(session.SUBTITLE['segments']):
         markdown_text += '<small><b>' + str("{:.3f}".format(subtitle['start']))
         if not selected_subtitle_found:
             position += len(str("{:.3f}".format(subtitle['start'])))
 
-        next_index = globals.SESSION['segments'].index(subtitle) + 1
-        if next_index < len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index]['start'] - 0.001 == subtitle['end'] or (next_index == len(globals.SESSION['segments']) and not self.video_metadata['duration'] - 0.001 == subtitle['end']):
+        next_index = session.SUBTITLE['segments'].index(subtitle) + 1
+        if next_index < len(session.SUBTITLE['segments']) and not session.SUBTITLE['segments'][next_index]['start'] - 0.001 == subtitle['end'] or (next_index == len(session.SUBTITLE['segments']) and not session.VIDEO['duration'] - 0.001 == subtitle['end']):
             markdown_text += ' - ' + str("{:.3f}".format(subtitle['end']))
             if not selected_subtitle_found:
                 position += len(' - ' + str("{:.3f}".format(subtitle['end'])))
@@ -146,7 +146,7 @@ def update_subtitles_panel_markdown(self, selection=False):
 
         markdown_text += str(subtitle[2]) + '<br/><br/>'
 
-        if self.selected_subtitle == subtitle:
+        if session.SUBTITLE['selected'] == subtitle:
             selected_subtitle_found = True
             # position -= 2
 

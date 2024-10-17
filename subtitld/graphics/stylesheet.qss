@@ -900,6 +900,10 @@ QLabel[class=qlabel_for_buttons] {
     text-transform: uppercase;
 }
 
+QGraphicsView {
+    background: transparent;
+}
+
 #subtitles_panel_findandreplace_casesensitive {
     icon-size: 12px;
     qproperty-icon: url(:/graphics/find_casesensitive.svg);
@@ -918,13 +922,6 @@ QLabel[class=qlabel_for_buttons] {
     color: rgb(106, 116, 131);
     qproperty-alignment: "AlignCenter";
     padding: 40px;
-}
-
-#player_subtitle_layer {
-    /* font-size:40px; */
-    color: rgb(255, 255, 255);
-    qproperty-alignment: "AlignCenter | AlignBottom";
-    padding: 10px;
 }
 
 #start_screen_recent_listwidget {
@@ -948,7 +945,7 @@ QLabel[class=qlabel_for_buttons] {
 }
 
 #start_screen_recentfiles_background {
-    background-color: rgba(106, 116, 131, 50);
+    background-color: rgba(106, 116, 131, 24);
 }
 
 #start_screen_adver_panel {
@@ -956,10 +953,10 @@ QLabel[class=qlabel_for_buttons] {
     border-radius: 5px;
 }
 
-#start_screen_top_shadow {
-    border-width: 1 0 0 0;
-    border-image: url(:/graphics/start_screen_top_shadow.svg) 1 0 0 0 stretch stretch;
-    outline: none;
+#start_screen_bottom_line {
+    border-image: url(:/graphics/start_screen_top_shadow.svg) 150 10 0 10 stretch;
+    border: 150 0 0 0;
+    background-color: #15000000;
 }
 
 #start_screen_open_label {
@@ -1017,6 +1014,7 @@ QLabel[class=qlabel_for_buttons] {
     font-size: 14px;
     qproperty-alignment: "AlignCenter";
 }
+
 
 #small_label {
     font-size:7px;
@@ -1149,66 +1147,6 @@ QLabel[class=qlabel_for_buttons] {
     qproperty-icon: url(:/graphics/snap_move_next.svg);
 }
 
-#playercontrols_widget_frame_top_middle {
-    border-width: 0;
-    border-image: url(:/graphics/timeline_top_controls_left.svg) 0 0 0 18 stretch stretch;
-    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
-}
-
-#playercontrols_widget_frame_top_left {
-    border-width: 0 19 0 0;
-    border-image: url(:/graphics/timeline_top_controls_left.svg) 0 19 0 0 stretch stretch;
-    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
-    background-origin: border;
-}
-
-#playercontrols_widget_frame_top_right {
-    border-width: 0 0 0 19;
-    border-image: url(:/graphics/timeline_top_controls_right.svg) 0 0 0 19 stretch stretch;
-    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
-    background-origin: border;
-}
-
-#playercontrols_widget_frame_bottom_middle {
-    border-width: 0;
-    border-image: url(:/graphics/timeline_bottom_controls_left.svg) 0 0 0 12 stretch stretch;
-    background-image: url(:/graphics/timeline_bottom_controls_background.svg) 0 0 0 0 stretch stretch;
-}
-
-#playercontrols_widget_frame_bottom_left {
-    border-width: 0 12 0 0;
-    border-image: url(:/graphics/timeline_bottom_controls_left.svg) 0 12 0 0 stretch stretch;
-    background-image: url(:/graphics/timeline_bottom_controls_background.svg) 0 0 0 0 stretch stretch;
-    background-origin: border;
-}
-
-#playercontrols_widget_frame_bottom_right {
-    border-width: 0 0 0 12;
-    border-image: url(:/graphics/timeline_bottom_controls_right.svg) 0 0 0 12 stretch stretch;
-    background-image: url(:/graphics/timeline_bottom_controls_background.svg) 0 0 0 0 stretch stretch;
-    background-origin: border;
-}
-
-#playercontrols_widget_frame_top_middle {
-    border-width: 0;
-    border-image: url(:/graphics/timeline_top_controls_left.svg) 0 0 0 18 stretch stretch;
-    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
-}
-
-#playercontrols_widget_frame_top_left {
-    border-width: 0 19 0 0;
-    border-image: url(:/graphics/timeline_top_controls_left.svg) 0 19 0 0 stretch stretch;
-    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
-    background-origin: border;
-}
-
-#playercontrols_widget_frame_top_right {
-    border-width: 0 0 0 19;
-    border-image: url(:/graphics/timeline_top_controls_right.svg) 0 0 0 19 stretch stretch;
-    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
-    background-origin: border;
-}
-
 #repeat_playback_x_label,
 #change_playback_speed_label {
     qproperty-alignment:AlignCenter;
@@ -1304,11 +1242,6 @@ QLabel[class=qlabel_for_buttons] {
     qproperty-icon: url(:/graphics/zoom_out_icon.svg);
 }
 
-#playercontrols_widget_frame_bottom_right_corner {
-    border-width: 0 0 0 12;
-    border-image: url(:/graphics/timeline_bottom_controls_left.svg) 0 0 0 12 stretch stretch;
-}
-
 #subtitles_panel_widget_button_list {
     icon:   url(:/graphics/subtitles_panel_widget_button_list.svg),
             url(:/graphics/subtitles_panel_widget_button_list.svg) disabled;
@@ -1346,16 +1279,15 @@ QLabel[class=qlabel_for_buttons] {
     color: white;
 }
 
-#background_label {
+#main_widget {
     background: qlineargradient( x1:0 y1:0, x2:0 y2:1, stop:0 rgb(7,9,11), stop:1 rgb(26,35,43));
+    background-image: url(:/graphics/background_watermark.svg);
+    background-repeat: no-repeat;
+    background-position: center;
 }
 
 #background_label2 {
     background: qlineargradient( x1:0 y1:0, x2:0 y2:1, stop:0 rgba(26,35,43,250), stop:1 rgba(46,62,76,230));
-}
-
-#background_watermark_label {
-    image: url(:/graphics/background_watermark.svg);
 }
 
 #subtitles_panel_widget {
@@ -1457,29 +1389,6 @@ QLabel[class=qlabel_for_buttons] {
 #global_panel_content {
     border-width: 0 2px 0 0;
     border-image: url(:/graphics/global_config_video_background.svg) 0  2  0  0 stretch stretch;
-}
-
-#playercontrols_widget_central_top_background {
-    border: 0 0 0 0;
-    border-image: url(:/graphics/timeline_top_controls_background.svg)    0  0  0  0 stretch stretch;
-}
-
-#playercontrols_widget_central_bottom_background {
-    border: 0 0 0 0;
-    border-image: url(:/graphics/timeline_bottom_controls_background.svg) 0 0 0 0 stretch stretch;
-}
-
-#playercontrols_widget_central_bottom {
-    border-top: 0;
-    border-right: 12px;
-    border-bottom: 0;
-    border-left: 12px;
-    border-image: url(:/graphics/timeline_bottom_controls.svg) 0 12 0 12 stretch stretch;
-}
-
-#playercontrols_widget_bottom_right {
-    border-width: 0 25px 0 0;
-    border-image: url(:/graphics/timeline_bottom_controls.svg) 0 1 0 24 stretch stretch;
 }
 
 #player_border {
@@ -1798,7 +1707,50 @@ QLabel[class=qlabel_for_buttons] {
     color: #aab8cee0;
     background-color: rgba(62, 83, 99, 100);
 }
+
 #toppanel_subtitle_file_progress_bar::chunk {
     background-color: rgb(62, 83, 99);
     border-radius: 2px;
+}
+
+#start_screen_open_button {
+    padding: 10px 20px;
+}
+
+#playercontrols_widget_top_line {
+    background-image: url(:/graphics/timeline_top_controls_background.svg) 0 0 0 0 stretch stretch;
+}
+
+#playercontrols_widget_left_top_line {
+    border-image: url(:/graphics/playercontrols_widget_center_top_line.svg) 0 39 0 0 stretch stretch;
+    margin-right: 13px;
+}
+
+#playercontrols_widget_center_top_line {
+    border-width: 10 18 6 18;
+    border-image: url(:/graphics/playercontrols_widget_center_top_line.svg) 10 18 6 18 stretch stretch;
+}
+
+#playercontrols_widget_right_top_line {
+    border-image: url(:/graphics/playercontrols_widget_center_top_line.svg) 0 0 0 39 stretch stretch;
+    margin-left: 13px;
+}
+
+#playercontrols_widget_bottom_line {
+    background-image: url(:/graphics/timeline_bottom_controls_background.svg) 0 0 0 0 stretch stretch;
+}
+
+#playercontrols_widget_left_bottom_line {
+    border-image: url(:/graphics/playercontrols_widget_center_bottom_line.svg) 0 25 0 0 stretch stretch;
+    margin-right: 10px;
+}
+
+#playercontrols_widget_center_bottom_line {
+    border-width: 0 11 0 11;
+    border-image: url(:/graphics/playercontrols_widget_center_bottom_line.svg) 0 11 0 11 stretch stretch;
+}
+
+#playercontrols_widget_right_bottom_line {
+    border-image: url(:/graphics/playercontrols_widget_center_bottom_line.svg) 0 0 0 25 stretch stretch;
+    margin-left: 10px;
 }

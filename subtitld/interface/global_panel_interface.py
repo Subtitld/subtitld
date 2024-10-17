@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QPushButton, QWidget, QVBoxLayout, QTabWidget, QLa
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase, QColor
 
+from subtitld.modules import session
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
 
@@ -436,139 +437,139 @@ def load_widgets(self):
 
     self.global_panel_content_stacked_widgets.addWidget(self.global_panel_interface_content)
 
-    update_widgets(self)
+    # update_widgets(self)
 
 
 def global_panel_interface_videoplayer_fontfamily_combobox_changed(self):
-    self.settings['videoplayer']['font_family'] = self.global_panel_interface_videoplayer_fontfamily_combobox.currentText()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['font_family'] = self.global_panel_interface_videoplayer_fontfamily_combobox.currentText()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_fontsize_spinbox_changed(self):
-    self.settings['videoplayer']['font_size'] = self.global_panel_interface_videoplayer_fontsize_spinbox.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['font_size'] = self.global_panel_interface_videoplayer_fontsize_spinbox.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_shadow_group_toggled(self):
-    self.settings['videoplayer']['shadow_enabled'] = self.global_panel_interface_videoplayer_shadow_group.isChecked()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['shadow_enabled'] = self.global_panel_interface_videoplayer_shadow_group.isChecked()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_shadow_x_position_changed(self):
-    self.settings['videoplayer']['shadow_x'] = self.global_panel_interface_videoplayer_shadow_x_position.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['shadow_x'] = self.global_panel_interface_videoplayer_shadow_x_position.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_shadow_y_position_changed(self):
-    self.settings['videoplayer']['shadow_y'] = self.global_panel_interface_videoplayer_shadow_y_position.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['shadow_y'] = self.global_panel_interface_videoplayer_shadow_y_position.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_shadow_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        self.settings['videoplayer']['shadow_color'] = color.name(QColor.HexArgb)
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+        session.CONFIG['videoplayer']['shadow_color'] = color.name(QColor.HexArgb)
+    self.player_widget.update()
     update_widgets(self)
 
 
 def global_panel_interface_videoplayer_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        self.settings['videoplayer']['color'] = color.name(QColor.HexArgb)
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+        session.CONFIG['videoplayer']['color'] = color.name(QColor.HexArgb)
+    self.player_widget.update()
     update_widgets(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_group_toggled(self):
-    self.settings['videoplayer']['safe_margin_action_enabled'] = self.global_panel_interface_videoplayer_backgroundbox_group.isChecked()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_action_enabled'] = self.global_panel_interface_videoplayer_backgroundbox_group.isChecked()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_backgroundbox_padding_changed(self):
-    self.settings['videoplayer']['backgroundbox_padding'] = self.global_panel_interface_videoplayer_backgroundbox_padding.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['backgroundbox_padding'] = self.global_panel_interface_videoplayer_backgroundbox_padding.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_backgroundbox_border_radius_changed(self):
-    self.settings['videoplayer']['backgroundbox_border_radius'] = self.global_panel_interface_videoplayer_backgroundbox_border_radius.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['backgroundbox_border_radius'] = self.global_panel_interface_videoplayer_backgroundbox_border_radius.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_backgroundbox_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        self.settings['videoplayer']['backgroundbox_color'] = color.name(QColor.HexArgb)
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+        session.CONFIG['videoplayer']['backgroundbox_color'] = color.name(QColor.HexArgb)
+    self.player_widget.update()
     update_widgets(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_action_group_toggled(self):
-    self.settings['videoplayer']['safe_margin_action_enabled'] = self.global_panel_interface_videoplayer_safe_margin_action_group.isChecked()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_action_enabled'] = self.global_panel_interface_videoplayer_safe_margin_action_group.isChecked()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_action_x_margin_changed(self):
-    self.settings['videoplayer']['safe_margin_action_x'] = self.global_panel_interface_videoplayer_safe_margin_action_x_margin.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_action_x'] = self.global_panel_interface_videoplayer_safe_margin_action_x_margin.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_action_y_margin_changed(self):
-    self.settings['videoplayer']['safe_margin_action_y'] = self.global_panel_interface_videoplayer_safe_margin_action_y_margin.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_action_y'] = self.global_panel_interface_videoplayer_safe_margin_action_y_margin.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_action_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        self.settings['videoplayer']['safe_margin_action_color'] = color.name(QColor.HexArgb)
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+        session.CONFIG['videoplayer']['safe_margin_action_color'] = color.name(QColor.HexArgb)
+    self.player_widget.update()
     update_widgets(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_title_group_toggled(self):
-    self.settings['videoplayer']['safe_margin_title_enabled'] = self.global_panel_interface_videoplayer_safe_margin_title_group.isChecked()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_title_enabled'] = self.global_panel_interface_videoplayer_safe_margin_title_group.isChecked()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_title_x_margin_changed(self):
-    self.settings['videoplayer']['safe_margin_title_x'] = self.global_panel_interface_videoplayer_safe_margin_title_x_margin.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_title_x'] = self.global_panel_interface_videoplayer_safe_margin_title_x_margin.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_title_y_margin_changed(self):
-    self.settings['videoplayer']['safe_margin_title_y'] = self.global_panel_interface_videoplayer_safe_margin_title_y_margin.value()
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+    session.CONFIG['videoplayer']['safe_margin_title_y'] = self.global_panel_interface_videoplayer_safe_margin_title_y_margin.value()
+    self.player_widget.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_title_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        self.settings['videoplayer']['safe_margin_title_color'] = color.name(QColor.HexArgb)
-    self.player_subtitle_layer.update_style(self.settings['videoplayer'])
+        session.CONFIG['videoplayer']['safe_margin_title_color'] = color.name(QColor.HexArgb)
+    self.player_widget.update()
     update_widgets(self)
 
 
 def update_widgets(self):
-    self.global_panel_interface_videoplayer_fontsize_spinbox.setValue(self.settings['videoplayer'].get('font_size', 40))
-    self.global_panel_interface_videoplayer_fontfamily_combobox.setCurrentText(self.settings['videoplayer'].get('font_family', 'Ubuntu'))
-    self.global_panel_interface_videoplayer_color_button.setStyleSheet('QPushButton { background-color: ' + self.settings['videoplayer'].get('color', '#ffffffff') + ' }')
-    self.global_panel_interface_videoplayer_shadow_group.setChecked(self.settings['videoplayer'].get('shadow_enabled', True))
-    self.global_panel_interface_videoplayer_shadow_x_position.setValue(self.settings['videoplayer'].get('shadow_x', 2))
-    self.global_panel_interface_videoplayer_shadow_y_position.setValue(self.settings['videoplayer'].get('shadow_y', 2))
-    self.global_panel_interface_videoplayer_shadow_color_button.setStyleSheet('QPushButton { background-color: ' + self.settings['videoplayer'].get('shadow_color', '#ff000000') + ' }')
-    self.global_panel_interface_videoplayer_backgroundbox_group.setChecked(self.settings['videoplayer'].get('backgroundbox_enabled', True))
-    self.global_panel_interface_videoplayer_backgroundbox_padding.setValue(self.settings['videoplayer'].get('backgroundbox_padding', 10))
-    self.global_panel_interface_videoplayer_backgroundbox_border_radius.setValue(self.settings['videoplayer'].get('backgroundbox_border_radius', 5))
-    self.global_panel_interface_videoplayer_backgroundbox_color_button.setStyleSheet('QPushButton { background-color: ' + self.settings['videoplayer'].get('backgroundbox_color', '#55000000') + ' }')
-    self.global_panel_interface_videoplayer_safe_margin_action_group.setChecked(self.settings['videoplayer'].get('safe_margin_action_enabled', False))
-    self.global_panel_interface_videoplayer_safe_margin_action_x_margin.setValue(self.settings['videoplayer'].get('safe_margin_action_x', 5))
-    self.global_panel_interface_videoplayer_safe_margin_action_y_margin.setValue(self.settings['videoplayer'].get('safe_margin_action_y', 5))
-    self.global_panel_interface_videoplayer_safe_margin_action_color_button.setStyleSheet('QPushButton { background-color: ' + self.settings['videoplayer'].get('safe_margin_action_color', '#dd67FF4D') + ' }')
-    self.global_panel_interface_videoplayer_safe_margin_title_group.setChecked(self.settings['videoplayer'].get('safe_margin_title_enabled', False))
-    self.global_panel_interface_videoplayer_safe_margin_title_x_margin.setValue(self.settings['videoplayer'].get('safe_margin_title_x', 10))
-    self.global_panel_interface_videoplayer_safe_margin_title_y_margin.setValue(self.settings['videoplayer'].get('safe_margin_title_y', 10))
-    self.global_panel_interface_videoplayer_safe_margin_title_color_button.setStyleSheet('QPushButton { background-color: ' + self.settings['videoplayer'].get('safe_margin_title_color', '#ddff0000') + ' }')
+    self.global_panel_interface_videoplayer_fontsize_spinbox.setValue(session.CONFIG['videoplayer'].get('font_size', 40))
+    self.global_panel_interface_videoplayer_fontfamily_combobox.setCurrentText(session.CONFIG['videoplayer'].get('font_family', 'Ubuntu'))
+    self.global_panel_interface_videoplayer_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('color', '#ffffffff') + ' }')
+    self.global_panel_interface_videoplayer_shadow_group.setChecked(session.CONFIG['videoplayer'].get('shadow_enabled', True))
+    self.global_panel_interface_videoplayer_shadow_x_position.setValue(session.CONFIG['videoplayer'].get('shadow_x', 2))
+    self.global_panel_interface_videoplayer_shadow_y_position.setValue(session.CONFIG['videoplayer'].get('shadow_y', 2))
+    self.global_panel_interface_videoplayer_shadow_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('shadow_color', '#ff000000') + ' }')
+    self.global_panel_interface_videoplayer_backgroundbox_group.setChecked(session.CONFIG['videoplayer'].get('backgroundbox_enabled', True))
+    self.global_panel_interface_videoplayer_backgroundbox_padding.setValue(session.CONFIG['videoplayer'].get('backgroundbox_padding', 10))
+    self.global_panel_interface_videoplayer_backgroundbox_border_radius.setValue(session.CONFIG['videoplayer'].get('backgroundbox_border_radius', 5))
+    self.global_panel_interface_videoplayer_backgroundbox_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('backgroundbox_color', '#55000000') + ' }')
+    self.global_panel_interface_videoplayer_safe_margin_action_group.setChecked(session.CONFIG['videoplayer'].get('safe_margin_action_enabled', False))
+    self.global_panel_interface_videoplayer_safe_margin_action_x_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_x', 5))
+    self.global_panel_interface_videoplayer_safe_margin_action_y_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_y', 5))
+    self.global_panel_interface_videoplayer_safe_margin_action_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('safe_margin_action_color', '#dd67FF4D') + ' }')
+    self.global_panel_interface_videoplayer_safe_margin_title_group.setChecked(session.CONFIG['videoplayer'].get('safe_margin_title_enabled', False))
+    self.global_panel_interface_videoplayer_safe_margin_title_x_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_title_x', 10))
+    self.global_panel_interface_videoplayer_safe_margin_title_y_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_title_y', 10))
+    self.global_panel_interface_videoplayer_safe_margin_title_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('safe_margin_title_color', '#ddff0000') + ' }')
 
 
 def translate_widgets(self):

@@ -12,7 +12,7 @@ except ImportError:
 
 from PySide6.QtCore import QThread, Signal
 
-from subtitld.modules.globals import VERSION_NUMBER, PATH_SUBTITLD_DATA_UPDATE
+from subtitld.modules.session import VERSION_NUMBER, PATH_SUBTITLD_DATA_UPDATE
 
 
 

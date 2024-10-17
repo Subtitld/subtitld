@@ -11,12 +11,12 @@ import numpy
 import ffms2
 import asyncio
 
-from subtitld.modules.globals import STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp, FFPROBE_EXECUTABLE
+from subtitld.modules.session import STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp, FFPROBE_EXECUTABLE
 
 
 def return_audio_numpy(self, audionp):
     """Function to return waveform's numpy"""
-    self.video_metadata['waveform'][0] = audionp
+    session.VIDEO['waveform'][0] = audionp
 
 
 def ffmpeg_load_audio(filepath, samplerate=48000, mono=True, normalize=True, in_type=numpy.int16, out_type=numpy.float32):
@@ -215,7 +215,7 @@ def generate_waveform_zoom2(zoom, duration, filepath):
 
 def return_waveform_zoom(self, qpixmap):
     """Function to return waveform's zoom"""
-    self.video_metadata['waveform'][qpixmap[0]] = qpixmap[1]
+    session.VIDEO['waveform'][qpixmap[0]] = qpixmap[1]
 
 
 class ThreadExtractWaveform2(QThread):

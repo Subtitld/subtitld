@@ -242,6 +242,12 @@ LANGUAGE_DICT_LIST = {
     'Zulu (South Africa)': 'zu-za'
 }
 
-SESSION = {
+SUBTITLE = {
     'segments': []
 }
+
+VIDEO = {}
+
+CONFIG = {}
+
+REPEAT_DURATION_BUFFER = []

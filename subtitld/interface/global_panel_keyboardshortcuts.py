@@ -6,7 +6,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeySequence
 from subtitld.modules import shortcuts
 
-from subtitld.modules.shortcuts import shortcuts_dict, default_shortcuts_dict
+from subtitld.modules import session, shortcuts
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
 
@@ -158,16 +158,16 @@ def load_widgets(self):
 def global_panel_tabwidget_shortkeys_table_update(self):
     """Function to update subtitlesvideo panel shorkeys table"""
     self.global_panel_tabwidget_shortkeys_table.clear()
-    self.global_panel_tabwidget_shortkeys_table.setRowCount(len(shortcuts_dict))
+    self.global_panel_tabwidget_shortkeys_table.setRowCount(len(shortcuts.shortcuts_dict))
     self.global_panel_tabwidget_shortkeys_table.setHorizontalHeaderLabels([_('global_panel_keyboardshortcuts.command'), 'internal_command', _('global_panel_keyboardshortcuts.shortkeys')])
 
     i = 0
-    for item in shortcuts_dict:
-        item_name = QTableWidgetItem(shortcuts_dict[item])
+    for item in shortcuts.shortcuts_dict:
+        item_name = QTableWidgetItem(shortcuts.shortcuts_dict[item])
         self.global_panel_tabwidget_shortkeys_table.setItem(i, 0, item_name)
         item_name = QTableWidgetItem(item)
         self.global_panel_tabwidget_shortkeys_table.setItem(i, 1, item_name)
-        item_name = QTableWidgetItem(self.settings['shortcuts'].get(item, default_shortcuts_dict.get(item, ['']))[0])
+        item_name = QTableWidgetItem(session.CONFIG['shortcuts'].get(item, shortcuts.default_shortcuts_dict.get(item, ['']))[0])
         self.global_panel_tabwidget_shortkeys_table.setItem(i, 2, item_name)
         i += 1
     update_global_panel_tabwidget_shortkeys_details(self)
@@ -203,7 +203,7 @@ def global_panel_keyboardshortcut_change_button_clicked(self):
 
 def global_panel_keyboardshortcut_confirm_button_clicked(self):
     command = self.global_panel_tabwidget_shortkeys_table.item(self.global_panel_tabwidget_shortkeys_table.currentRow(), 1).text()
-    self.settings['shortcuts'][command] = [self.global_panel_keyboardshortcut_qlineedit.command]
+    session.CONFIG['shortcuts'][command] = [self.global_panel_keyboardshortcut_qlineedit.command]
 
     global_panel_keyboardshortcut_cancel_button_clicked(self)
 
@@ -217,7 +217,7 @@ def global_panel_keyboardshortcut_confirm_button_clicked(self):
 
 def global_panel_keyboardshortcut_clear_button_clicked(self):
     command = self.global_panel_tabwidget_shortkeys_table.item(self.global_panel_tabwidget_shortkeys_table.currentRow(), 1).text()
-    self.settings['shortcuts'][command] = ['']
+    session.CONFIG['shortcuts'][command] = ['']
 
     global_panel_keyboardshortcut_cancel_button_clicked(self)
 

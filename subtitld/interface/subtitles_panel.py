@@ -6,115 +6,32 @@
 import os
 import datetime
 
-from PySide6.QtWidgets import QHBoxLayout, QLayout, QPushButton, QLabel, QMessageBox, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit, QProgressBar, QFileDialog, QApplication
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QSize
-from PySide6.QtGui import QTextCursor, QMouseEvent
+from PySide6.QtWidgets import QHBoxLayout, QLayout, QPushButton, QLabel, QMessageBox, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit, QProgressBar, QFileDialog, QSplitter
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QSize, QRect
+from PySide6.QtGui import QTextCursor
 
-from subtitld.interface import subtitles_panel_widget_markdown, subtitles_panel_widget_qlistwidget, subtitles_panel_widget_timeline, timeline
+from subtitld.interface import subtitles_panel_widget_markdown, subtitles_panel_widget_qlistwidget, subtitles_panel_widget_timeline, timeline, subtitles_panel_info
 from subtitld.interface.translation import _
-from subtitld.modules import file_io
-from subtitld.modules import subtitles
-from subtitld.modules import globals
-from subtitld.modules.globals import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
-from subtitld.modules.utils import get_subtitle_format, get_format_from_extension
+from subtitld.modules import file_io, subtitles, session, utils
 
 
 def load(self):
     """Function to load subtitles list widgets"""
-    self.subtitles_panel_widget = QLabel(parent=self)
+    self.subtitles_panel_widget = QLabel()
     self.subtitles_panel_widget.setObjectName('subtitles_panel_widget')
-    self.subtitles_panel_widget_animation = QPropertyAnimation(self.subtitles_panel_widget, b'geometry')
-    self.subtitles_panel_widget_animation.setEasingCurve(QEasingCurve.OutCirc)
+    self.subtitles_panel_widget_animation = QPropertyAnimation(self.subtitles_panel_widget, b'maximumWidth')
+    self.subtitles_panel_widget_animation.setEasingCurve(QEasingCurve.OutQuint)
+    self.subtitles_panel_widget_animation.finished.connect(lambda: self.subtitles_panel_widget.setMaximumWidth(self.window().width()))
     self.subtitles_panel_widget.setAttribute(Qt.WA_LayoutOnEntireRect)
     self.subtitles_panel_widget.setLayout(QHBoxLayout())
-    self.subtitles_panel_widget.layout().setContentsMargins(0, 0, 2, 210)
+    self.subtitles_panel_widget.layout().setContentsMargins(0, 0, 2, 20)
     self.subtitles_panel_widget.layout().setSpacing(0)
 
     self.subtitles_panel_widget_vbox = QVBoxLayout()
     self.subtitles_panel_widget_vbox.setContentsMargins(0, 20, 0, 0)
     self.subtitles_panel_widget_vbox.setSpacing(20)
 
-    self.subtitles_panel_widget_top_bar = QHBoxLayout()
-    self.subtitles_panel_widget_top_bar.setSpacing(8)
-    self.subtitles_panel_widget_top_bar.setContentsMargins(0, 0, 0, 0)
-
-    self.toppanel_format_label = QLabel()
-    self.toppanel_format_label.setObjectName('toppanel_format_label')
-    self.toppanel_format_label.setProperty('class', 'unsaved')
-    self.toppanel_format_label.setLayout(QHBoxLayout())
-    # self.toppanel_format_label.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
-    # self.toppanel_format_label.setMinimumHeight(40)
-    self.toppanel_format_label.layout().setSpacing(8)
-    self.toppanel_format_label.layout().setContentsMargins(20, 5, 5, 5)
-    self.toppanel_format_label.layout().setSizeConstraint(QLayout.SetMinAndMaxSize)
-
-    self.toppanel_format_label_text = QLabel()
-    self.toppanel_format_label_text.setObjectName('toppanel_format_label_text')
-    self.toppanel_format_label_text.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.toppanel_format_label.layout().addWidget(self.toppanel_format_label_text, 0)
-
-    class toppanel_save_button(QPushButton):
-        def __init__(widget, parent=None):
-            super().__init__(parent)
-            widget.key_modifiers = []
-
-        def keyPressEvent(widget, event):
-            widget.key_modifiers = event.modifiers()
-            event.accept()
-
-        def keyReleaseEvent(widget, event):
-            widget.key_modifiers = []
-            event.accept()
-
-        # def mouseReleaseEvent(widget, event):
-        #     toppanel_save_button_clicked(self)
-        #     event.accept()
-
-    self.toppanel_save_button = toppanel_save_button()
-    self.toppanel_save_button.setObjectName('toppanel_save_button')
-    self.toppanel_save_button.clicked.connect(lambda: toppanel_save_button_clicked(self))
-    self.toppanel_save_button.setProperty('class', 'subbutton2_dark')
-    # self.toppanel_save_button.setFixedSize(QSize(48, 48))
-    self.toppanel_save_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.toppanel_format_label.layout().addWidget(self.toppanel_save_button, 0)
-
-    self.subtitles_panel_widget_top_bar.addWidget(self.toppanel_format_label, 0)
-
-    class toppanel_subtitle_file_info_label(QLabel):
-        def enterEvent(widget, event):
-            self.toppanel_open_button.setVisible(True)
-            event.accept()
-
-        def leaveEvent(widget, event):
-            self.toppanel_open_button.setVisible(False)
-            event.accept()
-
-    self.toppanel_subtitle_file_info_label = toppanel_subtitle_file_info_label()
-    self.toppanel_subtitle_file_info_label.setLayout(QHBoxLayout(self.toppanel_subtitle_file_info_label))
-    self.toppanel_subtitle_file_info_label.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
-    self.toppanel_subtitle_file_info_label.layout().setContentsMargins(0, 0, 0, 0)
-    self.toppanel_subtitle_file_info_label.setObjectName('toppanel_subtitle_file_info_label')
-
-    self.toppanel_open_button = QPushButton()
-    self.toppanel_open_button.setObjectName('toppanel_open_button')
-    self.toppanel_open_button.setProperty('class', 'subbutton2_dark')
-    self.toppanel_open_button.clicked.connect(lambda: toppanel_open_button_clicked(self))
-    # self.toppanel_open_button.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
-    # self.toppanel_open_button.setProperty('class', 'button')
-    self.toppanel_open_button.setVisible(False)
-    self.toppanel_subtitle_file_info_label.layout().addWidget(self.toppanel_open_button, 0, Qt.AlignRight)
-
-    self.subtitles_panel_widget_top_bar.addWidget(self.toppanel_subtitle_file_info_label, 1)
-
-    self.toppanel_subtitle_file_progress_bar = QProgressBar()
-    self.toppanel_subtitle_file_progress_bar.setObjectName('toppanel_subtitle_file_progress_bar')
-    self.toppanel_subtitle_file_progress_bar.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
-    self.toppanel_subtitle_file_progress_bar.setValue(40)
-    self.toppanel_subtitle_file_progress_bar.setAlignment(Qt.AlignCenter)
-    self.toppanel_subtitle_file_progress_bar.setVisible(False)
-    self.subtitles_panel_widget_top_bar.addWidget(self.toppanel_subtitle_file_progress_bar, 1)
-
-    self.subtitles_panel_widget_vbox.layout().addLayout(self.subtitles_panel_widget_top_bar)
+    subtitles_panel_info.load(self)
 
     self.subtitles_panel_stackedwidgets = QStackedWidget()
 
@@ -275,13 +192,13 @@ def load(self):
 
 def resized(self):
     """Function to call when resizing subtitles list"""
-    x = int(-((self.width() * self.subtitles_panel_width_proportion) - 15))
-    if (globals.SESSION['segments'] or self.video_metadata) and not self.subtitles_panel_toggle_button.isChecked():
+    x = int(-((self.width() * session.CONFIG['subtitles_panel_width_proportion']) - 15))
+    if (session.SUBTITLE['segments'] or session.VIDEO) and not self.subtitles_panel_toggle_button.isChecked():
         x = 0
-    self.subtitles_panel_widget.setGeometry(x, 0, int((self.width() * self.subtitles_panel_width_proportion) - 15), int(self.height()))
+    self.subtitles_panel_widget.setGeometry(x, 0, int((self.width() * session.CONFIG['subtitles_panel_width_proportion']) - 15), int(self.height()))
 
     # x = self.subtitles_panel_widget.x() + self.subtitles_panel_widget.width()
-    # if (globals.SESSION['segments'] or self.video_metadata) and self.subtitles_panel_toggle_button.isChecked():
+    # if (session.SUBTITLE['segments'] or session.VIDEO) and self.subtitles_panel_toggle_button.isChecked():
     #     x = self.global_panel_widget.x() + self.global_panel_widget.width() - self.subtitles_panel_toggle_button.width()
     # x -= self.subtitles_panel_toggle_button.width()
 
@@ -289,16 +206,8 @@ def resized(self):
     subtitles_panel_widget_timeline.timeline_resized(self)
 
 
-def update_topbar_status(self):
-    # self.toppanel_format_label.setObjectName('toppanel_format_label')
-    self.toppanel_format_label.setProperty('class', 'unsaved' if self.unsaved else 'saved')
-    self.toppanel_format_label.setStyleSheet(self.toppanel_format_label.styleSheet())
-
 def update_subtitles_panel_widget_vision_content(self):
-    if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_simplelist_widget:
-        subtitles_panel_widget_qlistwidget.update_subtitles_panel_qlistwidget(self)
-
-    elif self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_markdown_widget:
+    if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_markdown_widget:
         if not self.subtitles_panel_markdown_qtextedit.hasFocus():
             subtitles_panel_widget_markdown.update_subtitles_panel_markdown(self)
 
@@ -306,117 +215,29 @@ def update_subtitles_panel_widget_vision_content(self):
         subtitles_panel_widget_timeline.update_subtitles_panel_timeline(self)
 
 
-def update_subtitles_panel_format_label(self):
-    self.toppanel_format_label_text.setText(get_subtitle_format(globals.SESSION['subtitle_filepath']) or self.settings['default_values'].get('subtitle_format', 'USF'))
-
 
 def show(self):
+    self.generate_effect(self.subtitles_panel_widget_animation, 'maximumWidth', 2000, 0, int(session.CONFIG.get('subtitles_list_panel_width', .4) * self.window().width()))
+    self.subtitles_panel_simplelist_qsplitter.setSizes([
+        int(self.subtitles_panel_simplelist_qsplitter.height() * session.CONFIG.get('subtitles_list_textedit_height', .7)),
+        int(self.subtitles_panel_simplelist_qsplitter.height() * session.CONFIG.get('subtitles_list_textedit_height', .3))
+    ])
     """Function to show subtitle list panel"""
-    self.generate_effect(
-        self.subtitles_panel_widget_animation,
-        'geometry',
-        700,
-        [int(self.subtitles_panel_widget.x()), int(self.subtitles_panel_widget.y()), int(self.subtitles_panel_widget.width()), int(self.subtitles_panel_widget.height())],
-        [0, int(self.subtitles_panel_widget.y()), int(self.subtitles_panel_widget.width()), int(self.subtitles_panel_widget.height())]
-    )
-    self.global_panel.hide_global_panel(self)
-    update_toppanel_subtitle_file_info_label(self)
-    update_subtitles_panel_widget_vision_content(self)
+    # self.generate_effect(
+    #     self.subtitles_panel_widget_animation,
+    #     'geometry',
+    #     700,
+    #     [int(self.subtitles_panel_widget.x()), int(self.subtitles_panel_widget.y()), int(self.subtitles_panel_widget.width()), int(self.subtitles_panel_widget.height())],
+    #     [0, int(self.subtitles_panel_widget.y()), int(self.subtitles_panel_widget.width()), int(self.subtitles_panel_widget.height())]
+    # )
+    # self.global_panel.hide_global_panel(self)
+    # update_subtitles_panel_widget_vision_content(self)
 
 
 def hide(self):
     """Function to hide subtitle list panel"""
-    self.generate_effect(self.subtitles_panel_widget_animation, 'geometry', 700, [self.subtitles_panel_widget.x(), self.subtitles_panel_widget.y(), self.subtitles_panel_widget.width(), self.subtitles_panel_widget.height()], [-self.subtitles_panel_widget.width(), self.subtitles_panel_widget.y(), self.subtitles_panel_widget.width(), self.subtitles_panel_widget.height()])
-
-
-def toppanel_save_button_clicked(self):
-    """Function to call when save button on subtitles list panel is clicked"""
-
-    actual_subtitle_file = False
-    subtitle_format = get_subtitle_format(globals.SESSION['subtitle_filepath'])
-    if subtitle_format:
-        actual_subtitle_file = globals.SESSION['subtitle_filepath']
-    else:
-        subtitle_format = self.settings['default_values'].get('subtitle_format', 'USF')
-
-    if not actual_subtitle_file:
-        suggested_path = os.path.dirname(self.video_metadata['filepath'])
-        suggested_filename = os.path.basename(self.video_metadata['filepath']).rsplit('.', 1)[0] + '.' + LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[subtitle_format]['extensions'][0]
-
-        globals.SESSION['subtitle_filepath'] = os.path.join(suggested_path, suggested_filename)
-
-    if self.toppanel_save_button.key_modifiers:
-        if Qt.ShiftModifier in self.toppanel_save_button.key_modifiers:
-            filedialog_title = 'Save subtitle as'
-        if Qt.AltModifier in self.toppanel_save_button.key_modifiers:
-            filedialog_title = 'Save a copy of the subtitle as'
-        if Qt.ControlModifier in self.toppanel_save_button.key_modifiers:
-            filedialog_title = 'Export as'
-
-        supported_subtitle_files = ''
-        for exttype in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-            supported_subtitle_files += LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['description'] + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']])) + ';;'
-
-        filedialog = QFileDialog.getSaveFileName(parent=self, caption=filedialog_title, dir=os.path.dirname(globals.SESSION['subtitle_filepath']), filter=supported_subtitle_files)
-
-        if filedialog[0] and filedialog[1]:
-            filepath = filedialog[0]
-            selected_extensions = filedialog[1].split('(', 1)[-1].split(')', 1)[0].replace('*.', '').split(' ')
-            if not filepath.rsplit('.', 1)[-1].lower() in selected_extensions:
-                selected_extension = selected_extensions[0]
-                filepath += f'.{selected_extension}'
-            else:
-                selected_extension = filepath.rsplit('.', 1)[-1].lower()
-            selected_format = get_format_from_extension(selected_extension)
-
-            if Qt.ShiftModifier in self.toppanel_save_button.key_modifiers:
-                globals.SESSION['subtitle_filepath'] = filepath
-                self.settings['recent_files'][globals.SESSION['subtitle_filepath']] = {
-                    'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
-                    'video_filepath': self.video_metadata['filepath']
-                }
-                file_io.save_file(globals.SESSION['subtitle_filepath'], selected_format, self.selected_language)
-                if self.settings['default_values'].get('save_automatic_copy', False) and not subtitle_format == self.settings['default_values'].get('subtitle_format', 'USF'):
-                    file_io.save_file(globals.SESSION['subtitle_filepath'].rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
-                update_subtitles_panel_format_label(self)
-                update_toppanel_subtitle_file_info_label(self)
-                self.unsaved = False
-
-            if Qt.AltModifier in self.toppanel_save_button.key_modifiers:
-                file_io.save_file(filepath, selected_format, self.selected_language)
-
-            if Qt.ControlModifier in self.toppanel_save_button.key_modifiers:
-                file_io.save_file(filepath, selected_format, self.selected_language)
-
-    elif globals.SESSION['subtitle_filepath']:
-        file_io.save_file(globals.SESSION['subtitle_filepath'], subtitle_format, self.selected_language)
-        if self.settings['default_values'].get('save_automatic_copy', False) and not subtitle_format == self.settings['default_values'].get('subtitle_format', 'USF'):
-            file_io.save_file(globals.SESSION['subtitle_filepath'].rsplit('.', 1)[0] + '.{}'.format(LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[self.settings['default_values'].get('subtitle_format', 'USF')]['extensions'][0]), self.settings['default_values'].get('subtitle_format', 'USF'), self.selected_language)
-        update_subtitles_panel_format_label(self)
-        update_toppanel_subtitle_file_info_label(self)
-        self.unsaved = False
-
-    update_topbar_status(self)
-
-
-def toppanel_open_button_clicked(self):
-    """Function to call when open button on subtitles list panel is clicked"""
-    if self.unsaved:
-        save_message_box = QMessageBox(self)
-
-        save_message_box.setWindowTitle('Unsaved changes')
-        save_message_box.setText('Do you want to save the changes you made on the subtitles?')
-
-        save_message_box.addButton('Save', QMessageBox.AcceptRole)
-        save_message_box.addButton("Don't save", QMessageBox.RejectRole)
-        ret = save_message_box.exec_()
-
-        if ret == QMessageBox.AcceptRole:
-            toppanel_save_button_clicked(self)
-
-    file_io.open_filepath(self)
-    update_topbar_status(self)
-
+    None
+    # self.generate_effect(self.subtitles_panel_widget_animation, 'geometry', 700, [self.subtitles_panel_widget.x(), self.subtitles_panel_widget.y(), self.subtitles_panel_widget.width(), self.subtitles_panel_widget.height()], [-self.subtitles_panel_widget.width(), self.subtitles_panel_widget.y(), self.subtitles_panel_widget.width(), self.subtitles_panel_widget.height()])
 
 def subtitles_panel_findandreplace_toggle_button_clicked(self):
     self.subtitles_panel_findandreplace_panel.setVisible(True)
@@ -448,16 +269,16 @@ def subtitles_panel_findandreplace_replaceandfindnext_button_clicked(self):
 
 
 def subtitles_panel_findandreplace_replace_button_clicked(self):
-    if self.selected_subtitle:
-        subtitles.change_subtitle_text(selected_subtitle=self.selected_subtitle, text=self.selected_subtitle['text'][:self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1]] + self.subtitles_panel_findandreplace_replace_field.text() + self.selected_subtitle['text'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2]:])
-        self.unsaved = True
-        update_topbar_status(self)
+    if session.SUBTITLE['selected']:
+        subtitles.change_subtitle_text(selected_subtitle=session.SUBTITLE['selected'], text=session.SUBTITLE['selected']['text'][:self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1]] + self.subtitles_panel_findandreplace_replace_field.text() + session.SUBTITLE['selected']['text'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2]:])
+        session.CONFIG['unsaved'] = True
+        subtitles_panel_info.update(self)
 
     ind = self.subtitles_panel_findandreplace_index
     subtitles_panel_findandreplace_find_field_textchanged(self)
     self.subtitles_panel_findandreplace_index = ind
 
-    if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_simplelist_widget:
+    if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_simplelist_qsplitter:
         subtitles_panel_widget_qlistwidget.update_properties_widget(self)
     elif self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_markdown_widget:
         subtitles_panel_widget_markdown.update_subtitles_panel_markdown(self)
@@ -480,11 +301,11 @@ def subtitles_panel_findandreplace_perform_search(self):
     self.subtitles_panel_findandreplace_index = 0
 
     text_to_search = self.subtitles_panel_findandreplace_find_field.text() if self.subtitles_panel_findandreplace_casesensitive.isChecked() else self.subtitles_panel_findandreplace_find_field.text().lower()
-    for subtitle in globals.SESSION['segments']:
+    for subtitle in session.SUBTITLE['segments']:
         if text_to_search in (subtitle['text'] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle['text'].lower()):
             s = 0
             for _ in range((subtitle['text'] if self.subtitles_panel_findandreplace_casesensitive.isChecked() else subtitle['text'].lower()).count(text_to_search)):
-                self.subtitles_panel_findandreplace_list.append([globals.SESSION['segments'].index(subtitle), subtitle['text'].find(text_to_search, s), len(text_to_search)])
+                self.subtitles_panel_findandreplace_list.append([session.SUBTITLE['segments'].index(subtitle), subtitle['text'].find(text_to_search, s), len(text_to_search)])
                 s += subtitle['text'].find(text_to_search, s) + len(text_to_search)
 
 
@@ -504,14 +325,14 @@ def subtitles_panel_findandreplace_findnext_field_clicked(self):
 
 def subtitles_panel_findandreplace_update(self):
     if self.subtitles_panel_findandreplace_list:
-        self.selected_subtitle = globals.SESSION['segments'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][0]]
+        session.SUBTITLE['selected'] = session.SUBTITLE['segments'][self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][0]]
 
-        if not self.selected_subtitle['start'] < self.player_widget.position < self.selected_subtitle['end']:
-            self.player_widget.seek(self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5))
+        if not session.SUBTITLE['selected']['start'] < session.SUBTITLE.get('position', 0) < session.SUBTITLE['selected']['end']:
+            self.player_widget.seek(session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) * .5))
             timeline.update_scrollbar(self, position='middle')
 
         update_subtitles_panel_widget_vision_content(self)
-        if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_simplelist_widget:
+        if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_simplelist_qsplitter:
             c = self.properties_textedit.textCursor()
             c.setPosition(self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1])
             c.setPosition(self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][1] + self.subtitles_panel_findandreplace_list[self.subtitles_panel_findandreplace_index][2], QTextCursor.KeepAnchor)
@@ -528,17 +349,9 @@ def subtitles_panel_findandreplace_update(self):
             subtitles_panel_widget_timeline.update_scrollbar(self, position='middle')
 
 
-def update_toppanel_subtitle_file_info_label(self):
-    """Function to update top information on subtitles list panel"""
-    text = 'Actual video does not have saved subtitle file.'
-    if globals.SESSION['subtitle_filepath']:
-        text = '<b><small>' + 'Actual project:'.upper() + '</small></b><br><big>' + os.path.basename(globals.SESSION['subtitle_filepath']) + '</big>'
-    self.toppanel_subtitle_file_info_label.setText(text)
-
-
 def update_subtitles_panel_widget_vision(self, vision='list'):
     if vision == 'list':
-        self.subtitles_panel_stackedwidgets.setCurrentWidget(self.subtitles_panel_simplelist_widget)
+        self.subtitles_panel_stackedwidgets.setCurrentWidget(self.subtitles_panel_simplelist_qsplitter)
         self.subtitles_panel_widget_button_list.setEnabled(False)
     else:
         self.subtitles_panel_widget_button_list.setEnabled(True)

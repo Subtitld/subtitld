@@ -1,41 +1,37 @@
-from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QSizePolicy, QTextEdit, QVBoxLayout, QWidget, QStyledItemDelegate, QStyle, QListView, QLineEdit, QFrame, QComboBox
+from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QSizePolicy, QTextEdit, QVBoxLayout, QWidget, QStyledItemDelegate, QStyle, QListView, QLineEdit, QFrame, QComboBox, QSplitter
 from PySide6.QtGui import QFontMetrics, QFont, QColor
 from PySide6.QtCore import Qt, QSize, QAbstractListModel, QRect, QMargins
 
-from subtitld.interface import subtitles_panel
+from subtitld.interface import subtitles_panel, subtitles_panel_info, timeline
 from subtitld.interface.translation import _
-from subtitld.modules import utils
-from subtitld.modules import quality_check
-from subtitld.modules import subtitles
-from subtitld.modules import globals
+from subtitld.modules import utils, quality_check, subtitles, session
 
 
 class subtitles_panel_qlistwidget_model(QAbstractListModel):
     def __init__(self, *args, subs=None, **kwargs):
         super(subtitles_panel_qlistwidget_model, self).__init__(*args, **kwargs)
-        self.subtitles = subs or []
+        # self.subtitles = subs or []
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
-            return self.subtitles[index.row()]['text']
+            return session.SUBTITLE['segments'][index.row()]['text']
 
         # if role == Qt.DecorationRole:
-        #     status, _ = self.subtitles[index.row()]
+        #     status, _ = session.SUBTITLE['segments'][index.row()]
         #     if status:
         #         return tick
 
     def get_index(self, subtitle):
-        index = self.subtitles.index(subtitle)
+        index = session.SUBTITLE['segments'].index(subtitle)
         return self.index(index)
 
     def rowCount(self, _):
-        return len(self.subtitles)
+        return len(session.SUBTITLE['segments'])
 
 
 class subtitles_panel_qlistwidget_delegate(QStyledItemDelegate):
-    def __init__(self, parent=None, settings=None):
+    def __init__(self, parent=None):
         super(subtitles_panel_qlistwidget_delegate, self).__init__(parent)
-        self.settings = settings or {}
 
     def get_number_width(self, index):
         number_width = QFontMetrics(QFont('Ubuntu', 8)).horizontalAdvance((len(str(index.model().rowCount(index)))) * '8')
@@ -53,24 +49,24 @@ class subtitles_panel_qlistwidget_delegate(QStyledItemDelegate):
 
         if option.state & QStyle.State_Selected:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(self.settings.get('subtitle_list', {}).get('background_color', '#102e3e4c')))
+            painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('background_color', '#102e3e4c')))
             painter.drawRect(option.rect)
             # painter.setBrush(QColor('#55d43f'))
             # painter.drawRect(QRect(0, option.rect.y(), 20, option.rect.height()))
 
         sub_is_ok = True
-        if self.settings['quality_check'].get('enabled', False):
-            sub_is_ok, _, _ = quality_check.check_subtitle(index.model().subtitles[index.row()], self.settings['quality_check'])
+        if session.CONFIG['quality_check'].get('enabled', False):
+            sub_is_ok, _, _ = quality_check.check_subtitle(index.model().subtitles[index.row()], session.CONFIG['quality_check'])
 
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(self.settings.get('subtitle_list', {}).get('number_background_color', '#aa2e3e4c') if sub_is_ok else self.settings.get('subtitle_list', {}).get('number_background_warning_color', '#aa9e1a1a')))
+        painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('number_background_color', '#aa2e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_background_warning_color', '#aa9e1a1a')))
 
         number_rect = QRect(20, option.rect.y(), 10 + number_width + 10, option.rect.height())
         text_rect = QRect(number_rect.right(), option.rect.y(), option.rect.width() - number_rect.right(), option.rect.height())
 
         painter.drawRect(number_rect)
 
-        painter.setPen(QColor(self.settings.get('subtitle_list', {}).get('number_color', '#ffffff') if sub_is_ok else self.settings.get('subtitle_list', {}).get('number_warning_color', '#ffffff')))
+        painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('number_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_warning_color', '#ffffff')))
 
         number_rect = number_rect.marginsRemoved(QMargins(10, 10, 10, 10))
 
@@ -78,13 +74,13 @@ class subtitles_panel_qlistwidget_delegate(QStyledItemDelegate):
         painter.drawText(number_rect, 0, str(index.row() + 1))
 
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(self.settings.get('subtitle_list', {}).get('text_background_color', '#102e3e4c') if sub_is_ok else self.settings.get('subtitle_list', {}).get('text_background_warning_color', '#109e1a1a')))
+        painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('text_background_color', '#102e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_background_warning_color', '#109e1a1a')))
 
         painter.drawRect(text_rect)
 
         text_rect = text_rect.marginsRemoved(QMargins(10, 10, 10, 10))
 
-        painter.setPen(QColor(self.settings.get('subtitle_list', {}).get('text_color', '#2e3e4c') if sub_is_ok else self.settings.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
+        painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#2e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
         painter.setFont(QFont('Ubuntu', 11))
         painter.drawText(text_rect, Qt.TextWordWrap, row_text)
 
@@ -95,16 +91,45 @@ class subtitles_panel_qlistwidget_delegate(QStyledItemDelegate):
 
 
 def add_widgets(self):
+    self.subtitles_panel_simplelist_qsplitter = QSplitter(Qt.Vertical)
+
     self.subtitles_panel_simplelist_widget = QWidget()
-    self.subtitles_panel_simplelist_widget_vbox = QVBoxLayout(self.subtitles_panel_simplelist_widget)
-    self.subtitles_panel_simplelist_widget_vbox.setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_widget_vbox.setSpacing(10)
+    self.subtitles_panel_simplelist_widget.setObjectName('subtitles_panel_simplelist_widget')
+    self.subtitles_panel_simplelist_widget.setLayout(QVBoxLayout())
+    self.subtitles_panel_simplelist_widget.layout().setContentsMargins(0, 0, 0, 0)
+    self.subtitles_panel_simplelist_widget.layout().setSpacing(0)
 
     self.subtitles_panel_qlistwidget_model = subtitles_panel_qlistwidget_model()
 
-    self.subtitles_panel_qlistwidget_delegate = subtitles_panel_qlistwidget_delegate(settings=self.settings)
+    self.subtitles_panel_qlistwidget_delegate = subtitles_panel_qlistwidget_delegate()
 
-    self.subtitles_panel_qlistwidget = QListView()
+    class subtitles_panel_qlistwidget(QListView):
+        def __init__(widget, parent=None):
+            super(subtitles_panel_qlistwidget, widget).__init__(parent)
+        
+        def resizeEvent(widget, event):
+            widget.model().layoutChanged.emit()
+            event.accept()
+        
+        def showEvent(widget, event):
+            widget.update_content()
+            event.accept()
+        
+        def update_content(widget):
+            current_sub = subtitles.subtitle_under_current_position()
+            index = session.SUBTITLE['segments'].index(current_sub) if current_sub else 0
+            if current_sub and not (widget.verticalScrollBar().value() + widget.verticalScrollBar().pageStep() > index > widget.verticalScrollBar().value()):
+                widget.verticalScrollBar().setValue(index - 1)
+
+            widget.model().layoutChanged.emit()
+
+            if session.SUBTITLE['selected']:
+                widget.setCurrentIndex(widget.model().get_index(session.SUBTITLE['selected']))
+
+            update_properties_widget(widget.window())
+
+
+    self.subtitles_panel_qlistwidget = subtitles_panel_qlistwidget()
     self.subtitles_panel_qlistwidget.setViewMode(QListView.ListMode)
     self.subtitles_panel_qlistwidget.setObjectName('subtitles_panel_qlistwidget')
     self.subtitles_panel_qlistwidget.setContentsMargins(QMargins(0, 0, 0, 0))
@@ -115,7 +140,7 @@ def add_widgets(self):
     self.subtitles_panel_qlistwidget.setItemDelegate(self.subtitles_panel_qlistwidget_delegate)
     # self.subtitles_panel_qlistwidget.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
     self.subtitles_panel_qlistwidget.clicked.connect(lambda: subtitles_panel_qlistwidget_item_clicked(self))
-    self.subtitles_panel_simplelist_widget_vbox.addWidget(self.subtitles_panel_qlistwidget, 1)
+    self.subtitles_panel_simplelist_widget.layout().addWidget(self.subtitles_panel_qlistwidget, 1)
 
     self.properties_information = QFrame()
     self.properties_information.setObjectName('properties_information')
@@ -178,7 +203,9 @@ def add_widgets(self):
 
     # self.properties_information.layout().addStretch()
 
-    self.subtitles_panel_simplelist_widget_vbox.addWidget(self.properties_information)
+    self.subtitles_panel_simplelist_widget.layout().addWidget(self.properties_information)
+
+    self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_widget)
 
     self.subtitles_panel_simplelist_properties = QFrame()
     self.subtitles_panel_simplelist_properties.setLayout(QVBoxLayout())
@@ -191,7 +218,6 @@ def add_widgets(self):
 
     self.properties_textedit = QTextEdit()
     self.properties_textedit.setObjectName('properties_textedit')
-    self.properties_textedit.setFixedHeight(120)
     self.properties_textedit.textChanged.connect(lambda: properties_textedit_changed(self))
     self.subtitles_panel_simplelist_properties_textedit_line.addWidget(self.properties_textedit)
 
@@ -277,7 +303,7 @@ def add_widgets(self):
 
     self.subtitles_panel_simplelist_properties_textedit_line.addLayout(self.subtitles_panel_simplelist_properties_textedit_timings_column)
 
-    self.subtitles_panel_simplelist_properties.layout().addLayout(self.subtitles_panel_simplelist_properties_textedit_line)
+    self.subtitles_panel_simplelist_properties.layout().addLayout(self.subtitles_panel_simplelist_properties_textedit_line, 1)
 
     self.subtitles_panel_simplelist_properties_buttons_line = QHBoxLayout()
     self.subtitles_panel_simplelist_properties_buttons_line.setContentsMargins(0, 0, 0, 0)
@@ -319,11 +345,13 @@ def add_widgets(self):
     self.send_text_to_next_subtitle_and_slice_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.send_text_to_next_subtitle_button.layout().addWidget(self.send_text_to_next_subtitle_and_slice_button, 0, Qt.AlignRight)
 
-    self.subtitles_panel_simplelist_properties.layout().addLayout(self.subtitles_panel_simplelist_properties_buttons_line)
+    self.subtitles_panel_simplelist_properties.layout().addLayout(self.subtitles_panel_simplelist_properties_buttons_line, 0)
 
-    self.subtitles_panel_simplelist_widget_vbox.addWidget(self.subtitles_panel_simplelist_properties, 0)
+    # self.subtitles_panel_simplelist_widget.layout().addWidget(self.subtitles_panel_simplelist_properties, 0)
 
-    self.subtitles_panel_stackedwidgets.addWidget(self.subtitles_panel_simplelist_widget)
+    self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_properties)
+
+    self.subtitles_panel_stackedwidgets.addWidget(self.subtitles_panel_simplelist_qsplitter)
 
 
 def add_button(self):
@@ -342,26 +370,26 @@ def subtitles_panel_markdown_qtextedit_cursorpositionchanged(self):
 
     cursor = 0
     # markdown_text = ''
-    for subtitle in sorted(globals.SESSION['segments']):
+    for subtitle in sorted(session.SUBTITLE['segments']):
         cursor += len(str("{:.3f}".format(subtitle['start'])))
-        next_index = globals.SESSION['segments'].index(subtitle) + 1
-        if not next_index >= len(globals.SESSION['segments']) and not globals.SESSION['segments'][next_index]['start'] - 0.001 == subtitle['end']:
+        next_index = session.SUBTITLE['segments'].index(subtitle) + 1
+        if not next_index >= len(session.SUBTITLE['segments']) and not session.SUBTITLE['segments'][next_index]['start'] - 0.001 == subtitle['end']:
             cursor += len(' - ' + str("{:.3f}".format(subtitle['end'])))
         cursor += len('\n')
 
         cursor += len(str(subtitle['text']) + '\n\n')
         if cursor > position:
-            self.selected_subtitle = subtitle
+            session.SUBTITLE['selected'] = subtitle
             break
 
-    if self.selected_subtitle:
-        if not (self.player_widget.position > self.selected_subtitle['start'] and self.player_widget.position < self.selected_subtitle['end']):
-            self.player_widget.seek(self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5))
+    if session.SUBTITLE['selected']:
+        if not (session.SUBTITLE.get('position', 0) > session.SUBTITLE['selected']['start'] and session.SUBTITLE.get('position', 0) < session.SUBTITLE['selected']['end']):
+            self.player_widget.seek(session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) * .5))
 
-    self.timeline.update(self)
-    self.timeline.update_scrollbar(self, position='middle')
+    timeline.update(self)
+    timeline.update_scrollbar(self, position='middle')
 
-    # print(self.selected_subtitle)
+    # print(session.SUBTITLE['selected'])
 
 
 def subtitles_panel_markdown_qtextedit_textchanged(self):
@@ -411,47 +439,29 @@ def subtitles_panel_markdown_qtextedit_update_subtitles_list(self):
         )
         last_text = ''
 
-    self.selected_subtitle = False
+    session.SUBTITLE['selected'] = False
 
     # Sanitize subtitles so there is no overlaping subtitles?
 
-    globals.SESSION['segments'] = sorted(sub_list)
+    session.SUBTITLE['segments'] = sorted(sub_list)
 
-    self.timeline.update(self)
-
-
-def update_subtitles_panel_qlistwidget(self):
-    """Function to update subtitles list widgets"""
-
-    current_sub, index = subtitles.subtitle_under_current_position(position=self.player_widget.position)
-    if current_sub and not (self.subtitles_panel_qlistwidget.verticalScrollBar().value() + self.subtitles_panel_qlistwidget.verticalScrollBar().pageStep() > index > self.subtitles_panel_qlistwidget.verticalScrollBar().value()):
-        self.subtitles_panel_qlistwidget.verticalScrollBar().setValue(index - 1)
-
-    self.subtitles_panel_qlistwidget_model.subtitles = globals.SESSION['segments']
-    self.subtitles_panel_qlistwidget_model.layoutChanged.emit()
-
-    if self.selected_subtitle:
-        self.subtitles_panel_qlistwidget.setCurrentIndex(self.subtitles_panel_qlistwidget_model.get_index(self.selected_subtitle))
-
-
-    update_properties_widget(self)
-
+    timeline.update(self)
 
 def subtitles_panel_qlistwidget_item_clicked(self):
     """Function to call when a subtitle item on the list is clicked"""
     if self.subtitles_panel_qlistwidget.currentIndex():
         sub_index = self.subtitles_panel_qlistwidget.currentIndex().row()
-        self.selected_subtitle = globals.SESSION['segments'][sub_index]
+        session.SUBTITLE['selected'] = session.SUBTITLE['segments'][sub_index]
 
-    if self.selected_subtitle:
+    if session.SUBTITLE['selected']:
         self.properties_textedit.blockSignals(True)
         update_properties_widget(self)
         self.properties_textedit.blockSignals(False)
 
-        if not self.selected_subtitle['start'] < self.player_widget.position < self.selected_subtitle['end']:
-            self.player_widget.seek(self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5))
+        if not session.SUBTITLE['selected']['start'] < session.SUBTITLE.get('position', 0) < session.SUBTITLE['selected']['end']:
+            self.player_widget.seek(session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) * .5))
 
-        self.timeline.update_scrollbar(self, position='middle')
+        timeline.update_scrollbar(self, position='middle')
 
 
 def send_text_to_next_subtitle_button_clicked(self):
@@ -459,23 +469,23 @@ def send_text_to_next_subtitle_button_clicked(self):
     pos = self.properties_textedit.textCursor().position()
     last_text = self.properties_textedit.toPlainText()[:pos].strip()
     next_text = self.properties_textedit.toPlainText()[pos:].strip()
-    subtitles.send_text_to_next_subtitle(selected_subtitle=self.selected_subtitle, last_text=last_text, next_text=next_text)
+    subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
-    self.timeline.update(self)
+    timeline.update(self)
 
     self.timeline_widget.setFocus(Qt.TabFocusReason)
 
 
 def speaker_combobox_current_index_changed(self):
-    if self.selected_subtitle:
-        self.selected_subtitle['speaker'] = self.speaker_combobox.currentText()
+    if session.SUBTITLE['selected']:
+        session.SUBTITLE['selected']['speaker'] = self.speaker_combobox.currentText()
 
 
 def send_text_to_last_subtitle_and_slice_button_clicked(self):
     """Function to send text to the last subtitle and slice at the same time"""
-    position = self.player_widget.position
-    if not self.selected_subtitle['end'] > self.player_widget.position > self.selected_subtitle['start']:
-        position = self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5)
+    position = session.SUBTITLE.get('position', 0)
+    if not session.SUBTITLE['selected']['end'] > session.SUBTITLE.get('position', 0) > session.SUBTITLE['selected']['start']:
+        position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) * .5)
     subtitles.subtitle_start_to_current_position(position=position)
     subtitles.last_end_to_current_position(position=position - .001)
     send_text_to_last_subtitle_button_clicked(self)
@@ -483,9 +493,9 @@ def send_text_to_last_subtitle_and_slice_button_clicked(self):
 
 def send_text_to_next_subtitle_and_slice_button_clicked(self):
     """Function to send text to the next subtitle and slice at the same time"""
-    position = self.player_widget.position
-    if not self.selected_subtitle['end'] > self.player_widget.position > self.selected_subtitle['start']:
-        position = self.selected_subtitle['start'] + ((self.selected_subtitle['end'] - self.selected_subtitle['start']) * .5)
+    position = session.SUBTITLE.get('position', 0)
+    if not session.SUBTITLE['selected']['end'] > session.SUBTITLE.get('position', 0) > session.SUBTITLE['selected']['start']:
+        position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) * .5)
     subtitles.subtitle_end_to_current_position(position=position)
     subtitles.next_start_to_current_position(position=position + .001)
     send_text_to_next_subtitle_button_clicked(self)
@@ -496,35 +506,34 @@ def send_text_to_last_subtitle_button_clicked(self):
     pos = self.properties_textedit.textCursor().position()
     last_text = self.properties_textedit.toPlainText()[:pos].strip()
     next_text = self.properties_textedit.toPlainText()[pos:].strip()
-    subtitles.send_text_to_last_subtitle(selected_subtitle=self.selected_subtitle, last_text=last_text, next_text=next_text)
+    subtitles.send_text_to_last_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
-    self.timeline.update(self)
+    timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
 
 
 def properties_textedit_changed(self):
     """Function to call when properties textedit is changed"""
-    old_selected_subtitle = self.selected_subtitle
+    old_selected_subtitle = session.SUBTITLE['selected']
     if old_selected_subtitle and old_selected_subtitle['text'] != self.properties_textedit.toPlainText():
-        counter = globals.SESSION['segments'].index(old_selected_subtitle)
-        subtitles.change_subtitle_text(selected_subtitle=globals.SESSION['segments'][counter], text=self.properties_textedit.toPlainText())
-        self.unsaved = True
-        subtitles_panel.update_topbar_status(self)
-        self.timeline.update(self)
-        self.player.update_subtitle_layer(self)
+        counter = session.SUBTITLE['segments'].index(old_selected_subtitle)
+        subtitles.change_subtitle_text(selected_subtitle=session.SUBTITLE['segments'][counter], text=self.properties_textedit.toPlainText())
+        session.CONFIG['unsaved'] = True
+        subtitles_panel_info.update(self)
+        timeline.update(self)
         update_properties_information(self)
 
 
 def update_properties_information(self):
-    if self.selected_subtitle:
+    if session.SUBTITLE['selected']:
         reasons = []
         issues = []
 
-        if self.settings['quality_check'].get('enabled', False):
-            _, reasons, issues = quality_check.check_subtitle(self.selected_subtitle, self.settings['quality_check'])
+        if session.CONFIG['quality_check'].get('enabled', False):
+            _, reasons, issues = quality_check.check_subtitle(session.SUBTITLE['selected'], session.CONFIG['quality_check'])
 
-            n_words = len(self.selected_subtitle['text'].replace('\n', ' ').split(' '))
-            n_char = len(self.selected_subtitle['text'].replace('\n', '').replace(' ', ''))
+            n_words = len(session.SUBTITLE['selected']['text'].replace('\n', ' ').split(' '))
+            n_char = len(session.SUBTITLE['selected']['text'].replace('\n', '').replace(' ', ''))
 
             self.properties_information_word_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'wpm' not in issues else '#aa9e1a1a') + '}')
             self.properties_information_wpm.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'wpm' not in issues else '#bb9e1a1a') + '}')
@@ -535,11 +544,11 @@ def update_properties_information(self):
             self.properties_information_cpl.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cpl' not in issues else '#bb9e1a1a') + '}')
 
             self.properties_information_word_counter.setText(str(n_words))
-            self.properties_information_wpm.setText(str(int(n_words / ((self.selected_subtitle['end'] - self.selected_subtitle['start']) / 60))))
+            self.properties_information_wpm.setText(str(int(n_words / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 60))))
             self.properties_information_character_counter.setText(str(n_char))
-            self.properties_information_cps.setText(str(int(n_char / ((self.selected_subtitle['end'] - self.selected_subtitle['start'])))))
-            self.properties_information_sub_duration.setText(str(round((self.selected_subtitle['end'] - self.selected_subtitle['start']), 3)))
-            self.properties_information_number_of_lines.setText(str(int(len(self.selected_subtitle['text'].split('\n')))))
+            self.properties_information_cps.setText(str(int(n_char / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start'])))))
+            self.properties_information_sub_duration.setText(str(round((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), 3)))
+            self.properties_information_number_of_lines.setText(str(int(len(session.SUBTITLE['selected']['text'].split('\n')))))
 
             self.properties_information_reason.setVisible(bool(reasons))
             self.properties_information_reason.setText('\n'.join(reasons))
@@ -547,53 +556,53 @@ def update_properties_information(self):
 
 def update_properties_widget(self):
     """Function to update properties panel widgets"""
-    if self.subtitles_panel_stackedwidgets.currentWidget() == self.subtitles_panel_simplelist_widget:
-        update_properties_information(self)
-        self.subtitles_panel_simplelist_properties.setVisible(bool(self.selected_subtitle))
-        self.subtitles_panel_simplelist_properties_duration_timing_lock_button.raise_()
 
-        text = ''
-        if self.selected_subtitle:
-            text = self.selected_subtitle['text']
+    update_properties_information(self)
+    self.subtitles_panel_simplelist_properties.setVisible(bool(session.SUBTITLE['selected']))
+    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.raise_()
 
-            self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(utils.get_timeline_time_str(self.selected_subtitle['start'], ms=True))
-            self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(utils.get_timeline_time_str((self.selected_subtitle['end'] - self.selected_subtitle['start']), ms=True))
-            self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(utils.get_timeline_time_str(self.selected_subtitle['end'], ms=True))
+    text = ''
+    if session.SUBTITLE['selected']:
+        text = session.SUBTITLE['selected']['text']
 
-            self.speaker_combobox.setCurrentText(self.selected_subtitle.get('speaker', 'A'))
+        self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(utils.get_timeline_time_str(session.SUBTITLE['selected']['start'], ms=True))
+        self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), ms=True))
+        self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
 
-        if not self.properties_textedit.hasFocus():
-            self.properties_textedit.setText(text)
-        self.properties_information_stats.setVisible(bool(self.selected_subtitle) and self.settings.get('quality_check', {}).get('show_statistics', False))
+        self.speaker_combobox.setCurrentText(session.SUBTITLE['selected'].get('speaker', 'A'))
+
+    if not self.properties_textedit.hasFocus():
+        self.properties_textedit.setText(text)
+    self.properties_information_stats.setVisible(bool(session.SUBTITLE['selected']) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
 
     
 
 def subtitles_panel_simplelist_properties_start_timing_qlineedit_text_edited(self):
-    if self.selected_subtitle:
-        if not (self.subtitles_panel_simplelist_properties_start_timing_qlineedit.text() == '' or utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_start_timing_qlineedit.text()) > self.selected_subtitle['end']):
+    if session.SUBTITLE['selected']:
+        if not (self.subtitles_panel_simplelist_properties_start_timing_qlineedit.text() == '' or utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_start_timing_qlineedit.text()) > session.SUBTITLE['selected']['end']):
             new_start = utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_start_timing_qlineedit.text())
-            duration = (self.selected_subtitle['end'] - self.selected_subtitle['start']) if self.subtitles_panel_simplelist_properties_duration_timing_lock_button.isChecked() else (self.selected_subtitle['end'] - new_start)
-            self.selected_subtitle['start'] = new_start
-            self.selected_subtitle['end'] = self.selected_subtitle['start'] + duration
-    self.timeline.update(self)
+            duration = (session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) if self.subtitles_panel_simplelist_properties_duration_timing_lock_button.isChecked() else (session.SUBTITLE['selected']['end'] - new_start)
+            session.SUBTITLE['selected']['start'] = new_start
+            session.SUBTITLE['selected']['end'] = session.SUBTITLE['selected']['start'] + duration
+    timeline.update(self)
 
 
 def subtitles_panel_simplelist_properties_duration_timing_qlineedit_text_edited(self):
-    if self.selected_subtitle:
+    if session.SUBTITLE['selected']:
         if self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.text() == '':
-            self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(utils.get_timeline_time_str((self.selected_subtitle['end'] - self.selected_subtitle['start']) - self.selected_subtitle['start'], ms=True))
+            self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) - session.SUBTITLE['selected']['start'], ms=True))
         else:
-            self.selected_subtitle['end'] = self.selected_subtitle['start'] + utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.text())
-    self.timeline.update(self)
+            session.SUBTITLE['selected']['end'] = session.SUBTITLE['selected']['start'] + utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.text())
+    timeline.update(self)
 
 
 def subtitles_panel_simplelist_properties_ending_timing_qlineedit_text_edited(self):
-    if self.selected_subtitle:
+    if session.SUBTITLE['selected']:
         if self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.text() == '':
-            self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(utils.get_timeline_time_str(self.selected_subtitle['end'], ms=True))
+            self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
         else:
-            self.selected_subtitle['end'] = self.selected_subtitle['start'] + utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.text()) - utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_starting_timing_qlineedit.text())
-    self.timeline.update(self)
+            session.SUBTITLE['selected']['end'] = session.SUBTITLE['selected']['start'] + utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.text()) - utils.convert_ffmpeg_timecode_to_seconds(self.subtitles_panel_simplelist_properties_starting_timing_qlineedit.text())
+    timeline.update(self)
 
 
 def translate_widgets(self):
@@ -606,4 +615,4 @@ def translate_widgets(self):
 
 def update_speakers_list(self):
     self.speaker_combobox.clear()
-    self.speaker_combobox.addItems(sorted(set([subtitle.get('speaker', 'A') for subtitle in globals.SESSION['segments']])))
+    self.speaker_combobox.addItems(sorted(set([subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']])))

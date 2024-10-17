@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton, QSpinBox, QWidget, QVBoxLayout, QCheckBox, QSlider, QGroupBox, QHBoxLayout
 from PySide6.QtCore import Qt
 
+from subtitld.modules import session
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
 
@@ -202,32 +203,32 @@ def load_widgets(self):
 
 
 def update_global_panel_qualitycontrol_content_widgets(self):
-    self.global_panel_tabwidget_show_statistics_checkbox.setChecked(self.settings['quality_check'].get('show_statistics', False))
-    self.global_panel_tabwidget_quality_enable_groupbox.setChecked(self.settings['quality_check'].get('enabled', False))
-    self.global_panel_tabwidget_quality_readingspeed_cps.setValue(self.settings['quality_check'].get('reading_speed_cps', 21))
-    self.global_panel_tabwidget_quality_readingspeed_wpm.setValue(self.settings['quality_check'].get('reading_speed_wpm', 140))
-    self.global_panel_tabwidget_quality_duration_minimum.setValue(self.settings['quality_check'].get('minimum_duration', .7))
-    self.global_panel_tabwidget_quality_duration_maximum.setValue(self.settings['quality_check'].get('maximum_duration', 7))
-    self.global_panel_tabwidget_quality_lines_maximum.setValue(self.settings['quality_check'].get('maximum_lines', 2))
-    self.global_panel_tabwidget_quality_lines_maximumcharacters.setValue(self.settings['quality_check'].get('maximum_characters_per_line', 42))
-    self.global_panel_tabwidget_quality_prefer_compact_checkbox.setChecked(self.settings['quality_check'].get('prefer_compact', False))
-    self.global_panel_tabwidget_quality_balanceratio_checkbox.setChecked(self.settings['quality_check'].get('balance_ratio_enabled', False))
-    self.global_panel_tabwidget_quality_balanceratio_slider.setValue(self.settings['quality_check'].get('balance_ratio', 50))
-    self.global_panel_tabwidget_quality_balanceratio_slider_label.setText('Ratio ({p}% the shortest should be of the largest)'.format(p=self.settings['quality_check'].get('balance_ratio', 50)))
+    self.global_panel_tabwidget_show_statistics_checkbox.setChecked(session.CONFIG['quality_check'].get('show_statistics', False))
+    self.global_panel_tabwidget_quality_enable_groupbox.setChecked(session.CONFIG['quality_check'].get('enabled', False))
+    self.global_panel_tabwidget_quality_readingspeed_cps.setValue(session.CONFIG['quality_check'].get('reading_speed_cps', 21))
+    self.global_panel_tabwidget_quality_readingspeed_wpm.setValue(session.CONFIG['quality_check'].get('reading_speed_wpm', 140))
+    self.global_panel_tabwidget_quality_duration_minimum.setValue(session.CONFIG['quality_check'].get('minimum_duration', .7))
+    self.global_panel_tabwidget_quality_duration_maximum.setValue(session.CONFIG['quality_check'].get('maximum_duration', 7))
+    self.global_panel_tabwidget_quality_lines_maximum.setValue(session.CONFIG['quality_check'].get('maximum_lines', 2))
+    self.global_panel_tabwidget_quality_lines_maximumcharacters.setValue(session.CONFIG['quality_check'].get('maximum_characters_per_line', 42))
+    self.global_panel_tabwidget_quality_prefer_compact_checkbox.setChecked(session.CONFIG['quality_check'].get('prefer_compact', False))
+    self.global_panel_tabwidget_quality_balanceratio_checkbox.setChecked(session.CONFIG['quality_check'].get('balance_ratio_enabled', False))
+    self.global_panel_tabwidget_quality_balanceratio_slider.setValue(session.CONFIG['quality_check'].get('balance_ratio', 50))
+    self.global_panel_tabwidget_quality_balanceratio_slider_label.setText('Ratio ({p}% the shortest should be of the largest)'.format(p=session.CONFIG['quality_check'].get('balance_ratio', 50)))
 
 
 def update_quality_settings(self):
-    self.settings['quality_check']['show_statistics'] = self.global_panel_tabwidget_show_statistics_checkbox.isChecked()
-    self.settings['quality_check']['enabled'] = self.global_panel_tabwidget_quality_enable_groupbox.isChecked()
-    self.settings['quality_check']['reading_speed_cps'] = self.global_panel_tabwidget_quality_readingspeed_cps.value()
-    self.settings['quality_check']['reading_speed_wpm'] = self.global_panel_tabwidget_quality_readingspeed_wpm.value()
-    self.settings['quality_check']['minimum_duration'] = self.global_panel_tabwidget_quality_duration_minimum.value()
-    self.settings['quality_check']['maximum_duration'] = self.global_panel_tabwidget_quality_duration_maximum.value()
-    self.settings['quality_check']['maximum_lines'] = self.global_panel_tabwidget_quality_lines_maximum.value()
-    self.settings['quality_check']['maximum_characters_per_line'] = self.global_panel_tabwidget_quality_lines_maximumcharacters.value()
-    self.settings['quality_check']['prefer_compact'] = self.global_panel_tabwidget_quality_prefer_compact_checkbox.isChecked()
-    self.settings['quality_check']['balance_ratio_enabled'] = self.global_panel_tabwidget_quality_balanceratio_checkbox.isChecked()
-    self.settings['quality_check']['balance_ratio'] = self.global_panel_tabwidget_quality_balanceratio_slider.value()
+    session.CONFIG['quality_check']['show_statistics'] = self.global_panel_tabwidget_show_statistics_checkbox.isChecked()
+    session.CONFIG['quality_check']['enabled'] = self.global_panel_tabwidget_quality_enable_groupbox.isChecked()
+    session.CONFIG['quality_check']['reading_speed_cps'] = self.global_panel_tabwidget_quality_readingspeed_cps.value()
+    session.CONFIG['quality_check']['reading_speed_wpm'] = self.global_panel_tabwidget_quality_readingspeed_wpm.value()
+    session.CONFIG['quality_check']['minimum_duration'] = self.global_panel_tabwidget_quality_duration_minimum.value()
+    session.CONFIG['quality_check']['maximum_duration'] = self.global_panel_tabwidget_quality_duration_maximum.value()
+    session.CONFIG['quality_check']['maximum_lines'] = self.global_panel_tabwidget_quality_lines_maximum.value()
+    session.CONFIG['quality_check']['maximum_characters_per_line'] = self.global_panel_tabwidget_quality_lines_maximumcharacters.value()
+    session.CONFIG['quality_check']['prefer_compact'] = self.global_panel_tabwidget_quality_prefer_compact_checkbox.isChecked()
+    session.CONFIG['quality_check']['balance_ratio_enabled'] = self.global_panel_tabwidget_quality_balanceratio_checkbox.isChecked()
+    session.CONFIG['quality_check']['balance_ratio'] = self.global_panel_tabwidget_quality_balanceratio_slider.value()
     update_global_panel_qualitycontrol_content_widgets(self)
 
 def translate_widgets(self):

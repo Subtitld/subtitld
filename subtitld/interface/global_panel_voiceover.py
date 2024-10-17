@@ -6,7 +6,7 @@ import subprocess
 from PySide6.QtWidgets import QPushButton, QWidget
 from PySide6.QtCore import QThread, Signal
 
-from subtitld.modules.globals import STARTUPINFO
+from subtitld.modules.session import STARTUPINFO
 from subtitld.modules import utils
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
@@ -66,7 +66,7 @@ def global_subtitlesvideo_autovoiceover_button_clicked(self):
     # speech_config = SpeechConfig(subscription="", region="southcentralus")
     # speech_config.set_speech_synthesis_output_format(SpeechSynthesisOutputFormat["Riff24Khz16BitMonoPcm"])
 
-    # audio_from_video = AudioSegment.from_file(self.video_metadata['filepath'])
+    # audio_from_video = AudioSegment.from_file(session.VIDEO['filepath'])
     # final_audio = AudioSegment.empty()
 
     # audio_config = AudioOutputConfig(filename=os.path.join(path_tmp, 'voiceover.wav'))
@@ -74,7 +74,7 @@ def global_subtitlesvideo_autovoiceover_button_clicked(self):
     # audio_pieces = []
     # parser = 0
     # first = True
-    # for subtitle in globals.SESSION['segments']:
+    # for subtitle in session.SUBTITLE['segments']:
     #     # print(subtitle)
 
     #     ssml_content = '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="pt-BR-AntonioNeural">'
@@ -109,7 +109,7 @@ def global_subtitlesvideo_autovoiceover_button_clicked(self):
 
     # final_audio.export(os.path.join(path_tmp, 'final_voiceover.wav'), format='wav')
 
-    # subprocess.call(['ffmpeg', '-i', self.video_metadata['filepath'], '-i' , os.path.join(path_tmp, 'final_voiceover.wav'), '-c:v', 'copy', '-y', '-map', '0:v:0', '-map', '1:a:0', self.video_metadata['filepath'].rsplit('.', 1)[0] + '_voiceover.' + self.video_metadata['filepath'].rsplit('.', 1)[-1]])
+    # subprocess.call(['ffmpeg', '-i', session.VIDEO['filepath'], '-i' , os.path.join(path_tmp, 'final_voiceover.wav'), '-c:v', 'copy', '-y', '-map', '0:v:0', '-map', '1:a:0', session.VIDEO['filepath'].rsplit('.', 1)[0] + '_voiceover.' + session.VIDEO['filepath'].rsplit('.', 1)[-1]])
 
     # # list_of_final_audiofiles = []
     # #     audio_config = AudioOutputConfig(filename="file.wav")

@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QFrame, QStacked
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QSize
 
 from subtitld.interface import global_panel_general, global_panel_import, global_panel_interface, global_panel_keyboardshortcuts, global_panel_qualitycontrol, global_panel_translation, global_panel_transcription, global_panel_export
-from subtitld.modules import globals
+from subtitld.modules import session
 
 # from azure.cognitiveservices.speech import AudioDataStream, SpeechConfig, SpeechSynthesizer, SpeechSynthesisOutputFormat
 # from azure.cognitiveservices.speech.audio import AudioOutputConfig
@@ -81,7 +81,7 @@ def load(self):
 def resized(self):
     """Function on resizing widgets"""
     x = - self.width()
-    if (globals.SESSION['segments'] or self.video_metadata):
+    if (session.SUBTITLE['segments'] or session.VIDEO):
         if self.subtitles_panel_toggle_button.isChecked():
             x = 0
         else:
@@ -92,7 +92,7 @@ def resized(self):
 def show_global_panel(self):
     """Function to show subtitlesvideo panel"""
     self.generate_effect(self.global_panel_widget_animation, 'geometry', 700, [self.global_panel_widget.x(), self.global_panel_widget.y(), self.global_panel_widget.width(), self.global_panel_widget.height()], [0, self.global_panel_widget.y(), self.global_panel_widget.width(), self.global_panel_widget.height()])
-    self.generate_effect(self.player_border_transparency_animation, 'opacity', 200, 1.0, 0.0)
+    # self.generate_effect(self.player_border_transparency_animation, 'opacity', 200, 1.0, 0.0)
     self.global_panel_general_menu_button.setChecked(True)
     # self.player_widget.hold_update = True
 
@@ -100,7 +100,7 @@ def show_global_panel(self):
 def hide_global_panel(self):
     # self.player_widget.hold_update = False
     self.generate_effect(self.global_panel_widget_animation, 'geometry', 700, [self.global_panel_widget.x(), self.global_panel_widget.y(), self.global_panel_widget.width(), self.global_panel_widget.height()], [int(-self.global_panel_widget.width() + self.subtitles_panel_widget.width()), self.global_panel_widget.y(), self.global_panel_widget.width(), self.global_panel_widget.height()])
-    self.generate_effect(self.player_border_transparency_animation, 'opacity', 200, 0.0, 1.0)
+    # self.generate_effect(self.player_border_transparency_animation, 'opacity', 200, 0.0, 1.0)
 
 
 def global_panel_menu_changed(self, button, widget):
@@ -131,9 +131,9 @@ def subtitles_panel_toggled(self):
     if self.global_panel_widget.property('shown'):
         # subtitles_panel_toggle_button_to_end(self)
         show_global_panel(self)
-        self.playercontrols.hide_playercontrols(self)
+        playercontrols.hide_playercontrols(self)
         self.subtitles_panel.hide(self)
     else:
         hide_global_panel(self)
-        self.playercontrols.show_playercontrols(self)
+        playercontrols.show_playercontrols(self)
         self.subtitles_panel.show(self)

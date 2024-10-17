@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QLabel, QComboBox, QPushButton, QWidget, QVBoxLayout, QCheckBox, QDoubleSpinBox, QHBoxLayout
 from PySide6.QtCore import Qt
 
-from subtitld.modules.globals import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
+from subtitld.modules import session
 from subtitld.interface import global_panel
 from subtitld.interface.translation import _
 
@@ -38,8 +38,8 @@ def load_widgets(self):
     self.global_panel_general_save_as_line.addWidget(self.global_subtitlesvideo_save_as_label, 0, Qt.AlignLeft)
 
     list_of_subtitle_extensions = []
-    for extformat in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-        list_of_subtitle_extensions.append(extformat + ' - ' + LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[extformat]['description'])
+    for extformat in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+        list_of_subtitle_extensions.append(extformat + ' - ' + session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[extformat]['description'])
     self.global_subtitlesvideo_save_as_combobox = QComboBox(parent=self.global_panel_general_content)
     self.global_subtitlesvideo_save_as_combobox.setProperty('class', 'button')
     self.global_subtitlesvideo_save_as_combobox.addItems(list_of_subtitle_extensions)
@@ -91,26 +91,26 @@ def load_widgets(self):
 
 def global_subtitlesvideo_save_as_combobox_activated(self):
     """Function to change format as combobox selection"""
-    self.settings['default_values']['subtitle_format'] = self.global_subtitlesvideo_save_as_combobox.currentText().split(' ', 1)[0]
+    session.CONFIG['default_values']['subtitle_format'] = self.global_subtitlesvideo_save_as_combobox.currentText().split(' ', 1)[0]
 
 
 def global_panel_general_save_copy_changed(self):
-    self.settings['default_values']['save_automatic_copy'] = self.global_panel_general_save_copy.isChecked()
+    session.CONFIG['default_values']['save_automatic_copy'] = self.global_panel_general_save_copy.isChecked()
 
 
 def global_panel_general_minimum_duration_spinbox_changed(self):
-    self.settings['default_values']['minimum_subtitle_width'] = self.global_panel_general_minimum_duration_spinbox.value()
+    session.CONFIG['default_values']['minimum_subtitle_width'] = self.global_panel_general_minimum_duration_spinbox.value()
 
 
 def update_widgets(self):
     for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
-        if item.startswith(self.settings['default_values'].get('subtitle_format', 'USF')):
+        if item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USF')):
             self.global_subtitlesvideo_save_as_combobox.setCurrentText(item)
             break
 
-    self.global_panel_general_save_copy.setChecked(self.settings['default_values'].get('save_automatic_copy', False))
+    self.global_panel_general_save_copy.setChecked(session.CONFIG['default_values'].get('save_automatic_copy', False))
 
-    self.global_panel_general_minimum_duration_spinbox.setValue(self.settings['default_values'].get('minimum_subtitle_width', 1.0))
+    self.global_panel_general_minimum_duration_spinbox.setValue(session.CONFIG['default_values'].get('minimum_subtitle_width', 1.0))
 
 
 def translate_widgets(self):

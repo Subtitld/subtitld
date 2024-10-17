@@ -127,8 +127,8 @@
     <file>graphics/subtitles_panel_widget_button_timeline.svg</file>
     <file>graphics/subtitles_panel_widget_find_icon.svg</file>
     <file>graphics/timeline_bottom_controls_background.svg</file>
-    <file>graphics/timeline_bottom_controls_left.svg</file>
-    <file>graphics/timeline_bottom_controls_right.svg</file>
+    <file>graphics/playercontrols_widget_center_top_line.svg</file>
+    <file>graphics/playercontrols_widget_center_bottom_line.svg</file>
     <file>graphics/timeline_cursor_back_frame.svg</file>
     <file>graphics/timeline_cursor_next_frame.svg</file>
     <file>graphics/timelinescrolling_follow_icon.svg</file>
@@ -141,8 +141,6 @@
     <file>graphics/timeline_top_controls_button_right_hover.svg</file>
     <file>graphics/timeline_top_controls_button_right_normal.svg</file>
     <file>graphics/timeline_top_controls_button_right_pressed.svg</file>
-    <file>graphics/timeline_top_controls_left.svg</file>
-    <file>graphics/timeline_top_controls_right.svg</file>
     <file>graphics/Ubuntu-R.ttf</file>
     <file>graphics/Ubuntu-RI.ttf</file>
     <file>graphics/Ubuntu-Th.ttf</file>

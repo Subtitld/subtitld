@@ -3,7 +3,7 @@ from translate import Translator
 from PySide6.QtWidgets import QComboBox, QPushButton, QWidget, QMessageBox, QGridLayout
 from PySide6.QtCore import Qt, Signal, QThread
 
-from subtitld.modules.globals import LANGUAGE_DICT_LIST
+from subtitld.modules.session import LANGUAGE_DICT_LIST
 from subtitld.interface import global_panel, subtitles_panel, player
 from subtitld.interface.translation import _
 
@@ -68,8 +68,8 @@ def load_widgets(self):
             self.global_subtitlesvideo_translate_button.setEnabled(True)
         else:
             for sub in response:
-                subtitles_panel.update_processing_status(self, show_widgets=True, value=int((sub / len(globals.SESSION['segments'])) * 100))
-                globals.SESSION['segments'][sub]['text'] = response[sub]
+                subtitles_panel.update_processing_status(self, show_widgets=True, value=int((sub / len(session.SUBTITLE['segments'])) * 100))
+                session.SUBTITLE['segments'][sub]['text'] = response[sub]
 
         player.update_timelines(self)
 
@@ -83,7 +83,7 @@ def global_subtitlesvideo_translate_button_clicked(self):
     """Function to translate subtitles"""
     run_command = False
 
-    if bool(globals.SESSION['segments']):
+    if bool(session.SUBTITLE['segments']):
         are_you_sure_message = QMessageBox(self)
         are_you_sure_message.setWindowTitle(_('alert.are_you_sure'))
         are_you_sure_message.setText(_('alert.overwrite_warning'))
@@ -98,7 +98,7 @@ def global_subtitlesvideo_translate_button_clicked(self):
 
 
     if run_command:
-        self.global_panel_translation_thread.subtitles_list = globals.SESSION['segments']
+        self.global_panel_translation_thread.subtitles_list = session.SUBTITLE['segments']
         self.global_panel_translation_thread.language_from = LANGUAGE_DICT_LIST[self.global_subtitlesvideo_autosync_lang_from_combobox.currentText()].split('-')[0]
         self.global_panel_translation_thread.language_to = LANGUAGE_DICT_LIST[self.global_subtitlesvideo_autosync_lang_to_combobox.currentText()].split('-')[0]
         self.global_panel_translation_thread.start()

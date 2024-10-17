@@ -1,7 +1,8 @@
 import ctypes
 import platform
 
-from subtitld.modules.globals import LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
+from subtitld import timecode
+from subtitld.modules import session
 
 
 def is_float(element: str) -> bool:
@@ -117,16 +118,16 @@ class GetProcAddressGetter:
 def get_subtitle_format(subtitle_filepath):
     subtitle_format = False
     if subtitle_filepath:
-        for formt in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-            for ext in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
+        for formt in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+            for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
                 if subtitle_filepath.endswith(ext):
                     return formt
     return subtitle_format
 
 
 def get_format_from_extension(extension):
-    for formt in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-        for ext in LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
+    for formt in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+        for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
             if extension == ext:
                 return formt
     return 'USF'
