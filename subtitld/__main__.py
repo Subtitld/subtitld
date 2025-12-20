@@ -1,25 +1,23 @@
-import os
 import sys
-import datetime
+import os
 import argparse
-import locale
+import pathlib
+import inspect
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
-from PySide6.QtGui import QIcon, QFont, QFontDatabase
-from PySide6.QtCore import Qt, QRect, QTimer
+from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QPushButton
+from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence
+from PySide6.QtCore import QDir
+from qframelesswindow import FramelessMainWindow
 
-from subtitld.modules import config, file_io, session, shortcuts, history
-from subtitld.interface import translation, startscreen, productionscreen, global_panel, timeline, playercontrols, subtitles_panel
-from subtitld import resources_rc
+from subtitld.interface import top_bar
+from subtitld.interface import startscreen
+from subtitld.interface import productionscreen
+from subtitld.interface import actionmanager
 
-if session.ACTUAL_OS == 'darwin':
-    from subtitld.modules.session import NSURL
+from subtitld.modules import session
+from subtitld.modules import config
+from subtitld.modules import file_io
 
-list_of_supported_subtitle_extensions = []
-for t in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-    for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[t]['extensions']:
-        list_of_supported_subtitle_extensions.append(ext)
-list_of_supported_subtitle_extensions = tuple(list_of_supported_subtitle_extensions)
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
 parser.add_argument('file', type=argparse.FileType('r'), help='The path for video or subtitle file', nargs='*', default=False)
@@ -27,270 +25,188 @@ parser.add_argument('--version', help='Prints the actual version of Subtitld.', 
 args = parser.parse_args()
 
 
-class Subtitld(QMainWindow):
-    """The main window (QWidget) class"""
-    def __init__(self):
-        super().__init__()
-        self.setWindowIcon(QIcon(":/graphics/subtitld.png"))
-        self.setAcceptDrops(True)
-        self.setMinimumSize(860, 645)
-
-        self.main_widget = QStackedWidget()
-        self.main_widget.setObjectName('main_widget')
-        self.main_widget.setAutoFillBackground(True)
-        # self.main_widget.layout().setStackingMode(QStackedLayout.StackAll)
-        
-        # self.layout().setStackingMode(QStackedLayout.StackAll)
-
-        # Setting some default values
-        self.update_accuracy = 200
-        session.VIDEO = {}
-        
-        self.actual_video_file = ''
-
-        session.CONFIG = config.load(session.PATH_SUBTITLD_USER_CONFIG_FILE)
-
-        translation.load_translation_files()
-        translation.set_language(session.CONFIG.get('interface', {}).get('language', locale.getdefaultlocale()[0]))
-
-        session.SUBTITLE['selected'] = False
-        session.REPEAT_DURATION_BUFFER = []
-        session.CONFIG['timeline_zoom'] = 100.0
-        # session.CONFIG['waveformsize'] = .7
-        session.CONFIG['mediaplayer_opacity'] = .5
-        session.CONFIG['playback_speed'] = 1.0
-        session.CONFIG['default_new_subtitle_duration'] = 5.0
-        session.CONFIG['repeat_duration'] = 5.0
-        session.CONFIG['repeat_times'] = 3
-        session.CONFIG['repeat_activated'] = False
-        session.CONFIG['unsaved'] = False
-        session.CONFIG['format_to_save'] = 'SRT'
-        session.CONFIG['selected_language'] = 'en'
-        session.CONFIG['subtitles_panel_width_proportion'] = .3
-
-        # self.background_label = QLabel(self)
-        # self.background_label.setObjectName('background_label')
-
-        # self.start_screen_thumbnail_background = QLabel(parent=self)
-        # self.start_screen_thumbnail_background.setAlignment(Qt.AlignCenter)
-        # # self.start_screen_thumbnail_background.setScaledContents(True)
-        # self.start_screen_thumbnail_background_transparency = QGraphicsOpacityEffect()
-        # self.start_screen_thumbnail_background.setGraphicsEffect(self.start_screen_thumbnail_background_transparency)
-        # self.start_screen_thumbnail_background_transparency_animation = QPropertyAnimation(self.start_screen_thumbnail_background_transparency, b'opacity')
-        # # self.start_screen_thumbnail_background_transparency_animation.setEasingCurve(QEasingCurve.InExpo)
-        # self.start_screen_thumbnail_background_transparency.setOpacity(1)
-        # self.start_screen_thumbnail_background_animation = QPropertyAnimation(self.start_screen_thumbnail_background, b'geometry')
-        # self.start_screen_thumbnail_background_animation.setEasingCurve(QEasingCurve.OutCirc)
-
-        # self.background_label2 = QLabel(self)
-        # self.background_label2.setObjectName('background_label2')
-        # self.background_label2_transparency = QGraphicsOpacityEffect()
-        # self.background_label2.setGraphicsEffect(self.background_label2_transparency)
-        # self.background_label2_transparency_animation = QPropertyAnimation(self.background_label2_transparency, b'opacity')
-        # self.background_label2_transparency.setOpacity(1)
-
-        # Setting the gorgeous watermarked background logo
-        # self.background_watermark_label = QLabel(self)
-        # self.background_watermark_label.setObjectName('background_watermark_label')
-
-        # All the stylesheet properties are in a separate file, so importing it here
+class Window(FramelessMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.setWindowTitle("Subtitld")
         self.setStyleSheet(open(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'stylesheet.qss')).read())
+        
+        session.CONFIG = config.Config()
 
-        # The file io system
-        self.file_io = file_io
-        self.file_io.load(self)
+        file_io.load(self)
 
-        # if ACTUAL_OS == 'windows':
-        #     # The windows update system
-        #     from modules import update
-        #     self.update = update
-        #     self.update.load(self)
+        top_bar.load(self)
 
-        # The start screen
+        self.central_widget = QWidget(self)
+        self.central_widget.setLayout(QStackedLayout())
+        self.central_widget.layout().setContentsMargins(0, 0, 0, 0)
+        self.setCentralWidget(self.central_widget)
+
         startscreen.load(self)
-        self.main_widget.addWidget(self.start_screen)
-
         productionscreen.load(self)
-        self.main_widget.addWidget(self.main_vertical_splitter)
+
+        self.translate()
+
+        self.titleBar.raise_()
+        self.showMaximized()
+
+        if session.SUBTITLE.get('filepath', False) and session.VIDEO.get('filepath', False):
+            session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
+            session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+            startscreen.load_productionscreen(self)
+        else:
+            startscreen.show(self)
+
+        # self.action_manager.register("open", "open_file", "Ctrl+O", self.open_file)
+        # self.action_manager.register("save", "save_file", "Ctrl+S", self.save_file)
         
-        shortcuts.load(self, session.CONFIG['shortcuts'])
+        # session.action_manager = actionmanager.ActionManager(parent=self.central_widget)
 
-        self.autosave_timer = QTimer(self)
-        self.autosave_timer.setInterval(int(session.CONFIG['autosave'].get('interval', 300000)))
-        self.autosave_timer.timeout.connect(lambda: autosave_timer_timeout(self))
+        # actionmanager.register(self, "play_pause", "play_pause", "Space", playercontrols_playpause_button_clicked(self))
 
-        
-        # Maybe implement saving window position...? Useful?
-        # self.setGeometry(0, 0, QDesktopWidget().screenGeometry().width(), QDesktopWidget().screenGeometry().height())
-
-
-        # self.showMaximized()
-        # self.setFixedSize(QSize(1280, 720))
-        self.setCentralWidget(self.main_widget)
-
-        self.translate_widgets()
-
-        self.show()
-
-        startscreen.show(self)
-
-        if session.SUBTITLE.get('subtitle_filepath', False) and session.SUBTITLE.get('video_filepath', False):
-            file_io.open_filepath(self, update_interface=True)
-       
 
         
+        
+        # qshortcut = QShortcut(QKeySequence("Space"), self)
+        
+        # qshortcut.activated.connect(lambda: playercontrols_playpause_button_clicked(self))
 
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls and len(event.mimeData().urls()) > 0:
-            if sys.platform == 'darwin':
-                filename = str(NSURL.alloc().initWithString_(event.mimeData().urls()[0].toString()).fileSystemRepresentation())
-            else:
-                filename = event.mimeData().urls()[0].toLocalFile()
+        # self.register_shortcut("Ctrl+O", self.open_button_clicked, self.title_widget_load_line_button, "Open")
+        # self.register_shortcut("Ctrl+S", self.save_entities, None, "Save entities")
+        # self.register_shortcut("Left", self.previous_button_clicked, self.previous_button, "Previous")
+        # self.register_shortcut("Right", self.next_button_clicked, self.next_button, "Next")
+        # self.register_shortcut("Esc", self.close, self.close_button, "Close window")
+        # self.register_shortcut("1", lambda: self.type_button_clicked('blue'), self.blue_button, "Blue type")
+        # self.register_shortcut("2", lambda: self.type_button_clicked('red'), self.red_button, "Red type")
+        # self.register_shortcut("3", lambda: self.type_button_clicked('vip'), self.vip_button, "VIP type")
+        # self.register_shortcut("4", lambda: self.type_button_clicked('noncombatant'), self.noncombatant_button, "Non combatant type")
+        # self.register_shortcut("Space", playercontrols_playpause_button_clicked(self), self.playercontrols_playpause_button, "Play/Pause")
 
-            if filename.lower().endswith(('.subtitld')) or filename.lower().endswith(list_of_supported_subtitle_extensions) or filename.lower().endswith(session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
-                event.accept()
 
-    def dropEvent(self, event):
-        event.accept()
-        # if sys.platform == 'darwin':
-        #     filename = str(NSURL.alloc().initWithString_(event.mimeData().urls()[0].toString()).fileSystemRepresentation())
-        # else:
-        #     filename = event.mimeData().urls()[0].toLocalFile()
+    # def register_shortcut(self, keyseq, handler, button, description):
+    #     shortcut = QShortcut(QKeySequence(keyseq), self)
+    #     shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+    #     shortcut.activated.connect(handler)
 
-    def resizeEvent(self, event):
-        # self.background_label.setGeometry(0, 0, self.width(), self.height())
-        # self.start_screen_thumbnail_background.setGeometry(0, 0, self.width(), self.height())
-        # self.background_label2.setGeometry(0, 0, self.width(), self.height())
+    #     if button:
+    #         text = button.toolTip() or description or ""
+    #         key_hint = f" ({keyseq})"
+    #         if key_hint not in text:
+    #             button.setToolTip(text + key_hint)
+        
+    #     return shortcut
 
-        # self.startscreen.resized(self)
-        # self.subtitles_panel.resized(self)
-        # self.properties.resized(self)
 
-        # self.global_panel.resized(self)
-        # self.global_properties_panel.resized(self)
-
-        # playercontrols.resized(self)
-        # self.playercontrols_properties.resized(self)
-
-        # self.background_watermark_label.setGeometry(int((self.width() * .5) - 129), int(((self.height() - self.playercontrols_widget.height()) * .5) - 129), 258, 258)
-        # self.background_watermark_label.setVisible(False)
-
-        # self.player.resized(self)
-        # timeline.resized(self)
-        event.accept()
-
-    def closeEvent(self, event):
-        if session.CONFIG['unsaved']:
-            save_message_box = QMessageBox(self)
-
-            save_message_box.setWindowTitle('Unsaved changes')
-            save_message_box.setText('Do you want to save the changes you made on the subtitles?')
-            save_message_box.addButton('Save', QMessageBox.AcceptRole)
-            save_message_box.addButton("Don't save", QMessageBox.RejectRole)
-            ret = save_message_box.exec_()
-
-            if ret == QMessageBox.AcceptRole:
-                self.subtitles_panel.toppanel_save_button_clicked(self)
-
-        self.thread_get_waveform.quit()
-        self.thread_get_qimages.quit()
-        # self.thread_extract_scene_time_positions.quit()
-        self.thread_generated_burned_video.quit()
-        self.thread_extract_waveform.quit()
-        if session.SUBTITLE.get('subtitle_filepath', False) and 'hash' in session.VIDEO:
-            self.player_widget.grab().save(os.path.join(session.PATH_SUBTITLD_DATA_THUMBNAILS, session.VIDEO['hash'] + '.png'))
-            session.CONFIG['recent_files'][session.SUBTITLE['subtitle_filepath']]['last_position'] = session.SUBTITLE.get('position', 0)
-        config.save(session.CONFIG, session.PATH_SUBTITLD_USER_CONFIG_FILE)
-        self.player_widget.close()
-
-        event.accept()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Space:
-            self.player_widget.pause()
-            self.playercontrols_playpause_button.setChecked(not self.playercontrols_playpause_button.isChecked())
+    # def keyPressEvent(self, event):
+    #     if event.key() == Qt.Key_Space:
+    #         playercontrols_playpause_button_clicked(self)
+            # self.player_widget.pause()
+            # self.playercontrols_playpause_button.setChecked(not self.playercontrols_playpause_button.isChecked())
             # playercontrols.playercontrols_playpause_button_update(self)
 
-        if event.key() == Qt.Key_F1:
-            playercontrols.add_subtitle_button_clicked(self)
+        # if event.key() == Qt.Key_F1:
+        #     playercontrols.add_subtitle_button_clicked(self)
 
-        if event.key() == Qt.Key_F12:
-            playercontrols.add_subtitle_button_clicked(self)
+        # if event.key() == Qt.Key_F12:
+        #     playercontrols.add_subtitle_button_clicked(self)
 
-        if event.key() == Qt.Key_Z:
-            if event.modifiers() == Qt.ControlModifier | Qt.ShiftModifier:
-                history.history_redo()
-            elif event.modifiers() == Qt.ControlModifier:
-                history.history_undo()
-            session.SUBTITLE['selected'] = False
-            subtitles_panel.update_subtitles_panel_widget_vision_content(self)
-            # self.properties.update_properties_widget(self)
-            timeline.update(self)
+        # if event.key() == Qt.Key_Z:
+        #     if event.modifiers() == Qt.ControlModifier | Qt.ShiftModifier:
+        #         history.history_redo()
+        #     elif event.modifiers() == Qt.ControlModifier:
+        #         history.history_undo()
+        #     session.SUBTITLE['selected'] = False
+        #     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
+        #     # self.properties.update_properties_widget(self)
+        #     timeline.update(self)
 
-        if event.key() == Qt.Key_Left:
-            self.player_widget.frameBackStep()
+        # if event.key() == Qt.Key_Left:
+        #     self.player_widget.frameBackStep()
 
-        if event.key() == Qt.Key_Right:
-            self.player_widget.frameStep()
+        # if event.key() == Qt.Key_Right:
+        #     self.player_widget.frameStep()
 
-    def translate_widgets(self):
-        self.setWindowTitle(translation._('window.title'))
-        startscreen.translate_widgets(self)
-        global_panel.translate_widgets(self)
-        playercontrols.translate_widgets(self)
-        subtitles_panel.translate_widgets(self)
+        # methods = [name for name in dir(actionmanager) if callable(getattr(actionmanager, name))]
 
-    def generate_effect(self, widget, effect_type, duration, startValue, endValue):
-        widget.setDuration(duration)
-        if effect_type == 'geometry':
-            widget.setStartValue(QRect(startValue[0], startValue[1], startValue[2], startValue[3]))
-            widget.setEndValue(QRect(endValue[0], endValue[1], endValue[2], endValue[3]))
-        elif effect_type in ['maximumHeight', 'maximumWidth', 'minimumHeight', 'minimumWidth', 'opacity']:
-            widget.setStartValue(startValue)
-            widget.setEndValue(endValue)
-        widget.start()
+        # for name, fn in inspect.getmembers(actionmanager, inspect.ismethod):
+        #     function_name = getattr(fn, "name", None)
+        #     function_default_shortcut = getattr(fn, "default_shortcut", None)
 
+        for name, fn in inspect.getmembers(actionmanager, inspect.isfunction):
+            function_name = getattr(fn, "name", None)
+            function_default_shortcut = getattr(fn, "default_shortcut", None)
 
-def autosave_timer_timeout(self):
-    filename = os.path.basename(session.SUBTITLE['subtitle_filepath']).rsplit('.', 1)[0]
-    if not filename:
-        filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
-    self.file_io.save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.{}'.format(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[session.CONFIG['default_values'].get('subtitle_format', 'USF')]['extensions'][0])), session.CONFIG['default_values'].get('subtitle_format', 'USF'))
+    def translate(self):
+        startscreen.translate(self)
+        productionscreen.translate(self)
+        
 
+    def closeEvent(self, event):
+        # if session.CONFIG['unsaved']:
+        #     save_message_box = QMessageBox(self)
+
+        #     save_message_box.setWindowTitle('Unsaved changes')
+        #     save_message_box.setText('Do you want to save the changes you made on the subtitles?')
+        #     save_message_box.addButton('Save', QMessageBox.AcceptRole)
+        #     save_message_box.addButton("Don't save", QMessageBox.RejectRole)
+        #     ret = save_message_box.exec_()
+
+        #     if ret == QMessageBox.AcceptRole:
+        #         self.subtitles_panel.toppanel_save_button_clicked(self)
+
+        # self.thread_get_waveform.quit()
+        # self.thread_get_qimages.quit()
+        # # self.thread_extract_scene_time_positions.quit()
+        # self.thread_generated_burned_video.quit()
+        # self.thread_extract_waveform.quit()
+        # if session.SUBTITLE.get('subtitle_filepath', False) and 'hash' in session.VIDEO:
+        #     self.player_widget.grab().save(os.path.join(session.PATH_SUBTITLD_DATA_THUMBNAILS, session.VIDEO['hash'] + '.png'))
+        #     session.CONFIG['recent_files'][session.SUBTITLE['filepath']]['last_position'] = session.SUBTITLE.get('position', 0)
+        
+        # session.CONFIG['window_position'] = {'x': self.x(), 'y': self.y(), 'width': self.width(), 'height': self.height()}
+
+        # config.save(session.CONFIG, session.PATH_SUBTITLD_USER_CONFIG_FILE)
+        # self.player_widget.close()
+
+        self.hide()
+
+        if self.timeline_widget.audio_thread.isRunning():
+            self.timeline_widget.audio_thread.cancel()
+            self.timeline_widget.audio_thread.wait()
+
+        session.CONFIG.save()
+
+        event.accept()
 
 def main():
     if args.file:
-        print(args.file)
         for filepath in args.file:
-            if os.path.abspath(filepath.name).lower().endswith(tuple(list_of_supported_subtitle_extensions)):
-                session.SUBTITLE['subtitle_filepath'] = os.path.abspath(filepath.name)
-            elif os.path.abspath(filepath.name).lower().endswith(tuple(session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS)):
-                session.SUBTITLE['video_filepath'] = os.path.abspath(filepath.name)
-
+            filepath = pathlib.Path(filepath.name)            
+            if filepath.suffix[1:].upper() in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.keys():
+                session.SUBTITLE['filepath'] = str(filepath)
+                break 
+        
+        for filepath in args.file:
+            filepath = pathlib.Path(filepath.name)
+            if filepath.suffix[1:].upper() in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS.keys():
+                session.VIDEO['filepath'] = str(filepath)
+                break
+        
     app = QApplication(sys.argv)
+
+    QDir.addSearchPath('graphics', session.PATH_SUBTITLD_GRAPHICS)
+
+    for font_file in os.listdir(session.PATH_SUBTITLD_GRAPHICS):
+        if font_file.endswith('.ttf'):
+            QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, font_file))
+
     app.setApplicationName("Subtitld")
+    app.setFont(QFont('Montserrat', 10))
 
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-B.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-BI.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-C.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-L.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-LI.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-M.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-MI.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'UbuntuMono-B.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'UbuntuMono-BI.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'UbuntuMono-R.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'UbuntuMono-RI.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-R.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-RI.ttf'))
-    QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'Ubuntu-Th.ttf'))
-
-    app.setFont(QFont('Ubuntu', 10))
-
-    app.main = Subtitld()
+    main_window = Window()
+    main_window.show()
 
     sys.exit(app.exec())
-
 
 if __name__ == '__main__':
     main()

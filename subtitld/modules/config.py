@@ -1,61 +1,44 @@
-"""Config functions. Load and save files.
-
-"""
-
-import os
 import json
+from pathlib import Path
 
 from subtitld.modules.session import PATH_SUBTITLD_USER_CONFIG_FILE
 
 
-def load(config_file_path=False):
-    """Config load function. Provide a file path with 'config_file_path'.
-    It will return a dict with the settings.
-    """
-    config = {}
-    if config_file_path and os.path.isfile(config_file_path):
-        with open(config_file_path) as fileobj:
-            config = json.load(fileobj)
+class Config(dict):
+    def __init__(self, filepath=PATH_SUBTITLD_USER_CONFIG_FILE):
+        self.filepath = Path(filepath)
+        
+        if self.filepath.exists():
+            try:
+                with open(self.filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except json.JSONDecodeError:
+                data = json.loads('{}')
+        else:
+            data = json.loads('{}')
 
-    if not config.get('recent_files', False):
-        config['recent_files'] = {}
+        self.load_defaults()
 
-    if not config.get('shortcuts', False):
-        config['shortcuts'] = {}
+        super().__init__(data)
+    
+    def __getitem__(self, key):
+        return super().get(key, False)  # returns False if not found
+    
+    def save(self):
+        with open(self.filepath, 'w', encoding='utf-8') as f:
+            json.dump(self, f, indent=4)
 
-    if not config.get('safety_margins', False):
-        config['safety_margins'] = {}
-
-    if not config.get('autosave', False):
-        config['autosave'] = {}
-
-    if not config.get('timeline', False):
-        config['timeline'] = {}
-
-    if not config.get('videoplayer', False):
-        config['videoplayer'] = {}
-
-    if not config.get('quality_check', False):
-        config['quality_check'] = {}
-
-    if not config.get('default_values', False):
-        config['default_values'] = {}
-
-    if not config.get('export', False):
-        config['export'] = {}
-
-    if not config.get('interface', False):
-        config['interface'] = {}
-
-    return config
-
-
-def save(config=False, config_file_path=False):
-    """Config save function. Provide a dict and
-    a file path with 'config_file_path'.
-    """
-    if config:
-        if not config_file_path:
-            config_file_path = os.path.join(PATH_SUBTITLD_USER_CONFIG_FILE)
-        with open(config_file_path, 'w') as fileobj:
-            json.dump(config, fileobj, indent=4, sort_keys=True, ensure_ascii=False)
+    def load_defaults(self):
+        self.setdefault('timeline_zoom', 100.0)
+        self.setdefault('playback_speed', 1.0)
+        self.setdefault('repeat_activated', False)
+        self.setdefault('playback_repeat_duration', 10.0)        
+        self.setdefault('playback_repeat_times', 3)
+        self.setdefault('timeline', {})
+        self.setdefault('interface_splitters', {})
+        self.setdefault('shortcuts', {})
+        self.setdefault('default_new_subtitle_duration', 10.0)
+        self.setdefault('new_subtitle_start_from_last', False)
+        self.setdefault('new_subtitle_and_play', False)
+        self.setdefault('new_subtitle_to_next_start', False)
+        

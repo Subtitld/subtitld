@@ -151,11 +151,9 @@ def next_start_to_current_position(position=0.0):
     subt = [item['start'] for item in session.SUBTITLE['segments']]
     index = bisect(subt, position)
     if index < len(subt):
-        end = session.SUBTITLE['segments'][index]['end']
         session.SUBTITLE['segments'][index]['start'] = position
-        session.SUBTITLE['segments'][index]['end'] = end - position
-    if index and session.SUBTITLE['segments'][index - 1]['end'] > position:
-        last_end_to_current_position(position=position - 0.001)
+    # if index and session.SUBTITLE['segments'][index - 1]['end'] > position:
+    #     last_end_to_current_position(position=position - 0.001)
 
 
 def subtitle_start_to_current_position(position=0.0):
@@ -164,13 +162,13 @@ def subtitle_start_to_current_position(position=0.0):
     subt = [item['start'] for item in session.SUBTITLE['segments']]
     index = bisect(subt, position)
     if index and position < (session.SUBTITLE['segments'][index - 1]['end']):
-        end = session.SUBTITLE['segments'][index - 1]['end']
+        # end = session.SUBTITLE['segments'][index - 1]['end']
         session.SUBTITLE['segments'][index - 1]['start'] = position
-        session.SUBTITLE['segments'][index - 1]['end'] = end - position
-    else:
-        end = session.SUBTITLE['segments'][index]['end']
-        session.SUBTITLE['segments'][index]['start'] = position
-        session.SUBTITLE['segments'][index]['end'] = end - position
+        # session.SUBTITLE['segments'][index - 1]['end'] = end - position
+    # else:
+    #     end = session.SUBTITLE['segments'][index]['end']
+    #     session.SUBTITLE['segments'][index]['start'] = position
+    #     session.SUBTITLE['segments'][index]['end'] = end - position
 
 
 def subtitle_end_to_current_position(position=0.0):
@@ -180,22 +178,41 @@ def subtitle_end_to_current_position(position=0.0):
     index = bisect(subt, position)
     if index:
         if position < (session.SUBTITLE['segments'][index - 1]['end']):
-            session.SUBTITLE['segments'][index - 1]['end'] = position - session.SUBTITLE['segments'][index - 1]['start']
-        else:
-            session.SUBTITLE['segments'][index - 1]['end'] = position - session.SUBTITLE['segments'][index - 1]['start']
+            session.SUBTITLE['segments'][index - 1]['end'] = position # - session.SUBTITLE['segments'][index - 1]['start']
+        # else:
+        #     session.SUBTITLE['segments'][index - 1]['end'] = position - session.SUBTITLE['segments'][index - 1]['start']
 
 
 def subtitle_under_current_position(position=False):
     """Function to return subtitle under position"""
     if not position:
         position = session.SUBTITLE.get('position', 0.0)
-    current_subtitle = False
+    # current_subtitle = False
+
+    return next((item for item in session.SUBTITLE['segments'] if item['start'] <= position < item['end']), False)
+
+
+    # subt = [item['start'] for item in session.SUBTITLE['segments']]
+    # index = bisect(subt, position)
+    # if index - 1 > -1 and position > session.SUBTITLE['segments'][index - 1]['start'] and position < (session.SUBTITLE['segments'][index - 1]['end']):
+    #     current_subtitle = session.SUBTITLE['segments'][index - 1]
+    # return current_subtitle
+
+
+def get_adjacent_subtitles(position=False, subtitle=False):
+    if subtitle:
+        position = subtitle['start']
+
+    if not position:
+        position = session.SUBTITLE.get('position', 0.0)
+
+    # The most efficient way to get the adjacent subtitles is to use binary search
     subt = [item['start'] for item in session.SUBTITLE['segments']]
     index = bisect(subt, position)
-    if index - 1 > -1 and position > session.SUBTITLE['segments'][index - 1]['start'] and position < (session.SUBTITLE['segments'][index - 1]['end']):
-        current_subtitle = session.SUBTITLE['segments'][index - 1]
-    return current_subtitle
 
+    return session.SUBTITLE['segments'][index - 2] if index > 1 else False, session.SUBTITLE['segments'][index] if index < len(subt) else False
+    
+    
 
 def last_subtitle_current_position(position=0.0):
     """Function to return the last subtitle of position"""
@@ -226,7 +243,7 @@ def next_end_to_current_position(position=0.0):
     if index:
         end = session.SUBTITLE['segments'][index - 1]['end']
         if end > position:
-            session.SUBTITLE['segments'][index - 1]['end'] = position - session.SUBTITLE['segments'][index - 1]['start']
+            session.SUBTITLE['segments'][index - 1]['end'] = position # - session.SUBTITLE['segments'][index - 1]['start']
 
 
 def last_end_to_current_position(position=0.0):
@@ -236,7 +253,7 @@ def last_end_to_current_position(position=0.0):
     index = bisect(subt, position)
 
     if index - 1 < len(subt) - 1:
-        session.SUBTITLE['segments'][index - 1]['end'] = position - session.SUBTITLE['segments'][index - 1]['start']
+        session.SUBTITLE['segments'][index - 1]['end'] = position # - session.SUBTITLE['segments'][index - 1]['start']
 
 
 def last_start_to_current_position(position=0.0):
@@ -245,9 +262,9 @@ def last_start_to_current_position(position=0.0):
     subt = [item['start'] for item in session.SUBTITLE['segments']]
     index = bisect(subt, position)
     if index and session.SUBTITLE['segments'][index - 1]['start'] < position and not (session.SUBTITLE['segments'][index - 1]['end']) < position:
-        end = session.SUBTITLE['segments'][index - 1]['end']
+        # end = session.SUBTITLE['segments'][index - 1]['end']
         session.SUBTITLE['segments'][index - 1]['start'] = position
-        session.SUBTITLE['segments'][index - 1]['end'] = end - position
+        # session.SUBTITLE['segments'][index - 1]['end'] = end - position
 
 
 def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
@@ -292,3 +309,13 @@ def is_current_position_above_subtitle(position=0.0):
         return True
 
     return False
+
+def get_speaker_intervals(speaker_name):
+    intervals = []
+    for subtitle in session.SUBTITLE['segments']:
+        speaker = subtitle.get('speaker', None)
+        if speaker == speaker_name:
+            start = subtitle['start']
+            end = subtitle['end']
+            intervals.append((start, end))
+    return intervals

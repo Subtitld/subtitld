@@ -2,7 +2,7 @@
 
 
 from bs4 import BeautifulSoup
-from subtitld import timecode
+import subtitld.modules.timecode as timecode
 
 # <?xml version="1.0" encoding="UTF-16"?>
 USF_BASE_MARKUP = '''
@@ -44,7 +44,7 @@ class USFReader():
 
                     if 'start' in element.attrs and 'stop' in element.attrs and text:
                         subtitle['start'] = timecode.Timecode('1000', element.attrs['start']).float
-                        subtitle['end'] = timecode.Timecode('1000', element.attrs['stop']).float - timecode.Timecode('1000', element.attrs['start']).float
+                        subtitle['end'] = timecode.Timecode('1000', element.attrs['stop']).float
                         subtitle['text'] = text.strip()
 
                     if subtitle:

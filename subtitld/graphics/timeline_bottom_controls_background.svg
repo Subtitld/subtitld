@@ -1,18 +1,25 @@
-<svg width="1" height="26" version="1.1" viewBox="0 0 1 26" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg width="200" height="26" version="1.1" viewBox="0 0 200 26" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
  <defs>
-  <radialGradient id="b" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 1.1431e-6 1.781e-8 -.03125 606.84 98.112)" gradientUnits="userSpaceOnUse" xlink:href="#a"/>
-  <linearGradient id="a">
+  <linearGradient id="linearGradient2613">
    <stop offset="0"/>
    <stop stop-opacity="0" offset="1"/>
   </linearGradient>
-  <radialGradient id="c" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 5.7153e-7 1.781e-8 -.015625 606.84 64.869)" gradientUnits="userSpaceOnUse" xlink:href="#a"/>
-  <radialGradient id="d" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 2.8576e-7 1.781e-8 -.0078125 606.84 49.247)" gradientUnits="userSpaceOnUse" xlink:href="#a"/>
+  <radialGradient id="radialGradient2920" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 1.1431e-6 1.781e-8 -.03125 -173.49 3212.1)" gradientUnits="userSpaceOnUse" xlink:href="#linearGradient2613"/>
+  <radialGradient id="radialGradient2918" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 5.7153e-7 1.781e-8 -.015625 -173.49 3180.9)" gradientUnits="userSpaceOnUse" xlink:href="#linearGradient2613"/>
+  <radialGradient id="radialGradient2916" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 2.8576e-7 1.781e-8 -.0078125 -173.49 3165.3)" gradientUnits="userSpaceOnUse" xlink:href="#linearGradient2613"/>
+  <radialGradient id="radialGradient2914" cx="655.28" cy="366523" r="640" gradientTransform="matrix(1 0 -.0009328 .1028 -1125.8 -34531)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#fff" offset="0"/>
+   <stop stop-color="#fff" stop-opacity="0" offset="1"/>
+  </radialGradient>
  </defs>
- <g transform="translate(-35.817,-32.627)" opacity=".98">
-  <path d="m35.817 32.627v24h1v-24z" fill-opacity=".8"/>
-  <path d="m35.817 32.627v23h1v-23z" fill="url(#b)" fill-rule="evenodd" opacity=".3"/>
-  <path d="m35.817 32.627v11h1v-11z" fill="url(#c)" fill-rule="evenodd" opacity=".08"/>
-  <path d="m35.817 32.627v6h1v-6z" fill="url(#d)" fill-rule="evenodd" opacity=".1"/>
-  <path d="m35.817 55.627v1h1v-1z" fill-opacity=".3"/>
+ <g transform="matrix(.15625 0 0 1.0952 226.95 -3449.5)" fill-rule="evenodd" stroke-width="2.4173">
+  <path d="m-1452.5 3149.6v20h1280v-20z" fill="url(#radialGradient2920)" opacity=".3"/>
+  <path d="m-1452.5 3149.6v10h1280v-10z" fill="url(#radialGradient2918)" opacity=".08"/>
+  <path d="m-1452.5 3149.6v5h1280v-5z" fill="url(#radialGradient2916)" opacity=".1"/>
+  <path d="m-1452.5 3148.6v1h1280v-1z" fill="url(#radialGradient2914)" opacity=".1"/>
  </g>
+ <path d="m0 0v23h200v-23z" fill-opacity=".2"/>
+ <path d="m0 23v1h200v-1z" fill-opacity=".3"/>
 </svg>

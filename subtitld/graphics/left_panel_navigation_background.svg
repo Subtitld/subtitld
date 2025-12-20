@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16" height="16" version="1.1" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+ <defs>
+  <linearGradient id="linearGradient3" x1="16" x2="11" y1="8" y2="8" gradientUnits="userSpaceOnUse">
+   <stop stop-opacity=".3" offset="0"/>
+   <stop stop-opacity="0" offset="1"/>
+  </linearGradient>
+ </defs>
+ <rect x="11" width="5" height="16" rx="0" ry="0" fill="url(#linearGradient3)" style="paint-order:stroke fill markers"/>
+ <rect x="15" width="1" height="16" rx="0" ry="0" fill-opacity=".2" style="paint-order:stroke fill markers"/>
+</svg>

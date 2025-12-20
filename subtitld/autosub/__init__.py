@@ -178,10 +178,8 @@ def extract_audio(filename, channels=1, rate=16000, ffmpeg_executable='ffmpeg'):
     """
     temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
     if not os.path.isfile(filename):
-        print("The given file does not exist: {}".format(filename))
         raise Exception("Invalid filepath: {}".format(filename))
     if not which(ffmpeg_executable) and not which("{}.exe".format(ffmpeg_executable)):
-        print("ffmpeg: Executable not found on machine.")
         raise Exception("Dependency not found: ffmpeg")
     command = [ffmpeg_executable, "-y", "-i", filename,
                "-ac", str(channels), "-ar", str(rate),

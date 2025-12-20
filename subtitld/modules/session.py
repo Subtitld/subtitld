@@ -1,17 +1,16 @@
 """All path definitions for Subtitld"""
 
-import os
+import pathlib
 import sys
 import tempfile
 import subprocess
 import subtitld
 
-PATH_SUBTITLD = os.path.dirname(subtitld.__file__)
-PATH_LOCALE = os.path.join(PATH_SUBTITLD, 'locale')
-PATH_SUBTITLD_GRAPHICS = os.path.join(PATH_SUBTITLD, 'graphics')
-PATH_HOME = os.path.expanduser("~")
-PATH_SUBTITLD_USER_CONFIG = os.path.join(PATH_HOME, '.config', 'subtitld')
-REAL_PATH_HOME = PATH_HOME
+PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
+PATH_LOCALE = PATH_SUBTITLD / 'locale'
+PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
+PATH_HOME = pathlib.Path.home()
+PATH_SUBTITLD_USER_CONFIG = PATH_HOME / '.config' / 'subtitld'
 
 FFMPEG_EXECUTABLE = 'ffmpeg'
 FFPROBE_EXECUTABLE = 'ffprobe'
@@ -25,73 +24,55 @@ path_tmp = tempdir.name
 
 if sys.platform == 'darwin':
     ACTUAL_OS = 'macos'
-    PATH_SUBTITLD_USER_CONFIG = os.path.join(PATH_HOME, 'Library', 'Application Support', 'subtitld')
-    FFMPEG_EXECUTABLE = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'ffmpeg')
-    FFPROBE_EXECUTABLE = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'ffprobe')
+    PATH_SUBTITLD_USER_CONFIG = PATH_HOME / 'Library' / 'Application Support' / 'subtitld'
+    FFMPEG_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffmpeg'
+    FFPROBE_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffprobe'
     # try:
     #     from Foundation import NSURL
     # except ImportError:
     #     sys.path.append('/System/Library/Frameworks/Python.framework/Versions/2.7/Extras/lib/python/PyObjC')
     #     from Foundation import NSURL
-elif sys.platform == 'win32' or os.name == 'nt':
+elif sys.platform == 'win32':
     ACTUAL_OS = 'windows'
-    PATH_SUBTITLD_USER_CONFIG = os.path.join(os.getenv('LOCALAPPDATA'), 'subtitld')
+    PATH_SUBTITLD_USER_CONFIG = pathlib.Path(os.getenv('LOCALAPPDATA')) / 'subtitld'
     if getattr(sys, "frozen", False):
-        PATH_SUBTITLD = os.path.dirname(PATH_SUBTITLD)
-        PATH_SUBTITLD_GRAPHICS = os.path.join(PATH_SUBTITLD, 'graphics')
-        FFMPEG_EXECUTABLE = os.path.join(PATH_SUBTITLD, 'ffmpeg.exe')
-        FFPROBE_EXECUTABLE = os.path.join(PATH_SUBTITLD, 'ffprobe.exe')
+        PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
+        PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
+        FFMPEG_EXECUTABLE = PATH_SUBTITLD / 'ffmpeg.exe'
+        FFPROBE_EXECUTABLE = PATH_SUBTITLD / 'ffprobe.exe'
     else:
-        FFMPEG_EXECUTABLE = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'ffmpeg.exe')
-        FFPROBE_EXECUTABLE = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'ffprobe.exe')
+        script_dir = pathlib.Path(sys.argv[0]).parent
+        FFMPEG_EXECUTABLE = script_dir / 'ffmpeg.exe'
+        FFPROBE_EXECUTABLE = script_dir / 'ffprobe.exe'
     STARTUPINFO = subprocess.STARTUPINFO()
     STARTUPINFO.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     STARTUPINFO.wShowWindow = subprocess.SW_HIDE
     import multiprocessing
     multiprocessing.freeze_support()
-else:
-    # if 'APPIMAGE' in os.environ or 'SNAP' in os.environ:
-    # PATH_SUBTITLD_GRAPHICS = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'graphics')
-    # FFMPEG_EXECUTABLE = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'ffmpeg')
-    # FFPROBE_EXECUTABLE = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'ffprobe')
-
-    if 'SNAP_REAL_HOME' in os.environ:
-        REAL_PATH_HOME = os.environ['SNAP_REAL_HOME']
-    else:
-        try:
-            REAL_PATH_HOME = subprocess.Popen(['getente', 'passwd', str(os.getuid())], stdout=subprocess.PIPE).stdout.read().decode().split(':')[5]
-        except FileNotFoundError:
-            pass
-
-    if not os.path.isdir(os.path.join(PATH_HOME, '.config')):
-        os.mkdir(os.path.join(PATH_HOME, '.config'))
 
 
-PATH_SUBTITLD_DATA_BACKUP = os.path.join(PATH_SUBTITLD_USER_CONFIG, 'backup')
+    # FFMPEG_EXECUTABLE = pathlib.Path('ffmpeg').resolve()
+    # FFPROBE_EXECUTABLE = pathlib.Path('ffprobe').resolve()
 
-PATH_SUBTITLD_DATA_UPDATE = os.path.join(PATH_SUBTITLD_USER_CONFIG, 'update')
+PATH_SUBTITLD_DATA_BACKUP = PATH_SUBTITLD_USER_CONFIG / 'backup'
 
-PATH_SUBTITLD_DATA_THUMBNAILS = os.path.join(PATH_SUBTITLD_USER_CONFIG, 'thumbnails')
+PATH_SUBTITLD_USER_CONFIG_FILE = PATH_SUBTITLD_USER_CONFIG / 'subtitld.config'
 
-if not os.path.isdir(PATH_SUBTITLD_USER_CONFIG):
-    os.mkdir(PATH_SUBTITLD_USER_CONFIG)
+# VERSION_NUMBER = '20.07.0.0'
+# if os.path.isfile(os.path.join(PATH_SUBTITLD, 'current_version')):
+#     VERSION_NUMBER = open(os.path.join(PATH_SUBTITLD, 'current_version')).read().strip()
 
-if not os.path.isdir(PATH_SUBTITLD_DATA_BACKUP):
-    os.mkdir(PATH_SUBTITLD_DATA_BACKUP)
+CONFIG = {}
 
-if not os.path.isdir(PATH_SUBTITLD_DATA_UPDATE):
-    os.mkdir(PATH_SUBTITLD_DATA_UPDATE)
-
-if not os.path.isdir(PATH_SUBTITLD_DATA_THUMBNAILS):
-    os.mkdir(PATH_SUBTITLD_DATA_THUMBNAILS)
-
-PATH_SUBTITLD_USER_CONFIG_FILE = os.path.join(PATH_SUBTITLD_USER_CONFIG, 'subtitld.config')
-
-VERSION_NUMBER = '20.07.0.0'
-if os.path.isfile(os.path.join(PATH_SUBTITLD, 'current_version')):
-    VERSION_NUMBER = open(os.path.join(PATH_SUBTITLD, 'current_version')).read().strip()
-
-LIST_OF_SUPPORTED_VIDEO_EXTENSIONS = (('.mp4', '.mkv', '.mov', '.mpg', '.webm', '.ogv', '.m4v'))
+LIST_OF_SUPPORTED_VIDEO_EXTENSIONS = {
+    'MP4': {'description': 'MPEG-4 Video format', 'extensions': ['mp4']},
+    'MKV': {'description': 'Matroska Video format', 'extensions': ['mkv']},
+    'MOV': {'description': 'Quicktime Video format', 'extensions': ['mov']},
+    'MPG': {'description': 'MPEG Video format', 'extensions': ['mpg']},
+    'WEBM': {'description': 'WebM Video format', 'extensions': ['webm']},
+    'OGV': {'description': 'Ogg Video format', 'extensions': ['ogv']},
+    'M4V': {'description': 'MPEG-4 Video format', 'extensions': ['m4v']},
+}
 
 LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SRT': {'description': 'SubRip Subtitle format', 'extensions': ['srt']},
@@ -243,8 +224,10 @@ LANGUAGE_DICT_LIST = {
 }
 
 SUBTITLE = {
-    'segments': []
+    'segments': [],
 }
+
+SPEAKERS = {}
 
 VIDEO = {}
 

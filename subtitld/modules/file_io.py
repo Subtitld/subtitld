@@ -1,62 +1,29 @@
 import os
-import datetime
 import hashlib
 from docx import Document
 import json
-
-from PySide6.QtWidgets import QFileDialog
-from PySide6.QtCore import QThread, Signal, QTimer
-
-# from scenedetect.video_manager import VideoManager
-# from scenedetect.scene_manager import SceneManager
-# from scenedetect.stats_manager import StatsManager
-# from scenedetect.detectors import ContentDetector
-
 import pycaption
 from pycaption.exceptions import CaptionReadSyntaxError, CaptionReadNoCaptions
 import chardet
 import pysubs2
-# from cleantext import clean
-from subtitld import timecode  # , captionstransformer
+import copy
 
-from subtitld.modules import session, waveform, usf
+from PySide6.QtWidgets import QFileDialog
+from PySide6.QtCore import QThread, Signal
+
+from subtitld.modules import timecode
+from subtitld.modules import session
+from subtitld.modules import waveform
+from subtitld.modules import usf
+
+from subtitld.interface import timeline
+# from subtitld.interface import productionscreen
+# from subtitld.interface import startscreen
+# from subtitld.interface import subtitles_panel_widget_qlistwidget
+# from subtitld.interface import subtitles_panel
+# from subtitld.interface import subtitles_panel_info
 from subtitld.interface.translation import _
-from subtitld.interface import subtitles_panel_widget_qlistwidget, productionscreen, timeline, subtitles_panel, startscreen, subtitles_panel_info
 
-
-list_of_supported_subtitle_extensions = []
-for exttype in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-    for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']:
-        list_of_supported_subtitle_extensions.append(ext)
-
-
-# class ThreadExtractSceneTimePositions(QThread):
-#     """Thread to extract time positions of scenes"""
-#     command = Signal(list)
-#     filepath = ''
-
-#     def run(self):
-#         """Run function of extract time positions thread"""
-#         if self.filepath:
-#             result = []
-#             try:
-#                 video_manager = VideoManager([self.filepath])
-#                 stats_manager = StatsManager()
-#                 scene_manager = SceneManager(stats_manager)
-#                 scene_manager.add_detector(ContentDetector())
-#                 base_timecode = video_manager.get_base_timecode()
-#                 try:
-#                     video_manager.set_downscale_factor()
-#                     video_manager.start()
-#                     scene_manager.detect_scenes(frame_source=video_manager, show_progress=False)
-#                     scene_list = scene_manager.get_scene_list(base_timecode)
-#                     for _, scene in enumerate(scene_list):
-#                         result.append(scene[0].get_seconds())
-#                 finally:
-#                     video_manager.release()
-#             except Exception:
-#                 pass
-#             self.command.emit(result)
 
 
 class ThreadExtractWaveform(QThread):
@@ -98,22 +65,22 @@ class ThreadGenerateHashOfVideo(QThread):
 
 def load(self):
     """Load thread objects"""
-    def thread_extract_waveform_ended(command):
-        session.VIDEO['audio'] = command
-        timeline.zoom_update_waveform(self)
-        # self.videoinfo_label.setText('Audio ffmpeg_extract_subtitleed')
+    # def thread_extract_waveform_ended(command):
+    #     session.VIDEO['audio'] = command
+    #     timeline.zoom_update_waveform(self)
+    #     # self.videoinfo_label.setText('Audio ffmpeg_extract_subtitleed')
 
-    self.thread_extract_waveform = ThreadExtractWaveform(self)
-    self.thread_extract_waveform.command.connect(thread_extract_waveform_ended)
+    # self.thread_extract_waveform = ThreadExtractWaveform(self)
+    # self.thread_extract_waveform.command.connect(thread_extract_waveform_ended)
 
-    def thread_extract_waveform_ended2(command):
-        if not command[0] in session.VIDEO['waveform']:
-            session.VIDEO['waveform'][command[0]] = {'qimages': []}
-        session.VIDEO['waveform'][command[0]]['qimages'].append(command[1])
-        self.timeline_widget.update()
+    # def thread_extract_waveform_ended2(command):
+    #     if not command[0] in session.VIDEO['waveform']:
+    #         session.VIDEO['waveform'][command[0]] = {'qimages': []}
+    #     session.VIDEO['waveform'][command[0]]['qimages'].append(command[1])
+    #     self.timeline_widget.update()
 
-    self.thread_extract_waveform2 = waveform.ThreadExtractWaveform2(self)
-    self.thread_extract_waveform2.command.connect(thread_extract_waveform_ended2)
+    # self.thread_extract_waveform2 = waveform.ThreadExtractWaveform2(self)
+    # self.thread_extract_waveform2.command.connect(thread_extract_waveform_ended2)
 
     # def thread_extract_scene_time_positions_ended(command):
     #     session.VIDEO['scenes'] = command
@@ -121,34 +88,37 @@ def load(self):
     # self.thread_extract_scene_time_positions = ThreadExtractSceneTimePositions(self)
     # self.thread_extract_scene_time_positions.command.connect(thread_extract_scene_time_positions_ended)
 
-    def thread_generate_hash_of_video(response):
-        if session.VIDEO.get('filepath', '') == response[0] and 'hash' not in session.VIDEO:
-            session.VIDEO['hash'] = response[1]
-            if session.SUBTITLE['subtitle_filepath'] in session.CONFIG['recent_files']:
-                session.CONFIG['recent_files'][session.SUBTITLE['subtitle_filepath']]['video_hash'] = session.VIDEO['hash']
+    # def thread_generate_hash_of_video(response):
+    #     if session.VIDEO.get('filepath', '') == response[0] and 'hash' not in session.VIDEO:
+    #         session.VIDEO['hash'] = response[1]
+    #         if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
+    #             session.CONFIG['recent_files'][session.SUBTITLE['filepath']]['video_hash'] = session.VIDEO['hash']
 
-    self.thread_generate_hash_of_video = ThreadGenerateHashOfVideo(self)
-    self.thread_generate_hash_of_video.response.connect(thread_generate_hash_of_video)
+    # self.thread_generate_hash_of_video = ThreadGenerateHashOfVideo(self)
+    # self.thread_generate_hash_of_video.response.connect(thread_generate_hash_of_video)
+    pass
 
+def open_filepath():
+    pass
 
-def open_filepath(self, files_to_open=[], update_interface=False):
-    """Open subtitle or video and performs some checks"""
-    supported_subtitle_files = _('file_io.subtitle_files') + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in list_of_supported_subtitle_extensions]))
-    supported_video_files = _('file_io.video_files') + ' ({})'.format(" ".join(["*{}".format(fo) for fo in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS]))
+def open_filepath_2(self, files_to_open=[], update_interface=False):
     
+    """Open subtitle or video and performs some checks"""
     if session.SUBTITLE.get('subtitle_filepath', False):
-        files_to_open.append(session.SUBTITLE['subtitle_filepath'])
+        files_to_open.append(session.SUBTITLE['filepath'])
     
     if session.SUBTITLE.get('video_filepath', False):
-        files_to_open.append(session.SUBTITLE['video_filepath'])
+        files_to_open.append(session.VIDEO['filepath'])
 
     if not files_to_open:
-        files_to_open.append(QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_or_subtitle'), dir=session.REAL_PATH_HOME, filter=supported_subtitle_files + ';;' + supported_video_files)[0])
+        files_to_open.append(
+            
+        )
 
     for filepath in files_to_open:
         if os.path.isfile(filepath):
             if not session.SUBTITLE['segments'] and filepath.lower().endswith(tuple(list_of_supported_subtitle_extensions)):
-                session.SUBTITLE['subtitle_filepath'] = filepath
+                session.SUBTITLE['filepath'] = filepath
                 session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(filepath)
             # elif not session.VIDEO and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
             #     session.VIDEO = process_video_file(filepath)
@@ -163,14 +133,19 @@ def open_filepath(self, files_to_open=[], update_interface=False):
             #     for filename in os.listdir(os.path.dirname(filepath)):
             #         if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(tuple(list_of_supported_subtitle_extensions)):
             #             session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(os.path.join(os.path.dirname(filepath), filename))
-            #             session.SUBTITLE['subtitle_filepath'] = os.path.join(os.path.dirname(filepath), filename)
+            #             session.SUBTITLE['filepath'] = os.path.join(os.path.dirname(filepath), filename)
             #             break
 
     if not session.VIDEO:
-        filepath = QFileDialog.getOpenFileName(parent=self, caption=_('file_io.select_video_file'), dir=session.REAL_PATH_HOME, filter=supported_video_files)[0]
+        filepath = QFileDialog.getOpenFileName(
+            parent=self,
+            caption=_('file_io.select_video_file'),
+            dir=str(session.PATH_HOME), filter=supported_video_files
+        )[0]
+
         if filepath and os.path.isfile(filepath) and filepath.lower().endswith(session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
             session.VIDEO = process_video_file(filepath)
-            session.SUBTITLE['video_filepath'] = filepath
+            session.VIDEO['filepath'] = filepath
             
     if session.VIDEO:
         self.actual_video_file = session.VIDEO['filepath']
@@ -179,20 +154,20 @@ def open_filepath(self, files_to_open=[], update_interface=False):
             self.thread_extract_waveform.start()
             # self.videoinfo_label.setText('Extracting audio...')
 
-        self.player_widget.loadfile(session.VIDEO['filepath'])
-        if session.SUBTITLE['subtitle_filepath']:
-            self.thread_generate_hash_of_video.filepath = session.VIDEO['filepath']
-            self.thread_generate_hash_of_video.start()
-            if session.SUBTITLE['subtitle_filepath'] in session.CONFIG['recent_files']:
-                self.player_widget.seek(session.CONFIG['recent_files'][session.SUBTITLE['subtitle_filepath']].get('last_position', 0))
+        # # self.player_widget.loadfile(session.VIDEO['filepath'])
+        # if session.SUBTITLE['filepath']:
+        #     self.thread_generate_hash_of_video.filepath = session.VIDEO['filepath']
+        #     self.thread_generate_hash_of_video.start()
+        #     # if session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
+        #     #     self.player_widget.seek(session.CONFIG['recent_files'][session.SUBTITLE['filepath']].get('last_position', 0))
 
-        if not session.SUBTITLE['subtitle_filepath']:
-            if session.VIDEO.get('subtitles', ''):
-                session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(session.VIDEO['subtitles'])
-        session.CONFIG['recent_files'][session.SUBTITLE['subtitle_filepath']] = {
-            'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
-            'video_filepath': session.VIDEO['filepath']
-        }
+        # if not session.SUBTITLE['filepath']:
+        #     if session.VIDEO.get('subtitles', ''):
+        #         session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(session.VIDEO['subtitles'])
+        # # session.CONFIG['recent_files'][session.SUBTITLE['filepath']] = {
+        # #     'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+        # #     'video_filepath': session.VIDEO['filepath']
+        # # }
         
 
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
@@ -241,7 +216,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         segments_list.append({
                             'start': event.start / 1000.0,
                             'end': (event.start / 1000.0) + (event.duration / 1000.0),
-                            'text': text
+                            'text': event.text
                         })
                 except CaptionReadNoCaptions:
                     pass

@@ -7,11 +7,12 @@
 import os
 import sys
 import pydoc
+from pathlib import Path
+import subprocess
 
 from setuptools import setup, find_packages
 
 import subtitld
-
 
 def get_description(filename='README.md'):
     with open(os.path.join(os.path.abspath(os.path.dirname(__file__)), filename), encoding='utf-8') as f:
@@ -20,7 +21,6 @@ def get_description(filename='README.md'):
     for item in file[11: len(file)]:
         desc += item
     return desc
-
 
 def get_data_files():
     files = []
@@ -125,37 +125,43 @@ def pip_notes():
 
 setup_requires = ['setuptools']
 install_requires = [
-    'PySide6==6.7.3',
-    'pyopengl',
-    'python-mpv==1.0.5',
-    'ffms2',
-    'numpy==1.24.0',
-    'cffi',
-    'requests',
-    'pycaption',
+    'PySideSix-Frameless-Window',
+    'mediapipe',
+    'opencv-python',
+    # 'soundfile',
+    # 'scipy'
+    # 'requests',
+    # 'numpy',
+    # 'PySide6',
+    # 'ffms2',
+    # 'pycaption',
+    # 'pysubs2',
+    # 'clean-text[gpl]',
+    # 'translate',
+    # 'python-docx',
+    # 'chardet',
+    # 'google-api-python-client',
+    # 'pysrt',
+    # 'python-i18n',
+    # 'google-cloud-core',
+    # 'sounddevice',
+    # 'pydub',
+    # 'pyrubberband',
+    # 'distutils',
+    # 'cffi',
     # 'captionstransformer @ git+ssh://git@github.com/toutpt/captionstransformer',
-    'pysubs2',
-    'clean-text[gpl]',
-    'html5lib==1.0b8',
+    # 'html5lib==1.0b8',
     # 'scenedetect',
     # 'opencv-python',
     # 'autosub3',
-    'translate',
-    'SpeechRecognition',
-    'beautifulsoup4<4.10,>=4.8.1',
-    'python-docx',
-    'chardet',
-    'google-api-python-client',
-    'pysrt',
-    'certifi',
-    'python-i18n',
-    'google-cloud-core'
+    # 'SpeechRecognition',
+    # 'beautifulsoup4<4.10,>=4.8.1',
+    # 'certifi',
 ]
 
 # --------------------------------------------------------------------------- #
 
 try:
-    # begin setuptools installer
     result = setup(
         app=['subtitld/__main__.py'],
         name=subtitld.__appname__.lower(),

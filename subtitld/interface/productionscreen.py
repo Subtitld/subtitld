@@ -1,62 +1,59 @@
-import os
-import sys
-from datetime import datetime
+from PySide6.QtWidgets import QSplitter
+from PySide6.QtCore import Qt
 
-from PySide6.QtWidgets import QSplitter, QLabel, QGraphicsOpacityEffect, QListWidget, QListWidgetItem, QVBoxLayout, QWidget, QHBoxLayout, QSizePolicy
-from PySide6.QtCore import QPropertyAnimation, Qt, QSize, QEasingCurve, QTimer
+from subtitld.modules import file_io
+from subtitld.modules import session
 
-from subtitld.interface import global_panel, player, playercontrols, timeline, subtitles_panel
-from subtitld.modules import file_io, session
+from subtitld.interface import left_panel
+from subtitld.interface import preview_panel
+from subtitld.interface import bottom_panel
 from subtitld.interface.translation import _
 
 
 def load(self):
     self.main_horizontal_splitter = QSplitter(Qt.Horizontal)
+    self.main_horizontal_splitter.splitterMoved.connect(lambda pos, index: main_horizontal_splitter_changed(self, pos, index))
 
-    global_panel.load(self)
-
-    subtitles_panel.load(self)
-
-    self.main_horizontal_splitter.addWidget(self.subtitles_panel_widget)
-
-    player.load(self)
-
-    self.main_horizontal_splitter.addWidget(self.player_widget)
+    left_panel.load(self)
+    
+    preview_panel.load(self)
+    
+    self.main_horizontal_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_horizontal', [25, 75]))
 
     self.main_vertical_splitter = QSplitter(Qt.Vertical)
+    self.main_vertical_splitter.splitterMoved.connect(lambda pos, index: main_vertical_splitter_changed(self, pos, index))
 
     self.main_vertical_splitter.addWidget(self.main_horizontal_splitter)
-
-    playercontrols.load(self)
-
-    self.main_vertical_splitter.addWidget(self.playercontrols_widget)
-
     
+    bottom_panel.load(self)
+    
+    self.central_widget.layout().addWidget(self.main_vertical_splitter)
+
+    self.main_vertical_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_vertical', [70, 30]))
+
+
+def main_horizontal_splitter_changed(self, pos, index):
+    session.CONFIG['interface_splitters']['main_horizontal'] = self.main_horizontal_splitter.sizes()
+
+
+def main_vertical_splitter_changed(self, pos, index):
+    session.CONFIG['interface_splitters']['main_vertical'] = self.main_vertical_splitter.sizes()
+
+
 def show(self):
-    self.main_widget.setCurrentIndex(1)
-    subtitles_panel.show(self)
-    playercontrols.show(self)
-    global_panel.hide_global_panel(self)
-    # timeline.update_timeline(self)
+    self.central_widget.layout().setCurrentWidget(self.main_vertical_splitter)
+    left_panel.show(self)
+    preview_panel.show(self)
+    bottom_panel.show(self)
     
-
-    # timeline.update_timeline(self)
-    # self.startscreen.hide(self)
-    # playercontrols.show(self)
-    # self.subtitles_panel.show(self)
-
-    # playercontrols.show(self)
-    # self.subtitles_panel.show(self)
-    # self.global_panel.hide_global_panel(self)
-    # player_qrect = [self.player_widget.x(), self.player_widget.y(), self.player_widget.width(), self.player_widget.height()] 
-    # original_qrect = [self.start_screen_thumbnail_background.x(), self.start_screen_thumbnail_background.y(), self.start_screen_thumbnail_background.width(), self.start_screen_thumbnail_background.height()]
-    # self.generate_effect(self.start_screen_thumbnail_background_transparency_animation, 'opacity', 200, 1.0, 0.0)
-    # self.generate_effect(self.player_border_animation, 'geometry', 700, original_qrect, player_qrect)
-    # self.generate_effect(self.player_border_transparency_animation, 'opacity', 700, 0.5, 1.0)
-
-
 
 def hide(self):
-    """Function to hide starting panel"""
-    self.generate_effect(self.start_screen_animation_out, 'geometry', 200, [self.start_screen.x(), self.start_screen.y(), self.start_screen.width(), self.start_screen.height()], [self.start_screen.x(), int(self.start_screen.height()), self.start_screen.width(), self.start_screen.height()])
-    self.generate_effect(self.start_screen_transparency_animation, 'opacity', 200, 1.0, 0.5)
+    left_panel.hide(self)
+    preview_panel.hide(self)
+    bottom_panel.hide(self)
+
+
+def translate(self):
+    left_panel.translate(self)
+    preview_panel.translate(self)
+    bottom_panel.translate(self)

@@ -1,7 +1,6 @@
 import ctypes
 import platform
 
-from subtitld import timecode
 from subtitld.modules import session
 
 
@@ -126,8 +125,8 @@ def get_subtitle_format(subtitle_filepath):
 
 
 def get_format_from_extension(extension):
-    for formt in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-        for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
+    for format in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+        for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[format]['extensions']:
             if extension == ext:
-                return formt
+                return format
     return 'USF'

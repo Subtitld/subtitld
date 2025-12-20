@@ -8,6 +8,7 @@ import json
 from PySide6.QtCore import QPointF, QThread, Signal, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 import numpy
+import numpy as np
 import ffms2
 import asyncio
 
@@ -29,7 +30,6 @@ def ffmpeg_load_audio(filepath, samplerate=48000, mono=True, normalize=True, in_
         numpy.int32: 's32le',
         numpy.uint32: 'u32le'
     }
-    print('ffmpeg load audio started')
     format_string = format_strings[in_type]
     command = [
         FFMPEG_EXECUTABLE,
@@ -40,7 +40,6 @@ def ffmpeg_load_audio(filepath, samplerate=48000, mono=True, normalize=True, in_
         '-ar', str(samplerate),
         '-ac', str(channels),
         '-']
-    print('ffmpeg load will start')
     # proc = asyncio.subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=STARTUPINFO)#, bufsize=64)
     async def runcmd(command):
         proc = await asyncio.create_subprocess_shell(command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, startupinfo=STARTUPINFO)#, bufsize=64)
@@ -50,17 +49,14 @@ def ffmpeg_load_audio(filepath, samplerate=48000, mono=True, normalize=True, in_
     # frame_size = bytes_per_sample * channels
     # chunk_size = frame_size * sr
 
-    # print('ffmpeg load audio subprocess started')
     # with proc.stdout as stdout:
         # raw = stdout.read()
         raw = stdout
-        # print(type(raw))
         audio = numpy.frombuffer(raw)#, dtype=in_type).astype(out_type)
         return audio
 
     audio = asyncio.run(runcmd(' '.join(command)))
 
-    print('ffmpeg load ended')
     # p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=4096, startupinfo=STARTUPINFO) # creationflags=subprocess.CREATE_NO_WINDOW,
     # bytes_per_sample = numpy.dtype(in_type).itemsize
     # frame_size = bytes_per_sample * channels
@@ -85,28 +81,47 @@ def ffmpeg_load_audio(filepath, samplerate=48000, mono=True, normalize=True, in_
                 audio /= peak
         elif issubclass(in_type, numpy.integer):
             audio /= numpy.iinfo(in_type).max
-    print(len(audio))
     return audio
 
 
-def ffms2_load_audio(filepath, samplerate=48000, mono=True, normalize=True, in_type=numpy.int16, out_type=numpy.float32):
-    # asource = ffms2.AudioSource(filepath)
-    # asource.init_buffer(asource.properties.NumSamples)
-    # print(asource.properties.NumSamples)
-    # print(4096*64000)
-    # asource.init_buffer((4096*64000))
-    # sound_np = asource.get_audio(0)
-    # start = (4096*64)
-    # while start < asource.properties.NumSamples:
-    #     if start + (4096*64) > asource.properties.NumSamples:
-    #         asource.init_buffer((4096*64) % ((start + (4096*64)) - asource.properties.NumSamples))
+def ffms2_load_audio(filepath, samplerate=48000, mono=True, normalize=True,
+                     in_type=np.int16, out_type=np.float32, chunk_size=4096*64):
+    asource = ffms2.AudioSource(filepath)
+    total_samples = asource.properties.NumSamples
+    channels = asource.properties.Channels
 
-    #     sound_np = numpy.append(sound_np, asource.get_audio(start), axis=0)
-    #     start += (4096*64)
-    # # print(sound_np)
-    # print(sound_np.shape)
-    return []#sound_np
+    # Initialize a buffer large enough for one chunk
+    asource.init_buffer(chunk_size)
 
+    chunks = []
+    start = 0
+
+    while start < total_samples:
+        # Determine the effective chunk size for this iteration
+        remaining = total_samples - start
+        if remaining < chunk_size:
+            asource.init_buffer(remaining)
+
+        try:
+            chunk = asource.get_audio(start)
+        except ffms2.Error as e:
+            break
+
+        chunks.append(chunk)
+        start += chunk_size
+
+    sound_np = np.concatenate(chunks, axis=0)
+
+    # Convert and normalize if requested
+    sound_np = sound_np.astype(out_type)
+    if normalize:
+        if np.issubdtype(in_type, np.integer):
+            sound_np /= np.iinfo(in_type).max
+
+    # Convert to mono if needed
+    if mono and channels > 1:
+        sound_np = np.mean(sound_np, axis=1)
+    return sound_np
 
 def ffmpeg_extract_subtitle(filepath, index):
     """Function to extract subtitle from video using ffmpeg"""
@@ -118,7 +133,6 @@ def ffmpeg_extract_subtitle(filepath, index):
         '0:' + str(index),
         os.path.join(path_tmp, 'subtitle.vtt')]
     subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=STARTUPINFO).wait()
-    print('subtitle extracted')
     return os.path.join(path_tmp, 'subtitle.vtt')
 
 
@@ -136,8 +150,6 @@ def ffmpeg_load_metadata(filepath):
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=STARTUPINFO)
     json_file = False
     with proc.stdout as stdout:
-        # test = stdout.read()
-        # print(test)
         json_file = json.loads(stdout.read())
 
     return json_file
@@ -171,7 +183,6 @@ def generate_waveform_zoom2(zoom, duration, filepath):
 
     parser = 0
     chunk = int(asource.properties.NumSamples / (duration * zoom))
-    print(chunk)
     while parser < asource.properties.NumSamples:
         if parser + chunk > asource.properties.NumSamples:
             chunk = (asource.properties.NumSamples - parser)
