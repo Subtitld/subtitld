@@ -103,7 +103,8 @@ QLineEdit[class=qlineedit_timings] {
 
 
 QSpinBox,
-QDoubleSpinBox {
+QDoubleSpinBox,
+QComboBox {
     padding-left:1px;
     border: 0;
     background-color: #3e5363;
@@ -115,7 +116,8 @@ QDoubleSpinBox {
 }
 
 QSpinBox::disabled,
-QDoubleSpinBox::disabled {
+QDoubleSpinBox::disabled,
+QComboBox::disabled {
     background-color: #803e5363;
 }
 
@@ -203,21 +205,19 @@ QSlider::handle:horizontal:disabled {
     border-width: 0 0 2 0;
 }
 
-#titleBar_left_save_container {
-    border-bottom-right-radius: 3px;
-    border-top-right-radius: 3px;
+#titleBar_left_save_button {
+    border-bottom-left-radius: 0;
+    border-top-left-radius: 0;
+    padding: 8px 8px 8px 20px;
+    icon: url(graphics:save.svg);
 }
 
-#titleBar_left_save_container[class=saved] {
+#titleBar_left_save_button[class=saved] {
     background-color: #b8cee0;
 }
 
-#titleBar_left_save_container[class=unsaved] {
+#titleBar_left_save_button[class=unsaved] {
     background-color: #67ff4d;
-}
-
-#titleBar_left_save_button {
-    qproperty-icon: url(graphics:save.svg);
 }
 
 #titleBar_left_information_container QLabel {
@@ -305,9 +305,11 @@ QSlider::handle:horizontal:disabled {
     qproperty-wordWrap: true;
 }
 
+QScrollArea,
+#left_panel_speakers_panel_content,
 #preview_panel_player QGraphicsView,
 #left_panel_navigation,
-QScrollArea {
+#left_panel_qualitycheck_panel_widget {
     background: transparent;
     outline: 0;
     margin: 0;
@@ -543,18 +545,20 @@ QScrollArea {
 }
 
 #playercontrols_widget_left_bottom_line {
-    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 1 27 2 0 stretch stretch;
-    border: 1 0 2 0;
+    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 28 2 0 stretch stretch;
+    border-width: 0 0 2 0;
+    margin-right: 12px;
 }
 
 #playercontrols_widget_center_bottom_line {
-    border-width: 1 14 2 14;
-    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 1 14 2 14 stretch stretch;
+    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 14 25 14 stretch stretch;
+    border-width: 0 14 25 14;
 }
 
 #playercontrols_widget_right_bottom_line {
-    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 1 0 2 27 stretch stretch;
-    margin-left: 10px;
+    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 0 2 28 stretch stretch;
+    border-width: 0 0 2 0;
+    margin-left: 12px;
 }
 
 #playercontrols_widget_center_top_line {
@@ -763,7 +767,7 @@ QScrollArea {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
-    qproperty-icon: url(graphics:gap_add_icon.svg);
+    icon: url(graphics:gap_add_icon.svg);
 }
 
 #gap_hbox #gap_remove_subtitle_button {
@@ -771,7 +775,7 @@ QScrollArea {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     border-bottom-left-radius: 0;
-    qproperty-icon: url(graphics:gap_remove_icon.svg);
+    icon: url(graphics:gap_remove_icon.svg);
 }
 
 #playercontrols_widget_top_line #add_subtitle_button {
@@ -936,7 +940,6 @@ QScrollArea {
 #playercontrols_widget_bottom_line QPushButton {
     border-radius: 0;
     padding: 0;
-    border-top: 1px solid #40304251;
 }
 
 #playercontrols_widget_bottom_line QPushButton:checked,
@@ -946,17 +949,530 @@ QScrollArea {
 
 #timelinescrolling_container #timelinescrolling_none_button {
     border-top-left-radius: 2px;
-    border-left: 1px solid #40304251;
     icon: url(graphics:timelinescrolling_none_icon.svg);
+}
+
+#timelinescrolling_container #timelinescrolling_none_button::checked {
+    icon: url(graphics:timelinescrolling_none_icon_checked.svg);
 }
 
 #timelinescrolling_container #timelinescrolling_follow_button {
     border-top-right-radius: 2px;
-    border-right: 1px solid #40304251;
     icon: url(graphics:timelinescrolling_follow_icon.svg);
 }
 
+#timelinescrolling_container #timelinescrolling_follow_button::checked {
+    icon: url(graphics:timelinescrolling_follow_icon_checked.svg);
+}
 
 #timelinescrolling_container #timelinescrolling_page_button {
     icon: url(graphics:timelinescrolling_page_icon.svg);
 }
+
+#timelinescrolling_container #timelinescrolling_page_button::checked {
+    icon: url(graphics:timelinescrolling_page_icon_checked.svg);
+}
+
+#snap_controls_container #snap_button {
+    border-top-left-radius: 2px;
+}
+
+#snap_controls_container #snap_button QLabel,
+#grid_controls_container #grid_button,
+#step_button_container #step_button {
+    text-transform: uppercase;
+    font-weight: 700;
+    font-size: 9px;
+}
+
+#playercontrols_widget_bottom_line QDoubleSpinBox {
+    border-radius: 0;
+}
+
+#playercontrols_widget_bottom_line QDoubleSpinBox::down-button {
+    padding: 0 5 3 0;
+}
+
+#playercontrols_widget_bottom_line QDoubleSpinBox::up-button {
+    padding: 3 5 0 0;
+}
+
+#playercontrols_widget_bottom_line QDoubleSpinBox::disabled {
+    background-color: transparent;
+    color: #40b8cee0;
+}
+
+#snap_controls_container #snap_limits_button {
+    icon: url(graphics:snap_limits_icon.svg);
+}
+
+#snap_controls_container #snap_limits_button::disabled,
+#snap_controls_container #snap_limits_button::checked:disabled {
+    icon: url(graphics:snap_limits_icon_disabled.svg);
+}
+
+#snap_controls_container #snap_limits_button::checked {
+    icon: url(graphics:snap_limits_icon_checked.svg);
+}
+
+#snap_controls_container #snap_grid_button {
+    icon: url(graphics:snap_grid_icon.svg);
+    padding-left: 4px;
+}
+
+#snap_controls_container #snap_grid_button::disabled,
+#snap_controls_container #snap_grid_button::checked:disabled {
+    icon: url(graphics:snap_grid_icon_disabled.svg);
+}
+
+#snap_controls_container #snap_grid_button::checked {
+    icon: url(graphics:snap_grid_icon_checked.svg);
+}
+
+#snap_controls_container #snap_move_button {
+    icon: url(graphics:snap_move_next.svg);
+}
+
+#snap_controls_container #snap_move_button::disabled,
+#snap_controls_container #snap_move_button::checked:disabled {
+    icon: url(graphics:snap_move_next_disabled.svg);
+}
+
+#snap_controls_container #snap_move_button::checked {
+    icon: url(graphics:snap_move_next_checked.svg);
+}
+
+#snap_controls_container #snap_move_nereast_button {
+    icon: url(graphics:snap_moving_icon.svg);
+    padding-right: 4px;
+    border-top-right-radius: 2px;
+}
+
+#snap_controls_container #snap_move_nereast_button::disabled,
+#snap_controls_container #snap_move_nereast_button::checked:disabled {
+    icon: url(graphics:snap_moving_icon_disabled.svg);
+}
+
+#snap_controls_container #snap_move_nereast_button::checked {
+    icon: url(graphics:snap_moving_icon_checked.svg);
+}
+
+#move_start_container #move_start_back_subtitle {
+    icon: url(graphics:move_start_back_subtitle.svg);
+    padding: 4 0 4 0;
+    border-top-left-radius: 2px;
+}
+
+#move_start_container #move_start_forward_subtitle {
+    icon: url(graphics:move_start_forward_subtitle.svg);
+    padding: 4 0 4 0;
+    border-top-right-radius: 2px;
+}
+
+#move_end_container #move_end_back_subtitle {
+    icon: url(graphics:move_end_back_subtitle.svg);
+    padding: 4 0 4 0;
+    border-top-left-radius: 2px;
+}
+
+#move_end_container #move_end_forward_subtitle {
+    icon: url(graphics:move_end_forward_subtitle.svg);
+    padding: 4 0 4 0;
+    border-top-right-radius: 2px;
+}
+
+#playercontrols_widget_left_bottom_line #move_backward_subtitle {
+    icon: url(graphics:move_backward_subtitle.svg);
+    padding: 4 0 4 0;
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
+}
+
+#playercontrols_widget_right_bottom_line #move_forward_subtitle {
+    icon: url(graphics:move_forward_subtitle.svg);
+    padding: 4 0 4 0;
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
+}
+
+#playercontrols_widget_left_bottom_line #timeline_cursor_back_frame {
+    background-color: transparent;
+    icon: url(graphics:timeline_cursor_back_frame.svg);
+}
+
+#playercontrols_widget_right_bottom_line #timeline_cursor_next_frame {
+    background-color: transparent;
+    icon: url(graphics:timeline_cursor_next_frame.svg);
+}
+
+#playercontrols_widget_left_bottom_line #timeline_cursor_back_frame::hover {
+    icon: url(graphics:timeline_cursor_back_frame_hover.svg);
+}
+
+#playercontrols_widget_right_bottom_line #timeline_cursor_next_frame::hover {
+    icon: url(graphics:timeline_cursor_next_frame_hover.svg);
+}
+
+#grid_controls_container #grid_button {
+    border-top-left-radius: 2px;
+    padding: 0 4 0 4;
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_frames_button {
+    icon: url(graphics:grid_frames_icon.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_frames_button::checked {
+    icon: url(graphics:grid_frames_icon_checked.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_frames_button::disabled {
+    icon: url(graphics:grid_frames_icon_disabled.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_seconds_button {
+    icon: url(graphics:grid_seconds_icon.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_seconds_button::checked {
+    icon: url(graphics:grid_seconds_icon_checked.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_seconds_button::disabled {
+    icon: url(graphics:grid_seconds_icon_disabled.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button {
+    icon: url(graphics:grid_scenes_icon.svg);
+    border-top-right-radius: 2px;
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button::checked {
+    icon: url(graphics:grid_scenes_icon_checked.svg);
+}
+
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button::disabled {
+    icon: url(graphics:grid_scenes_icon_disabled.svg);
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container #step_button {
+    border-top-left-radius: 2px;
+    padding: 0 4;
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container QDoubleSpinBox,
+#playercontrols_widget_right_bottom_line #step_button_container QSpinBox {
+    border-radius: 0;
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container QDoubleSpinBox::down-button,
+#playercontrols_widget_right_bottom_line #step_button_container QSpinBox::down-button {
+    padding: 0 5 6 0;
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container QDoubleSpinBox::up-button,
+#playercontrols_widget_right_bottom_line #step_button_container QSpinBox::up-button {
+    padding: 6 5 0 0;
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container QDoubleSpinBox::disabled,
+#playercontrols_widget_right_bottom_line #step_button_container QSpinBox::disabled {
+    background-color: #803e5363;
+    color: #40b8cee0;
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container QComboBox {
+    border-radius: 0;
+    border-top-right-radius: 2px;
+}
+
+
+#playercontrols_widget_right_bottom_line #step_button_container QComboBox::disabled {
+    color: #40b8cee0;
+}
+
+#playercontrols_widget_right_bottom_line #step_button_container QComboBox::drop-down {
+    border: 0;
+}
+
+#playercontrols_widget_right_bottom_line #zoomin_button {
+    icon: url(graphics:zoom_in_icon.svg);
+    border-top-left-radius: 2px;
+}
+
+#playercontrols_widget_right_bottom_line #zoomin_button::disabled {
+    icon: url(graphics:zoom_in_icon_disabled.svg);
+}
+
+#playercontrols_widget_right_bottom_line #zoomout_button {
+    icon: url(graphics:zoom_out_icon.svg);
+    border-top-right-radius: 2px;
+}
+
+#playercontrols_widget_right_bottom_line #zoomout_button::disabled {
+    icon: url(graphics:zoom_out_icon_disabled.svg);
+}
+
+#left_panel_metadata_panel_scroll,
+#left_panel_metadata_panel_info {
+    background-color: transparent;
+}
+
+
+#properties_information_word_counter {
+    border-top-left-radius: 2px;
+    border-bottom-left-radius: 2px;
+    padding: 6 6 6 30;
+    background-image: url('graphics:word_count_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+#properties_information_wpm {
+    border-top-right-radius: 2px;
+    border-bottom-right-radius: 2px;
+    padding: 6 6 6 24;
+    background-image: url('graphics:wpm_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    background-color: silver;
+}
+
+#properties_information_cps {
+    border-top-right-radius: 2px;
+    border-bottom-right-radius: 2px;
+    padding: 6 6 6 24;
+    background-image: url('graphics:cps_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    background-color: silver;
+}
+
+#properties_information_sub_duration {
+    border-radius: 2px;
+    padding: 6 6 6 24;
+    background-image: url('graphics:cps_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    background-color: silver;
+}
+
+#properties_information_character_counter {
+    border-top-left-radius: 2px;
+    border-bottom-left-radius: 2px;
+    padding: 6 6 6 30;
+    background-image: url('graphics:character_count_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+#properties_information_number_of_lines {
+    border-top-left-radius: 2px;
+    border-bottom-left-radius: 2px;
+    padding: 6 6 6 30;
+    background-image: url('graphics:new_line_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+#properties_information_cpl {
+    border-top-right-radius: 2px;
+    border-bottom-right-radius: 2px;
+    background-image: url('graphics:character_count_icon.svg');
+    background-repeat: no-repeat;
+    background-position: left center;
+}
+
+#properties_information_reason {
+    /* border-radius: 2px; */
+    /* padding: 6; */
+    color: #304251;
+    font-size: 9px;
+    qproperty-wordWrap: true;
+}
+
+#left_panel_qualitycheck_panel_widget {
+    color: white;
+}
+
+#left_panel_speakers_panel_content_item {
+    background-color: #e53e5363;
+    border-radius: 2px;
+}
+
+#left_panel_speakers_panel_content_item::hover {
+    background-color: #3e5363;
+}
+
+#left_panel_speakers_panel_content_item[selected=true] {
+    background-color: #6a7483;
+}
+
+#left_panel_speakers_panel_content_item QPushButton {
+    background-color: transparent;
+}
+
+
+#left_panel_speakers_panel_content_item QPushButton::hover {
+    background-color: #80304251;
+}
+
+
+#left_panel_speakers_panel_content_item QPushButton::pressed {
+    background-color: #40304251;
+}
+
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_rename_button {
+    icon: url(graphics:speaker_list_item_rename_icon.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_rename_button:hover {
+    icon: url(graphics:speaker_list_item_rename_icon_hover.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_change_color_button {
+    icon: url(graphics:speaker_list_item_change_color_icon.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_change_color_button:hover {
+    icon: url(graphics:speaker_list_item_change_color_icon_hover.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_remove_button {
+    icon: url(graphics:speaker_list_item_remove_icon.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_remove_button:hover {
+    icon: url(graphics:speaker_list_item_remove_icon_hover.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_export_button {
+    icon: url(graphics:speaker_list_item_export_icon.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_export_button:hover {
+    icon: url(graphics:speaker_list_item_export_icon_hover.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_bottom_line {
+    background-color: #bf304251;
+    border-bottom-left-radius: 2px;
+    border-bottom-right-radius: 2px;
+}
+
+#dialog_title {
+    background-color: #3e5363;
+    border-bottom: 1px solid #e530404c;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+#dialog_title QLabel {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+#dialog_title QPushButton {
+    border-top-right-radius: 4px;
+    border-top-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+#dialog_content {
+    background-color: #e53e5363;
+}
+
+#dialog_bottom {
+    background-color: #3e5363;
+    border-top: 1px solid #e530404c;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+#dialog_bottom QPushButton {
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    border-radius: 0;
+}
+
+#dialog_bottom QPushButton::hover {
+    background-color: #384b59;
+}
+
+#dialog_bottom QPushButton[class="accept_button"] {
+    border-bottom-right-radius: 4px;
+    background-color: #406a7483;
+}
+
+#dialog_bottom QPushButton[class="accept_button"]::hover {
+    background-color: #384b59;
+}
+
+#dialog_title #dialog_close_button {
+    icon: url(graphics:dialog_close_icon.svg);
+}
+
+#dialog_title #dialog_close_button::hover {
+    icon: url(graphics:dialog_close_icon_hover.svg);
+}
+
+#music_voice_separation_box #music_voice_separation_music_icon {
+    icon: url(graphics:music_voice_separation_music_icon.svg);
+    padding: 0 13px 0 8px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+#music_voice_separation_box #music_voice_separation_voice_icon {
+    icon: url(graphics:music_voice_separation_voice_icon.svg);
+    padding: 0 8px 0 13px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+#music_voice_separation_box #music_voice_separation_slider {
+    background-color: #b8cee0;
+}
+
+#music_voice_separation_box #music_voice_separation_slider[class="middle"] {
+    background-color: #6a7483;
+}
+
+#music_voice_separation_box #music_voice_separation_slider::disabled {
+    background-color: #1a1e2a33;
+    opacity: .5;
+}
+
+#music_voice_separation_box #music_voice_separation_music_icon::disabled {
+    icon: url(graphics:music_voice_separation_music_icon_disabled.svg);
+}
+
+#music_voice_separation_box #music_voice_separation_voice_icon::disabled {
+    icon: url(graphics:music_voice_separation_voice_icon_disabled.svg);
+}
+
+

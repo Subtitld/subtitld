@@ -1,4 +1,7 @@
-from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
+from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize
+
 
 from subtitld.interface.translation import _
 
@@ -85,3 +88,87 @@ def friendly_time(dt):
             months = seconds // 2419200
             return _("{months} month{plural} ago").format(months=months, plural='' if months == 1 else 's')
 
+
+class SimpleDialog(QDialog):
+    def __init__(self, parent=None, title='', *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+
+        self.title_line = QWidget()
+        self.title_line.setObjectName('dialog_title')
+        self.title_line.setLayout(QHBoxLayout())
+        self.title_line.layout().setContentsMargins(10, 0, 0, 1)
+
+        self.title_line.label = QLabel(title)
+        self.title_line.label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+        self.title_line.layout().addWidget(self.title_line.label)
+
+        close_button = QPushButton()
+        close_button.setFixedSize(QSize(32, 32))
+        close_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        close_button.setObjectName('dialog_close_button')
+        close_button.clicked.connect(lambda: self.reject())
+        self.title_line.layout().addWidget(close_button)
+
+        self.layout().addWidget(self.title_line)
+
+        # Enable mouse tracking for dragging functionality
+        self.title_line.setMouseTracking(True)
+        self.title_line.mousePressEvent = self.title_mouse_press_event
+        self.title_line.mouseMoveEvent = self.title_mouse_move_event
+        self.title_line.mouseReleaseEvent = self.title_mouse_release_event
+
+        self.content = QWidget()
+        self.content.setObjectName('dialog_content')
+        self.content.setLayout(QVBoxLayout())
+        self.content.layout().setContentsMargins(10, 10, 10, 10)
+        self.layout().addWidget(self.content)
+
+        bottom_line = QWidget()
+        bottom_line.setObjectName('dialog_bottom')
+        bottom_line.setLayout(QHBoxLayout())
+        bottom_line.layout().setContentsMargins(0, 1, 0, 0)
+        bottom_line.layout().setSpacing(0)
+
+        self.accept_button = QPushButton("OK")
+        self.accept_button.setProperty('class', 'accept_button')
+
+        self.reject_button = QPushButton("Cancel")
+        self.reject_button.setProperty('class', 'reject_button')
+
+        bottom_line.layout().addStretch()
+        bottom_line.layout().addWidget(self.reject_button)
+        bottom_line.layout().addWidget(self.accept_button)
+
+        self.accept_button.clicked.connect(self.accept)
+        self.reject_button.clicked.connect(self.reject)
+
+        self.layout().addWidget(bottom_line)
+
+    def title_mouse_press_event(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def title_mouse_move_event(self, event):
+        if event.buttons() == Qt.LeftButton:
+            if hasattr(self, 'drag_position'):
+                new_pos = event.globalPos() - self.drag_position
+                self.move(new_pos)
+                event.accept()
+
+    def title_mouse_release_event(self, event):
+        if hasattr(self, 'drag_position'):
+            delattr(self, 'drag_position')
+    
+    def set_title(self, title):
+        self.title_line.label.setText(title)
+
+    def accept(self):
+        super().accept()
+
+    

@@ -1,10 +1,11 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+from colorhash import ColorHash
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QListWidget, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
+from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -12,6 +13,7 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
+import random
 
 
 class FaceExtractorThread(QThread):
@@ -138,7 +140,6 @@ class FaceExtractorThread(QThread):
 
 def load(self):
     tab_name = 'speakers'
-    left_panel.add_button(self, tab_name)
     
     class left_panel_speakers_panel_qwidget(QWidget):
         def __init__(self):
@@ -152,35 +153,37 @@ def load(self):
             return super().showEvent(event)
 
     left_panel_speakers_panel = left_panel_speakers_panel_qwidget()
+    left_panel_speakers_panel.setProperty('tab_name', tab_name)
 
-    self.left_panel_speakers_list = QListWidget()
+    left_panel_speakers_panel_scroll = QScrollArea()
+    left_panel_speakers_panel_scroll.setObjectName('left_panel_speakers_panel_scroll')
+    left_panel_speakers_panel_scroll.setWidgetResizable(True)
+    left_panel_speakers_panel_scroll.setFrameShape(QScrollArea.NoFrame)
+    left_panel_speakers_panel.layout().addWidget(left_panel_speakers_panel_scroll)
+
+    left_panel_speakers_panel_content = QWidget()
+    left_panel_speakers_panel_content.setObjectName('left_panel_speakers_panel_content')
+    left_panel_speakers_panel_content.setLayout(QVBoxLayout())
+    left_panel_speakers_panel_content.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_speakers_panel_content.layout().setSpacing(10)
+    left_panel_speakers_panel_scroll.setWidget(left_panel_speakers_panel_content)
+
+    self.left_panel_speakers_list = QWidget()
     self.left_panel_speakers_list.setObjectName('left_panel_speakers_list')
-    # self.left_panel_speakers_list.itemSelectionChanged.connect(lambda: left_panel_speakers_list_item_selection_changed(self))
-    left_panel_speakers_panel.layout().addWidget(self.left_panel_speakers_list)
+    self.left_panel_speakers_list.setLayout(QVBoxLayout())
+    self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
+    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
 
-    bottom_line = QHBoxLayout()
-    bottom_line.setContentsMargins(0, 0, 0, 0)
+    add_button = QPushButton('Add speaker')
+    add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
+    left_panel_speakers_panel_content.layout().addWidget(add_button)
 
-    self.left_panel_speakers_add_speaker_button = QPushButton()
-    self.left_panel_speakers_add_speaker_button.setObjectName('left_panel_speakers_add_speaker_button')
-    self.left_panel_speakers_add_speaker_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
-    bottom_line.addWidget(self.left_panel_speakers_add_speaker_button)
-    bottom_line.addStretch()
+    left_panel_speakers_panel_content.layout().addStretch()
 
-    self.left_panel_speakers_remove_speaker_button = QPushButton()
-    self.left_panel_speakers_remove_speaker_button.setObjectName('left_panel_speakers_remove_speaker_button')
-    self.left_panel_speakers_remove_speaker_button.clicked.connect(lambda: left_panel_speakers_remove_speaker_button_clicked(self))
-    self.left_panel_speakers_remove_speaker_button.setVisible(False)
-    bottom_line.addWidget(self.left_panel_speakers_remove_speaker_button)
-    bottom_line.addStretch()
-
-    left_panel_speakers_panel.layout().addLayout(bottom_line)
-
-    self.left_panel_speakers_image_test = QLabel()
-    left_panel_speakers_panel.layout().addWidget(self.left_panel_speakers_image_test)
+    left_panel_speakers_panel.update = update
     
     left_panel.add_panel(self, left_panel_speakers_panel)
-
+    
     def handle_face_result(data):
         if data["image"] is not None:
             if not data["name"] in session.SPEAKERS:
@@ -191,35 +194,203 @@ def load(self):
     self.left_panel_speakers_image_test_thread = FaceExtractorThread(parent=self)
     self.left_panel_speakers_image_test_thread.result.connect(handle_face_result)
     
-    self.left_panel_speakers_new_name_dialog = NewNameDialog(self)
+    self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
+
     
 
+class RoundedCornerLabel(QLabel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.radius_top_left = 2  # 2px radius for top-left corner
+
+    def paintEvent(self, event):
+        pixmap = self.pixmap()
+        if pixmap:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            # Create a rounded rectangle path with only top-left corner rounded
+            path = QPainterPath()
+            size = self.size()
+
+            # Start from top-left with rounded corner
+            path.moveTo(self.radius_top_left, 0)
+            path.lineTo(size.width(), 0)  # Top edge
+            path.lineTo(size.width(), size.height())  # Right edge
+            path.lineTo(0, size.height())  # Bottom edge
+            path.lineTo(0, self.radius_top_left)  # Left edge going up to the arc start
+            # Arc from left edge to top edge (counter-clockwise for proper curve)
+            path.arcTo(0, 0, self.radius_top_left * 2, self.radius_top_left * 2, 180, -90)  # Top-left arc
+            path.closeSubpath()
+
+            # Clip the drawing area to the path
+            painter.setClipPath(path)
+
+            # Draw the pixmap
+            painter.drawPixmap(self.rect(), pixmap)
+        else:
+            # If no pixmap, just draw normally
+            super().paintEvent(event)
+
+
+class speakers_list_item(QWidget):
+    def __init__(widget, speaker_name, speaker_data):
+        super().__init__()
+        widget.speaker_name = speaker_name
+        widget.speaker_data = speaker_data
+        
+        widget.setAttribute(Qt.WA_StyledBackground, True)
+        widget.setObjectName('left_panel_speakers_panel_content_item')
+        widget.setProperty('class', '')
+        widget.setProperty('speaker_name', widget.speaker_name)
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(0)
+
+        up_line = QWidget()
+        up_line.setLayout(QHBoxLayout())
+        up_line.layout().setContentsMargins(0, 0, 10, 0)
+
+        widget.speaker_icon = RoundedCornerLabel()
+        widget.speaker_icon.setFixedSize(42, 42)
+        widget.speaker_icon.setScaledContents(True)
+        up_line.layout().addWidget(widget.speaker_icon)
+
+        widget.name_label = QLabel()
+        up_line.layout().addWidget(widget.name_label)
+
+        widget.rename_button = QPushButton()
+        widget.rename_button.setObjectName('left_panel_speakers_panel_content_item_rename_button')
+        widget.rename_button.setFixedSize(24, 24)
+        widget.rename_button.setIconSize(QSize(16, 16))
+        widget.rename_button.setVisible(False)
+        up_line.layout().addWidget(widget.rename_button)
+
+        widget.change_color_button = QPushButton()
+        widget.change_color_button.setObjectName('left_panel_speakers_panel_content_item_change_color_button')
+        widget.change_color_button.setFixedSize(24, 24)
+        widget.change_color_button.setIconSize(QSize(16, 16))
+        widget.change_color_button.setVisible(False)
+        up_line.layout().addWidget(widget.change_color_button)
+
+        widget.export_button = QPushButton()
+        widget.export_button.setObjectName('left_panel_speakers_panel_content_item_export_button')
+        widget.export_button.setFixedSize(24, 24)
+        widget.export_button.setIconSize(QSize(16, 16))
+        widget.export_button.setVisible(False)
+        up_line.layout().addWidget(widget.export_button)
+
+        widget.remove_button = QPushButton()
+        widget.remove_button.setObjectName('left_panel_speakers_panel_content_item_remove_button')
+        widget.remove_button.setFixedSize(24, 24)
+        widget.remove_button.setIconSize(QSize(16, 16))
+        widget.remove_button.setVisible(False)
+        up_line.layout().addWidget(widget.remove_button)
+
+        widget.layout().addWidget(up_line)
+
+        class small_timeline(QLabel):
+            def __init__(widget, speaker_name=False, timeline=[], duration=30):
+                super().__init__()
+                widget.timeline = timeline
+                widget.duration = duration
+                widget.speaker_name = speaker_name
+                
+            def paintEvent(widget, event):
+                if widget.speaker_name:
+                    painter = QPainter(widget)
+                    painter.setRenderHint(QPainter.Antialiasing)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(session.SPEAKERS[widget.speaker_name].get('color', '#b8cee0')))
+                    painter.setOpacity(0.5)
+                    for segment in widget.timeline:
+                        start_x = (segment[0] / widget.duration) * widget.width()
+                        end_x = (segment[1] / widget.duration) * widget.width()
+                        painter.drawRect(start_x, 0, end_x - start_x, widget.height())
+
+                return super().paintEvent(event)
+
+            def update(widget, timeline=False, duration=False, color=False):
+                if timeline:
+                    widget.timeline = timeline
+                if duration:
+                    widget.duration = duration
+                if color:
+                    widget.color = color
+
+        widget.bottom_line = small_timeline(speaker_name=widget.speaker_name)
+        widget.bottom_line.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+        widget.bottom_line.setObjectName('left_panel_speakers_panel_content_item_bottom_line')
+        widget.bottom_line.setFixedHeight(5)
+        widget.layout().addWidget(widget.bottom_line)
+
+        widget.update()
+
+    def enterEvent(widget, event):
+        widget.rename_button.setVisible(True)
+        widget.change_color_button.setVisible(True)
+        widget.export_button.setVisible(True)
+        widget.remove_button.setVisible(True)
+        event.accept()
+
+    def leaveEvent(widget, event):
+        widget.rename_button.setVisible(False)
+        widget.change_color_button.setVisible(False)
+        widget.export_button.setVisible(False)
+        widget.remove_button.setVisible(False)
+        event.accept()
+
+    def mousePressEvent(widget, event):
+        for sib_widget in widget.parent().children():
+            if sib_widget.objectName() == 'left_panel_speakers_panel_content_item':
+                if sib_widget.property('speaker_name') == widget.property('speaker_name'):
+                    sib_widget.setProperty('selected', 'true')
+                else:
+                    sib_widget.setProperty('selected', 'false')
+                sib_widget.style().unpolish(sib_widget)
+                sib_widget.style().polish(sib_widget)
+            
+        return super().mousePressEvent(event)
+
+    def update(widget):
+        widget.speaker_icon.setPixmap(
+            QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg')) if not widget.speaker_data.get('image', None)
+            else QPixmap.fromImage(widget.speaker_data['image']).scaled(36, 36)
+        )
+        widget.bottom_line.update(
+            timeline=[[segment['start'], segment['end']] for segment in session.SUBTITLE['segments'] if segment.get('speaker', 'A') == widget.speaker_name],
+            duration=session.VIDEO.get('duration', 60)
+        )
+        speaker_time = round(sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments'] if segment.get('speaker', 'A') == widget.speaker_name]), 3)
+        total_speaking_time = sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments']])
+        percentage = int(round((speaker_time / total_speaking_time) * 100, 0))
+        widget.name_label.setText('<b>' + widget.speaker_name + '</b><br><small>' + f'{speaker_time} sec. ({percentage}%)' + '</small>')
+        
+
 def update_speakers_list(self):
-    self.left_panel_speakers_list.clear()
+    while self.left_panel_speakers_list.layout().count():
+        item = self.left_panel_speakers_list.layout().takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.setParent(None)
+            widget.deleteLater()
+            continue    
 
     for speaker_name, speaker_data in session.SPEAKERS.items():
-        widget = QWidget()
-        widget.setLayout(QHBoxLayout())
-        widget.layout().setContentsMargins(10, 10, 10, 10)
-        speaker_icon = QLabel()
-        speaker_icon.setFixedSize(32, 32)
-        speaker_icon.setScaledContents(True)
-        speaker_icon.setPixmap(
-            QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg')) if not speaker_data.get('image', None)
-            else QPixmap.fromImage(speaker_data['image']).scaled(32, 32)
-        )
-        widget.layout().addWidget(speaker_icon)
-        label = QLabel(speaker_name)
-        widget.layout().addWidget(label)
-        item = QListWidgetItem()
-        self.left_panel_speakers_list.addItem(item)
-        self.left_panel_speakers_list.setItemWidget(item, widget)
-        item.setSizeHint(widget.sizeHint())
-
+        if not speaker_data.get('color', False):
+            speaker_data['color'] = f'{ColorHash(speaker_name, saturation=[0.6], lightness=[0.7]).hex}'
+        
+        widget = speakers_list_item(speaker_name, speaker_data)
+        
         if not speaker_data.get('image', None) and not self.left_panel_speakers_image_test_thread.isRunning():
             self.left_panel_speakers_image_test_thread.name = speaker_name
             self.left_panel_speakers_image_test_thread.start()
 
+        self.left_panel_speakers_list.layout().addWidget(widget)
+    
+
+def update(self):
+    update_speakers_list(self)
 
 def left_panel_speakers_remove_speaker_button_clicked(self):
     selected_items = self.left_panel_speakers_list.selectedItems()
@@ -235,30 +406,16 @@ def left_panel_speakers_remove_speaker_button_clicked(self):
         #     update_speakers_list(self)
 
 
-# def left_panel_speakers_list_item_selection_changed(self):
-#     selected_items = self.left_panel_speakers_list.selectedItems()
-#     if not selected_items:
-#         self.left_panel_speakers_remove_speaker_button.setVisible(False)
-#         return
-#     can_remove = True
-#     for item in selected_items:
-#         speaker_name = item.text()
-#         if any(subtitle.get('speaker', 'A') == speaker_name for subtitle in session.SUBTITLE['segments']):
-#             can_remove = False
-#             break
-#     self.left_panel_speakers_image_test_thread.intervals = [[0.0, max(5.0, session.VIDEO.get('duration', 30.0))]]
-#     self.left_panel_speakers_image_test_thread.name = selected_items[0].text()
-    
-#     self.left_panel_speakers_image_test_thread.start()
-
-#     self.left_panel_speakers_remove_speaker_button.setVisible(can_remove)
-
-
 def left_panel_speakers_add_speaker_button_clicked(self):
     new_name = None
-    if self.left_panel_speakers_new_name_dialog.exec() == QDialog.Accepted:
-        new_name = self.left_panel_speakers_new_name_dialog.name
+    values = self.left_panel_speakers_new_name_dialog.exec_and_get_values()
     
+    if values:
+        # Get the value from the first input widget (the name input field)
+        # values = self.left_panel_speakers_new_name_dialog.get_values()
+        new_name = values[0].strip()  # Get the first input value and strip whitespace
+    else:
+        print('canceled')
     subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
 
     # if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
@@ -267,35 +424,29 @@ def left_panel_speakers_add_speaker_button_clicked(self):
     
 
 def translate(self):
-    self.left_panel_speakers_add_speaker_button.setText(_('Add Speaker'))
-
-
-
-
-
-class NewNameDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Enter Your Name")
-        self.name = None
-
-        layout = QVBoxLayout(self)
-
-        self.label = QLabel("Please enter your name:")
-        self.input = QLineEdit()
-        self.ok_button = QPushButton("OK")
-        self.cancel_button = QPushButton("Cancel")
-
-        layout.addWidget(self.label)
-        layout.addWidget(self.input)
-        layout.addWidget(self.ok_button)
-        layout.addWidget(self.cancel_button)
-
-        self.ok_button.clicked.connect(self.accept)
-        self.cancel_button.clicked.connect(self.reject)
-
-    def accept(self):
-        self.name = self.input.text().strip()
-        super().accept()
-
+    self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
+    self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
     
+
+
+class new_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please enter your name:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.input = QLineEdit()
+        self.input_line.layout().addWidget(self.input)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.input.text()
+        return None

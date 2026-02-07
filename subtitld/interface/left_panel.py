@@ -7,6 +7,15 @@ from subtitld.modules import session
 from subtitld.interface import left_panel_subtitleslist
 from subtitld.interface import left_panel_metadata
 from subtitld.interface import left_panel_speakers
+from subtitld.interface import left_panel_qualitycheck
+from subtitld.interface import left_panel_global
+from subtitld.interface import left_panel_interface
+from subtitld.interface import left_panel_keyboard
+from subtitld.interface import left_panel_transcription
+from subtitld.interface import left_panel_translation
+from subtitld.interface import left_panel_import
+from subtitld.interface import left_panel_export
+from subtitld.interface import left_panel_autosave
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
@@ -30,6 +39,7 @@ class navigation_button(QPushButton):
             if button == self:
                 continue
             button.setChecked(False)
+        update(self.window())
         return super().mousePressEvent(e)
 
 
@@ -75,11 +85,18 @@ def load(self):
     self.left_panel_stackedwidgets.setObjectName('left_panel_stackedwidgets')
     self.left_panel.layout().addWidget(self.left_panel_stackedwidgets)
 
-    left_panel_subtitleslist.load(self)
-    
+    left_panel_subtitleslist.load(self)    
     left_panel_metadata.load(self)
-
     left_panel_speakers.load(self)
+    left_panel_qualitycheck.load(self)
+    left_panel_global.load(self)
+    left_panel_interface.load(self)
+    left_panel_keyboard.load(self)
+    left_panel_transcription.load(self)
+    left_panel_translation.load(self)
+    left_panel_import.load(self)
+    left_panel_export.load(self)
+    left_panel_autosave.load(self)
 
     self.left_panel_navigation.layout().itemAt(0).widget().click()
 
@@ -94,18 +111,13 @@ def hide(self):
     utils.animate_element(self.left_panel.animation, duration=200, effect='slide_to_left')
 
 
-def add_button(self, tab_name):
-    self.left_panel_metadata_button = navigation_button(tab_name)
-    self.left_panel_navigation.layout().insertWidget(self.left_panel_navigation.layout().count() - 1, self.left_panel_metadata_button)
-
 def update(self):
-    # TODO: check what panel is active and update only that one
-    left_panel_subtitleslist.update(self)
-    # left_panel_metadata.update(self)
-    # left_panel_speakers.update(self)
+    self.left_panel_stackedwidgets.currentWidget().update(self)
 
 
 def add_panel(self, widget):
+    button = navigation_button(widget.property('tab_name'))
+    self.left_panel_navigation.layout().insertWidget(self.left_panel_navigation.layout().count() - 1, button)
     self.left_panel_stackedwidgets.addWidget(widget)
 
 
@@ -113,3 +125,12 @@ def translate(self):
     left_panel_subtitleslist.translate(self)
     left_panel_metadata.translate(self)
     left_panel_speakers.translate(self)
+    left_panel_qualitycheck.translate(self)
+    left_panel_global.translate(self)
+    left_panel_interface.translate(self)
+    left_panel_keyboard.translate(self)
+    left_panel_transcription.translate(self)
+    left_panel_translation.translate(self)
+    left_panel_import.translate(self)
+    left_panel_export.translate(self)
+    left_panel_autosave.translate(self)

@@ -6,7 +6,7 @@ import pycaption
 from pycaption.exceptions import CaptionReadSyntaxError, CaptionReadNoCaptions
 import chardet
 import pysubs2
-import copy
+import datetime
 
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import QThread, Signal
@@ -25,7 +25,6 @@ from subtitld.interface import timeline
 from subtitld.interface.translation import _
 
 
-
 class ThreadExtractWaveform(QThread):
     """Thread to extract waveform"""
     command = Signal(list)
@@ -36,9 +35,7 @@ class ThreadExtractWaveform(QThread):
     height = ''
 
     def run(self):
-        """Run function of thread to extract waveform"""
         if self.filepath:
-            # result = waveform.ffmpeg_load_audio(filepath=self.filepath)
             result = waveform.ffms2_load_audio(filepath=self.filepath)
             self.command.emit(result)
 
@@ -62,113 +59,6 @@ class ThreadGenerateHashOfVideo(QThread):
 
             self.response.emit([self.filepath, md5_hash])
 
-
-def load(self):
-    """Load thread objects"""
-    # def thread_extract_waveform_ended(command):
-    #     session.VIDEO['audio'] = command
-    #     timeline.zoom_update_waveform(self)
-    #     # self.videoinfo_label.setText('Audio ffmpeg_extract_subtitleed')
-
-    # self.thread_extract_waveform = ThreadExtractWaveform(self)
-    # self.thread_extract_waveform.command.connect(thread_extract_waveform_ended)
-
-    # def thread_extract_waveform_ended2(command):
-    #     if not command[0] in session.VIDEO['waveform']:
-    #         session.VIDEO['waveform'][command[0]] = {'qimages': []}
-    #     session.VIDEO['waveform'][command[0]]['qimages'].append(command[1])
-    #     self.timeline_widget.update()
-
-    # self.thread_extract_waveform2 = waveform.ThreadExtractWaveform2(self)
-    # self.thread_extract_waveform2.command.connect(thread_extract_waveform_ended2)
-
-    # def thread_extract_scene_time_positions_ended(command):
-    #     session.VIDEO['scenes'] = command
-
-    # self.thread_extract_scene_time_positions = ThreadExtractSceneTimePositions(self)
-    # self.thread_extract_scene_time_positions.command.connect(thread_extract_scene_time_positions_ended)
-
-    # def thread_generate_hash_of_video(response):
-    #     if session.VIDEO.get('filepath', '') == response[0] and 'hash' not in session.VIDEO:
-    #         session.VIDEO['hash'] = response[1]
-    #         if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
-    #             session.CONFIG['recent_files'][session.SUBTITLE['filepath']]['video_hash'] = session.VIDEO['hash']
-
-    # self.thread_generate_hash_of_video = ThreadGenerateHashOfVideo(self)
-    # self.thread_generate_hash_of_video.response.connect(thread_generate_hash_of_video)
-    pass
-
-def open_filepath():
-    pass
-
-def open_filepath_2(self, files_to_open=[], update_interface=False):
-    
-    """Open subtitle or video and performs some checks"""
-    if session.SUBTITLE.get('subtitle_filepath', False):
-        files_to_open.append(session.SUBTITLE['filepath'])
-    
-    if session.SUBTITLE.get('video_filepath', False):
-        files_to_open.append(session.VIDEO['filepath'])
-
-    if not files_to_open:
-        files_to_open.append(
-            
-        )
-
-    for filepath in files_to_open:
-        if os.path.isfile(filepath):
-            if not session.SUBTITLE['segments'] and filepath.lower().endswith(tuple(list_of_supported_subtitle_extensions)):
-                session.SUBTITLE['filepath'] = filepath
-                session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(filepath)
-            # elif not session.VIDEO and filepath.lower().endswith(globals.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
-            #     session.VIDEO = process_video_file(filepath)
-            
-            if not session.VIDEO:
-                for filename in os.listdir(os.path.dirname(filepath)):
-                    if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
-                        session.VIDEO = process_video_file(os.path.join(os.path.dirname(filepath), filename))
-                        break
-                    
-            # elif session.VIDEO and not session.SUBTITLE['segments']:
-            #     for filename in os.listdir(os.path.dirname(filepath)):
-            #         if filename.rsplit('.', 1)[0] == os.path.basename(filepath).rsplit('.', 1)[0] and filename.endswith(tuple(list_of_supported_subtitle_extensions)):
-            #             session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(os.path.join(os.path.dirname(filepath), filename))
-            #             session.SUBTITLE['filepath'] = os.path.join(os.path.dirname(filepath), filename)
-            #             break
-
-    if not session.VIDEO:
-        filepath = QFileDialog.getOpenFileName(
-            parent=self,
-            caption=_('file_io.select_video_file'),
-            dir=str(session.PATH_HOME), filter=supported_video_files
-        )[0]
-
-        if filepath and os.path.isfile(filepath) and filepath.lower().endswith(session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS):
-            session.VIDEO = process_video_file(filepath)
-            session.VIDEO['filepath'] = filepath
-            
-    if session.VIDEO:
-        self.actual_video_file = session.VIDEO['filepath']
-        if session.VIDEO['audio_is_present']:
-            self.thread_extract_waveform.filepath = session.VIDEO['filepath']
-            self.thread_extract_waveform.start()
-            # self.videoinfo_label.setText('Extracting audio...')
-
-        # # self.player_widget.loadfile(session.VIDEO['filepath'])
-        # if session.SUBTITLE['filepath']:
-        #     self.thread_generate_hash_of_video.filepath = session.VIDEO['filepath']
-        #     self.thread_generate_hash_of_video.start()
-        #     # if session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
-        #     #     self.player_widget.seek(session.CONFIG['recent_files'][session.SUBTITLE['filepath']].get('last_position', 0))
-
-        # if not session.SUBTITLE['filepath']:
-        #     if session.VIDEO.get('subtitles', ''):
-        #         session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = process_subtitles_file(session.VIDEO['subtitles'])
-        # # session.CONFIG['recent_files'][session.SUBTITLE['filepath']] = {
-        # #     'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
-        # #     'video_filepath': session.VIDEO['filepath']
-        # # }
-        
 
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
@@ -577,7 +467,7 @@ def export_file(filename=False, export_format='TXT', options=False):
                 txt_file.write(final_xml)
 
 
-def save_file(final_file, subtitle_format='SRT', language='en'):
+def save_file(final_file, subtitle_format='USF', language='en'):
     """Function to save the subtitle project. A subtitles dict and the format is given."""
     if session.SUBTITLE['segments']:
         # if not final_file.lower().endswith('.' + format.lower()):
@@ -642,3 +532,10 @@ def save_file(final_file, subtitle_format='SRT', language='en'):
         elif subtitle_format in ['USF']:
             open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(session.SUBTITLE['segments']))
 
+
+def autosave_timer_timeout():
+    print('autosave_timer_timeout')
+    filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
+    if not filename:
+        filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
+    save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usf'))

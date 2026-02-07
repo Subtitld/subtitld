@@ -1,19 +1,95 @@
-"""Player control widgets.
-
-"""
-
 import os
+import aud
 from bisect import bisect
+from audio_separator.separator import Separator
+import subprocess
 
-from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QSpacerItem
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize
+from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal
 
 import subtitld.modules.timecode as timecode
-from subtitld.interface import timeline, left_panel_subtitleslist, left_panel #, subtitles_panel_info, subtitles_panel, 
+from subtitld.interface import timeline, left_panel
 from subtitld.interface.translation import _
-from subtitld.modules import subtitles, session #, utils
+
+from subtitld.modules import subtitles
+from subtitld.modules import session
+from subtitld.modules import audioengine
 
 STEPS_LIST = ['Frames', 'Seconds']
+
+
+
+class MusicAudioExtractorThread(QThread):
+    response = Signal(dict)
+    original = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.filename = None
+
+    def run(self):
+        if not self.filename:
+            return
+        
+        cmd = [
+            session.FFMPEG_EXECUTABLE,
+            "-hide_banner", "-loglevel", "error",
+            "-i", self.filename,
+            "-vn",
+            "-ar", '48000', '-y',
+            os.path.join(
+                session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                os.path.basename(self.filename).rsplit(".", 1)[0] + "_original.flac"
+            )
+        ]
+
+        subprocess.run(cmd)
+
+        self.original.emit(os.path.join(
+            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+            os.path.basename(self.filename).rsplit(".", 1)[0] + "_original.flac"
+        ))
+
+        cmd = [
+            session.FFMPEG_EXECUTABLE,
+            "-hide_banner", "-loglevel", "error",
+            "-i", self.filename, '-y',
+            "-vn",
+            "-filter_complex",
+            (
+                "[0:a]asplit=2[a1][a2];"
+                "[a1]pan=mono|c0=0.5*c0+0.5*c1[vocals];"
+                "[a2]pan=mono|c0=c0-c1[background]"
+            ),
+
+            # vocals (center)
+            "-map", "[vocals]",
+            "-ac", "1",
+            "-ar", '48000',
+            os.path.join(
+                session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                os.path.basename(self.filename).rsplit(".", 1)[0] + "_vocals.flac"
+            ),
+
+            # background (sides)
+            "-map", "[background]",
+            "-ac", "1",
+            "-ar", '48000',
+            os.path.join(
+                session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                os.path.basename(self.filename).rsplit(".", 1)[0] + "_background.flac"
+            ),
+        ]
+
+        subprocess.run(cmd)
+
+        self.response.emit({
+            'vocals': os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, os.path.basename(self.filename).rsplit('.', 1)[0] + '_vocals.flac'),
+            'background': os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, os.path.basename(self.filename).rsplit('.', 1)[0] + '_background.flac'),
+            'volume': .5
+        })
+
 
 
 class QLeftTabBar(QTabBar):
@@ -75,7 +151,6 @@ def load(self):
     self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
     self.playercontrols_widget_left_top_line.layout().addStretch()
-
 
     self.send_text_buttons_container = QWidget()
     self.send_text_buttons_container.setLayout(QHBoxLayout())
@@ -370,6 +445,92 @@ def load(self):
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback)
 
+    self.music_voice_separation_box = QWidget()
+    self.music_voice_separation_box.setObjectName('music_voice_separation_box')
+    self.music_voice_separation_box.setFixedHeight(42)
+    self.music_voice_separation_box.setLayout(QHBoxLayout())
+    self.music_voice_separation_box.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.music_voice_separation_box.layout().setContentsMargins(0, 0, 0, 0)
+    self.music_voice_separation_box.layout().setSpacing(0)
+
+    self.music_voice_separation_music_icon = QPushButton()
+    self.music_voice_separation_music_icon.setObjectName('music_voice_separation_music_icon')
+    self.music_voice_separation_music_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.music_voice_separation_music_icon.setIconSize(QSize(24, 24))
+    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
+    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_music_icon)
+
+    self.music_voice_separation_box.layout().addSpacing(-21)
+
+    class CenterSnapDial(QDial):
+        def __init__(self, center=None, threshold=3, parent=None):
+            super().__init__(parent)
+            self._center = center
+            self._threshold = threshold
+            self._middle_value = 50
+
+            self.valueChanged.connect(self.handle_value_change)
+    
+        def handle_value_change(self, value):
+            # Check if value is close to middle
+            if abs(value - self._middle_value) <= self._threshold:
+                # Snap to middle
+                self.blockSignals(True)  # Prevent recursive signal
+                self.setValue(self._middle_value)
+                self.blockSignals(False)
+
+    self.music_voice_separation_slider = CenterSnapDial(center=50, threshold=3)
+    self.music_voice_separation_slider.setObjectName('music_voice_separation_slider')
+    self.music_voice_separation_slider.setFixedSize(QSize(42, 42))
+    self.music_voice_separation_slider.setRange(0,  100)
+    self.music_voice_separation_slider.setValue(50)
+    self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
+    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_slider, 1)
+
+    self.music_voice_separation_box.layout().addSpacing(-21)
+
+    self.music_voice_separation_voice_icon = QPushButton()
+    self.music_voice_separation_voice_icon.setObjectName('music_voice_separation_voice_icon')
+    self.music_voice_separation_voice_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.music_voice_separation_voice_icon.setIconSize(QSize(24, 24))
+    self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
+    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_voice_icon)
+
+    self.music_voice_separation_slider.raise_()
+
+    def music_voice_separation_thread_finished(response):
+        session.VIDEO['music_voice_separation'] = response
+        self.preview_panel_player._audio_device.original_track.enabled = False  
+
+        background_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['background'])
+        background_clip = self.preview_panel_player._audio_device.load_clip(background_source)
+        self.preview_panel_player._audio_device.background_sound = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.background_sound.add_clip(background_clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.background_sound)
+
+        vocals_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['vocals'])
+        vocals_clip = self.preview_panel_player._audio_device.load_clip(vocals_source)
+        self.preview_panel_player._audio_device.vocals_sound = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.vocals_sound.add_clip(vocals_clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
+
+        music_voice_separation_box_update(self)
+        
+    def music_voice_separation_thread_original_extracted(response):
+        audio_source = self.preview_panel_player._audio_device.load_audio(response)
+        clip = self.preview_panel_player._audio_device.load_clip(audio_source)
+        self.preview_panel_player._audio_device.original_track = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.original_track.add_clip(clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.original_track)
+        self.preview_panel_player._audio_output = None
+        # widget._media_player.setAudioOutput(widget._audio_output)
+
+    self.music_voice_separation_thread = MusicAudioExtractorThread(parent=self)
+    self.music_voice_separation_thread.response.connect(lambda response: music_voice_separation_thread_finished(response))
+    self.music_voice_separation_thread.original.connect(lambda response: music_voice_separation_thread_original_extracted(response))   
+
+    self.playercontrols_widget_right_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
+
     self.gap_hbox = QWidget()
     self.gap_hbox.setObjectName('gap_hbox')
     self.gap_hbox.setFixedHeight(42)
@@ -406,8 +567,6 @@ def load(self):
     self.gap_subtitle_duration.raise_()
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.gap_hbox, 0, Qt.AlignTop)
-
-
 
     self.add_remove_subtitle_frame = QWidget()
     self.add_remove_subtitle_frame.setLayout(QHBoxLayout())
@@ -495,21 +654,21 @@ def load(self):
     
     self.playercontrols_widget_bottom_line = QWidget()
     self.playercontrols_widget_bottom_line.setObjectName('playercontrols_widget_bottom_line')
-    self.playercontrols_widget_bottom_line.setFixedHeight(26)
+    # self.playercontrols_widget_bottom_line.setFixedHeight(26)
     self.playercontrols_widget_bottom_line.setLayout(QHBoxLayout())
     self.playercontrols_widget_bottom_line.layout().setContentsMargins(0, 0, 0, 0)
     self.playercontrols_widget_bottom_line.layout().setSpacing(0)
-    self.playercontrols_widget_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
+    # self.playercontrols_widget_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
     self.playercontrols_widget_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
 
     self.playercontrols_widget_left_bottom_line = QWidget()
     self.playercontrols_widget_left_bottom_line.setObjectName('playercontrols_widget_left_bottom_line')
     # self.playercontrols_widget_left_bottom_line.setAttribute(Qt.WA_TranslucentBackground)
+    # self.playercontrols_widget_left_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
     self.playercontrols_widget_left_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_left_bottom_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_left_bottom_line.layout().setContentsMargins(0, 3, 0, 1)
+    self.playercontrols_widget_left_bottom_line.layout().setContentsMargins(0, 2, 0, 1)#0, 3, 0, 1)
     self.playercontrols_widget_left_bottom_line.layout().setSpacing(6)
-    self.playercontrols_widget_left_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
     self.playercontrols_widget_left_bottom_line.layout().addStretch()
 
@@ -539,8 +698,6 @@ def load(self):
 
     self.timelinescrolling_follow_button = QPushButton()
     self.timelinescrolling_follow_button.setObjectName('timelinescrolling_follow_button')
-    self.timelinescrolling_follow_button.setProperty('class', 'subbutton')
-    self.timelinescrolling_follow_button.setProperty('borderless_bottom', 'true')
     self.timelinescrolling_follow_button.setCheckable(True)
     self.timelinescrolling_follow_button.setIconSize(QSize(15, 15))
     self.timelinescrolling_follow_button.setFixedWidth(24)
@@ -557,20 +714,20 @@ def load(self):
     self.snap_controls_container.layout().setSpacing(0)
 
     self.snap_button = QPushButton()
-    self.snap_button.setProperty('class', 'subbutton')
-    self.snap_button.setProperty('borderless_right', 'true')
-    self.snap_button.setProperty('borderless_bottom', 'true')
+    self.snap_button.setObjectName('snap_button')
     self.snap_button.setCheckable(True)
     self.snap_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_button.clicked.connect(lambda: snap_button_clicked(self))
     self.snap_button.setLayout(QHBoxLayout())
     self.snap_button.layout().setSizeConstraint(QLayout.SetMinimumSize)
-    self.snap_button.layout().setContentsMargins(10, 4, 5, 4)
+    self.snap_button.layout().setContentsMargins(4, 0, 0, 0)
     self.snap_button.layout().setSpacing(4)
     self.snap_controls_container.layout().addWidget(self.snap_button)
 
     self.snap_button_label = QLabel()
     self.snap_button_label.setObjectName('snap_button_label')
+    self.snap_button_label.setAlignment(Qt.AlignCenter)
+    self.snap_button_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_button.layout().addWidget(self.snap_button_label)
 
     self.snap_value = QDoubleSpinBox()
@@ -579,41 +736,38 @@ def load(self):
     self.snap_value.valueChanged.connect(lambda: snap_value_changed(self))
     self.snap_button.layout().addWidget(self.snap_value)
 
-    self.snap_limits_button = QPushButton()
-    self.snap_limits_button.setObjectName('snap_limits_button')
-    self.snap_limits_button.setProperty('class', 'subbutton')
-    self.snap_limits_button.setProperty('borderless_right', 'true')
-    self.snap_limits_button.setProperty('borderless_bottom', 'true')
-    self.snap_limits_button.setCheckable(True)
-    self.snap_limits_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.snap_limits_button.clicked.connect(lambda: snap_limits_button_clicked(self))
-    self.snap_controls_container.layout().addWidget(self.snap_limits_button)
-
     self.snap_grid_button = QPushButton()
     self.snap_grid_button.setObjectName('snap_grid_button')
-    self.snap_grid_button.setProperty('class', 'subbutton')
-    self.snap_grid_button.setProperty('borderless_right', 'true')
-    self.snap_grid_button.setProperty('borderless_bottom', 'true')
     self.snap_grid_button.setCheckable(True)
+    self.snap_grid_button.setIconSize(QSize(24, 16))
+    self.snap_grid_button.setFixedWidth(28)
     self.snap_grid_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_grid_button.clicked.connect(lambda: snap_grid_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_grid_button)
 
     self.snap_move_button = QPushButton()
     self.snap_move_button.setObjectName('snap_move_button')
-    self.snap_move_button.setProperty('class', 'subbutton')
-    self.snap_move_button.setProperty('borderless_right', 'true')
-    self.snap_move_button.setProperty('borderless_bottom', 'true')
     self.snap_move_button.setCheckable(True)
+    self.snap_move_button.setIconSize(QSize(24, 16))
+    self.snap_move_button.setFixedWidth(24)
     self.snap_move_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_move_button.clicked.connect(lambda: snap_move_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_move_button)
 
+    self.snap_limits_button = QPushButton()
+    self.snap_limits_button.setObjectName('snap_limits_button')
+    self.snap_limits_button.setCheckable(True)
+    self.snap_limits_button.setIconSize(QSize(24, 16))
+    self.snap_limits_button.setFixedWidth(24)
+    self.snap_limits_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.snap_limits_button.clicked.connect(lambda: snap_limits_button_clicked(self))
+    self.snap_controls_container.layout().addWidget(self.snap_limits_button)
+
     self.snap_move_nereast_button = QPushButton()
     self.snap_move_nereast_button.setObjectName('snap_move_nereast_button')
-    self.snap_move_nereast_button.setProperty('class', 'subbutton')
-    self.snap_move_nereast_button.setProperty('borderless_bottom', 'true')
     self.snap_move_nereast_button.setCheckable(True)
+    self.snap_move_nereast_button.setIconSize(QSize(24, 16))
+    self.snap_move_nereast_button.setFixedWidth(28)
     self.snap_move_nereast_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_move_nereast_button.clicked.connect(lambda: snap_move_nereast_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_move_nereast_button)
@@ -628,19 +782,15 @@ def load(self):
 
     self.move_start_back_subtitle = QPushButton()
     self.move_start_back_subtitle.setObjectName('move_start_back_subtitle')
-    self.move_start_back_subtitle.setProperty('class', 'subbutton2_dark')
-    self.move_start_back_subtitle.setProperty('borderless_bottom', 'true')
-    self.move_start_back_subtitle.setProperty('borderless_right', 'true')
     self.move_start_back_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.move_start_back_subtitle.setFixedWidth(24)
     self.move_start_back_subtitle.clicked.connect(lambda: move_start_back_subtitle_clicked(self))
     self.move_start_container.layout().addWidget(self.move_start_back_subtitle)
 
     self.move_start_forward_subtitle = QPushButton()
     self.move_start_forward_subtitle.setObjectName('move_start_forward_subtitle')
-    self.move_start_forward_subtitle.setProperty('class', 'subbutton2_dark')
-    self.move_start_forward_subtitle.setProperty('borderless_bottom', 'true')
-    self.move_start_forward_subtitle.setProperty('borderless_left', 'true')
     self.move_start_forward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.move_start_forward_subtitle.setFixedWidth(24)
     self.move_start_forward_subtitle.clicked.connect(lambda: move_start_forward_subtitle_clicked(self))
     self.move_start_container.layout().addWidget(self.move_start_forward_subtitle)
 
@@ -648,32 +798,31 @@ def load(self):
 
     self.move_backward_subtitle = QPushButton()
     self.move_backward_subtitle.setObjectName('move_backward_subtitle')
-    self.move_backward_subtitle.setProperty('class', 'subbutton2_dark')
-    self.move_backward_subtitle.setProperty('borderless_bottom', 'true')
     self.move_backward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.move_backward_subtitle.setFixedWidth(24)
     self.move_backward_subtitle.clicked.connect(lambda: move_backward_subtitle_clicked(self))
     self.playercontrols_widget_left_bottom_line.layout().addWidget(self.move_backward_subtitle)
 
     self.timeline_cursor_back_frame = QPushButton()
     self.timeline_cursor_back_frame.setObjectName('timeline_cursor_back_frame')
-    self.timeline_cursor_back_frame.setProperty('class', 'subbutton_left_dark')
-    self.timeline_cursor_back_frame.setProperty('borderless_bottom', 'true')
     self.timeline_cursor_back_frame.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.timeline_cursor_back_frame.setFixedWidth(24)
     self.timeline_cursor_back_frame.clicked.connect(lambda: timeline_cursor_back_frame_clicked(self))
     self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_cursor_back_frame)
 
-    self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_left_bottom_line, 1)
+    self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_left_bottom_line)
 
-    self.playercontrols_widget_bottom_line.layout().addSpacing(-10)
+    self.playercontrols_widget_bottom_line.layout().addSpacing(-12)
 
     self.playercontrols_widget_center_bottom_line = QWidget()
     self.playercontrols_widget_center_bottom_line.setObjectName('playercontrols_widget_center_bottom_line')
+    # self.playercontrols_widget_center_bottom_line.setFixedHeight(26)
     # self.playercontrols_widget_center_bottom_line.setAttribute(Qt.WA_TranslucentBackground)
-    self.playercontrols_widget_center_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
+    # self.playercontrols_widget_center_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
+    self.playercontrols_widget_center_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.playercontrols_widget_center_bottom_line.setLayout(QHBoxLayout())
     self.playercontrols_widget_center_bottom_line.layout().setContentsMargins(0, 0, 0, 0)
     self.playercontrols_widget_center_bottom_line.layout().setSpacing(0)
-    self.playercontrols_widget_center_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
     class playercontrols_timecode_label(QLabel):
         def __init__(widget, *args):
@@ -691,30 +840,31 @@ def load(self):
     self.preview_panel_player.position_changed_signal.connect(self.playercontrols_timecode_label.update_time)
     self.preview_panel_player.position_changed_signal.connect(lambda: timeline.update(self))
 
-    self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_center_bottom_line, 0)
+    self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_center_bottom_line)
 
-    self.playercontrols_widget_bottom_line.layout().addSpacing(-10)
+    self.playercontrols_widget_left_bottom_line.raise_()
+
+    self.playercontrols_widget_bottom_line.layout().addSpacing(-12)
 
     self.playercontrols_widget_right_bottom_line = QWidget()
     self.playercontrols_widget_right_bottom_line.setObjectName('playercontrols_widget_right_bottom_line')
     # self.playercontrols_widget_right_bottom_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_right_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_right_bottom_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_right_bottom_line.layout().setContentsMargins(0, 0, 0, 2)
+    self.playercontrols_widget_right_bottom_line.layout().setContentsMargins(0, 2, 0, 1)
+    self.playercontrols_widget_right_bottom_line.layout().setSpacing(6)
     
     self.timeline_cursor_next_frame = QPushButton()
     self.timeline_cursor_next_frame.setObjectName('timeline_cursor_next_frame')
-    self.timeline_cursor_next_frame.setProperty('class', 'subbutton_right_dark')
-    self.timeline_cursor_next_frame.setProperty('borderless_bottom', 'true')
     self.timeline_cursor_next_frame.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.timeline_cursor_next_frame.setFixedWidth(24)
     self.timeline_cursor_next_frame.clicked.connect(lambda: timeline_cursor_next_frame_clicked(self))
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.timeline_cursor_next_frame)
 
     self.move_forward_subtitle = QPushButton()
     self.move_forward_subtitle.setObjectName('move_forward_subtitle')
-    self.move_forward_subtitle.setProperty('class', 'subbutton2_dark')
-    self.move_forward_subtitle.setProperty('borderless_bottom', 'true')
     self.move_forward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.move_forward_subtitle.setFixedWidth(24)
     self.move_forward_subtitle.clicked.connect(lambda: move_forward_subtitle_clicked(self))
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.move_forward_subtitle)
 
@@ -726,19 +876,15 @@ def load(self):
 
     self.move_end_back_subtitle = QPushButton()
     self.move_end_back_subtitle.setObjectName('move_end_back_subtitle')
-    self.move_end_back_subtitle.setProperty('class', 'subbutton2_dark')
-    self.move_end_back_subtitle.setProperty('borderless_bottom', 'true')
-    self.move_end_back_subtitle.setProperty('borderless_right', 'true')
     self.move_end_back_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.move_end_back_subtitle.setFixedWidth(24)
     self.move_end_back_subtitle.clicked.connect(lambda: move_end_back_subtitle_clicked(self))
     self.move_end_container.layout().addWidget(self.move_end_back_subtitle)
 
     self.move_end_forward_subtitle = QPushButton()
     self.move_end_forward_subtitle.setObjectName('move_end_forward_subtitle')
-    self.move_end_forward_subtitle.setProperty('class', 'subbutton2_dark')
-    self.move_end_forward_subtitle.setProperty('borderless_bottom', 'true')
-    self.move_end_forward_subtitle.setProperty('borderless_left', 'true')
     self.move_end_forward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.move_end_forward_subtitle.setFixedWidth(24)
     self.move_end_forward_subtitle.clicked.connect(lambda: move_end_forward_subtitle_clicked(self))
     self.move_end_container.layout().addWidget(self.move_end_forward_subtitle)
 
@@ -751,9 +897,7 @@ def load(self):
     self.grid_controls_container.layout().setSpacing(0)
 
     self.grid_button = QPushButton()
-    self.grid_button.setProperty('class', 'subbutton')
-    self.grid_button.setProperty('borderless_bottom', 'true')
-    self.grid_button.setProperty('borderless_right', 'true')
+    self.grid_button.setObjectName('grid_button')
     self.grid_button.setCheckable(True)
     self.grid_button.clicked.connect(lambda: grid_button_clicked(self))
     self.grid_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
@@ -761,80 +905,78 @@ def load(self):
 
     self.grid_frames_button = QPushButton()
     self.grid_frames_button.setObjectName('grid_frames_button')
-    self.grid_frames_button.setProperty('class', 'subbutton')
-    self.grid_frames_button.setProperty('borderless_bottom', 'true')
-    self.grid_frames_button.setProperty('borderless_right', 'true')
     self.grid_frames_button.setCheckable(True)
     self.grid_frames_button.clicked.connect(lambda: grid_type_changed(self, 'frames'))
+    self.grid_frames_button.setIconSize(QSize(16, 16))
+    self.grid_frames_button.setFixedWidth(24)
     self.grid_frames_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_frames_button)
 
     self.grid_seconds_button = QPushButton()
     self.grid_seconds_button.setObjectName('grid_seconds_button')
-    self.grid_seconds_button.setProperty('class', 'subbutton')
-    self.grid_seconds_button.setProperty('borderless_bottom', 'true')
-    self.grid_seconds_button.setProperty('borderless_right', 'true')
     self.grid_seconds_button.setCheckable(True)
     self.grid_seconds_button.clicked.connect(lambda: grid_type_changed(self, 'seconds'))
+    self.grid_seconds_button.setIconSize(QSize(16, 16))
+    self.grid_seconds_button.setFixedWidth(24)
     self.grid_seconds_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_seconds_button)
 
     self.grid_scenes_button = QPushButton()
     self.grid_scenes_button.setObjectName('grid_scenes_button')
-    self.grid_scenes_button.setProperty('class', 'subbutton')
-    self.grid_scenes_button.setProperty('borderless_bottom', 'true')
-    # self.grid_scenes_button.setProperty('borderless_right', 'true')
     self.grid_scenes_button.setCheckable(True)
+    self.grid_scenes_button.setIconSize(QSize(16, 16))
+    self.grid_scenes_button.setFixedWidth(24)
     self.grid_scenes_button.clicked.connect(lambda: grid_type_changed(self, 'scenes'))
     self.grid_scenes_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_scenes_button)
 
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.grid_controls_container)
 
-    self.step_button = QPushButton()
-    self.step_button.setProperty('class', 'subbutton')
-    self.step_button.setProperty('borderless_bottom', 'true')
-    self.step_button.setCheckable(True)
-    self.step_button.clicked.connect(lambda: update_step_buttons(self))
-    self.step_button.setLayout(QHBoxLayout())
-    self.step_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.step_button.layout().setSizeConstraint(QLayout.SetMinimumSize)
-    self.step_button.layout().setContentsMargins(10, 4, 5, 4)
-    self.step_button.layout().setSpacing(2)
+    self.step_button_container = QWidget()
+    self.step_button_container.setObjectName('step_button_container')
+    self.step_button_container.setLayout(QHBoxLayout())
+    self.step_button_container.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.step_button_container.layout().setContentsMargins(0, 0, 0, 0)
+    self.step_button_container.layout().setSpacing(0)
 
-    self.step_button_label = QLabel()
-    self.step_button_label.setObjectName('step_button_label')
-    # self.step_button_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.step_button.layout().addWidget(self.step_button_label)
+    self.step_button = QPushButton()
+    self.step_button.setObjectName('step_button')   
+    self.step_button.setCheckable(True)
+    self.step_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.step_button.clicked.connect(lambda: update_step_buttons(self))
+    self.step_button_container.layout().addWidget(self.step_button)
+    
 
     self.step_value_f = QDoubleSpinBox()
     self.step_value_f.setObjectName('step_value_f')
-    self.step_value_f.setProperty('class', 'spin_playercontrols')
     self.step_value_f.setMinimum(.001)
     self.step_value_f.setMaximum(999.999)
     self.step_value_f.valueChanged.connect(lambda: step_value_changed(self))
-    # self.step_value_f.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.step_button.layout().addWidget(self.step_value_f)
+    self.step_value_f.setFixedHeight(24)
+    self.step_value_f.setFixedWidth(50)
+    self.step_value_f.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.step_button_container.layout().addWidget(self.step_value_f)
 
     self.step_value_i = QSpinBox()
     self.step_value_i.setObjectName('step_value_i')
-    self.step_value_i.setProperty('class', 'spin_playercontrols')
     self.step_value_i.setMinimum(1)
     self.step_value_i.setMaximum(999)
+    self.step_value_i.setFixedHeight(24)
+    self.step_value_i.setFixedWidth(50)
     self.step_value_i.valueChanged.connect(lambda: step_value_changed(self))
-    # self.step_value_i.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.step_button.layout().addWidget(self.step_value_i)
+    self.step_value_i.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.step_button_container.layout().addWidget(self.step_value_i)
 
     self.step_unit = QComboBox()
     self.step_unit.setObjectName('step_unit')
-    self.step_unit.setProperty('class', 'combobox_playercontrols')
     self.step_unit.insertItems(0, STEPS_LIST)
     self.step_unit.activated.connect(lambda: step_value_changed(self))
-    # self.step_unit.setFixedWidth(50)
-    # self.step_unit.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum))
-    self.step_button.layout().addWidget(self.step_unit)
+    # self.step_unit.setFixedHeight(24)
+    # self.step_unit.setFixedWidth(80)
+    self.step_unit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.step_button_container.layout().addWidget(self.step_unit, 1)
 
-    self.playercontrols_widget_right_bottom_line.layout().addWidget(self.step_button)
+    self.playercontrols_widget_right_bottom_line.layout().addWidget(self.step_button_container)
 
     self.zoom_controls_container = QWidget()
     self.zoom_controls_container.setObjectName('zoom_controls_container')
@@ -844,18 +986,12 @@ def load(self):
 
     self.zoomin_button = QPushButton(parent=self.playercontrols_widget)
     self.zoomin_button.setObjectName('zoomin_button')
-    self.zoomin_button.setProperty('borderless_bottom', 'true')
-    self.zoomin_button.setProperty('borderless_right', 'true')
-    self.zoomin_button.setProperty('class', 'subbutton2_dark')
     self.zoomin_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.zoomin_button.clicked.connect(lambda: zoomin_button_clicked(self))
     self.zoom_controls_container.layout().addWidget(self.zoomin_button)
 
     self.zoomout_button = QPushButton(parent=self.playercontrols_widget)
     self.zoomout_button.setObjectName('zoomout_button')
-    self.zoomout_button.setProperty('borderless_bottom', 'true')
-    self.zoomout_button.setProperty('borderless_left', 'true')
-    self.zoomout_button.setProperty('class', 'subbutton2_dark')
     self.zoomout_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.zoomout_button.clicked.connect(lambda: zoomout_button_clicked(self))
     self.zoom_controls_container.layout().addWidget(self.zoomout_button)
@@ -864,7 +1000,7 @@ def load(self):
 
     self.playercontrols_widget_right_bottom_line.layout().addStretch()
 
-    self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_right_bottom_line, 1)
+    self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_right_bottom_line)
 
     self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_bottom_line, 0)
 
@@ -1156,6 +1292,10 @@ def update_playercontrols_playpause_button(self):
 
 
 def show(self):
+    update(self)
+
+
+def update(self):
     self.preview_panel_player.update_speed()
     self.playercontrols_timecode_label.update_time()
     update_playback_speed_buttons(self)
@@ -1166,6 +1306,10 @@ def show(self):
     self.add_subtitle_and_play.setChecked(session.CONFIG.get('new_subtitle_and_play', False))
     self.add_subtitle_to_next_start.setChecked(session.CONFIG.get('new_subtitle_to_next_start', False))
     timelinescrolling_type_update(self)
+    update_snap_buttons(self)
+    update_grid_buttons(self)
+    update_step_buttons(self)
+    music_voice_separation_box_update(self)
 
 
 def zoomin_button_clicked(self):
@@ -1177,13 +1321,14 @@ def zoomin_button_clicked(self):
 def zoomout_button_clicked(self):
     """Function to call when zoonout button is clicked"""
     session.CONFIG['timeline_zoom'] -= 10.0
+    print(session.CONFIG['timeline_zoom'])
     zoom_buttons_update(self)
 
 
 def zoom_buttons_update(self):
     """Function to update zoom buttons"""
-    self.zoomout_button.setEnabled(True if session.CONFIG['timeline_zoom'] - 5.0 > 0.0 else False)
-    self.zoomin_button.setEnabled(True if session.CONFIG['timeline_zoom'] + 5.0 < 500.0 else False)
+    self.zoomout_button.setEnabled(True if session.CONFIG['timeline_zoom'] - 10.0 > 0.0 else False)
+    self.zoomin_button.setEnabled(True if session.CONFIG['timeline_zoom'] + 10.0 < 500.0 else False)
     proportion = ((session.SUBTITLE.get('position', 0) * self.timeline_widget.width_proportion) - self.timeline_scroll.horizontalScrollBar().value()) / self.timeline_scroll.width()
     self.timeline_widget.setGeometry(0, 0, int(round(session.VIDEO.get('duration', 0.01) * session.CONFIG['timeline_zoom'])), self.timeline_scroll.height() - 20)
     # timeline.zoom_update_waveform(self)
@@ -1283,21 +1428,21 @@ def add_subtitle_to_next_start_clicked(self):
 def gap_add_subtitle_button_clicked(self):
     """Function to call when add gap button is clicked"""
     subtitles.set_gap(position=session.SUBTITLE.get('position', 0), gap=self.gap_subtitle_duration.value())
-    session.CONFIG['unsaved'] = True
     left_panel.update(self)
-    session.SUBTITLE['selected'] = False
+    session.SUBTITLE['selected'] = None
     timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def gap_remove_subtitle_button_clicked(self):
     """Function to call when remove gap button is clicked"""
     subtitles.set_gap(position=session.SUBTITLE.get('position', 0), gap=-(self.gap_subtitle_duration.value()))
-    session.CONFIG['unsaved'] = True
     left_panel.update(self)
-    session.SUBTITLE['selected'] = False
+    session.SUBTITLE['selected'] = None
     timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def update_snap_buttons(self):
@@ -1390,7 +1535,6 @@ def add_subtitle_button_clicked(self):
         if next_subtitle:
             duration = max(duration, next_subtitle['start'] - session.SUBTITLE.get('position', 0))
     session.SUBTITLE['selected'] = subtitles.add_subtitle(position=session.SUBTITLE.get('position', 0), duration=duration, from_last_subtitle=self.add_subtitle_starting_from_last.isChecked())
-    session.CONFIG['unsaved'] = True
     self.left_panel_subtitleslist_textedit.setFocus(Qt.TabFocusReason)
     if self.add_subtitle_and_play.isChecked():
         self.preview_panel_player.play()
@@ -1398,29 +1542,30 @@ def add_subtitle_button_clicked(self):
         update_playercontrols_playpause_button(self)
     timeline.update(self)
     self.timeline_widget.update()
+    session.set_unsaved()
 
 
 def remove_selected_subtitle_button_clicked(self):
     """Function to call when remove selected subtitle button is clicked"""
     subtitles.remove_subtitle(selected_subtitle=session.SUBTITLE['selected'])
-    session.CONFIG['unsaved'] = True
+    session.SUBTITLE['selected'] = None
     left_panel.update(self)
-    session.SUBTITLE['selected'] = False
     timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def slice_selected_subtitle_button_clicked(self):
     """Function to call when slice selected subtitle button is clicked"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
         last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos]
         next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:]
         session.SUBTITLE['selected'] = subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE['selected'], position=session.SUBTITLE.get('position', 0), next_text=next_text, last_text=last_text)
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def select_subtitle_in_current_position(self):
@@ -1449,29 +1594,27 @@ def select_last_subtitle_over_current_position(self):
 
 def merge_back_selected_subtitle_button_clicked(self):
     """Function to merge selected subtitle with the last subtitle"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         session.SUBTITLE['selected'] = subtitles.merge_back_subtitle(selected_subtitle=session.SUBTITLE['selected'])
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def merge_next_selected_subtitle_button_clicked(self):
     """Function to merge selected subtitle with the next subtitle"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         session.SUBTITLE['selected'] = subtitles.merge_next_subtitle(selected_subtitle=session.SUBTITLE['selected'])
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def move_backward_subtitle_clicked(self):
     """Function to move subtitle backward"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         amount = (1.0 / session.VIDEO['framerate'])
         if self.step_button.isChecked():
             if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
@@ -1479,15 +1622,15 @@ def move_backward_subtitle_clicked(self):
             else:
                 amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
         subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=-amount)
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def move_forward_subtitle_clicked(self):
     """Function to move subtitle forward"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         amount = (1.0 / session.VIDEO['framerate'])
         if self.step_button.isChecked():
             if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
@@ -1495,15 +1638,15 @@ def move_forward_subtitle_clicked(self):
             else:
                 amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
         subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=amount)
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def move_start_back_subtitle_clicked(self):
     """Function to move starting position of selected subtitle backward"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         amount = (1.0 / session.VIDEO['framerate'])
         if self.step_button.isChecked():
             if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
@@ -1511,15 +1654,15 @@ def move_start_back_subtitle_clicked(self):
             else:
                 amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
         subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def move_start_forward_subtitle_clicked(self):
     """Function to move starting position of selected subtitle forward"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         amount = (1.0 / session.VIDEO['framerate'])
         if self.step_button.isChecked():
             if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
@@ -1527,15 +1670,15 @@ def move_start_forward_subtitle_clicked(self):
             else:
                 amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
         subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def move_end_back_subtitle_clicked(self):
     """Function to move ending position of selected subtitle backwards"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         amount = (1.0 / session.VIDEO['framerate'])
         if self.step_button.isChecked():
             if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
@@ -1543,15 +1686,15 @@ def move_end_back_subtitle_clicked(self):
             else:
                 amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
         subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=-amount)
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def move_end_forward_subtitle_clicked(self):
     """Function to move ending position of selected subtitle forward"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         amount = (1.0 / session.VIDEO['framerate'])
         if self.step_button.isChecked():
             if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
@@ -1559,78 +1702,80 @@ def move_end_forward_subtitle_clicked(self):
             else:
                 amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
         subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=amount)
-        session.CONFIG['unsaved'] = True
-        left_panel.update(self)
         timeline.update(self)
+        left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def timeline_cursor_back_frame_clicked(self):
     """Function to move cursor one frame backward"""
     self.preview_panel_player.frameBackStep()
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def timeline_cursor_next_frame_clicked(self):
     """Function to move cursor one frame forward"""
     self.preview_panel_player.frameStep()
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def next_start_to_current_position_button_clicked(self):
     """Function to move cursor one frame backward"""
     subtitles.next_start_to_current_position(position=session.SUBTITLE.get('position', 0))
-    session.CONFIG['unsaved'] = True
-    left_panel.update(self)
     timeline.update(self)
+    left_panel.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def last_end_to_current_position_button_clicked(self):
     """Function to move last ending position of selected subtitle to current cursor position"""
     subtitles.last_end_to_current_position(position=session.SUBTITLE.get('position', 0))
-    session.CONFIG['unsaved'] = True
-    left_panel.update(self)
     timeline.update(self)
+    left_panel.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def last_start_to_current_position_button_clicked(self):
     """Function to move last starting position subtitle to current cursor position"""
     subtitles.last_start_to_current_position(position=session.SUBTITLE.get('position', 0))
-    session.CONFIG['unsaved'] = True
-    left_panel.update(self)
     timeline.update(self)
+    left_panel.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def last_start_last_end_to_current_position_button_clicked(self):
     """Function to move starting position subtitle to current cursor position"""
     subtitles.subtitle_start_to_current_position(position=session.SUBTITLE.get('position', 0))
     subtitles.last_end_to_current_position(position=session.SUBTITLE.get('position', 0) - .001)
-    session.CONFIG['unsaved'] = True
-    left_panel.update(self)
     timeline.update(self)
+    left_panel.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def next_start_next_end_to_current_position_button_clicked(self):
     """Function to move ending position subtitle to current cursor position"""
     subtitles.subtitle_end_to_current_position(position=session.SUBTITLE.get('position', 0))
     subtitles.next_start_to_current_position(position=session.SUBTITLE.get('position', 0))
-    session.CONFIG['unsaved'] = True
-    left_panel.update(self)
     timeline.update(self)
+    left_panel.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def next_end_to_current_position_button_clicked(self):
     """Function to move next ending position to current cursor position"""
     subtitles.next_end_to_current_position(position=session.SUBTITLE.get('position', 0))
-    session.CONFIG['unsaved'] = True
-    left_panel.update(self)
     timeline.update(self)
+    left_panel.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 def change_playback_speed_clicked(self):
@@ -1852,7 +1997,7 @@ def playercontrols_properties_panel_tabwidget_background_cursor_color_button_cli
 
 def send_text_to_last_subtitle_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
         last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
         next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
@@ -1860,11 +2005,12 @@ def send_text_to_last_subtitle_button_clicked(self):
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def send_text_to_next_subtitle_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
         last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
         next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
@@ -1872,11 +2018,12 @@ def send_text_to_next_subtitle_button_clicked(self):
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 def send_text_to_last_subtitle_and_slice_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
         last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
         next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
@@ -1886,12 +2033,13 @@ def send_text_to_last_subtitle_and_slice_button_clicked(self):
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
 
 
 
 def send_text_to_next_subtitle_and_slice_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+    if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
         last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
         next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
@@ -1901,12 +2049,77 @@ def send_text_to_next_subtitle_and_slice_button_clicked(self):
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
+        session.set_unsaved()
+
+
+def music_voice_separation_activate_button_clicked(self):
+    self.music_voice_separation_activate_button.setEnabled(False)
+    self.music_voice_separation_activate_button.setText('...')
+    self.music_voice_separation_thread.filename = session.VIDEO['filepath']
+    self.music_voice_separation_thread.start()
+
+
+def music_voice_separation_music_icon_clicked(self):
+    if not 'volume' in session.VIDEO.get('music_voice_separation', {}):
+        session.VIDEO['music_voice_separation']['volume'] = .5    
+    session.VIDEO['music_voice_separation']['volume'] -= .05
+    music_voice_separation_slider_update(self)
+    music_voice_separation_buttons_update(self)
+
+def music_voice_separation_box_update(self):
+    self.music_voice_separation_box.setEnabled(bool(session.VIDEO.get('music_voice_separation', {})))
+    music_voice_separation_slider_update(self)
+    music_voice_separation_buttons_update(self)
+
+def music_voice_separation_voice_icon_clicked(self):
+    if not 'volume' in session.VIDEO.get('music_voice_separation', {}):
+        session.VIDEO['music_voice_separation']['volume'] = .5
+    session.VIDEO['music_voice_separation']['volume'] += .05
+    music_voice_separation_slider_update(self)
+    music_voice_separation_buttons_update(self)
+
+def music_voice_separation_buttons_update(self):
+    self.music_voice_separation_voice_icon.setEnabled(session.VIDEO.get('music_voice_separation', {}).get('volume', .5) < 1.0)
+    self.music_voice_separation_music_icon.setEnabled(session.VIDEO.get('music_voice_separation', {}).get('volume', .5) > 0.0)
+
+def music_voice_separation_slider_update(self):
+    self.music_voice_separation_slider.setValue(int(session.VIDEO.get('music_voice_separation', {}).get('volume', .5) * 100))
+    self.music_voice_separation_slider.setProperty('class', 'middle' if session.VIDEO.get('music_voice_separation', {}).get('volume', .5) == .5 else '')
+    self.music_voice_separation_slider.style().unpolish(self.music_voice_separation_slider)
+    self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
+
+def music_voice_separation_slider_changed(self):
+    if session.VIDEO.get('music_voice_separation', False):
+        session.VIDEO['music_voice_separation']['volume'] = self.music_voice_separation_slider.value() / 100.0
+    
+    music_voice_separation_buttons_update(self)
+
+    if session.VIDEO['music_voice_separation']['volume'] == .5:
+        self.preview_panel_player._audio_device.original_track.enabled = True
+        self.preview_panel_player._audio_device.background_sound.enabled = False
+        self.preview_panel_player._audio_device.vocals_sound.enabled = False
+        self.music_voice_separation_slider.setProperty('class', 'middle')
+        self.music_voice_separation_slider.style().unpolish(self.music_voice_separation_slider)
+        self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
+    else:
+        self.preview_panel_player._audio_device.original_track.enabled = False
+        self.preview_panel_player._audio_device.background_sound.enabled = True
+        self.preview_panel_player._audio_device.vocals_sound.enabled = True
+        self.music_voice_separation_slider.setProperty('class', '')
+        self.music_voice_separation_slider.style().unpolish(self.music_voice_separation_slider)
+        self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
+
+        background_volume = 1 if session.VIDEO['music_voice_separation']['volume'] < .5 else (1 - ((session.VIDEO['music_voice_separation']['volume'] - .5) * 2))
+        voice_volume = 1 if session.VIDEO['music_voice_separation']['volume'] > .5 else (session.VIDEO['music_voice_separation']['volume'] * 2)
+        
+        self.preview_panel_player._audio_device.background_sound.gain = background_volume
+        self.preview_panel_player._audio_device.vocals_sound.gain = voice_volume
 
 
 def translate(self):
     self.add_subtitle_button.setText(' ' + _('playercontrols.add'))
     self.snap_button_label.setText(_('playercontrols.snap'))
-    self.step_button_label.setText(_('playercontrols.step'))
+    self.step_button.setText(_('playercontrols.step'))
     self.remove_selected_subtitle_button.setText(' ' + _('playercontrols.remove'))
     self.grid_button.setText(_('playercontrols.grid'))
 

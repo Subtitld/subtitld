@@ -5,16 +5,17 @@ import sys
 import tempfile
 import subprocess
 import subtitld
+import os
+import platformdirs
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_LOCALE = PATH_SUBTITLD / 'locale'
 PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
 PATH_HOME = pathlib.Path.home()
-PATH_SUBTITLD_USER_CONFIG = PATH_HOME / '.config' / 'subtitld'
-
+PATH_SUBTITLD_USER_CONFIG = pathlib.Path(platformdirs.user_config_dir('subtitld'))
+PATH_SUBTITLD_USER_CACHE = pathlib.Path(platformdirs.user_cache_dir('subtitld'))
 FFMPEG_EXECUTABLE = 'ffmpeg'
 FFPROBE_EXECUTABLE = 'ffprobe'
-
 STARTUPINFO = None
 
 ACTUAL_OS = 'linux'
@@ -24,9 +25,9 @@ path_tmp = tempdir.name
 
 if sys.platform == 'darwin':
     ACTUAL_OS = 'macos'
-    PATH_SUBTITLD_USER_CONFIG = PATH_HOME / 'Library' / 'Application Support' / 'subtitld'
-    FFMPEG_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffmpeg'
-    FFPROBE_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffprobe'
+    
+    # FFMPEG_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffmpeg'
+    # FFPROBE_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffprobe'
     # try:
     #     from Foundation import NSURL
     # except ImportError:
@@ -34,16 +35,16 @@ if sys.platform == 'darwin':
     #     from Foundation import NSURL
 elif sys.platform == 'win32':
     ACTUAL_OS = 'windows'
-    PATH_SUBTITLD_USER_CONFIG = pathlib.Path(os.getenv('LOCALAPPDATA')) / 'subtitld'
-    if getattr(sys, "frozen", False):
-        PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
-        PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
-        FFMPEG_EXECUTABLE = PATH_SUBTITLD / 'ffmpeg.exe'
-        FFPROBE_EXECUTABLE = PATH_SUBTITLD / 'ffprobe.exe'
-    else:
-        script_dir = pathlib.Path(sys.argv[0]).parent
-        FFMPEG_EXECUTABLE = script_dir / 'ffmpeg.exe'
-        FFPROBE_EXECUTABLE = script_dir / 'ffprobe.exe'
+    
+    # if getattr(sys, "frozen", False):
+    #     PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
+    #     PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
+    #     FFMPEG_EXECUTABLE = PATH_SUBTITLD / 'ffmpeg.exe'
+    #     FFPROBE_EXECUTABLE = PATH_SUBTITLD / 'ffprobe.exe'
+    # else:
+    #     script_dir = pathlib.Path(sys.argv[0]).parent
+    #     FFMPEG_EXECUTABLE = script_dir / 'ffmpeg.exe'
+    #     FFPROBE_EXECUTABLE = script_dir / 'ffprobe.exe'
     STARTUPINFO = subprocess.STARTUPINFO()
     STARTUPINFO.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     STARTUPINFO.wShowWindow = subprocess.SW_HIDE
@@ -54,7 +55,22 @@ elif sys.platform == 'win32':
     # FFMPEG_EXECUTABLE = pathlib.Path('ffmpeg').resolve()
     # FFPROBE_EXECUTABLE = pathlib.Path('ffprobe').resolve()
 
-PATH_SUBTITLD_DATA_BACKUP = PATH_SUBTITLD_USER_CONFIG / 'backup'
+if not PATH_SUBTITLD_USER_CONFIG.exists():
+    PATH_SUBTITLD_USER_CONFIG.mkdir(parents=True)
+
+if not PATH_SUBTITLD_USER_CACHE.exists():
+    PATH_SUBTITLD_USER_CACHE.mkdir(parents=True)
+
+PATH_SUBTITLD_DATA_BACKUP = PATH_SUBTITLD_USER_CACHE / 'backup'
+
+if not PATH_SUBTITLD_DATA_BACKUP.exists():
+    PATH_SUBTITLD_DATA_BACKUP.mkdir(parents=True)
+
+
+PATH_SUBTITLD_DATA_AUDIOSEPARATION = PATH_SUBTITLD_USER_CACHE / 'audioseparation'
+
+if not PATH_SUBTITLD_DATA_AUDIOSEPARATION.exists():
+    PATH_SUBTITLD_DATA_AUDIOSEPARATION.mkdir(parents=True)
 
 PATH_SUBTITLD_USER_CONFIG_FILE = PATH_SUBTITLD_USER_CONFIG / 'subtitld.config'
 
@@ -234,3 +250,14 @@ VIDEO = {}
 CONFIG = {}
 
 REPEAT_DURATION_BUFFER = []
+
+UNSAVED = False
+_unsaved_change_callbacks = []
+def set_unsaved(value=True):
+    global UNSAVED
+    old_value = UNSAVED
+    UNSAVED = value
+    if old_value != value:
+        for callback in _unsaved_change_callbacks:
+            callback()
+

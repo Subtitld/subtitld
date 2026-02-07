@@ -125,19 +125,31 @@ def pip_notes():
 
 setup_requires = ['setuptools']
 install_requires = [
+    'PySide6',
     'PySideSix-Frameless-Window',
-    'mediapipe',
+    'mediapipe==0.10.21',
     'opencv-python',
+    'audaspace',
+    'python-i18n',
+    'python-docx',
+    'pycaption',
+    'chardet',
+    'audaspace',
+    'ffms2',
+    'pysubs2',
+    'translate',
+    'colorhash',
+    'platformdirs',
+    'audio-separator[cpu]',
+    'psutil',
+    # 'pysub2'
     # 'soundfile',
     # 'scipy'
     # 'requests',
     # 'numpy',
     # 'PySide6',
-    # 'ffms2',
-    # 'pycaption',
-    # 'pysubs2',
+    # 'pycaption',z
     # 'clean-text[gpl]',
-    # 'translate',
     # 'python-docx',
     # 'chardet',
     # 'google-api-python-client',

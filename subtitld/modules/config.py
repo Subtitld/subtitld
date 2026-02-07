@@ -20,7 +20,7 @@ class Config(dict):
         self.load_defaults()
 
         super().__init__(data)
-    
+        
     def __getitem__(self, key):
         return super().get(key, False)  # returns False if not found
     
@@ -41,4 +41,9 @@ class Config(dict):
         self.setdefault('new_subtitle_start_from_last', False)
         self.setdefault('new_subtitle_and_play', False)
         self.setdefault('new_subtitle_to_next_start', False)
+        self.setdefault('quality_check', {})
+        self.setdefault('default_values', {})
+        self.setdefault('videoplayer', {})
+        self.setdefault('export', {})
+        self.setdefault('autosave', {}) 
         

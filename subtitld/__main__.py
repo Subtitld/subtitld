@@ -4,15 +4,17 @@ import argparse
 import pathlib
 import inspect
 
-from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QPushButton
+from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog
 from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence
-from PySide6.QtCore import QDir
+from PySide6.QtCore import QDir, QTimer
 from qframelesswindow import FramelessMainWindow
 
 from subtitld.interface import top_bar
 from subtitld.interface import startscreen
 from subtitld.interface import productionscreen
 from subtitld.interface import actionmanager
+from subtitld.interface import utils
+from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import config
@@ -33,7 +35,9 @@ class Window(FramelessMainWindow):
         
         session.CONFIG = config.Config()
 
-        file_io.load(self)
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setInterval(int(session.CONFIG['autosave'].get('interval', 300000)))
+        self.autosave_timer.timeout.connect(lambda: file_io.autosave_timer_timeout())
 
         top_bar.load(self)
 
@@ -44,8 +48,6 @@ class Window(FramelessMainWindow):
 
         startscreen.load(self)
         productionscreen.load(self)
-
-        self.translate()
 
         self.titleBar.raise_()
         self.showMaximized()
@@ -83,26 +85,26 @@ class Window(FramelessMainWindow):
         # self.register_shortcut("Space", playercontrols_playpause_button_clicked(self), self.playercontrols_playpause_button, "Play/Pause")
 
 
-    # def register_shortcut(self, keyseq, handler, button, description):
-    #     shortcut = QShortcut(QKeySequence(keyseq), self)
-    #     shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-    #     shortcut.activated.connect(handler)
+        # def register_shortcut(self, keyseq, handler, button, description):
+        #     shortcut = QShortcut(QKeySequence(keyseq), self)
+        #     shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        #     shortcut.activated.connect(handler)
 
-    #     if button:
-    #         text = button.toolTip() or description or ""
-    #         key_hint = f" ({keyseq})"
-    #         if key_hint not in text:
-    #             button.setToolTip(text + key_hint)
-        
-    #     return shortcut
+        #     if button:
+        #         text = button.toolTip() or description or ""
+        #         key_hint = f" ({keyseq})"
+        #         if key_hint not in text:
+        #             button.setToolTip(text + key_hint)
+            
+        #     return shortcut
 
 
-    # def keyPressEvent(self, event):
-    #     if event.key() == Qt.Key_Space:
-    #         playercontrols_playpause_button_clicked(self)
-            # self.player_widget.pause()
-            # self.playercontrols_playpause_button.setChecked(not self.playercontrols_playpause_button.isChecked())
-            # playercontrols.playercontrols_playpause_button_update(self)
+        # def keyPressEvent(self, event):
+        #     if event.key() == Qt.Key_Space:
+        #         playercontrols_playpause_button_clicked(self)
+                # self.player_widget.pause()
+                # self.playercontrols_playpause_button.setChecked(not self.playercontrols_playpause_button.isChecked())
+                # playercontrols.playercontrols_playpause_button_update(self)
 
         # if event.key() == Qt.Key_F1:
         #     playercontrols.add_subtitle_button_clicked(self)
@@ -115,7 +117,7 @@ class Window(FramelessMainWindow):
         #         history.history_redo()
         #     elif event.modifiers() == Qt.ControlModifier:
         #         history.history_undo()
-        #     session.SUBTITLE['selected'] = False
+        #     session.SUBTITLE['selected'] = None
         #     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
         #     # self.properties.update_properties_widget(self)
         #     timeline.update(self)
@@ -135,24 +137,30 @@ class Window(FramelessMainWindow):
         for name, fn in inspect.getmembers(actionmanager, inspect.isfunction):
             function_name = getattr(fn, "name", None)
             function_default_shortcut = getattr(fn, "default_shortcut", None)
+        
+        self.confirm_exit_dialog = confirm_exit_dialog(self)
+
+
+
+        self.translate()
 
     def translate(self):
         startscreen.translate(self)
         productionscreen.translate(self)
+
+        self.confirm_exit_dialog.set_title(_('confirm_exit_dialog.title'))
+        self.confirm_exit_dialog.main_label.setText(_('confirm_exit_dialog.text'))
+        self.confirm_exit_dialog.accept_button.setText(_('confirm_exit_dialog.save_button'))
+        self.confirm_exit_dialog.reject_button.setText(_('confirm_exit_dialog.dont_save_button'))
         
 
     def closeEvent(self, event):
-        # if session.CONFIG['unsaved']:
-        #     save_message_box = QMessageBox(self)
+        if session.UNSAVED:
+            ret = self.confirm_exit_dialog.exec_()
+            print(ret)
 
-        #     save_message_box.setWindowTitle('Unsaved changes')
-        #     save_message_box.setText('Do you want to save the changes you made on the subtitles?')
-        #     save_message_box.addButton('Save', QMessageBox.AcceptRole)
-        #     save_message_box.addButton("Don't save", QMessageBox.RejectRole)
-        #     ret = save_message_box.exec_()
-
-        #     if ret == QMessageBox.AcceptRole:
-        #         self.subtitles_panel.toppanel_save_button_clicked(self)
+            if ret:
+                top_bar.toppanel_save_button_clicked(self)
 
         # self.thread_get_waveform.quit()
         # self.thread_get_qimages.quit()
@@ -177,6 +185,21 @@ class Window(FramelessMainWindow):
         session.CONFIG.save()
 
         event.accept()
+
+
+class confirm_exit_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.main_label = QLabel()
+        self.input_line.layout().addWidget(self.main_label)
+
+        self.content.layout().addWidget(self.input_line)
+
 
 def main():
     if args.file:

@@ -7,6 +7,7 @@ from subtitld.modules import session
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
 from subtitld.interface import bottom_panel
+from subtitld.interface import top_bar
 from subtitld.interface.translation import _
 
 
@@ -31,6 +32,9 @@ def load(self):
 
     self.main_vertical_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_vertical', [70, 30]))
 
+    if session.CONFIG.get('autosave', {}).get('backup_enabled', True):
+        self.autosave_timer.start()
+
 
 def main_horizontal_splitter_changed(self, pos, index):
     session.CONFIG['interface_splitters']['main_horizontal'] = self.main_horizontal_splitter.sizes()
@@ -54,6 +58,8 @@ def hide(self):
 
 
 def translate(self):
+    top_bar.translate(self)
     left_panel.translate(self)
     preview_panel.translate(self)
     bottom_panel.translate(self)
+    

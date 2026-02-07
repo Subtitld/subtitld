@@ -167,13 +167,18 @@ def load_productionscreen(self):
         QTimer().singleShot(200, lambda: productionscreen.show(self))
 
         self.preview_panel_player.loadfile(session.VIDEO['filepath'])
+
+        self.music_voice_separation_thread.filename = session.VIDEO['filepath']
+        self.music_voice_separation_thread.start()
+
+        session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+
         if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
             session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
             speakers = [segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']]
             session.SPEAKERS = {
                 name: {} for name in set(speakers)
             }
-            session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
             
             if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
                 self.preview_panel_player.seek(session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])].get('last_position', 0))

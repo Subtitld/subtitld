@@ -10,6 +10,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import utils as modules_utils
+from subtitld.modules import quality_check
 
 
 class subtitles_panel_qlistwidget(QListView):
@@ -63,8 +64,8 @@ class subtitles_panel_qlistwidget(QListView):
                     # painter.drawRect(QRect(0, option.rect.y(), 20, option.rect.height()))
 
                 sub_is_ok = True
-                # if session.CONFIG['quality_check'].get('enabled', False):
-                #     sub_is_ok, _, _ = quality_check.check_subtitle(index.model.subtitles[index.row()], session.CONFIG['quality_check'])
+                if session.CONFIG.get('quality_check', {}).get('enabled', False):
+                    sub_is_ok, _, _ = quality_check.check_subtitle(session.SUBTITLE['segments'][index.row()])
 
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('number_background_color', '#aa2e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_background_warning_color', '#aa9e1a1a')))
@@ -125,7 +126,7 @@ class subtitles_panel_qlistwidget(QListView):
 
         widget.model.layoutChanged.emit()
 
-        if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
+        if session.SUBTITLE.get('selected', None) is not None:
             widget.setCurrentIndex(widget.model.get_index(session.SUBTITLE['selected']))
 
         # widget.update_properties_widget(widget.window())
@@ -136,12 +137,14 @@ class subtitles_panel_qlistwidget(QListView):
 
 def load(self):
     tab_name = 'subtitles'
-    left_panel.add_button(self, tab_name)
     
     left_panel_subtitles_panel = QWidget()
     left_panel_subtitles_panel.setObjectName(f'left_panel_{tab_name}')
+    left_panel_subtitles_panel.setProperty('tab_name', tab_name)
     left_panel_subtitles_panel.setLayout(QVBoxLayout())
     left_panel_subtitles_panel.layout().setContentsMargins(0, 0, 0, 0)
+
+    left_panel_subtitles_panel.update = update
     
     left_panel.add_panel(self, left_panel_subtitles_panel)
 
@@ -157,9 +160,6 @@ def load(self):
     self.left_panel_subtitleslist_bottom_panel.layout().setContentsMargins(0, 0, 0, 0)
     self.left_panel_subtitleslist_bottom_panel.layout().setSpacing(0)
 
-    self.left_panel_subtitleslist_speaker_selector = SpeakerSelector()
-    self.left_panel_subtitleslist_speaker_selector.setObjectName('left_panel_subtitleslist_speaker_selector')
-    
     self.left_panel_subtitleslist_textedit = QTextEdit()
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
     self.left_panel_subtitleslist_textedit.setAttribute(Qt.WA_LayoutOnEntireRect)
@@ -167,168 +167,18 @@ def load(self):
     self.left_panel_subtitleslist_textedit.layout().setContentsMargins(0, 0, 0, 0)
     self.left_panel_subtitleslist_textedit.layout().setSpacing(0)
     self.left_panel_subtitleslist_textedit.textChanged.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
-    self.left_panel_subtitleslist_textedit.layout().addWidget(self.left_panel_subtitleslist_speaker_selector, 0, Qt.AlignBottom | Qt.AlignRight)
-    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
 
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row = QHBoxLayout()
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setObjectName('subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row')
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setSpacing(0)
+    self.left_panel_subtitleslist_textedit.layout().addStretch()
 
-    self.subtitles_panel_simplelist_properties_start_timing_label = QLabel()
-    self.subtitles_panel_simplelist_properties_start_timing_label.setObjectName('subtitles_panel_simplelist_properties_start_timing_label')
-    self.subtitles_panel_simplelist_properties_start_timing_label.setProperty('class', 'properties_timing_labels')
-    self.subtitles_panel_simplelist_properties_start_timing_label.setAlignment(Qt.AlignLeft)
-    self.subtitles_panel_simplelist_properties_start_timing_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_start_timing_label)
+    self.left_panel_subtitleslist_textedit_bottom_line = QHBoxLayout()
+    self.left_panel_subtitleslist_textedit_bottom_line.setContentsMargins(0, 0, 0, 0)
+    self.left_panel_subtitleslist_textedit_bottom_line.setSpacing(0)
 
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit = QLineEdit()
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setProperty('class', 'qlineedit_timings')
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setObjectName('subtitles_panel_simplelist_properties_start_timing_qlineedit')
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setLayout(QVBoxLayout())
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.layout().setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.layout().setSpacing(0)
-    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.layout().addWidget(self.subtitles_panel_simplelist_properties_start_timing_label, 0, Qt.AlignLeft | Qt.AlignTop)    
-    # self.subtitles_panel_simplelist_properties_start_timing_qlineedit.textEdited.connect(lambda: subtitles_panel_simplelist_properties_start_timing_qlineedit_text_edited(self))
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_start_timing_qlineedit)
-
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row = QWidget()
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row.setLayout(QHBoxLayout())
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().setSpacing(0)
-
-    self.subtitles_panel_simplelist_properties_duration_timing_label = QLabel()
-    self.subtitles_panel_simplelist_properties_duration_timing_label.setObjectName('subtitles_panel_simplelist_properties_duration_timing_label')
-    self.subtitles_panel_simplelist_properties_duration_timing_label.setProperty('class', 'properties_timing_labels')
-    self.subtitles_panel_simplelist_properties_duration_timing_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.subtitles_panel_simplelist_properties_duration_timing_label.setAlignment(Qt.AlignCenter)
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().addWidget(self.subtitles_panel_simplelist_properties_duration_timing_label, 0, Qt.AlignTop)
-    
-    self.subtitles_panel_simplelist_properties_duration_timing_lock_button = QPushButton()
-    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.setObjectName('subtitles_panel_simplelist_properties_duration_timing_lock_button')
-    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.setCheckable(True)
-    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.setFixedSize(QSize(20, 16))
-    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().addWidget(self.subtitles_panel_simplelist_properties_duration_timing_lock_button, 0, Qt.AlignTop)
-    
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit = QLineEdit()
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setProperty('class', 'qlineedit_timings')
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setObjectName('subtitles_panel_simplelist_properties_duration_timing_qlineedit')
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setLayout(QVBoxLayout())
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setAlignment(Qt.AlignCenter)
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.layout().setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.layout().setSpacing(0)
-    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.layout().addWidget(self.subtitles_panel_simplelist_properties_duration_timing_label_row, 0, Qt.AlignCenter | Qt.AlignTop)
-    # self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.textEdited.connect(lambda: subtitles_panel_simplelist_properties_duration_timing_qlineedit_text_edited(self))
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_duration_timing_qlineedit)
-
-    self.subtitles_panel_simplelist_properties_ending_timing_label = QLabel()
-    self.subtitles_panel_simplelist_properties_ending_timing_label.setObjectName('subtitles_panel_simplelist_properties_ending_timing_label')
-    self.subtitles_panel_simplelist_properties_ending_timing_label.setProperty('class', 'properties_timing_labels')
-    self.subtitles_panel_simplelist_properties_ending_timing_label.setAlignment(Qt.AlignRight)
-    self.subtitles_panel_simplelist_properties_ending_timing_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_ending_timing_label)
-
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit = QLineEdit()
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setProperty('class', 'qlineedit_timings')
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setObjectName('subtitles_panel_simplelist_properties_ending_timing_qlineedit')
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setLayout(QVBoxLayout())
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setAlignment(Qt.AlignRight)
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.layout().setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.layout().setSpacing(0)
-    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.layout().addWidget(self.subtitles_panel_simplelist_properties_ending_timing_label, 0, Qt.AlignRight | Qt.AlignTop)
-    # self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.textEdited.connect(lambda: subtitles_panel_simplelist_properties_ending_timing_qlineedit_text_edited(self))
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_ending_timing_qlineedit)
-
-    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.raise_()
-
-    self.left_panel_subtitleslist_bottom_panel.layout().addLayout(self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row)
-
-    subtitles_panel_simplelist_qsplitter.addWidget(self.left_panel_subtitleslist_bottom_panel)
-
-    subtitles_panel_simplelist_qsplitter.setSizes([subtitles_panel_simplelist_qsplitter.height()*.8, subtitles_panel_simplelist_qsplitter.height()*.2])
-
-    left_panel_subtitles_panel.layout().addWidget(subtitles_panel_simplelist_qsplitter)
-
-
-def left_panel_subtitleslist_textedit_changed(self):
-    if session.SUBTITLE['selected']:
-        session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
-    self.timeline_widget.update()
-    self.preview_panel_player.update()
-
-
-def update(self):
-    self.left_panel_subtitleslist_bottom_panel.setVisible(bool(session.SUBTITLE.get('selected', False)))
-    
-    if session.SUBTITLE.get('selected', False):
-        self.left_panel_subtitleslist_textedit.setText(session.SUBTITLE['selected']['text'])
-
-        if self.preview_panel_player.is_paused():
-            position = session.SUBTITLE.get('position', 0)
-            if position > session.SUBTITLE['selected']['end'] or position < session.SUBTITLE['selected']['start']:
-                position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 2)
-            self.preview_panel_player.set_position(position)
-        
-        self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE['selected'].get('speaker', 'A'))
-
-        self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['start'], ms=True))
-        self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), ms=True))
-        self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
-    
-    
-    # if session.SUBTITLE['selected']:
-        # text = session.SUBTITLE['selected']['text']
-    # text = ''
-        # reasons = []
-        # issues = []
-
-        # if session.CONFIG['quality_check'].get('enabled', False):
-        #     _, reasons, issues = quality_check.check_subtitle(session.SUBTITLE['selected'], session.CONFIG['quality_check'])
-
-        #     n_words = len(session.SUBTITLE['selected']['text'].replace('\n', ' ').split(' '))
-        #     n_char = len(session.SUBTITLE['selected']['text'].replace('\n', '').replace(' ', ''))
-
-        #     self.properties_information_word_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'wpm' not in issues else '#aa9e1a1a') + '}')
-        #     self.properties_information_wpm.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'wpm' not in issues else '#bb9e1a1a') + '}')
-        #     self.properties_information_character_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'cps' not in issues else '#aa9e1a1a') + '}')
-        #     self.properties_information_cps.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cps' not in issues else '#bb9e1a1a') + '}')
-        #     self.properties_information_sub_duration.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'duration' not in issues else '#bb9e1a1a') + '}')
-        #     self.properties_information_number_of_lines.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'number_of_lines' not in issues else '#bb9e1a1a') + '}')
-        #     self.properties_information_cpl.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cpl' not in issues else '#bb9e1a1a') + '}')
-
-        #     self.properties_information_word_counter.setText(str(n_words))
-        #     self.properties_information_wpm.setText(str(int(n_words / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 60))))
-        #     self.properties_information_character_counter.setText(str(n_char))
-        #     self.properties_information_cps.setText(str(int(n_char / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start'])))))
-        #     self.properties_information_sub_duration.setText(str(round((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), 3)))
-        #     self.properties_information_number_of_lines.setText(str(int(len(session.SUBTITLE['selected']['text'].split('\n')))))
-
-        #     self.properties_information_reason.setVisible(bool(reasons))
-        #     self.properties_information_reason.setText('\n'.join(reasons))
-
-        #     self.properties_information_issues.setVisible(bool(issues))
-        #     self.properties_information_issues.setText('\n'.join(issues))
-
-    # def update_properties_widget(self):
-    # """Function to update properties panel widgets"""
-    #  update(self)
-    # self.subtitles_panel_simplelist_properties.setVisible(bool(session.SUBTITLE['selected']))
-    
-
-    # if not self.left_panel_subtitleslist_textedit.hasFocus():
-    #     self.left_panel_subtitleslist_textedit.setText(text)
-    # self.properties_information_stats.setVisible(bool(session.SUBTITLE['selected']) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
-    
-
-def loads(self):
-    self.properties_information = QFrame()
+    self.properties_information = QWidget()
     self.properties_information.setObjectName('properties_information')
+    self.properties_information.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
     self.properties_information.setLayout(QVBoxLayout())
-    self.properties_information.layout().setContentsMargins(20, 0, 0, 0)
+    self.properties_information.layout().setContentsMargins(5, 5, 5, 5)
     self.properties_information.layout().setSpacing(5)
 
     self.properties_information_stats = QFrame()
@@ -380,29 +230,193 @@ def loads(self):
 
     self.properties_information.layout().addWidget(self.properties_information_stats)
 
-    self.properties_information_reason = QLabel()
-    self.properties_information_reason.setObjectName('properties_information_reason')
-    self.properties_information.layout().addWidget(self.properties_information_reason)
+    # self.properties_information_reason = QLabel()
+    # self.properties_information_reason.setObjectName('properties_information_reason')
+    # self.properties_information.layout().addWidget(self.properties_information_reason)
 
-    self.subtitles_panel_simplelist_widget.layout().addWidget(self.properties_information)
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.properties_information, 1, Qt.AlignLeft | Qt.AlignBottom)
 
-    self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_widget)
+    # self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_widget)
 
-    self.subtitles_panel_simplelist_properties = QFrame()
-    self.subtitles_panel_simplelist_properties.setLayout(QVBoxLayout())
-    self.subtitles_panel_simplelist_properties.layout().setContentsMargins(20, 0, 0, 0)
-    self.subtitles_panel_simplelist_properties.layout().setSpacing(0)
+    # self.subtitles_panel_simplelist_properties = QFrame()
+    # self.subtitles_panel_simplelist_properties.setLayout(QVBoxLayout())
+    # self.subtitles_panel_simplelist_properties.layout().setContentsMargins(20, 0, 0, 0)
+    # self.subtitles_panel_simplelist_properties.layout().setSpacing(0)
 
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line = QHBoxLayout()
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line.setContentsMargins(0, 0, 0, 0)
-    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line.setSpacing(0)
+    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line = QHBoxLayout()
+    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line.setContentsMargins(0, 0, 0, 0)
+    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line.setSpacing(0)
 
-    self.subtitles_panel_simplelist_properties.layout().addLayout(self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line, 1)
+    # self.subtitles_panel_simplelist_properties.layout().addLayout(self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_line, 1)
 
-    self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_properties)
+    # self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_properties)
+
+    self.left_panel_subtitleslist_speaker_selector = SpeakerSelector()
+    self.left_panel_subtitleslist_speaker_selector.setObjectName('left_panel_subtitleslist_speaker_selector')
+
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_speaker_selector, 0, Qt.AlignRight | Qt.AlignBottom)
+
+    self.left_panel_subtitleslist_textedit.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
+    
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
+
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row = QHBoxLayout()
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setObjectName('subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row')
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setContentsMargins(0, 0, 0, 0)
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setSpacing(0)
+
+    self.subtitles_panel_simplelist_properties_start_timing_label = QLabel()
+    self.subtitles_panel_simplelist_properties_start_timing_label.setObjectName('subtitles_panel_simplelist_properties_start_timing_label')
+    self.subtitles_panel_simplelist_properties_start_timing_label.setProperty('class', 'properties_timing_labels')
+    self.subtitles_panel_simplelist_properties_start_timing_label.setAlignment(Qt.AlignLeft)
+    # self.subtitles_panel_simplelist_properties_start_timing_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_start_timing_label)
+
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit = QLineEdit()
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setProperty('class', 'qlineedit_timings')
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setObjectName('subtitles_panel_simplelist_properties_start_timing_qlineedit')
+    # self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setLayout(QVBoxLayout())
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.layout().setContentsMargins(0, 0, 0, 0)
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.layout().setSpacing(0)
+    self.subtitles_panel_simplelist_properties_start_timing_qlineedit.layout().addWidget(self.subtitles_panel_simplelist_properties_start_timing_label, 0, Qt.AlignLeft | Qt.AlignTop)    
+    # self.subtitles_panel_simplelist_properties_start_timing_qlineedit.textEdited.connect(lambda: subtitles_panel_simplelist_properties_start_timing_qlineedit_text_edited(self))
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_start_timing_qlineedit, 1)
+
+    self.subtitles_panel_simplelist_properties_duration_timing_label_row = QWidget()
+    self.subtitles_panel_simplelist_properties_duration_timing_label_row.setLayout(QHBoxLayout())
+    # self.subtitles_panel_simplelist_properties_duration_timing_label_row.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().setContentsMargins(0, 0, 0, 0)
+    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().setSpacing(0)
+
+    self.subtitles_panel_simplelist_properties_duration_timing_label = QLabel()
+    self.subtitles_panel_simplelist_properties_duration_timing_label.setObjectName('subtitles_panel_simplelist_properties_duration_timing_label')
+    self.subtitles_panel_simplelist_properties_duration_timing_label.setProperty('class', 'properties_timing_labels')
+    # self.subtitles_panel_simplelist_properties_duration_timing_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.subtitles_panel_simplelist_properties_duration_timing_label.setAlignment(Qt.AlignCenter)
+    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().addWidget(self.subtitles_panel_simplelist_properties_duration_timing_label, 0, Qt.AlignTop)
+    
+    self.subtitles_panel_simplelist_properties_duration_timing_lock_button = QPushButton()
+    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.setObjectName('subtitles_panel_simplelist_properties_duration_timing_lock_button')
+    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.setCheckable(True)
+    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.setFixedSize(QSize(20, 16))
+    self.subtitles_panel_simplelist_properties_duration_timing_label_row.layout().addWidget(self.subtitles_panel_simplelist_properties_duration_timing_lock_button, 0, Qt.AlignTop)
+    
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit = QLineEdit()
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setProperty('class', 'qlineedit_timings')
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setObjectName('subtitles_panel_simplelist_properties_duration_timing_qlineedit')
+    # self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setLayout(QVBoxLayout())
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setAlignment(Qt.AlignCenter)
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.layout().setContentsMargins(0, 0, 0, 0)
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.layout().setSpacing(0)
+    self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.layout().addWidget(self.subtitles_panel_simplelist_properties_duration_timing_label_row, 0, Qt.AlignCenter | Qt.AlignTop)
+    # self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.textEdited.connect(lambda: subtitles_panel_simplelist_properties_duration_timing_qlineedit_text_edited(self))
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_duration_timing_qlineedit, 1)
+
+    self.subtitles_panel_simplelist_properties_ending_timing_label = QLabel()
+    self.subtitles_panel_simplelist_properties_ending_timing_label.setObjectName('subtitles_panel_simplelist_properties_ending_timing_label')
+    self.subtitles_panel_simplelist_properties_ending_timing_label.setProperty('class', 'properties_timing_labels')
+    self.subtitles_panel_simplelist_properties_ending_timing_label.setAlignment(Qt.AlignRight)
+    # self.subtitles_panel_simplelist_properties_ending_timing_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    # self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_ending_timing_label)
+
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit = QLineEdit()
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setProperty('class', 'qlineedit_timings')
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setObjectName('subtitles_panel_simplelist_properties_ending_timing_qlineedit')
+    # self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setLayout(QVBoxLayout())
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setAlignment(Qt.AlignRight)
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.layout().setContentsMargins(0, 0, 0, 0)
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.layout().setSpacing(0)
+    self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.layout().addWidget(self.subtitles_panel_simplelist_properties_ending_timing_label, 0, Qt.AlignRight | Qt.AlignTop)
+    # self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.textEdited.connect(lambda: subtitles_panel_simplelist_properties_ending_timing_qlineedit_text_edited(self))
+    self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.addWidget(self.subtitles_panel_simplelist_properties_ending_timing_qlineedit, 1)
+
+    self.subtitles_panel_simplelist_properties_duration_timing_lock_button.raise_()
+
+    self.left_panel_subtitleslist_bottom_panel.layout().addLayout(self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row)
+
+    subtitles_panel_simplelist_qsplitter.addWidget(self.left_panel_subtitleslist_bottom_panel)
+
+    subtitles_panel_simplelist_qsplitter.setSizes([subtitles_panel_simplelist_qsplitter.height()*.8, subtitles_panel_simplelist_qsplitter.height()*.2])
+
+    left_panel_subtitles_panel.layout().addWidget(subtitles_panel_simplelist_qsplitter)
 
 
+def left_panel_subtitleslist_textedit_changed(self):
+    if session.SUBTITLE['selected']:
+        session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
+    self.timeline_widget.update()
+    self.preview_panel_player.update()
 
+
+def update(self):
+    self.subtitles_panel_qlistwidget.update_content()
+
+    self.left_panel_subtitleslist_bottom_panel.setVisible(bool(session.SUBTITLE.get('selected', False)))
+    self.properties_information.setVisible(bool(session.SUBTITLE.get('selected', False)) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
+    
+    if session.SUBTITLE.get('selected', None) is None:
+        self.subtitles_panel_qlistwidget.clearSelection()
+    else:
+        self.left_panel_subtitleslist_textedit.setText(session.SUBTITLE['selected']['text'])
+
+        if self.preview_panel_player.is_paused():
+            position = session.SUBTITLE.get('position', 0)
+            if position > session.SUBTITLE['selected']['end'] or position < session.SUBTITLE['selected']['start']:
+                position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 2)
+            self.preview_panel_player.set_position(position)
+        
+        self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE['selected'].get('speaker', 'A'))
+
+        self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['start'], ms=True))
+        self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), ms=True))
+        self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
+                
+        if session.CONFIG.get('quality_check', {}).get('enabled', False):
+            text = ''
+            reasons = []
+            issues = []
+
+            _, reasons, issues = quality_check.check_subtitle(session.SUBTITLE['selected'])
+
+            n_words = len(session.SUBTITLE['selected']['text'].replace('\n', ' ').split(' '))
+            n_char = len(session.SUBTITLE['selected']['text'].replace('\n', '').replace(' ', ''))
+
+            self.properties_information_word_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'wpm' not in issues else '#aa9e1a1a') + '}')
+            self.properties_information_wpm.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'wpm' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_character_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'cps' not in issues else '#aa9e1a1a') + '}')
+            self.properties_information_cps.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cps' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_sub_duration.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'duration' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_number_of_lines.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'number_of_lines' not in issues else '#bb9e1a1a') + '}')
+            self.properties_information_cpl.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cpl' not in issues else '#bb9e1a1a') + '}')
+
+            self.properties_information_word_counter.setText(str(n_words))
+            self.properties_information_wpm.setText(str(int(n_words / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 60))))
+            self.properties_information_character_counter.setText(str(n_char))
+            self.properties_information_cps.setText(str(int(n_char / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start'])))))
+            self.properties_information_sub_duration.setText(str(round((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), 3)))
+            self.properties_information_number_of_lines.setText(str(int(len(session.SUBTITLE['selected']['text'].split('\n')))))
+
+            self.properties_information.setToolTip('\n'.join(reasons))
+
+            # self.properties_information_reason.setVisible(bool(reasons))
+            # self.properties_information_reason.setText('\n'.join(reasons))
+
+            # self.properties_information_issues.setVisible(bool(issues))
+            # self.properties_information_issues.setText('\n'.join(issues))
+
+    # def update_properties_widget(self):
+    # """Function to update properties panel widgets"""
+    #  update(self)
+    # self.subtitles_panel_simplelist_properties.setVisible(bool(session.SUBTITLE['selected']))
+    
+
+    # if not self.left_panel_subtitleslist_textedit.hasFocus():
+    #     self.left_panel_subtitleslist_textedit.setText(text)
+    # self.properties_information_stats.setVisible(bool(session.SUBTITLE['selected']) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
+    
     
 def show(self):
     update(self)
@@ -438,7 +452,7 @@ class SpeakerSelector(QWidget):
     def __init__(self, parent=None):
         super(SpeakerSelector, self).__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum))
+        self.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
         self.setLayout(QHBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)

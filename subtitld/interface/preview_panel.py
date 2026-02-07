@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QVBoxLayout, QGraphicsScene, QGraphicsView, QFrame, QGraphicsOpacityEffect, QSizePolicy
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QMargins, Signal, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaMetaData
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 
 from subtitld.interface import utils
@@ -11,6 +11,7 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
+from subtitld.modules import audioengine #AudaspaceAudioDevice
     
 
 class PlayerWidget(QWidget):
@@ -20,10 +21,15 @@ class PlayerWidget(QWidget):
         widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
         widget.setLayout(QVBoxLayout())
         widget.layout().setContentsMargins(0, 0, 0, 0)
+
+        widget._media_player = QMediaPlayer()
         
         widget._audio_output = QAudioOutput()
-        widget._media_player = QMediaPlayer()
         widget._media_player.setAudioOutput(widget._audio_output)
+        # widget._media_player.setAudioOutput(QAudioOutput())
+        
+        widget._audio_device = audioengine.SoundDeviceAudioEngine()
+
         widget._graphics_scene = QGraphicsScene()
         widget._graphics_view = QGraphicsView(widget._graphics_scene)
         widget._graphics_view.setFrameShadow(QFrame.Plain)
@@ -121,7 +127,6 @@ class PlayerWidget(QWidget):
 
         QTimer.singleShot(0, widget._force_resize_update)
     
-
     def position_changed(widget, position):
         session.SUBTITLE['position'] = position / 1000.0
         widget.update_subtitle_layer()
@@ -138,44 +143,43 @@ class PlayerWidget(QWidget):
         event.accept()
 
     def loadfile(widget, filepath):
-        """Function to load a media file"""
         if os.path.isfile(filepath):
             widget._media_player.setSource(str(filepath))
+            # widget._audio_device.load(filepath)
             widget.play()
             widget.pause()
             
     def frameStep(widget):
-        None
+        fps = widget._media_player.metaData().value(QMediaMetaData.VideoFrameRate)
+        widget._media_player.setPosition(widget._media_player.position() + int(1000/fps))
 
     def frameBackStep(widget):
-        None
+        fps = widget._media_player.metaData().value(QMediaMetaData.VideoFrameRate)
+        widget._media_player.setPosition(widget._media_player.position() - int(1000/fps))
 
     def seek(widget, pos=0.0, method='absolute+exact'):
         """Function to seek at some position"""
         widget._media_player.setPosition(int(pos*1000))
-        # widget.audio_device.seek_audio(pos)
+        widget._audio_device.seek(pos)
         
     def stop(widget):
         """Function to stop playback (fake stop, it is pause + position 0)"""
         widget._media_player.pause()
+        widget._audio_device.stop()
         widget.seek(0)
-        # widget._media_player.stop()
-        # widget.audio
 
     def pause(widget):
         """Function to pause playback (fake pause, it just changes actual playback status)"""
         widget._media_player.pause()
-        # widget.audio_device.pause()
+        widget._audio_device.pause()
 
     def play(widget):
         """Function to play (fake play, it just changes actual playback status)"""
         widget._media_player.play()
-        # widget.audio_device.play()
-        # widget._sound_effect.play()
+        widget._audio_device.play(session.SUBTITLE.get('position', 0))
 
     def mute(widget):
         """Function to mute"""
-        # widget._media_player.setMuted(True)
         None
 
     def is_paused(widget):
@@ -183,7 +187,6 @@ class PlayerWidget(QWidget):
 
     def volume(widget, vol: int):
         """Function to change volume"""
-        # widget.property('volume', vol)
         None
     
     def set_position(widget, pos):
@@ -195,7 +198,8 @@ class PlayerWidget(QWidget):
     def update_speed(self):
         """Function to change playback speed"""
         self._media_player.setPlaybackRate(session.CONFIG['playback_speed'])
-        # self.audio_device.change_speed(session.CONFIG['playback_speed'])
+        self._audio_device.set_speed(session.CONFIG['playback_speed'])
+        # self._audio_device.change_speed(session.CONFIG['playback_speed'])
 
     def _force_resize_update(widget):
         size = widget.size()

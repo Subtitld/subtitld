@@ -10,12 +10,12 @@ from PySide6.QtCore import Qt, QRectF, QThread, Signal, QMarginsF, QTimer
 from subtitld.modules import session
 from subtitld.modules import utils
 from subtitld.modules import subtitles
+from subtitld.modules import quality_check
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 
 # from subtitld.modules import history
-# from subtitld.modules import quality_check
 # from subtitld.modules import utils
 # from subtitld.interface import subtitles_panel, player
 
@@ -53,7 +53,7 @@ class AudioLoaderThread(QThread):
     """
     finished = Signal(object, int)
 
-    def __init__(self, samplerate: int = 48000, parent=None):
+    def __init__(self, samplerate=48000, parent=None):
         super().__init__(parent)
         self.filepath = None
         self.target_samplerate = samplerate
@@ -70,10 +70,15 @@ class AudioLoaderThread(QThread):
             # You might emit a signal for error if needed
             pass
 
-    def _load_audio(self, filepath: str, samplerate: int = 48000):
+
+    def _load_audio(self, filepath, samplerate=48000):
         cmd = [
-            "ffmpeg", "-v", "error", "-i", filepath,
-            "-ac", "1", "-ar", str(samplerate), "-f", "f32le", "-"
+            session.FFMPEG_EXECUTABLE,
+            "-v", "error",
+            "-i", filepath,
+            "-ac", "1",
+            "-ar", str(samplerate),
+            "-f", "f32le", "-",
         ]
 
         # Use Popen to allow termination
@@ -131,6 +136,7 @@ class WaveformWorker(QThread):
             maxs = buckets.max(axis=1)
         self.finished.emit(self.zoom_key, (mins, maxs, self.samples_per_bucket))
     
+
 class WaveformManager:
     def __init__(self, samples=None):
         self.samples = None
@@ -248,6 +254,7 @@ class WaveformManager:
     def ensure_level(self, samples_per_pixel):
         self._start_worker_if_missing(int(max(1, samples_per_pixel)))
 
+
 class Timeline(QWidget):
     seek = Signal(float)
     subtitle_clicked = Signal()    
@@ -275,7 +282,7 @@ class Timeline(QWidget):
 
         widget.waveform_manager = WaveformManager()
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
-        widget.waveform_y = 0
+        widget.waveform_y = 45
 
     def paintEvent(widget, event):
         if not widget.isVisible() or widget.width() <= 0 or widget.height() <= 0:
@@ -286,6 +293,43 @@ class Timeline(QWidget):
         scroll_width = widget.parent().parent().width()
 
         painter.setRenderHint(QPainter.Antialiasing)
+
+        grid_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483')), 1, Qt.SolidLine)
+        painter.setFont(QFont('Ubuntu Mono', 8))
+        
+        xpos = 0
+        for sec in range(int(session.VIDEO.get('duration', 60))):
+            if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
+                if (session.CONFIG.get('timeline_zoom', 1) > 75) or (session.CONFIG.get('timeline_zoom', 1) > 50 and session.CONFIG.get('timeline_zoom', 1) <= 75 and not int((sec % 2))) or (session.CONFIG.get('timeline_zoom', 1) > 25 and session.CONFIG.get('timeline_zoom', 1) <= 50 and not int((sec % 4))) or (session.CONFIG.get('timeline_zoom', 1) <= 25 and not int((sec % 8))):
+                    lim_rect = QRectF(
+                        xpos + 3,
+                        27,
+                        50,
+                        20
+                    )
+                    painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#806a7483')))
+                    painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
+
+                if session.CONFIG.get('timeline', {}).get('show_grid', False) and session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds':
+                    painter.setPen(grid_pen)
+                    painter.drawLine(xpos, 0, xpos, widget.height())
+            
+            xpos += widget.width_proportion
+
+        if session.CONFIG.get('timeline', {}).get('show_grid', False):
+            if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
+                painter.setPen(grid_pen)
+                xpos = 0.0
+                for _ in range(int(session.VIDEO.get('duration', 60) * session.VIDEO['framerate'])):
+                    if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
+                        painter.drawLine(xpos, 0, xpos, widget.height())
+                    xpos += widget.width_proportion / session.VIDEO['framerate']
+            elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and session.VIDEO['scenes']:
+                painter.setPen(grid_pen)
+                for scene in session.VIDEO['scenes']:
+                    xpos = (scene * widget.width_proportion)
+                    if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
+                        painter.drawLine(xpos, 0, xpos, widget.height())
 
         if session.REPEAT_DURATION_BUFFER:
             rep_rect = QRectF(
@@ -314,7 +358,7 @@ class Timeline(QWidget):
             samples_per_pixel = max(1, int(sr / widget.width_proportion))  # heuristic: how many samples map to one timeline pixel
             mins, maxs, spb, chosen = widget.waveform_manager.get_level(samples_per_pixel, start_sample, end_sample)
             if len(mins) > 0:
-                center = widget.waveform_y + widget.waveform_height * 0.5 + 10
+                center = widget.waveform_y + (widget.waveform_height * 0.5)
                 scale = widget.waveform_height * 0.9 / 2.0  # scale factor to map normalized -1..1 to pixels
                 buckets_count = len(mins)
                 if buckets_count > 0:
@@ -347,6 +391,8 @@ class Timeline(QWidget):
 
         if session.SUBTITLE['segments']:
             painter.setOpacity(1)
+            painter.setFont(QFont('Montserrat', 10))
+            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#304251')))
 
             for subtitle in session.SUBTITLE['segments']:
                 if (subtitle['start'] / session.VIDEO.get('duration', 0.01)) > ((scroll_position + scroll_width) / widget.width()):
@@ -370,13 +416,20 @@ class Timeline(QWidget):
 
                     painter.drawRoundedRect(subtitle_rect, 2.0, 2.0, Qt.AbsoluteSize)
 
-                    # approved, _, _ = quality_check.check_subtitle(subtitle, session.CONFIG['quality_check'])
-                    # if session.CONFIG['quality_check'].get('enabled', False) and not approved:
-                    #     painter.setPen(QColor('#9e1a1a'))
-                    # elif session.SUBTITLE['selected'] == subtitle:
-                    #     painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#ffffffff')))
-                    # else:
-                    #     painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#ff304251')))
+                    if session.CONFIG.get('quality_check', {}).get('enabled', False):
+                        approved, _, _ = quality_check.check_subtitle(subtitle)
+                        if not approved:
+                            painter.setPen(QColor('#9e1a1a'))
+                        elif session.SUBTITLE.get('selected', False) == subtitle:
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#ffffffff')))
+                        else:
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#ff304251')))
+                    else:
+                        if session.SUBTITLE.get('selected', False) == subtitle:
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
+                        else:
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+
 
                     subtitle_rect -= QMarginsF(22, 2, 22, 2)
                     painter.drawText(subtitle_rect, Qt.AlignCenter | Qt.TextWordWrap, subtitle['text'])
@@ -446,39 +499,6 @@ class Timeline(QWidget):
 
             painter.setOpacity(1)
 
-        if session.CONFIG.get('timeline', {}).get('show_grid', False):
-            grid_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483')), 1, Qt.SolidLine)
-            painter.setFont(QFont('Ubuntu Mono', 8))
-            xpos = 0
-            for sec in range(int(session.VIDEO.get('duration', 60))):
-                if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
-                    if (session.CONFIG.get('timeline_zoom', 1) > 75) or (session.CONFIG.get('timeline_zoom', 1) > 50 and session.CONFIG.get('timeline_zoom', 1) <= 75 and not int((sec % 2))) or (session.CONFIG.get('timeline_zoom', 1) > 25 and session.CONFIG.get('timeline_zoom', 1) <= 50 and not int((sec % 4))) or (session.CONFIG.get('timeline_zoom', 1) <= 25 and not int((sec % 8))):
-                        lim_rect = QRectF(
-                            xpos + 3,
-                            27,
-                            50,
-                            20
-                        )
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#806a7483')))
-                        painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
-                    if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds':
-                        painter.setPen(grid_pen)
-                        painter.drawLine(xpos, 0, xpos, widget.height())
-                xpos += widget.width_proportion
-            if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
-                painter.setPen(grid_pen)
-                xpos = 0.0
-                for _ in range(int(session.VIDEO.get('duration', 60) * session.VIDEO['framerate'])):
-                    if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
-                        painter.drawLine(xpos, 0, xpos, widget.height())
-                    xpos += widget.width_proportion / session.VIDEO['framerate']
-            elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and session.VIDEO['scenes']:
-                painter.setPen(grid_pen)
-                for scene in session.VIDEO['scenes']:
-                    xpos = (scene * widget.width_proportion)
-                    if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
-                        painter.drawLine(xpos, 0, xpos, widget.height())
-
         if bool(widget.show_tug_of_war):
             tug_of_war_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(tug_of_war_pen)
@@ -503,7 +523,7 @@ class Timeline(QWidget):
                     text += f'⤺{len(session.REPEAT_DURATION_BUFFER)}'
 
                 if not session.CONFIG['playback_speed'] == 1.0:
-                    text += (' ' if text else '') + f'x{session.CONFIG['playback_speed']}'
+                    text += (' ' if text else '') + f"x{session.CONFIG['playback_speed']}"
 
                 cfont_metr = QFontMetrics(cfont).horizontalAdvance(text)
 
@@ -535,7 +555,7 @@ class Timeline(QWidget):
         cursor_is_out_of_view = bool(session.SUBTITLE.get('position', 0) * widget.width_proportion < widget.parent().parent().horizontalScrollBar().value() or session.SUBTITLE.get('position', 0) * widget.width_proportion > widget.parent().parent().width() + widget.parent().parent().horizontalScrollBar().value())
 
         widget.is_cursor_pressing = True
-        session.SUBTITLE['selected'] = False
+        session.SUBTITLE['selected'] = None
 
         for subtitle in session.SUBTITLE['segments']:
             if (subtitle['start'] / session.VIDEO.get('duration', 0.01)) > ((scroll_position + scroll_width) / widget.width()):
@@ -559,8 +579,6 @@ class Timeline(QWidget):
                     break
 
         if (widget.subtitle_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked):
-            # history.history_append(session.SUBTITLE['segments'])
-            session.CONFIG['unsaved'] = True
             widget.subtitle_clicked.emit()
         else:
             session.SUBTITLE['position'] = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
@@ -571,6 +589,8 @@ class Timeline(QWidget):
         widget.update()
 
     def mouseReleaseEvent(widget, event):
+        if (widget.subtitle_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked):
+            session.set_unsaved()
         widget.subtitle_is_clicked = False
         widget.subtitle_start_is_clicked = False
         widget.subtitle_end_is_clicked = False
@@ -599,7 +619,7 @@ class Timeline(QWidget):
             if last and subtitle_under_the_cursor['start'] - (cursor_tug_of_war_range*.5) < cursor_time_position < subtitle_under_the_cursor['start'] + (cursor_tug_of_war_range*.5) and subtitle_under_the_cursor['start'] - .001 < last['end'] + .02:
                 widget.show_tug_of_war = subtitle_under_the_cursor['start'] - .0005
             
-        if session.SUBTITLE.get('selected', False):
+        if session.SUBTITLE.get('selected', None) is not None:
             i = session.SUBTITLE['segments'].index(session.SUBTITLE['selected'])
             last = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) - 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) > 0 else {'start': 0, 'end': 0, 'text': ''}
             nextsub = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) + 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) < len(session.SUBTITLE['segments']) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
@@ -711,6 +731,7 @@ class Timeline(QWidget):
         session.VIDEO["samplerate"] = samplerate
         widget.waveform_manager.set_samples(samples)
         QTimer.singleShot(1000, lambda: widget.update()) 
+     
         
 def update_subtitles_panel_subtitle_selected(self):
     self.subtitles_panel_qlistwidget.update_content()
@@ -767,7 +788,7 @@ def update(self):
         elif session.CONFIG.get('timeline', {}).get('scrolling', 'page') == 'page' and current_position_in_timeline_widget > self.timeline_scroll.width() + self.timeline_scroll.horizontalScrollBar().value():
             update_scrollbar(self)
 
-    # self.timeline_widget.update()
+    self.timeline_widget.update()
 
 
 def load_audio_for_timeline(filepath: str, samplerate: int = 48000):

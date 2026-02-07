@@ -45,15 +45,6 @@ def load(self):
     # Add our bar
     self.titleBar.layout().insertWidget(0, self.titleBar_left_container)
 
-    self.titleBar_left_save_container = QWidget(self)
-    self.titleBar_left_save_container.setObjectName('titleBar_left_save_container')
-    self.titleBar_left_save_container.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.titleBar_left_save_container.setLayout(QHBoxLayout())
-    self.titleBar_left_save_container.layout().setContentsMargins(15, 0, 0, 0)
-    self.titleBar_left_save_container.setAttribute(Qt.WA_StyledBackground, True)
-    self.titleBar_left_save_container.setProperty('class', 'saved')
-    self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_container, alignment=Qt.AlignLeft | Qt.AlignVCenter)
-
     class titleBar_left_save_button(QPushButton):
         def __init__(widget, parent=None):
             super().__init__(parent)
@@ -66,14 +57,25 @@ def load(self):
         def keyReleaseEvent(widget, event):
             widget.key_modifiers = []
             event.accept()
-
+        
+        def update_state(widget):
+            print('save button updated')
+            widget.setProperty(
+                'class',
+                'unsaved' if session.UNSAVED else 'saved'
+            )
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            super().update()
 
     self.titleBar_left_save_button = titleBar_left_save_button(self)
     self.titleBar_left_save_button.setObjectName('titleBar_left_save_button')
+    self.titleBar_left_save_button.setProperty('class', 'saved')
     self.titleBar_left_save_button.setIconSize(QSize(16, 16))
     self.titleBar_left_save_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
     self.titleBar_left_save_button.clicked.connect(lambda: toppanel_save_button_clicked(self))
-    self.titleBar_left_save_container.layout().addWidget(self.titleBar_left_save_button)
+    session._unsaved_change_callbacks.append(self.titleBar_left_save_button.update_state)
+    self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignVCenter)
 
     self.titleBar_left_information_container = QWidget(self)
     self.titleBar_left_information_container.setObjectName('titleBar_left_information_container')
@@ -111,9 +113,13 @@ def show(self):
     utils.animate_element(self.titleBar_left_container.animation, duration=1000, effect='slide_from_left')
 
 
+def translate(self):
+    self.titleBar_left_save_button.setToolTip(_('top_bar.save'))
+
+
 def toppanel_save_button_clicked(self):
     """Function to call when save button on subtitles list panel is clicked"""
-
+    session.set_unsaved(False)
     actual_subtitle_file = False
     subtitle_format = modules_utils.get_subtitle_format(session.SUBTITLE['filepath'])
     if subtitle_format:
@@ -160,7 +166,6 @@ def toppanel_save_button_clicked(self):
             #     file_io.save_file(session.SUBTITLE['filepath'], selected_format, session.CONFIG['selected_language'])
             #     if session.CONFIG.get('default_values', {}).get('save_automatic_copy', False) and not subtitle_format == session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF'):
             #         file_io.save_file(session.SUBTITLE['filepath'].rsplit('.', 1)[0] + '.{}'.format(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF')]['extensions'][0]), session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF'), session.CONFIG['selected_language'])
-            #     session.CONFIG['unsaved'] = False
 
             # if Qt.AltModifier in self.titleBar_left_save_button.key_modifiers:
             #     file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
@@ -172,6 +177,5 @@ def toppanel_save_button_clicked(self):
         file_io.save_file(session.SUBTITLE['filepath'], subtitle_format, session.CONFIG['selected_language'])
         if session.CONFIG['save_automatic_copy'] and not subtitle_format == session.CONFIG.get('automatic_copy_format', 'USF'):
             file_io.save_file(session.SUBTITLE['filepath'].rsplit('.', 1)[0] + '.{}'.format(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[session.CONFIG.get('automatic_copy_format', 'USF')]['extensions'][0]), session.CONFIG.get('automatic_copy_format', 'USF'), session.CONFIG['selected_language'])
-        session.CONFIG['unsaved'] = False
 
     # update(self)
