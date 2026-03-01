@@ -9,11 +9,12 @@ from subtitld.modules import session
 def load(self):
     tab_name = 'qualitycheck'
     
-    left_panel_qualitycheck_panel = QWidget()
-    left_panel_qualitycheck_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_qualitycheck_panel.setProperty('tab_name', tab_name)
-    left_panel_qualitycheck_panel.setLayout(QVBoxLayout())
-    left_panel_qualitycheck_panel.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_qualitycheck_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
     left_panel_qualitycheck_panel_scroll = QScrollArea()
     left_panel_qualitycheck_panel_scroll.setObjectName('left_panel_qualitycheck_panel_scroll')
@@ -22,6 +23,7 @@ def load(self):
     left_panel_qualitycheck_panel.layout().addWidget(left_panel_qualitycheck_panel_scroll)
 
     self.left_panel_qualitycheck_panel_widget = QWidget()
+    self.left_panel_qualitycheck_panel_widget.setProperty('class', 'transparent_panel')
     self.left_panel_qualitycheck_panel_widget.setObjectName('left_panel_qualitycheck_panel_widget')
     self.left_panel_qualitycheck_panel_widget.setLayout(QVBoxLayout())
     self.left_panel_qualitycheck_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
@@ -198,9 +200,6 @@ def load(self):
 
     self.left_panel_qualitycheck_panel_widget.layout().addStretch()
 
-    left_panel_qualitycheck_panel.update = update
-    
-    left_panel.add_panel(self, left_panel_qualitycheck_panel)
 
     update(self)
 
@@ -209,7 +208,6 @@ def show(self):
     update(self)
 
 def update(self):
-    print('Update Quality Check Panel')
     self.global_panel_tabwidget_show_statistics_checkbox.setChecked(session.CONFIG['quality_check'].get('show_statistics', False))
     self.global_panel_tabwidget_quality_enable_groupbox.setChecked(session.CONFIG['quality_check'].get('enabled', False))
     self.global_panel_tabwidget_quality_readingspeed_cps.setValue(session.CONFIG['quality_check'].get('reading_speed_cps', 21))

@@ -1,381 +1,645 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QHBoxLayout, QPushButton, QComboBox, QGroupBox, QTabWidget, QProgressBar, QMessageBox
-from PySide6.QtCore import Qt, QThread, Signal, QRect, QSize, QMargins
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QLineEdit, QSizePolicy, QStackedWidget, QProgressBar
+from PySide6.QtCore import Qt, QThread, Signal
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
+from subtitld.interface import utils
 from subtitld.modules import session
-from subtitld.modules import file_io
+
+import speech_recognition as sr
+from vosk import Model, KaldiRecognizer
+import requests
+import zipfile
+import wave
+import subprocess
+import re
+import shutil
+import assemblyai as aai
 
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
 
+VOSK_CONFIG = {
+  "en": [
+    {
+      "name": "vosk-model-small-en-us-0.15",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+      "size": "40M",
+      "license": "Apache 2.0",
+      "description": "Small English (US) model. Lightweight, low memory usage, suitable for mobile and embedded/offline applications."
+    },
+    {
+      "name": "vosk-model-en-us-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip",
+      "size": "1.8G",
+      "license": "Apache 2.0",
+      "description": "Full-size English (US) model. Higher accuracy, recommended for server or desktop environments."
+    },
+    {
+      "name": "vosk-model-en-us-0.22-lgraph",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip",
+      "size": "128M",
+      "license": "Apache 2.0",
+      "description": "English (US) model with compact language graph. Balanced size and accuracy."
+    },
+    {
+      "name": "vosk-model-en-us-0.42-gigaspeech",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.42-gigaspeech.zip",
+      "size": "2.3G",
+      "license": "Apache 2.0",
+      "description": "Large English model trained on GigaSpeech dataset. Improved accuracy for diverse speech."
+    }
+  ],
+  "pt": [
+    {
+      "name": "vosk-model-small-pt-0.3",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip",
+      "size": "31M",
+      "license": "Apache 2.0",
+      "description": "Small Portuguese model. Lightweight and suitable for offline/mobile applications."
+    },
+    {
+      "name": "vosk-model-pt-fb-v0.1.1-20220516_2113",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-pt-fb-v0.1.1-20220516_2113.zip",
+      "size": "1.6G",
+      "license": "GPLv3.0",
+      "description": "Full-size Portuguese model (Facebook training). Higher accuracy, requires more memory."
+    }
+  ],
+  "es": [
+    {
+      "name": "vosk-model-small-es-0.42",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip",
+      "size": "39M",
+      "license": "Apache 2.0",
+      "description": "Small Spanish model. Lightweight, optimized for embedded and offline usage."
+    },
+    {
+      "name": "vosk-model-es-0.42",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-es-0.42.zip",
+      "size": "1.4G",
+      "license": "Apache 2.0",
+      "description": "Full-size Spanish model. Higher recognition accuracy for desktop/server usage."
+    }
+  ],
+  "fr": [
+    {
+      "name": "vosk-model-small-fr-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip",
+      "size": "41M",
+      "license": "Apache 2.0",
+      "description": "Small French model. Lightweight and efficient for offline/mobile systems."
+    },
+    {
+      "name": "vosk-model-fr-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-fr-0.22.zip",
+      "size": "1.4G",
+      "license": "Apache 2.0",
+      "description": "Full-size French model. Improved accuracy, recommended for powerful systems."
+    }
+  ],
+  "de": [
+    {
+      "name": "vosk-model-small-de-0.15",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-de-0.15.zip",
+      "size": "45M",
+      "license": "Apache 2.0",
+      "description": "Small German model. Suitable for low-resource and embedded applications."
+    },
+    {
+      "name": "vosk-model-de-0.21",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-de-0.21.zip",
+      "size": "1.9G",
+      "license": "Apache 2.0",
+      "description": "Full-size German model. Higher accuracy for server/desktop environments."
+    }
+  ],
+  "it": [
+    {
+      "name": "vosk-model-small-it-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-it-0.22.zip",
+      "size": "48M",
+      "license": "Apache 2.0",
+      "description": "Small Italian model. Lightweight and optimized for offline usage."
+    },
+    {
+      "name": "vosk-model-it-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-it-0.22.zip",
+      "size": "1.2G",
+      "license": "Apache 2.0",
+      "description": "Full-size Italian model. Better accuracy for production/server applications."
+    }
+  ],
+  "ru": [
+    {
+      "name": "vosk-model-small-ru-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip",
+      "size": "45M",
+      "license": "Apache 2.0",
+      "description": "Small Russian model. Lightweight and suitable for offline systems."
+    },
+    {
+      "name": "vosk-model-ru-0.42",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-ru-0.42.zip",
+      "size": "1.8G",
+      "license": "Apache 2.0",
+      "description": "Full-size Russian model. Higher accuracy for complex speech recognition tasks."
+    }
+  ],
+  "zh": [
+    {
+      "name": "vosk-model-small-cn-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip",
+      "size": "42M",
+      "license": "Apache 2.0",
+      "description": "Small Chinese model. Compact and suitable for embedded/offline use."
+    },
+    {
+      "name": "vosk-model-cn-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip",
+      "size": "1.3G",
+      "license": "Apache 2.0",
+      "description": "Full-size Chinese model. Higher recognition accuracy for server environments."
+    }
+  ],
+  "ja": [
+    {
+      "name": "vosk-model-small-ja-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip",
+      "size": "48M",
+      "license": "Apache 2.0",
+      "description": "Small Japanese model. Lightweight for offline/mobile applications."
+    },
+    {
+      "name": "vosk-model-ja-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-ja-0.22.zip",
+      "size": "1Gb",
+      "license": "Apache 2.0",
+      "description": "Full-size Japanese model. Higher accuracy for desktop/server usage."
+    }
+  ]
+}
 
-class global_panel_transcription_autosubtitles_thread(QThread):
-    """Thread to generate burned video"""
-    response = Signal(str)
-    original_file = ''
-    language = 'en'
 
-    def run(self):
-        if self.original_file:
-            autosub.generate_subtitles(
-                self.original_file,
-                output=os.path.join(session.path_tmp, 'subtitle.json'),
-                src_language=self.language,
-                dst_language=self.language,
-                subtitle_file_format='json',
-                ffmpeg_executable=session.FFMPEG_EXECUTABLE
-            )
-            self.response.emit('end')
+class VoskPanel(QWidget):
+    transcript_started = Signal()
+    transcript_progress = Signal(int)
+    transcript_finished = Signal()
+    def __init__(widget, parent=None):
+        super().__init__(parent=None)
+        widget.parent = parent
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(10)
+        widget.setProperty('transcription_engine', 'Vosk')
+        widget.setProperty('class', 'transparent_panel')
 
+        widget.selected_model = False
 
-class global_panel_transcription_transcript_thread(QThread):
-    """Class of qtread to get waveform data"""
-    result = Signal(str)
-    text = Signal(str)
+        widget.model_line = QWidget()
+        widget.model_line.setLayout(QHBoxLayout())
+        widget.model_line.layout().setContentsMargins(0, 0, 0, 0)
+        widget.model_line.layout().setSpacing(5)
+        widget.layout().addWidget(widget.model_line) 
 
-    def __init__(self):
-        super().__init__()
-        self.metadata = {}
-        session.CONFIG['selected_language'] = False
+        widget.model_combobox = utils.LabeledComboBox()
+        widget.model_combobox.setObjectName('global_panel_transcription_vosk_transcription_model_combobox')
+        widget.model_combobox.activated.connect(lambda: widget.model_combobox_activated())
+        widget.model_line.layout().addWidget(widget.model_combobox, 1)
 
-    def run(self):
-        final_text = ''
-        total_steps = int(self.metadata['duration'] / 60)
+        widget.download_model_button = QPushButton()
+        widget.download_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
+        widget.download_model_button.setObjectName('global_panel_transcription_vosk_transcription_download_model_button')
+        widget.download_model_button.clicked.connect(lambda: widget.download_model_button_clicked())
+        widget.model_combobox.bottom_line.addWidget(widget.download_model_button)
 
-        actual_split = 0
-        while actual_split < self.metadata['duration']:
-            if self.metadata and session.CONFIG['selected_language']:
-                self.result.emit('{}/{}'.format(int(actual_split / 60), total_steps))
-                subprocess.run(
-                    [
+        widget.update_model_button = QPushButton()
+        widget.update_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
+        widget.update_model_button.setObjectName('global_panel_transcription_vosk_transcription_update_model_button')
+        widget.update_model_button.clicked.connect(lambda: widget.update_model_button_clicked())
+        widget.model_combobox.bottom_line.addWidget(widget.update_model_button)
+
+        widget.remove_model_button = QPushButton()
+        widget.remove_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
+        widget.remove_model_button.setObjectName('global_panel_transcription_vosk_transcription_remove_model_button')
+        widget.remove_model_button.setProperty('class', 'danger')
+        widget.remove_model_button.clicked.connect(lambda: widget.remove_model_button_clicked())
+        widget.model_combobox.bottom_line.addWidget(widget.remove_model_button)
+
+        widget.no_model_available_label = QLabel()
+        widget.layout().addWidget(widget.no_model_available_label)
+
+        widget.details_line = QHBoxLayout()
+        widget.details_line.setContentsMargins(0, 0, 0, 0)
+        widget.details_line.setSpacing(10)
+
+        widget.description_label = QLabel()
+        widget.description_label.setWordWrap(True)
+        widget.details_line.addWidget(widget.description_label, 1, Qt.AlignLeft | Qt.AlignTop)
+
+        widget.license_label = utils.LabeledLabel()
+        widget.details_line.addWidget(widget.license_label, 0, Qt.AlignTop)
+
+        widget.size_label = utils.LabeledLabel()
+        widget.details_line.addWidget(widget.size_label, 0, Qt.AlignTop)
+
+        widget.layout().addLayout(widget.details_line)
+
+        widget.layout().addStretch()
+
+        class download_thread(QThread):
+            response = Signal(float)
+            url = None
+            final_path = None
+            def run(self):
+                if self.url is not None and self.final_path is not None:
+                    r = requests.get(self.url, stream=True)
+                    total_size = int(r.headers.get('content-length', 0))
+                    size_counter = 0
+                    with open(self.final_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size = 1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                                size_counter += len(chunk)
+                                self.response.emit(float(size_counter) / float(total_size))
+                                                                  
+                    with zipfile.ZipFile(self.final_path, 'r') as zip_ref:
+                        zip_ref.extractall(session.PATH_SUBTITLD_DATA_MODELS)        
+        
+        def download_started():
+            widget.model_combobox.setEnabled(False)
+            widget.size_label.setLabel(_('transcription_panel.downloading'))
+
+        def download_progress_changed(value):
+            widget.size_label.setText(f'{widget.selected_model["size"]} ({int(value * 100)}%)')
+
+        def download_finished():
+            widget.size_label.setLabel(_('transcription_panel.size'))
+            widget.model_combobox.setEnabled(True)
+            widget.models_update()
+
+        widget.download_thread = download_thread()
+        widget.download_thread.response.connect(lambda value: download_progress_changed(value))
+        widget.download_thread.started.connect(lambda: download_started())
+        widget.download_thread.finished.connect(lambda: download_finished())
+
+        class VoskThread(QThread):
+            response = Signal(object)
+            progress = Signal(int)
+            model_path = None
+            audio_file = None
+            
+            def run(self):
+                if self.model_path and self.audio_file:
+                    temp_audio_file = os.path.join(session.PATH_TEMP, f'vosk_transcribe_{os.path.basename(self.audio_file)}')
+
+                    self.progress.emit(1)
+
+                    subprocess.Popen([
                         session.FFMPEG_EXECUTABLE,
-                        '-y',
-                        '-i',
-                        self.metadata['filepath'],
-                        '-ss', str(actual_split),
-                        '-t', '60',
-                        os.path.join(session.path_tmp, 'transcribe.wav')
-                    ]
-                )
+                        '-i', self.audio_file,
+                        '-acodec', 'pcm_s16le',
+                        '-ar', '16000',
+                        '-ac', '1',
+                        '-f', 'wav',
+                        temp_audio_file
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=session.STARTUPINFO).wait()
 
-                r = sr.Recognizer()
-                with sr.AudioFile(os.path.join(session.path_tmp, 'transcribe.wav')) as source:
-                    audio = r.record(source)
+                    self.progress.emit(8)
 
-                language = session.LANGUAGE_DICT_LIST[session.CONFIG['selected_language']].split('-')[0]
+                    model = Model(self.model_path)
 
-                try:
-                    final_text += r.recognize_google(audio, language=language)
-                except sr.UnknownValueError:
-                    print("Google Speech Recognition could not understand audio")
-                except sr.RequestError as e:
-                    print("Could not request results from Google Speech Recognition service; {0}".format(e))
+                    self.progress.emit(9)
 
-                actual_split += 60
+                    wf = wave.open(temp_audio_file, "rb")
 
-        if final_text:
-            self.text.emit(final_text)
+                    self.progress.emit(10)
+
+                    rec = KaldiRecognizer(model, wf.getframerate())
+                    rec.SetWords(True)
+
+                    while True:
+                        data = wf.readframes(4000)
+                        if len(data) == 0:
+                            break
+                        if rec.AcceptWaveform(data):
+                            result = rec.Result()
+                            result = re.sub(r'(\d),(\d)', r'\1.\2', result)
+                            result = json.loads(result)
+                            self.progress.emit(10 + int((float(result['result'][0]['start'])/float(session.VIDEO.get('duration', 60.0))) * 90))
+                            self.response.emit(result)
+
+                    self.response.emit(rec.FinalResult())
+
+        def translate_thread_response(response):
+            if isinstance(response, dict) and all(k in response for k in ('result', 'text')):
+                session.SUBTITLE['segments'].append({
+                    'start': response['result'][0]['start'],
+                    'end': response['result'][-1]['end'],
+                    'text': response['text']
+                })
+                widget.window().timeline_widget.update()
+                session.set_unsaved()
+
+        widget.translate_thread = VoskThread()
+        widget.translate_thread.response.connect(translate_thread_response)
+        widget.translate_thread.started.connect(lambda: widget.transcript_started.emit())
+        widget.translate_thread.progress.connect(lambda value: widget.transcript_progress.emit(value))        
+        widget.translate_thread.finished.connect(lambda: widget.transcript_finished.emit())
+
+        widget.update_callback = widget.update
+        widget.transcript_callback = widget.transcript
+        widget.translate_callback = widget.translate
+
+    def update(widget):
+        widget.model_line.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
+        widget.no_model_available_label.setVisible(not bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
+        widget.description_label.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
+        widget.license_label.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
+        widget.size_label.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
+
+        if widget.model_line.isVisible():
+            list_of_available_models = [item['name'] for item in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]]
+            widget.model_combobox.clear()
+            widget.model_combobox.addItems(list_of_available_models)
+
+            selected_model_from_config = session.CONFIG['transcription'].get('engine_options', {}).get('Vosk', {}).get('selected_model', False)
+            if selected_model_from_config:
+                widget.model_combobox.setCurrentText(selected_model_from_config)
+
+        widget.models_update()
+
+    def remove_model_button_clicked(widget):
+        confirm_dialog = utils.SimpleDialog(widget, title=_('transcription_panel.remove_model_confirm'))
+        label = QLabel(_('transcription_panel.remove_model_confirm_text'))
+        confirm_dialog.content.layout().addWidget(label)
+        confirm_dialog.exec()
+        if confirm_dialog.result() == 1:
+            widget.selected_model = {}
+            for model in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]:
+                if model['name'] == widget.model_combobox.currentText():
+                    widget.selected_model = model
+                    break
+
+            model_path = os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])
+
+            if os.path.isdir(model_path):
+                shutil.rmtree(model_path)
+
+            widget.models_update()
+
+    def models_update(widget):
+        if widget.model_line.isVisible():
+            widget.selected_model = {}
+            for model in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]:
+                if model['name'] == widget.model_combobox.currentText():
+                    widget.selected_model = model
+                    break
+
+            widget.download_model_button.setVisible(not os.path.isdir(os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])))
+            widget.update_model_button.setVisible(os.path.isdir(os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])))
+            widget.remove_model_button.setVisible(os.path.isdir(os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])))
+            widget.description_label.setText(widget.selected_model['description'])
+            widget.license_label.setText(widget.selected_model['license'])
+            widget.size_label.setText(widget.selected_model['size'])
+
+    def model_combobox_activated(widget):
+        if not 'engine_options' in session.CONFIG['transcription']:
+            session.CONFIG['transcription']['engine_options'] = {}
+        if not 'Vosk' in session.CONFIG['transcription']['engine_options']:
+            session.CONFIG['transcription']['engine_options']['Vosk'] = {}
+
+        session.CONFIG['transcription']['engine_options']['Vosk']['selected_model'] = widget.model_combobox.currentText()
+
+        widget.models_update()
+
+    def download_model_button_clicked(widget):
+        widget.selected_model = {}
+        for model in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]:
+            if model['name'] == widget.model_combobox.currentText():
+                widget.selected_model = model
+                break
+
+        widget.download_thread.url = widget.selected_model['url']
+        widget.download_thread.final_path = os.path.join(session.PATH_TEMP, widget.selected_model['name'])
+        widget.download_thread.start()
+
+    def update_model_button_clicked(widget):
+        widget.remove_model_button_clicked()
+        widget.download_model_button_clicked()
+
+    def transcript(widget):
+        if widget.selected_model:
+            widget.translate_thread.model_path = os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])
+            widget.translate_thread.audio_file = session.VIDEO['music_voice_separation']['vocals']
+            widget.translate_thread.start()
+
+    def translate(widget):
+        widget.model_combobox.setLabel(_('transcription_panel.model'))
+        widget.license_label.setLabel(_('transcription_panel.license'))
+        widget.size_label.setLabel(_('transcription_panel.size'))
+        widget.no_model_available_label.setText(_('transcription_panel.no_model_available'))
 
 
-class global_panel_transcription_transcript_preview(QLabel):
-    def __init__(widget):
-        super().__init__()
-        widget.text = ''
-        widget.division_type = 'equal'
+class AssemblyAIPanel(QWidget):
+    transcript_started = Signal()
+    transcript_progress = Signal(int)
+    transcript_finished = Signal()
+    def __init__(widget, parent=None):
+        super().__init__(parent=None)
+        widget.parent = parent
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(10)
+        widget.setProperty('transcription_engine', 'AssemblyAI')
+        widget.setProperty('class', 'transparent_panel')
 
-    def update_type(widget, slice_type):
-        widget.division_type = slice_type
-        widget.update()
+        widget.api_key = utils.LabeledLineEdit()
+        widget.api_key.setObjectName('global_panel_transcription_assemblyai_transcription_api_key')
+        widget.api_key.lineedit.setEchoMode(QLineEdit.Password)
+        widget.api_key.editingFinished.connect(lambda value: widget.api_key_activated(value))
+        widget.layout().addWidget(widget.api_key, 1)
 
-    def update_text(widget, text):
-        widget.text = text
-        widget.update()
+        widget.layout().addStretch()
 
-    def paintEvent(widget, event):
-        """Function for paintEvent of Timeline"""
-        painter = QPainter(widget)
-        painter.setRenderHint(QPainter.Antialiasing)
+        class AssemblyAIThread(QThread):
+            response = Signal(list)
+            response_error = Signal(str)
+            progress = Signal(int)
+            audio_file = None
+            
+            def run(self):
+                api_key = session.CONFIG['transcription'].get('engine_options', {}).get('AssemblyAI', {}).get('api_key', False)
+                if api_key and self.audio_file:
+                    try:
+                        temp_audio_file = os.path.join(session.PATH_TEMP, f'vosk_transcribe_{os.path.basename(self.audio_file)}.opus')
+                        subprocess.Popen([
+                            session.FFMPEG_EXECUTABLE,
+                            '-i', self.audio_file,
+                            '-c:a', 'libopus',
+                            '-b:a', '24k',
+                            '-vbr', 'on',
+                            '-compression_level', '10',
+                            '-application', 'voip',
+                            '-ac', '1',
+                            '-ar', '48000',
+                            temp_audio_file.replace('.wav', '.opus')
 
-        main_qrect = QRect(
-            0,
-            0,
-            widget.width(),
-            widget.height()
-        )
+                        ], stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        startupinfo=session.STARTUPINFO).wait()
 
-        main_qrect -= QMargins(
-            10,
-            1,
-            10,
-            1
-        )
+                        self.progress.emit(25)
+                
+                        aai.settings.api_key = api_key
+                        
+                        assemblyai_config = aai.TranscriptionConfig(
+                            speaker_labels=True,
+                            language_code=session.SUBTITLE.get('language', 'en-us')[:2],
+                            punctuate=True,
+                        )
 
-        painter.setPen(QPen(QColor('#33304251'), 1, Qt.SolidLine))
-        painter.setBrush(QColor('#ffffff'))
-        painter.drawRoundedRect(main_qrect, 2, 2)
+                        transcriber = aai.Transcriber()
+                        transcript = transcriber.transcribe(
+                            f"{temp_audio_file}",
+                            config=assemblyai_config
+                        )
 
-        text_qrect = main_qrect - QMargins(
-            8,
-            8,
-            8,
-            8
-        )
+                        segments = []
 
-        painter.setFont(QFont('Ubuntu', 5))
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QColor('#ff304251'))
+                        for sentence in transcript.get_sentences():
+                            segments.append({
+                                'start': float(sentence.start / 1000),
+                                'end': float(sentence.end / 1000),
+                                'text': sentence.text,
+                                'speaker': sentence.speaker
+                            })
 
-        if widget.text:
-            painter.drawText(text_qrect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, widget.text)
-            painter.drawText(text_qrect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, widget.text)
+                        self.response.emit(segments)
 
-            painter.setBrush(QColor('#0f1519'))
-            painter.setPen(Qt.NoPen)
+                        self.progress.emit(99)
 
-            timeline_qrect = QRect(
-                0,
-                (widget.height() - 30) * .75,
-                widget.width(),
-                34,
-            )
+                    except Exception as e:
+                        self.response_error.emit(str(e))
+                
+        def translate_thread_response(response):
+            if isinstance(response, list):
+                session.SUBTITLE['segments'] = response
+                widget.window().timeline_widget.update()
+                session.set_unsaved()
 
-            painter.drawRoundedRect(timeline_qrect, 2, 2)
+        def translate_thread_error(response):
+            error_dialog = utils.SimpleDialog(widget, title=_('transcription_panel.error'), text=response)
+            label = QLabel(response)
+            error_dialog.content.layout().addWidget(label)
+            error_dialog.reject_button.setVisible(False)
+            error_dialog.exec()
 
-            timeline_qrect -= QMargins(10, 10, -10, 10)
+        widget.translate_thread = AssemblyAIThread()
+        widget.translate_thread.response.connect(translate_thread_response)
+        widget.translate_thread.response_error.connect(lambda: translate_thread_error)
+        widget.translate_thread.started.connect(lambda: widget.transcript_started.emit())
+        widget.translate_thread.progress.connect(lambda value: widget.transcript_progress.emit(value))
+        widget.translate_thread.finished.connect(lambda: widget.transcript_finished.emit())
 
-            painter.setPen(QColor('#ff6a7483'))
-            painter.setBrush(QColor('#ccb8cee0'))
+        widget.update_callback = widget.update
+        widget.transcript_callback = widget.transcript
+        widget.translate_callback = widget.translate
 
-            if widget.division_type == 'equal':
-                ns = 5
-                for s in range(ns):
-                    painter.setPen(QPen(QColor('#ff6a7483'), 1, Qt.SolidLine))
-                    srect = timeline_qrect - QMargins(s * (timeline_qrect.width() / ns), 0, ((ns - 1 - s) * (timeline_qrect.width() / ns) + 1), 0)
-                    painter.drawRoundedRect(srect, 2, 2)
-                    painter.setPen(QPen(QColor('#ff6a7483'), 5, Qt.SolidLine, Qt.RoundCap))
-                    srect -= QMargins(5, 2, 5, 0)
-                    painter.drawLine(srect.left(), srect.center().y(), srect.right(), srect.center().y())
-            elif widget.division_type == 'phrase':
-                ns = 5 if len(widget.text.split('. ')) > 4 else len(widget.text.split('. '))
-                tl = len('.'.join(widget.text.split('. ')[:ns]))
-                x = 0
-                for s in range(ns):
-                    painter.setPen(QPen(QColor('#ff6a7483'), 1, Qt.SolidLine))
-                    cl = (len(widget.text.split('. ')[s]) / tl) * timeline_qrect.width()
-                    srect = timeline_qrect - QMargins(x, 0, timeline_qrect.width() - x - cl + 1, 0)
-                    painter.drawRoundedRect(srect, 2, 2)
-                    painter.setPen(QPen(QColor('#ff6a7483'), 5, Qt.SolidLine, Qt.RoundCap))
-                    srect -= QMargins(5, 2, 5, 0)
-                    painter.drawLine(srect.left(), srect.center().y(), srect.right(), srect.center().y())
-                    x += cl
-            elif widget.division_type == 'words':
-                wlist = widget.text.split(' ')
-                while('' in wlist):
-                    wlist.remove('')
-                ns = 15 if len(wlist) > 14 else len(wlist)
-                tl = len(' '.join(wlist[:ns])) + (3 * ns)
-                x = 0
-                for s in range(ns):
-                    painter.setPen(QPen(QColor('#ff6a7483'), 1, Qt.SolidLine))
-                    cl = ((len(wlist[s]) + 3) / tl) * (timeline_qrect.width() + 50)
-                    srect = timeline_qrect - QMargins(x, 0, timeline_qrect.width() - x - cl + 1, 0)
-                    painter.drawRoundedRect(srect, 2, 2)
-                    painter.setPen(QPen(QColor('#ff6a7483'), 5, Qt.SolidLine, Qt.RoundCap))
-                    srect -= QMargins(5, 2, 5, 0)
-                    painter.drawLine(srect.left(), srect.center().y(), srect.right(), srect.center().y())
-                    x += cl
+    def update(widget):
+        widget.api_key.setText(session.CONFIG['transcription'].get('engine_options', {}).get('AssemblyAI', {}).get('api_key', ''))
+    
+    def api_key_activated(widget, value):
+        if not 'engine_options' in session.CONFIG['transcription']:
+            session.CONFIG['transcription']['engine_options'] = {}
+        if not 'AssemblyAI' in session.CONFIG['transcription']['engine_options']:
+            session.CONFIG['transcription']['engine_options']['AssemblyAI'] = {}
+
+        session.CONFIG['transcription']['engine_options']['AssemblyAI']['api_key'] = value
+
+
+    def transcript(widget):
+        if session.CONFIG['transcription'].get('engine_options', {}).get('AssemblyAI', {}).get('api_key', ''):
+            widget.translate_thread.audio_file = session.VIDEO['music_voice_separation']['vocals']
+            widget.translate_thread.start()
         else:
-            painter.drawText(text_qrect, Qt.AlignCenter | Qt.TextWordWrap, 'No transcription.')
+            error_dialog = utils.SimpleDialog(widget, title=_('transcription_panel.error'))
+            label = QLabel(_('transcription_panel.no_api_key_error'))
+            error_dialog.content.layout().addWidget(label)
+            error_dialog.exec()
 
-        painter.end()
-        event.accept()
-
-
-def read_json_transcribed_subtitles(filename='', transcribed=False):
-    final_subtitles = []
-    if filename:
-        with open(filename, encoding='utf-8') as json_file:
-            data = json.loads(json_file.read())
-            if transcribed:
-                for fragment in data:
-                    subtitle = []
-                    subtitle.append(float(fragment['start']))
-                    subtitle.append(float(fragment['end']) - subtitle[0])
-                    subtitle.append(str(fragment['content']))
-                    final_subtitles.append(subtitle)
-            else:
-                for fragment in data['fragments']:
-                    subtitle = []
-                    subtitle.append(float(fragment['begin']))
-                    subtitle.append(float(fragment['end']) - float(fragment['begin']))
-                    # subtitle.append(codecs.decode(fragment['lines'][0], 'unicode-escape'))
-                    # print(fragment['lines'][0])
-                    subtitle.append(str(fragment['lines'][0]))
-                    final_subtitles.append(subtitle)
-    return final_subtitles
-
-
-
+    def translate(widget):
+        widget.api_key.setLabel(_('transcription_panel.api_key'))
+        widget.api_key.lineedit.setPlaceholderText(_('transcription_panel.api_key'))
+        widget.api_key.lineedit.setToolTip(_('transcription_panel.api_key'))
 
 
 def load(self):
     tab_name = 'transcription'
     
-    left_panel_transcription_panel = QWidget()
-    left_panel_transcription_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_transcription_panel.setProperty('tab_name', tab_name)
-    left_panel_transcription_panel.setLayout(QVBoxLayout())
-    left_panel_transcription_panel.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_transcription_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
-    left_panel_transcription_panel_scroll = QScrollArea()
-    left_panel_transcription_panel_scroll.setObjectName('left_panel_transcription_panel_scroll')
-    left_panel_transcription_panel_scroll.setWidgetResizable(True)
-    left_panel_transcription_panel_scroll.setFrameShape(QScrollArea.NoFrame)
-    left_panel_transcription_panel.layout().addWidget(left_panel_transcription_panel_scroll)
-
-    self.left_panel_transcription_panel_widget = QWidget()
-    self.left_panel_transcription_panel_widget.setObjectName('left_panel_transcription_panel_widget')
-    self.left_panel_transcription_panel_widget.setLayout(QVBoxLayout())
-    self.left_panel_transcription_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
-    left_panel_transcription_panel_scroll.setWidget(self.left_panel_transcription_panel_widget)
-
-    self.global_panel_transcription_language_combobox = QComboBox()
-    self.global_panel_transcription_language_combobox.setProperty('class', 'button')
+    self.global_panel_transcription_language_combobox = utils.LabeledComboBox()
     self.global_panel_transcription_language_combobox.addItems(LANGUAGE_DESCRIPTIONS)
-    self.left_panel_transcription_panel_widget.layout().addWidget(self.global_panel_transcription_language_combobox, 0, Qt.AlignLeft)
+    self.global_panel_transcription_language_combobox.activated.connect(lambda: global_panel_transcription_language_combobox_activated(self))
+    left_panel_transcription_panel.layout().addWidget(self.global_panel_transcription_language_combobox, 1)
 
-    self.global_panel_transcription_tabwidget = QTabWidget()
+    self.global_panel_transcription_engine_combobox = utils.LabeledComboBox()
+    self.global_panel_transcription_engine_combobox.setProperty('class', 'button')
+    self.global_panel_transcription_engine_combobox.addItems(['Vosk', 'AssemblyAI'])
+    self.global_panel_transcription_engine_combobox.activated.connect(lambda: global_panel_transcription_engine_combobox_activated(self))
+    left_panel_transcription_panel.layout().addWidget(self.global_panel_transcription_engine_combobox)
 
-    self.global_panel_transcription_autosubtitle_widget = QWidget()
-    self.global_panel_transcription_autosubtitle_widget.setLayout(QVBoxLayout())
-    self.global_panel_transcription_autosubtitle_widget.layout().setContentsMargins(10, 10, 10, 10)
-    self.global_panel_transcription_autosubtitle_widget.layout().setSpacing(20)
+    self.global_panel_transcription_tabwidget = QStackedWidget()
 
-    self.global_panel_transcription_autosubtitle_groupbox = QGroupBox()
-    self.global_panel_transcription_autosubtitle_groupbox.setLayout(QHBoxLayout())
-    self.global_panel_transcription_autosubtitle_groupbox.layout().setContentsMargins(10, 10, 10, 10)
-    self.global_panel_transcription_autosubtitle_groupbox.layout().setSpacing(5)
+    self.global_panel_transcription_vosk_transcription_widget = VoskPanel()
+    self.global_panel_transcription_vosk_transcription_widget.transcript_started.connect(lambda: global_panel_transcription_start_transcription_progress_start(self))
+    self.global_panel_transcription_vosk_transcription_widget.transcript_progress.connect(lambda value: global_panel_transcription_start_transcription_progress_update(self, value))
+    self.global_panel_transcription_vosk_transcription_widget.transcript_finished.connect(lambda: global_panel_transcription_start_transcription_progress_finish(self))
+    self.global_panel_transcription_tabwidget.addWidget(self.global_panel_transcription_vosk_transcription_widget)
 
-    self.global_panel_transcription_autosubtitle_button = QPushButton()
-    self.global_panel_transcription_autosubtitle_button.setProperty('class', 'button')
-    self.global_panel_transcription_autosubtitle_button.clicked.connect(lambda: global_panel_transcription_autosubtitle_button_clicked(self))
-    self.global_panel_transcription_autosubtitle_groupbox.layout().addWidget(self.global_panel_transcription_autosubtitle_button)
+    self.global_panel_transcription_assemblyai_transcription_widget = AssemblyAIPanel()
+    self.global_panel_transcription_assemblyai_transcription_widget.transcript_started.connect(lambda: global_panel_transcription_start_transcription_progress_start(self))
+    self.global_panel_transcription_assemblyai_transcription_widget.transcript_progress.connect(lambda value: global_panel_transcription_start_transcription_progress_update(self, value))
+    self.global_panel_transcription_assemblyai_transcription_widget.transcript_finished.connect(lambda: global_panel_transcription_start_transcription_progress_finish(self))
+    self.global_panel_transcription_tabwidget.addWidget(self.global_panel_transcription_assemblyai_transcription_widget)
 
-    self.global_panel_transcription_autosubtitle_label = QLabel()
-    self.global_panel_transcription_autosubtitle_label.setProperty('class', 'units_label')
-    self.global_panel_transcription_autosubtitle_groupbox.layout().addWidget(self.global_panel_transcription_autosubtitle_label)
+    left_panel_transcription_panel.layout().addWidget(self.global_panel_transcription_tabwidget, 1)
 
-    self.global_panel_transcription_autosubtitle_groupbox.layout().addStretch()
+    bottom_line = QHBoxLayout()
+    bottom_line.setContentsMargins(0, 0, 0, 0)
+    bottom_line.setSpacing(0)
+    left_panel_transcription_panel.layout().addLayout(bottom_line)
 
-    self.global_panel_transcription_autosubtitle_widget.layout().addWidget(self.global_panel_transcription_autosubtitle_groupbox)
+    def global_panel_transcription_start_transcription_progress_start(self):
+        self.global_panel_transcription_start_transcription_progress.setVisible(True)
+        self.global_panel_transcription_start_transcription_progress.setValue(0)
+        self.global_panel_transcription_start_transcription_progress.setMaximum(100)
+        self.global_panel_transcription_start_transcription_button.setVisible(False)
+    
+    def global_panel_transcription_start_transcription_progress_update(self, value):
+        self.global_panel_transcription_start_transcription_progress.setValue(value)
 
-    self.global_panel_transcription_autosubtitle_widget.layout().addStretch()
+    def global_panel_transcription_start_transcription_progress_finish(self):
+        self.global_panel_transcription_start_transcription_progress.setVisible(False)
+        self.global_panel_transcription_start_transcription_button.setVisible(True)
 
-    def global_panel_transcription_autosubtitles_thread_ended(response):
-        if 'end' in response:
-            if os.path.isfile(os.path.join(session.path_tmp, 'subtitle.json')):
-                session.SUBTITLE['segments'] = read_json_transcribed_subtitles(filename=os.path.join(session.path_tmp, 'subtitle.json'), transcribed=True)
-                if session.SUBTITLE['segments']:
-                    session.SUBTITLE['segments'] = session.SUBTITLE['segments']
-            # subtitles_panel.update_processing_status(self, show_widgets=False, value=0)
-            self.global_panel_transcription_autosubtitle_button.setEnabled(True)
+    self.global_panel_transcription_start_transcription_progress = QProgressBar()
+    self.global_panel_transcription_start_transcription_progress.setVisible(False)
+    self.global_panel_transcription_start_transcription_progress.setProperty('class', 'secondary')
+    bottom_line.addWidget(self.global_panel_transcription_start_transcription_progress)
 
-    self.global_panel_transcription_autosubtitles_thread = global_panel_transcription_autosubtitles_thread(self)
-    self.global_panel_transcription_autosubtitles_thread.response.connect(global_panel_transcription_autosubtitles_thread_ended)
-
-    self.global_panel_transcription_tabwidget.addTab(self.global_panel_transcription_autosubtitle_widget, 'Autosubtitle')
-
-    self.global_panel_transcription_transcript_widget = QWidget()
-    self.global_panel_transcription_transcript_widget.setLayout(QHBoxLayout())
-    self.global_panel_transcription_transcript_widget.layout().setContentsMargins(10, 10, 10, 10)
-    self.global_panel_transcription_transcript_widget.layout().setSpacing(20)
-
-    self.global_panel_transcription_transcript_column = QVBoxLayout()
-    self.global_panel_transcription_transcript_column.setContentsMargins(0, 0, 0, 0)
-
-    self.global_panel_transcription_transcript_groupbox = QGroupBox()
-    self.global_panel_transcription_transcript_groupbox.setLayout(QHBoxLayout())
-    self.global_panel_transcription_transcript_groupbox.layout().setContentsMargins(10, 10, 10, 10)
-    self.global_panel_transcription_transcript_groupbox.layout().setSpacing(5)
-
-    def global_panel_transcription_transcript_thread_text_emmited(result):
-        self.global_panel_transcription_transcript_preview.update_text(text=result)
-        self.global_panel_transcription_transcript_button.setVisible(True)
-        self.global_panel_transcription_transcript_progress.setVisible(False)
-        self.global_panel_transcription_transcript_apply_transcript_button.setVisible(True)
-
-    def global_panel_transcription_transcript_thread_result_emmited(result):
-        if '/' in result:
-            self.global_panel_transcription_transcript_button.setVisible(False)
-            self.global_panel_transcription_transcript_progress.setVisible(True)
-            self.global_panel_transcription_transcript_progress.setMaximum(int(result.split('/')[1]))
-            self.global_panel_transcription_transcript_progress.setValue(int(result.split('/')[0]))
-
-    self.global_panel_transcription_transcript_thread = global_panel_transcription_transcript_thread()
-    self.global_panel_transcription_transcript_thread.result.connect(lambda: global_panel_transcription_transcript_thread_result_emmited())
-    self.global_panel_transcription_transcript_thread.text.connect(lambda: global_panel_transcription_transcript_thread_text_emmited())
-
-    self.global_panel_transcription_transcript_button = QPushButton()
-    self.global_panel_transcription_transcript_button.setProperty('class', 'button')
-    self.global_panel_transcription_transcript_button.clicked.connect(lambda: global_panel_transcription_transcript_button_clicked(self))
-    self.global_panel_transcription_transcript_groupbox.layout().addWidget(self.global_panel_transcription_transcript_button)
-
-    self.global_panel_transcription_transcript_progress = QProgressBar()
-    self.global_panel_transcription_transcript_progress.setVisible(False)
-    self.global_panel_transcription_transcript_groupbox.layout().addWidget(self.global_panel_transcription_transcript_progress)
-
-    self.global_panel_transcription_transcript_groupbox.layout().addStretch()
-
-    self.global_panel_transcription_transcript_column.addWidget(self.global_panel_transcription_transcript_groupbox)
-
-    self.global_panel_transcription_transcript_column.addStretch()
-
-    self.global_panel_transcription_transcript_widget.layout().addLayout(self.global_panel_transcription_transcript_column)
-
-    self.global_panel_transcription_transcript_preview_column = QVBoxLayout()
-    self.global_panel_transcription_transcript_preview_column.setContentsMargins(0, 0, 0, 0)
-    self.global_panel_transcription_transcript_preview_column.setSpacing(0)
-
-    self.global_panel_transcription_transcript_preview = global_panel_transcription_transcript_preview()
-    self.global_panel_transcription_transcript_preview.setFixedSize(QSize(200, 150))
-
-    self.global_panel_transcription_transcript_preview_column.addWidget(self.global_panel_transcription_transcript_preview)
-
-    self.global_panel_transcription_transcript_preview_column.addSpacing(10)
-
-    self.global_panel_transcription_transcript_slice_label = QLabel()
-    self.global_panel_transcription_transcript_slice_label.setProperty('class', 'widget_label')
-    self.global_panel_transcription_transcript_preview_column.addWidget(self.global_panel_transcription_transcript_slice_label)
-
-    self.global_panel_transcription_transcript_preview_column.addSpacing(2)
-
-    self.global_panel_transcription_transcript_slice_combobox = QComboBox()
-    self.global_panel_transcription_transcript_slice_combobox.activated.connect(lambda: global_panel_transcription_transcript_slice_combobox_activated(self))
-    self.global_panel_transcription_transcript_preview_column.addWidget(self.global_panel_transcription_transcript_slice_combobox)
-
-    self.global_panel_transcription_transcript_preview_column.addSpacing(10)
-
-    self.global_panel_transcription_transcript_apply_transcript_button = QPushButton()
-    self.global_panel_transcription_transcript_apply_transcript_button.setProperty('class', 'button')
-    self.global_panel_transcription_transcript_apply_transcript_button.setVisible(False)
-    self.global_panel_transcription_transcript_apply_transcript_button.clicked.connect(lambda: global_panel_transcription_transcript_apply_transcript_button_clicked(self))
-    self.global_panel_transcription_transcript_preview_column.layout().addWidget(self.global_panel_transcription_transcript_apply_transcript_button)
-
-    self.global_panel_transcription_transcript_preview_column.addStretch()
-
-    self.global_panel_transcription_transcript_widget.layout().addLayout(self.global_panel_transcription_transcript_preview_column)
-
-    self.global_panel_transcription_tabwidget.addTab(self.global_panel_transcription_transcript_widget, 'Transcript')
-
-    self.left_panel_transcription_panel_widget.layout().addWidget(self.global_panel_transcription_tabwidget)
-
-    left_panel_transcription_panel.update = update
-
-    left_panel.add_panel(self, left_panel_transcription_panel)
+    self.global_panel_transcription_start_transcription_button = QPushButton()
+    self.global_panel_transcription_start_transcription_button.setProperty('class', 'secondary')
+    self.global_panel_transcription_start_transcription_button.clicked.connect(lambda: global_panel_transcription_start_transcription_button_clicked(self))
+    bottom_line.addWidget(self.global_panel_transcription_start_transcription_button, 0, Qt.AlignRight)
 
     update(self)
 
@@ -383,163 +647,70 @@ def load(self):
 def show(self):
     update(self)
 
+
 def update(self):
-    pass
+    if not session.SUBTITLE.get('language', False):
+        session.SUBTITLE['language'] = 'en-us'
+    selected_language_name = 'English (United States)'
+    for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
+        if language_code == session.SUBTITLE['language']:
+            selected_language_name = language_name
+            break
+    self.global_panel_transcription_language_combobox.setCurrentText(selected_language_name)
 
+    self.global_panel_transcription_engine_combobox.setCurrentText(session.CONFIG['transcription'].get('engine', 'Vosk'))
 
-def global_subtitlesvideo_autosync_button_clicked(self):
-    """Function to run autosync"""
-    run_command = False
-
-    if bool(session.SUBTITLE['segments']):
-        are_you_sure_message = QMessageBox(self)
-        are_you_sure_message.setWindowTitle('Are you sure?')
-        are_you_sure_message.setText('This will overwrite your actual subtitle set. New timings will be applied. Are you sure you want to replace your actual subtitles?')
-        are_you_sure_message.addButton('Yes', QMessageBox.AcceptRole)
-        are_you_sure_message.addButton('No', QMessageBox.RejectRole)
-        ret = are_you_sure_message.exec_()
-
-        if ret == 0:
-            run_command = True
-    else:
-        run_command = True
-
-    if run_command:
-        file_io.save_file(os.path.join(session.path_tmp, 'subtitle_original.srt'), session.SUBTITLE['segments'], 'SRT')
-        sub = os.path.join(session.path_tmp, 'subtitle_final.srt')
-
-        # unparsed_args = [session.VIDEO['filepath'], "-i", os.path.join(globals.path_tmp, 'subtitle_original.srt'), "-o", sub]
-
-        # parser = ffsubsync.make_parser()
-        # args = parser.parse_args(unparsed_args)
-
-        # ffsubsync.run(args)
-
-        if os.path.isfile(sub):
-            session.SUBTITLE['segments'] = file_io.process_subtitles_file(sub)[0]
-            # update_widgets(self)
-
-
-def global_panel_transcription_autosubtitle_button_clicked(self):
-    """Function to run autosub"""
-    run_command = False
-
-    if bool(session.SUBTITLE['segments']):
-        are_you_sure_message = QMessageBox(self)
-        are_you_sure_message.setWindowTitle('Are you sure?')
-        are_you_sure_message.setText('This will overwrite your actual subtitle set. New timings will be applied. Are you sure you want to replace your actual subtitles?')
-        are_you_sure_message.addButton('Yes', QMessageBox.AcceptRole)
-        are_you_sure_message.addButton('No', QMessageBox.RejectRole)
-        ret = are_you_sure_message.exec_()
-
-        if ret == 0:
-            run_command = True
-    else:
-        run_command = True
-
-    if run_command:
-
-        language = session.LANGUAGE_DICT_LIST[self.global_panel_transcription_language_combobox.currentText()]
-
-        self.global_panel_transcription_autosubtitles_thread.original_file = session.VIDEO['filepath']
-        self.global_panel_transcription_autosubtitles_thread.language = language
-        self.global_panel_transcription_autosubtitles_thread.start()
-
-        # subtitles_panel.update_processing_status(self, show_widgets=True, value=33)
-        self.global_panel_transcription_autosubtitle_button.setEnabled(False)
-
-
-def global_panel_transcription_transcript_apply_transcript_button_clicked(self):
-    """Function to transcribe using google speech"""
-    run_command = False
-
-    if bool(session.SUBTITLE['segments']):
-        are_you_sure_message = QMessageBox(self)
-        are_you_sure_message.setWindowTitle(_('alert.are_you_sure'))
-        are_you_sure_message.setText(_('alert.overwrite_warning'))
-        are_you_sure_message.addButton('Yes', QMessageBox.AcceptRole)
-        are_you_sure_message.addButton('No', QMessageBox.RejectRole)
-        ret = are_you_sure_message.exec_()
-
-        if ret == 0:
-            run_command = True
-    else:
-        run_command = True
-
-    if run_command and self.global_panel_transcription_transcript_preview.text:
-        if self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 0:
-            session.SUBTITLE['segments'] = []
-            ns = len(self.global_panel_transcription_transcript_preview.text.split('. '))
-            ts = session.VIDEO['duration'] / ns
-            c = 0.0
-            for sub in self.global_panel_transcription_transcript_preview.text.split('. '):
-                session.SUBTITLE['segments'].append({
-                    'start': c,
-                    'end': c + ts,
-                    'text': sub + '.'
-                })
-                c += ts
-        elif self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 1:
-            session.SUBTITLE['segments'] = []
-            ns = len(self.global_panel_transcription_transcript_preview.text)
-            c = 0.0
-            for sub in self.global_panel_transcription_transcript_preview.text.split('. '):
-                ts = (len(sub + '.') / ns) * session.VIDEO['duration']
-                session.SUBTITLE['segments'].append({
-                    'start': c,
-                    'end': c + ts,
-                    'text': sub + '.'
-                })
-                c += ts
-        elif self.global_panel_transcription_transcript_slice_combobox.currentIndex() == 2:
-            session.SUBTITLE['segments'] = []
-            ns = len(self.global_panel_transcription_transcript_preview.text)
-            c = 0.0
-            for sub in self.global_panel_transcription_transcript_preview.text.split(' '):
-                ts = (len(sub + ' ') / ns) * session.VIDEO['duration']
-                session.SUBTITLE['segments'].append({
-                    'start': c,
-                    'end': c + ts,
-                    'text': sub + ' '
-                })
-                c += ts
-
-
-def global_panel_transcription_transcript_button_clicked(self):
-    self.global_panel_transcription_transcript_thread.metadata = session.VIDEO
-    self.global_panel_transcription_transcript_thread.selected_language = self.global_panel_transcription_language_combobox.currentText()
-    self.global_panel_transcription_transcript_thread.start()
-
-
-def global_panel_transcription_transcript_slice_combobox_activated(self):
-    if self.global_panel_transcription_transcript_slice_combobox.currentText() == 'Equal size':
-        self.global_panel_transcription_transcript_preview.update_type('equal')
-    elif self.global_panel_transcription_transcript_slice_combobox.currentText() == 'Phrase size':
-        self.global_panel_transcription_transcript_preview.update_type('phrases')
-    elif self.global_panel_transcription_transcript_slice_combobox.currentText() == 'Words':
-        self.global_panel_transcription_transcript_preview.update_type('words')
-
-
+    global_panel_transcription_tabwidget_update(self)
     
+
 def hide(self):
     pass
 
+
+def global_panel_transcription_language_combobox_activated(self):
+    session.SUBTITLE['language'] = session.LANGUAGE_DICT_LIST[self.global_panel_transcription_language_combobox.currentText()]
+    global_panel_transcription_tabwidget_update(self)
+
+
+def global_panel_transcription_engine_combobox_activated(self):
+    session.CONFIG['transcription']['engine'] = self.global_panel_transcription_engine_combobox.currentText()
+    global_panel_transcription_tabwidget_update(self)
+
+
+def global_panel_transcription_start_transcription_button_clicked(self):
+    confirm_transcript = False
+    if session.SUBTITLE['segments']:
+        confirm_dialog = utils.SimpleDialog(self, title=_('transcription_panel.start_transcription'))
+        label = QLabel(_('transcription_panel.start_transcription_text'))
+        confirm_dialog.content.layout().addWidget(label)
+        confirm_dialog.exec()
+        confirm_transcript = bool(confirm_dialog.result() == 1)
+
+    if confirm_transcript or not session.SUBTITLE['segments']:
+        session.SUBTITLE['segments'] = []
+        self.timeline_widget.update()
+        for widget in self.global_panel_transcription_tabwidget.findChildren(QWidget):
+            if widget.property('transcription_engine') == self.global_panel_transcription_engine_combobox.currentText():
+                widget.transcript_callback()
+                break
+               
+
+def global_panel_transcription_tabwidget_update(self):
+    for widget in self.global_panel_transcription_tabwidget.findChildren(QWidget):
+        if widget.property('transcription_engine') == self.global_panel_transcription_engine_combobox.currentText():
+            self.global_panel_transcription_tabwidget.setCurrentWidget(widget)
+            widget.update_callback()
+            break
     
+
 def translate(self):    
-    self.global_panel_transcription_autosubtitle_groupbox.setTitle(_('transcription_panel.google_web_speech_public_api'))
-    self.global_panel_transcription_autosubtitle_button.setText(_('transcription_panel.auto_subtitle'))
-    self.global_panel_transcription_autosubtitle_label.setText(_('transcription_panel.warning_overwrite'))
-    self.global_panel_transcription_transcript_groupbox.setTitle(_('transcription_panel.google_web_speech_public_api'))
-    self.global_panel_transcription_transcript_button.setText(_('transcription_panel.transcribe'))
-    self.global_panel_transcription_transcript_slice_label.setText(_('transcription_panel.slicing_and_timing'))
-    self.global_panel_transcription_transcript_slice_combobox.clear()
-    self.global_panel_transcription_transcript_slice_combobox.addItems([
-        _('transcription_panel.slice_combobox.equal_size'),
-        _('transcription_panel.slice_combobox.phrase_size'),
-        _('transcription_panel.slice_combobox.words')
-    ])
-    self.global_panel_transcription_transcript_apply_transcript_button.setText(_('transcription_panel.slice_to_subtitles'))
+    self.global_panel_transcription_language_combobox.setLabel(_('transcription_panel.language'))
+    self.global_panel_transcription_start_transcription_button.setText(_('transcription_panel.start_transcription'))
+    self.global_panel_transcription_engine_combobox.setLabel(_('transcription_panel.engine'))
+    for widget in self.global_panel_transcription_tabwidget.findChildren(QWidget):
+        if 'translate_callback' in dir(widget):
+            widget.translate_callback()
 
-
+    
 
     

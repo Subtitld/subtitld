@@ -9,11 +9,12 @@ from subtitld.modules import session
 def load(self):
     tab_name = 'global'
     
-    left_panel_global_panel = QWidget()
-    left_panel_global_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_global_panel.setProperty('tab_name', tab_name)
-    left_panel_global_panel.setLayout(QVBoxLayout())
-    left_panel_global_panel.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_global_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
     left_panel_global_panel_scroll = QScrollArea()
     left_panel_global_panel_scroll.setObjectName('left_panel_global_panel_scroll')
@@ -22,6 +23,7 @@ def load(self):
     left_panel_global_panel.layout().addWidget(left_panel_global_panel_scroll)
 
     self.left_panel_global_panel_widget = QWidget()
+    self.left_panel_global_panel_widget.setProperty('class', 'transparent_panel')
     self.left_panel_global_panel_widget.setObjectName('left_panel_global_panel_widget')
     self.left_panel_global_panel_widget.setLayout(QVBoxLayout())
     self.left_panel_global_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
@@ -82,9 +84,6 @@ def load(self):
 
     self.left_panel_global_panel_widget.layout().addStretch()
     
-    left_panel.add_panel(self, left_panel_global_panel)
-
-    left_panel_global_panel.update = update
 
     update(self)
 

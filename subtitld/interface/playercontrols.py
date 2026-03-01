@@ -14,6 +14,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import subtitles
 from subtitld.modules import session
 from subtitld.modules import audioengine
+from subtitld.modules.shortcuts import shortcut
 
 STEPS_LIST = ['Frames', 'Seconds']
 
@@ -221,6 +222,7 @@ def load(self):
     self.slice_selected_subtitle_button.setObjectName('slice_selected_subtitle_button')
     self.slice_selected_subtitle_button.setIconSize(QSize(32, 20))
     self.slice_selected_subtitle_button.setFixedWidth(30)
+    self.slice_selected_subtitle_button.setCheckable(True)
     self.slice_selected_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.slice_selected_subtitle_button.clicked.connect(lambda: slice_selected_subtitle_button_clicked(self))
     self.merge_slice_frame.layout().addWidget(self.slice_selected_subtitle_button)
@@ -1277,6 +1279,13 @@ def playercontrols_stop_button_clicked(self):
     update_playercontrols_playpause_button(self)
     timeline.update(self)
 
+@shortcut('playpause', 'Play/Pause', ['Space'])
+def playercontrols_playpause_button_pressed(self):
+    if self.playercontrols_widget.isVisible():
+        playercontrols_playpause_button_clicked(self)
+        update_playercontrols_playpause_button(self)
+
+
 def playercontrols_playpause_button_clicked(self):
     """Function to call when play/pause button is clicked"""
     if self.preview_panel_player.is_paused():
@@ -1312,16 +1321,17 @@ def update(self):
     music_voice_separation_box_update(self)
 
 
+@shortcut('zoom_in', 'Zoom in', ['+'])
 def zoomin_button_clicked(self):
     """Function to call when zoonin button is clicked"""
     session.CONFIG['timeline_zoom'] += 10.0
     zoom_buttons_update(self)
 
 
+@shortcut('zoom_out', 'Zoom out', ['-'])
 def zoomout_button_clicked(self):
     """Function to call when zoonout button is clicked"""
     session.CONFIG['timeline_zoom'] -= 10.0
-    print(session.CONFIG['timeline_zoom'])
     zoom_buttons_update(self)
 
 
@@ -1528,6 +1538,7 @@ def playercontrols_play_from_next_start_button_clicked(self):
     update_playercontrols_playpause_button(self)
 
 
+@shortcut('add_new_subtitle_to_current_position', 'Add new subtitle to current position', ['Enter'])
 def add_subtitle_button_clicked(self):
     duration = session.CONFIG['default_new_subtitle_duration']
     if session.CONFIG.get('new_subtitle_to_next_start', False):
@@ -1545,6 +1556,7 @@ def add_subtitle_button_clicked(self):
     session.set_unsaved()
 
 
+@shortcut('remove_current_subtitle', 'Remove current subtitle', ['*'])
 def remove_selected_subtitle_button_clicked(self):
     """Function to call when remove selected subtitle button is clicked"""
     subtitles.remove_subtitle(selected_subtitle=session.SUBTITLE['selected'])
@@ -1555,9 +1567,15 @@ def remove_selected_subtitle_button_clicked(self):
     session.set_unsaved()
 
 
+@shortcut('slice_current_subtitle', 'Slice current subtitle', ['/'])
+def slice_selected_subtitle_command(self):
+    slice_selected_subtitle_button_clicked(self)
+    slice_selected_subtitle_button_update(self)
+
+
 def slice_selected_subtitle_button_clicked(self):
     """Function to call when slice selected subtitle button is clicked"""
-    if session.SUBTITLE.get('selected', None) is not None:
+    if self.slice_selected_subtitle_button.isChecked() and session.SUBTITLE.get('selected', None) is not None and self.left_panel_subtitleslist_textedit.textCursor().position():
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
         last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos]
         next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:]
@@ -1566,8 +1584,18 @@ def slice_selected_subtitle_button_clicked(self):
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
         session.set_unsaved()
+    elif not self.slice_selected_subtitle_button.isChecked():
+        self.timeline_widget.is_smart_splicing = False
+    else:
+        self.timeline_widget.is_smart_splicing = {'mode': 'words'}
+    self.timeline_widget.update()
 
 
+def slice_selected_subtitle_button_update(self):
+    self.slice_selected_subtitle_button.setChecked(bool(self.timeline_widget.is_smart_splicing))
+
+
+@shortcut('select_subtitle_in_current_position', 'Select subtitle in current position', ['5'])
 def select_subtitle_in_current_position(self):
     """Function to call when actual subtitle under cursor need to be selected"""
     subtitle = subtitles.subtitle_under_current_position(position=session.SUBTITLE.get('position', 0))
@@ -1576,6 +1604,7 @@ def select_subtitle_in_current_position(self):
         timeline.update(self)
 
 
+@shortcut('select_next_subtitle_over_current_position', 'Select next subtitle over current position', ['8'])
 def select_next_subtitle_over_current_position(self):
     """Function to call when next subtitle under cursor need to be selected"""
     subtitle = subtitles.next_subtitle_current_position(position=session.SUBTITLE.get('position', 0))
@@ -1584,6 +1613,7 @@ def select_next_subtitle_over_current_position(self):
         timeline.update(self)
 
 
+@shortcut('select_last_subtitle_over_current_position', 'Select last subtitle over current position', ['2'])
 def select_last_subtitle_over_current_position(self):
     """Function to call when last subtitle under cursor need to be selected"""
     subtitle = subtitles.last_subtitle_current_position(position=session.SUBTITLE.get('position', 0))
@@ -1612,6 +1642,7 @@ def merge_next_selected_subtitle_button_clicked(self):
         session.set_unsaved()
 
 
+@shortcut('move_step_backward_subtitle', 'Move subtitle a step backward', ['4'])
 def move_backward_subtitle_clicked(self):
     """Function to move subtitle backward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -1628,6 +1659,7 @@ def move_backward_subtitle_clicked(self):
         session.set_unsaved()
 
 
+@shortcut('move_step_forward_subtitle', 'Move subtitle a step forward', ['6'])
 def move_forward_subtitle_clicked(self):
     """Function to move subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -1644,6 +1676,7 @@ def move_forward_subtitle_clicked(self):
         session.set_unsaved()
 
 
+@shortcut('subtract_step_subtitle_start', 'Subtract a step to subtitle start', ['1'])
 def move_start_back_subtitle_clicked(self):
     """Function to move starting position of selected subtitle backward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -1660,6 +1693,7 @@ def move_start_back_subtitle_clicked(self):
         session.set_unsaved()
 
 
+@shortcut('add_step_subtitle_start', 'Add a step to subtitle start', ['7'])
 def move_start_forward_subtitle_clicked(self):
     """Function to move starting position of selected subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -1676,6 +1710,7 @@ def move_start_forward_subtitle_clicked(self):
         session.set_unsaved()
 
 
+@shortcut('subtract_step_subtitle_end', 'Subtract a step to subtitle end', ['3'])
 def move_end_back_subtitle_clicked(self):
     """Function to move ending position of selected subtitle backwards"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -1692,6 +1727,7 @@ def move_end_back_subtitle_clicked(self):
         session.set_unsaved()
 
 
+@shortcut('add_step_subtitle_end', 'Add a step to subtitle end', ['9'])
 def move_end_forward_subtitle_clicked(self):
     """Function to move ending position of selected subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -1998,10 +2034,16 @@ def playercontrols_properties_panel_tabwidget_background_cursor_color_button_cli
 def send_text_to_last_subtitle_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
     if session.SUBTITLE.get('selected', None) is not None:
-        pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-        last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
-        next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
-        subtitles.send_text_to_last_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
+        if self.left_panel_subtitleslist_textedit.textCursor().position():
+            pos = self.left_panel_subtitleslist_textedit.textCursor().position()
+            last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
+            next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
+            subtitles.send_text_to_last_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
+        elif self.left_panel_subtitleslist_translation_textedit.textCursor().position():
+            pos = self.left_panel_subtitleslist_translation_textedit.textCursor().position()
+            last_text = self.left_panel_subtitleslist_translation_textedit.toPlainText()[:pos].strip()
+            next_text = self.left_panel_subtitleslist_translation_textedit.toPlainText()[pos:].strip()
+            subtitles.send_translated_text_to_last_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2011,10 +2053,16 @@ def send_text_to_last_subtitle_button_clicked(self):
 def send_text_to_next_subtitle_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
     if session.SUBTITLE.get('selected', None) is not None:
-        pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-        last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
-        next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
-        subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
+        if self.left_panel_subtitleslist_textedit.textCursor().position():
+            pos = self.left_panel_subtitleslist_textedit.textCursor().position()
+            last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
+            next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
+            subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
+        elif self.left_panel_subtitleslist_translation_textedit.textCursor().position():
+            pos = self.left_panel_subtitleslist_translation_textedit.textCursor().position()
+            last_text = self.left_panel_subtitleslist_translation_textedit.toPlainText()[:pos].strip()
+            next_text = self.left_panel_subtitleslist_translation_textedit.toPlainText()[pos:].strip()            
+            subtitles.send_translated_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)

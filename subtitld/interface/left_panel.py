@@ -20,6 +20,22 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 
 
+class left_panel(QWidget):
+    def __init__(self, parent=None, tab_name=None, update_callback=None, translate_callback=None):
+        super().__init__(parent)
+        self.setObjectName('left_panel')
+
+        self.setObjectName(f'left_panel_{tab_name}')
+        self.setProperty('tab_name', tab_name)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(10, 10, 10, 10)
+
+        self.update = update_callback
+        self.translate = translate_callback
+
+        add_panel(self)
+
+
 class navigation_button(QPushButton):
     def __init__(self, tab_name):
         super().__init__()
@@ -70,7 +86,7 @@ def load(self):
     navigation_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
     navigation_scroll.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
 
-    self.left_panel_navigation = QWidget()
+    self.left_panel_navigation = QWidget(self)
     self.left_panel_navigation.setObjectName('left_panel_navigation')
     self.left_panel_navigation.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.left_panel_navigation.setLayout(QVBoxLayout())
@@ -115,22 +131,12 @@ def update(self):
     self.left_panel_stackedwidgets.currentWidget().update(self)
 
 
-def add_panel(self, widget):
+def add_panel(widget):
     button = navigation_button(widget.property('tab_name'))
-    self.left_panel_navigation.layout().insertWidget(self.left_panel_navigation.layout().count() - 1, button)
-    self.left_panel_stackedwidgets.addWidget(widget)
+    widget.window().left_panel_navigation.layout().insertWidget(widget.window().left_panel_navigation.layout().count() - 1, button)
+    widget.window().left_panel_stackedwidgets.addWidget(widget)
 
 
 def translate(self):
-    left_panel_subtitleslist.translate(self)
-    left_panel_metadata.translate(self)
-    left_panel_speakers.translate(self)
-    left_panel_qualitycheck.translate(self)
-    left_panel_global.translate(self)
-    left_panel_interface.translate(self)
-    left_panel_keyboard.translate(self)
-    left_panel_transcription.translate(self)
-    left_panel_translation.translate(self)
-    left_panel_import.translate(self)
-    left_panel_export.translate(self)
-    left_panel_autosave.translate(self)
+    for widget in self.left_panel_stackedwidgets.findChildren(left_panel):
+        widget.translate(self)

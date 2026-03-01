@@ -10,11 +10,12 @@ from subtitld.interface.translation import _
 def load(self):
     tab_name = 'metadata'
     
-    left_panel_metadata_panel = QWidget()
-    left_panel_metadata_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_metadata_panel.setProperty('tab_name', tab_name)
-    left_panel_metadata_panel.setLayout(QVBoxLayout())
-    left_panel_metadata_panel.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_metadata_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
     left_panel_metadata_panel_scroll = QScrollArea()
     left_panel_metadata_panel_scroll.setObjectName('left_panel_metadata_panel_scroll')
@@ -27,10 +28,6 @@ def load(self):
     self.left_panel_metadata_panel_info.setWordWrap(True)
     self.left_panel_metadata_panel_info.setAlignment(Qt.AlignTop | Qt.AlignLeft)
     left_panel_metadata_panel_scroll.setWidget(self.left_panel_metadata_panel_info)
-
-    left_panel_metadata_panel.update = update
-    
-    left_panel.add_panel(self, left_panel_metadata_panel)
 
     
 def show(self):

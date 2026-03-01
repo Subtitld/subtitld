@@ -17,11 +17,12 @@ from subtitld.modules import subtitles
 def load(self):
     tab_name = 'autosave'
     
-    left_panel_autosave_panel = QWidget()
-    left_panel_autosave_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_autosave_panel.setProperty('tab_name', tab_name)
-    left_panel_autosave_panel.setLayout(QVBoxLayout())
-    left_panel_autosave_panel.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_autosave_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
     left_panel_autosave_panel_scroll = QScrollArea()
     left_panel_autosave_panel_scroll.setObjectName('left_panel_autosave_panel_scroll')
@@ -29,21 +30,22 @@ def load(self):
     left_panel_autosave_panel_scroll.setFrameShape(QScrollArea.NoFrame)
     left_panel_autosave_panel.layout().addWidget(left_panel_autosave_panel_scroll)
 
-    self.left_panel_autosave_panel_widget = QWidget()
-    self.left_panel_autosave_panel_widget.setObjectName('left_panel_autosave_panel_widget')
-    self.left_panel_autosave_panel_widget.setLayout(QVBoxLayout())
-    self.left_panel_autosave_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
-    left_panel_autosave_panel_scroll.setWidget(self.left_panel_autosave_panel_widget)
+    left_panel_autosave_panel_widget = QWidget()
+    left_panel_autosave_panel_widget.setProperty('class', 'transparent_panel')
+    left_panel_autosave_panel_widget.setObjectName('left_panel_autosave_panel_widget')
+    left_panel_autosave_panel_widget.setLayout(QVBoxLayout())
+    left_panel_autosave_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
+    left_panel_autosave_panel_scroll.setWidget(left_panel_autosave_panel_widget)
 
     self.panel_autosave_backup_enabled_checkbox = QCheckBox()
     self.panel_autosave_backup_enabled_checkbox.clicked.connect(lambda: panel_autosave_backup_enabled_checkbox_clicked(self))
-    self.left_panel_autosave_panel_widget.layout().addWidget(self.panel_autosave_backup_enabled_checkbox)
+    left_panel_autosave_panel_widget.layout().addWidget(self.panel_autosave_backup_enabled_checkbox)
 
     self.panel_autosave_backup_interval_row = QWidget()
     self.panel_autosave_backup_interval_row.setLayout(QHBoxLayout())
     self.panel_autosave_backup_interval_row.layout().setContentsMargins(0, 0, 0, 0)
     self.panel_autosave_backup_interval_row.layout().setSpacing(5)
-    self.left_panel_autosave_panel_widget.layout().addWidget(self.panel_autosave_backup_interval_row)
+    left_panel_autosave_panel_widget.layout().addWidget(self.panel_autosave_backup_interval_row)
 
     self.panel_autosave_backup_interval_label = QLabel()
     self.panel_autosave_backup_interval_row.layout().addWidget(self.panel_autosave_backup_interval_label, 0, Qt.AlignLeft)
@@ -59,11 +61,8 @@ def load(self):
     self.panel_autosave_backup_interval_row.layout().addWidget(self.panel_autosave_backup_interval_seconds_label, 0, Qt.AlignLeft)
     self.panel_autosave_backup_interval_row.layout().addStretch()
 
-    self.left_panel_autosave_panel_widget.layout().addStretch()
+    left_panel_autosave_panel_widget.layout().addStretch()
     
-    left_panel_autosave_panel.update = update
-
-    left_panel.add_panel(self, left_panel_autosave_panel)
 
     update(self)
 

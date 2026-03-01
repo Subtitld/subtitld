@@ -21,7 +21,7 @@ STARTUPINFO = None
 ACTUAL_OS = 'linux'
 
 tempdir = tempfile.TemporaryDirectory()
-path_tmp = tempdir.name
+PATH_TEMP = tempdir.name
 
 if sys.platform == 'darwin':
     ACTUAL_OS = 'macos'
@@ -66,6 +66,10 @@ PATH_SUBTITLD_DATA_BACKUP = PATH_SUBTITLD_USER_CACHE / 'backup'
 if not PATH_SUBTITLD_DATA_BACKUP.exists():
     PATH_SUBTITLD_DATA_BACKUP.mkdir(parents=True)
 
+PATH_SUBTITLD_DATA_MODELS = PATH_SUBTITLD_USER_CACHE / 'models'
+
+if not PATH_SUBTITLD_DATA_MODELS.exists():
+    PATH_SUBTITLD_DATA_MODELS.mkdir(parents=True)
 
 PATH_SUBTITLD_DATA_AUDIOSEPARATION = PATH_SUBTITLD_USER_CACHE / 'audioseparation'
 

@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize
 
@@ -172,3 +172,111 @@ class SimpleDialog(QDialog):
         super().accept()
 
     
+class LabeledComboBox(QWidget):
+    activated = Signal()
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setObjectName('labeled_combobox')
+        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+        widget.setAttribute(Qt.WA_StyledBackground)
+
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(0)
+
+        widget.label = QLabel()
+        widget.layout().addWidget(widget.label, 1)
+
+        widget.bottom_line = QHBoxLayout()
+        widget.bottom_line.setContentsMargins(0, 0, 0, 0)
+        widget.bottom_line.setSpacing(0)
+        widget.layout().addLayout(widget.bottom_line)
+
+        widget.combobox = QComboBox()
+        widget.bottom_line.addWidget(widget.combobox, 1)
+
+        widget.combobox.activated.connect(widget.activated)
+
+    def clear(widget):
+        widget.combobox.clear()
+    
+    def addItems(widget, items):
+        widget.combobox.addItems(items)
+
+    def setLabel(widget, label):
+        widget.label.setText(label)
+
+    def setCurrentText(widget, text):
+        widget.combobox.setCurrentText(text)
+    
+    def currentText(widget):
+        return widget.combobox.currentText()
+    
+
+class LabeledLabel(QWidget):
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+        widget.setAttribute(Qt.WA_StyledBackground)
+
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(0)
+
+        widget.top_label = QLabel()
+        widget.top_label.setObjectName('top_label')
+        widget.layout().addWidget(widget.top_label, 1)
+
+        widget.bottom_line = QHBoxLayout()
+        widget.bottom_line.setContentsMargins(0, 0, 0, 0)
+        widget.bottom_line.setSpacing(0)
+        widget.layout().addLayout(widget.bottom_line)
+
+        widget.label = QLabel()
+        widget.label.setObjectName('label')
+        widget.label.setWordWrap(True)
+        widget.bottom_line.addWidget(widget.label, 1)
+    
+    def setText(widget, label):
+        widget.label.setText(label)
+
+    def setLabel(widget, text):
+        widget.top_label.setText(text)
+    
+
+class LabeledLineEdit(QWidget):
+    editingFinished = Signal(str)
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setObjectName('labeled_lineedit')
+        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+        widget.setAttribute(Qt.WA_StyledBackground)
+
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(0)
+
+        widget.label = QLabel()
+        widget.label.setObjectName('top_label')
+        widget.layout().addWidget(widget.label, 1)
+
+        widget.bottom_line = QHBoxLayout()
+        widget.bottom_line.setContentsMargins(0, 0, 0, 0)
+        widget.bottom_line.setSpacing(0)
+        widget.layout().addLayout(widget.bottom_line)
+
+        widget.lineedit = QLineEdit()
+        widget.lineedit.editingFinished.connect(lambda: widget.editing_finished())
+        widget.bottom_line.addWidget(widget.lineedit, 1)
+
+    def setLabel(widget, label):
+        widget.label.setText(label)
+
+    def setText(widget, text):
+        widget.lineedit.setText(text)
+    
+    def text(widget):
+        return widget.lineedit.text()
+    
+    def editing_finished(widget):
+        widget.editingFinished.emit(widget.text())

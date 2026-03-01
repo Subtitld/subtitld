@@ -46,4 +46,7 @@ class Config(dict):
         self.setdefault('videoplayer', {})
         self.setdefault('export', {})
         self.setdefault('autosave', {}) 
+        self.setdefault('transcription', {})
+        self.setdefault('translation', {})
+
         

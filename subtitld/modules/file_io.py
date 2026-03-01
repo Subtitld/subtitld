@@ -201,7 +201,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         'start': segment['start'],
                         'end': segment['end'],
                         'text': segment['text'],
-                        'speaker': segment.get('speaker', 'A')
+                        'speaker': segment.get('speaker', 'A'),
+                        'translations': segment.get('translations', {})
                     })
 
     return segments_list, subtitle_format
@@ -534,8 +535,8 @@ def save_file(final_file, subtitle_format='USF', language='en'):
 
 
 def autosave_timer_timeout():
-    print('autosave_timer_timeout')
-    filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
-    if not filename:
-        filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
-    save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usf'))
+    if session.SUBTITLE:
+        filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
+        if not filename:
+            filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
+        save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usf'))

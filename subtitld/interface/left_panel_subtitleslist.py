@@ -24,7 +24,11 @@ class subtitles_panel_qlistwidget(QListView):
 
             def data(self, index, role):
                 if role == Qt.DisplayRole:
-                    return session.SUBTITLE['segments'][index.row()]['text']
+                    return session.SUBTITLE['segments'][index.row()] #['text']
+            
+            # def translated_data(self, index, role):
+            #     if role == Qt.DisplayRole:
+            #         return session.SUBTITLE['segments'][index.row()].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), '')
 
                 # if role == Qt.DecorationRole:
                 #     status, _ = session.SUBTITLE['segments'][index.row()]
@@ -47,14 +51,22 @@ class subtitles_panel_qlistwidget(QListView):
                 return number_width
 
             def get_text_height(self, option, index):
-                row_text = index.data(Qt.DisplayRole)
+                row_text = index.data(Qt.DisplayRole)['text']
                 width = option.rect.width()
-                height = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(0, 0, width - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, row_text).height()
+                if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
+                    translated_text = index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), '')
+                    height_o = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(0, 0, (width/2) - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, row_text).height()
+                    height_t = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(width/2, 0, (width/2) - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, translated_text).height()
+                    height = max(height_o, height_t)
+                else:
+                    height = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(0, 0, width - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, row_text).height()
                 return height
 
             def paint(self, painter, option, index):
-                row_text = index.data(Qt.DisplayRole)
+                segment = index.data(Qt.DisplayRole)
+                row_text = segment['text']
                 number_width = self.get_number_width(index)
+                
 
                 if option.state & QStyle.State_Selected:
                     painter.setPen(Qt.NoPen)
@@ -87,11 +99,23 @@ class subtitles_panel_qlistwidget(QListView):
 
                 painter.drawRect(text_rect)
 
-                text_rect = text_rect.marginsRemoved(QMargins(10, 10, 10, 10))
-
                 painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
                 painter.setFont(QFont('Montserrat', 10))
-                painter.drawText(text_rect, Qt.TextWordWrap, row_text)
+
+                if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
+                    original_rect = text_rect.marginsRemoved(QMargins(0, 0, text_rect.width()*.5, 0))
+                    original_rect = original_rect.marginsRemoved(QMargins(10, 10, 10, 10))
+                    painter.drawText(original_rect, Qt.TextWordWrap, row_text)
+                    translated_rect = text_rect.marginsRemoved(QMargins(text_rect.width()*.5, 0, 0, 0))
+                    painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#0dffffff')))
+                    painter.drawLine(translated_rect.topLeft(), translated_rect.bottomLeft())
+                    painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
+                    translated_rect = translated_rect.marginsRemoved(QMargins(10, 10, 10, 10))
+                    translated_text = segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), '')
+                    painter.drawText(translated_rect, Qt.TextWordWrap, translated_text)   
+                else:
+                    original_rect = text_rect.marginsRemoved(QMargins(10, 10, 10, 10))
+                    painter.drawText(original_rect, Qt.TextWordWrap, row_text)
 
             def sizeHint(self, option, index):
                 width = option.rect.width()
@@ -138,20 +162,19 @@ class subtitles_panel_qlistwidget(QListView):
 def load(self):
     tab_name = 'subtitles'
     
-    left_panel_subtitles_panel = QWidget()
-    left_panel_subtitles_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_subtitles_panel.setProperty('tab_name', tab_name)
-    left_panel_subtitles_panel.setLayout(QVBoxLayout())
+    left_panel_subtitles_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
+    
     left_panel_subtitles_panel.layout().setContentsMargins(0, 0, 0, 0)
 
-    left_panel_subtitles_panel.update = update
-    
-    left_panel.add_panel(self, left_panel_subtitles_panel)
 
     subtitles_panel_simplelist_qsplitter = QSplitter(Qt.Vertical)
     
     self.subtitles_panel_qlistwidget = subtitles_panel_qlistwidget()
-
     subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_qlistwidget)
 
     self.left_panel_subtitleslist_bottom_panel = QWidget()
@@ -159,20 +182,22 @@ def load(self):
     self.left_panel_subtitleslist_bottom_panel.setLayout(QVBoxLayout())
     self.left_panel_subtitleslist_bottom_panel.layout().setContentsMargins(0, 0, 0, 0)
     self.left_panel_subtitleslist_bottom_panel.layout().setSpacing(0)
+    subtitles_panel_simplelist_qsplitter.addWidget(self.left_panel_subtitleslist_bottom_panel)
 
     self.left_panel_subtitleslist_textedit = QTextEdit()
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
-    self.left_panel_subtitleslist_textedit.setAttribute(Qt.WA_LayoutOnEntireRect)
-    self.left_panel_subtitleslist_textedit.setLayout(QVBoxLayout())
-    self.left_panel_subtitleslist_textedit.layout().setContentsMargins(0, 0, 0, 0)
-    self.left_panel_subtitleslist_textedit.layout().setSpacing(0)
     self.left_panel_subtitleslist_textedit.textChanged.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
 
-    self.left_panel_subtitleslist_textedit.layout().addStretch()
+    self.left_panel_subtitleslist_translation_textedit = QTextEdit()
+    self.left_panel_subtitleslist_translation_textedit.setObjectName('left_panel_subtitleslist_translation_textedit')
+    self.left_panel_subtitleslist_translation_textedit.textChanged.connect(lambda: left_panel_subtitleslist_translation_textedit_changed(self))
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_translation_textedit)
 
     self.left_panel_subtitleslist_textedit_bottom_line = QHBoxLayout()
     self.left_panel_subtitleslist_textedit_bottom_line.setContentsMargins(0, 0, 0, 0)
     self.left_panel_subtitleslist_textedit_bottom_line.setSpacing(0)
+    self.left_panel_subtitleslist_bottom_panel.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
 
     self.properties_information = QWidget()
     self.properties_information.setObjectName('properties_information')
@@ -256,9 +281,9 @@ def load(self):
 
     self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_speaker_selector, 0, Qt.AlignRight | Qt.AlignBottom)
 
-    self.left_panel_subtitleslist_textedit.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
+    # self.left_panel_subtitleslist_textedit.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
     
-    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
+    # self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
 
     self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row = QHBoxLayout()
     self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row.setObjectName('subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row')
@@ -337,8 +362,6 @@ def load(self):
 
     self.left_panel_subtitleslist_bottom_panel.layout().addLayout(self.subtitles_panel_simplelist_left_panel_subtitleslist_textedit_timings_row)
 
-    subtitles_panel_simplelist_qsplitter.addWidget(self.left_panel_subtitleslist_bottom_panel)
-
     subtitles_panel_simplelist_qsplitter.setSizes([subtitles_panel_simplelist_qsplitter.height()*.8, subtitles_panel_simplelist_qsplitter.height()*.2])
 
     left_panel_subtitles_panel.layout().addWidget(subtitles_panel_simplelist_qsplitter)
@@ -347,6 +370,15 @@ def load(self):
 def left_panel_subtitleslist_textedit_changed(self):
     if session.SUBTITLE['selected']:
         session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
+    self.timeline_widget.update()
+    self.preview_panel_player.update()
+
+
+def left_panel_subtitleslist_translation_textedit_changed(self):
+    if session.SUBTITLE['selected']:
+        if not 'translations' in session.SUBTITLE['selected']:
+            session.SUBTITLE['selected']['translations'] = {}
+        session.SUBTITLE['selected']['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
     self.timeline_widget.update()
     self.preview_panel_player.update()
 
@@ -361,6 +393,9 @@ def update(self):
         self.subtitles_panel_qlistwidget.clearSelection()
     else:
         self.left_panel_subtitleslist_textedit.setText(session.SUBTITLE['selected']['text'])
+        
+        self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
+        self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), ''))
 
         if self.preview_panel_player.is_paused():
             position = session.SUBTITLE.get('position', 0)

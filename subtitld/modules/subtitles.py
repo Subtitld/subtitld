@@ -275,6 +275,14 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
         session.SUBTITLE['segments'][index]['text'] = last_text
         session.SUBTITLE['segments'][index + 1]['text'] = next_text + ' ' + session.SUBTITLE['segments'][index + 1]['text']
 
+def send_translated_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
+    """Function send text to the last subtitle"""
+    if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
+        history.history_append(session.SUBTITLE['segments'])
+        index = session.SUBTITLE['segments'].index(selected_subtitle)
+        session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')] = next_text
+        session.SUBTITLE['segments'][index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')] = last_text
+
 
 def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
@@ -283,6 +291,15 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
         index = session.SUBTITLE['segments'].index(selected_subtitle)
         session.SUBTITLE['segments'][index]['text'] = next_text
         session.SUBTITLE['segments'][index - 1]['text'] += ' ' + last_text
+
+
+def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
+    """Function send text to the last subtitle"""
+    if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
+        history.history_append(session.SUBTITLE['segments'])
+        index = session.SUBTITLE['segments'].index(selected_subtitle)
+        session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')] = next_text
+        session.SUBTITLE['segments'][index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')] += ' ' + last_text
 
 
 def set_gap(position=0.0, gap=0.0):

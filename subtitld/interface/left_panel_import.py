@@ -20,12 +20,13 @@ for exttype in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS:
 def load(self):
     tab_name = 'import'
     
-    left_panel_import_panel = QWidget()
-    left_panel_import_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_import_panel.setProperty('tab_name', tab_name)
-    left_panel_import_panel.setLayout(QVBoxLayout())
-    left_panel_import_panel.layout().setContentsMargins(10, 10, 10, 10)
-
+    left_panel_import_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
+    
     left_panel_import_panel_scroll = QScrollArea()
     left_panel_import_panel_scroll.setObjectName('left_panel_import_panel_scroll')
     left_panel_import_panel_scroll.setWidgetResizable(True)
@@ -33,6 +34,7 @@ def load(self):
     left_panel_import_panel.layout().addWidget(left_panel_import_panel_scroll)
 
     self.left_panel_import_panel_widget = QWidget()
+    self.left_panel_import_panel_widget.setProperty('class', 'transparent_panel')
     self.left_panel_import_panel_widget.setObjectName('left_panel_import_panel_widget')
     self.left_panel_import_panel_widget.setLayout(QVBoxLayout())
     self.left_panel_import_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
@@ -43,9 +45,6 @@ def load(self):
     # self.global_subtitlesvideo_import_button.setCheckable(True)
     self.global_subtitlesvideo_import_button.clicked.connect(lambda: global_subtitlesvideo_import_button_clicked(self))
 
-    left_panel_import_panel.update = update
-
-    left_panel.add_panel(self, left_panel_import_panel)
 
     update(self)
 

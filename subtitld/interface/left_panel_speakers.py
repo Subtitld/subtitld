@@ -141,19 +141,12 @@ class FaceExtractorThread(QThread):
 def load(self):
     tab_name = 'speakers'
     
-    class left_panel_speakers_panel_qwidget(QWidget):
-        def __init__(self):
-            super().__init__()
-            self.setObjectName(f'left_panel_{tab_name}')
-            self.setLayout(QVBoxLayout())
-            self.layout().setContentsMargins(0, 0, 0, 0)
-        
-        def showEvent(self, event):
-            update_speakers_list(self.window())
-            return super().showEvent(event)
-
-    left_panel_speakers_panel = left_panel_speakers_panel_qwidget()
-    left_panel_speakers_panel.setProperty('tab_name', tab_name)
+    left_panel_speakers_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
     left_panel_speakers_panel_scroll = QScrollArea()
     left_panel_speakers_panel_scroll.setObjectName('left_panel_speakers_panel_scroll')
@@ -162,9 +155,10 @@ def load(self):
     left_panel_speakers_panel.layout().addWidget(left_panel_speakers_panel_scroll)
 
     left_panel_speakers_panel_content = QWidget()
+    left_panel_speakers_panel_content.setProperty('class', 'transparent_panel')
     left_panel_speakers_panel_content.setObjectName('left_panel_speakers_panel_content')
     left_panel_speakers_panel_content.setLayout(QVBoxLayout())
-    left_panel_speakers_panel_content.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_speakers_panel_content.layout().setContentsMargins(0, 0, 0, 0)
     left_panel_speakers_panel_content.layout().setSpacing(10)
     left_panel_speakers_panel_scroll.setWidget(left_panel_speakers_panel_content)
 
@@ -180,10 +174,6 @@ def load(self):
 
     left_panel_speakers_panel_content.layout().addStretch()
 
-    left_panel_speakers_panel.update = update
-    
-    left_panel.add_panel(self, left_panel_speakers_panel)
-    
     def handle_face_result(data):
         if data["image"] is not None:
             if not data["name"] in session.SPEAKERS:
@@ -196,7 +186,7 @@ def load(self):
     
     self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
 
-    
+    update(self)
 
 class RoundedCornerLabel(QLabel):
     def __init__(self, *args, **kwargs):
@@ -415,7 +405,7 @@ def left_panel_speakers_add_speaker_button_clicked(self):
         # values = self.left_panel_speakers_new_name_dialog.get_values()
         new_name = values[0].strip()  # Get the first input value and strip whitespace
     else:
-        print('canceled')
+        pass
     subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
 
     # if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:

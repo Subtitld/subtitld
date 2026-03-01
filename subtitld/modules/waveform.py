@@ -12,7 +12,7 @@ import numpy as np
 import ffms2
 import asyncio
 
-from subtitld.modules.session import STARTUPINFO, FFMPEG_EXECUTABLE, path_tmp, FFPROBE_EXECUTABLE
+from subtitld.modules.session import STARTUPINFO, FFMPEG_EXECUTABLE, PATH_TEMP, FFPROBE_EXECUTABLE
 
 
 def ffms2_load_audio(filepath, samplerate=48000, mono=True, normalize=True,
@@ -63,9 +63,9 @@ def ffmpeg_extract_subtitle(filepath, index):
         filepath,
         '-map',
         '0:' + str(index),
-        os.path.join(path_tmp, 'subtitle.vtt')]
+        os.path.join(PATH_TEMP, 'subtitle.vtt')]
     subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=STARTUPINFO).wait()
-    return os.path.join(path_tmp, 'subtitle.vtt')
+    return os.path.join(PATH_TEMP, 'subtitle.vtt')
 
 
 def ffmpeg_load_metadata(filepath):

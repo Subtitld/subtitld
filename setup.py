@@ -140,8 +140,11 @@ install_requires = [
     'translate',
     'colorhash',
     'platformdirs',
-    'audio-separator[cpu]',
     'psutil',
+    'vosk',
+    'assemblyai',
+    'deep_translator'
+    # 'SpeechRecognition',
     # 'pysub2'
     # 'soundfile',
     # 'scipy'

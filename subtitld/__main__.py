@@ -19,6 +19,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import config
 from subtitld.modules import file_io
+from subtitld.modules import shortcuts
 
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
@@ -48,6 +49,8 @@ class Window(FramelessMainWindow):
 
         startscreen.load(self)
         productionscreen.load(self)
+        
+        shortcuts.load(self, session.CONFIG['shortcuts'])
 
         self.titleBar.raise_()
         self.showMaximized()
@@ -157,8 +160,6 @@ class Window(FramelessMainWindow):
     def closeEvent(self, event):
         if session.UNSAVED:
             ret = self.confirm_exit_dialog.exec_()
-            print(ret)
-
             if ret:
                 top_bar.toppanel_save_button_clicked(self)
 

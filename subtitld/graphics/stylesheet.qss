@@ -2,8 +2,28 @@ QPushButton {
     border-radius: 2px;
     border: 0;
     background-color: #3e5363;
-    padding: 4px;
+    padding: 6px 12px;
     outline: none;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+QPushButton[class="danger"] {
+    background-color: #a94444;
+}
+
+QPushButton[class="danger"]:hover {
+    background-color: #c55252;
+}
+
+QPushButton[class="secondary"] {
+    background-color: #b8cee0;
+    color: #3e5363
+}
+
+QPushButton[class="secondary"]:hover {
+    background-color: #e5b8cee0;
 }
 
 QPushButton::hover {
@@ -121,6 +141,98 @@ QComboBox::disabled {
     background-color: #803e5363;
 }
 
+QComboBox {
+    padding-left:2px;
+    font-size: 11px;
+}
+
+QComboBox::hover {
+    background-color: #304251;
+}
+
+QComboBox::drop-down {
+    background-color: #304251;
+    border: 0;
+    border-top-right-radius: 2px;
+    border-bottom-right-radius: 2px;
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+}
+
+/* QComboBox::drop-down:on {
+    background-color: darkgray;
+}
+
+QComboBox::drop-down:disabled {
+    background-color: #CCC;
+} */
+
+LabeledComboBox,
+LabeledLineEdit {
+    background-color: #304251; 
+    border-radius: 2px;
+}
+
+LabeledComboBox QComboBox,
+LabeledLineEdit QLineEdit {
+    background-color: #304251; 
+    border: 0;
+    border-bottom-left-radius: 2px;
+    border-bottom-right-radius: 2px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    font-size: 12px;
+    color:#b8cee0;
+    padding: 6px;
+}
+
+LabeledComboBox QComboBox::hover,
+LabeledLineEdit QLineEdit::hover {
+    background-color: #3e5363; 
+}
+
+
+LabeledComboBox QComboBox::drop-down {
+    background-color: transparent;
+    border-top-right-radius: 0;
+    image: url(graphics:combobox_down_arrow.svg);
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    padding: 0 6px;
+}
+
+LabeledComboBox QLabel,
+LabeledLabel #top_label,
+LabeledLineEdit #top_label {
+    font-size: 9px;
+    color:#b8cee0;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 4px;
+}
+
+LabeledLabel,
+QProgressBar {
+    background-color: #33304251; 
+    border-radius: 2px;
+}
+
+LabeledLabel #label {
+    font-size: 12px;
+    color:#b8cee0;
+    padding: 0 6px 6px 6px;
+}
+
+QProgressBar {
+    color: #3e5363;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #b8cee0;
+    border-radius: 2px;
+}
 
 QSpinBox::up-button,
 QDoubleSpinBox::up-button {
@@ -199,6 +311,36 @@ QSlider::handle:horizontal:disabled {
     background: transparent;
 }
 
+QCheckBox::indicator,
+QGroupBox::indicator {
+	width: 26px;
+    height: 14px;
+}
+    
+QCheckBox::indicator:checked,
+QGroupBox::indicator:checked {
+    image: url(graphics:checkbox_checked.svg);
+}
+
+QCheckBox::indicator:checked:hover,
+QGroupBox::indicator:checked:hover {
+    image: url(graphics:checkbox_checked_hover.svg);
+}
+
+QCheckBox::indicator:unchecked,
+QGroupBox::indicator:unchecked {
+    image: url(graphics:checkbox_unchecked.svg);
+}
+
+QCheckBox::indicator:unchecked:hover,
+QGroupBox::indicator:unchecked:hover {
+    image: url(graphics:checkbox_unchecked_hover.svg);
+}
+
+QCheckBox::indicator:disabled,
+QGroupBox::indicator:disabled {
+    image: url(graphics:checkbox_disabled.svg);
+}
 
 #titleBar_left_container {
     border-image: url(graphics:titleBar_left_container_border.svg) 0 0 2 0 stretch stretch;
@@ -306,10 +448,8 @@ QSlider::handle:horizontal:disabled {
 }
 
 QScrollArea,
-#left_panel_speakers_panel_content,
 #preview_panel_player QGraphicsView,
-#left_panel_navigation,
-#left_panel_qualitycheck_panel_widget {
+QWidget[class='transparent_panel'] {
     background: transparent;
     outline: 0;
     margin: 0;
@@ -382,11 +522,15 @@ QScrollArea,
     border: 0;
 }
 
-#left_panel_subtitleslist_textedit {
+#left_panel_subtitleslist_textedit,
+#left_panel_subtitleslist_translation_textedit {
     padding: 8px 8px 40px 8px;
     font-size: 14px;
     font-weight: 500;
-    border-right: 1px solid #0affffff;
+}
+
+#left_panel_subtitleslist_translation_textedit {
+    border-top: 1px solid #0affffff;
 }
 
 #left_panel_subtitleslist_bottom_panel {
@@ -888,6 +1032,11 @@ QScrollArea,
     padding-left: 0;
     icon: url(graphics:slice_selected_subtitle_icon.svg);
 }
+
+#playercontrols_widget_top_line #merge_slice_frame #slice_selected_subtitle_button:checked {
+    background-color: #803e5363;
+}
+
 
 #playercontrols_widget_top_line #merge_slice_frame #merge_next_selected_subtitle_button {
     border-bottom-right-radius: 2px;
@@ -1473,6 +1622,40 @@ QScrollArea,
 
 #music_voice_separation_box #music_voice_separation_voice_icon::disabled {
     icon: url(graphics:music_voice_separation_voice_icon_disabled.svg);
+}
+
+#global_panel_transcription_vosk_transcription_download_model_button {
+    icon: url(graphics:vosk_transcription_download_model_icon.svg);
+}
+
+#global_panel_transcription_vosk_transcription_update_model_button {
+    icon: url(graphics:vosk_transcription_update_model_icon.svg);
+}
+
+#global_panel_transcription_vosk_transcription_remove_model_button {
+    icon: url(graphics:speaker_list_item_remove_icon.svg);
+}
+
+#global_panel_transcription_vosk_transcription_remove_model_button:hover {
+    icon: url(graphics:speaker_list_item_remove_icon_hover.svg);
+}
+
+#global_panel_transcription_vosk_transcription_model_combobox QComboBox::drop-down {
+    border-bottom-right-radius: 0;
+}
+
+#global_panel_transcription_vosk_transcription_model_combobox QPushButton {
+    border-radius: 0;
+}
+
+#global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_download_model_button,
+#global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_remove_model_button {
+    border-bottom-right-radius: 2px;
+}
+
+#global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_download_model_button,
+#global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_update_model_button {
+    border-top-left-radius: 2px;
 }
 
 

@@ -1,162 +1,76 @@
-"""Shortcuts module
+"""Shortcuts module - Robust customizable shortcut system with decorators
 
 """
 
 from PySide6.QtGui import QAction
 
-from subtitld.interface import playercontrols
+
+class ShortcutRegistry:
+    """Registry for managing shortcuts and their associated actions"""
+    
+    def __init__(self):
+        self._shortcuts = {}
+    
+    def register(self, command_id, description, default_keys, handler):
+        """Register a shortcut with its handler"""
+        self._shortcuts[command_id] = {
+            'description': description,
+            'default_keys': default_keys,
+            'handler': handler
+        }
+    
+    def shortcut(self, command_id, description, keys):
+        """Decorator to register a function as a shortcut handler
+        
+        Usage:
+            @shortcut('my_command', 'My Command Description', ['Ctrl+K'])
+            def my_handler(self):
+                # handler code
+        """
+        def decorator(func):
+            self.register(command_id, description, keys, func)
+            return func
+        return decorator
+    
+    def get_description(self, command_id):
+        return self._shortcuts.get(command_id, {}).get('description', '')
+    
+    def get_default_keys(self, command_id):
+        return self._shortcuts.get(command_id, {}).get('default_keys', [])
+    
+    def get_handler(self, command_id):
+        return self._shortcuts.get(command_id, {}).get('handler')
+    
+    def get_all_commands(self):
+        return list(self._shortcuts.keys())
 
 
-shortcuts_dict = {
-    'playpause': 'Play/Pause',
-    'subtitle_start_to_current_position': 'Subtitle start to current position',
-    'subtitle_end_subtitle_to_current_position': 'Subtitle end to current position',
-    'add_new_subtitle_to_current_position': 'Add new subtitle to current position',
-    'remove_current_subtitle': 'Remove current subtitle',
-    'zoom_out': 'Zoom out',
-    'zoom_in': 'Zoom in',
-    'slice_current_subtitle': 'Slice current subtitle',
-    'select_subtitle_in_current_position': 'Select subtitle in current position',
-    'add_step_subtitle_start': 'Add a step to subtitle start',
-    'subtract_step_subtitle_start': 'Subtract a step to subtitle start',
-    'add_step_subtitle_end': 'Add a step to subtitle end',
-    'subtract_step_subtitle_end': 'Subtract a step to subtitle end',
-    'move_step_backward_subtitle': 'Move subtitle a step backward',
-    'move_step_forward_subtitle': 'Move subtitle a step forward',
-    'select_next_subtitle_over_current_position': 'Select next subtitle over current position',
-    'select_last_subtitle_over_current_position': 'Select last subtitle over current position',
-}
+# Global registry
+_registry = ShortcutRegistry()
+shortcut = _registry.shortcut
 
-
-default_shortcuts_dict = {
-    'playpause': ['Space'],
-    'subtitle_start_to_current_position': ['0'],
-    'subtitle_end_subtitle_to_current_position': [','],
-    'add_new_subtitle_to_current_position': ['Enter'],
-    'remove_current_subtitle': ['*'],
-    'zoom_out': ['-'],
-    'zoom_in': ['+'],
-    'slice_current_subtitle': ['/'],
-    'select_subtitle_in_current_position': ['5'],
-    'add_step_subtitle_start': ['7'],
-    'subtract_step_subtitle_start': ['1'],
-    'add_step_subtitle_end': ['9'],
-    'subtract_step_subtitle_end': ['3'],
-    'move_step_backward_subtitle': ['4'],
-    'move_step_forward_subtitle': ['6'],
-    'select_next_subtitle_over_current_position': ['8'],
-    'select_last_subtitle_over_current_position': ['2'],
-}
+# Legacy compatibility
+shortcuts_dict = {}
+default_shortcuts_dict = {}
 
 
 def load(self, shortcut_commands):
-    """Function to load shortcuts commands on widgets"""
-    for item in default_shortcuts_dict:
-        if item not in shortcut_commands:
-            shortcut_commands[item] = default_shortcuts_dict[item]
-
-    for command in shortcut_commands.keys():
-        if command == 'playpause':
-            playpause_action = QAction(shortcuts_dict['playpause'], self)
-            playpause_action.setShortcuts(shortcut_commands[command])
-            playpause_action.triggered.connect(lambda: playercontrols.playercontrols_playpause_button_clicked(self))
-            self.addAction(playpause_action)
-
-        if command == 'subtitle_start_to_current_position':
-            subtitle_start_to_current_position_action = QAction(shortcuts_dict['subtitle_start_to_current_position'], self)
-            subtitle_start_to_current_position_action.setShortcuts(shortcut_commands[command])
-            subtitle_start_to_current_position_action.triggered.connect(lambda: playercontrols.subtitle_start_to_current_position_button_clicked(self))
-            self.addAction(subtitle_start_to_current_position_action)
-
-        if command == 'subtitle_end_subtitle_to_current_position':
-            subtitle_end_subtitle_to_current_position_action = QAction(shortcuts_dict['subtitle_end_subtitle_to_current_position'], self)
-            subtitle_end_subtitle_to_current_position_action.setShortcuts(shortcut_commands[command])
-            subtitle_end_subtitle_to_current_position_action.triggered.connect(lambda: playercontrols.subtitle_end_to_current_position_button_clicked(self))
-            self.addAction(subtitle_end_subtitle_to_current_position_action)
-
-        if command == 'add_new_subtitle_to_current_position':
-            add_new_subtitle_to_current_position_action = QAction(shortcuts_dict['add_new_subtitle_to_current_position'], self)
-            add_new_subtitle_to_current_position_action.setShortcuts(shortcut_commands[command])
-            add_new_subtitle_to_current_position_action.triggered.connect(lambda: playercontrols.add_subtitle_button_clicked(self))
-            self.addAction(add_new_subtitle_to_current_position_action)
-
-        if command == 'remove_current_subtitle':
-            remove_current_subtitle_action = QAction(shortcuts_dict['remove_current_subtitle'], self)
-            remove_current_subtitle_action.setShortcuts(shortcut_commands[command])
-            remove_current_subtitle_action.triggered.connect(lambda: playercontrols.remove_selected_subtitle_button_clicked(self))
-            self.addAction(remove_current_subtitle_action)
-
-        if command == 'zoom_in':
-            zoom_in_action = QAction(shortcuts_dict['zoom_in'], self)
-            zoom_in_action.setShortcuts(shortcut_commands[command])
-            zoom_in_action.triggered.connect(lambda: playercontrols.zoomin_button_clicked(self))
-            self.addAction(zoom_in_action)
-
-        if command == 'zoom_out':
-            zoom_out_action = QAction(shortcuts_dict['zoom_out'], self)
-            zoom_out_action.setShortcuts(shortcut_commands[command])
-            zoom_out_action.triggered.connect(lambda: playercontrols.zoomout_button_clicked(self))
-            self.addAction(zoom_out_action)
-
-        if command == 'slice_current_subtitle':
-            slice_current_subtitle_action = QAction(shortcuts_dict['slice_current_subtitle'], self)
-            slice_current_subtitle_action.setShortcuts(shortcut_commands[command])
-            slice_current_subtitle_action.triggered.connect(lambda: playercontrols.slice_selected_subtitle_button_clicked(self))
-            self.addAction(slice_current_subtitle_action)
-
-        if command == 'select_subtitle_in_current_position':
-            select_subtitle_in_current_position_action = QAction(shortcuts_dict['select_subtitle_in_current_position'], self)
-            select_subtitle_in_current_position_action.setShortcuts(shortcut_commands[command])
-            select_subtitle_in_current_position_action.triggered.connect(lambda: playercontrols.select_subtitle_in_current_position(self))
-            self.addAction(select_subtitle_in_current_position_action)
-
-        if command == 'add_step_subtitle_start':
-            add_step_subtitle_start_action = QAction(shortcuts_dict['add_step_subtitle_start'], self)
-            add_step_subtitle_start_action.setShortcuts(shortcut_commands[command])
-            add_step_subtitle_start_action.triggered.connect(lambda: playercontrols.move_start_forward_subtitle_clicked(self))
-            self.addAction(add_step_subtitle_start_action)
-
-        if command == 'subtract_step_subtitle_start':
-            subtract_step_subtitle_start_action = QAction(shortcuts_dict['subtract_step_subtitle_start'], self)
-            subtract_step_subtitle_start_action.setShortcuts(shortcut_commands[command])
-            subtract_step_subtitle_start_action.triggered.connect(lambda: playercontrols.move_start_back_subtitle_clicked(self))
-            self.addAction(subtract_step_subtitle_start_action)
-
-        if command == 'add_step_subtitle_end':
-            add_step_subtitle_end_action = QAction(shortcuts_dict['add_step_subtitle_end'], self)
-            add_step_subtitle_end_action.setShortcuts(shortcut_commands[command])
-            add_step_subtitle_end_action.triggered.connect(lambda: playercontrols.move_end_forward_subtitle_clicked(self))
-            self.addAction(add_step_subtitle_end_action)
-
-        if command == 'subtract_step_subtitle_end':
-            subtract_step_subtitle_end_action = QAction(shortcuts_dict['subtract_step_subtitle_end'], self)
-            subtract_step_subtitle_end_action.setShortcuts(shortcut_commands[command])
-            subtract_step_subtitle_end_action.triggered.connect(lambda: playercontrols.move_end_back_subtitle_clicked(self))
-            self.addAction(subtract_step_subtitle_end_action)
-
-        if command == 'move_step_backward_subtitle':
-            move_step_backward_subtitle_action = QAction(shortcuts_dict['move_step_backward_subtitle'], self)
-            move_step_backward_subtitle_action.setShortcuts(shortcut_commands[command])
-            move_step_backward_subtitle_action.triggered.connect(lambda: playercontrols.move_backward_subtitle_clicked(self))
-            self.addAction(move_step_backward_subtitle_action)
-
-        if command == 'move_step_forward_subtitle':
-            move_step_forward_subtitle_action = QAction(shortcuts_dict['move_step_forward_subtitle'], self)
-            move_step_forward_subtitle_action.setShortcuts(shortcut_commands[command])
-            move_step_forward_subtitle_action.triggered.connect(lambda: playercontrols.move_forward_subtitle_clicked(self))
-            self.addAction(move_step_forward_subtitle_action)
-
-        if command == 'select_next_subtitle_over_current_position':
-            select_next_subtitle_over_current_position_action = QAction(shortcuts_dict['select_next_subtitle_over_current_position'], self)
-            select_next_subtitle_over_current_position_action.setShortcuts(shortcut_commands[command])
-            select_next_subtitle_over_current_position_action.triggered.connect(lambda: playercontrols.select_next_subtitle_over_current_position(self))
-            self.addAction(select_next_subtitle_over_current_position_action)
-
-        if command == 'select_last_subtitle_over_current_position':
-            select_last_subtitle_over_current_position_action = QAction(shortcuts_dict['select_last_subtitle_over_current_position'], self)
-            select_last_subtitle_over_current_position_action.setShortcuts(shortcut_commands[command])
-            select_last_subtitle_over_current_position_action.triggered.connect(lambda: playercontrols.select_last_subtitle_over_current_position(self))
-            self.addAction(select_last_subtitle_over_current_position_action)
+    """Load shortcuts commands on widgets"""
+    # Update legacy dicts
+    shortcuts_dict.update({cmd: _registry.get_description(cmd) for cmd in _registry.get_all_commands()})
+    default_shortcuts_dict.update({cmd: _registry.get_default_keys(cmd) for cmd in _registry.get_all_commands()})
+    
+    for command_id in _registry.get_all_commands():
+        if command_id not in shortcut_commands:
+            shortcut_commands[command_id] = _registry.get_default_keys(command_id)
+    
+    for command_id, keys in shortcut_commands.items():
+        handler = _registry.get_handler(command_id)
+        if handler:
+            action = QAction(_registry.get_description(command_id), self)
+            action.setShortcuts(keys)
+            action.triggered.connect(lambda checked=False, h=handler: h(self))
+            self.addAction(action)
 
 
 def disable_actions(self):

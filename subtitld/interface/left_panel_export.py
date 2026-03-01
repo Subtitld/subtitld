@@ -34,7 +34,7 @@ class ThreadGenerateVideo(QThread):
             ]
 
             if self.is_burned:
-                vf_string = 'subtitles=filename=' + os.path.join(session.path_tmp, 'subtitle.srt').replace('\\', '\\\\\\\\').replace(':', '\\\:') + ":force_style='"
+                vf_string = 'subtitles=filename=' + os.path.join(session.PATH_TEMP, 'subtitle.srt').replace('\\', '\\\\\\\\').replace(':', '\\\:') + ":force_style='"
                 vf_string += 'FontName=' + self.burnedin_options.get('ffmpeg_font_family', 'Ubuntu') + ','
                 vf_string += 'FontSize=' + str(self.burnedin_options.get('ffmpeg_font_size', 40)) + ','
                 if self.burnedin_options.get('ffmpeg_shadow_enabled', True):
@@ -60,7 +60,7 @@ class ThreadGenerateVideo(QThread):
                 commands += [
                     '-ss', str(self.is_preview),
                     '-frames:v', '1',
-                    os.path.join(session.path_tmp, 'preview.png')
+                    os.path.join(session.PATH_TEMP, 'preview.png')
                 ]
             else:
                 commands += [
@@ -91,7 +91,7 @@ class ThreadGenerateVideo(QThread):
                     self.response.emit(str(current_step) + '|' + str(number_of_steps))
 
             if self.is_preview:
-                self.response_preview.emit(QPixmap(os.path.join(session.path_tmp, 'preview.png')))
+                self.response_preview.emit(QPixmap(os.path.join(session.PATH_TEMP, 'preview.png')))
             else:
                 self.response.emit('end')
 
@@ -100,11 +100,12 @@ class ThreadGenerateVideo(QThread):
 def load(self):
     tab_name = 'export'
     
-    left_panel_export_panel = QWidget()
-    left_panel_export_panel.setObjectName(f'left_panel_{tab_name}')
-    left_panel_export_panel.setProperty('tab_name', tab_name)
-    left_panel_export_panel.setLayout(QVBoxLayout())
-    left_panel_export_panel.layout().setContentsMargins(10, 10, 10, 10)
+    left_panel_export_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
 
     left_panel_export_panel_scroll = QScrollArea()
     left_panel_export_panel_scroll.setObjectName('left_panel_export_panel_scroll')
@@ -113,6 +114,7 @@ def load(self):
     left_panel_export_panel.layout().addWidget(left_panel_export_panel_scroll)
 
     self.left_panel_export_panel_widget = QWidget()
+    self.left_panel_export_panel_widget.setProperty('class', 'transparent_panel')
     self.left_panel_export_panel_widget.setObjectName('left_panel_export_panel_widget')
     self.left_panel_export_panel_widget.setLayout(QVBoxLayout())
     self.left_panel_export_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
@@ -458,7 +460,7 @@ def load(self):
     # self.global_subtitlesvideo_video_generate_transparent_video_button.setVisible(False)
 
     def thread_generated_burned_video_ended(response):
-        print(response)
+        pass
         # if '|' in response:
         #     subtitles_panel.update_processing_status(self, show_widgets=True, value=int((float(response.split('|')[0]) / float(response.split('|')[1])) * 100))
         # elif 'end' in response:
@@ -476,9 +478,6 @@ def load(self):
 
     self.left_panel_export_panel_widget.layout().addWidget(self.global_panel_export_tabwidget)
     
-    left_panel_export_panel.update = update
-
-    left_panel.add_panel(self, left_panel_export_panel)
 
     update(self)
 
@@ -506,7 +505,7 @@ def global_panel_export_video_ffmpeg_export_button_clicked(self):
     generated_video_filepath = QFileDialog.getSaveFileName(parent=self, caption=_('global_panel_export.select_subtitle_file'), dir=os.path.join(suggested_path, suggested_name), filter=save_formats)[0]
 
     if generated_video_filepath:
-        file_io.save_file(os.path.join(session.path_tmp, 'subtitle.srt'), subtitle_format='SRT', language='en')
+        file_io.save_file(os.path.join(session.PATH_TEMP, 'subtitle.srt'), subtitle_format='SRT', language='en')
 
         self.thread_generated_burned_video.original_file = session.VIDEO['filepath']
         self.thread_generated_burned_video.final_file = generated_video_filepath
@@ -574,14 +573,14 @@ def global_subtitlesvideo_video_generate_transparent_video_button_clicked(self):
 
         for segment in session.SUBTITLE['segments']:
             if not last_position + .001 > segment['start'] - .001:
-                filename = os.path.join(session.path_tmp, 'empty.png')
+                filename = os.path.join(session.PATH_TEMP, 'empty.png')
                 layer.subtitle_text = ''
                 layer.grab().save(filename, 'PNG')
 
                 final_text += "file '" + filename + "'\n"
                 final_text += 'duration {}\n'.format(segment['start'] - last_position)
 
-            filename = os.path.join(session.path_tmp, '{}.png'.format(i))
+            filename = os.path.join(session.PATH_TEMP, '{}.png'.format(i))
             layer.subtitle_text = segment['text']
             layer.grab().save(filename, 'PNG')
 
@@ -590,10 +589,9 @@ def global_subtitlesvideo_video_generate_transparent_video_button_clicked(self):
 
             last_position = segment['end']
             i += 1
-            print(i)
 
         if not session.SUBTITLE['segments'][-1]['start'] + session.SUBTITLE['segments'][-1]['end'] == session.VIDEO.get('duration', 60.0):
-            filename = os.path.join(session.path_tmp, 'empty.png')
+            filename = os.path.join(session.PATH_TEMP, 'empty.png')
             layer.subtitle_text = ''
             layer.grab().save(filename, 'PNG')
 
@@ -601,8 +599,8 @@ def global_subtitlesvideo_video_generate_transparent_video_button_clicked(self):
             final_text += 'duration {}\n'.format(session.SUBTITLE['segments'][0]['end'] - session.SUBTITLE['segments'][-1]['start'])
             final_text += "file '" + filename + "'\n"
 
-        open(os.path.join(session.path_tmp, 'subtitles.txt'), 'w').write(final_text)
-        subprocess.Popen([session.FFMPEG_EXECUTABLE, '-y', '-f', 'concat', '-safe', '0', '-i', os.path.join(session.path_tmp, 'subtitles.txt'), '-r', str(session.VIDEO.get('framerate', 24)), '-c:v', 'qtrle', '-an', generated_video_filepath], startupinfo=session.STARTUPINFO, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.read()
+        open(os.path.join(session.PATH_TEMP, 'subtitles.txt'), 'w').write(final_text)
+        subprocess.Popen([session.FFMPEG_EXECUTABLE, '-y', '-f', 'concat', '-safe', '0', '-i', os.path.join(session.PATH_TEMP, 'subtitles.txt'), '-r', str(session.VIDEO.get('framerate', 24)), '-c:v', 'qtrle', '-an', generated_video_filepath], startupinfo=session.STARTUPINFO, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.read()
 
 
 def global_subtitlesvideo_export_button_clicked(self):
@@ -687,7 +685,7 @@ def global_panel_export_video_ffmpeg_command_qlineedit_textedited(self):
 
 def update_preview(self):
     if self.global_panel_export_video_ffmpeg_panel.isVisible():
-        file_io.save_file(os.path.join(session.path_tmp, 'subtitle.srt'), subtitle_format='SRT', language='en')
+        file_io.save_file(os.path.join(session.PATH_TEMP, 'subtitle.srt'), subtitle_format='SRT', language='en')
         self.thread_generated_burned_video.original_file = session.VIDEO['filepath']
         self.thread_generated_burned_video.is_preview = session.SUBTITLE.get('position', 0) if subtitles.is_current_position_above_subtitle(session.SUBTITLE.get('position', 0)) else session.SUBTITLE['segments'][0]['end']/2
         self.thread_generated_burned_video.is_burned = True

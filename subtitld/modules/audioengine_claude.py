@@ -208,7 +208,7 @@ class SoundDeviceAudioEngine:
 
     def _callback(self, outdata, frames, time, status):
         if status:
-            print(status)
+            pass
 
         outdata.fill(0.0)
         

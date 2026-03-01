@@ -5,7 +5,7 @@ import subprocess
 
 from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QFontMetrics
-from PySide6.QtCore import Qt, QRectF, QThread, Signal, QMarginsF, QTimer
+from PySide6.QtCore import Qt, QRectF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import session
 from subtitld.modules import utils
@@ -13,6 +13,7 @@ from subtitld.modules import subtitles
 from subtitld.modules import quality_check
 
 from subtitld.interface import left_panel
+from subtitld.interface import playercontrols
 from subtitld.interface.translation import _
 
 # from subtitld.modules import history
@@ -275,6 +276,7 @@ class Timeline(QWidget):
         widget.show_tug_of_war = False
         widget.tug_of_war_pressed = False
         widget.is_cursor_pressing = False
+        widget.is_smart_splicing = False
         widget.width_proportion = widget.width() / session.VIDEO.get('duration', 0.01)
 
         widget.audio_thread = AudioLoaderThread()
@@ -430,9 +432,83 @@ class Timeline(QWidget):
                         else:
                             painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
 
+                    subtitle_rect -= QMarginsF(26, 6, 26, 6)
 
-                    subtitle_rect -= QMarginsF(22, 2, 22, 2)
-                    painter.drawText(subtitle_rect, Qt.AlignCenter | Qt.TextWordWrap, subtitle['text'])
+                    painter.setFont(QFont('Montserrat', 10))
+
+                    if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):                        
+                        original_subtitle_rect = subtitle_rect - QMarginsF(0, 0, 0, subtitle_rect.height()*.5)
+
+                        if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
+                            pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
+                            if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
+                                left_side = widget.is_smart_splicing['left']
+                                right_side = widget.is_smart_splicing['right']
+                                painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
+                                painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
+                                painter.setPen(QColor("#1a000000"))
+                                painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
+                            if widget.is_smart_splicing['mode'] == 'split':
+                                painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
+                                painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
+                        else:
+                            # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
+                            painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
+
+                        translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
+
+                        if session.SUBTITLE.get('selected', False) == subtitle:
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
+                        else:
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+
+                        painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), Qt.AlignLeft | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), ''))
+                        
+                        painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', "#40304251")))
+                        painter.setPen(Qt.NoPen)
+
+                        r = 3
+
+                        lfont = QFont('Montserrat', 6)
+                        lfont.setBold(True)
+                        painter.setFont(lfont)
+
+                        language_name = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US').upper()
+
+                        lang_text_metrics = QFontMetrics(lfont).boundingRect(language_name)
+                        lang_text_metrics += QMargins(1, 2, 1, 2)
+
+                        badge = QPainterPath()
+                        badge.moveTo(translated_subtitle_rect.left(), translated_subtitle_rect.top() - 1)
+                        badge.lineTo(translated_subtitle_rect.right(), translated_subtitle_rect.top() - 1)
+                        badge.lineTo(translated_subtitle_rect.right(), translated_subtitle_rect.top() + lang_text_metrics.height() - r)
+                        badge.arcTo(translated_subtitle_rect.right() - (r*2), translated_subtitle_rect.top() + lang_text_metrics.height() - (r*2), (r*2), (r*2), 0, -90)
+                        badge.lineTo(translated_subtitle_rect.right() - r, translated_subtitle_rect.top() + lang_text_metrics.height())
+                        badge.arcTo(translated_subtitle_rect.right() - lang_text_metrics.width() - r, translated_subtitle_rect.top() + lang_text_metrics.height() - (r*2), (r*2), (r*2), -90, -90)
+                        badge.lineTo(translated_subtitle_rect.right() - lang_text_metrics.width() - r, translated_subtitle_rect.top())
+                        badge.lineTo(translated_subtitle_rect.left(), translated_subtitle_rect.top())
+                        badge.closeSubpath()
+
+                        painter.drawPath(badge)
+
+                        painter.setPen(QColor('#80ffffff'))
+                        painter.drawText(translated_subtitle_rect.right() - lang_text_metrics.width(), translated_subtitle_rect.top(), lang_text_metrics.width(), lang_text_metrics.height(), Qt.AlignLeft | Qt.AlignVCenter, language_name)
+                    else:
+                        original_subtitle_rect = subtitle_rect - QMarginsF(0, 5, 0, 5)
+                        if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
+                            pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
+                            if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
+                                left_side = widget.is_smart_splicing['left']
+                                right_side = widget.is_smart_splicing['right']
+                                painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
+                                painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
+                                painter.setPen(QColor("#1a000000"))
+                                painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
+                            if widget.is_smart_splicing['mode'] == 'split':
+                                painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
+                                painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
+                        else:
+                            painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
 
                     if widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                         if session.SUBTITLE.get('selected', False) == subtitle:
@@ -596,8 +672,27 @@ class Timeline(QWidget):
         widget.subtitle_end_is_clicked = False
         widget.is_cursor_pressing = False
         widget.tug_of_war_pressed = False
+        subtitle_under_position = subtitles.subtitle_under_current_position(position=event.pos().x() / widget.width_proportion)
+        if widget.is_smart_splicing and widget.is_smart_splicing['mode'] == 'words':
+            widget.is_smart_splicing['boundaries'] = [
+                subtitle_under_position['start'] * widget.width_proportion,
+                subtitle_under_position['end'] * widget.width_proportion
+            ]
+            widget.is_smart_splicing['mode'] = 'split'
+        elif widget.is_smart_splicing and widget.is_smart_splicing['mode'] == 'split':
+            last_text = widget.is_smart_splicing['left'][1].strip()
+            next_text = widget.is_smart_splicing['right'][1].strip()
+            pos = widget.is_smart_splicing['position'] / widget.width_proportion
+            session.SUBTITLE['selected'] = subtitles.slice_subtitle(selected_subtitle=subtitle_under_position, position=pos, next_text=next_text, last_text=last_text)
+            left_panel.update(widget.window())
+            widget.setFocus(Qt.TabFocusReason)
+            session.set_unsaved()
+            widget.is_smart_splicing = False
+            playercontrols.slice_selected_subtitle_button_update(widget.window())        
         widget.update()
-        # subtitles_panel.update_subtitles_panel_widget_vision_content(widget.window())
+        if not subtitle_under_position:
+            session.SUBTITLE['selected'] = None
+            left_panel.update(widget.window())
         event.accept()
 
     def mouseMoveEvent(widget, event):
@@ -618,6 +713,41 @@ class Timeline(QWidget):
         
             if last and subtitle_under_the_cursor['start'] - (cursor_tug_of_war_range*.5) < cursor_time_position < subtitle_under_the_cursor['start'] + (cursor_tug_of_war_range*.5) and subtitle_under_the_cursor['start'] - .001 < last['end'] + .02:
                 widget.show_tug_of_war = subtitle_under_the_cursor['start'] - .0005
+
+            if widget.is_smart_splicing:
+                cursor_position_in_subtitle = (event.pos().x() - (subtitle_under_the_cursor['start'] * widget.width_proportion))
+                subtitle_width = ((subtitle_under_the_cursor['end'] - subtitle_under_the_cursor['start']) * widget.width_proportion)
+                
+                number_of_characters = len(subtitle_under_the_cursor['text'].replace(' ', ''))
+                if isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'words':
+                    character_width = subtitle_width / number_of_characters
+                    left_words = ''
+                    right_words = ''
+                    for word in subtitle_under_the_cursor['text'].split():
+                        if len((left_words + word).replace(' ', '')) * character_width > cursor_position_in_subtitle:
+                            break
+                        left_words += ' ' + word
+            
+                    right_words = subtitle_under_the_cursor['text'][len(left_words):]
+                    proportion = cursor_position_in_subtitle / subtitle_width
+                    widget.is_smart_splicing = {
+                        'mode': 'words',
+                        'position': event.pos().x(),
+                        'left': [1 - proportion, left_words],
+                        'right': [proportion, right_words]
+                    }
+                elif isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'split' and (widget.is_smart_splicing['boundaries'][0] <= event.pos().x() <= widget.is_smart_splicing['boundaries'][1]):
+                    widget.is_smart_splicing['position'] = event.pos().x()
+
+            # left_words = ''
+            # right_words = ''
+            # for word in subtitle['text'].split():
+            #     if len((left_words + word).replace(' ', '')) * character_width < cursor_position_in_subtitle:
+            #         left_words += ' ' + word
+            #     else:
+            #         right_words += ' ' + word
+            
+
             
         if session.SUBTITLE.get('selected', None) is not None:
             i = session.SUBTITLE['segments'].index(session.SUBTITLE['selected'])

@@ -59,7 +59,6 @@ def load(self):
             event.accept()
         
         def update_state(widget):
-            print('save button updated')
             widget.setProperty(
                 'class',
                 'unsaved' if session.UNSAVED else 'saved'
