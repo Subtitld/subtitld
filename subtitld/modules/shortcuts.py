@@ -81,3 +81,4 @@ def disable_actions(self):
 def enable_actions(self):
     for action in self.actions():
         action.setEnabled(True)
+

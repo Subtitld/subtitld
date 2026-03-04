@@ -2164,6 +2164,14 @@ def music_voice_separation_slider_changed(self):
         self.preview_panel_player._audio_device.vocals_sound.gain = voice_volume
 
 
+@shortcut('timeline_escape_action', 'Escape timeline actions', ['Escape'])
+def escape_actions(self):
+    if self.timeline_widget.is_smart_splicing:
+        self.timeline_widget.is_smart_splicing = False
+        self.timeline_widget.update()
+    slice_selected_subtitle_button_update(self)
+
+
 def translate(self):
     self.add_subtitle_button.setText(' ' + _('playercontrols.add'))
     self.snap_button_label.setText(_('playercontrols.snap'))
