@@ -22,9 +22,11 @@ chmod +x $APP_DIR/usr/bin/subtitld
 
 # Copy desktop file and icon
 cp snap/gui/subtitld.desktop $APP_DIR/usr/share/applications/
+cp snap/gui/subtitld.desktop $APP_DIR/
 cp snap/gui/icon.png $APP_DIR/usr/share/icons/hicolor/256x256/apps/subtitld.png
 cp snap/gui/icon.png $APP_DIR/subtitld.png
 sed -i 's|Icon=.*|Icon=subtitld|' $APP_DIR/usr/share/applications/subtitld.desktop
+sed -i 's|Icon=.*|Icon=subtitld|' $APP_DIR/subtitld.desktop
 
 # Create AppRun
 cat > $APP_DIR/AppRun << 'EOF'
