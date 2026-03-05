@@ -27,6 +27,9 @@ cp snap/gui/icon.png $APP_DIR/usr/share/icons/hicolor/256x256/apps/subtitld.png
 cp snap/gui/icon.png $APP_DIR/subtitld.png
 sed -i 's|Icon=.*|Icon=subtitld|' $APP_DIR/usr/share/applications/subtitld.desktop
 sed -i 's|Icon=.*|Icon=subtitld|' $APP_DIR/subtitld.desktop
+sed -i '/^Encoding=/d' $APP_DIR/subtitld.desktop
+sed -i 's/^Info=/X-Info=/' $APP_DIR/subtitld.desktop
+sed -i 's/Categories=Application;Multimedia/Categories=AudioVideo;/' $APP_DIR/subtitld.desktop
 
 # Create AppRun
 cat > $APP_DIR/AppRun << 'EOF'
