@@ -127,7 +127,7 @@ Verifique se todas as dependências do sistema estão no `before_script`:
 ```yaml
 before_script:
   - apt-get update
-  - apt-get install -y libffms2-5 libmpv1 libglib2.0-0
+  - apt-get install -y libglib2.0-0
 ```
 
 ### AppImage não executa
@@ -160,8 +160,6 @@ AppDir:
     include:
       # Apenas dependências essenciais
       - python3
-      - libffms2-5
-      - libmpv1
 ```
 
 ### Icone não aparece

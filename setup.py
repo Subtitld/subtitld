@@ -69,22 +69,22 @@ def pip_notes():
 
         ---[Ubuntu/Debian/Mint/etc]--------------------------
 
-            python3-dev libmpv1 libmpv-dev python3-pyqt5
+            python3-dev python3-pyqt5
             python3-pyqt5.qtopengl python3-pyqt5.qtx11extras
             ffmpeg mediainfo python3-opengl
 
         ---[Arch Linux]--------------------------------------
 
-            python mpv python-pyqt5 ffmpeg mediainfo
+            python python-pyqt5 ffmpeg mediainfo
 
         ---[Fedora]------------------------------------------
 
-            python3-devel mpv-libs mpv-libs-devel python3-qt5
+            python3-devel python3-qt5
             ffmpeg mediainfo python3-pyopengl
 
         ---[openSUSE]----------------------------------------
 
-            python3-devel libmpv1 mpv-devel python3-qt5
+            python3-devel python3-qt5
             ffmpeg mediainfo
 
     You need to build a Python extension module before you can run the
@@ -105,15 +105,6 @@ def pip_notes():
     append the debug parameter:
 
         $ python3 -m subtitld --debug
-
-    Make sure you build the extension module AFTER installing the
-    dependencies covered above, in particular libmpv and the mpv + python3
-    dev headers are all needed for it to compile successfully. Compiled
-    extension modules under subtitld/libs will look like:
-
-        mpv.cpython-36m-x86_64-linux-gnu.so [linux]
-        mpv.cp36-win_amd64.pyd              [win32]
-
 
     Get more information on:
 

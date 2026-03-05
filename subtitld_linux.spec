@@ -11,21 +11,7 @@ block_cipher = None
 
 a = Analysis(['subtitld/__main__.py'],
              pathex=[],
-             binaries=[
-                #  ('/usr/lib/x86_64-linux-gnu/libmpv.so', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb.so.1', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb-icccm.so.4', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb-image.so.0', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb-keysyms.so.1', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb-render-util.so.0', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb-xinerama.so.0', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxcb-xkb.so.1', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so.0', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libdrm.so.2', '.'),
-                #  ('/usr/lib/x86_64-linux-gnu/libavresample.so.4', '.'),
-                #  ('/usr/bin/ffmpeg', '.'),
-                #  ('/usr/bin/ffprobe', '.'),
-             ],
+             binaries=[],
              datas=[
                      ( 'subtitld/graphics/*', 'graphics' ),
                      ( os.path.join(os.getenv('PYTHON_DIRECTORY'), '/Lib/site-packages/PySide6/plugins'), 'PySide6/plugins/')

@@ -77,7 +77,6 @@ parts:
         - qtwayland5
         - libqt5gui5
         - qt5-style-plugins
-        - libmpv1
         - ffmpeg
         - libffms2-4
         - freeglut3
