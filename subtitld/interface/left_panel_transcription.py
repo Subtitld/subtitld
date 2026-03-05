@@ -9,7 +9,6 @@ from subtitld.interface.translation import _
 from subtitld.interface import utils
 from subtitld.modules import session
 
-import speech_recognition as sr
 from vosk import Model, KaldiRecognizer
 import requests
 import zipfile

@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subtitld"
+dynamic = ["version"]
+description = "Subtitld"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GPL3"}
+authors = [
+    {name = "Jonatã Bolzan Loss", email = "subtitld@subtitld.org"}
+]
+keywords = ["subtitld"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Natural Language :: English",
+    "Operating System :: POSIX",
+    "Topic :: Multimedia",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "PySide6",
+    "PySideSix-Frameless-Window",
+    "mediapipe==0.10.21",
+    "opencv-python",
+    "audaspace",
+    "python-i18n",
+    "python-docx",
+    "pycaption",
+    "chardet",
+    "ffms2",
+    "pysubs2",
+    "translate",
+    "colorhash",
+    "platformdirs",
+    "psutil",
+    "vosk",
+    "assemblyai",
+    "deep_translator",
+    "soundfile",
+]
+
+[project.urls]
+Homepage = "https://subtitld.org"
+Issues = "https://gitlab.com/jonata/subtitld/issues"
+
+[project.scripts]
+subtitld = "subtitld.__main__:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "subtitld.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["subtitld*"]
+
+[tool.setuptools.package-data]
+subtitld = ["graphics/*", "locale/*", "ftfy/*"]

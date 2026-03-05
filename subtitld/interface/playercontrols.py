@@ -1,7 +1,5 @@
 import os
-import aud
 from bisect import bisect
-from audio_separator.separator import Separator
 import subprocess
 
 from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
@@ -13,7 +11,6 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import subtitles
 from subtitld.modules import session
-from subtitld.modules import audioengine
 from subtitld.modules.shortcuts import shortcut
 
 STEPS_LIST = ['Frames', 'Seconds']

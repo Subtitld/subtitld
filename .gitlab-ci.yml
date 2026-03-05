@@ -1,61 +1,47 @@
-# =============================================================================
-# Pipeline CI/CD para Subtitld
-# =============================================================================
-
 stages:
   - build
   - deploy
 
-# Incluir configurações modularizadas
-include:
-  - local: '.gitlab/appimage.yml'
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
-# -----------------------------------------------------------------------------
-# Snap (edge)
-# -----------------------------------------------------------------------------
-snap-edge:amd64:
-  image:
-    name: ubuntudesktop/gnome-3-38-2004:latest
-  stage: deploy
+cache:
+  paths:
+    - .cache/pip
+
+build:
+  stage: build
+  image: python:3.9
   script:
-    - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
-    - apt-get update
-    - apt-get install -y python3-dev
-    - snapcraft
-    - echo ${SNAPCRAFT_LOGIN_FILE} | base64 --decode --ignore-garbage > snapcraft.login
-    - snapcraft login --with snapcraft.login
-    - snapcraft upload *.snap --release edge
+    - pip install build
+    - VERSION=$(date +%y.%m.%d.%H%M)
+    - sed -i "s/__version__ = '.*'/__version__ = '$VERSION'/" subtitld/__init__.py
+    - python -m build
   artifacts:
     paths:
-      - subtitld*.snap
+      - dist/
     expire_in: 1 week
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master"
 
-# -----------------------------------------------------------------------------
-# Windows
-# -----------------------------------------------------------------------------
-windows:
-  image: cheaterman/pyinstaller-windows:latest
+deploy_testpypi:
   stage: deploy
+  image: python:3.9
+  only:
+    - branches
+  except:
+    - master
   script:
-    - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
-    - apt-get update -qy
-    - apt-get install -y nsis openssh-client sshpass unzip librsvg2-bin
-    - wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
-    - unzip ffmpeg-release-essentials.zip
-    - wine pip3 install -r requirements.txt
-    - wine pip3 install -U pyinstaller glfw pywin32==225
-    - for f in subtitld/graphics/*.svg; do rsvg-convert "$f" -o "${f%.*}.png"; done
-    - sed -i 's/.svg/.png/g' subtitld/graphics/stylesheet.qss
-    - wine pyinstaller subtitld_win.spec
-    - makensis subtitld_win.nsi
-    - mv "dist/Subtitld Portable.exe" "Subtitld ${VERSION_NUMBER} Portable.exe"
-    - export SSHPASS=$USER_PASS
-    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.exe jonata@jonata.org:/home/jonata/builds.subtitld.org/windows/
-  artifacts:
-    paths:
-      - Subtitld*.exe
-    expire_in: 1 week
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master"
+    - pip install twine
+    - twine upload --repository testpypi dist/* -u __token__ -p $TESTPYPI_TOKEN
+  dependencies:
+    - build
+
+deploy_pypi:
+  stage: deploy
+  image: python:3.9
+  only:
+    - master
+  script:
+    - pip install twine
+    - twine upload dist/* -u __token__ -p $PYPI_TOKEN
+  dependencies:
+    - build
