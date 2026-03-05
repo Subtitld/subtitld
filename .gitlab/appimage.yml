@@ -1,0 +1,103 @@
+# GitLab CI/CD pipeline para geração de AppImage do Subtitld
+# Adicione no seu .gitlab-ci.yml: include:
+#   - local: '.gitlab/appimage.yml'
+
+appimage:
+  image: ubuntu:jammy
+  stage: build
+  variables:
+    # Versão será baseada na tag ou commit
+    VERSION_NUMBER: $CI_COMMIT_TAG
+  before_script:
+    - echo "=== Preparando ambiente para build do AppImage ==="
+    - DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+        python3
+        python3-pip
+        python3-dev
+        python3-venv
+        wget
+        curl
+        git
+        desktop-file-utils
+        libgdk-pixbuf-2.0-0
+        squashfs-tools
+        zsync
+        libglib2.0-bin
+        file
+        libffms2-5
+        libmpv1
+  script:
+    # Definir versão dinâmica se não for tag
+    - |
+      if [ -z "$VERSION_NUMBER" ]; then
+        export VERSION_NUMBER="$(date +%y.%m.%d.%H%M)-${CI_COMMIT_SHORT_SHA}"
+        echo "Versão dinâmica: $VERSION_NUMBER"
+      else
+        echo "Versão da tag: $VERSION_NUMBER"
+      fi
+
+    # Instalar appimage-builder
+    - echo "=== Instalando appimage-builder ==="
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install appimage-builder
+
+    # Instalar dependências do projeto
+    - echo "=== Instalando dependências do projeto ==="
+    - python3 -m pip install -r requirements.txt
+
+    # Executar appimage-builder com a versão
+    - echo "=== Gerando AppImage ==="
+    - export VERSION_NUMBER
+    - appimage-builder --skip-test --recipe AppImageBuilder.yml
+
+    # Listar arquivos gerados
+    - echo "=== Arquivos gerados ==="
+    - ls -lh *.AppImage* || true
+
+  artifacts:
+    name: "subtitld-appimage-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - "*.AppImage"
+      - "*.AppImage.zsync"
+    expire_in: 30 days
+  rules:
+    # Executa automaticamente em tags
+    - if: $CI_COMMIT_TAG
+      when: always
+    # Executa automaticamente na master
+    - if: $CI_COMMIT_BRANCH == "master"
+      when: always
+    # Permite execução manual em outras branches
+    - when: manual
+      allow_failure: true
+
+# Job opcional para upload em releases do GitLab
+appimage:release:
+  image: ubuntu:jammy
+  stage: deploy
+  extends: appimage
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - echo "Download do artifact já contém o AppImage"
+  script:
+    - echo "=== Upload para Release do GitLab ==="
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        apt-get update -qq && apt-get install -y -qq curl
+        for file in *.AppImage *.AppImage.zsync; do
+          if [ -f "$file" ]; then
+            curl --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+                 --upload-file "$file" \
+                 "${CI_API_URL}/projects/${CI_PROJECT_ID}/releases/${CI_COMMIT_TAG}/assets/links"
+          fi
+        done
+      else
+        echo "Não é uma tag, pulando upload para release"
+      fi
+  artifacts:
+    inherit: false
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: always

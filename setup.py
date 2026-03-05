@@ -144,34 +144,6 @@ install_requires = [
     'vosk',
     'assemblyai',
     'deep_translator'
-    # 'SpeechRecognition',
-    # 'pysub2'
-    # 'soundfile',
-    # 'scipy'
-    # 'requests',
-    # 'numpy',
-    # 'PySide6',
-    # 'pycaption',z
-    # 'clean-text[gpl]',
-    # 'python-docx',
-    # 'chardet',
-    # 'google-api-python-client',
-    # 'pysrt',
-    # 'python-i18n',
-    # 'google-cloud-core',
-    # 'sounddevice',
-    # 'pydub',
-    # 'pyrubberband',
-    # 'distutils',
-    # 'cffi',
-    # 'captionstransformer @ git+ssh://git@github.com/toutpt/captionstransformer',
-    # 'html5lib==1.0b8',
-    # 'scenedetect',
-    # 'opencv-python',
-    # 'autosub3',
-    # 'SpeechRecognition',
-    # 'beautifulsoup4<4.10,>=4.8.1',
-    # 'certifi',
 ]
 
 # --------------------------------------------------------------------------- #

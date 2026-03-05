@@ -1,3 +1,18 @@
+# =============================================================================
+# Pipeline CI/CD para Subtitld
+# =============================================================================
+
+stages:
+  - build
+  - deploy
+
+# Incluir configurações modularizadas
+include:
+  - local: '.gitlab/appimage.yml'
+
+# -----------------------------------------------------------------------------
+# Snap (edge)
+# -----------------------------------------------------------------------------
 snap-edge:amd64:
   image:
     name: ubuntudesktop/gnome-3-38-2004:latest
@@ -14,35 +29,12 @@ snap-edge:amd64:
     paths:
       - subtitld*.snap
     expire_in: 1 week
-  only:
-    - master
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
 
-appimage:
-  image:
-    name: ubuntu:jammy
-  stage: deploy
-  before_script:
-    - DEBIAN_FRONTEND=noninteractive apt update
-  script:
-    - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
-    - apt-get update -qy
-    - apt-get install -y sshpass
-    - DEBIAN_FRONTEND=noninteractive apt-get install -y wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin
-    - mkdir -p ~/.local/bin
-    - wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ~/.local/bin/appimagetool
-    - chmod +x ~/.local/bin/appimagetool
-    - python3 --version
-    - python3 -m pip install appimage-builder
-    - appimage-builder --skip-test --recipe AppImageBuilder.yml
-    - ls
-    - mv Subtitld*.AppImage "Subtitld ${VERSION_NUMBER}.AppImage"
-    - export SSHPASS=$USER_PASS
-    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.AppImage jonata@jonata.org:/home/jonata/builds.subtitld.org/appimage/
-  artifacts:
-    paths:
-      - '*.AppImage*'
-    expire_in: 1 week
-
+# -----------------------------------------------------------------------------
+# Windows
+# -----------------------------------------------------------------------------
 windows:
   image: cheaterman/pyinstaller-windows:latest
   stage: deploy
@@ -65,5 +57,5 @@ windows:
     paths:
       - Subtitld*.exe
     expire_in: 1 week
-  only:
-    - master
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"

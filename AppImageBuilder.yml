@@ -1,44 +1,47 @@
 version: 1
 script:
+  # Limpar build anterior
   - rm -rf AppDir | true
-  - python3.10 -m pip install --upgrade --force-reinstall --prefix=/usr --root=AppDir .
-  - python3.10 setup.py install --prefix=/usr --root=AppDir
-  # - ls -R
-  - sed -i 's/find_library(name)/"libffms2.so.5.0.0"/g' AppDir/usr/local/lib/python3.10/dist-packages/ffms2/get_library.py
-  - sed -i 's/raise OSError("Cannot find libmpv in the usual places. Depending on your distro, you may try installing an "/sofile = "libmpv.so.1"/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  - sed -i 's/                "mpv-devel or mpv-libs package. If you have libmpv around but this script can/        \#/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  - sed -i 's/                "the documentation for ctypes/        \#/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  - sed -i 's/                "filename.")/        \#/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  # - ls -R  --ignore-installed --no-deps --no-cache-dir
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/qml/
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/examples/
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/resources/
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/translations/qtwebengine_locales/
-  # - rm -f AppDir/usr/lib/python3.8/site-packages/PySide6/{assistant,designer,linguist,lrelease,lupdate}
-  # - rm -f AppDir/usr/lib/python3.8/site-packages/PySide6/{Qt3D*,QtBluetooth*,QtCharts*,QtConcurrent*,QtDataVisualization*,QtDBus*,QtDesigner*,QtHelp*,QtMultimedia*,QtNetwork*,QtOpenGL*,QtPositioning*,QtPrintSupport*,QtQml*,QtQuick*,QtRemoteObjects*,QtScxml*,QtSensors*,QtSerialPort*,QtSql*,QtStateMachine*,QtSvg*,QtTest*,QtWeb*,QtXml*}
-  # - shopt -s extglob
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/lib/!(libQt6OpenGL*|libQt6XcbQpa*|libQt6Wayland*|libQt6Egl*|libicudata*|libicuuc*|libicui18n*|libQt6DBus*|libQt6Network*|libQt6Qml*|libQt6Core*|libQt6Gui*|libQt6Widgets*|libQt6Svg*|libQt6UiTools*)
-
+  
+  # Instalar dependências do sistema no AppDir
+  - apt-get update
+  - apt-get install -y --no-install-recommends -q
+      python3
+      python3-pip
+      python3-dev
+      libffms2-5
+      libmpv1
+  
+  # Instalar o projeto via pip
+  - python3 -m pip install --upgrade pip
+  - python3 -m pip install --no-cache-dir .
+  
+  # Copiar arquivos para AppDir
+  - python3 setup.py install --root=AppDir
+  
+  # Corrigir paths das bibliotecas nativas
+  - sed -i 's/find_library(name)/"libffms2.so.5.0.0"/g' AppDir/usr/local/lib/python3.*/dist-packages/ffms2/get_library.py || true
+  - sed -i 's/raise OSError("Cannot find libmpv in the usual places. Depending on your distro, you may try installing an "/sofile = "libmpv.so.1"/g' AppDir/usr/local/lib/python3.*/dist-packages/mpv.py || true
+  - sed -i 's/                "mpv-devel or mpv-libs package. If you have libmpv around but this script can/        #/g' AppDir/usr/local/lib/python3.*/dist-packages/mpv.py || true
+  - sed -i 's/                "the documentation for ctypes/        #/g' AppDir/usr/local/lib/python3.*/dist-packages/mpv.py || true
+  - sed -i 's/                "filename.")/        #/g' AppDir/usr/local/lib/python3.*/dist-packages/mpv.py || true
 
 AppDir:
   path: ./AppDir
 
-  # after_bundle: |
-  #   # Set python 3.10 env
-  #   export PYTHONHOME=${APPDIR}/usr
-  #   export PYTHONPATH=${APPDIR}/usr/lib/python3.10/site-packages:$APPDIR/usr/lib/python3.10
-  #   export PATH=${APPDIR}/usr/bin:$PATH
-  #   # Set python 3.10 as default
-  #   ln -fs python3.10 $APPDIR/usr/bin/python3
-
   app_info:
-    id: org.jonata.Subtitld
+    id: org.subtitld.Subtitld
     name: Subtitld
-    icon: subtitld
-    version: 22.09.01.01
-    exec: "usr/bin/python3"
+    icon: subtitld.png
+    version: ${VERSION_NUMBER}
+    exec: usr/bin/python3
     exec_args: "$APPDIR/usr/bin/subtitld $@"
-    # exec_args: "$@"
+
+  files:
+    include:
+      - subtitld/graphics/subtitld.png
+    override:
+      - usr/share/icons/hicolor/512x512/apps/subtitld.png=subtitld/graphics/subtitld.png
 
   apt:
     arch: amd64
@@ -51,16 +54,14 @@ AppDir:
       - python3-pkg-resources
       - libffms2-5
       - libmpv1
-      # - libopengl0
-      # - libssl1.1
-      # - libk5crypto3
-      # - libkrb5-3
-      # - libgssapi-krb5-2
+      - libglib2.0-0
+      - libgl1
+      - libxcb-xinerama0
 
   runtime:
     env:
       PYTHONHOME: '${APPDIR}/usr'
-      PYTHONPATH: '${APPDIR}/usr/lib/python3.10/site-packages'
+      PYTHONPATH: '${APPDIR}/usr/local/lib/python3.10/dist-packages:${APPDIR}/usr/lib/python3.10'
 
 
 AppImage:
