@@ -25,20 +25,6 @@ from subtitld.interface import timeline
 from subtitld.interface.translation import _
 
 
-class ThreadExtractWaveform(QThread):
-    """Thread to extract waveform"""
-    command = Signal(list)
-    filepath = ''
-    audio = ''
-    duration = ''
-    width = ''
-    height = ''
-
-    def run(self):
-        if self.filepath:
-            result = waveform.ffms2_load_audio(filepath=self.filepath)
-            self.command.emit(result)
-
 
 class ThreadGenerateHashOfVideo(QThread):
     """Thread to extract time positions of scenes"""
