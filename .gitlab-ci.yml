@@ -1,6 +1,7 @@
 stages:
   - build
   - deploy
+  - package
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -45,3 +46,18 @@ deploy_pypi:
     - twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
   dependencies:
     - build
+
+build_appimage:
+  stage: package
+  image: ubuntu:22.04
+  only:
+    - master
+  script:
+    - apt-get update
+    - apt-get install -y python3 python3-pip wget file
+    - chmod +x build-appimage.sh
+    - ./build-appimage.sh
+  artifacts:
+    paths:
+      - Subtitld-*.AppImage
+    expire_in: 1 month
