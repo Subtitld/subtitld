@@ -31,7 +31,7 @@ deploy_testpypi:
     - master
   script:
     - pip install twine
-    - twine upload --repository testpypi dist/* -u __token__ -p $TESTPYPI_TOKEN
+    - twine upload --repository testpypi dist/* -u __token__ -p "$TESTPYPI_TOKEN"
   dependencies:
     - build
 
@@ -42,6 +42,6 @@ deploy_pypi:
     - master
   script:
     - pip install twine
-    - twine upload dist/* -u __token__ -p $PYPI_TOKEN
+    - twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
   dependencies:
     - build
