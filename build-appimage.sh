@@ -9,6 +9,7 @@ mkdir -p $APP_DIR/usr/{bin,lib,share/applications,share/icons/hicolor/256x256/ap
 
 # Install Python dependencies
 pip install --target=$APP_DIR/usr/lib .
+cp -r subtitld $APP_DIR/usr/lib/
 
 # Copy executable
 cat > $APP_DIR/usr/bin/subtitld << 'EOF'
