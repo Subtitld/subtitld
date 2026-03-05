@@ -9,8 +9,6 @@ script:
       python3
       python3-pip
       python3-dev
-      libffms2-5
-      libmpv1
   
   # Instalar o projeto via pip
   - python3 -m pip install --upgrade pip
@@ -18,7 +16,12 @@ script:
   
   # Copiar arquivos para AppDir
   - python3 setup.py install --root=AppDir
-  
+
+  # Copiar ícone para o AppDir
+  - mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
+  - cp subtitld/graphics/subtitld.png AppDir/usr/share/icons/hicolor/512x512/apps/subtitld.png
+  - cp subtitld/graphics/subtitld.png AppDir/subtitld.png
+
   # Corrigir paths das bibliotecas nativas
   - sed -i 's/find_library(name)/"libffms2.so.5.0.0"/g' AppDir/usr/local/lib/python3.*/dist-packages/ffms2/get_library.py || true
   - sed -i 's/raise OSError("Cannot find libmpv in the usual places. Depending on your distro, you may try installing an "/sofile = "libmpv.so.1"/g' AppDir/usr/local/lib/python3.*/dist-packages/mpv.py || true
@@ -32,16 +35,10 @@ AppDir:
   app_info:
     id: org.subtitld.Subtitld
     name: Subtitld
-    icon: subtitld.png
+    icon: subtitld
     version: ${VERSION_NUMBER}
     exec: usr/bin/python3
     exec_args: "$APPDIR/usr/bin/subtitld $@"
-
-  files:
-    include:
-      - subtitld/graphics/subtitld.png
-    override:
-      - usr/share/icons/hicolor/512x512/apps/subtitld.png=subtitld/graphics/subtitld.png
 
   apt:
     arch: amd64
