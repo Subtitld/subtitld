@@ -47,4 +47,4 @@ wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/app
 chmod +x appimagetool-x86_64.AppImage
 
 # Build AppImage
-./appimagetool-x86_64.AppImage --appimage-extract-and-run $APP_DIR Subtitld-$VERSION-x86_64.AppImage
+ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run $APP_DIR Subtitld-$VERSION-x86_64.AppImage
