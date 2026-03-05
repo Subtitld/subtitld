@@ -14,8 +14,8 @@ pip install --target=$APP_DIR/usr/lib .
 cat > $APP_DIR/usr/bin/subtitld << 'EOF'
 #!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")/.."
-export PYTHONPATH="$APPDIR/lib:$PYTHONPATH"
-export LD_LIBRARY_PATH="$APPDIR/lib:$LD_LIBRARY_PATH"
+export PYTHONPATH="$APPDIR/usr/lib:$PYTHONPATH"
+export LD_LIBRARY_PATH="$APPDIR/usr/lib:$LD_LIBRARY_PATH"
 exec python3 -m subtitld "$@"
 EOF
 chmod +x $APP_DIR/usr/bin/subtitld
