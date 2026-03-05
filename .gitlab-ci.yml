@@ -52,7 +52,7 @@ build_appimage:
   image: ubuntu:22.04
   script:
     - apt-get update
-    - apt-get install -y python3 python3-pip wget file
+    - apt-get install -y python3 python3-pip wget file libfuse2
     - chmod +x build-appimage.sh
     - ./build-appimage.sh
   artifacts:
