@@ -63,9 +63,7 @@ build_appimage:
     - python3 -m pip install .
     - python3 -m pip install PyInstaller
     - python3 -m PyInstaller subtitld.spec
-    - ls
     - appimage-builder --skip-test --recipe AppImageBuilder.yml
-    - ls
     - export SSHPASS=$USER_PASS
     - sshpass -e scp -o stricthostkeychecking=no Subtitld*.AppImage subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
   artifacts:

@@ -1,6 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
+
+# Collect all PySide6 data and submodules
+pyside6_datas = collect_data_files('PySide6')
+pyside6_hiddenimports = collect_submodules('PySide6')
 
 a = Analysis(
     ['subtitld/__main__.py'],
@@ -10,11 +15,8 @@ a = Analysis(
         ('subtitld/graphics', 'subtitld/graphics'),
         ('subtitld/locale', 'subtitld/locale'),
         ('subtitld/ftfy', 'subtitld/ftfy'),
-    ],
+    ] + pyside6_datas,
     hiddenimports=[
-        'PySide6.QtCore',
-        'PySide6.QtGui', 
-        'PySide6.QtWidgets',
         'qframelesswindow',
         'subtitld',
         'subtitld.interface',
@@ -30,7 +32,7 @@ a = Analysis(
         'subtitld.modules.file_io',
         'subtitld.modules.shortcuts',
         'subtitld.autosub',
-    ],
+    ] + pyside6_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
