@@ -4,7 +4,8 @@ set -e
 VERSION=$(date +%y.%m.%d.%H%M)
 APP_DIR="Subtitld.AppDir"
 
-# Build with PyInstaller
+# Install dependencies and build with PyInstaller
+pip install .
 pip install pyinstaller
 pyinstaller subtitld.spec --clean
 
