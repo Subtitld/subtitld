@@ -55,6 +55,7 @@ subtitld = "subtitld.__main__:main"
 version = {attr = "subtitld.__version__"}
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["subtitld*"]
 
 [tool.setuptools.package-data]
