@@ -60,7 +60,7 @@ build_appimage:
     - chmod +x ~/.local/bin/appimagetool
     - python3 --version
     - python3 -m pip install appimage-builder
-    - python3 -m pip install .
+    - python3 -m pip install dist/*.whl
     - python3 -m pip install PyInstaller
     - python3 -m PyInstaller subtitld.spec
     - appimage-builder --skip-test --recipe AppImageBuilder.yml
