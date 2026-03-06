@@ -28,7 +28,6 @@ dependencies = [
     "PySideSix-Frameless-Window",
     "mediapipe==0.10.21",
     "opencv-python",
-    "audaspace",
     "python-i18n",
     "python-docx",
     "pycaption",
