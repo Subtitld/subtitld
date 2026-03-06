@@ -2,7 +2,7 @@ version: 1
 script:
   - rm -rf AppDir | true
   - python3.10 -m pip install --upgrade --force-reinstall --prefix=/usr --root=AppDir .
-  - python3.10 setup.py install --prefix=/usr --root=AppDir
+  - python3.10 -m pip install . --prefix=/usr --root=AppDir
   # - ls -R
   #   - sed -i 's/find_library(name)/"libffms2.so.5.0.0"/g' AppDir/usr/local/lib/python3.10/dist-packages/ffms2/get_library.py
   #   - sed -i 's/raise OSError("Cannot find libmpv in the usual places. Depending on your distro, you may try installing an "/sofile = "libmpv.so.1"/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
