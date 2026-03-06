@@ -51,10 +51,20 @@ build_appimage:
   stage: package
   image: ubuntu:22.04
   script:
-    - apt-get update
-    - apt-get install -y python3 python3-pip wget file libfuse2
-    - chmod +x build-appimage.sh
-    - ./build-appimage.sh
+    - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
+    - apt-get update -qy
+    - apt-get install -y sshpass
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin
+    - mkdir -p ~/.local/bin
+    - wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ~/.local/bin/appimagetool
+    - chmod +x ~/.local/bin/appimagetool
+    - python3 --version
+    - python3 -m pip install appimage-builder
+    - appimage-builder --skip-test --recipe AppImageBuilder.yml
+    - ls
+    - mv Subtitld*.AppImage "Subtitld ${VERSION_NUMBER}.AppImage"
+    - export SSHPASS=$USER_PASS
+    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.AppImage jonata@jonata.org:/home/jonata/builds.subtitld.org/appimage/
   artifacts:
     paths:
       - Subtitld-*.AppImage
