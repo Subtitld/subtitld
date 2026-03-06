@@ -31,6 +31,7 @@ a = Analysis(
         'subtitld.modules.shortcuts',
         'subtitld.autosub',
         'charset_normalizer',
+        'mypyc',
     ],
     hookspath=[],
     hooksconfig={},
