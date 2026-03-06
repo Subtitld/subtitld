@@ -1,6 +1,7 @@
 version: 1
 script:
   - rm -rf AppDir | true
+  - ls
   - mv dist/subtitld AppDir/subtitld
   #   - python3.10 -m pip install --upgrade --force-reinstall --prefix=/usr --root=AppDir .
   #   - python3.10 -m pip install . --prefix=/usr --root=AppDir

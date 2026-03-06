@@ -63,6 +63,7 @@ build_appimage:
     - python3 -m pip install .
     - python3 -m pip install PyInstaller
     - python3 -m PyInstaller subtitld.spec
+    - ls
     - appimage-builder --skip-test --recipe AppImageBuilder.yml
     - ls
     - export SSHPASS=$USER_PASS
