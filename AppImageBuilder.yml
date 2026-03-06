@@ -26,7 +26,7 @@ AppDir:
     name: Subtitld
     icon: org.jonata.Subtitld
     version: 22.09.01.01
-    exec: "$APPDIR/subtitld"
+    exec: "subtitld/subtitld"
     # exec_args: "$APPDIR/subtitld $@"
     exec_args: "$@"
 
