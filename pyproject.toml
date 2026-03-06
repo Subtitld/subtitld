@@ -34,7 +34,7 @@ dependencies = [
     "chardet==6.0.0",
     "pysubs2",
     "translate",
-    "colorhash",
+    "autohex",
     "platformdirs",
     "psutil",
     "vosk",

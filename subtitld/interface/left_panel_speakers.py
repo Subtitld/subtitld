@@ -1,7 +1,7 @@
 import cv2
 import mediapipe as mp
 import numpy as np
-from colorhash import ColorHash
+from autohex import AutoHex
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
@@ -368,7 +368,8 @@ def update_speakers_list(self):
 
     for speaker_name, speaker_data in session.SPEAKERS.items():
         if not speaker_data.get('color', False):
-            speaker_data['color'] = f'{ColorHash(speaker_name, saturation=[0.6], lightness=[0.7]).hex}'
+            gen = AutoHex()
+            speaker_data['color'] = f'{gen.gen(speaker_name)}'
         
         widget = speakers_list_item(speaker_name, speaker_data)
         

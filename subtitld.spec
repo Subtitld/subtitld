@@ -29,8 +29,7 @@ a = Analysis(
         'subtitld.modules.config',
         'subtitld.modules.file_io',
         'subtitld.modules.shortcuts',
-        'subtitld.autosub',
-        'colorhash'
+        'subtitld.autosub'
     ],
     hookspath=[],
     hooksconfig={},
