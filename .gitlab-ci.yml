@@ -64,7 +64,7 @@ build_appimage:
     - ls
     - mv Subtitld*.AppImage "Subtitld ${VERSION_NUMBER}.AppImage"
     - export SSHPASS=$USER_PASS
-    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.AppImage jonata@jonata.org:/home/jonata/builds.subtitld.org/appimage/
+    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.AppImage subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
   artifacts:
     paths:
       - Subtitld-*.AppImage
