@@ -30,7 +30,7 @@ a = Analysis(
         'subtitld.modules.file_io',
         'subtitld.modules.shortcuts',
         'subtitld.autosub',
-        'charset_normalizer'
+        'colorhash'
     ],
     hookspath=[],
     hooksconfig={},
