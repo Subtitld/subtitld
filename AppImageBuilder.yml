@@ -1,25 +1,12 @@
 version: 1
 script:
   - rm -rf AppDir | true
-  - python3.10 -m pip install --upgrade --force-reinstall --prefix=/usr --root=AppDir .
-  - python3.10 -m pip install . --prefix=/usr --root=AppDir
+  - mv dist/subtitld AppDir/subtitld
+  #   - python3.10 -m pip install --upgrade --force-reinstall --prefix=/usr --root=AppDir .
+  #   - python3.10 -m pip install . --prefix=/usr --root=AppDir
   - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
   - cp snap/gui/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/org.jonata.Subtitld.png
-  # - ls -R
-  #   - sed -i 's/find_library(name)/"libffms2.so.5.0.0"/g' AppDir/usr/local/lib/python3.10/dist-packages/ffms2/get_library.py
-  #   - sed -i 's/raise OSError("Cannot find libmpv in the usual places. Depending on your distro, you may try installing an "/sofile = "libmpv.so.1"/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  #   - sed -i 's/                "mpv-devel or mpv-libs package. If you have libmpv around but this script can/        \#/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  #   - sed -i 's/                "the documentation for ctypes/        \#/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  #   - sed -i 's/                "filename.")/        \#/g' AppDir/usr/local/lib/python3.10/dist-packages/mpv.py
-  # - ls -R  --ignore-installed --no-deps --no-cache-dir
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/qml/
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/examples/
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/resources/
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/translations/qtwebengine_locales/
-  # - rm -f AppDir/usr/lib/python3.8/site-packages/PySide6/{assistant,designer,linguist,lrelease,lupdate}
-  # - rm -f AppDir/usr/lib/python3.8/site-packages/PySide6/{Qt3D*,QtBluetooth*,QtCharts*,QtConcurrent*,QtDataVisualization*,QtDBus*,QtDesigner*,QtHelp*,QtMultimedia*,QtNetwork*,QtOpenGL*,QtPositioning*,QtPrintSupport*,QtQml*,QtQuick*,QtRemoteObjects*,QtScxml*,QtSensors*,QtSerialPort*,QtSql*,QtStateMachine*,QtSvg*,QtTest*,QtWeb*,QtXml*}
-  # - shopt -s extglob
-  # - rm -rf AppDir/usr/lib/python3.8/site-packages/PySide6/Qt/lib/!(libQt6OpenGL*|libQt6XcbQpa*|libQt6Wayland*|libQt6Egl*|libicudata*|libicuuc*|libicui18n*|libQt6DBus*|libQt6Network*|libQt6Qml*|libQt6Core*|libQt6Gui*|libQt6Widgets*|libQt6Svg*|libQt6UiTools*)
+  
 
 
 AppDir:
@@ -38,9 +25,9 @@ AppDir:
     name: Subtitld
     icon: org.jonata.Subtitld
     version: 22.09.01.01
-    exec: "usr/bin/python3"
-    exec_args: "$APPDIR/usr/bin/subtitld $@"
-    # exec_args: "$@"
+    exec: "$APPDIR/subtitld"
+    # exec_args: "$APPDIR/subtitld $@"
+    exec_args: "$@"
 
   apt:
     arch: amd64
