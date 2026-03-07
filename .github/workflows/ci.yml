@@ -98,10 +98,13 @@ jobs:
       - run: |
           export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
           apt-get update -qy
-          apt-get install -y nsis openssh-client sshpass unzip zip
+          apt-get install -y nsis openssh-client sshpass unzip zip wget
           wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
           unzip ffmpeg-release-essentials.zip
           export PATH=$PATH:$(pwd)/ffmpeg-*-essentials_build/bin
+          wget https://github.com/unicode-org/icu/releases/download/release-73-2/icu4c-73_2-Win64-MSVC2019.zip
+          unzip icu4c-73_2-Win64-MSVC2019.zip -d icu
+          cp icu/bin64/*.dll /root/.wine/drive_c/windows/system32/
           wine pip3 install dist/*.whl
           wine pip3 install -U pyinstaller pywin32
           wine python -m PyInstaller subtitld-windows.spec
