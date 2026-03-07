@@ -31,6 +31,8 @@ for dll in pyside6_dlls:
 
 # Add ICU DLLs from Wine system32
 icu_dlls = glob('/root/.wine/drive_c/windows/system32/icu*.dll')
+if not icu_dlls:
+    icu_dlls = glob('icu/bin64/icu*.dll')
 for dll in icu_dlls:
     binaries_list.append((dll, '.'))
 
