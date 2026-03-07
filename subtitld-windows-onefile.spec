@@ -19,8 +19,11 @@ try:
     qt_bin_path = os.path.join(pyside6_path, 'Qt', 'bin')
     if os.path.exists(qt_bin_path):
         pyside6_dlls.extend(glob(os.path.join(qt_bin_path, '*.dll')))
+    # Get Qt plugins
+    qt_plugins_path = os.path.join(pyside6_path, 'Qt', 'plugins')
 except:
     pyside6_dlls = []
+    qt_plugins_path = None
 
 binaries_list = [
     (os.path.join(vosk_path, 'libvosk.dll'), 'vosk'),
@@ -39,15 +42,20 @@ if os.path.exists('icudt73.dll'):
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
 
+datas_list = [
+    ('subtitld/graphics', 'subtitld/graphics'),
+    ('subtitld/locale', 'subtitld/locale'),
+    ('subtitld/ftfy', 'subtitld/ftfy'),
+]
+
+if qt_plugins_path and os.path.exists(qt_plugins_path):
+    datas_list.append((os.path.join(qt_plugins_path, 'platforms'), 'PySide6/Qt/plugins/platforms'))
+
 a = Analysis(
     ['subtitld/__main__.py'],
     pathex=[],
     binaries=binaries_list,
-    datas=[
-        ('subtitld/graphics', 'subtitld/graphics'),
-        ('subtitld/locale', 'subtitld/locale'),
-        ('subtitld/ftfy', 'subtitld/ftfy'),
-    ],
+    datas=datas_list,
     hiddenimports=[
         'PySide6.QtCore',
         'PySide6.QtGui', 
