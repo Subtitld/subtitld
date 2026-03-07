@@ -34,7 +34,13 @@ icu_dlls = glob('/root/.wine/drive_c/windows/system32/icu*.dll')
 if not icu_dlls:
     icu_dlls = glob('icu/bin64/icu*.dll')
 for dll in icu_dlls:
-    binaries_list.append((dll, '.'))
+    basename = os.path.basename(dll)
+    # Rename icuuc73.dll to icuuc.dll, icudt73.dll to icudt.dll, etc.
+    if basename.startswith('icu'):
+        new_name = basename[:5] + '.dll' if len(basename) > 9 else basename
+        binaries_list.append((dll, '.', new_name))
+    else:
+        binaries_list.append((dll, '.'))
 
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
