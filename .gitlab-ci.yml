@@ -77,17 +77,18 @@ build_windows:
   script:
     - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
     - apt-get update -qy
-    - apt-get install -y nsis openssh-client sshpass unzip 
+    - apt-get install -y nsis openssh-client sshpass unzip zip
     - wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
     - unzip ffmpeg-release-essentials.zip
     - export PATH=$PATH:$(pwd)/ffmpeg-*-essentials_build/bin
     - wine pip3 install dist/*.whl
     - wine pip3 install -U pyinstaller pywin32
     - wine python -m PyInstaller subtitld-windows.spec
+    - cd dist && zip -r ../Subtitld-Portable-${VERSION_NUMBER}.zip Subtitld/ && cd ..
     - makensis nsis-installer.nsi
-    - mv "Subtitld-Setup.exe" "Subtitld ${VERSION_NUMBER} Setup.exe"
+    - mv "Subtitld-Setup.exe" "Subtitld-Setup-${VERSION_NUMBER}.exe"
     - export SSHPASS=$USER_PASS
-    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+    - sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.zip Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
   artifacts:
     paths:
       - Subtitld-Portable-*.zip
