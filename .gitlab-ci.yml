@@ -84,7 +84,8 @@ build_windows:
     - wine pip3 install dist/*.whl
     - wine pip3 install -U pyinstaller pywin32
     - wine python -m PyInstaller subtitld-windows.spec
-    - mv dist/Subtitld.exe Subtitld-Portable-${VERSION_NUMBER}.exe
+    - wine python -m PyInstaller subtitld-windows-onefile.spec
+    - mv dist/Subtitld-Portable.exe Subtitld-Portable-${VERSION_NUMBER}.exe
     - makensis nsis-installer.nsi
     - mv "Subtitld-Setup.exe" "Subtitld-Setup-${VERSION_NUMBER}.exe"
     - export SSHPASS=$USER_PASS
