@@ -29,18 +29,9 @@ binaries_list = [
 for dll in pyside6_dlls:
     binaries_list.append((dll, 'PySide6'))
 
-# Add ICU DLLs from Wine system32
-icu_dlls = glob('/root/.wine/drive_c/windows/system32/icu*.dll')
-if not icu_dlls:
-    icu_dlls = glob('icu/bin64/icu*.dll')
-for dll in icu_dlls:
-    basename = os.path.basename(dll)
-    # Rename icuuc73.dll to icuuc.dll, icudt73.dll to icudt.dll, etc.
-    if basename.startswith('icu'):
-        new_name = basename[:5] + '.dll' if len(basename) > 9 else basename
-        binaries_list.append((dll, '.', new_name))
-    else:
-        binaries_list.append((dll, '.'))
+# Add ICU DLLs
+if os.path.exists('icuuc.dll'):
+    binaries_list.append(('icuuc.dll', '.'))
 
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
