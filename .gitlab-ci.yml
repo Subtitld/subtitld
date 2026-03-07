@@ -73,18 +73,21 @@ build_appimage:
     expire_in: 1 month
 
 build_windows:
-  stage: package
-  tags:
-    - windows
+  image: cheaterman/pyinstaller-windows:latest
+  stage: deploy
   script:
-    - $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
-    - python -m pip install dist/*.whl
-    - python -m pip install PyInstaller
-    - python -m PyInstaller subtitld-windows.spec
-    - Compress-Archive -Path dist\Subtitld\* -DestinationPath Subtitld-Portable-$VERSION_NUMBER.zip
-    - choco install nsis -y
-    - makensis installer.nsi
-    - Move-Item Subtitld-Setup.exe Subtitld-Setup-$VERSION_NUMBER.exe
+    - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
+    - apt-get update -qy
+    - apt-get install -y nsis openssh-client sshpass unzip 
+    - wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
+    - unzip ffmpeg-release-essentials.zip
+    - wine pip3 install dist/*.whl
+    - wine pip3 install -U pyinstaller pywin32==225
+    - wine python -m PyInstaller subtitld-windows.spec
+    - makensis nsis-installer.nsi
+    - mv "Subtitld-Setup.exe" "Subtitld ${VERSION_NUMBER} Setup.exe"
+    - export SSHPASS=$USER_PASS
+    - sshpass -e scp -o stricthostkeychecking=no Subtitld*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
   artifacts:
     paths:
       - Subtitld-Portable-*.zip
