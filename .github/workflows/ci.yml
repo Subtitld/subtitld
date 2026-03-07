@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      - run: pip install build
+      - run: |
+          VERSION=$(date +%y.%m.%d.%H%M)
+          sed -i "s/__version__ = '.*'/__version__ = '$VERSION'/" subtitld/__init__.py
+          python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  deploy_testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref != 'refs/heads/master'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: pip install twine
+      - run: twine upload --repository testpypi dist/* -u __token__ -p "${{ secrets.TESTPYPI_TOKEN }}" --verbose
+
+  deploy_pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: pip install twine
+      - run: twine upload dist/* -u __token__ -p "${{ secrets.PYPI_TOKEN }}"
+
+  build_appimage:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - run: |
+          export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
+          sed -i "s/version: 22.09.01.01/version: $VERSION_NUMBER/" AppImageBuilder.yml
+          sudo apt-get update -qy
+          sudo apt-get install -y sshpass wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin ffmpeg
+          mkdir -p ~/.local/bin
+          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ~/.local/bin/appimagetool
+          chmod +x ~/.local/bin/appimagetool
+          python3 -m pip install appimage-builder
+          python3 -m pip install dist/*.whl
+          python3 -m pip install PyInstaller
+          python3 -m PyInstaller subtitld.spec
+          appimage-builder --skip-test --recipe AppImageBuilder.yml
+          export SSHPASS=${{ secrets.USER_PASS }}
+          sshpass -e scp -o stricthostkeychecking=no Subtitld*.AppImage subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: Subtitld-*.AppImage
+          retention-days: 30
+
+  build_windows:
+    needs: build
+    runs-on: ubuntu-latest
+    container: cheaterman/pyinstaller-windows:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - run: |
+          export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
+          apt-get update -qy
+          apt-get install -y nsis openssh-client sshpass unzip zip
+          wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
+          unzip ffmpeg-release-essentials.zip
+          export PATH=$PATH:$(pwd)/ffmpeg-*-essentials_build/bin
+          wine pip3 install dist/*.whl
+          wine pip3 install -U pyinstaller pywin32
+          wine python -m PyInstaller subtitld-windows.spec
+          wine python -m PyInstaller subtitld-windows-onefile.spec
+          mv dist/Subtitld-Portable.exe Subtitld-Portable-${VERSION_NUMBER}.exe
+          makensis nsis-installer.nsi
+          mv "Subtitld-Setup.exe" "Subtitld-Setup-${VERSION_NUMBER}.exe"
+          export SSHPASS=${{ secrets.USER_PASS }}
+          sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            Subtitld-Portable-*.exe
+            Subtitld-Setup-*.exe
+          retention-days: 30
