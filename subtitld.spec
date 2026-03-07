@@ -2,10 +2,17 @@
 
 block_cipher = None
 
+import os
+import vosk
+
+vosk_path = os.path.dirname(vosk.__file__)
+
 a = Analysis(
     ['subtitld/__main__.py'],
     pathex=[],
-    binaries=[],
+    binaries=[
+        (os.path.join(vosk_path, 'libvosk.so'), 'vosk'),
+    ],
     datas=[
         ('subtitld/graphics', 'subtitld/graphics'),
         ('subtitld/locale', 'subtitld/locale'),
