@@ -84,13 +84,13 @@ build_windows:
     - wine pip3 install dist/*.whl
     - wine pip3 install -U pyinstaller pywin32
     - wine python -m PyInstaller subtitld-windows.spec
-    - cd dist && zip -r ../Subtitld-Portable-${VERSION_NUMBER}.zip Subtitld/ && cd ..
+    - mv dist/Subtitld.exe Subtitld-Portable-${VERSION_NUMBER}.exe
     - makensis nsis-installer.nsi
     - mv "Subtitld-Setup.exe" "Subtitld-Setup-${VERSION_NUMBER}.exe"
     - export SSHPASS=$USER_PASS
-    - sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.zip Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+    - sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
   artifacts:
     paths:
-      - Subtitld-Portable-*.zip
+      - Subtitld-Portable-*.exe
       - Subtitld-Setup-*.exe
     expire_in: 1 month

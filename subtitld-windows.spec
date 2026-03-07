@@ -5,12 +5,15 @@ block_cipher = None
 import os
 import vosk
 import shutil
+import PySide6
 
 vosk_path = os.path.dirname(vosk.__file__)
 ffmpeg_path = shutil.which('ffmpeg')
+pyside6_path = os.path.dirname(PySide6.__file__)
 
 binaries_list = [
     (os.path.join(vosk_path, 'libvosk.dll'), 'vosk'),
+    (os.path.join(pyside6_path, '*.dll'), 'PySide6'),
 ]
 
 if ffmpeg_path:
@@ -31,6 +34,7 @@ a = Analysis(
         'PySide6.QtWidgets',
         'qframelesswindow',
         'charset_normalizer',
+        'shiboken6',
     ],
     hookspath=[],
     hooksconfig={},
@@ -47,13 +51,17 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='Subtitld',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -61,15 +69,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='snap/gui/icon.png',
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Subtitld',
 )
