@@ -52,7 +52,7 @@ build_appimage:
   image: ubuntu:22.04
   script:
     - export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
-    - "sed -i \"s/version: .*/version: $VERSION_NUMBER/\" AppImageBuilder.yml"
+    - "sed -i \"s/version: 22.09.01.01/version: $VERSION_NUMBER/\" AppImageBuilder.yml"
     - apt-get update -qy
     - apt-get install -y sshpass
     - DEBIAN_FRONTEND=noninteractive apt-get install -y wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin ffmpeg
@@ -70,4 +70,23 @@ build_appimage:
   artifacts:
     paths:
       - Subtitld-*.AppImage
+    expire_in: 1 month
+
+build_windows:
+  stage: package
+  tags:
+    - windows
+  script:
+    - $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
+    - python -m pip install dist/*.whl
+    - python -m pip install PyInstaller
+    - python -m PyInstaller subtitld-windows.spec
+    - Compress-Archive -Path dist\Subtitld\* -DestinationPath Subtitld-Portable-$VERSION_NUMBER.zip
+    - choco install nsis -y
+    - makensis installer.nsi
+    - Move-Item Subtitld-Setup.exe Subtitld-Setup-$VERSION_NUMBER.exe
+  artifacts:
+    paths:
+      - Subtitld-Portable-*.zip
+      - Subtitld-Setup-*.exe
     expire_in: 1 month
