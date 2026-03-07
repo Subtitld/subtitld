@@ -5,16 +5,25 @@ block_cipher = None
 import os
 import vosk
 import shutil
-import PySide6
+from glob import glob
 
 vosk_path = os.path.dirname(vosk.__file__)
 ffmpeg_path = shutil.which('ffmpeg')
-pyside6_path = os.path.dirname(PySide6.__file__)
+
+# Get PySide6 path and collect all DLLs
+try:
+    import PySide6
+    pyside6_path = os.path.dirname(PySide6.__file__)
+    pyside6_dlls = glob(os.path.join(pyside6_path, '*.dll'))
+except:
+    pyside6_dlls = []
 
 binaries_list = [
     (os.path.join(vosk_path, 'libvosk.dll'), 'vosk'),
-    (os.path.join(pyside6_path, '*.dll'), 'PySide6'),
 ]
+
+for dll in pyside6_dlls:
+    binaries_list.append((dll, 'PySide6'))
 
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
@@ -32,6 +41,7 @@ a = Analysis(
         'PySide6.QtCore',
         'PySide6.QtGui', 
         'PySide6.QtWidgets',
+        'PySide6.QtSvg',
         'qframelesswindow',
         'charset_normalizer',
         'shiboken6',
