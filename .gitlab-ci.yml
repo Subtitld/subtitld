@@ -80,6 +80,7 @@ build_windows:
     - apt-get install -y nsis openssh-client sshpass unzip 
     - wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
     - unzip ffmpeg-release-essentials.zip
+    - export PATH=$PATH:$(pwd)/ffmpeg-*-essentials_build/bin
     - wine pip3 install dist/*.whl
     - wine pip3 install -U pyinstaller pywin32
     - wine python -m PyInstaller subtitld-windows.spec
