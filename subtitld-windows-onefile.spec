@@ -15,6 +15,10 @@ try:
     import PySide6
     pyside6_path = os.path.dirname(PySide6.__file__)
     pyside6_dlls = glob(os.path.join(pyside6_path, '*.dll'))
+    # Also get ICU DLLs from Qt bin directory
+    qt_bin_path = os.path.join(pyside6_path, 'Qt', 'bin')
+    if os.path.exists(qt_bin_path):
+        pyside6_dlls.extend(glob(os.path.join(qt_bin_path, '*.dll')))
 except:
     pyside6_dlls = []
 
