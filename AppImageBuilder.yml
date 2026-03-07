@@ -13,21 +13,12 @@ script:
 AppDir:
   path: ./AppDir
 
-  # after_bundle: |
-  #   # Set python 3.10 env
-  #   export PYTHONHOME=${APPDIR}/usr
-  #   export PYTHONPATH=${APPDIR}/usr/lib/python3.10/site-packages:$APPDIR/usr/lib/python3.10
-  #   export PATH=${APPDIR}/usr/bin:$PATH
-  #   # Set python 3.10 as default
-  #   ln -fs python3.10 $APPDIR/usr/bin/python3
-
   app_info:
     id: org.jonata.Subtitld
     name: Subtitld
     icon: org.jonata.Subtitld
     version: 22.09.01.01
     exec: "subtitld"
-    # exec_args: "$APPDIR/subtitld $@"
     exec_args: "$@"
 
   apt:
@@ -39,13 +30,6 @@ AppDir:
     include:
       - python3
       - python3-pkg-resources
-      #   - libffms2-5
-      #   - libmpv1
-      # - libopengl0
-      # - libssl1.1
-      # - libk5crypto3
-      # - libkrb5-3
-      # - libgssapi-krb5-2
 
   runtime:
     env:

@@ -52,9 +52,10 @@ build_appimage:
   image: ubuntu:22.04
   script:
     - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
+    - sed -i "s/version: .*/version: $VERSION_NUMBER/" AppImageBuilder.yml
     - apt-get update -qy
     - apt-get install -y sshpass
-    - DEBIAN_FRONTEND=noninteractive apt-get install -y wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin ffmpeg
     - mkdir -p ~/.local/bin
     - wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ~/.local/bin/appimagetool
     - chmod +x ~/.local/bin/appimagetool

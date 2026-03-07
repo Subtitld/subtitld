@@ -4,14 +4,17 @@ block_cipher = None
 
 import os
 import vosk
+import shutil
 
 vosk_path = os.path.dirname(vosk.__file__)
+ffmpeg_path = shutil.which('ffmpeg')
 
 a = Analysis(
     ['subtitld/__main__.py'],
     pathex=[],
     binaries=[
         (os.path.join(vosk_path, 'libvosk.so'), 'vosk'),
+        (ffmpeg_path, '.'),
     ],
     datas=[
         ('subtitld/graphics', 'subtitld/graphics'),
