@@ -51,7 +51,7 @@ build_appimage:
   stage: package
   image: ubuntu:22.04
   script:
-    - export VERSION_NUMBER=`date +%y.%m.%d.%H%M`
+    - export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
     - sed -i "s/version: .*/version: $VERSION_NUMBER/" AppImageBuilder.yml
     - apt-get update -qy
     - apt-get install -y sshpass
