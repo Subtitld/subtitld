@@ -33,6 +33,9 @@ for dll in pyside6_dlls:
 if os.path.exists('icuuc.dll'):
     binaries_list.append(('icuuc.dll', '.'))
 
+if os.path.exists('icudt73.dll'):
+    binaries_list.append(('icudt73.dll', '.'))
+    
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
 
