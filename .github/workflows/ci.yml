@@ -106,6 +106,7 @@ jobs:
           unzip icu4c-73_2-Win64-MSVC2019.zip -d icu
           unzip icu/*/icu-windows.zip -d icu
           cp icu/bin64/icuuc*.dll icuuc.dll
+          cp icu/bin64/ic*.dll .
           wine pip3 install dist/*.whl
           wine pip3 install -U pyinstaller pywin32
           wine python -m PyInstaller subtitld-windows.spec
