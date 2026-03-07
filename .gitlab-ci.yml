@@ -1,7 +1,6 @@
 stages:
   - build
   - deploy
-  - package
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -48,7 +47,7 @@ deploy_pypi:
     - build
 
 build_appimage:
-  stage: package
+  stage: deploy
   image: ubuntu:22.04
   script:
     - export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
@@ -82,7 +81,7 @@ build_windows:
     - wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
     - unzip ffmpeg-release-essentials.zip
     - wine pip3 install dist/*.whl
-    - wine pip3 install -U pyinstaller pywin32==225
+    - wine pip3 install -U pyinstaller pywin32
     - wine python -m PyInstaller subtitld-windows.spec
     - makensis nsis-installer.nsi
     - mv "Subtitld-Setup.exe" "Subtitld ${VERSION_NUMBER} Setup.exe"
