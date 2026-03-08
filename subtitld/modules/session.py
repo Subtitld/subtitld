@@ -9,8 +9,6 @@ import os
 import platformdirs
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
-PATH_LOCALE = PATH_SUBTITLD / 'locale'
-PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
 PATH_HOME = pathlib.Path.home()
 PATH_SUBTITLD_USER_CONFIG = pathlib.Path(platformdirs.user_config_dir('subtitld'))
 PATH_SUBTITLD_USER_CACHE = pathlib.Path(platformdirs.user_cache_dir('subtitld'))
@@ -36,15 +34,14 @@ if sys.platform == 'darwin':
 elif sys.platform == 'win32':
     ACTUAL_OS = 'windows'
     
-    # if getattr(sys, "frozen", False):
-    #     PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
-    #     PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
-    FFMPEG_EXECUTABLE = PATH_SUBTITLD / 'ffmpeg.exe'
-    FFPROBE_EXECUTABLE = PATH_SUBTITLD / 'ffprobe.exe'
-    # else:
-    #     script_dir = pathlib.Path(sys.argv[0]).parent
-    #     FFMPEG_EXECUTABLE = script_dir / 'ffmpeg.exe'
-    #     FFPROBE_EXECUTABLE = script_dir / 'ffprobe.exe'
+    if getattr(sys, "frozen", False):
+        PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
+        FFMPEG_EXECUTABLE = PATH_SUBTITLD / 'ffmpeg.exe'
+        FFPROBE_EXECUTABLE = PATH_SUBTITLD / 'ffprobe.exe'
+    else:
+        script_dir = pathlib.Path(sys.argv[0]).parent
+        FFMPEG_EXECUTABLE = script_dir / 'ffmpeg.exe'
+        FFPROBE_EXECUTABLE = script_dir / 'ffprobe.exe'
     STARTUPINFO = subprocess.STARTUPINFO()
     STARTUPINFO.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     STARTUPINFO.wShowWindow = subprocess.SW_HIDE
@@ -54,6 +51,11 @@ elif sys.platform == 'win32':
 
     # FFMPEG_EXECUTABLE = pathlib.Path('ffmpeg').resolve()
     # FFPROBE_EXECUTABLE = pathlib.Path('ffprobe').resolve()
+
+print(FFMPEG_EXECUTABLE)
+
+PATH_LOCALE = PATH_SUBTITLD / 'locale'
+PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
 
 if not PATH_SUBTITLD_USER_CONFIG.exists():
     PATH_SUBTITLD_USER_CONFIG.mkdir(parents=True)
