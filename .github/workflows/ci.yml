@@ -87,36 +87,33 @@ jobs:
 
   build_windows:
     needs: build
-    runs-on: ubuntu-latest
-    container: intelup/pyinstaller-windows:python3.12.9
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
       - run: |
-          export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
-          apt-get update -qy
-          apt-get install -y nsis openssh-client sshpass unzip zip wget winetricks
-          winetricks vcrun2022
-          wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
-          unzip ffmpeg-release-essentials.zip
-          export PATH=$PATH:$(pwd)/ffmpeg-*-essentials_build/bin
-          wget https://github.com/unicode-org/icu/releases/download/release-73-2/icu4c-73_2-Win64-MSVC2019.zip
-          unzip icu4c-73_2-Win64-MSVC2019.zip -d icu
-          unzip icu/*/icu-windows.zip -d icu
-          cp icu/bin64/icuuc*.dll icuuc.dll
-          cp icu/bin64/ic*.dll .
-          wine pip3 install dist/*.whl
-          wine pip3 install -U pyinstaller pywin32
-          wine python -m PyInstaller subtitld-windows.spec
-          wine python -m PyInstaller subtitld-windows-onefile.spec
-          mv dist/Subtitld-Portable.exe Subtitld-Portable-${VERSION_NUMBER}.exe
+          $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
+          choco install nsis -y
+          choco install ffmpeg -y
+          pip install dist/*.whl
+          pip install pyinstaller pywin32
+          python -m PyInstaller subtitld-windows.spec
+          python -m PyInstaller subtitld-windows-onefile.spec
+          Move-Item dist/Subtitld-Portable.exe Subtitld-Portable-$VERSION_NUMBER.exe
           makensis nsis-installer.nsi
-          mv "Subtitld-Setup.exe" "Subtitld-Setup-${VERSION_NUMBER}.exe"
-          export SSHPASS=${{ secrets.USER_PASS }}
-          sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+          Move-Item "Subtitld-Setup.exe" "Subtitld-Setup-$VERSION_NUMBER.exe"
+        shell: pwsh
+      - run: |
+          scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+        shell: bash
+        env:
+          SSHPASS: ${{ secrets.USER_PASS }}
       - uses: actions/upload-artifact@v4
         with:
           name: windows
