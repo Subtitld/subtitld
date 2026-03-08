@@ -101,12 +101,13 @@ jobs:
           $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
           choco install nsis -y
           choco install ffmpeg -y
+          $env:PATH += ";C:\Program Files (x86)\NSIS"
           pip install (Get-Item dist/*.whl).FullName
           pip install pyinstaller pywin32
           python -m PyInstaller subtitld-windows.spec
           python -m PyInstaller subtitld-windows-onefile.spec
           Move-Item dist/Subtitld-Portable.exe Subtitld-Portable-$VERSION_NUMBER.exe
-          makensis nsis-installer.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
           Move-Item "Subtitld-Setup.exe" "Subtitld-Setup-$VERSION_NUMBER.exe"
         shell: pwsh
       - run: |
