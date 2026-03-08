@@ -107,9 +107,9 @@ jobs:
           pip install pyinstaller pywin32
           python -m PyInstaller subtitld-windows.spec
           python -m PyInstaller subtitld-windows-onefile.spec
-          Move-Item dist/Subtitld-Portable.exe Subtitld-Portable-$VERSION_NUMBER.exe
+          Move-Item dist/Subtitld-Portable.exe "Subtitld $VERSION_NUMBER Portable.exe"
           & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
-          Move-Item "Subtitld-Setup.exe" "Subtitld-Setup-$VERSION_NUMBER.exe"
+          Move-Item "Subtitld-Setup.exe" "Subtitld $VERSION_NUMBER Installer.exe"
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
