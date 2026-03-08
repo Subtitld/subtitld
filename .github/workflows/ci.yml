@@ -111,10 +111,10 @@ jobs:
           Move-Item "Subtitld-Setup.exe" "Subtitld-Setup-$VERSION_NUMBER.exe"
         shell: pwsh
       - run: |
-          scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
-        shell: bash
-        env:
-          SSHPASS: ${{ secrets.USER_PASS }}
+          choco install sshpass -y
+          $env:SSHPASS = "${{ secrets.USER_PASS }}"
+          sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+        shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: windows
