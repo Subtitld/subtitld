@@ -83,7 +83,12 @@ class AudioLoaderThread(QThread):
         ]
 
         # Use Popen to allow termination
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            startupinfo=session.STARTUPINFO
+        )
 
         try:
             stdout, _ = self.proc.communicate()
@@ -932,7 +937,13 @@ def load_audio_for_timeline(filepath: str, samplerate: int = 48000):
         "-ar", str(samplerate), # resample rate
         "-f", "f32le", "-"      # raw 32-bit float to stdout
     ]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=True,
+        startupinfo=session.STARTUPINFO,
+    )
     raw = np.frombuffer(proc.stdout, dtype=np.float32).copy()
     # Normalize
     if raw.size > 0:

@@ -296,15 +296,20 @@ class VoskPanel(QWidget):
 
                     self.progress.emit(1)
 
-                    subprocess.Popen([
-                        session.FFMPEG_EXECUTABLE,
-                        '-i', self.audio_file,
-                        '-acodec', 'pcm_s16le',
-                        '-ar', '16000',
-                        '-ac', '1',
-                        '-f', 'wav',
-                        temp_audio_file
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=session.STARTUPINFO).wait()
+                    subprocess.Popen(
+                        [
+                            session.FFMPEG_EXECUTABLE,
+                            '-i', self.audio_file,
+                            '-acodec', 'pcm_s16le',
+                            '-ar', '16000',
+                            '-ac', '1',
+                            '-f', 'wav',
+                            temp_audio_file
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL, 
+                        startupinfo=session.STARTUPINFO
+                    ).wait()
 
                     self.progress.emit(8)
 
@@ -474,21 +479,23 @@ class AssemblyAIPanel(QWidget):
                 if api_key and self.audio_file:
                     try:
                         temp_audio_file = os.path.join(session.PATH_TEMP, f'vosk_transcribe_{os.path.basename(self.audio_file)}.opus')
-                        subprocess.Popen([
-                            session.FFMPEG_EXECUTABLE,
-                            '-i', self.audio_file,
-                            '-c:a', 'libopus',
-                            '-b:a', '24k',
-                            '-vbr', 'on',
-                            '-compression_level', '10',
-                            '-application', 'voip',
-                            '-ac', '1',
-                            '-ar', '48000',
-                            temp_audio_file.replace('.wav', '.opus')
-
-                        ], stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        startupinfo=session.STARTUPINFO).wait()
+                        subprocess.Popen(
+                            [
+                                session.FFMPEG_EXECUTABLE,
+                                '-i', self.audio_file,
+                                '-c:a', 'libopus',
+                                '-b:a', '24k',
+                                '-vbr', 'on',
+                                '-compression_level', '10',
+                                '-application', 'voip',
+                                '-ac', '1',
+                                '-ar', '48000',
+                                temp_audio_file.replace('.wav', '.opus')
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            startupinfo=session.STARTUPINFO
+                        ).wait()
 
                         self.progress.emit(25)
                 

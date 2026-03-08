@@ -18,7 +18,12 @@ def ffmpeg_extract_subtitle(filepath, index):
         '-map',
         '0:' + str(index),
         os.path.join(PATH_TEMP, 'subtitle.vtt')]
-    subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=STARTUPINFO).wait()
+    subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        startupinfo=STARTUPINFO
+    ).wait()
     return os.path.join(PATH_TEMP, 'subtitle.vtt')
 
 
@@ -33,7 +38,12 @@ def ffmpeg_load_metadata(filepath):
         '-show_format',
         '-show_streams',
         filepath]
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=STARTUPINFO)
+    proc = subprocess.Popen(
+        command, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.DEVNULL, 
+        startupinfo=STARTUPINFO
+    )
     json_file = False
     with proc.stdout as stdout:
         json_file = json.loads(stdout.read())

@@ -42,7 +42,12 @@ class MusicAudioExtractorThread(QThread):
             )
         ]
 
-        subprocess.run(cmd)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=session.STARTUPINFO
+        )
 
         self.original.emit(os.path.join(
             session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
@@ -80,7 +85,13 @@ class MusicAudioExtractorThread(QThread):
             ),
         ]
 
-        subprocess.run(cmd)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=session.STARTUPINFO
+        )
+        
 
         self.response.emit({
             'vocals': os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, os.path.basename(self.filename).rsplit('.', 1)[0] + '_vocals.flac'),

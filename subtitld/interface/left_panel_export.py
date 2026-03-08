@@ -600,7 +600,19 @@ def global_subtitlesvideo_video_generate_transparent_video_button_clicked(self):
             final_text += "file '" + filename + "'\n"
 
         open(os.path.join(session.PATH_TEMP, 'subtitles.txt'), 'w').write(final_text)
-        subprocess.Popen([session.FFMPEG_EXECUTABLE, '-y', '-f', 'concat', '-safe', '0', '-i', os.path.join(session.PATH_TEMP, 'subtitles.txt'), '-r', str(session.VIDEO.get('framerate', 24)), '-c:v', 'qtrle', '-an', generated_video_filepath], startupinfo=session.STARTUPINFO, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.read()
+        subprocess.Popen(
+            [
+                session.FFMPEG_EXECUTABLE, '-y',
+                '-f', 'concat', '-safe', '0',
+                '-i', os.path.join(session.PATH_TEMP, 'subtitles.txt'),
+                '-r', str(session.VIDEO.get('framerate', 24)),
+                '-c:v', 'qtrle', '-an', generated_video_filepath
+            ],
+            startupinfo=session.STARTUPINFO,
+            stdin=subprocess.PIPE, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT
+        ).stdout.read()
 
 
 def global_subtitlesvideo_export_button_clicked(self):

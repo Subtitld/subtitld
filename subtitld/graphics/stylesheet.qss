@@ -41,8 +41,8 @@ QMainWindow {
     background-position: center;
 }
 
-QSplitter {
-    border-color: transparent;
+QSplitter::hover {
+    background-color: transparent;
 }
 
 QScrollBar:vertical {
