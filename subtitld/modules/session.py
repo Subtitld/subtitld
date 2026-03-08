@@ -10,6 +10,8 @@ import platformdirs
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
+PATH_LOCALE = PATH_SUBTITLD / 'locale'
+PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
 PATH_SUBTITLD_USER_CONFIG = pathlib.Path(platformdirs.user_config_dir('subtitld'))
 PATH_SUBTITLD_USER_CACHE = pathlib.Path(platformdirs.user_cache_dir('subtitld'))
 FFMPEG_EXECUTABLE = 'ffmpeg'
@@ -54,8 +56,6 @@ elif sys.platform == 'win32':
 
 print(FFMPEG_EXECUTABLE)
 
-PATH_LOCALE = PATH_SUBTITLD / 'locale'
-PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
 
 if not PATH_SUBTITLD_USER_CONFIG.exists():
     PATH_SUBTITLD_USER_CONFIG.mkdir(parents=True)
