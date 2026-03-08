@@ -113,7 +113,7 @@ jobs:
           $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
           choco install vcredist-all -y
           choco install nsis -y
-          choco install ffmpeg -y
+          choco install ffmpeg-full -y
           $env:PATH += ";C:\Program Files (x86)\NSIS"
           pip install (Get-Item dist/*.whl).FullName
           pip install pyinstaller pywin32

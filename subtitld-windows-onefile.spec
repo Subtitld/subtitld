@@ -9,6 +9,7 @@ from glob import glob
 
 vosk_path = os.path.dirname(vosk.__file__)
 ffmpeg_path = shutil.which('ffmpeg')
+ffprobe_path = shutil.which('ffprobe')
 
 binaries_list = [
     (os.path.join(vosk_path, 'libvosk.dll'), 'vosk'),
@@ -16,6 +17,8 @@ binaries_list = [
     
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
+if ffprobe_path:
+    binaries_list.append((ffprobe_path, '.'))
 
 datas_list = [
     ('subtitld/graphics', 'subtitld/graphics'),
