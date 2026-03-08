@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           name: dist
@@ -101,7 +101,7 @@ jobs:
           $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
           choco install nsis -y
           choco install ffmpeg -y
-          pip install dist/*.whl
+          pip install (Get-Item dist/*.whl).FullName
           pip install pyinstaller pywin32
           python -m PyInstaller subtitld-windows.spec
           python -m PyInstaller subtitld-windows-onefile.spec
