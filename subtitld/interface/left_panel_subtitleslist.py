@@ -28,7 +28,7 @@ class subtitles_panel_qlistwidget(QListView):
             
             # def translated_data(self, index, role):
             #     if role == Qt.DisplayRole:
-            #         return session.SUBTITLE['segments'][index.row()].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), '')
+            #         return session.SUBTITLE['segments'][index.row()].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
 
                 # if role == Qt.DecorationRole:
                 #     status, _ = session.SUBTITLE['segments'][index.row()]
@@ -54,7 +54,7 @@ class subtitles_panel_qlistwidget(QListView):
                 row_text = index.data(Qt.DisplayRole)['text']
                 width = option.rect.width()
                 if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
-                    translated_text = index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), '')
+                    translated_text = index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
                     height_o = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(0, 0, (width/2) - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, row_text).height()
                     height_t = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(width/2, 0, (width/2) - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, translated_text).height()
                     height = max(height_o, height_t)
@@ -111,7 +111,7 @@ class subtitles_panel_qlistwidget(QListView):
                     painter.drawLine(translated_rect.topLeft(), translated_rect.bottomLeft())
                     painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
                     translated_rect = translated_rect.marginsRemoved(QMargins(10, 10, 10, 10))
-                    translated_text = segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), '')
+                    translated_text = segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
                     painter.drawText(translated_rect, Qt.TextWordWrap, translated_text)   
                 else:
                     original_rect = text_rect.marginsRemoved(QMargins(10, 10, 10, 10))
@@ -378,7 +378,7 @@ def left_panel_subtitleslist_translation_textedit_changed(self):
     if session.SUBTITLE['selected']:
         if not 'translations' in session.SUBTITLE['selected']:
             session.SUBTITLE['selected']['translations'] = {}
-        session.SUBTITLE['selected']['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
+        session.SUBTITLE['selected']['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
     self.timeline_widget.update()
     self.preview_panel_player.update()
 
@@ -395,7 +395,7 @@ def update(self):
         self.left_panel_subtitleslist_textedit.setText(session.SUBTITLE['selected']['text'])
         
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
-        self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), ''))
+        self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
 
         if self.preview_panel_player.is_paused():
             position = session.SUBTITLE.get('position', 0)

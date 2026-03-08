@@ -462,7 +462,7 @@ class Timeline(QWidget):
                         else:
                             painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
 
-                        painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), Qt.AlignLeft | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US'), ''))
+                        painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), Qt.AlignLeft | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
                         
                         painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', "#40304251")))
                         painter.setPen(Qt.NoPen)
@@ -473,7 +473,7 @@ class Timeline(QWidget):
                         lfont.setBold(True)
                         painter.setFont(lfont)
 
-                        language_name = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US').upper()
+                        language_name = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us').upper()
 
                         lang_text_metrics = QFontMetrics(lfont).boundingRect(language_name)
                         lang_text_metrics += QMargins(1, 2, 1, 2)

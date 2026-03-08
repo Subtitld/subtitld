@@ -42,7 +42,7 @@ class GoogleTranslatorPanel(QWidget):
             
             def run(self):
                 if self.sentences_list:
-                    target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')
+                    target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
                     use_context = session.CONFIG['translation'].get('engine_options', {}). get('GoogleTranslator', {}).get('use_context', False)
                     try:
                         context_full = []
@@ -198,7 +198,7 @@ def show(self):
     
 
 def update(self):    
-    selected_language_name = INVERTED_LANGUAGES[session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')]
+    selected_language_name = INVERTED_LANGUAGES[session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')]
     self.global_panel_translation_target_language_combobox.setCurrentText(selected_language_name)
     self.global_panel_translation_show_translations_button.setChecked(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
 
@@ -239,7 +239,7 @@ def global_panel_translation_invert_translation_button_clicked(self):
     confirm_dialog.exec()
     confirm_translation = bool(confirm_dialog.result() == 1)
     if confirm_translation:
-        target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-US')
+        target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
         original_language = session.SUBTITLE.get('language', 'en-us')
         for segment in session.SUBTITLE['segments']:
             original_text = str(segment['text'])
