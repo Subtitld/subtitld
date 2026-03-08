@@ -10,31 +10,9 @@ from glob import glob
 vosk_path = os.path.dirname(vosk.__file__)
 ffmpeg_path = shutil.which('ffmpeg')
 
-# Get PySide6 path and collect all DLLs
-#try:
-#    import PySide6
-#    pyside6_path = os.path.dirname(PySide6.__file__)
-#    pyside6_dlls = glob(os.path.join(pyside6_path, '*.dll'))
-#    # Also get ICU DLLs from Qt bin directory
-#    qt_bin_path = os.path.join(pyside6_path, 'Qt', 'bin')
-#    if os.path.exists(qt_bin_path):
-#        pyside6_dlls.extend(glob(os.path.join(qt_bin_path, '*.dll')))
-#except:
-#    pyside6_dlls = []
-
 binaries_list = [
     (os.path.join(vosk_path, 'libvosk.dll'), 'vosk'),
 ]
-
-#for dll in pyside6_dlls:
-#    binaries_list.append((dll, 'PySide6'))
-
-# Add ICU DLLs
-#if os.path.exists('icuuc.dll'):
-#    binaries_list.append(('icuuc.dll', '.'))
-
-#if os.path.exists('icudt73.dll'):
-#    binaries_list.append(('icudt73.dll', '.'))
 
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
