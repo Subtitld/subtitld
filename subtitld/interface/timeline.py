@@ -927,7 +927,7 @@ def load_audio_for_timeline(filepath: str, samplerate: int = 48000):
     Requires ffmpeg installed in PATH.
     """
     cmd = [
-        "ffmpeg", "-v", "error", "-i", filepath,
+        session.FFMPEG_EXECUTABLE, "-v", "error", "-i", filepath,
         "-ac", "1",             # mono
         "-ar", str(samplerate), # resample rate
         "-f", "f32le", "-"      # raw 32-bit float to stdout
