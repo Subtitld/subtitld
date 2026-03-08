@@ -43,6 +43,7 @@ QMainWindow {
 
 QSplitter {
     background-color: transparent;
+    color: transparent;
 }
 
 QScrollBar:vertical {
