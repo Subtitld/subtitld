@@ -48,8 +48,8 @@ datas_list = [
     ('subtitld/ftfy', 'subtitld/ftfy'),
 ]
 
-if qt_plugins_path and os.path.exists(qt_plugins_path):
-    datas_list.append((os.path.join(qt_plugins_path, 'platforms'), 'PySide6/Qt/plugins/platforms'))
+#if qt_plugins_path and os.path.exists(qt_plugins_path):
+#    datas_list.append((os.path.join(qt_plugins_path, 'platforms'), 'PySide6/Qt/plugins/platforms'))
 
 a = Analysis(
     ['subtitld/__main__.py'],
