@@ -67,7 +67,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='snap/gui/icon.png',
-    contents_directory=None
+    contents_directory=''
 )
 
 coll = COLLECT(
