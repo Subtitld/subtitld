@@ -98,7 +98,8 @@ jobs:
       - run: |
           export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
           apt-get update -qy
-          apt-get install -y nsis openssh-client sshpass unzip zip wget
+          apt-get install -y nsis openssh-client sshpass unzip zip wget winetricks
+          winetricks vcrun2022
           wget https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip --no-check-certificate
           unzip ffmpeg-release-essentials.zip
           export PATH=$PATH:$(pwd)/ffmpeg-*-essentials_build/bin
