@@ -9,6 +9,9 @@ import os
 import platformdirs
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
+
+print(PATH_SUBTITLD)
+
 PATH_HOME = pathlib.Path.home()
 PATH_LOCALE = PATH_SUBTITLD / 'locale'
 PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
@@ -37,9 +40,9 @@ elif sys.platform == 'win32':
     ACTUAL_OS = 'windows'
     
     if getattr(sys, "frozen", False):
-        PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
-        FFMPEG_EXECUTABLE = PATH_SUBTITLD / 'ffmpeg.exe'
-        FFPROBE_EXECUTABLE = PATH_SUBTITLD / 'ffprobe.exe'
+        # PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
+        FFMPEG_EXECUTABLE = pathlib.Path(PATH_SUBTITLD).parent / 'ffmpeg.exe'
+        FFPROBE_EXECUTABLE = pathlib.Path(PATH_SUBTITLD).parent / 'ffprobe.exe'
     else:
         script_dir = pathlib.Path(sys.argv[0]).parent
         FFMPEG_EXECUTABLE = script_dir / 'ffmpeg.exe'
