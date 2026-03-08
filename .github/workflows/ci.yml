@@ -110,11 +110,12 @@ jobs:
           & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
           Move-Item "Subtitld-Setup.exe" "Subtitld-Setup-$VERSION_NUMBER.exe"
         shell: pwsh
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       - run: |
-          choco install sshpass -y
-          $env:SSHPASS = "${{ secrets.USER_PASS }}"
-          sshpass -e scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
-        shell: pwsh
+          scp -o stricthostkeychecking=no Subtitld-Portable-*.exe Subtitld-Setup-*.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+        shell: bash
       - uses: actions/upload-artifact@v4
         with:
           name: windows
