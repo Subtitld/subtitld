@@ -167,9 +167,9 @@ def load(self):
     self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
     left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
 
-    add_button = QPushButton('Add speaker')
-    add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
-    left_panel_speakers_panel_content.layout().addWidget(add_button)
+    self.left_panel_speakers_add_button = QPushButton()
+    self.left_panel_speakers_add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
+    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_add_button, 0, Qt.AlignmentFlag.AlignRight)
 
     left_panel_speakers_panel_content.layout().addStretch()
 
@@ -489,6 +489,7 @@ def left_panel_speakers_add_speaker_button_clicked(self):
     
 
 def translate(self):
+    self.left_panel_speakers_add_button.setText(_('subtitles_panel_widget_speakers.add_speaker'))
     self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
     

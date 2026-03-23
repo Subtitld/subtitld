@@ -244,6 +244,7 @@
     "subtitles_panel_widget_speakers.cannot_remove_last_speaker" : "Cannot remove last speaker",
     "subtitles_panel_widget_speakers.remove_speaker": "Remove speaker",
     "subtitles_panel_widget_speakers.sure_to_remove_speaker": "Are you sure you want to remove this speaker?",
+    "subtitles_panel_widget_speakers.add_speaker": "Add speaker",
     "confirm_exit_dialog.title": "Subtitles are not saved",
     "confirm_exit_dialog.text": "You have unsaved changes. Do you want to save the changes you made on the subtitles?",
     "confirm_exit_dialog.save_button": "Save and exit",
