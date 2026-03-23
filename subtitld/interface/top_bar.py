@@ -119,12 +119,13 @@ def translate(self):
 def toppanel_save_button_clicked(self):
     """Function to call when save button on subtitles list panel is clicked"""
     session.set_unsaved(False)
-    actual_subtitle_file = False
-    subtitle_format = modules_utils.get_subtitle_format(session.SUBTITLE['filepath'])
-    if subtitle_format:
-        actual_subtitle_file = session.SUBTITLE['filepath']
-    else:
+    
+    if not 'filepath' in session.SUBTITLE:
         subtitle_format = session.CONFIG['default_values'].get('subtitle_format', 'USF')
+        actual_subtitle_file = False
+    else:
+        subtitle_format = modules_utils.get_subtitle_format(session.SUBTITLE['filepath'])
+        actual_subtitle_file = session.SUBTITLE['filepath']
 
     if not actual_subtitle_file:
         suggested_path = os.path.dirname(session.VIDEO['filepath'])

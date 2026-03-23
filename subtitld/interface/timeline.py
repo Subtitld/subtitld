@@ -282,6 +282,9 @@ class Timeline(QWidget):
         widget.tug_of_war_pressed = False
         widget.is_cursor_pressing = False
         widget.is_smart_splicing = False
+        widget.subtitle_under_the_cursor = False
+        widget.show_speaker_color = session.CONFIG['timeline'].get('show_speaker_color', False)
+        widget.show_speaker_tracks = session.CONFIG['timeline'].get('show_speaker_tracks', False)
         widget.width_proportion = widget.width() / session.VIDEO.get('duration', 0.01)
 
         widget.audio_thread = AudioLoaderThread()
@@ -396,6 +399,46 @@ class Timeline(QWidget):
                         painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('waveform_fill_color', '#cc153450')))
                         painter.drawPath(path)
 
+        if widget.show_speaker_tracks and widget.show_speaker_color:
+            for i, speaker in enumerate(list(session.SPEAKERS.keys())):
+                track_height = widget.subtitle_height / len(list(session.SPEAKERS.keys()))
+                
+                grad = QLinearGradient(0, widget.subtitle_y + (track_height*i), 0, widget.subtitle_y + (track_height*i) + track_height)
+
+                c1 = QColor(session.SPEAKERS[speaker].get('color', '#b8cee0'))
+                c1.setAlpha(0)
+                grad.setColorAt(0, c1)
+                c2 = QColor(session.SPEAKERS[speaker].get('color', '#b8cee0'))
+                c2.setAlpha(15)
+                grad.setColorAt(1, c2)
+
+                track_rect = QRectF(
+                    0,
+                    widget.subtitle_y + (track_height*i),
+                    widget.width(),
+                    track_height
+                )
+
+                painter.fillRect(track_rect, grad)
+                if session.SPEAKERS[speaker].get('image', None):
+                    qimage = session.SPEAKERS[speaker]['image']
+                    qimage_size = int(track_height * .3)
+                    qimage = qimage.scaled(qimage_size, qimage_size)
+
+                    x = scroll_position + 6
+                    y = widget.subtitle_y + (track_height * (i+1)) - qimage_size + 6
+
+                    painter.save()
+
+                    path = QPainterPath()
+                    path.addEllipse(x, y, qimage_size, qimage_size)
+                    painter.setClipPath(path)
+
+                    painter.drawImage(x, y, qimage)
+
+                    painter.restore()
+
+
         if session.SUBTITLE['segments']:
             painter.setOpacity(1)
             painter.setFont(QFont('Montserrat', 10))
@@ -414,14 +457,28 @@ class Timeline(QWidget):
                         painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483')))
                         painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
 
+                    subtitle_track = [0, 1] # [index, number of tracks]
+                    if widget.show_speaker_tracks and session.SPEAKERS:
+                        subtitle_track = [
+                            list(session.SPEAKERS.keys()).index(subtitle.get('speaker', 'A')),
+                            len(list(session.SPEAKERS.keys()))
+                        ]
+
                     subtitle_rect = QRectF(
                         subtitle['start'] * widget.width_proportion,
-                        widget.subtitle_y,
+                        widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0]),
                         (subtitle['end'] - subtitle['start']) * widget.width_proportion,
-                        widget.subtitle_height
+                        widget.subtitle_height / subtitle_track[1]
                     )
 
                     painter.drawRoundedRect(subtitle_rect, 2.0, 2.0, Qt.AbsoluteSize)
+                    
+                    if widget.show_speaker_color and session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', None):
+                        pen = QPen(QColor(session.SPEAKERS[subtitle.get('speaker', 'A')].get('color', '#b8cee0')))
+                        pen.setWidth(4)
+                        pen.setCapStyle(Qt.RoundCap)
+                        painter.setPen(pen)
+                        painter.drawLine(subtitle_rect.left() + 4, subtitle_rect.top() + 3, subtitle_rect.right() - 2, subtitle_rect.top() + 3)
 
                     if session.CONFIG.get('quality_check', {}).get('enabled', False):
                         approved, _, _ = quality_check.check_subtitle(subtitle)
@@ -515,7 +572,7 @@ class Timeline(QWidget):
                         else:
                             painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
 
-                    if widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
+                    if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                         if session.SUBTITLE.get('selected', False) == subtitle:
                             painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_fill_color', '#cc3e5363')))
                         else:
@@ -524,9 +581,9 @@ class Timeline(QWidget):
                         painter.setPen(Qt.NoPen)
                         lim_rect = QRectF(
                             (subtitle['start'] * widget.width_proportion) + 2,
-                            widget.subtitle_y + 2,
+                            widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0]) + 2,
                             18,
-                            widget.subtitle_height - 4
+                            widget.subtitle_height / subtitle_track[1] - 4
                         )
 
                         painter.drawRoundedRect(lim_rect, 1.0, 1.0, Qt.AbsoluteSize)
@@ -555,9 +612,9 @@ class Timeline(QWidget):
                         painter.setPen(Qt.NoPen)
                         lim_rect = QRectF(
                             (subtitle['start'] * widget.width_proportion) + ((subtitle['end'] - subtitle['start']) * widget.width_proportion) - 20,
-                            widget.subtitle_y + 2,
+                            widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0]) + 2,
                             18,
-                            widget.subtitle_height - 4
+                            widget.subtitle_height / subtitle_track[1] - 4
                         )
 
                         painter.drawRoundedRect(lim_rect, 1.0, 1.0, Qt.AbsoluteSize)
@@ -634,6 +691,9 @@ class Timeline(QWidget):
         scroll_width = widget.parent().parent().width()
 
         cursor_is_out_of_view = bool(session.SUBTITLE.get('position', 0) * widget.width_proportion < widget.parent().parent().horizontalScrollBar().value() or session.SUBTITLE.get('position', 0) * widget.width_proportion > widget.parent().parent().width() + widget.parent().parent().horizontalScrollBar().value())
+        
+        cursor_time_position = event.pos().x() / widget.width_proportion
+        widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
 
         widget.is_cursor_pressing = True
         session.SUBTITLE['selected'] = None
@@ -643,8 +703,20 @@ class Timeline(QWidget):
                 break
             elif (subtitle['end']) / session.VIDEO.get('duration', 0.01) < (scroll_position / widget.width()):
                 continue
-            else:
-                if event.pos().y() > widget.subtitle_y and event.pos().y() < (widget.subtitle_height + widget.subtitle_y) and (((event.pos().x()) / widget.width_proportion) > subtitle['start'] and ((event.pos().x()) / widget.width_proportion) < (subtitle['end'])):
+            elif widget.subtitle_under_the_cursor:
+                subtitle_track = [0, 1]
+                if widget.show_speaker_tracks and session.SPEAKERS:
+                    subtitle_track = [
+                        list(session.SPEAKERS.keys()).index(widget.subtitle_under_the_cursor.get('speaker', 'A')),
+                        len(list(session.SPEAKERS.keys()))
+                    ]
+                y = widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0])
+                h = widget.subtitle_height / subtitle_track[1]
+                widget.show_limiters = bool(y < event.pos().y() < (y + h))
+                
+                if widget.show_limiters and subtitle == widget.subtitle_under_the_cursor:
+
+                # if event.pos().y() > widget.subtitle_y and event.pos().y() < (widget.subtitle_height + widget.subtitle_y) and (((event.pos().x()) / widget.width_proportion) > subtitle['start'] and ((event.pos().x()) / widget.width_proportion) < (subtitle['end'])):
                     session.SUBTITLE['selected'] = subtitle
                     if event.pos().x() / widget.width_proportion > (subtitle['end']) - (20 / widget.width_proportion):
                         widget.subtitle_end_is_clicked = True
@@ -701,59 +773,58 @@ class Timeline(QWidget):
         event.accept()
 
     def mouseMoveEvent(widget, event):
-        widget.show_limiters = bool(event.pos().y() > widget.subtitle_y and event.pos().y() < (widget.subtitle_height + widget.subtitle_y))
-
         cursor_time_position = event.pos().x() / widget.width_proportion #(event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
         cursor_tug_of_war_range = 10 / widget.width_proportion
 
-        subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
+        widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
         last, next = subtitles.get_adjacent_subtitles(position=cursor_time_position)
         
         if not widget.tug_of_war_pressed:
             widget.show_tug_of_war = False
 
-        if subtitle_under_the_cursor:
-            if next and subtitle_under_the_cursor['end'] - (cursor_tug_of_war_range * .5) < cursor_time_position < subtitle_under_the_cursor['end'] + (cursor_tug_of_war_range*.5) and subtitle_under_the_cursor['end'] + .001 > next['start'] - .02:
-                widget.show_tug_of_war = subtitle_under_the_cursor['end'] + .0005
-        
-            if last and subtitle_under_the_cursor['start'] - (cursor_tug_of_war_range*.5) < cursor_time_position < subtitle_under_the_cursor['start'] + (cursor_tug_of_war_range*.5) and subtitle_under_the_cursor['start'] - .001 < last['end'] + .02:
-                widget.show_tug_of_war = subtitle_under_the_cursor['start'] - .0005
+        if widget.subtitle_under_the_cursor:
+            subtitle_track = [0, 1]
+            if widget.show_speaker_tracks and session.SPEAKERS:
+                subtitle_track = [
+                    list(session.SPEAKERS.keys()).index(widget.subtitle_under_the_cursor.get('speaker', 'A')),
+                    len(list(session.SPEAKERS.keys()))
+                ]
+            y = widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0])
+            h = widget.subtitle_height / subtitle_track[1]
+            widget.show_limiters = bool(y < event.pos().y() < (y + h))
+            
+            if widget.show_limiters:
+                if next and widget.subtitle_under_the_cursor['end'] - (cursor_tug_of_war_range * .5) < cursor_time_position < widget.subtitle_under_the_cursor['end'] + (cursor_tug_of_war_range*.5) and widget.subtitle_under_the_cursor['end'] + .001 > next['start'] - .02:
+                    widget.show_tug_of_war = widget.subtitle_under_the_cursor['end'] + .0005
+            
+                if last and widget.subtitle_under_the_cursor['start'] - (cursor_tug_of_war_range*.5) < cursor_time_position < widget.subtitle_under_the_cursor['start'] + (cursor_tug_of_war_range*.5) and widget.subtitle_under_the_cursor['start'] - .001 < last['end'] + .02:
+                    widget.show_tug_of_war = widget.subtitle_under_the_cursor['start'] - .0005
 
-            if widget.is_smart_splicing:
-                cursor_position_in_subtitle = (event.pos().x() - (subtitle_under_the_cursor['start'] * widget.width_proportion))
-                subtitle_width = ((subtitle_under_the_cursor['end'] - subtitle_under_the_cursor['start']) * widget.width_proportion)
+                if widget.is_smart_splicing:
+                    cursor_position_in_subtitle = (event.pos().x() - (widget.subtitle_under_the_cursor['start'] * widget.width_proportion))
+                    subtitle_width = ((widget.subtitle_under_the_cursor['end'] - widget.subtitle_under_the_cursor['start']) * widget.width_proportion)
+                    
+                    number_of_characters = len(widget.subtitle_under_the_cursor['text'].replace(' ', ''))
+                    if isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'words':
+                        character_width = subtitle_width / number_of_characters
+                        left_words = ''
+                        right_words = ''
+                        for word in widget.subtitle_under_the_cursor['text'].split():
+                            if len((left_words + word).replace(' ', '')) * character_width > cursor_position_in_subtitle:
+                                break
+                            left_words += ' ' + word
                 
-                number_of_characters = len(subtitle_under_the_cursor['text'].replace(' ', ''))
-                if isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'words':
-                    character_width = subtitle_width / number_of_characters
-                    left_words = ''
-                    right_words = ''
-                    for word in subtitle_under_the_cursor['text'].split():
-                        if len((left_words + word).replace(' ', '')) * character_width > cursor_position_in_subtitle:
-                            break
-                        left_words += ' ' + word
-            
-                    right_words = subtitle_under_the_cursor['text'][len(left_words):]
-                    proportion = cursor_position_in_subtitle / subtitle_width
-                    widget.is_smart_splicing = {
-                        'mode': 'words',
-                        'position': event.pos().x(),
-                        'left': [1 - proportion, left_words],
-                        'right': [proportion, right_words]
-                    }
-                elif isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'split' and (widget.is_smart_splicing['boundaries'][0] <= event.pos().x() <= widget.is_smart_splicing['boundaries'][1]):
-                    widget.is_smart_splicing['position'] = event.pos().x()
+                        right_words = widget.subtitle_under_the_cursor['text'][len(left_words):]
+                        proportion = cursor_position_in_subtitle / subtitle_width
+                        widget.is_smart_splicing = {
+                            'mode': 'words',
+                            'position': event.pos().x(),
+                            'left': [1 - proportion, left_words],
+                            'right': [proportion, right_words]
+                        }
+                    elif isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'split' and (widget.is_smart_splicing['boundaries'][0] <= event.pos().x() <= widget.is_smart_splicing['boundaries'][1]):
+                        widget.is_smart_splicing['position'] = event.pos().x()
 
-            # left_words = ''
-            # right_words = ''
-            # for word in subtitle['text'].split():
-            #     if len((left_words + word).replace(' ', '')) * character_width < cursor_position_in_subtitle:
-            #         left_words += ' ' + word
-            #     else:
-            #         right_words += ' ' + word
-            
-
-            
         if session.SUBTITLE.get('selected', None) is not None:
             i = session.SUBTITLE['segments'].index(session.SUBTITLE['selected'])
             last = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) - 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) > 0 else {'start': 0, 'end': 0, 'text': ''}

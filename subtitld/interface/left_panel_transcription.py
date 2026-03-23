@@ -342,8 +342,13 @@ class VoskPanel(QWidget):
                 session.SUBTITLE['segments'].append({
                     'start': response['result'][0]['start'],
                     'end': response['result'][-1]['end'],
-                    'text': response['text']
+                    'text': response['text'],
+                    'speaker': 'A'
                 })
+                if not response['result'][0]['speaker'] in session.SPEAKERS:
+                    session.SPEAKERS[response['result'][0]['speaker']] = {
+                        'image': None
+                    }
                 widget.window().timeline_widget.update()
                 session.set_unsaved()
 
@@ -533,6 +538,11 @@ class AssemblyAIPanel(QWidget):
         def translate_thread_response(response):
             if isinstance(response, list):
                 session.SUBTITLE['segments'] = response
+                for segment in session.SUBTITLE['segments']:
+                    if not segment.get('speaker', 'A') in session.SPEAKERS:
+                        session.SPEAKERS[segment.get('speaker', 'A')] = {
+                            'image': None
+                        }
                 widget.window().timeline_widget.update()
                 session.set_unsaved()
 

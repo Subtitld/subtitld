@@ -522,7 +522,10 @@ def save_file(final_file, subtitle_format='USF', language='en'):
 
 def autosave_timer_timeout():
     if session.SUBTITLE:
-        filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
+        if not 'filepath' in session.SUBTITLE:
+            filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
+        else:
+            filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
         if not filename:
             filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
         save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usf'))

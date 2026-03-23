@@ -533,7 +533,7 @@ QWidget[class='transparent_panel'] {
 
 #left_panel_subtitleslist_textedit,
 #left_panel_subtitleslist_translation_textedit {
-    padding: 8px 8px 40px 8px;
+    padding: 8px;
     font-size: 14px;
     font-weight: 500;
 }
@@ -868,6 +868,26 @@ QWidget[class='transparent_panel'] {
     font-weight:bold;
     color: #B8C6E0;
     padding-left: 1;
+}
+
+#timeline_speaker_container #timeline_show_speaker_color_button {
+    border-top-left-radius: 2px;
+    icon: url(graphics:timeline_show_speaker_color.svg);
+}
+
+#timeline_speaker_container #timeline_show_speaker_color_button:checked {
+    border-top-left-radius: 2px;
+    icon: url(graphics:timeline_show_speaker_color_checked.svg);
+}
+
+#timeline_speaker_container #timeline_show_speaker_tracks_button {
+    border-top-right-radius: 2px;
+    icon: url(graphics:timeline_show_speaker_in_tracks.svg);
+}
+
+#timeline_speaker_container #timeline_show_speaker_tracks_button:checked {
+    border-top-right-radius: 2px;
+    icon: url(graphics:timeline_show_speaker_in_tracks_checked.svg);
 }
 
 #change_playback_speed QPushButton {

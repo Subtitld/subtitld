@@ -74,7 +74,14 @@ def merge_back_subtitle(selected_subtitle=False):
         
         nearest_subttile['end'] = selected_subtitle['end']
         nearest_subttile['text'] += ' ' + selected_subtitle['text']
-
+        
+        if 'translations' in nearest_subttile and 'translations' in selected_subtitle:
+            for language in nearest_subttile['translations']:
+                if language in nearest_subttile['translations'] and language in selected_subtitle['translations']:
+                    nearest_subttile['translations'][language] += ' ' + selected_subtitle['translations'][language]
+                else:
+                    nearest_subttile['translations'][language] = selected_subtitle['translations'][language]
+            
         remove_subtitle(selected_subtitle=selected_subtitle)
 
         return nearest_subttile
@@ -90,6 +97,13 @@ def merge_next_subtitle(selected_subtitle=False):
 
         selected_subtitle['end'] = nearest_subttile['end']
         selected_subtitle['text'] += ' ' + nearest_subttile['text']
+        
+        if 'translations' in selected_subtitle and 'translations' in nearest_subttile:
+            for language in selected_subtitle['translations']:
+                if language in selected_subtitle['translations']:
+                    selected_subtitle['translations'][language] += ' ' + nearest_subttile['translations'][language]
+                else:
+                    selected_subtitle['translations'][language] = nearest_subttile['translations'][language]
 
         remove_subtitle(selected_subtitle=nearest_subttile)
         

@@ -367,6 +367,9 @@ def load(self):
     left_panel_subtitles_panel.layout().addWidget(subtitles_panel_simplelist_qsplitter)
 
 
+    self.left_panel_subtitleslist_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
+
+
 def left_panel_subtitleslist_textedit_changed(self):
     if session.SUBTITLE['selected']:
         session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
@@ -481,6 +484,9 @@ def translate(self):
     self.subtitles_panel_simplelist_properties_duration_timing_label.setText(_('left_panel_subtitleslist.duration'))
     self.subtitles_panel_simplelist_properties_ending_timing_label.setText(_('left_panel_subtitleslist.end'))
     self.left_panel_subtitleslist_speaker_selector.label.setText(_('left_panel_subtitleslist.speaker'))
+
+    # self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
+    # self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
 
 
 class SpeakerSelector(QWidget):
@@ -728,9 +734,39 @@ class SpeakerSelector(QWidget):
 
     def add_button_clicked(self):
         new_name = None
-        if self.new_name_dialog.exec() == QDialog.Accepted:
-            new_name = self.new_name_dialog.name
-            if new_name:
-                session.SUBTITLE['selected']['speaker'] = new_name
-                session.SPEAKERS[new_name] = {}
-                self.set_current_speaker(new_name)
+        self.window().left_panel_subtitleslist_new_name_dialog.input.setText('')
+        value = self.window().left_panel_subtitleslist_new_name_dialog.exec_and_get_values()
+        
+        if value:
+            new_name = value.strip()
+        else:
+            pass
+        
+        subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
+        if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
+            session.SUBTITLE['selected']['speaker'] = new_name
+            session.SPEAKERS[new_name] = {}
+            self.set_current_speaker(new_name)
+
+
+class new_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please enter your name:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.input = QLineEdit()
+        self.input_line.layout().addWidget(self.input)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.input.text()
+        return None

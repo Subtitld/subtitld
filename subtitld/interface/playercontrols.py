@@ -682,6 +682,32 @@ def load(self):
 
     self.playercontrols_widget_left_bottom_line.layout().addStretch()
 
+    self.timeline_speaker_container = QWidget()
+    self.timeline_speaker_container.setObjectName('timeline_speaker_container')
+    self.timeline_speaker_container.setLayout(QHBoxLayout())
+    self.timeline_speaker_container.layout().setContentsMargins(0, 0, 0, 0)
+    self.timeline_speaker_container.layout().setSpacing(0)
+
+    self.timeline_show_speaker_color_button = QPushButton()
+    self.timeline_show_speaker_color_button.setObjectName('timeline_show_speaker_color_button')
+    self.timeline_show_speaker_color_button.setCheckable(True)
+    self.timeline_show_speaker_color_button.setIconSize(QSize(16, 16))
+    self.timeline_show_speaker_color_button.setFixedWidth(24)
+    self.timeline_show_speaker_color_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.timeline_show_speaker_color_button.clicked.connect(lambda: timeline_show_speaker_color_button_clicked(self))
+    self.timeline_speaker_container.layout().addWidget(self.timeline_show_speaker_color_button)
+
+    self.timeline_show_speaker_tracks_button = QPushButton()
+    self.timeline_show_speaker_tracks_button.setObjectName('timeline_show_speaker_tracks_button')
+    self.timeline_show_speaker_tracks_button.setCheckable(True)
+    self.timeline_show_speaker_tracks_button.setIconSize(QSize(16, 16))
+    self.timeline_show_speaker_tracks_button.setFixedWidth(24)
+    self.timeline_show_speaker_tracks_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.timeline_show_speaker_tracks_button.clicked.connect(lambda: timeline_show_speaker_tracks_button_clicked(self))
+    self.timeline_speaker_container.layout().addWidget(self.timeline_show_speaker_tracks_button)
+
+    self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_speaker_container)
+
     self.timelinescrolling_container = QWidget()
     self.timelinescrolling_container.setObjectName('timelinescrolling_container')
     self.timelinescrolling_container.setLayout(QHBoxLayout())
@@ -691,7 +717,7 @@ def load(self):
     self.timelinescrolling_none_button = QPushButton()
     self.timelinescrolling_none_button.setObjectName('timelinescrolling_none_button')
     self.timelinescrolling_none_button.setCheckable(True)
-    self.timelinescrolling_none_button.setIconSize(QSize(15, 15))
+    self.timelinescrolling_none_button.setIconSize(QSize(16, 16))
     self.timelinescrolling_none_button.setFixedWidth(24)
     self.timelinescrolling_none_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timelinescrolling_none_button.clicked.connect(lambda: timelinescrolling_type_changed(self, 'none'))
@@ -700,7 +726,7 @@ def load(self):
     self.timelinescrolling_page_button = QPushButton()
     self.timelinescrolling_page_button.setObjectName('timelinescrolling_page_button')
     self.timelinescrolling_page_button.setCheckable(True)
-    self.timelinescrolling_page_button.setIconSize(QSize(15, 15))
+    self.timelinescrolling_page_button.setIconSize(QSize(16, 16))
     self.timelinescrolling_page_button.setFixedWidth(24)
     self.timelinescrolling_page_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timelinescrolling_page_button.clicked.connect(lambda: timelinescrolling_type_changed(self, 'page'))
@@ -709,7 +735,7 @@ def load(self):
     self.timelinescrolling_follow_button = QPushButton()
     self.timelinescrolling_follow_button.setObjectName('timelinescrolling_follow_button')
     self.timelinescrolling_follow_button.setCheckable(True)
-    self.timelinescrolling_follow_button.setIconSize(QSize(15, 15))
+    self.timelinescrolling_follow_button.setIconSize(QSize(16, 16))
     self.timelinescrolling_follow_button.setFixedWidth(24)
     self.timelinescrolling_follow_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timelinescrolling_follow_button.clicked.connect(lambda: timelinescrolling_type_changed(self, 'follow'))
@@ -1318,10 +1344,12 @@ def update(self):
     update_playback_speed_buttons(self)
     update_playback_repeat_buttons(self)
     # self.add_subtitle_duration.setEnabled(not session.CONFIG.get('new_subtitle_to_next_start', False))
-    self.add_subtitle_duration.setValue(session.CONFIG.get('default_new_subtitle_duration', 10.0))
+    self.add_subtitle_duration.setValue(session.CONFIG.get('default_new_subtitle_duration', 5.0))
     self.add_subtitle_starting_from_last.setChecked(session.CONFIG.get('new_subtitle_start_from_last', False))
     self.add_subtitle_and_play.setChecked(session.CONFIG.get('new_subtitle_and_play', False))
     self.add_subtitle_to_next_start.setChecked(session.CONFIG.get('new_subtitle_to_next_start', False))
+    self.timeline_show_speaker_tracks_button.setChecked(session.CONFIG['timeline'].get('show_speaker_tracks', False))
+    self.timeline_show_speaker_color_button.setChecked(session.CONFIG['timeline'].get('show_speaker_color', False))
     timelinescrolling_type_update(self)
     update_snap_buttons(self)
     update_grid_buttons(self)
@@ -2172,6 +2200,18 @@ def music_voice_separation_slider_changed(self):
         self.preview_panel_player._audio_device.vocals_sound.gain = voice_volume
 
 
+def timeline_show_speaker_color_button_clicked(self):
+    self.timeline_widget.show_speaker_color = self.timeline_show_speaker_color_button.isChecked()
+    session.CONFIG['timeline']['show_speaker_color'] = self.timeline_show_speaker_color_button.isChecked()
+    self.timeline_widget.update()
+
+
+def timeline_show_speaker_tracks_button_clicked(self):
+    self.timeline_widget.show_speaker_tracks = self.timeline_show_speaker_tracks_button.isChecked()
+    session.CONFIG['timeline']['show_speaker_tracks'] = self.timeline_show_speaker_tracks_button.isChecked()
+    self.timeline_widget.update()
+
+
 @shortcut('timeline_escape_action', 'Escape timeline actions', ['Escape'])
 def escape_actions(self):
     if self.timeline_widget.is_smart_splicing:
@@ -2237,5 +2277,7 @@ def translate(self):
     self.step_button.setToolTip(_('playercontrols.step'))
     self.zoomin_button.setToolTip(_('playercontrols.zoom_in'))
     self.zoomout_button.setToolTip(_('playercontrols.zoom_out'))
+    self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))
+    self.timeline_show_speaker_tracks_button.setToolTip(_('playercontrols.timeline_show_speaker_tracks'))
 
 

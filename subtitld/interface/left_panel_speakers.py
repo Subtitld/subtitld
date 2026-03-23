@@ -3,9 +3,9 @@ import mediapipe as mp
 import numpy as np
 from autohex import AutoHex
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
-from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor
+from PySide6.QtCore import QThread, Signal, Qt, QSize
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -13,7 +13,6 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
-import random
 
 
 class FaceExtractorThread(QThread):
@@ -186,7 +185,11 @@ def load(self):
     
     self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
 
+    self.left_panel_speakers_rename_dialog = rename_speaker_name_dialog(parent=self)
+    self.left_panel_speakers_remove_dialog = remove_speaker_name_dialog(parent=self)
+
     update(self)
+
 
 class RoundedCornerLabel(QLabel):
     def __init__(self, *args, **kwargs):
@@ -254,6 +257,7 @@ class speakers_list_item(QWidget):
         widget.rename_button.setFixedSize(24, 24)
         widget.rename_button.setIconSize(QSize(16, 16))
         widget.rename_button.setVisible(False)
+        widget.rename_button.clicked.connect(lambda: rename_button_clicked(widget))
         up_line.layout().addWidget(widget.rename_button)
 
         widget.change_color_button = QPushButton()
@@ -261,6 +265,7 @@ class speakers_list_item(QWidget):
         widget.change_color_button.setFixedSize(24, 24)
         widget.change_color_button.setIconSize(QSize(16, 16))
         widget.change_color_button.setVisible(False)
+        widget.change_color_button.clicked.connect(lambda: change_color_button_clicked(widget))
         up_line.layout().addWidget(widget.change_color_button)
 
         widget.export_button = QPushButton()
@@ -268,6 +273,7 @@ class speakers_list_item(QWidget):
         widget.export_button.setFixedSize(24, 24)
         widget.export_button.setIconSize(QSize(16, 16))
         widget.export_button.setVisible(False)
+        widget.export_button.clicked.connect(lambda: export_button_clicked(widget))
         up_line.layout().addWidget(widget.export_button)
 
         widget.remove_button = QPushButton()
@@ -275,6 +281,7 @@ class speakers_list_item(QWidget):
         widget.remove_button.setFixedSize(24, 24)
         widget.remove_button.setIconSize(QSize(16, 16))
         widget.remove_button.setVisible(False)
+        widget.remove_button.clicked.connect(lambda: remove_button_clicked(widget))
         up_line.layout().addWidget(widget.remove_button)
 
         widget.layout().addWidget(up_line)
@@ -313,13 +320,13 @@ class speakers_list_item(QWidget):
         widget.bottom_line.setObjectName('left_panel_speakers_panel_content_item_bottom_line')
         widget.bottom_line.setFixedHeight(5)
         widget.layout().addWidget(widget.bottom_line)
-
+        
         widget.update()
 
     def enterEvent(widget, event):
         widget.rename_button.setVisible(True)
         widget.change_color_button.setVisible(True)
-        widget.export_button.setVisible(True)
+        widget.export_button.setVisible(False)
         widget.remove_button.setVisible(True)
         event.accept()
 
@@ -355,7 +362,79 @@ class speakers_list_item(QWidget):
         total_speaking_time = sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments']])
         percentage = int(round((speaker_time / total_speaking_time) * 100, 0))
         widget.name_label.setText('<b>' + widget.speaker_name + '</b><br><small>' + f'{speaker_time} sec. ({percentage}%)' + '</small>')
+    
+
+
+def change_color_button_clicked(widget):
+    color_dialog = QColorDialog(session.SPEAKERS[widget.speaker_name]['color'], widget)
+    color = color_dialog.getColor()
+    if color.isValid():
+        session.SPEAKERS[widget.speaker_name]['color'] = f'{color.name()}'
+        widget.window().timeline_widget.update()
+        session.set_unsaved()
+
+
+def export_button_clicked(widget):
+    pass
+
+
+def remove_button_clicked(widget):
+    if len(session.SPEAKERS) == 2:
+        remove_alert = utils.SimpleDialog(widget.window(), _('subtitles_panel_widget_speakers.remove_speaker'))
+        remove_alert.content.layout().addWidget(QLabel(_('subtitles_panel_widget_speakers.sure_to_remove_speaker')))
+        result = remove_alert.exec()
+        if result:
+            last_speaker = [speaker_name for speaker_name in session.SPEAKERS.keys() if speaker_name != widget.speaker_name][0]
+            for segment in session.SUBTITLE['segments']:
+                if segment['speaker'] == widget.speaker_name:
+                    segment['speaker'] = last_speaker
+            del session.SPEAKERS[widget.speaker_name]
+            update_speakers_list(widget.window())
+
+    elif len(session.SPEAKERS) < 2:
+        no_remove_alert = utils.SimpleDialog(widget.window(), _('subtitles_panel_widget_speakers.remove_speaker'))
+        no_remove_alert.content.layout().addWidget(QLabel(_('subtitles_panel_widget_speakers.cannot_remove_last_speaker')))
+        no_remove_alert.reject_button.setVisible(False)
+        no_remove_alert.exec()
+    else:
+        widget.window().left_panel_speakers_remove_dialog.set_title(_('subtitles_panel_widget_speakers.remove_speaker'))
+        widget.window().left_panel_speakers_remove_dialog.select.clear()
+        widget.window().left_panel_speakers_remove_dialog.select.addItems([speaker_name for speaker_name in session.SPEAKERS.keys() if speaker_name != widget.speaker_name])
         
+        value = widget.window().left_panel_speakers_remove_dialog.exec_and_get_values()
+
+        if value:
+            for segment in session.SUBTITLE['segments']:
+                if segment['speaker'] == widget.speaker_name:
+                    segment['speaker'] = value
+            del session.SPEAKERS[widget.speaker_name]
+            update_speakers_list(widget.window())
+
+
+def rename_button_clicked(widget):
+    widget.window().left_panel_speakers_rename_dialog.set_title(_('subtitles_panel_widget_speakers.rename_speaker'))
+    widget.window().left_panel_speakers_rename_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
+    widget.window().left_panel_speakers_rename_dialog.input.setText(widget.speaker_name)
+    widget.window().left_panel_speakers_rename_dialog.input.selectAll()
+
+    value = widget.window().left_panel_speakers_rename_dialog.exec_and_get_values()
+    
+    if value:
+        new_name = value.strip()
+    else:
+        return
+
+    old_speaker = session.SPEAKERS[widget.speaker_name]
+    session.SPEAKERS[new_name] = old_speaker
+
+    for segment in session.SUBTITLE['segments']:
+        if segment['speaker'] == widget.speaker_name:
+            segment['speaker'] = new_name
+
+    del session.SPEAKERS[widget.speaker_name]
+
+    update_speakers_list(widget.window())
+
 
 def update_speakers_list(self):
     while self.left_panel_speakers_list.layout().count():
@@ -383,42 +462,36 @@ def update_speakers_list(self):
 def update(self):
     update_speakers_list(self)
 
+
 def left_panel_speakers_remove_speaker_button_clicked(self):
     selected_items = self.left_panel_speakers_list.selectedItems()
     if not selected_items:
         return
     for item in selected_items:
         speaker_name = item.text()
-        # Check if the speaker is used in any subtitle segment
         if any(subtitle.get('speaker', 'A') == speaker_name for subtitle in session.SUBTITLE['segments']):
-            continue  # Skip removal if speaker is in use
-        # if speaker_name in session.SPEAKERS:
-        #     session.SPEAKERS.remove(speaker_name)
-        #     update_speakers_list(self)
+            continue
 
 
 def left_panel_speakers_add_speaker_button_clicked(self):
     new_name = None
-    values = self.left_panel_speakers_new_name_dialog.exec_and_get_values()
+    value = self.left_panel_speakers_new_name_dialog.exec_and_get_values()
     
-    if values:
-        # Get the value from the first input widget (the name input field)
-        # values = self.left_panel_speakers_new_name_dialog.get_values()
-        new_name = values[0].strip()  # Get the first input value and strip whitespace
+    if value:
+        new_name = value.strip()
     else:
         pass
     subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
 
-    # if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
-    #     session.SPEAKERS.append(new_name)
-    #     update_speakers_list(self)
+    if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
+        session.SPEAKERS.append(new_name)
+        update_speakers_list(self)
     
 
 def translate(self):
     self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
     
-
 
 class new_speaker_name_dialog(utils.SimpleDialog):
     def __init__(self, parent=None, title=''):
@@ -441,3 +514,50 @@ class new_speaker_name_dialog(utils.SimpleDialog):
         if self.exec() == QDialog.Accepted:
             return self.input.text()
         return None
+
+
+class rename_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please enter your name:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.input = QLineEdit()
+        self.input_line.layout().addWidget(self.input)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.input.text()
+        return None
+
+
+class remove_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please select the speaker to replace with the removed speaker:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.select = QComboBox()
+        self.input_line.layout().addWidget(self.select)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.select.currentText()
+        return None
+
