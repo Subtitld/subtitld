@@ -286,6 +286,7 @@ class Timeline(QWidget):
         widget.show_speaker_color = session.CONFIG['timeline'].get('show_speaker_color', False)
         widget.show_speaker_tracks = session.CONFIG['timeline'].get('show_speaker_tracks', False)
         widget.width_proportion = widget.width() / session.VIDEO.get('duration', 0.01)
+        widget.subtitle_alignment = {'left' : Qt.AlignLeft, 'center' : Qt.AlignCenter, 'right' : Qt.AlignRight}[session.CONFIG.get('default_values', {}).get('subtitle_alignment', 'left')]
 
         widget.audio_thread = AudioLoaderThread()
         widget.audio_thread.finished.connect(widget.on_waveform_loaded)
@@ -515,7 +516,7 @@ class Timeline(QWidget):
                                 painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                         else:
                             # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
-                            painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
+                            painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
 
                         translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
 
@@ -524,7 +525,7 @@ class Timeline(QWidget):
                         else:
                             painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
 
-                        painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), Qt.AlignLeft | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+                        painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
                         
                         painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', "#40304251")))
                         painter.setPen(Qt.NoPen)

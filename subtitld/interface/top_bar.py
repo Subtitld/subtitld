@@ -133,9 +133,9 @@ def toppanel_save_button_clicked(self):
 
     if not actual_subtitle_file:
         suggested_path = os.path.dirname(session.VIDEO['filepath'])
-        suggested_filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0] + '.' + session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[subtitle_format]['extensions'][0]
+        # suggested_filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0] + '.' + session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[subtitle_format]['extensions'][0]
 
-        filedialog = QFileDialog.getSaveFileName(parent=self, caption='Save subtitle', dir=os.path.dirname(suggested_path), filter=supported_subtitle_files)
+        filedialog = QFileDialog.getSaveFileName(parent=self, caption='Save subtitle', dir=suggested_path, filter=supported_subtitle_files)
         if filedialog[0] and filedialog[1]:
             session.SUBTITLE['filepath'] = filedialog[0]
             selected_extensions = filedialog[1].split('(', 1)[-1].split(')', 1)[0].replace('*.', '').split(' ')

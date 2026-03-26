@@ -92,6 +92,7 @@
     "global_panel_keyboardshortcuts.select_a_command": "Select a command",
     "global_panel_voiceover.title": "Voiceover",
     "global_panel_voiceover.voiceover": "Voiceover",
+    "global_panel.subtitle_alignment": "Subtitle alignment",
     "playercontrols.add": "Add",
     "playercontrols.snap": "Snap",
     "playercontrols.step": "Step",

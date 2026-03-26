@@ -13,6 +13,13 @@ from subtitld.modules import utils as modules_utils
 from subtitld.modules import quality_check
 
 
+
+TEXT_ALIGNMENTS = {
+    'left' : Qt.AlignLeft,
+    'center' : Qt.AlignCenter,
+    'right' : Qt.AlignRight
+}
+
 class subtitles_panel_qlistwidget(QListView):
     def __init__(widget, parent=None):
         super(subtitles_panel_qlistwidget, widget).__init__(parent)
@@ -102,20 +109,22 @@ class subtitles_panel_qlistwidget(QListView):
                 painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
                 painter.setFont(QFont('Montserrat', 10))
 
+                qalignment = TEXT_ALIGNMENTS[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
+
                 if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
                     original_rect = text_rect.marginsRemoved(QMargins(0, 0, text_rect.width()*.5, 0))
                     original_rect = original_rect.marginsRemoved(QMargins(10, 10, 10, 10))
-                    painter.drawText(original_rect, Qt.TextWordWrap, row_text)
+                    painter.drawText(original_rect, qalignment | Qt.AlignTop | Qt.TextWordWrap, row_text)
                     translated_rect = text_rect.marginsRemoved(QMargins(text_rect.width()*.5, 0, 0, 0))
                     painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#0dffffff')))
                     painter.drawLine(translated_rect.topLeft(), translated_rect.bottomLeft())
                     painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
                     translated_rect = translated_rect.marginsRemoved(QMargins(10, 10, 10, 10))
                     translated_text = segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
-                    painter.drawText(translated_rect, Qt.TextWordWrap, translated_text)   
+                    painter.drawText(translated_rect, qalignment | Qt.AlignTop | Qt.TextWordWrap, translated_text)   
                 else:
                     original_rect = text_rect.marginsRemoved(QMargins(10, 10, 10, 10))
-                    painter.drawText(original_rect, Qt.TextWordWrap, row_text)
+                    painter.drawText(original_rect, qalignment | Qt.AlignTop | Qt.TextWordWrap, row_text)
 
             def sizeHint(self, option, index):
                 width = option.rect.width()
@@ -186,6 +195,7 @@ def load(self):
 
     self.left_panel_subtitleslist_textedit = QTextEdit()
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
+    self.left_panel_subtitleslist_textedit.setAcceptRichText(False)
     self.left_panel_subtitleslist_textedit.textChanged.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
 
@@ -371,14 +381,14 @@ def load(self):
 
 
 def left_panel_subtitleslist_textedit_changed(self):
-    if session.SUBTITLE['selected']:
+    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
         session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
     self.timeline_widget.update()
     self.preview_panel_player.update()
 
 
 def left_panel_subtitleslist_translation_textedit_changed(self):
-    if session.SUBTITLE['selected']:
+    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
         if not 'translations' in session.SUBTITLE['selected']:
             session.SUBTITLE['selected']['translations'] = {}
         session.SUBTITLE['selected']['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
@@ -399,6 +409,10 @@ def update(self):
         
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
         self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+
+        qalignment = TEXT_ALIGNMENTS[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
+        self.left_panel_subtitleslist_textedit.setAlignment(qalignment)
+        self.left_panel_subtitleslist_translation_textedit.setAlignment(qalignment)
 
         if self.preview_panel_player.is_paused():
             position = session.SUBTITLE.get('position', 0)
@@ -456,7 +470,7 @@ def update(self):
     # self.properties_information_stats.setVisible(bool(session.SUBTITLE['selected']) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
     
     
-def show(self):
+def show(self):    
     update(self)
 
 

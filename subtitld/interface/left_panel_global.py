@@ -198,24 +198,24 @@ def load(self):
 
     self.left_panel_global_panel_widget.layout().addLayout(self.global_panel_general_minimum_duration_line)
 
-    self.left_panel_global_panel_widget.layout().addStretch()
+    self.left_panel_global_subtitle_alignment = utils.LabeledComboBox()
+    self.left_panel_global_subtitle_alignment.addItems(['Left', 'Center', 'Right'])
+    self.left_panel_global_subtitle_alignment.activated.connect(lambda: left_panel_global_subtitle_alignment_activated(self))
+    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_subtitle_alignment)
 
-    self.left_panel_global_panel_import_export_buttons_line = QHBoxLayout()
-    self.left_panel_global_panel_import_export_buttons_line.setContentsMargins(0, 0, 0, 0)
-    self.left_panel_global_panel_import_export_buttons_line.setSpacing(5)
+
+    self.left_panel_global_panel_widget.layout().addStretch()
 
     self.left_panel_global_panel_export_settings_button = QPushButton()
     self.left_panel_global_panel_export_settings_button.clicked.connect(lambda: left_panel_global_panel_export_settings_button_clicked(self))
-    self.left_panel_global_panel_import_export_buttons_line.addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
-
-    self.left_panel_global_panel_widget.layout().addLayout(self.left_panel_global_panel_import_export_buttons_line)
-
+    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
 
     update(self)
 
     
 def show(self):
     update(self)
+
 
 def update(self):
     for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
@@ -226,6 +226,13 @@ def update(self):
     self.global_panel_general_save_copy.setChecked(session.CONFIG['default_values'].get('save_automatic_copy', False))
 
     self.global_panel_general_minimum_duration_spinbox.setValue(session.CONFIG['default_values'].get('minimum_subtitle_width', 1.0))
+
+    self.left_panel_global_subtitle_alignment.setCurrentText(session.CONFIG['default_values'].get('subtitle_alignment', 'left').capitalize())
+
+
+def left_panel_global_subtitle_alignment_activated(self):
+    session.CONFIG['default_values']['subtitle_alignment'] = self.left_panel_global_subtitle_alignment.currentText().lower()
+    self.timeline_widget.subtitle_alignment = {'left' : Qt.AlignLeft, 'center' : Qt.AlignCenter, 'right' : Qt.AlignRight}[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
 
 
 def global_subtitlesvideo_save_as_combobox_activated(self):
@@ -260,6 +267,7 @@ def translate(self):
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
     self.left_panel_global_panel_export_settings_button.setText(_('global_panel.export_settings'))
+    self.left_panel_global_subtitle_alignment.setLabel(_('global_panel.subtitle_alignment'))
 
 
 
