@@ -6,7 +6,7 @@ from bisect import bisect
 from subtitld.modules import history, session
 
 
-def add_subtitle(position=0.0, duration=5.0, text='', from_last_subtitle=False):
+def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
     """Function to add a subtitle to the main subtitle list"""
     history.history_append(session.SUBTITLE['segments'])
 

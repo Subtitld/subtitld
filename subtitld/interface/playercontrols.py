@@ -1386,7 +1386,7 @@ def update(self):
     update_playback_speed_buttons(self)
     update_playback_repeat_buttons(self)
     # self.add_subtitle_duration.setEnabled(not session.CONFIG.get('new_subtitle_to_next_start', False))
-    self.add_subtitle_duration.setValue(session.CONFIG.get('default_new_subtitle_duration', 5.0))
+    self.add_subtitle_duration.setValue(session.CONFIG.get('default_new_subtitle_duration', 3.0))
     self.add_subtitle_starting_from_last.setChecked(session.CONFIG.get('new_subtitle_start_from_last', False))
     self.add_subtitle_and_play.setChecked(session.CONFIG.get('new_subtitle_and_play', False))
     self.add_subtitle_to_next_start.setChecked(session.CONFIG.get('new_subtitle_to_next_start', False))
