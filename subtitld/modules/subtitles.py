@@ -368,7 +368,7 @@ def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='',
             right = last_text.find(' ', mid)
             if left == -1:
                 split = right
-            elif right == -1:
+            elif right == -1: 
                 split = left
             else:
                 split = left if (mid - left) < (right - mid) else right
