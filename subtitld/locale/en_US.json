@@ -255,6 +255,15 @@
     "autosave_panel.autosave_backup_enable": "Enable autosave backup",
     "autosave_panel.autosave_backup_interval": "Autosave backup interval",
     "playercontrols.music_voice_separation": "Music/Voice",
-    "export_json_dialog.format": "JSON Format"
+    "export_json_dialog.format": "JSON Format",
+    "global_panel.select_sections": "Select sections to import",
+    "global_panel.import": "Import",
+    "global_panel.cancel": "Cancel",
+    "global_panel.import_error": "Import error",
+    "global_panel.import_error_message": "Error reading JSON file. Make sure it is a valid Subtitld settings file.",
+    "global_panel.no_sections": "No sections available",
+    "global_panel.no_sections_message": "The selected file has no importable sections.",
+    "global_panel.import_no_valid_keys": "The selected file has no valid configuration keys.",
+    "global_panel.select_at_least_one": "Please select at least one section to import."
 }
 

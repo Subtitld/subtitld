@@ -1,13 +1,124 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem
+from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 
 import json
 import copy
 
 from subtitld.interface import left_panel
+from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
+from subtitld.modules.config import Config
 
+
+class DragDropWidget(QWidget):    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.parent_window = None
+    
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and url.toLocalFile().endswith('.json'):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+    
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and url.toLocalFile().endswith('.json'):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+    
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and url.toLocalFile().endswith('.json'):
+                    handle_json_drop(self.parent_window, url.toLocalFile())
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+
+def handle_json_drop(window, filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        error_dialog = utils.SimpleDialog(window, title=_('global_panel.import_error'))
+        error_dialog.content.layout().addWidget(QLabel(_('global_panel.import_error_message')))
+        error_dialog.reject_button.hide()
+        error_dialog.exec()
+        return
+
+    valid_keys = Config.get_valid_keys()
+    filtered_config_data = {k: v for k, v in config_data.items() if k in valid_keys}
+
+    if not filtered_config_data:
+        error_dialog = utils.SimpleDialog(window, title=_('global_panel.import_error'))
+        error_dialog.content.layout().addWidget(QLabel(_('global_panel.import_no_valid_keys')))
+        error_dialog.reject_button.hide()
+        error_dialog.exec()
+        return
+
+    available_sections = [key for key in filtered_config_data.keys() if key != 'recent_files']
+
+    if not available_sections:
+        error_dialog = utils.SimpleDialog(window, title=_('global_panel.no_sections'))
+        error_dialog.content.layout().addWidget(QLabel(_('global_panel.no_sections_message')))
+        error_dialog.reject_button.hide()
+        error_dialog.exec()
+        return
+
+    select_dialog = utils.SimpleDialog(window, title=_('global_panel.select_sections'))
+
+    list_widget = QListWidget()
+    list_widget.setMinimumHeight(400)
+    list_widget.setProperty('class', 'section_list')
+    for section in sorted(available_sections):
+        item = QListWidgetItem(section)
+        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+        item.setCheckState(Qt.Checked)
+        list_widget.addItem(item)
+
+    select_dialog.content.layout().addWidget(list_widget)
+    select_dialog.reject_button.setText(_('cancel'))
+    select_dialog.accept_button.setText(_('import'))
+
+    def import_sections():
+        sections_to_import = []
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                sections_to_import.append(item.text())
+
+        if not sections_to_import:
+            error_dialog = utils.SimpleDialog(window, title=_('global_panel.no_sections'))
+            error_dialog.content.layout().addWidget(QLabel(_('global_panel.select_at_least_one')))
+            error_dialog.reject_button.hide()
+            error_dialog.exec()
+            return
+
+        for section_name in sections_to_import:
+            section_data = filtered_config_data.get(section_name, {})
+
+            if isinstance(section_data, dict):
+                if section_name not in session.CONFIG:
+                    session.CONFIG[section_name] = {}
+                session.CONFIG[section_name].update(section_data)
+            else:
+                session.CONFIG[section_name] = section_data
+
+        session.CONFIG.save()
+        update(window)
+        select_dialog.accept()
+
+    select_dialog.accept_button.clicked.connect(import_sections)
+    select_dialog.exec()
 
 
 def load(self):
@@ -26,11 +137,12 @@ def load(self):
     left_panel_global_panel_scroll.setFrameShape(QScrollArea.NoFrame)
     left_panel_global_panel.layout().addWidget(left_panel_global_panel_scroll)
 
-    self.left_panel_global_panel_widget = QWidget()
+    self.left_panel_global_panel_widget = DragDropWidget()
     self.left_panel_global_panel_widget.setProperty('class', 'transparent_panel')
     self.left_panel_global_panel_widget.setObjectName('left_panel_global_panel_widget')
     self.left_panel_global_panel_widget.setLayout(QVBoxLayout())
     self.left_panel_global_panel_widget.layout().setContentsMargins(0, 0, 0, 0)
+    self.left_panel_global_panel_widget.parent_window = self
     left_panel_global_panel_scroll.setWidget(self.left_panel_global_panel_widget)
 
     self.global_panel_general_save_as_line = QVBoxLayout()
@@ -88,10 +200,16 @@ def load(self):
 
     self.left_panel_global_panel_widget.layout().addStretch()
 
+    self.left_panel_global_panel_import_export_buttons_line = QHBoxLayout()
+    self.left_panel_global_panel_import_export_buttons_line.setContentsMargins(0, 0, 0, 0)
+    self.left_panel_global_panel_import_export_buttons_line.setSpacing(5)
+
     self.left_panel_global_panel_export_settings_button = QPushButton()
-    self.left_panel_global_panel_export_settings_button.clicked.connect(lambda: left_panel_global_panel_export_settings_button_clicked(self))    
-    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
-    
+    self.left_panel_global_panel_export_settings_button.clicked.connect(lambda: left_panel_global_panel_export_settings_button_clicked(self))
+    self.left_panel_global_panel_import_export_buttons_line.addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
+
+    self.left_panel_global_panel_widget.layout().addLayout(self.left_panel_global_panel_import_export_buttons_line)
+
 
     update(self)
 
@@ -130,13 +248,13 @@ def left_panel_global_panel_export_settings_button_clicked(self):
     if filedialog[0] and filedialog[1]:
         with open(filedialog[0], mode='w', encoding='utf-8') as json_file:
             json.dump(config_dict, json_file, indent=4)
-    
+
 
 def hide(self):
     pass
 
-    
-def translate(self):    
+
+def translate(self):
     self.global_subtitlesvideo_save_as_label.setText(_('global_panel.default_format_save'))
     self.global_panel_general_save_copy.setText(_('global_panel.save_copy'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))

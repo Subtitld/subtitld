@@ -97,6 +97,7 @@ class SimpleDialog(QDialog):
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)
+        self.setMinimumWidth(400)
 
         self.title_line = QWidget()
         self.title_line.setObjectName('dialog_title')
