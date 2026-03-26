@@ -48,5 +48,6 @@ class Config(dict):
         self.setdefault('autosave', {}) 
         self.setdefault('transcription', {})
         self.setdefault('translation', {})
+        self.setdefault('dubbing', {})
 
         

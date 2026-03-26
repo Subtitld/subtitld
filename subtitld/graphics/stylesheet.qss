@@ -803,7 +803,7 @@ QWidget[class='transparent_panel'] {
 }
 
 #playercontrols_widget_center_top_line #playercontrols_playpause_button {
-    padding: 0 90 0 10;
+    padding: 0 80 0 10;
     icon: url(graphics:play_icon.svg);
 }
 
@@ -842,6 +842,15 @@ QWidget[class='transparent_panel'] {
     padding-left: 10;
     padding-right: 0;
     border-right: none;
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button {
+    padding: 0 90 0 10;
+    icon: url(graphics:record_icon.svg);
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button:checked {
+    icon: url(graphics:record_icon_pressed.svg);
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed {

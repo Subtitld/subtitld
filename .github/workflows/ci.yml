@@ -1,10 +1,12 @@
 name: CI
 
-on:
+'on':
   push:
-    branches: ['*']
+    branches:
+      - '*'
   pull_request:
 
+    null
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,7 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-          cache: 'pip'
+          cache: pip
       - run: pip install build
       - run: |
           VERSION=$(date +%y.%m.%d.%H%M)
@@ -24,21 +26,6 @@ jobs:
           name: dist
           path: dist/
           retention-days: 7
-
-  deploy_testpypi:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref != 'refs/heads/master'
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-      - run: pip install twine
-      - run: twine upload --repository testpypi dist/* -u __token__ -p "${{ secrets.TESTPYPI_TOKEN }}" --verbose
 
   deploy_pypi:
     needs: build
@@ -83,7 +70,6 @@ jobs:
           path: Subtitld-*.AppImage
           retention-days: 30
 
-
   deploy_appimage:
     needs: build_appimage
     runs-on: ubuntu-latest
@@ -95,7 +81,6 @@ jobs:
           sudo apt-get install -y sshpass
           export SSHPASS=${{ secrets.USER_PASS }}
           sshpass -e scp -o stricthostkeychecking=no *.AppImage subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
-
 
   build_windows:
     needs: build

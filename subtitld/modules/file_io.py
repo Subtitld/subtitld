@@ -16,14 +16,7 @@ from subtitld.modules import session
 from subtitld.modules import waveform
 from subtitld.modules import usf
 
-from subtitld.interface import timeline
-# from subtitld.interface import productionscreen
-# from subtitld.interface import startscreen
-# from subtitld.interface import subtitles_panel_widget_qlistwidget
-# from subtitld.interface import subtitles_panel
-# from subtitld.interface import subtitles_panel_info
 from subtitld.interface.translation import _
-
 
 
 class ThreadGenerateHashOfVideo(QThread):
@@ -190,6 +183,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         'speaker': segment.get('speaker', 'A'),
                         'translations': segment.get('translations', {})
                     })
+            if not 'config' in session.FORMAT:
+                session.FORMAT['config'] = {
+                    'standard': 'Whisper'
+                }
+
+    if not 'format' in session.FORMAT:
+        session.FORMAT['format'] = subtitle_format
 
     return segments_list, subtitle_format
 
@@ -460,6 +460,9 @@ def save_file(final_file, subtitle_format='USF', language='en'):
         # if not final_file.lower().endswith('.' + format.lower()):
         #     final_file += '.' + format.lower()
 
+        if not 'format' in session.FORMAT:
+            session.FORMAT['format'] = subtitle_format
+
         if subtitle_format in ['SRT', 'DFXP', 'TTML', 'SAMI', 'SCC', 'VTT']:
             captions = pycaption.CaptionList()
             for sub in session.SUBTITLE['segments']:
@@ -514,7 +517,31 @@ def save_file(final_file, subtitle_format='USF', language='en'):
             #     writer.write()
 
         elif subtitle_format in ['JSON']:
-            open(final_file, mode='w', encoding='utf-8').write(json.dumps(session.SUBTITLE, indent=4))
+            if session.FORMAT['options'].get('standard', 'Whisper') == 'Whisper':
+                open(final_file, mode='w', encoding='utf-8').write(json.dumps(session.SUBTITLE, indent=4))
+            elif session.FORMAT['options'].get('standard', 'Whisper') == 'AD':
+                new_json_dict = {
+                    'metadata': {
+                        'framerate': session.VIDEO.get('framerate', 25),
+                        'video_name': os.path.basename(session.VIDEO.get('filepath', ''))
+                    },
+                    'description_cues': [],
+                }
+                for i, segment in enumerate(session.SUBTITLE['segments']):
+                    new_json_dict['description_cues'].append({
+                        'cue_number': i,
+                        'text': segment['text'],
+                        'start_frame': int(segment['start'] * session.VIDEO.get('framerate', 25)),
+                        'end_frame': int(segment['end'] * session.VIDEO.get('framerate', 25)),
+                        'start_time_smpte': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=False)),
+                        'end_time_smpte': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=False)),
+                        'start_time': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=True)),
+                        'end_time': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=True)),
+                        'speaker': segment.get('speaker', 'A')
+                    })
+
+                open(final_file, mode='w', encoding='utf-8').write(json.dumps(new_json_dict, indent=4))
+
 
         elif subtitle_format in ['USF']:
             open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(session.SUBTITLE['segments']))

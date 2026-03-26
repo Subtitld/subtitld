@@ -5,13 +5,9 @@ import sys
 import tempfile
 import subprocess
 import subtitld
-import os
 import platformdirs
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
-
-print(PATH_SUBTITLD)
-
 PATH_HOME = pathlib.Path.home()
 PATH_LOCALE = PATH_SUBTITLD / 'locale'
 PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
@@ -57,9 +53,6 @@ elif sys.platform == 'win32':
     # FFMPEG_EXECUTABLE = pathlib.Path('ffmpeg').resolve()
     # FFPROBE_EXECUTABLE = pathlib.Path('ffprobe').resolve()
 
-print(FFMPEG_EXECUTABLE)
-
-
 if not PATH_SUBTITLD_USER_CONFIG.exists():
     PATH_SUBTITLD_USER_CONFIG.mkdir(parents=True)
 
@@ -86,8 +79,6 @@ PATH_SUBTITLD_USER_CONFIG_FILE = PATH_SUBTITLD_USER_CONFIG / 'subtitld.config'
 # VERSION_NUMBER = '20.07.0.0'
 # if os.path.isfile(os.path.join(PATH_SUBTITLD, 'current_version')):
 #     VERSION_NUMBER = open(os.path.join(PATH_SUBTITLD, 'current_version')).read().strip()
-
-CONFIG = {}
 
 LIST_OF_SUPPORTED_VIDEO_EXTENSIONS = {
     'MP4': {'description': 'MPEG-4 Video format', 'extensions': ['mp4']},
@@ -248,6 +239,8 @@ LANGUAGE_DICT_LIST = {
     'Zulu (South Africa)': 'zu-za'
 }
 
+CONFIG = {}
+
 SUBTITLE = {
     'segments': [],
 }
@@ -256,7 +249,7 @@ SPEAKERS = {}
 
 VIDEO = {}
 
-CONFIG = {}
+FORMAT = {}
 
 REPEAT_DURATION_BUFFER = []
 

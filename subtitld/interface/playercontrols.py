@@ -375,8 +375,7 @@ def load(self):
     self.playercontrols_playpause_button.setCheckable(True)
     self.playercontrols_playpause_button.setIconSize(QSize(22, 24))
     self.playercontrols_playpause_button.setLayout(QHBoxLayout())
-    self.playercontrols_playpause_button.setProperty('position', 'last')
-    self.playercontrols_playpause_button.layout().setContentsMargins(40, 0, 14, 5)
+    self.playercontrols_playpause_button.layout().setContentsMargins(40, 0, 0, 5)
     self.playercontrols_playpause_button.layout().setSpacing(0)
     self.playercontrols_playpause_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.playercontrols_playpause_button.clicked.connect(lambda: playercontrols_playpause_button_clicked(self))
@@ -400,6 +399,37 @@ def load(self):
     self.playercontrols_playpause_button.layout().addWidget(self.playercontrols_play_from_next_start_button, 0, Qt.AlignLeft)
 
     self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_playpause_button)
+
+    self.playercontrols_record_button = QPushButton()
+    self.playercontrols_record_button.setObjectName('playercontrols_record_button')
+    self.playercontrols_record_button.setIconSize(QSize(24, 24))
+    self.playercontrols_record_button.setCheckable(True)
+    self.playercontrols_record_button.setProperty('position', 'last')
+    self.playercontrols_record_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.playercontrols_record_button.clicked.connect(lambda: playercontrols_record_button_clicked(self))
+    self.playercontrols_record_button.setLayout(QHBoxLayout())
+    self.playercontrols_record_button.layout().setContentsMargins(40, 0, 0, 5)
+    self.playercontrols_record_button.layout().setSpacing(0)
+
+    self.playercontrols_record_transcript_button = QPushButton()
+    self.playercontrols_record_transcript_button.setIconSize(QSize(24, 24))
+    self.playercontrols_record_transcript_button.setObjectName('playercontrols_record_transcript_button')
+    self.playercontrols_record_transcript_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.playercontrols_record_transcript_button.setFixedWidth(36)
+    self.playercontrols_record_transcript_button.clicked.connect(lambda: playercontrols_record_transcript_button_clicked(self))
+    self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_transcript_button, 0, Qt.AlignRight)
+
+    self.playercontrols_record_button.layout().addSpacing(-1)
+
+    self.playercontrols_record_audio_button = QPushButton()
+    self.playercontrols_record_audio_button.setIconSize(QSize(24, 24))
+    self.playercontrols_record_audio_button.setObjectName('playercontrols_record_audio_button')
+    self.playercontrols_record_audio_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.playercontrols_record_audio_button.setFixedWidth(36)
+    self.playercontrols_record_audio_button.clicked.connect(lambda: playercontrols_record_audio_button_clicked(self))
+    self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_audio_button, 0, Qt.AlignLeft)
+
+    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_record_button)
     
     self.playercontrols_widget_top_line.layout().addSpacing(-30)
 
@@ -1328,6 +1358,18 @@ def playercontrols_playpause_button_clicked(self):
             session.REPEAT_DURATION_BUFFER = []
     else:
         self.preview_panel_player.pause()    
+
+
+def playercontrols_record_button_clicked(self):
+    pass
+
+
+def playercontrols_record_transcript_button_clicked(self):
+    pass
+
+
+def playercontrols_record_audio_button_clicked(self):
+    pass
 
 
 def update_playercontrols_playpause_button(self):

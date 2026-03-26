@@ -56,7 +56,7 @@ def get_subtitle_format(subtitle_filepath):
         for formt in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
             for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
                 if subtitle_filepath.endswith(ext):
-                    return formt
+                    subtitle_format = formt
     return subtitle_format
 
 

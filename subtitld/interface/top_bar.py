@@ -2,7 +2,7 @@ import pathlib
 import os
 import datetime
 
-from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget, QSizePolicy, QLabel, QSpacerItem, QGraphicsOpacityEffect, QFileDialog
+from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget, QSizePolicy, QLabel, QSpacerItem, QGraphicsOpacityEffect, QFileDialog, QDialog
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QTimer
 
 from subtitld.interface import utils
@@ -127,55 +127,95 @@ def toppanel_save_button_clicked(self):
         subtitle_format = modules_utils.get_subtitle_format(session.SUBTITLE['filepath'])
         actual_subtitle_file = session.SUBTITLE['filepath']
 
+    supported_subtitle_files = ''
+    for exttype in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+        supported_subtitle_files += session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['description'] + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']])) + ';;'
+
     if not actual_subtitle_file:
         suggested_path = os.path.dirname(session.VIDEO['filepath'])
         suggested_filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0] + '.' + session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[subtitle_format]['extensions'][0]
 
-        session.SUBTITLE['filepath'] = os.path.join(suggested_path, suggested_filename)
-
-    if self.titleBar_left_save_button.key_modifiers:
-        if Qt.ShiftModifier in self.titleBar_left_save_button.key_modifiers:
-            filedialog_title = 'Save subtitle as'
-        if Qt.AltModifier in self.titleBar_left_save_button.key_modifiers:
-            filedialog_title = 'Save a copy of the subtitle as'
-        if Qt.ControlModifier in self.titleBar_left_save_button.key_modifiers:
-            filedialog_title = 'Export as'
-
-        supported_subtitle_files = ''
-        for exttype in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-            supported_subtitle_files += session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['description'] + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[exttype]['extensions']])) + ';;'
-
-        filedialog = QFileDialog.getSaveFileName(parent=self, caption=filedialog_title, dir=os.path.dirname(session.SUBTITLE['filepath']), filter=supported_subtitle_files)
-
+        filedialog = QFileDialog.getSaveFileName(parent=self, caption='Save subtitle', dir=os.path.dirname(suggested_path), filter=supported_subtitle_files)
         if filedialog[0] and filedialog[1]:
-            filepath = filedialog[0]
+            session.SUBTITLE['filepath'] = filedialog[0]
             selected_extensions = filedialog[1].split('(', 1)[-1].split(')', 1)[0].replace('*.', '').split(' ')
-            if not filepath.rsplit('.', 1)[-1].lower() in selected_extensions:
+            if not filedialog[0].rsplit('.', 1)[-1].lower() in selected_extensions:
                 selected_extension = selected_extensions[0]
-                filepath += f'.{selected_extension}'
             else:
-                selected_extension = filepath.rsplit('.', 1)[-1].lower()
-            selected_format = modules_utils.get_format_from_extension(selected_extension)
+                selected_extension = filedialog[0].rsplit('.', 1)[-1].lower()
+            subtitle_format = modules_utils.get_format_from_extension(selected_extension)
 
-            # if Qt.ShiftModifier in self.titleBar_left_save_button.key_modifiers:
-            #     session.SUBTITLE['filepath'] = filepath
-            #     session.CONFIG['recent_files'][session.SUBTITLE['filepath']] = {
-            #         'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
-            #         'video_filepath': session.VIDEO['filepath']
-            #     }
-            #     file_io.save_file(session.SUBTITLE['filepath'], selected_format, session.CONFIG['selected_language'])
-            #     if session.CONFIG.get('default_values', {}).get('save_automatic_copy', False) and not subtitle_format == session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF'):
-            #         file_io.save_file(session.SUBTITLE['filepath'].rsplit('.', 1)[0] + '.{}'.format(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF')]['extensions'][0]), session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF'), session.CONFIG['selected_language'])
 
-            # if Qt.AltModifier in self.titleBar_left_save_button.key_modifiers:
-            #     file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
+    if 'filepath' in session.SUBTITLE:
+        if self.titleBar_left_save_button.key_modifiers:
+            if Qt.ShiftModifier in self.titleBar_left_save_button.key_modifiers:
+                filedialog_title = 'Save subtitle as'
+            if Qt.AltModifier in self.titleBar_left_save_button.key_modifiers:
+                filedialog_title = 'Save a copy of the subtitle as'
+            if Qt.ControlModifier in self.titleBar_left_save_button.key_modifiers:
+                filedialog_title = 'Export as'
 
-            # if Qt.ControlModifier in self.titleBar_left_save_button.key_modifiers:
-            file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
+            filedialog = QFileDialog.getSaveFileName(parent=self, caption=filedialog_title, dir=os.path.dirname(session.SUBTITLE['filepath']), filter=supported_subtitle_files)
 
-    if session.SUBTITLE['filepath']:
+            if filedialog[0] and filedialog[1]:
+                filepath = filedialog[0]
+                selected_extensions = filedialog[1].split('(', 1)[-1].split(')', 1)[0].replace('*.', '').split(' ')
+                if not filepath.rsplit('.', 1)[-1].lower() in selected_extensions:
+                    selected_extension = selected_extensions[0]
+                    filepath += f'.{selected_extension}'
+                else:
+                    selected_extension = filepath.rsplit('.', 1)[-1].lower()
+                selected_format = modules_utils.get_format_from_extension(selected_extension)
+
+                # if Qt.ShiftModifier in self.titleBar_left_save_button.key_modifiers:
+                #     session.SUBTITLE['filepath'] = filepath
+                #     session.CONFIG['recent_files'][session.SUBTITLE['filepath']] = {
+                #         'last_opened': datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+                #         'video_filepath': session.VIDEO['filepath']
+                #     }
+                #     file_io.save_file(session.SUBTITLE['filepath'], selected_format, session.CONFIG['selected_language'])
+                #     if session.CONFIG.get('default_values', {}).get('save_automatic_copy', False) and not subtitle_format == session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF'):
+                #         file_io.save_file(session.SUBTITLE['filepath'].rsplit('.', 1)[0] + '.{}'.format(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF')]['extensions'][0]), session.CONFIG.get('default_values', {}).get('subtitle_format', 'USF'), session.CONFIG['selected_language'])
+
+                # if Qt.AltModifier in self.titleBar_left_save_button.key_modifiers:
+                #     file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
+
+                # if Qt.ControlModifier in self.titleBar_left_save_button.key_modifiers:
+                file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
+    
+        if not 'format' in session.FORMAT:
+            session.FORMAT['format'] = subtitle_format
+
+        if not 'options' in session.FORMAT:
+            if session.FORMAT['format'] == 'JSON':                
+                json_dialog = export_json_dialog(parent=self, title='JSON options')
+                config = json_dialog.exec_and_get_values()
+                if config:
+                    session.FORMAT['options'] = config
+
         file_io.save_file(session.SUBTITLE['filepath'], subtitle_format, session.CONFIG['selected_language'])
+        
         if session.CONFIG['save_automatic_copy'] and not subtitle_format == session.CONFIG.get('automatic_copy_format', 'USF'):
             file_io.save_file(session.SUBTITLE['filepath'].rsplit('.', 1)[0] + '.{}'.format(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[session.CONFIG.get('automatic_copy_format', 'USF')]['extensions'][0]), session.CONFIG.get('automatic_copy_format', 'USF'), session.CONFIG['selected_language'])
 
-    # update(self)
+        # update(self)
+
+
+class export_json_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.format_combobox = utils.LabeledComboBox()
+        self.format_combobox.setLabel(_('export_json_dialog.format'))
+        self.format_combobox.addItems(['Whisper', 'AD'])
+        self.format_combobox.setCurrentText('Whisper')
+        # self.format_combobox.activated.connect(lambda: self.format_combobox_activated())
+        
+        self.content.layout().addWidget(self.format_combobox)
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return {
+                'standard': self.format_combobox.currentText()
+            }
+        return None

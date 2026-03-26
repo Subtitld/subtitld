@@ -245,12 +245,15 @@
     "subtitles_panel_widget_speakers.remove_speaker": "Remove speaker",
     "subtitles_panel_widget_speakers.sure_to_remove_speaker": "Are you sure you want to remove this speaker?",
     "subtitles_panel_widget_speakers.add_speaker": "Add speaker",
+    "subtitles_panel_widget_dubbing.enable_dubbing": "Enable dubbing",
+    "subtitles_panel_widget_dubbing.engine": "Dubbing engine",
     "confirm_exit_dialog.title": "Subtitles are not saved",
     "confirm_exit_dialog.text": "You have unsaved changes. Do you want to save the changes you made on the subtitles?",
     "confirm_exit_dialog.save_button": "Save and exit",
     "confirm_exit_dialog.dont_save_button": "Don't save and exit",
     "autosave_panel.autosave_backup_enable": "Enable autosave backup",
     "autosave_panel.autosave_backup_interval": "Autosave backup interval",
-    "playercontrols.music_voice_separation": "Music/Voice"
+    "playercontrols.music_voice_separation": "Music/Voice",
+    "export_json_dialog.format": "JSON Format"
 }
 

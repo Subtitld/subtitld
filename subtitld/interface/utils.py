@@ -92,7 +92,7 @@ def friendly_time(dt):
 class SimpleDialog(QDialog):
     def __init__(self, parent=None, title='', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)

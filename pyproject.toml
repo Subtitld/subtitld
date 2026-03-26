@@ -41,6 +41,7 @@ dependencies = [
     "assemblyai",
     "deep_translator",
     "soundfile",
+    "edge-tts"
 ]
 
 [project.urls]

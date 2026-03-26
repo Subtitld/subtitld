@@ -3,7 +3,7 @@ import mediapipe as mp
 import numpy as np
 from autohex import AutoHex
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor
 from PySide6.QtCore import QThread, Signal, Qt, QSize
 
@@ -286,6 +286,12 @@ class speakers_list_item(QWidget):
 
         widget.layout().addWidget(up_line)
 
+        widget.dubbing_line = QWidget()
+        widget.dubbing_line.setLayout(QHBoxLayout())
+        widget.dubbing_line.layout().setContentsMargins(0, 0, 0, 0)
+        widget.dubbing_line.layout().setSpacing(0)
+        widget.layout().addWidget(widget.dubbing_line)
+
         class small_timeline(QLabel):
             def __init__(widget, speaker_name=False, timeline=[], duration=30):
                 super().__init__()
@@ -362,8 +368,9 @@ class speakers_list_item(QWidget):
         total_speaking_time = sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments']])
         percentage = int(round((speaker_time / total_speaking_time) * 100, 0))
         widget.name_label.setText('<b>' + widget.speaker_name + '</b><br><small>' + f'{speaker_time} sec. ({percentage}%)' + '</small>')
-    
 
+        widget.dubbing_line.setVisible(session.CONFIG['dubbing'].get('enabled', False))
+    
 
 def change_color_button_clicked(widget):
     color_dialog = QColorDialog(session.SPEAKERS[widget.speaker_name]['color'], widget)
@@ -376,7 +383,7 @@ def change_color_button_clicked(widget):
 
 def export_button_clicked(widget):
     pass
-
+   
 
 def remove_button_clicked(widget):
     if len(session.SPEAKERS) == 2:
@@ -492,7 +499,7 @@ def translate(self):
     self.left_panel_speakers_add_button.setText(_('subtitles_panel_widget_speakers.add_speaker'))
     self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
-    
+
 
 class new_speaker_name_dialog(utils.SimpleDialog):
     def __init__(self, parent=None, title=''):
