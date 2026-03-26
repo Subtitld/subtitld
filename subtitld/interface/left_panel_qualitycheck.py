@@ -196,6 +196,10 @@ def load(self):
 
     self.global_panel_tabwidget_quality_enable_groupbox.layout().addLayout(self.global_panel_tabwidget_quality_lines_vbox)
 
+    self.left_panel_qualitycheck_break_text_when_sending_text_to_adjacent_checkbox = QCheckBox()
+    self.left_panel_qualitycheck_break_text_when_sending_text_to_adjacent_checkbox.clicked.connect(lambda: save_quality_settings(self))
+    self.global_panel_tabwidget_quality_lines_vbox.addWidget(self.left_panel_qualitycheck_break_text_when_sending_text_to_adjacent_checkbox)
+
     self.left_panel_qualitycheck_panel_widget.layout().addWidget(self.global_panel_tabwidget_quality_enable_groupbox)
 
     self.left_panel_qualitycheck_panel_widget.layout().addStretch()
@@ -238,6 +242,7 @@ def translate(self):
     self.global_panel_tabwidget_quality_lines_maximumcharacters_label.setText(_('qualitycontrol.maximum_characters_per_line'))
     self.global_panel_tabwidget_quality_prefer_compact_checkbox.setText(_('qualitycontrol.prefer_compact_subtitles'))
     self.global_panel_tabwidget_quality_balanceratio_checkbox.setText(_('qualitycontrol.balance_line_length'))
+    self.left_panel_qualitycheck_break_text_when_sending_text_to_adjacent_checkbox.setText(_('qualitycontrol.break_text_when_sending_text_to_adjacent'))
 
 
 
@@ -253,4 +258,5 @@ def save_quality_settings(self):
     session.CONFIG['quality_check']['prefer_compact'] = self.global_panel_tabwidget_quality_prefer_compact_checkbox.isChecked()
     session.CONFIG['quality_check']['balance_ratio_enabled'] = self.global_panel_tabwidget_quality_balanceratio_checkbox.isChecked()
     session.CONFIG['quality_check']['balance_ratio'] = self.global_panel_tabwidget_quality_balanceratio_slider.value()
+    session.CONFIG['quality_check']['break_text_when_sending_text_to_adjacent'] = self.left_panel_qualitycheck_break_text_when_sending_text_to_adjacent_checkbox.isChecked()
     

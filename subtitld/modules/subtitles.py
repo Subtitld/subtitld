@@ -287,15 +287,45 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
         session.SUBTITLE['segments'][index]['text'] = last_text
-        session.SUBTITLE['segments'][index + 1]['text'] = next_text + ' ' + session.SUBTITLE['segments'][index + 1]['text']
+
+        next_text = next_text.strip() + ' ' + session.SUBTITLE['segments'][index + 1]['text']
+        if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in next_text:
+            next_text = next_text.replace('\n', ' ')
+            mid = len(next_text) // 2
+            left = next_text.rfind(' ', 0, mid)
+            right = next_text.find(' ', mid)
+            if left == -1:
+                split = right
+            elif right == -1:
+                split = left
+            else:
+                split = left if (mid - left) < (right - mid) else right
+            next_text = next_text[:split] + '\n' + next_text[split+1:]
+
+        session.SUBTITLE['segments'][index + 1]['text'] = next_text
 
 def send_translated_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
     if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
-        session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
-        session.SUBTITLE['segments'][index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
+        session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
+
+        next_text = next_text.strip() + ' ' + session.SUBTITLE['segments'][index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')]
+        if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in next_text:
+            next_text = next_text.replace('\n', ' ')
+            mid = len(next_text) // 2
+            left = next_text.rfind(' ', 0, mid)
+            right = next_text.find(' ', mid)
+            if left == -1:
+                split = right
+            elif right == -1:
+                split = left
+            else:
+                split = left if (mid - left) < (right - mid) else right
+            next_text = next_text[:split] + '\n' + next_text[split+1:]
+
+        session.SUBTITLE['segments'][index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
 
 
 def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
@@ -304,7 +334,23 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
         session.SUBTITLE['segments'][index]['text'] = next_text
-        session.SUBTITLE['segments'][index - 1]['text'] += ' ' + last_text
+
+        last_text = session.SUBTITLE['segments'][index - 1]['text'] + ' ' + last_text
+        if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in last_text:
+            last_text = last_text.replace('\n', ' ')
+            mid = len(last_text) // 2
+            left = last_text.rfind(' ', 0, mid)
+            right = last_text.find(' ', mid)
+            if left == -1:
+                split = right
+            elif right == -1:
+                split = left
+            else:
+                split = left if (mid - left) < (right - mid) else right
+            last_text = last_text[:split] + '\n' + last_text[split+1:]
+
+
+        session.SUBTITLE['segments'][index - 1]['text'] = last_text
 
 
 def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
@@ -313,7 +359,22 @@ def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='',
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
         session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
-        session.SUBTITLE['segments'][index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] += ' ' + last_text
+
+        last_text = session.SUBTITLE['segments'][index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] + ' ' + last_text
+        if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in last_text:
+            last_text = last_text.replace('\n', ' ')
+            mid = len(last_text) // 2
+            left = last_text.rfind(' ', 0, mid)
+            right = last_text.find(' ', mid)
+            if left == -1:
+                split = right
+            elif right == -1:
+                split = left
+            else:
+                split = left if (mid - left) < (right - mid) else right
+            last_text = last_text[:split] + '\n' + last_text[split+1:]
+
+        session.SUBTITLE['segments'][index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
 
 
 def set_gap(position=0.0, gap=0.0):
