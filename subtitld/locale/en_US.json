@@ -177,6 +177,7 @@
     "global_panel.default_format_save": "Default format to save",
     "global_panel.save_copy": "Save a copy",
     "global_panel.minimum_duration": "Minimum duration",
+    "global_panel.export_settings": "Export settings",
     "interface_panel.title": "Interface settings",
     "interface_panel.shadow": "Shadow",
     "interface_panel.x_position": "X position",

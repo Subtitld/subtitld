@@ -1,9 +1,13 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QSpinBox, QDoubleSpinBox, QSlider
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog
 from PySide6.QtCore import Qt
+
+import json
+import copy
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.modules import session
+
 
 
 def load(self):
@@ -83,6 +87,10 @@ def load(self):
     self.left_panel_global_panel_widget.layout().addLayout(self.global_panel_general_minimum_duration_line)
 
     self.left_panel_global_panel_widget.layout().addStretch()
+
+    self.left_panel_global_panel_export_settings_button = QPushButton()
+    self.left_panel_global_panel_export_settings_button.clicked.connect(lambda: left_panel_global_panel_export_settings_button_clicked(self))    
+    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
     
 
     update(self)
@@ -113,7 +121,17 @@ def global_panel_general_save_copy_changed(self):
 def global_panel_general_minimum_duration_spinbox_changed(self):
     session.CONFIG['default_values']['minimum_subtitle_width'] = self.global_panel_general_minimum_duration_spinbox.value()
 
+
+def left_panel_global_panel_export_settings_button_clicked(self):
+    filedialog = QFileDialog.getSaveFileName(parent=self, caption='Save settings', filter='JSON (*.json)')
+    config_dict = copy.deepcopy(session.CONFIG)
+    if 'recent_files' in config_dict:
+        del config_dict['recent_files']
+    if filedialog[0] and filedialog[1]:
+        with open(filedialog[0], mode='w', encoding='utf-8') as json_file:
+            json.dump(config_dict, json_file, indent=4)
     
+
 def hide(self):
     pass
 
@@ -123,6 +141,7 @@ def translate(self):
     self.global_panel_general_save_copy.setText(_('global_panel.save_copy'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
+    self.left_panel_global_panel_export_settings_button.setText(_('global_panel.export_settings'))
 
 
 
