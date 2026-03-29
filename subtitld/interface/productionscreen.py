@@ -33,7 +33,7 @@ def load(self):
     self.main_vertical_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_vertical', [70, 30]))
 
     if session.CONFIG.get('autosave', {}).get('backup_enabled', True):
-        self.autosave_timer.start()
+        self.autosave_backup_timer.start()
 
 
 def main_horizontal_splitter_changed(self, pos, index):

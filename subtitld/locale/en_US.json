@@ -31,6 +31,8 @@
     "global_panel_general.title": "General",
     "global_panel_general.default_format_save": "Default format to save:",
     "global_panel_general.save_copy": "Save a copy of the default format regardless of the original format",
+    "autosave_panel.autosave_original_enable": "Enable autosave original subtitle file",
+    "autosave_panel.autosave_original_interval": "Autosave original interval",
     "global_panel_general.minimum_duration": "Minimum duration of individual subtitles",
     "global_panel_interface.title": "Interface",
     "global_panel_interface.shadow": "Shadow",

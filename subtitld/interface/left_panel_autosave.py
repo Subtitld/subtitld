@@ -61,6 +61,30 @@ def load(self):
     self.panel_autosave_backup_interval_row.layout().addWidget(self.panel_autosave_backup_interval_seconds_label, 0, Qt.AlignLeft)
     self.panel_autosave_backup_interval_row.layout().addStretch()
 
+    self.panel_autosave_original_enabled_checkbox = QCheckBox()
+    self.panel_autosave_original_enabled_checkbox.clicked.connect(lambda: panel_autosave_original_enabled_checkbox_clicked(self))
+    left_panel_autosave_panel_widget.layout().addWidget(self.panel_autosave_original_enabled_checkbox)
+
+    self.panel_autosave_original_interval_row = QWidget()
+    self.panel_autosave_original_interval_row.setLayout(QHBoxLayout())
+    self.panel_autosave_original_interval_row.layout().setContentsMargins(0, 0, 0, 0)
+    self.panel_autosave_original_interval_row.layout().setSpacing(5)
+    left_panel_autosave_panel_widget.layout().addWidget(self.panel_autosave_original_interval_row)
+
+    self.panel_autosave_original_interval_label = QLabel()
+    self.panel_autosave_original_interval_row.layout().addWidget(self.panel_autosave_original_interval_label, 0, Qt.AlignLeft)
+
+    self.panel_autosave_original_interval_spinbox = QSpinBox()
+    self.panel_autosave_original_interval_spinbox.setMinimum(1)
+    self.panel_autosave_original_interval_spinbox.setMaximum(1000)
+    self.panel_autosave_original_interval_spinbox.valueChanged.connect(lambda: panel_autosave_original_interval_spinbox_changed(self))
+    self.panel_autosave_original_interval_row.layout().addWidget(self.panel_autosave_original_interval_spinbox, 0, Qt.AlignLeft)
+
+    self.panel_autosave_original_interval_seconds_label = QLabel()
+    self.panel_autosave_original_interval_seconds_label.setProperty('class', 'units_label')
+    self.panel_autosave_original_interval_row.layout().addWidget(self.panel_autosave_original_interval_seconds_label, 0, Qt.AlignLeft)
+    self.panel_autosave_original_interval_row.layout().addStretch()
+
     left_panel_autosave_panel_widget.layout().addStretch()
     
 
@@ -74,16 +98,34 @@ def show(self):
 
 def update(self):
     self.panel_autosave_backup_enabled_checkbox.setChecked(session.CONFIG.get('autosave', {}).get('backup_enabled', True))
-    if session.CONFIG.get('autosave', {}).get('backup_enabled', True) and not self.autosave_timer.isActive():
-        self.autosave_timer.start()
+    if session.CONFIG.get('autosave', {}).get('backup_enabled', True) and not self.autosave_backup_timer.isActive():
+        self.autosave_backup_timer.start()
     else:
-        self.autosave_timer.stop()
+        self.autosave_backup_timer.stop()
     
     self.panel_autosave_backup_interval_row.setEnabled(session.CONFIG.get('autosave', {}).get('backup_enabled', True))
-    self.panel_autosave_backup_interval_spinbox.setValue(session.CONFIG.get('autosave', {}).get('interval', 300000) / (60 * 1000))
+    self.panel_autosave_backup_interval_spinbox.setValue(session.CONFIG.get('autosave', {}).get('backup_interval', 300000) / (60 * 1000))
+
+    self.panel_autosave_original_enabled_checkbox.setChecked(session.CONFIG.get('autosave', {}).get('original_enabled', True))
+    if session.CONFIG.get('autosave', {}).get('original_enabled', True) and not self.autosave_original_timer.isActive():
+        self.autosave_original_timer.start()
+    else:
+        self.autosave_original_timer.stop()
+
+    self.panel_autosave_original_interval_row.setEnabled(session.CONFIG.get('autosave', {}).get('original_enabled', True))
+    self.panel_autosave_original_interval_spinbox.setValue(session.CONFIG.get('autosave', {}).get('original_interval', 300000) / (60 * 1000))
     
 def hide(self):
     pass
+
+
+def panel_autosave_original_enabled_checkbox_clicked(self):
+    session.CONFIG['autosave']['original_enabled'] = self.panel_autosave_original_enabled_checkbox.isChecked()
+    update(self)
+
+def panel_autosave_original_interval_spinbox_changed(self):
+    session.CONFIG['autosave']['original_interval'] = self.panel_autosave_original_interval_spinbox.value() * 60 * 1000
+    update(self)
 
 
 def panel_autosave_backup_enabled_checkbox_clicked(self):
@@ -91,7 +133,7 @@ def panel_autosave_backup_enabled_checkbox_clicked(self):
     update(self)
 
 def panel_autosave_backup_interval_spinbox_changed(self):
-    session.CONFIG['autosave']['interval'] = self.panel_autosave_backup_interval_spinbox.value() * 60 * 1000
+    session.CONFIG['autosave']['backup_interval'] = self.panel_autosave_backup_interval_spinbox.value() * 60 * 1000
     update(self)
 
     
@@ -99,7 +141,9 @@ def translate(self):
     self.panel_autosave_backup_enabled_checkbox.setText(_('autosave_panel.autosave_backup_enable'))
     self.panel_autosave_backup_interval_label.setText(_('autosave_panel.autosave_backup_interval'))
     self.panel_autosave_backup_interval_seconds_label.setText(_('units.minutes'))
-
+    self.panel_autosave_original_enabled_checkbox.setText(_('autosave_panel.autosave_original_enable'))
+    self.panel_autosave_original_interval_label.setText(_('autosave_panel.autosave_original_interval'))
+    self.panel_autosave_original_interval_seconds_label.setText(_('units.minutes'))
 
 
     

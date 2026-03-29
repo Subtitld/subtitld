@@ -517,7 +517,7 @@ def save_file(final_file, subtitle_format='USF', language='en'):
             #     writer.write()
 
         elif subtitle_format in ['JSON']:
-            if session.FORMAT['options'].get('standard', 'Whisper') == 'Whisper':
+            if session.FORMAT.get('options', {}).get('standard', 'Whisper') == 'Whisper':
                 open(final_file, mode='w', encoding='utf-8').write(json.dumps(session.SUBTITLE, indent=4))
             elif session.FORMAT['options'].get('standard', 'Whisper') == 'AD':
                 new_json_dict = {
@@ -547,7 +547,7 @@ def save_file(final_file, subtitle_format='USF', language='en'):
             open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(session.SUBTITLE['segments']))
 
 
-def autosave_timer_timeout():
+def autosave_backup_timer_timeout():
     if session.SUBTITLE:
         if not 'filepath' in session.SUBTITLE:
             filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
@@ -556,3 +556,8 @@ def autosave_timer_timeout():
         if not filename:
             filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
         save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usf'))
+
+def autosave_original_timer_timeout():
+    if session.SUBTITLE and 'filepath' in session.SUBTITLE:
+        save_file(session.SUBTITLE['filepath'], session.FORMAT['format'], session.CONFIG['selected_language'])
+        

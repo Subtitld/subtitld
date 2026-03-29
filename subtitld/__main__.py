@@ -36,9 +36,13 @@ class Window(FramelessMainWindow):
         
         session.CONFIG = config.Config()
 
-        self.autosave_timer = QTimer(self)
-        self.autosave_timer.setInterval(int(session.CONFIG['autosave'].get('interval', 300000)))
-        self.autosave_timer.timeout.connect(lambda: file_io.autosave_timer_timeout())
+        self.autosave_backup_timer = QTimer(self)
+        self.autosave_backup_timer.setInterval(int(session.CONFIG['autosave'].get('backup_interval', 300000)))
+        self.autosave_backup_timer.timeout.connect(lambda: file_io.autosave_backup_timer_timeout())
+
+        self.autosave_original_timer = QTimer(self)
+        self.autosave_original_timer.setInterval(int(session.CONFIG['autosave'].get('original_interval', 300000)))
+        self.autosave_original_timer.timeout.connect(lambda: file_io.autosave_original_timer_timeout())
 
         top_bar.load(self)
 

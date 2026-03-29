@@ -16,7 +16,7 @@ from subtitld.modules import quality_check
 
 TEXT_ALIGNMENTS = {
     'left' : Qt.AlignLeft,
-    'center' : Qt.AlignCenter,
+    'center' : Qt.AlignHCenter,
     'right' : Qt.AlignRight
 }
 
@@ -201,6 +201,7 @@ def load(self):
 
     self.left_panel_subtitleslist_translation_textedit = QTextEdit()
     self.left_panel_subtitleslist_translation_textedit.setObjectName('left_panel_subtitleslist_translation_textedit')
+    self.left_panel_subtitleslist_translation_textedit.setAcceptRichText(False)
     self.left_panel_subtitleslist_translation_textedit.textChanged.connect(lambda: left_panel_subtitleslist_translation_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_translation_textedit)
 
