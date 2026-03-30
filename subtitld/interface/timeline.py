@@ -1,3 +1,4 @@
+import hashlib
 import os
 from bisect import bisect
 import numpy as np
@@ -144,35 +145,72 @@ class WaveformWorker(QThread):
     
 
 class WaveformManager:
-    def __init__(self, samples=None):
+    def __init__(self, samples=None, filepath=None):
         self.samples = None
+        self.filepath = filepath  # Store filepath for cache key
         self.levels = {}  # zoom_key -> (mins, maxs, samples_per_bucket)
         self.workers = {}  # zoom_key -> worker thread
-        self.cache_dir = os.path.expanduser("~/.myapp_waveform_cache")
+        self.cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
         if samples is not None:
             self.set_samples(samples)
+
+    def _get_cache_key(self, filepath):
+        """Generate a cache key based on file path, size and modification time."""
+        try:
+            stat = os.stat(filepath)
+            file_info = f"{filepath}|{stat.st_size}|{stat.st_mtime}"
+            hash_key = hashlib.md5(file_info.encode()).hexdigest()
+            return hash_key
+        except Exception:
+            return None
+
+    def _cache_path(self):
+        """Get the unified cache file path."""
+        if not self.cache_dir or not self.filepath:
+            return None
+        cache_key = self._get_cache_key(self.filepath)
+        if not cache_key:
+            return None
+        return os.path.join(self.cache_dir, f"waveform_{cache_key}.npy")
+
+    def _load_from_cache(self):
+        """Load all cached data (samples + levels) from a single file."""
+        cache_path = self._cache_path()
+        if not cache_path or not os.path.exists(cache_path):
+            return False
+        
+        try:
+            data = np.load(cache_path, allow_pickle=True).item()
+            self.samples = data.get('samples')
+            self.levels = data.get('levels', {})
+            return self.samples is not None
+        except Exception:
+            return False
+
+    def _save_to_cache(self):
+        """Save all data (samples + levels) to a single cache file."""
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            cache_path = self._cache_path()
+            if cache_path and self.samples is not None:
+                data = {
+                    'samples': self.samples,
+                    'levels': self.levels
+                }
+                np.save(cache_path, data, allow_pickle=True)
+        except Exception:
+            pass  # Silently fail if cache write fails
 
     def set_samples(self, samples):
         self.samples = np.asarray(samples, dtype=np.float32)
         self._start_worker_if_missing(512)
 
-    def _cache_path(self, zoom_key):
-        if not self.cache_dir:
-            return None
-        return os.path.join(self.cache_dir, f'waveform_level_{zoom_key}.npy')
-
     def _start_worker_if_missing(self, zoom_key):
         if zoom_key in self.levels or zoom_key in self.workers:
             return
-        # try load from disk cache if present
-        cache_path = self._cache_path(zoom_key)
-        if cache_path and os.path.exists(cache_path):
-            try:
-                arr = np.load(cache_path, allow_pickle=True)
-                self.levels[zoom_key] = (arr[0], arr[1], int(arr[2]))
-                return
-            except Exception:
-                pass
+        # No longer load individual levels from disk - all loaded at once via _load_from_cache
         samples_per_bucket = zoom_key
         worker = WaveformWorker(self.samples, zoom_key, samples_per_bucket)
         worker.finished.connect(self._on_worker_finished)
@@ -182,17 +220,12 @@ class WaveformManager:
     def _on_worker_finished(self, zoom_key, payload):
         mins, maxs, samples_per_bucket = payload
         # store; convert to numpy if possible for speed
-    
+
         mins = np.asarray(mins, dtype=np.float32)
         maxs = np.asarray(maxs, dtype=np.float32)
         self.levels[zoom_key] = (mins, maxs, samples_per_bucket)
-        # try write to disk cache
-        cache_path = self._cache_path(zoom_key)
-        if cache_path:
-            try:
-                np.save(cache_path, np.array([mins, maxs, samples_per_bucket], dtype=object), allow_pickle=True)
-            except Exception:
-                pass
+        # save to unified cache
+        self._save_to_cache()
         # cleanup worker ref
         if zoom_key in self.workers:
             del self.workers[zoom_key]
@@ -291,7 +324,7 @@ class Timeline(QWidget):
         widget.audio_thread = AudioLoaderThread()
         widget.audio_thread.finished.connect(widget.on_waveform_loaded)
 
-        widget.waveform_manager = WaveformManager()
+        widget.waveform_manager = WaveformManager(filepath=session.VIDEO.get("filepath"))
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
         widget.waveform_y = 45
 
@@ -931,12 +964,26 @@ class Timeline(QWidget):
         filepath = session.VIDEO.get("filepath")
         if not filepath:
             return
+        
+        # Update waveform manager filepath for cache key
+        widget.waveform_manager.filepath = filepath
+        
+        # Try to load everything from cache (samples + levels)
+        if widget.waveform_manager._load_from_cache():
+            # Cache hit - start worker for base zoom level if needed
+            widget.waveform_manager._start_worker_if_missing(512)
+            QTimer.singleShot(100, lambda: widget.update())
+            return
+        
+        # Cache miss - load audio from file
         widget.audio_thread.filepath = filepath
         widget.audio_thread.start()
     
     def on_waveform_loaded(widget, samples, samplerate):
         session.VIDEO["samplerate"] = samplerate
         widget.waveform_manager.set_samples(samples)
+        # Save samples to cache (levels will be saved as workers complete)
+        widget.waveform_manager._save_to_cache()
         QTimer.singleShot(1000, lambda: widget.update()) 
      
         
