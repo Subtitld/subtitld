@@ -17,10 +17,6 @@ from subtitld.interface import left_panel
 from subtitld.interface import playercontrols
 from subtitld.interface.translation import _
 
-# from subtitld.modules import history
-# from subtitld.modules import utils
-# from subtitld.interface import subtitles_panel, player
-
 
 class TimelineScroll(QScrollArea):
     """Class for timeline scroll area"""
