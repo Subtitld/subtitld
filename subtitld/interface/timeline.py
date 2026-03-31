@@ -152,24 +152,15 @@ class WaveformManager:
         if samples is not None:
             self.set_samples(samples)
 
-    def _get_cache_key(self, filepath):
-        """Generate a cache key based on file path, size and modification time."""
-        try:
-            stat = os.stat(filepath)
-            file_info = f"{filepath}|{stat.st_size}|{stat.st_mtime}"
-            hash_key = hashlib.md5(file_info.encode()).hexdigest()
-            return hash_key
-        except Exception:
-            return None
 
     def _cache_path(self):
         """Get the unified cache file path."""
         if not self.cache_dir or not self.filepath:
             return None
-        cache_key = self._get_cache_key(self.filepath)
+        cache_key = utils.get_cache_key(self.filepath)
         if not cache_key:
             return None
-        return os.path.join(self.cache_dir, f"waveform_{cache_key}.npy")
+        return os.path.join(self.cache_dir, f"{cache_key}_waveform.npy")
 
     def _load_from_cache(self):
         """Load all cached data (samples + levels) from a single file."""

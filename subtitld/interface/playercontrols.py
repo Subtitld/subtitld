@@ -11,6 +11,7 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import subtitles
 from subtitld.modules import session
+from subtitld.modules import utils
 from subtitld.modules.shortcuts import shortcut
 
 STEPS_LIST = ['Frames', 'Seconds']
@@ -30,75 +31,80 @@ class MusicAudioExtractorThread(QThread):
         if not self.filename:
             return
         
-        cmd = [
-            session.FFMPEG_EXECUTABLE,
-            "-hide_banner", "-loglevel", "error",
-            "-i", self.filename,
-            "-vn",
-            "-ar", '48000', '-y',
-            os.path.join(
-                session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-                os.path.basename(self.filename).rsplit(".", 1)[0] + "_original.flac"
-            )
-        ]
+        filename_hash = utils.get_cache_key(self.filename)
 
-        subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            startupinfo=session.STARTUPINFO
-        )
-
-        self.original.emit(os.path.join(
+        original_filepath = os.path.join(
             session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-            os.path.basename(self.filename).rsplit(".", 1)[0] + "_original.flac"
-        ))
-
-        cmd = [
-            session.FFMPEG_EXECUTABLE,
-            "-hide_banner", "-loglevel", "error",
-            "-i", self.filename, '-y',
-            "-vn",
-            "-filter_complex",
-            (
-                "[0:a]asplit=2[a1][a2];"
-                "[a1]pan=mono|c0=0.5*c0+0.5*c1[vocals];"
-                "[a2]pan=mono|c0=c0-c1[background]"
-            ),
-
-            # vocals (center)
-            "-map", "[vocals]",
-            "-ac", "1",
-            "-ar", '48000',
-            os.path.join(
-                session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-                os.path.basename(self.filename).rsplit(".", 1)[0] + "_vocals.flac"
-            ),
-
-            # background (sides)
-            "-map", "[background]",
-            "-ac", "1",
-            "-ar", '48000',
-            os.path.join(
-                session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-                os.path.basename(self.filename).rsplit(".", 1)[0] + "_background.flac"
-            ),
-        ]
-
-        subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            startupinfo=session.STARTUPINFO
+            filename_hash + "_original.flac"
         )
-        
+
+        if not os.path.exists(original_filepath):
+            cmd = [
+                session.FFMPEG_EXECUTABLE,
+                "-hide_banner", "-loglevel", "error",
+                "-i", self.filename,
+                "-vn",
+                "-ar", '48000', '-y',
+                original_filepath
+            ]
+
+            subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                startupinfo=session.STARTUPINFO
+            )
+
+        self.original.emit(original_filepath)
+
+        vocals_filepath = os.path.join(
+            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+            filename_hash + "_vocals.flac"
+        )
+
+        background_filepath = os.path.join(
+            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+            filename_hash + "_background.flac"
+        )
+
+        if not (os.path.exists(vocals_filepath) and os.path.exists(background_filepath)):
+            cmd = [
+                session.FFMPEG_EXECUTABLE,
+                "-hide_banner", "-loglevel", "error",
+                "-i", self.filename, '-y',
+                "-vn",
+                "-filter_complex",
+                (
+                    "[0:a]asplit=2[a1][a2];"
+                    "[a1]pan=mono|c0=0.5*c0+0.5*c1[vocals];"
+                    "[a2]pan=mono|c0=c0-c1[background]"
+                ),
+
+                # vocals (center)
+                "-map", "[vocals]",
+                "-ac", "1",
+                "-ar", '48000',
+                vocals_filepath,
+
+                # background (sides)
+                "-map", "[background]",
+                "-ac", "1",
+                "-ar", '48000',
+                background_filepath,
+            ]
+
+            subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                startupinfo=session.STARTUPINFO
+            )
 
         self.response.emit({
-            'vocals': os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, os.path.basename(self.filename).rsplit('.', 1)[0] + '_vocals.flac'),
-            'background': os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, os.path.basename(self.filename).rsplit('.', 1)[0] + '_background.flac'),
+            'vocals': vocals_filepath,
+            'background': background_filepath,
             'volume': .5
         })
-
 
 
 class QLeftTabBar(QTabBar):
@@ -1012,7 +1018,6 @@ def load(self):
     self.step_button.clicked.connect(lambda: update_step_buttons(self))
     self.step_button_container.layout().addWidget(self.step_button)
     
-
     self.step_value_f = QDoubleSpinBox()
     self.step_value_f.setObjectName('step_value_f')
     self.step_value_f.setMinimum(.001)

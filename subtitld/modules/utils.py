@@ -1,5 +1,5 @@
-import ctypes
-import platform
+import os
+import hashlib
 
 from subtitld.modules import session
 
@@ -66,3 +66,14 @@ def get_format_from_extension(extension):
             if extension == ext:
                 return format
     return 'USF'
+
+
+def get_cache_key(filepath):
+    """Generate a cache key based on file path, size and modification time."""
+    try:
+        stat = os.stat(filepath)
+        file_info = f"{filepath}|{stat.st_size}|{stat.st_mtime}"
+        hash_key = hashlib.md5(file_info.encode()).hexdigest()
+        return hash_key
+    except Exception:
+        return None
