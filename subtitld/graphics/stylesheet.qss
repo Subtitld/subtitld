@@ -14,6 +14,27 @@ QLabel {
     color: #ffffff;
 }
 
+QLabel[class='widget_label'] {
+    font-size: 9px;
+    font-weight: 700;
+    color: #b8cee0;
+    text-transform: uppercase;
+    padding: 4px 0 2px 0;
+}
+
+QLabel[class='units_label'] {
+    font-size: 9px;
+    color: #80b8cee0;
+    padding: 0 4px;
+}
+
+QCheckBox {
+    font-size: 11px;
+    color: #d9ffffff;
+    padding: 2px 0;
+    spacing: 6px;
+}
+
 QPushButton[class="danger"] {
     background-color: #a94444;
 }
@@ -371,6 +392,17 @@ QGroupBox::indicator:disabled {
     background-color: #67ff4d;
 }
 
+#titleBar_left_export_button {
+    padding: 8px 16px;
+    icon: url(graphics:left_panel_export.svg);
+    background-color: #336a7483;
+    color: white;
+}
+
+#titleBar_left_export_button:hover {
+    background-color: #556a7483;
+}
+
 #titleBar_left_information_container QLabel {
     color: #d9ffffff;
     font-size: 11px;
@@ -464,6 +496,45 @@ QWidget[class='transparent_panel'] {
     margin: 0;
     padding: 0;
     border: none;
+}
+
+#left_panel_global_tabs {
+    background: transparent;
+    border: none;
+}
+
+#left_panel_global_tabs::pane {
+    background: transparent;
+    border: none;
+    border-top: 1px solid #22ffffff;
+    margin-top: -1px;
+}
+
+#left_panel_global_tabs QTabBar {
+    background: transparent;
+    border: none;
+}
+
+#left_panel_global_tabs QTabBar::tab {
+    background: transparent;
+    color: #80b8cee0;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 7px 12px;
+    margin-right: 2px;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+
+#left_panel_global_tabs QTabBar::tab:hover {
+    color: #b8cee0;
+}
+
+#left_panel_global_tabs QTabBar::tab:selected {
+    color: #ffffff;
+    border-bottom: 2px solid #b8cee0;
 }
 
 #left_panel_navigation {
@@ -1544,6 +1615,22 @@ QWidget[class='transparent_panel'] {
     icon: url(graphics:speaker_list_item_change_color_icon_hover.svg);
 }
 
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_change_image_button {
+    icon: url(graphics:speaker_list_item_change_image_icon.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_change_image_button:hover {
+    icon: url(graphics:speaker_list_item_change_image_icon_hover.svg);
+}
+
+#dubbing_container_hideexpand_button {
+    icon: url(graphics:dubbing_container_collapse_icon.svg);
+}
+
+#dubbing_container_hideexpand_button:checked {
+    icon: url(graphics:dubbing_container_expand_icon.svg);
+}
+
 #left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_remove_button {
     icon: url(graphics:speaker_list_item_remove_icon.svg);
 }
@@ -1696,4 +1783,6 @@ QWidget[class='transparent_panel'] {
     border-top-left-radius: 2px;
 }
 
-
+#left_panel_speakers_panel_content_item_dubbing_content {
+    background-color: #1a1e2a33;
+}

@@ -175,11 +175,10 @@ def load_productionscreen(self):
 
         if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
             session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
-            speakers = [segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']]
-            session.SPEAKERS = {
-                name: {} for name in set(speakers)
-            }
-            
+            for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
+                session.SPEAKERS.setdefault(name, {})
+            self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+
             if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
                 self.preview_panel_player.seek(session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])].get('last_position', 0))
 
@@ -202,11 +201,10 @@ def start_screen_recent_listwidget_item_clicked(self, item):
     session.VIDEO['filepath'] = config['video_filepath']
     session.SUBTITLE['filepath'] = config['subtitle_filepath']
     session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
-    speakers = [segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']]
-    session.SPEAKERS = {
-        name: {} for name in set(speakers)
-    }
+    for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
+        session.SPEAKERS.setdefault(name, {})
     session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+    self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
     load_productionscreen(self)
     
 

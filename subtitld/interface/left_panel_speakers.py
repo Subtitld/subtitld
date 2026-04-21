@@ -3,9 +3,9 @@ import mediapipe as mp
 import numpy as np
 from autohex import AutoHex
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QSize
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor
+from PySide6.QtCore import QThread, Signal, Qt, QSize, QRect, QPoint
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -135,60 +135,108 @@ class FaceExtractorThread(QThread):
             return None
         bytes_per_line = ch * w
         return QImage(image.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
+
+
+class AccordionArrowWidget(QWidget):
+    """Custom widget that draws the accordion arrow icon."""
     
-
-def load(self):
-    tab_name = 'speakers'
+    def __init__(self, expanded=True, parent=None):
+        super().__init__(parent)
+        self._expanded = expanded
+        self.setFixedSize(20, 20)
     
-    left_panel_speakers_panel = left_panel.left_panel(
-        parent=self,
-        tab_name=tab_name,
-        update_callback=update,
-        translate_callback=translate
-    )
-
-    left_panel_speakers_panel_scroll = QScrollArea()
-    left_panel_speakers_panel_scroll.setObjectName('left_panel_speakers_panel_scroll')
-    left_panel_speakers_panel_scroll.setWidgetResizable(True)
-    left_panel_speakers_panel_scroll.setFrameShape(QScrollArea.NoFrame)
-    left_panel_speakers_panel.layout().addWidget(left_panel_speakers_panel_scroll)
-
-    left_panel_speakers_panel_content = QWidget()
-    left_panel_speakers_panel_content.setProperty('class', 'transparent_panel')
-    left_panel_speakers_panel_content.setObjectName('left_panel_speakers_panel_content')
-    left_panel_speakers_panel_content.setLayout(QVBoxLayout())
-    left_panel_speakers_panel_content.layout().setContentsMargins(0, 0, 0, 0)
-    left_panel_speakers_panel_content.layout().setSpacing(10)
-    left_panel_speakers_panel_scroll.setWidget(left_panel_speakers_panel_content)
-
-    self.left_panel_speakers_list = QWidget()
-    self.left_panel_speakers_list.setObjectName('left_panel_speakers_list')
-    self.left_panel_speakers_list.setLayout(QVBoxLayout())
-    self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
-    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
-
-    self.left_panel_speakers_add_button = QPushButton()
-    self.left_panel_speakers_add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
-    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_add_button, 0, Qt.AlignmentFlag.AlignRight)
-
-    left_panel_speakers_panel_content.layout().addStretch()
-
-    def handle_face_result(data):
-        if data["image"] is not None:
-            if not data["name"] in session.SPEAKERS:
-                session.SPEAKERS[data["name"]] = {}
-            session.SPEAKERS[data["name"]]['image'] = data["image"]
-            update_speakers_list(self)
-
-    self.left_panel_speakers_image_test_thread = FaceExtractorThread(parent=self)
-    self.left_panel_speakers_image_test_thread.result.connect(handle_face_result)
+    def set_expanded(self, expanded: bool):
+        self._expanded = expanded
+        self.update()
     
-    self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#1e40af"))
+        
+        if self._expanded:
+            arrow = QPolygonF([
+                QPoint(4, 12),
+                QPoint(16, 12),
+                QPoint(10, 6)
+            ])
+        else:
+            arrow = QPolygonF([
+                QPoint(4, 8),
+                QPoint(16, 8),
+                QPoint(10, 14)
+            ])
+        
+        painter.drawPolygon(arrow)
 
-    self.left_panel_speakers_rename_dialog = rename_speaker_name_dialog(parent=self)
-    self.left_panel_speakers_remove_dialog = remove_speaker_name_dialog(parent=self)
 
-    update(self)
+class dubbing_container(QWidget):
+    def __init__(widget, parent=None):
+        super().__init__(parent)
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(10, 10, 10, 10)
+        widget.layout().setSpacing(0)
+
+        widget.setProperty('is_expanded', False)
+        
+        header_line = QHBoxLayout()
+        header_line.setContentsMargins(0, 0, 0, 0)
+        header_line.setSpacing(0)
+        widget.layout().addLayout(header_line)
+
+        widget.combobox = utils.LabeledComboBox()
+        widget.combobox.activated.connect(lambda: widget.combobox_changed())
+        header_line.addWidget(widget.combobox, 1)
+
+        widget.hideexpand_button = QPushButton()
+        widget.hideexpand_button.setObjectName('dubbing_container_hideexpand_button')
+        widget.hideexpand_button.setCheckable(True)
+        widget.hideexpand_button.setFixedSize(24, 24)
+        widget.hideexpand_button.setIconSize(QSize(16, 16))
+        widget.combobox.bottom_line.addWidget(widget.hideexpand_button, 0)
+
+        widget.hideexpand_button.clicked.connect(lambda: widget.hideexpand_button_clicked())
+
+        widget.content = QStackedWidget()
+        widget.content.setObjectName('left_panel_speakers_panel_content_item_dubbing_content')
+        widget.content.setVisible(False)
+        widget.layout().addWidget(widget.content)
+
+        widget.update()
+
+    def combobox_changed(widget):
+        value = widget.combobox.currentText()
+        speaker_name = widget.property('speaker')
+        
+        if speaker_name and speaker_name in session.SPEAKERS:
+            if not 'dubbing' in session.SPEAKERS[speaker_name]:
+                session.SPEAKERS[speaker_name]['dubbing'] = {}    
+            session.SPEAKERS[speaker_name]['dubbing']['engine'] = value
+        widget.update()
+
+    def hideexpand_button_clicked(widget):
+        widget.setProperty('is_expanded', not widget.property('is_expanded'))
+        widget.update()
+    
+    def update(widget):
+        has_engine = widget.combobox.combobox.currentIndex() >= 0
+        widget.hideexpand_button.setEnabled(has_engine)
+        if not has_engine:
+            widget.setProperty('is_expanded', False)
+
+        if widget.property('is_expanded'):
+            if not widget.hideexpand_button.isChecked():
+                widget.hideexpand_button.setChecked(True)
+            if not widget.content.isVisible():
+                widget.content.setVisible(True)
+
+                # widget.content.setCurrentWidget()
+        else:
+            if widget.hideexpand_button.isChecked():
+                widget.hideexpand_button.setChecked(False)
+            if widget.content.isVisible():
+                widget.content.setVisible(False)
 
 
 class RoundedCornerLabel(QLabel):
@@ -268,6 +316,15 @@ class speakers_list_item(QWidget):
         widget.change_color_button.clicked.connect(lambda: change_color_button_clicked(widget))
         up_line.layout().addWidget(widget.change_color_button)
 
+        widget.change_image_button = QPushButton()
+        widget.change_image_button.setObjectName('left_panel_speakers_panel_content_item_change_image_button')
+        widget.change_image_button.setFixedSize(24, 24)
+        widget.change_image_button.setIconSize(QSize(16, 16))
+        widget.change_image_button.setVisible(False)
+        widget.change_image_button.setToolTip(_('left_panel_speakers.change_image_tooltip'))
+        widget.change_image_button.clicked.connect(lambda: change_image_button_clicked(widget))
+        up_line.layout().addWidget(widget.change_image_button)
+
         widget.export_button = QPushButton()
         widget.export_button.setObjectName('left_panel_speakers_panel_content_item_export_button')
         widget.export_button.setFixedSize(24, 24)
@@ -292,6 +349,11 @@ class speakers_list_item(QWidget):
         widget.dubbing_line.layout().setSpacing(0)
         widget.layout().addWidget(widget.dubbing_line)
 
+        widget.dubbing_container = dubbing_container(parent=widget)
+        widget.dubbing_container.setProperty('speaker', widget.speaker_name)
+        widget.dubbing_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+        widget.dubbing_line.layout().addWidget(widget.dubbing_container)
+        
         class small_timeline(QLabel):
             def __init__(widget, speaker_name=False, timeline=[], duration=30):
                 super().__init__()
@@ -328,10 +390,12 @@ class speakers_list_item(QWidget):
         widget.layout().addWidget(widget.bottom_line)
         
         widget.update()
+        widget.translate()
 
     def enterEvent(widget, event):
         widget.rename_button.setVisible(True)
         widget.change_color_button.setVisible(True)
+        widget.change_image_button.setVisible(True)
         widget.export_button.setVisible(False)
         widget.remove_button.setVisible(True)
         event.accept()
@@ -339,6 +403,7 @@ class speakers_list_item(QWidget):
     def leaveEvent(widget, event):
         widget.rename_button.setVisible(False)
         widget.change_color_button.setVisible(False)
+        widget.change_image_button.setVisible(False)
         widget.export_button.setVisible(False)
         widget.remove_button.setVisible(False)
         event.accept()
@@ -355,6 +420,13 @@ class speakers_list_item(QWidget):
             
         return super().mousePressEvent(event)
 
+    def translate(widget):
+        widget.dubbing_container.combobox.setLabel(_('subtitles_panel_widget_dubbing.dubbing_engine'))
+        widget.dubbing_container.combobox.combobox.setPlaceholderText(_('subtitles_panel_widget_dubbing.no_engine_selected'))
+        for i in range(widget.dubbing_container.content.count()):
+            w = widget.dubbing_container.content.widget(i)
+            w.translate()
+
     def update(widget):
         widget.speaker_icon.setPixmap(
             QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg')) if not widget.speaker_data.get('image', None)
@@ -370,7 +442,161 @@ class speakers_list_item(QWidget):
         widget.name_label.setText('<b>' + widget.speaker_name + '</b><br><small>' + f'{speaker_time} sec. ({percentage}%)' + '</small>')
 
         widget.dubbing_line.setVisible(session.CONFIG['dubbing'].get('enabled', False))
+
+        if session.CONFIG['dubbing'].get('enabled', False):
+            for i in range(widget.dubbing_container.content.count()):
+                w = widget.dubbing_container.content.widget(i)
+                w.update()
+
+    def update_dubbing_options(widget, options):
+        widget.dubbing_container.combobox.clear()
+        widget.dubbing_container.combobox.addItems(list(options.keys()))
+
+        while widget.dubbing_container.content.count():
+            w = widget.dubbing_container.content.widget(0)
+            widget.dubbing_container.content.removeWidget(w)
+            w.deleteLater()
+
+        for option, engine in options.items():
+            new_dubbing_panel = engine.speaker_panel()
+            new_dubbing_panel.setProperty('speaker', widget.speaker_name)
+            widget.dubbing_container.content.addWidget(new_dubbing_panel)
+            new_dubbing_panel.update()
+
+        saved_engine = session.SPEAKERS.get(widget.speaker_name, {}).get('dubbing', {}).get('engine')
+        if saved_engine and saved_engine in options:
+            widget.dubbing_container.combobox.setCurrentText(saved_engine)
+        else:
+            widget.dubbing_container.combobox.combobox.setCurrentIndex(-1)
+
+        widget.dubbing_container.update()
+        widget.update()
+        widget.translate()
+
+class new_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please enter your name:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.input = QLineEdit()
+        self.input_line.layout().addWidget(self.input)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.input.text()
+        return None
+
+
+class rename_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please enter your name:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.input = QLineEdit()
+        self.input_line.layout().addWidget(self.input)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.input.text()
+        return None
+
+
+class remove_speaker_name_dialog(utils.SimpleDialog):
+    def __init__(self, parent=None, title=''):
+        super().__init__(parent, title)
+
+        self.input_line = QWidget()
+        self.input_line.setLayout(QHBoxLayout())
+        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.input_label = QLabel('Please select the speaker to replace with the removed speaker:')
+        self.input_line.layout().addWidget(self.input_label)
+
+        self.select = QComboBox()
+        self.input_line.layout().addWidget(self.select)
+
+        self.content.layout().addWidget(self.input_line)
+
+
+    def exec_and_get_values(self):
+        if self.exec() == QDialog.Accepted:
+            return self.select.currentText()
+        return None
+
+
+def load(self):
+    tab_name = 'speakers'
     
+    left_panel_speakers_panel = left_panel.left_panel(
+        parent=self,
+        tab_name=tab_name,
+        update_callback=update,
+        translate_callback=translate
+    )
+
+    left_panel_speakers_panel_scroll = QScrollArea()
+    left_panel_speakers_panel_scroll.setObjectName('left_panel_speakers_panel_scroll')
+    left_panel_speakers_panel_scroll.setWidgetResizable(True)
+    left_panel_speakers_panel_scroll.setFrameShape(QScrollArea.NoFrame)
+    left_panel_speakers_panel.layout().addWidget(left_panel_speakers_panel_scroll)
+
+    left_panel_speakers_panel_content = QWidget()
+    left_panel_speakers_panel_content.setProperty('class', 'transparent_panel')
+    left_panel_speakers_panel_content.setObjectName('left_panel_speakers_panel_content')
+    left_panel_speakers_panel_content.setLayout(QVBoxLayout())
+    left_panel_speakers_panel_content.layout().setContentsMargins(0, 0, 0, 0)
+    left_panel_speakers_panel_content.layout().setSpacing(10)
+    left_panel_speakers_panel_scroll.setWidget(left_panel_speakers_panel_content)
+
+    self.left_panel_speakers_list = QWidget()
+    self.left_panel_speakers_list.setObjectName('left_panel_speakers_list')
+    self.left_panel_speakers_list.setLayout(QVBoxLayout())
+    self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
+    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
+
+    self.left_panel_speakers_add_button = QPushButton()
+    self.left_panel_speakers_add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
+    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_add_button, 0, Qt.AlignmentFlag.AlignRight)
+
+    left_panel_speakers_panel_content.layout().addStretch()
+
+    def handle_face_result(data):
+        if data["image"] is not None:
+            if not data["name"] in session.SPEAKERS:
+                session.SPEAKERS[data["name"]] = {}
+            session.SPEAKERS[data["name"]]['image'] = data["image"]
+            update_speakers_list(self)
+
+    self.left_panel_speakers_image_test_thread = FaceExtractorThread(parent=self)
+    self.left_panel_speakers_image_test_thread.result.connect(handle_face_result)
+    
+    self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
+
+    self.left_panel_speakers_rename_dialog = rename_speaker_name_dialog(parent=self)
+    self.left_panel_speakers_remove_dialog = remove_speaker_name_dialog(parent=self)
+
+    self.left_panel_speakers_list_of_available_dubbing_engine = {}
+
+    update(self)
+
 
 def change_color_button_clicked(widget):
     color_dialog = QColorDialog(session.SPEAKERS[widget.speaker_name]['color'], widget)
@@ -381,9 +607,17 @@ def change_color_button_clicked(widget):
         session.set_unsaved()
 
 
+def change_image_button_clicked(widget):
+    window = widget.window()
+    preview = getattr(window, 'preview_panel_player', None)
+    if preview is None or not hasattr(preview, 'start_face_selection'):
+        return
+    preview.start_face_selection(widget.speaker_name)
+
+
 def export_button_clicked(widget):
     pass
-   
+
 
 def remove_button_clicked(widget):
     if len(session.SPEAKERS) == 2:
@@ -464,6 +698,8 @@ def update_speakers_list(self):
             self.left_panel_speakers_image_test_thread.start()
 
         self.left_panel_speakers_list.layout().addWidget(widget)
+        
+        widget.update_dubbing_options(self.left_panel_speakers_list_of_available_dubbing_engine)
     
 
 def update(self):
@@ -499,73 +735,3 @@ def translate(self):
     self.left_panel_speakers_add_button.setText(_('subtitles_panel_widget_speakers.add_speaker'))
     self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
-
-
-class new_speaker_name_dialog(utils.SimpleDialog):
-    def __init__(self, parent=None, title=''):
-        super().__init__(parent, title)
-
-        self.input_line = QWidget()
-        self.input_line.setLayout(QHBoxLayout())
-        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
-
-        self.input_label = QLabel('Please enter your name:')
-        self.input_line.layout().addWidget(self.input_label)
-
-        self.input = QLineEdit()
-        self.input_line.layout().addWidget(self.input)
-
-        self.content.layout().addWidget(self.input_line)
-
-
-    def exec_and_get_values(self):
-        if self.exec() == QDialog.Accepted:
-            return self.input.text()
-        return None
-
-
-class rename_speaker_name_dialog(utils.SimpleDialog):
-    def __init__(self, parent=None, title=''):
-        super().__init__(parent, title)
-
-        self.input_line = QWidget()
-        self.input_line.setLayout(QHBoxLayout())
-        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
-
-        self.input_label = QLabel('Please enter your name:')
-        self.input_line.layout().addWidget(self.input_label)
-
-        self.input = QLineEdit()
-        self.input_line.layout().addWidget(self.input)
-
-        self.content.layout().addWidget(self.input_line)
-
-
-    def exec_and_get_values(self):
-        if self.exec() == QDialog.Accepted:
-            return self.input.text()
-        return None
-
-
-class remove_speaker_name_dialog(utils.SimpleDialog):
-    def __init__(self, parent=None, title=''):
-        super().__init__(parent, title)
-
-        self.input_line = QWidget()
-        self.input_line.setLayout(QHBoxLayout())
-        self.input_line.layout().setContentsMargins(0, 0, 0, 0)
-
-        self.input_label = QLabel('Please select the speaker to replace with the removed speaker:')
-        self.input_line.layout().addWidget(self.input_label)
-
-        self.select = QComboBox()
-        self.input_line.layout().addWidget(self.select)
-
-        self.content.layout().addWidget(self.input_line)
-
-
-    def exec_and_get_values(self):
-        if self.exec() == QDialog.Accepted:
-            return self.select.currentText()
-        return None
-

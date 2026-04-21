@@ -8,6 +8,31 @@ from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.interface import utils
 from subtitld.modules import session
+from subtitld.modules import utils as modules_utils
+
+
+def _audio_source_for_transcription():
+    """Best available audio path for transcription.
+
+    Prefers the separated vocals (cleanest input) → falls back to the cached
+    full-original FLAC → falls back to the raw video file. Useful when the
+    separation thread hasn't finished yet."""
+    separation = session.VIDEO.get('music_voice_separation') or {}
+    vocals = separation.get('vocals')
+    if vocals and os.path.isfile(vocals):
+        return vocals
+
+    video_path = session.VIDEO.get('filepath')
+    if video_path:
+        key = modules_utils.get_cache_key(video_path)
+        if key:
+            original_flac = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, key + '_original.flac')
+            if os.path.isfile(original_flac):
+                return original_flac
+        if os.path.isfile(video_path):
+            return video_path
+
+    return None
 
 from vosk import Model, KaldiRecognizer
 import requests
@@ -441,8 +466,11 @@ class VoskPanel(QWidget):
 
     def transcript(widget):
         if widget.selected_model:
+            audio_file = _audio_source_for_transcription()
+            if not audio_file:
+                return
             widget.translate_thread.model_path = os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])
-            widget.translate_thread.audio_file = session.VIDEO['music_voice_separation']['vocals']
+            widget.translate_thread.audio_file = audio_file
             widget.translate_thread.start()
 
     def translate(widget):
@@ -578,7 +606,10 @@ class AssemblyAIPanel(QWidget):
 
     def transcript(widget):
         if session.CONFIG['transcription'].get('engine_options', {}).get('AssemblyAI', {}).get('api_key', ''):
-            widget.translate_thread.audio_file = session.VIDEO['music_voice_separation']['vocals']
+            audio_file = _audio_source_for_transcription()
+            if not audio_file:
+                return
+            widget.translate_thread.audio_file = audio_file
             widget.translate_thread.start()
         else:
             error_dialog = utils.SimpleDialog(widget, title=_('transcription_panel.error'))

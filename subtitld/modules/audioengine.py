@@ -243,6 +243,119 @@ class Clip:
         self._prefetch_thread.join(timeout=2.0)
 
 
+class SubtitleDubClip:
+    """Wrapper clip that always plays subtitle['dubbing'][0] for a given subtitle dict.
+
+    Reads `path` and `start` live each callback so timeline drags / playlist swaps
+    take effect immediately without engine re-sync. Loaded WAV samples are kept
+    in a small per-instance dict keyed by file path."""
+
+    def __init__(self, subtitle, samplerate):
+        self.subtitle = subtitle
+        self.samplerate = samplerate
+        self.gain = 1.0
+        self.speed = 1.0
+        self.enabled = True
+        self._loaded = {}  # path -> (data ndarray (N,2), src_samplerate, frame_count)
+
+    def _current_dub(self):
+        dubs = self.subtitle.get('dubbing')
+        return dubs[0] if dubs else None
+
+    def preload(self, path):
+        if path in self._loaded:
+            return
+        try:
+            with sf.SoundFile(path, 'r') as f:
+                data = f.read(dtype='float32', always_2d=True)
+                if data.shape[1] == 1:
+                    data = np.tile(data, (1, 2))
+                self._loaded[path] = (data, f.samplerate, len(data))
+        except Exception:
+            pass
+
+    def read(self, playhead, frames, samplerate, buffer_pool):
+        out = buffer_pool.get((frames, 2), dtype=np.float32)
+
+        if not self.enabled:
+            return out
+
+        dub = self._current_dub()
+        if not dub:
+            return out
+
+        path = dub.get('path')
+        if not path:
+            return out
+
+        if path not in self._loaded:
+            self.preload(path)
+        loaded = self._loaded.get(path)
+        if loaded is None:
+            return out
+        data, src_sr, total_frames = loaded
+
+        start_time = float(dub.get('start', 0.0))
+        clip_end = start_time + total_frames / src_sr
+
+        t0 = playhead
+        t1 = playhead + frames / samplerate
+
+        if t1 <= start_time or t0 >= clip_end:
+            return out
+
+        clip_t0 = max(t0, start_time)
+        clip_t1 = min(t1, clip_end)
+
+        out_start = round((clip_t0 - t0) * samplerate)
+        out_end = round((clip_t1 - t0) * samplerate)
+        num_output_frames = out_end - out_start
+
+        if num_output_frames <= 0:
+            return out
+
+        is_clip_start = clip_t0 <= start_time + 1.0 / samplerate
+        is_clip_end = clip_t1 >= clip_end - 1.0 / samplerate
+
+        ratio = (src_sr / samplerate) * self.speed
+        src_frame_start = (clip_t0 - start_time) * src_sr
+        src_idx = np.arange(num_output_frames, dtype=np.float64) * ratio + src_frame_start
+
+        i0 = np.floor(src_idx).astype(np.int64)
+        i1 = i0 + 1
+        frac = (src_idx - i0).astype(np.float32)
+
+        valid = (i0 >= 0) & (i1 < total_frames)
+        valid_count = int(np.count_nonzero(valid))
+        if valid_count == 0:
+            return out
+
+        i0v = i0[valid]
+        i1v = i1[valid]
+        fracv = frac[valid]
+        s0 = data[i0v]
+        s1 = data[i1v]
+        interp = (1.0 - fracv[:, None]) * s0 + fracv[:, None] * s1
+        out[out_start:out_start + valid_count] = interp * self.gain
+
+        fade_len = min(FADE_FRAMES, num_output_frames)
+        if is_clip_start:
+            ramp = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+            out[out_start:out_start + fade_len] *= ramp[:, None]
+        if is_clip_end:
+            ramp = np.linspace(1.0, 0.0, fade_len, dtype=np.float32)
+            end = out_start + num_output_frames
+            out[end - fade_len:end] *= ramp[:, None]
+
+        return out
+
+    def clear_cache(self):
+        pass
+
+    def shutdown(self):
+        self._loaded.clear()
+
+
 class Track:
     def __init__(self):
         self.clips = []
@@ -280,6 +393,11 @@ class SoundDeviceAudioEngine:
         self._playhead = 0.0
 
         self.buffer_pool = BufferPool(max_size=30)
+
+        # Per-speaker dub tracks. speaker_tracks[name] is the Track object.
+        # subtitle_clips[id(subtitle)] is the SubtitleDubClip wrapping it.
+        self.speaker_tracks = {}
+        self.subtitle_clips = {}
 
         self.stream = sd.OutputStream(
             samplerate=self.samplerate,
@@ -364,6 +482,58 @@ class SoundDeviceAudioEngine:
     def set_speed(self, speed):
         self.speed = max(0.0, speed)
 
+    def _ensure_speaker_track(self, speaker):
+        track = self.speaker_tracks.get(speaker)
+        if track is None:
+            track = Track()
+            self.speaker_tracks[speaker] = track
+            self.tracks.append(track)
+        return track
+
+    def sync_subtitle_dubs(self, segments, default_speaker='A'):
+        """Reconcile per-speaker dub tracks with the current subtitle list.
+
+        Idempotent: call after loading a project, generating a dub, swapping
+        the playlist, or reassigning a subtitle's speaker. Subtitles without
+        a `dubbing` list are dropped from the engine."""
+        seen = set()
+
+        for sub in segments:
+            if not sub.get('dubbing'):
+                continue
+            speaker = sub.get('speaker', default_speaker)
+            track = self._ensure_speaker_track(speaker)
+            sub_id = id(sub)
+            seen.add(sub_id)
+
+            clip = self.subtitle_clips.get(sub_id)
+            if clip is None:
+                clip = SubtitleDubClip(sub, self.samplerate)
+                self.subtitle_clips[sub_id] = clip
+                track.add_clip(clip)
+            else:
+                # Speaker may have changed — move the clip to the right track.
+                for other in self.speaker_tracks.values():
+                    if clip in other.clips and other is not track:
+                        other.clips.remove(clip)
+                        track.add_clip(clip)
+                        break
+
+            dub = sub['dubbing'][0]
+            path = dub.get('path')
+            if path:
+                clip.preload(path)
+
+        for sub_id in list(self.subtitle_clips):
+            if sub_id in seen:
+                continue
+            clip = self.subtitle_clips.pop(sub_id)
+            for track in self.speaker_tracks.values():
+                if clip in track.clips:
+                    track.clips.remove(clip)
+                    break
+            clip.shutdown()
+
     def shutdown(self):
         """Cleanly shut down the engine and all clip prefetch threads."""
         self.stop()
@@ -371,6 +541,53 @@ class SoundDeviceAudioEngine:
         for track in self.tracks:
             for clip in track.clips:
                 clip.shutdown()
+
+    def render_buffer(self, start=0.0, end=None, samplerate=None, tracks=None, blocksize=4096):
+        """Render the mix offline into a numpy (frames, 2) array.
+
+        start / end in seconds. If end is None, uses the video duration or the
+        latest clip endpoint. If `tracks` is provided, only those Track objects
+        are mixed (for rendering stems); otherwise all tracks mix together."""
+        sr = int(samplerate or self.samplerate)
+        mix_tracks = list(tracks) if tracks is not None else list(self.tracks)
+
+        if end is None:
+            latest = 0.0
+            for track in mix_tracks:
+                for clip in track.clips:
+                    if isinstance(clip, SubtitleDubClip):
+                        dub = clip._current_dub()
+                        if dub:
+                            try:
+                                path = dub.get('path')
+                                if path and path in clip._loaded:
+                                    _, src_sr, total = clip._loaded[path]
+                                    latest = max(latest, float(dub.get('start', 0.0)) + total / src_sr)
+                            except Exception:
+                                pass
+            end = max(end or 0.0, latest)
+
+        if end <= start:
+            return np.zeros((0, 2), dtype=np.float32)
+
+        total_frames = int(round((end - start) * sr))
+        out = np.zeros((total_frames, 2), dtype=np.float32)
+
+        written = 0
+        playhead = float(start)
+        while written < total_frames:
+            frames = min(blocksize, total_frames - written)
+            block = np.zeros((frames, 2), dtype=np.float32)
+            for track in mix_tracks:
+                td = track.read(playhead, frames, sr, self.buffer_pool)
+                block += td
+                self.buffer_pool.release(td)
+            out[written:written + frames] = block
+            written += frames
+            playhead = start + written / sr
+
+        np.clip(out, -1.0, 1.0, out=out)
+        return out
 
     def get_memory_usage(self):
         """Estimate current memory usage in MB"""

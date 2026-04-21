@@ -203,6 +203,9 @@ class LabeledComboBox(QWidget):
     
     def addItems(widget, items):
         widget.combobox.addItems(items)
+    
+    def addItem(widget, item):
+        widget.combobox.addItem(item)
 
     def setLabel(widget, label):
         widget.label.setText(label)

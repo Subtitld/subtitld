@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget
 from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 
@@ -145,22 +145,32 @@ def load(self):
     self.left_panel_global_panel_widget.parent_window = self
     left_panel_global_panel_scroll.setWidget(self.left_panel_global_panel_widget)
 
+    self.left_panel_global_tabs = QTabWidget()
+    self.left_panel_global_tabs.setObjectName('left_panel_global_tabs')
+    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_tabs)
+
+    # --- General tab ---
+    self.left_panel_global_tab_general = QWidget()
+    self.left_panel_global_tab_general.setProperty('class', 'transparent_panel')
+    self.left_panel_global_tab_general.setLayout(QVBoxLayout())
+    self.left_panel_global_tab_general.layout().setContentsMargins(10, 10, 10, 10)
+    self.left_panel_global_tab_general.layout().setSpacing(10)
+    self.left_panel_global_tabs.addTab(self.left_panel_global_tab_general, '')
+
     self.global_panel_general_save_as_line = QVBoxLayout()
     self.global_panel_general_save_as_line.setContentsMargins(0, 0, 0, 0)
     self.global_panel_general_save_as_line.setSpacing(5)
 
-    self.global_subtitlesvideo_save_as_label = QLabel(parent=self.left_panel_global_panel_widget)
+    self.global_subtitlesvideo_save_as_label = QLabel(parent=self.left_panel_global_tab_general)
     self.global_subtitlesvideo_save_as_label.setProperty('class', 'widget_label')
     self.global_panel_general_save_as_line.addWidget(self.global_subtitlesvideo_save_as_label, 0, Qt.AlignLeft)
 
     list_of_subtitle_extensions = []
     for extformat in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
         list_of_subtitle_extensions.append(extformat + ' - ' + session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[extformat]['description'])
-    self.global_subtitlesvideo_save_as_combobox = QComboBox(parent=self.left_panel_global_panel_widget)
+    self.global_subtitlesvideo_save_as_combobox = QComboBox(parent=self.left_panel_global_tab_general)
     self.global_subtitlesvideo_save_as_combobox.setProperty('class', 'button')
     self.global_subtitlesvideo_save_as_combobox.addItems(list_of_subtitle_extensions)
-    # self.global_subtitlesvideo_save_as_combobox.view().window().setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-    # self.global_subtitlesvideo_save_as_combobox.view().window().setAttribute(Qt.WA_TranslucentBackground)
     self.global_subtitlesvideo_save_as_combobox.activated.connect(lambda: global_subtitlesvideo_save_as_combobox_activated(self))
     self.global_panel_general_save_as_line.addWidget(self.global_subtitlesvideo_save_as_combobox, 0, Qt.AlignLeft)
 
@@ -168,7 +178,7 @@ def load(self):
     self.global_panel_general_save_copy.stateChanged.connect(lambda: global_panel_general_save_copy_changed(self))
     self.global_panel_general_save_as_line.addWidget(self.global_panel_general_save_copy, 0, Qt.AlignLeft)
 
-    self.left_panel_global_panel_widget.layout().addLayout(self.global_panel_general_save_as_line)
+    self.left_panel_global_tab_general.layout().addLayout(self.global_panel_general_save_as_line)
 
     self.global_panel_general_minimum_duration_line = QVBoxLayout()
     self.global_panel_general_minimum_duration_line.setContentsMargins(0, 0, 0, 0)
@@ -196,16 +206,51 @@ def load(self):
 
     self.global_panel_general_minimum_duration_line.addLayout(self.global_panel_general_minimum_duration_line_2)
 
-    self.left_panel_global_panel_widget.layout().addLayout(self.global_panel_general_minimum_duration_line)
+    self.left_panel_global_tab_general.layout().addLayout(self.global_panel_general_minimum_duration_line)
 
     self.left_panel_global_subtitle_alignment = utils.LabeledComboBox()
     self.left_panel_global_subtitle_alignment.addItems(['Left', 'Center', 'Right'])
     self.left_panel_global_subtitle_alignment.activated.connect(lambda: left_panel_global_subtitle_alignment_activated(self))
-    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_subtitle_alignment)
+    self.left_panel_global_tab_general.layout().addWidget(self.left_panel_global_subtitle_alignment)
 
+    self.left_panel_global_tab_general.layout().addStretch()
 
-    self.left_panel_global_panel_widget.layout().addStretch()
+    # --- USFX tab ---
+    self.left_panel_global_tab_usfx = QWidget()
+    self.left_panel_global_tab_usfx.setProperty('class', 'transparent_panel')
+    self.left_panel_global_tab_usfx.setLayout(QVBoxLayout())
+    self.left_panel_global_tab_usfx.layout().setContentsMargins(10, 10, 10, 10)
+    self.left_panel_global_tab_usfx.layout().setSpacing(6)
+    self.left_panel_global_tabs.addTab(self.left_panel_global_tab_usfx, '')
 
+    self.left_panel_global_tab_usfx_intro = QLabel()
+    self.left_panel_global_tab_usfx_intro.setProperty('class', 'widget_label')
+    self.left_panel_global_tab_usfx_intro.setWordWrap(True)
+    self.left_panel_global_tab_usfx.layout().addWidget(self.left_panel_global_tab_usfx_intro)
+
+    self.usfx_include_speaker_images_checkbox = QCheckBox()
+    self.usfx_include_speaker_images_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_speaker_images', self.usfx_include_speaker_images_checkbox.isChecked()))
+    self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_speaker_images_checkbox, 0, Qt.AlignLeft)
+
+    self.usfx_include_waveform_cache_checkbox = QCheckBox()
+    self.usfx_include_waveform_cache_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_waveform_cache', self.usfx_include_waveform_cache_checkbox.isChecked()))
+    self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_waveform_cache_checkbox, 0, Qt.AlignLeft)
+
+    self.usfx_include_original_audio_checkbox = QCheckBox()
+    self.usfx_include_original_audio_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_original_audio', self.usfx_include_original_audio_checkbox.isChecked()))
+    self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_original_audio_checkbox, 0, Qt.AlignLeft)
+
+    self.usfx_include_processed_audio_checkbox = QCheckBox()
+    self.usfx_include_processed_audio_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_processed_audio', self.usfx_include_processed_audio_checkbox.isChecked()))
+    self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_processed_audio_checkbox, 0, Qt.AlignLeft)
+
+    self.usfx_include_original_video_checkbox = QCheckBox()
+    self.usfx_include_original_video_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_original_video', self.usfx_include_original_video_checkbox.isChecked()))
+    self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_original_video_checkbox, 0, Qt.AlignLeft)
+
+    self.left_panel_global_tab_usfx.layout().addStretch()
+
+    # --- Export settings button stays at the bottom, below tabs ---
     self.left_panel_global_panel_export_settings_button = QPushButton()
     self.left_panel_global_panel_export_settings_button.clicked.connect(lambda: left_panel_global_panel_export_settings_button_clicked(self))
     self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
@@ -217,9 +262,28 @@ def show(self):
     update(self)
 
 
+USFX_OPTION_DEFAULTS = {
+    'include_speaker_images': True,
+    'include_waveform_cache': False,
+    'include_original_audio': False,
+    'include_processed_audio': False,
+    'include_original_video': False,
+}
+
+
+def _get_usfx_options():
+    return {**USFX_OPTION_DEFAULTS, **(session.CONFIG.get('default_values', {}).get('usfx_options') or {})}
+
+
+def usfx_option_changed(self, key, value):
+    options = _get_usfx_options()
+    options[key] = bool(value)
+    session.CONFIG.setdefault('default_values', {})['usfx_options'] = options
+
+
 def update(self):
     for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
-        if session.CONFIG['default_values'] and item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USF')):
+        if session.CONFIG['default_values'] and item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USFX')):
             self.global_subtitlesvideo_save_as_combobox.setCurrentText(item)
             break
 
@@ -228,6 +292,18 @@ def update(self):
     self.global_panel_general_minimum_duration_spinbox.setValue(session.CONFIG['default_values'].get('minimum_subtitle_width', 1.0))
 
     self.left_panel_global_subtitle_alignment.setCurrentText(session.CONFIG['default_values'].get('subtitle_alignment', 'left').capitalize())
+
+    options = _get_usfx_options()
+    for key, checkbox in (
+        ('include_speaker_images', self.usfx_include_speaker_images_checkbox),
+        ('include_waveform_cache', self.usfx_include_waveform_cache_checkbox),
+        ('include_original_audio', self.usfx_include_original_audio_checkbox),
+        ('include_processed_audio', self.usfx_include_processed_audio_checkbox),
+        ('include_original_video', self.usfx_include_original_video_checkbox),
+    ):
+        checkbox.blockSignals(True)
+        checkbox.setChecked(bool(options.get(key, False)))
+        checkbox.blockSignals(False)
 
 
 def left_panel_global_subtitle_alignment_activated(self):
@@ -262,6 +338,14 @@ def hide(self):
 
 
 def translate(self):
+    self.left_panel_global_tabs.setTabText(0, _('global_panel.tab_general'))
+    self.left_panel_global_tabs.setTabText(1, _('global_panel.tab_usfx'))
+    self.left_panel_global_tab_usfx_intro.setText(_('global_panel.usfx_intro'))
+    self.usfx_include_speaker_images_checkbox.setText(_('global_panel.usfx_include_speaker_images'))
+    self.usfx_include_waveform_cache_checkbox.setText(_('global_panel.usfx_include_waveform_cache'))
+    self.usfx_include_original_audio_checkbox.setText(_('global_panel.usfx_include_original_audio'))
+    self.usfx_include_processed_audio_checkbox.setText(_('global_panel.usfx_include_processed_audio'))
+    self.usfx_include_original_video_checkbox.setText(_('global_panel.usfx_include_original_video'))
     self.global_subtitlesvideo_save_as_label.setText(_('global_panel.default_format_save'))
     self.global_panel_general_save_copy.setText(_('global_panel.save_copy'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))

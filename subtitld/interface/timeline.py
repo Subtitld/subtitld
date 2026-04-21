@@ -36,6 +36,17 @@ class TimelineScroll(QScrollArea):
         event.accept()
 
     def wheelEvent(widget, event):
+        if event.modifiers() & Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta != 0:
+                step = 10.0 if delta > 0 else -10.0
+                new_zoom = session.CONFIG.get('timeline_zoom', 100.0) + step
+                new_zoom = max(10.0, min(490.0, new_zoom))
+                if new_zoom != session.CONFIG.get('timeline_zoom', 100.0):
+                    session.CONFIG['timeline_zoom'] = new_zoom
+                    playercontrols.zoom_buttons_update(widget.window())
+            event.accept()
+            return
         widget.horizontalScrollBar().setValue(widget.horizontalScrollBar().value() + event.angleDelta().y())
         event.accept()
     
@@ -162,6 +173,7 @@ class WaveformManager:
             return None
         return os.path.join(self.cache_dir, f"{cache_key}_waveform.npy")
 
+
     def _load_from_cache(self):
         """Load all cached data (samples + levels) from a single file."""
         cache_path = self._cache_path()
@@ -281,6 +293,59 @@ class WaveformManager:
         self._start_worker_if_missing(int(max(1, samples_per_pixel)))
 
 
+DUB_PEAKS_SAMPLERATE = 8000
+
+
+class DubPeaksWorker(QThread):
+    """Loads a small dub WAV via ffmpeg and computes min/max peaks + duration."""
+    finished = Signal(str, object, object, float)  # path, mins, maxs, duration_sec
+
+    def __init__(self, path, target_buckets=400, parent=None):
+        super().__init__(parent)
+        self.path = path
+        self.target_buckets = int(target_buckets)
+        self.proc = None
+
+    def run(self):
+        try:
+            cmd = [
+                session.FFMPEG_EXECUTABLE,
+                "-v", "error",
+                "-i", self.path,
+                "-ac", "1",
+                "-ar", str(DUB_PEAKS_SAMPLERATE),
+                "-f", "f32le", "-",
+            ]
+            self.proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                startupinfo=session.STARTUPINFO,
+            )
+            stdout, _ = self.proc.communicate()
+            if self.proc.returncode not in (0, None):
+                return
+
+            samples = np.frombuffer(stdout, dtype=np.float32).copy()
+            if samples.size == 0:
+                return
+
+            duration = samples.size / float(DUB_PEAKS_SAMPLERATE)
+
+            peak = float(np.max(np.abs(samples)))
+            if peak > 0:
+                samples /= peak
+
+            spb = max(1, samples.size // self.target_buckets)
+            length = (samples.size // spb) * spb
+            buckets = samples[:length].reshape(-1, spb)
+            mins = buckets.min(axis=1).astype(np.float32)
+            maxs = buckets.max(axis=1).astype(np.float32)
+            self.finished.emit(self.path, mins, maxs, duration)
+        except Exception:
+            pass
+
+
 class Timeline(QWidget):
     seek = Signal(float)
     subtitle_clicked = Signal()    
@@ -314,6 +379,12 @@ class Timeline(QWidget):
         widget.waveform_manager = WaveformManager(filepath=session.VIDEO.get("filepath"))
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
         widget.waveform_y = 45
+
+        widget.dub_peaks = {}     # path -> (mins, maxs, duration)
+        widget.dub_workers = {}   # path -> DubPeaksWorker
+        widget.dub_start_is_clicked = False
+        widget.dragging_dub = None
+        widget.dragging_dub_offset = 0.0
 
     def paintEvent(widget, event):
         if not widget.isVisible() or widget.width() <= 0 or widget.height() <= 0:
@@ -480,9 +551,11 @@ class Timeline(QWidget):
 
                     subtitle_track = [0, 1] # [index, number of tracks]
                     if widget.show_speaker_tracks and session.SPEAKERS:
+                        speakers_keys = list(session.SPEAKERS.keys())
+                        speaker_name = subtitle.get('speaker', 'A')
                         subtitle_track = [
-                            list(session.SPEAKERS.keys()).index(subtitle.get('speaker', 'A')),
-                            len(list(session.SPEAKERS.keys()))
+                            speakers_keys.index(speaker_name) if speaker_name in speakers_keys else 0,
+                            len(speakers_keys)
                         ]
 
                     subtitle_rect = QRectF(
@@ -493,7 +566,71 @@ class Timeline(QWidget):
                     )
 
                     painter.drawRoundedRect(subtitle_rect, 2.0, 2.0, Qt.AbsoluteSize)
-                    
+
+                    if subtitle.get('dubbing'):
+                        dub = subtitle['dubbing'][0]
+                        dub_path = dub.get('path')
+                        if dub_path:
+                            widget._request_dub_peaks(dub_path)
+                            peaks = widget.dub_peaks.get(dub_path)
+                            if peaks is not None:
+                                mins, maxs, duration = peaks
+                                dub_start = dub.get('start', subtitle['start'])
+                                dub_x = dub_start * widget.width_proportion
+                                dub_w = duration * widget.width_proportion
+                                if dub_w > 1:
+                                    show_translations = session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False)
+                                    band_ratio = 0.25 if show_translations else 0.5
+                                    dub_inset = QRectF(
+                                        dub_x,
+                                        subtitle_rect.top() + subtitle_rect.height() * (1.0 - band_ratio),
+                                        dub_w,
+                                        subtitle_rect.height() * band_ratio - 2,
+                                    )
+                                    speaker_color = QColor(session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', '#1a73a8'))
+                                    border_color = QColor(speaker_color)
+                                    border_color.setAlpha(255)
+                                    fill_color = QColor(speaker_color)
+                                    fill_color.setAlpha(204)
+                                    painter.save()
+                                    painter.setPen(QPen(border_color, 1))
+                                    painter.setBrush(fill_color)
+                                    painter.drawRoundedRect(dub_inset, 2.0, 2.0, Qt.AbsoluteSize)
+
+                                    handle_w = 4
+                                    handle_rect = QRectF(dub_inset.left() + 1, dub_inset.top() + 2, handle_w, max(0.0, dub_inset.height() - 4))
+                                    painter.setPen(Qt.NoPen)
+                                    painter.setBrush(QColor(255, 255, 255, 180))
+                                    painter.drawRoundedRect(handle_rect, 1.5, 1.5, Qt.AbsoluteSize)
+
+                                    count = len(mins)
+                                    if count > 0:
+                                        painter.setClipRect(dub_inset)
+                                        center = dub_inset.center().y()
+                                        scale = dub_inset.height() * 0.45
+                                        pixel_per_bucket = dub_inset.width() / count
+                                        wf = QPainterPath()
+                                        upper = []
+                                        x = dub_inset.left()
+                                        for i in range(count):
+                                            upper.append((x, center - float(maxs[i]) * scale))
+                                            x += pixel_per_bucket
+                                        lower = []
+                                        x -= pixel_per_bucket
+                                        for i in range(count - 1, -1, -1):
+                                            lower.append((x, center - float(mins[i]) * scale))
+                                            x -= pixel_per_bucket
+                                        wf.moveTo(upper[0][0], upper[0][1])
+                                        for (xx, yy) in upper[1:]:
+                                            wf.lineTo(xx, yy)
+                                        for (xx, yy) in lower:
+                                            wf.lineTo(xx, yy)
+                                        wf.closeSubpath()
+                                        painter.setPen(Qt.NoPen)
+                                        painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('dub_waveform_color', '#ffffffff')))
+                                        painter.drawPath(wf)
+                                    painter.restore()
+
                     if widget.show_speaker_color and session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', None):
                         pen = QPen(QColor(session.SPEAKERS[subtitle.get('speaker', 'A')].get('color', '#b8cee0')))
                         pen.setWidth(4)
@@ -514,6 +651,9 @@ class Timeline(QWidget):
                             painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
                         else:
                             painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+
+                    if subtitle.get('dubbing'):
+                        subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
 
                     subtitle_rect -= QMarginsF(26, 6, 26, 6)
 
@@ -591,7 +731,7 @@ class Timeline(QWidget):
                                 painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
                                 painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                         else:
-                            painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
+                            painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
 
                     if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                         if session.SUBTITLE.get('selected', False) == subtitle:
@@ -708,6 +848,16 @@ class Timeline(QWidget):
         event.accept()
 
     def mousePressEvent(widget, event):
+        dub_hit = widget._dub_handle_at_position(event.pos())
+        if dub_hit is not None:
+            _, dub = dub_hit
+            widget.dub_start_is_clicked = True
+            widget.dragging_dub = dub
+            widget.dragging_dub_offset = event.pos().x() - (dub.get('start', 0.0) * widget.width_proportion)
+            widget.is_cursor_pressing = True
+            event.accept()
+            return
+
         scroll_position = widget.parent().parent().horizontalScrollBar().value()
         scroll_width = widget.parent().parent().width()
 
@@ -727,14 +877,16 @@ class Timeline(QWidget):
             elif widget.subtitle_under_the_cursor:
                 subtitle_track = [0, 1]
                 if widget.show_speaker_tracks and session.SPEAKERS:
+                    speakers_keys = list(session.SPEAKERS.keys())
+                    speaker_name = widget.subtitle_under_the_cursor.get('speaker', 'A')
                     subtitle_track = [
-                        list(session.SPEAKERS.keys()).index(widget.subtitle_under_the_cursor.get('speaker', 'A')),
-                        len(list(session.SPEAKERS.keys()))
+                        speakers_keys.index(speaker_name) if speaker_name in speakers_keys else 0,
+                        len(speakers_keys)
                     ]
                 y = widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0])
                 h = widget.subtitle_height / subtitle_track[1]
-                widget.show_limiters = bool(y < event.pos().y() < (y + h))
-                
+                widget.show_limiters = bool(y < event.pos().y() < (y + h)) and widget._dub_hit_at_position(event.pos()) is None
+
                 if widget.show_limiters and subtitle == widget.subtitle_under_the_cursor:
 
                 # if event.pos().y() > widget.subtitle_y and event.pos().y() < (widget.subtitle_height + widget.subtitle_y) and (((event.pos().x()) / widget.width_proportion) > subtitle['start'] and ((event.pos().x()) / widget.width_proportion) < (subtitle['end'])):
@@ -763,6 +915,15 @@ class Timeline(QWidget):
         widget.update()
 
     def mouseReleaseEvent(widget, event):
+        if widget.dub_start_is_clicked:
+            widget.dub_start_is_clicked = False
+            widget.dragging_dub = None
+            widget.is_cursor_pressing = False
+            session.set_unsaved()
+            widget.update()
+            event.accept()
+            return
+
         if (widget.subtitle_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked):
             session.set_unsaved()
         widget.subtitle_is_clicked = False
@@ -794,6 +955,18 @@ class Timeline(QWidget):
         event.accept()
 
     def mouseMoveEvent(widget, event):
+        if widget.dub_start_is_clicked and widget.dragging_dub is not None:
+            new_start = (event.pos().x() - widget.dragging_dub_offset) / widget.width_proportion
+            widget.dragging_dub['start'] = max(0.0, new_start)
+            widget.update()
+            return
+
+        if not widget.is_cursor_pressing:
+            if widget._dub_handle_at_position(event.pos()) is not None:
+                widget.setCursor(Qt.SizeHorCursor)
+            else:
+                widget.unsetCursor()
+
         cursor_time_position = event.pos().x() / widget.width_proportion #(event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
         cursor_tug_of_war_range = 10 / widget.width_proportion
 
@@ -806,14 +979,16 @@ class Timeline(QWidget):
         if widget.subtitle_under_the_cursor:
             subtitle_track = [0, 1]
             if widget.show_speaker_tracks and session.SPEAKERS:
+                speakers_keys = list(session.SPEAKERS.keys())
+                speaker_name = widget.subtitle_under_the_cursor.get('speaker', 'A')
                 subtitle_track = [
-                    list(session.SPEAKERS.keys()).index(widget.subtitle_under_the_cursor.get('speaker', 'A')),
-                    len(list(session.SPEAKERS.keys()))
+                    speakers_keys.index(speaker_name) if speaker_name in speakers_keys else 0,
+                    len(speakers_keys)
                 ]
             y = widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0])
             h = widget.subtitle_height / subtitle_track[1]
-            widget.show_limiters = bool(y < event.pos().y() < (y + h))
-            
+            widget.show_limiters = bool(y < event.pos().y() < (y + h)) and widget._dub_hit_at_position(event.pos()) is None
+
             if widget.show_limiters:
                 if next and widget.subtitle_under_the_cursor['end'] - (cursor_tug_of_war_range * .5) < cursor_time_position < widget.subtitle_under_the_cursor['end'] + (cursor_tug_of_war_range*.5) and widget.subtitle_under_the_cursor['end'] + .001 > next['start'] - .02:
                     widget.show_tug_of_war = widget.subtitle_under_the_cursor['end'] + .0005
@@ -971,9 +1146,85 @@ class Timeline(QWidget):
         widget.waveform_manager.set_samples(samples)
         # Save samples to cache (levels will be saved as workers complete)
         widget.waveform_manager._save_to_cache()
-        QTimer.singleShot(1000, lambda: widget.update()) 
-     
-        
+        QTimer.singleShot(1000, lambda: widget.update())
+
+    def _dub_hit_at_position(widget, pos, handle_only=False):
+        """Return (subtitle, dub) if pos is over a dub clip; if handle_only, restrict to the leftmost 8px."""
+        show_translations = session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False)
+        band_ratio = 0.25 if show_translations else 0.5
+        speakers = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
+
+        for subtitle in session.SUBTITLE['segments']:
+            if not subtitle.get('dubbing'):
+                continue
+            dub = subtitle['dubbing'][0]
+            dub_path = dub.get('path')
+            if not dub_path:
+                continue
+            peaks = widget.dub_peaks.get(dub_path)
+            if peaks is None:
+                continue
+            _, _, duration = peaks
+
+            dub_x = dub.get('start', subtitle['start']) * widget.width_proportion
+            hit_w = 8 if handle_only else duration * widget.width_proportion
+
+            if speakers:
+                speaker_name = subtitle.get('speaker', 'A')
+                track_index = speakers.index(speaker_name) if speaker_name in speakers else 0
+                track_count = len(speakers)
+            else:
+                track_index, track_count = 0, 1
+            bar_y = widget.subtitle_y + ((widget.subtitle_height / track_count) * track_index)
+            bar_h = widget.subtitle_height / track_count
+            top = bar_y + bar_h * (1.0 - band_ratio)
+            bottom = bar_y + bar_h - 2
+
+            if dub_x <= pos.x() <= dub_x + hit_w and top <= pos.y() <= bottom:
+                return (subtitle, dub)
+
+        return None
+
+    def _dub_handle_at_position(widget, pos):
+        return widget._dub_hit_at_position(pos, handle_only=True)
+
+    def _dub_cache_path(widget, path):
+        cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+        os.makedirs(cache_dir, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        return os.path.join(cache_dir, f'dub_{stem}_peaks.npy')
+
+    def _request_dub_peaks(widget, path):
+        if path in widget.dub_peaks or path in widget.dub_workers:
+            return
+        cache_file = widget._dub_cache_path(path)
+        if cache_file and os.path.exists(cache_file):
+            try:
+                data = np.load(cache_file, allow_pickle=True).item()
+                if 'duration' in data:
+                    widget.dub_peaks[path] = (data['mins'], data['maxs'], float(data['duration']))
+                    return
+            except Exception:
+                pass
+        if not os.path.exists(path):
+            return
+        worker = DubPeaksWorker(path)
+        worker.finished.connect(widget._on_dub_peaks_ready)
+        widget.dub_workers[path] = worker
+        worker.start()
+
+    def _on_dub_peaks_ready(widget, path, mins, maxs, duration):
+        widget.dub_peaks[path] = (mins, maxs, duration)
+        widget.dub_workers.pop(path, None)
+        cache_file = widget._dub_cache_path(path)
+        if cache_file:
+            try:
+                np.save(cache_file, {'mins': mins, 'maxs': maxs, 'duration': duration}, allow_pickle=True)
+            except Exception:
+                pass
+        widget.update()
+
+
 def update_subtitles_panel_subtitle_selected(self):
     self.subtitles_panel_qlistwidget.update_content()
     left_panel.update(self)

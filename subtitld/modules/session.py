@@ -102,6 +102,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
     'XML': {'description': 'XML Subtitle format', 'extensions': ['xml']},
     'USF': {'description': 'Universal Subtitle Format', 'extensions': ['usf']},
+    'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
     'JSON': {'description': 'JSON format', 'extensions': ['json']},
 }
 
@@ -114,6 +115,13 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
     'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
     'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']}
+}
+
+LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {
+    'WAV': {'description': 'WAV audio', 'extensions': ['wav']},
+    'FLAC': {'description': 'FLAC lossless audio', 'extensions': ['flac']},
+    'MP3': {'description': 'MP3 audio', 'extensions': ['mp3']},
+    'MP4': {'description': 'MP4 video with dubbed audio', 'extensions': ['mp4']},
 }
 
 LANGUAGE_DICT_LIST = {

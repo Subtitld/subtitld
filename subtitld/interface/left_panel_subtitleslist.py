@@ -419,6 +419,10 @@ def update(self):
             position = session.SUBTITLE.get('position', 0)
             if position > session.SUBTITLE['selected']['end'] or position < session.SUBTITLE['selected']['start']:
                 position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 2)
+                if session.CONFIG.get('repeat_activated', False):
+                    duration = session.CONFIG.get('playback_repeat_duration', 10.0)
+                    times = session.CONFIG.get('playback_repeat_times', 1)
+                    session.REPEAT_DURATION_BUFFER = [[position, position + duration] for _ in range(times)]
             self.preview_panel_player.set_position(position)
         
         self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE['selected'].get('speaker', 'A'))

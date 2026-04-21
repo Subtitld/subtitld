@@ -1,5 +1,8 @@
 import os
+import copy
 import hashlib
+import shutil
+import zipfile
 from docx import Document
 import json
 import pycaption
@@ -9,12 +12,43 @@ import pysubs2
 import datetime
 
 from PySide6.QtWidgets import QFileDialog
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QByteArray, QBuffer, QIODevice
+from PySide6.QtGui import QImage
 
 from subtitld.modules import timecode
 from subtitld.modules import session
 from subtitld.modules import waveform
 from subtitld.modules import usf
+from subtitld.modules import utils
+
+
+def _safe_asset_name(name):
+    safe = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in str(name))
+    return safe or 'unnamed'
+
+
+def _usfx_extract_dir(usfx_path):
+    project_hash = hashlib.md5(os.path.abspath(usfx_path).encode('utf-8')).hexdigest()
+    path = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'usfx', project_hash)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+USFX_OPTION_DEFAULTS = {
+    'include_speaker_images': True,
+    'include_waveform_cache': False,
+    'include_original_audio': False,
+    'include_processed_audio': False,
+    'include_original_video': False,
+}
+
+
+def _get_usfx_options():
+    """Merge stored defaults with fallback values."""
+    stored = {}
+    if isinstance(session.CONFIG, dict):
+        stored = session.CONFIG.get('default_values', {}).get('usfx_options') or {}
+    return {**USFX_OPTION_DEFAULTS, **stored}
 
 from subtitld.interface.translation import _
 
@@ -167,7 +201,133 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.usf')):
             subtitle_format = 'USF'
-            segments_list = usf.USFReader().read(open(subtitle_file).read())
+            reader = usf.USFReader()
+            segments_list = reader.read(open(subtitle_file).read())
+            for speaker_name, speaker_data in reader.speakers.items():
+                existing = session.SPEAKERS.get(speaker_name, {})
+                if 'color' in speaker_data:
+                    existing['color'] = speaker_data['color']
+                if isinstance(speaker_data.get('dubbing'), dict):
+                    existing['dubbing'] = speaker_data['dubbing']
+                image_bytes = speaker_data.get('image_bytes')
+                if image_bytes:
+                    qimg = QImage()
+                    if qimg.loadFromData(image_bytes):
+                        existing['image'] = qimg
+                session.SPEAKERS[speaker_name] = existing
+
+            if not isinstance(session.FORMAT, dict):
+                session.FORMAT = {}
+            session.FORMAT['format'] = 'USF'
+            session.FORMAT['options'] = {
+                'embed_speaker_images': reader.has_embedded_images,
+                'embed_audio_clips': reader.has_embedded_audio_clips,
+            }
+
+            dub_cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+            os.makedirs(dub_cache_dir, exist_ok=True)
+            for segment in segments_list:
+                for dub in segment.get('dubbing', []) or []:
+                    raw = dub.pop('_embedded_bytes', None)
+                    fmt = dub.pop('_embedded_format', 'wav')
+                    if raw and dub.get('uid'):
+                        target = os.path.join(dub_cache_dir, f'{dub["uid"]}.{fmt}')
+                        if not os.path.exists(target):
+                            try:
+                                with open(target, 'wb') as wf:
+                                    wf.write(raw)
+                            except Exception:
+                                pass
+                        dub['path'] = target
+
+        elif subtitle_file.lower().endswith(('.usfx')):
+            subtitle_format = 'USFX'
+            extract_dir = _usfx_extract_dir(subtitle_file)
+
+            with zipfile.ZipFile(subtitle_file, 'r') as zf:
+                zf.extractall(extract_dir)
+
+            inner_usf = os.path.join(extract_dir, 'subtitles.usf')
+            if not os.path.exists(inner_usf):
+                for fname in os.listdir(extract_dir):
+                    if fname.lower().endswith('.usf'):
+                        inner_usf = os.path.join(extract_dir, fname)
+                        break
+
+            reader = usf.USFReader()
+            with open(inner_usf, encoding='utf-8') as fh:
+                segments_list = reader.read(fh.read())
+
+            speakers_dir = os.path.join(extract_dir, 'assets', 'speakers')
+            for speaker_name, speaker_data in reader.speakers.items():
+                existing = session.SPEAKERS.get(speaker_name, {})
+                if 'color' in speaker_data:
+                    existing['color'] = speaker_data['color']
+                if isinstance(speaker_data.get('dubbing'), dict):
+                    existing['dubbing'] = speaker_data['dubbing']
+                image_bytes = speaker_data.get('image_bytes')
+                if image_bytes:
+                    qimg = QImage()
+                    if qimg.loadFromData(image_bytes):
+                        existing['image'] = qimg
+                else:
+                    safe_name = _safe_asset_name(speaker_name)
+                    for ext in ('png', 'jpg', 'jpeg'):
+                        candidate = os.path.join(speakers_dir, f'{safe_name}.{ext}')
+                        if os.path.exists(candidate):
+                            qimg = QImage()
+                            if qimg.load(candidate):
+                                existing['image'] = qimg
+                            break
+                session.SPEAKERS[speaker_name] = existing
+
+            for segment in segments_list:
+                for dub in segment.get('dubbing', []) or []:
+                    path = dub.get('path', '')
+                    if path and not os.path.isabs(path):
+                        dub['path'] = os.path.join(extract_dir, path)
+
+            # If the bundle ships the original video, adopt it as the project's video
+            # (this lets a USFX opened on another machine find its source).
+            bundled_video_dir = os.path.join(extract_dir, 'assets', 'video')
+            if os.path.isdir(bundled_video_dir):
+                for fname in sorted(os.listdir(bundled_video_dir)):
+                    candidate = os.path.join(bundled_video_dir, fname)
+                    if os.path.isfile(candidate):
+                        if not isinstance(session.VIDEO, dict):
+                            session.VIDEO = {}
+                        session.VIDEO['filepath'] = candidate
+                        break
+
+            # Copy bundled caches to the cache directories, keyed against the current video.
+            current_video = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
+            current_key = utils.get_cache_key(current_video) if current_video else None
+            if current_key:
+                wf_bundled = os.path.join(extract_dir, 'assets', 'waveform.npy')
+                if os.path.isfile(wf_bundled):
+                    wf_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+                    os.makedirs(wf_dir, exist_ok=True)
+                    wf_target = os.path.join(wf_dir, f'{current_key}_waveform.npy')
+                    if not os.path.exists(wf_target):
+                        try:
+                            shutil.copy(wf_bundled, wf_target)
+                        except Exception:
+                            pass
+
+                for kind in ('original', 'vocals', 'background'):
+                    bundled = os.path.join(extract_dir, 'assets', 'audio', f'{kind}.flac')
+                    if os.path.isfile(bundled):
+                        target = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, f'{current_key}_{kind}.flac')
+                        if not os.path.exists(target):
+                            try:
+                                shutil.copy(bundled, target)
+                            except Exception:
+                                pass
+
+            if not isinstance(session.FORMAT, dict):
+                session.FORMAT = {}
+            session.FORMAT['format'] = 'USFX'
+            session.FORMAT['options'] = {}
 
         elif subtitle_file.lower().endswith(('.json')):
             subtitle_format = 'JSON'
@@ -454,7 +614,7 @@ def export_file(filename=False, export_format='TXT', options=False):
                 txt_file.write(final_xml)
 
 
-def save_file(final_file, subtitle_format='USF', language='en'):
+def save_file(final_file, subtitle_format='USFX', language='en'):
     """Function to save the subtitle project. A subtitles dict and the format is given."""
     if session.SUBTITLE['segments']:
         # if not final_file.lower().endswith('.' + format.lower()):
@@ -544,7 +704,153 @@ def save_file(final_file, subtitle_format='USF', language='en'):
 
 
         elif subtitle_format in ['USF']:
-            open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(session.SUBTITLE['segments']))
+            options = session.FORMAT.get('options', {}) if isinstance(session.FORMAT, dict) else {}
+            embed_speaker_images = bool(options.get('embed_speaker_images', False))
+            embed_audio_clips = bool(options.get('embed_audio_clips', False))
+
+            writer_speakers = {}
+            for name, data in session.SPEAKERS.items():
+                if not isinstance(data, dict):
+                    continue
+                entry = {}
+                if data.get('color'):
+                    entry['color'] = data['color']
+                if isinstance(data.get('dubbing'), dict):
+                    entry['dubbing'] = data['dubbing']
+                if embed_speaker_images and isinstance(data.get('image'), QImage):
+                    buf = QByteArray()
+                    qbuf = QBuffer(buf)
+                    qbuf.open(QIODevice.WriteOnly)
+                    if data['image'].save(qbuf, 'PNG'):
+                        entry['image_bytes'] = bytes(buf)
+                    qbuf.close()
+                if entry:
+                    writer_speakers[name] = entry
+
+            open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(
+                session.SUBTITLE['segments'],
+                speakers=writer_speakers,
+                language=language,
+                embed_audio_clips=embed_audio_clips,
+            ))
+
+        elif subtitle_format in ['USFX']:
+            usfx_options = _get_usfx_options()
+
+            writer_speakers = {}
+            speaker_image_bytes = {}
+            for name, data in session.SPEAKERS.items():
+                if not isinstance(data, dict):
+                    continue
+                entry = {}
+                if data.get('color'):
+                    entry['color'] = data['color']
+                if isinstance(data.get('dubbing'), dict):
+                    entry['dubbing'] = data['dubbing']
+                if usfx_options['include_speaker_images'] and isinstance(data.get('image'), QImage):
+                    buf = QByteArray()
+                    qbuf = QBuffer(buf)
+                    qbuf.open(QIODevice.WriteOnly)
+                    if data['image'].save(qbuf, 'PNG'):
+                        speaker_image_bytes[name] = bytes(buf)
+                    qbuf.close()
+                if entry:
+                    writer_speakers[name] = entry
+
+            segments_copy = copy.deepcopy(session.SUBTITLE['segments'])
+            dub_files_to_include = {}
+            for segment in segments_copy:
+                for dub in segment.get('dubbing', []) or []:
+                    source_path = dub.get('path')
+                    uid = dub.get('uid')
+                    if source_path and uid and os.path.isfile(source_path):
+                        ext = (os.path.splitext(source_path)[1].lstrip('.').lower() or 'wav')
+                        arcname = f'assets/dubs/{_safe_asset_name(uid)}.{ext}'
+                        dub_files_to_include[source_path] = arcname
+                        dub['path'] = arcname
+
+            # Collect optional bundled assets (video + separation caches + waveform cache).
+            video_path = session.VIDEO.get('filepath', '') if isinstance(session.VIDEO, dict) else ''
+            video_cache_key = utils.get_cache_key(video_path) if video_path else None
+            extra_files_to_include = {}  # source path -> arcname
+
+            if usfx_options['include_original_video'] and video_path and os.path.isfile(video_path):
+                extra_files_to_include[video_path] = f'assets/video/{_safe_asset_name(os.path.basename(video_path))}'
+
+            if video_cache_key:
+                if usfx_options['include_waveform_cache']:
+                    wf_source = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform', f'{video_cache_key}_waveform.npy')
+                    if os.path.isfile(wf_source):
+                        extra_files_to_include[wf_source] = 'assets/waveform.npy'
+                if usfx_options['include_original_audio']:
+                    src = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, f'{video_cache_key}_original.flac')
+                    if os.path.isfile(src):
+                        extra_files_to_include[src] = 'assets/audio/original.flac'
+                if usfx_options['include_processed_audio']:
+                    for kind in ('vocals', 'background'):
+                        src = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, f'{video_cache_key}_{kind}.flac')
+                        if os.path.isfile(src):
+                            extra_files_to_include[src] = f'assets/audio/{kind}.flac'
+
+            xml_content = usf.USFWriter().write(
+                segments_copy,
+                speakers=writer_speakers,
+                language=language,
+                embed_audio_clips=False,
+            )
+
+            def _mime_for(path_in_zip):
+                ext = path_in_zip.rsplit('.', 1)[-1].lower()
+                return {
+                    'usf': 'application/x-usf+xml',
+                    'png': 'image/png',
+                    'wav': 'audio/wav',
+                    'flac': 'audio/flac',
+                    'mp3': 'audio/mpeg',
+                    'mp4': 'video/mp4',
+                    'mkv': 'video/x-matroska',
+                    'mov': 'video/quicktime',
+                    'webm': 'video/webm',
+                    'ogv': 'video/ogg',
+                    'npy': 'application/octet-stream',
+                }.get(ext, 'application/octet-stream')
+
+            manifest_entries = [('subtitles.usf', 'application/x-usf+xml')]
+            for name in speaker_image_bytes:
+                manifest_entries.append((f'assets/speakers/{_safe_asset_name(name)}.png', 'image/png'))
+            for arc in dub_files_to_include.values():
+                manifest_entries.append((arc, _mime_for(arc)))
+            for arc in extra_files_to_include.values():
+                manifest_entries.append((arc, _mime_for(arc)))
+
+            manifest_lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+                              '<manifest version="1.0">',
+                              '  <format>USFX</format>',
+                              '  <generator>Subtitld</generator>']
+            for path, mime in manifest_entries:
+                manifest_lines.append(f'  <entry path="{path}" type="{mime}"/>')
+            manifest_lines.append('</manifest>')
+            manifest_xml = '\n'.join(manifest_lines)
+
+            tmp_path = final_file + '.tmp'
+            try:
+                with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.writestr('subtitles.usf', xml_content)
+                    zf.writestr('manifest.xml', manifest_xml)
+                    for source, arc in dub_files_to_include.items():
+                        zf.write(source, arc)
+                    for name, img_bytes in speaker_image_bytes.items():
+                        zf.writestr(f'assets/speakers/{_safe_asset_name(name)}.png', img_bytes)
+                    for source, arc in extra_files_to_include.items():
+                        zf.write(source, arc)
+                os.replace(tmp_path, final_file)
+            except Exception:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+                raise
 
 
 def autosave_backup_timer_timeout():
@@ -555,9 +861,10 @@ def autosave_backup_timer_timeout():
             filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
         if not filename:
             filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
-        save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usf'))
+        save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usfx'), 'USFX', session.CONFIG.get('selected_language', 'en'))
+
 
 def autosave_original_timer_timeout():
-    if session.SUBTITLE and 'filepath' in session.SUBTITLE:
-        save_file(session.SUBTITLE['filepath'], session.FORMAT['format'], session.CONFIG['selected_language'])
+    if session.SUBTITLE and session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'):
+        save_file(session.SUBTITLE['filepath'], 'USFX', session.CONFIG['selected_language'])
         

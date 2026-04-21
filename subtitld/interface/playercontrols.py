@@ -3,7 +3,25 @@ from bisect import bisect
 import subprocess
 
 from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent
+
+
+class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
+    """QDoubleSpinBox that fully consumes Return/Enter so neither global
+    shortcuts nor the parent widget (e.g. a QPushButton container) reacts."""
+    def event(self, ev):
+        if ev.type() == QEvent.ShortcutOverride and ev.key() in (Qt.Key_Return, Qt.Key_Enter):
+            ev.accept()
+            return True
+        return super().event(ev)
+
+    def keyPressEvent(self, ev):
+        if ev.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.interpretText()
+            self.editingFinished.emit()
+            ev.accept()
+            return
+        super().keyPressEvent(ev)
 
 import subtitld.modules.timecode as timecode
 from subtitld.interface import timeline, left_panel
@@ -464,7 +482,7 @@ def load(self):
     self.repeat_playback.layout().setSpacing(0)
     self.repeat_playback.clicked.connect(lambda: repeat_playback_clicked(self))
 
-    self.repeat_playback_duration = QDoubleSpinBox()
+    self.repeat_playback_duration = EnterAbsorbingDoubleSpinBox()
     self.repeat_playback_duration.setProperty('class', 'spin_playercontrols')
     self.repeat_playback_duration.setMinimum(.1)
     self.repeat_playback_duration.setMaximum(60.)
@@ -1647,6 +1665,7 @@ def remove_selected_subtitle_button_clicked(self):
     left_panel.update(self)
     timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
+    self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
     session.set_unsaved()
 
 
@@ -1942,7 +1961,6 @@ def repeat_playback_clicked(self):
 def repeat_playback_duration_changed(self):
     """Function to call when playback repeat duration is changed"""
     session.CONFIG['playback_repeat_duration'] = self.repeat_playback_duration.value()
-    self.timeline_widget.setFocus(Qt.TabFocusReason)
 
 
 def repeat_playback_times_changed(self):
