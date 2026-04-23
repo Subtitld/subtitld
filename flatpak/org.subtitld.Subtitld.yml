@@ -5,9 +5,6 @@ sdk: org.kde.Sdk
 base: io.qt.PySide.BaseApp
 base-version: '6.7'
 command: subtitld
-rename-icon: subtitld
-rename-desktop-file: org.subtitld.Subtitld.desktop
-rename-appdata-file: org.subtitld.Subtitld.appdata.xml
 
 finish-args:
   - --share=ipc

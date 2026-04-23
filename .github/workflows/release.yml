@@ -190,6 +190,13 @@ jobs:
       - name: Build MSIX
         shell: pwsh
         run: pwsh ./packaging/msix/build-msix.ps1
+      - name: Upload staging file list on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-staging-files
+          path: msix-staging-files.txt
+          if-no-files-found: ignore
       - name: Rename artifact
         shell: pwsh
         run: Move-Item Subtitld.msix "Subtitld-${{ needs.prep.outputs.version }}.msix"

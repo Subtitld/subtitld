@@ -52,20 +52,29 @@ Copy-Item -Path (Join-Path $DistDir '*') -Destination $StagingDir -Recurse -Forc
 # install artifacts). Not needed at runtime.
 Get-ChildItem -Path $StagingDir -Recurse -Force -Directory -Include '__pycache__', '*.dist-info', '*.egg-info' -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -Recurse -Force -LiteralPath $_.FullName }
-# Log staging contents and flag MSIX-incompatible paths (reserved names,
-# trailing dot/space, non-ASCII, or relative path > 256 chars).
+# Log every staged path so a failing makeappx run can be inspected offline.
 $allFiles = Get-ChildItem -Path $StagingDir -Recurse -Force -File
-Write-Host "Staging contains $($allFiles.Count) files."
+$stagingList = Join-Path $RepoRoot 'msix-staging-files.txt'
+$allFiles | ForEach-Object {
+    $rel = $_.FullName.Substring($StagingDir.Length).TrimStart('\')
+    "$($_.Length)`t$rel"
+} | Set-Content -LiteralPath $stagingList -Encoding UTF8
+Write-Host "Staging contains $($allFiles.Count) files. Full list -> $stagingList"
+
+# Flag MSIX-incompatible paths (reserved names, whitespace/dot at
+# segment boundaries, non-ASCII code points, or segments over 255 chars).
 $bad = $allFiles | ForEach-Object {
     $rel = $_.FullName.Substring($StagingDir.Length).TrimStart('\')
-    $n = $_.Name
     $reasons = @()
-    if ($n -match '[<>:"/\\|?*]')                                 { $reasons += 'reserved-char'  }
-    if ($n -match '[. ]$')                                        { $reasons += 'trailing-dot-or-space' }
-    if ($n -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)')   { $reasons += 'reserved-name' }
-    if ($rel -cmatch '[^\x20-\x7e\\]')                            { $reasons += 'non-ascii'    }
-    if ($rel.Length -gt 256)                                      { $reasons += 'path-too-long' }
-    if ($reasons) { [pscustomobject]@{ Reason = ($reasons -join ','); Path = $rel } }
+    foreach ($seg in $rel.Split('\')) {
+        if ($seg -match '[<>:"/|?*]')                                 { $reasons += 'reserved-char'  }
+        if ($seg -match '[. ]$' -or $seg -match '^[. ]')              { $reasons += 'edge-dot-or-space' }
+        if ($seg -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)') { $reasons += 'reserved-name' }
+        foreach ($c in $seg.ToCharArray()) { if ([int]$c -gt 127 -or [int]$c -lt 32) { $reasons += 'non-ascii-or-control'; break } }
+        if ($seg.Length -gt 255)                                      { $reasons += 'segment-too-long' }
+    }
+    if ($rel.Length -gt 256)                                          { $reasons += 'path-too-long' }
+    if ($reasons) { [pscustomobject]@{ Reason = (($reasons | Select-Object -Unique) -join ','); Path = $rel } }
 }
 if ($bad) {
     Write-Warning "Files that may be rejected by MakeAppx:"
