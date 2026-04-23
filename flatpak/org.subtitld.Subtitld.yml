@@ -38,7 +38,6 @@ modules:
       - --enable-libopus
       - --enable-libvorbis
       - --enable-libvpx
-      - --enable-libx264
     sources:
       - type: archive
         url: https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz

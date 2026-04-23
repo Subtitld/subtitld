@@ -148,10 +148,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install .
+      - name: Install NSIS
+        run: choco install nsis -y
       - name: Build with PyInstaller
         run: pyinstaller subtitld-windows.spec --clean --noconfirm
       - name: Build NSIS installer
-        run: makensis nsis-installer.nsi
+        shell: pwsh
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          makensis nsis-installer.nsi
       - name: Rename artifact
         run: |
           Move-Item Subtitld-Setup.exe "Subtitld-${{ needs.prep.outputs.version }}-Setup.exe"
