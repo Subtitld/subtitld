@@ -52,15 +52,24 @@ Copy-Item -Path (Join-Path $DistDir '*') -Destination $StagingDir -Recurse -Forc
 # install artifacts). Not needed at runtime.
 Get-ChildItem -Path $StagingDir -Recurse -Force -Directory -Include '__pycache__', '*.dist-info', '*.egg-info' -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -Recurse -Force -LiteralPath $_.FullName }
-# Flag any filenames with characters MSIX rejects (backslash/colon in name,
-# trailing dot/space, or Windows reserved names).
-$bad = Get-ChildItem -Path $StagingDir -Recurse -Force -File | Where-Object {
+# Log staging contents and flag MSIX-incompatible paths (reserved names,
+# trailing dot/space, non-ASCII, or relative path > 256 chars).
+$allFiles = Get-ChildItem -Path $StagingDir -Recurse -Force -File
+Write-Host "Staging contains $($allFiles.Count) files."
+$bad = $allFiles | ForEach-Object {
+    $rel = $_.FullName.Substring($StagingDir.Length).TrimStart('\')
     $n = $_.Name
-    $n -match '[<>:"/\\|?*]' -or $n -match '[. ]$' -or $n -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)'
+    $reasons = @()
+    if ($n -match '[<>:"/\\|?*]')                                 { $reasons += 'reserved-char'  }
+    if ($n -match '[. ]$')                                        { $reasons += 'trailing-dot-or-space' }
+    if ($n -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)')   { $reasons += 'reserved-name' }
+    if ($rel -cmatch '[^\x20-\x7e\\]')                            { $reasons += 'non-ascii'    }
+    if ($rel.Length -gt 256)                                      { $reasons += 'path-too-long' }
+    if ($reasons) { [pscustomobject]@{ Reason = ($reasons -join ','); Path = $rel } }
 }
 if ($bad) {
-    Write-Warning "Problematic filenames detected (MSIX may reject):"
-    $bad | ForEach-Object { Write-Warning "  $($_.FullName)" }
+    Write-Warning "Files that may be rejected by MakeAppx:"
+    $bad | ForEach-Object { Write-Warning "  [$($_.Reason)] $($_.Path)" }
 }
 
 # Copy icon assets
