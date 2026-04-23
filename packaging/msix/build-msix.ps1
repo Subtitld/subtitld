@@ -52,6 +52,11 @@ Copy-Item -Path (Join-Path $DistDir '*') -Destination $StagingDir -Recurse -Forc
 # install artifacts). Not needed at runtime.
 Get-ChildItem -Path $StagingDir -Recurse -Force -Directory -Include '__pycache__', '*.dist-info', '*.egg-info' -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -Recurse -Force -LiteralPath $_.FullName }
+
+# Rename/patch files MSIX rejects: '+' and '[...]' in file names (e.g.
+# vosk/libstdc++-6.dll and docx/.../[Content_Types].xml).
+python (Join-Path $ScriptDir 'sanitize-staging.py') $StagingDir
+if ($LASTEXITCODE -ne 0) { throw "sanitize-staging.py failed" }
 # Log every staged path so a failing makeappx run can be inspected offline.
 $allFiles = Get-ChildItem -Path $StagingDir -Recurse -Force -File
 $stagingList = Join-Path $RepoRoot 'msix-staging-files.txt'
