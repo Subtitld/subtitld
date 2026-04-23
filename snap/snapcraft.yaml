@@ -45,6 +45,7 @@ parts:
       - libpulse0
       - libportaudio2
       - libsndfile1
+      - libasound2-plugins
     override-pull: |
       craftctl default
       craftctl set version="$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)"
