@@ -5,13 +5,18 @@ on:
     tags:
       - 'v*'
     branches:
-      - ci-setup
+      - '**'
   workflow_dispatch:
     inputs:
-      publish:
-        description: 'Also run publish steps (Store, AUR, GitHub Release). Only effective on tag pushes normally.'
+      channel:
+        description: 'Publish channel (overrides commit-message detection)'
         required: false
-        default: 'false'
+        default: ''
+        type: choice
+        options:
+          - ''
+          - beta
+          - stable
 
 permissions:
   contents: write
@@ -26,13 +31,17 @@ env:
 
 jobs:
   # ────────────────────────────────────────────────────────────────
-  # prep — extract version from src/subtitld/__init__.py
+  # prep — extract version + resolve publish channel
   # ────────────────────────────────────────────────────────────────
+  #   channel=stable  →  tag push (refs/tags/v*)
+  #   channel=beta    →  commit subject ends with "(build)" on any branch
+  #   channel=<input> →  workflow_dispatch override
+  #   channel=""      →  no publish; all build jobs skip
   prep:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      is_tag: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      channel: ${{ steps.channel.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -40,11 +49,28 @@ jobs:
           v=$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
+      - id: channel
+        env:
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+          DISPATCH_CHANNEL: ${{ github.event.inputs.channel }}
+        run: |
+          if [ -n "$DISPATCH_CHANNEL" ]; then
+            channel="$DISPATCH_CHANNEL"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            channel="stable"
+          elif printf '%s' "$HEAD_MSG" | head -n 1 | grep -qE '\(build\)[[:space:]]*$'; then
+            channel="beta"
+          else
+            channel=""
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Resolved channel: '${channel:-<none>}'"
 
   # ────────────────────────────────────────────────────────────────
   # Linux: AppImage
   # ────────────────────────────────────────────────────────────────
   build-appimage:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: ubuntu-22.04
     steps:
@@ -75,6 +101,7 @@ jobs:
   # Linux: Snap
   # ────────────────────────────────────────────────────────────────
   build-snap:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: ubuntu-22.04
     steps:
@@ -90,6 +117,7 @@ jobs:
   # Linux: Flatpak
   # ────────────────────────────────────────────────────────────────
   build-flatpak:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: ubuntu-22.04
     container:
@@ -107,6 +135,7 @@ jobs:
   # Linux: AUR PKGBUILD validation
   # ────────────────────────────────────────────────────────────────
   validate-aur:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: ubuntu-22.04
     container:
@@ -136,6 +165,7 @@ jobs:
   # Windows: NSIS standalone installer
   # ────────────────────────────────────────────────────────────────
   build-windows-nsis:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: windows-latest
     steps:
@@ -171,6 +201,7 @@ jobs:
   # Windows: MSIX for Microsoft Store
   # ────────────────────────────────────────────────────────────────
   build-windows-msix:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: windows-latest
     env:
@@ -209,6 +240,7 @@ jobs:
   # macOS: .dmg
   # ────────────────────────────────────────────────────────────────
   build-macos-dmg:
+    if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: macos-latest
     steps:
@@ -242,10 +274,104 @@ jobs:
           path: Subtitld-*.dmg
 
   # ────────────────────────────────────────────────────────────────
-  # Publish: GitHub Release (tag only)
+  # Publish: user server (AppImage + NSIS) — both beta and stable
+  # ────────────────────────────────────────────────────────────────
+  publish-server:
+    if: needs.prep.outputs.channel != ''
+    needs:
+      - prep
+      - build-appimage
+      - build-windows-nsis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: appimage
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-nsis
+          path: .
+      - name: Upload to builds.subtitld.org
+        env:
+          SSHPASS: ${{ secrets.USER_PASS }}
+        run: |
+          sudo apt-get install -y sshpass
+          sshpass -e scp -o stricthostkeychecking=no *.AppImage \
+            subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
+          sshpass -e scp -o stricthostkeychecking=no *-Setup.exe \
+            subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
+
+  # ────────────────────────────────────────────────────────────────
+  # Publish: Snap Store — beta or stable channel
+  # ────────────────────────────────────────────────────────────────
+  publish-snap:
+    if: needs.prep.outputs.channel != ''
+    needs:
+      - prep
+      - build-snap
+    runs-on: ubuntu-22.04
+    continue-on-error: true  # remove once SNAPCRAFT_STORE_CREDENTIALS is configured
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: snap
+          path: .
+      - name: Resolve snap filename
+        id: snap
+        run: echo "path=$(ls subtitld_*.snap | head -n1)" >> "$GITHUB_OUTPUT"
+      - uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snap.outputs.path }}
+          release: ${{ needs.prep.outputs.channel }}
+
+  # ────────────────────────────────────────────────────────────────
+  # Publish: Microsoft Store — beta via Package Flight, stable to main
+  # ────────────────────────────────────────────────────────────────
+  publish-msstore:
+    if: needs.prep.outputs.channel != ''
+    needs:
+      - prep
+      - build-windows-msix
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-msix
+          path: .
+      - uses: microsoft/setup-msstore-cli@v1
+      - name: Configure msstore CLI
+        shell: pwsh
+        run: |
+          msstore reconfigure `
+            --tenantId "${{ secrets.MSSTORE_TENANT_ID }}" `
+            --sellerId "${{ env.MSSTORE_SELLER_ID }}" `
+            --clientId "${{ secrets.MSSTORE_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.MSSTORE_CLIENT_SECRET }}"
+      - name: Publish to Microsoft Store
+        shell: pwsh
+        env:
+          CHANNEL: ${{ needs.prep.outputs.channel }}
+          BETA_FLIGHT_ID: ${{ secrets.MSSTORE_BETA_FLIGHT_ID }}
+        run: |
+          $msix = Get-ChildItem -Filter 'Subtitld-*.msix' | Select-Object -First 1
+          if ($env:CHANNEL -eq 'beta') {
+            if (-not $env:BETA_FLIGHT_ID) {
+              Write-Warning "MSSTORE_BETA_FLIGHT_ID secret not set — skipping MS Store beta publish."
+              exit 0
+            }
+            msstore publish --flightId $env:BETA_FLIGHT_ID $msix.FullName
+          } else {
+            msstore publish $msix.FullName
+          }
+
+  # ────────────────────────────────────────────────────────────────
+  # Publish: GitHub Release — stable (tag) only
   # ────────────────────────────────────────────────────────────────
   publish-github-release:
-    if: needs.prep.outputs.is_tag == 'true'
+    if: needs.prep.outputs.channel == 'stable'
     needs:
       - prep
       - build-appimage
@@ -270,39 +396,26 @@ jobs:
           generate_release_notes: true
 
   # ────────────────────────────────────────────────────────────────
-  # Publish: Microsoft Store (tag only)
+  # Publish: PyPI — stable (tag) only
   # ────────────────────────────────────────────────────────────────
-  publish-msstore:
-    if: needs.prep.outputs.is_tag == 'true'
-    needs:
-      - prep
-      - build-windows-msix
-    runs-on: windows-latest
+  publish-pypi:
+    if: needs.prep.outputs.channel == 'stable'
+    needs: prep
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          name: windows-msix
-          path: .
-      - uses: microsoft/setup-msstore-cli@v1
-      - name: Configure msstore CLI
-        shell: pwsh
-        run: |
-          msstore reconfigure `
-            --tenantId "${{ secrets.MSSTORE_TENANT_ID }}" `
-            --sellerId "${{ env.MSSTORE_SELLER_ID }}" `
-            --clientId "${{ secrets.MSSTORE_CLIENT_ID }}" `
-            --clientSecret "${{ secrets.MSSTORE_CLIENT_SECRET }}"
-      - name: Publish to Microsoft Store
-        shell: pwsh
-        run: |
-          $msix = Get-ChildItem -Filter 'Subtitld-*.msix' | Select-Object -First 1
-          msstore publish $msix.FullName
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine upload dist/* -u __token__ -p "${{ secrets.PYPI_TOKEN }}"
 
   # ────────────────────────────────────────────────────────────────
-  # Publish: AUR (tag only)
+  # Publish: AUR — stable (tag) only
   # ────────────────────────────────────────────────────────────────
   publish-aur:
-    if: needs.prep.outputs.is_tag == 'true'
+    if: needs.prep.outputs.channel == 'stable'
     needs:
       - prep
       - validate-aur

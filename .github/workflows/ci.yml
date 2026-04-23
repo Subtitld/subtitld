@@ -1,12 +1,11 @@
 name: CI
 
-'on':
+on:
   push:
     branches:
-      - '*'
+      - '**'
   pull_request:
 
-    null
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,121 +13,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11'
           cache: pip
       - run: pip install build
-      - run: |
-          VERSION=$(date +%y.%m.%d.%H%M)
-          sed -i "s/__version__ = '.*'/__version__ = '$VERSION'/" src/subtitld/__init__.py
-          python -m build
+      - name: Build wheel
+        run: python -m build
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
           retention-days: 7
-
-  deploy_pypi:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-      - run: pip install twine
-      - run: twine upload dist/* -u __token__ -p "${{ secrets.PYPI_TOKEN }}"
-
-  build_appimage:
-    needs: build
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - run: |
-          export VERSION_NUMBER=$(date +%y.%m.%d.%H%M)
-          sed -i "s/version: 22.09.01.01/version: $VERSION_NUMBER/" AppImageBuilder.yml
-          sudo apt-get update -qy
-          sudo apt-get install -y sshpass wget python3-pip gtk-update-icon-cache libgdk-pixbuf-2.0-0 squashfs-tools zsync libglib2.0-bin ffmpeg
-          mkdir -p ~/.local/bin
-          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ~/.local/bin/appimagetool
-          chmod +x ~/.local/bin/appimagetool
-          python3 -m pip install appimage-builder
-          python3 -m pip install dist/*.whl
-          python3 -m pip install PyInstaller
-          python3 -m PyInstaller subtitld.spec
-          appimage-builder --skip-test --recipe AppImageBuilder.yml
-      - uses: actions/upload-artifact@v4
-        with:
-          name: appimage
-          path: Subtitld-*.AppImage
-          retention-days: 30
-
-  deploy_appimage:
-    needs: build_appimage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: appimage
-      - run: |
-          sudo apt-get install -y sshpass
-          export SSHPASS=${{ secrets.USER_PASS }}
-          sshpass -e scp -o stricthostkeychecking=no *.AppImage subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
-
-  build_windows:
-    needs: build
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - run: |
-          $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
-          choco install vcredist-all -y
-          choco install nsis -y
-          $nsis = Get-ChildItem -Path 'C:\Program Files*','C:\ProgramData\chocolatey\lib' -Filter 'makensis.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $nsis) { throw 'makensis.exe not found after choco install nsis' }
-          Write-Host "Using makensis: $nsis"
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
-          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "."
-          $ffmpegDir = Get-ChildItem -Directory -Filter "ffmpeg-*" | Select-Object -First 1
-          $env:PATH = "$($ffmpegDir.FullName)\bin;$env:PATH"
-          pip install (Get-Item dist/*.whl).FullName
-          pip install pyinstaller pywin32
-          python -m PyInstaller subtitld-windows.spec
-          python -m PyInstaller subtitld-windows-onefile.spec
-          Move-Item dist/Subtitld-Portable.exe "Subtitld $VERSION_NUMBER Portable.exe"
-          & $nsis nsis-installer.nsi
-          Move-Item "Subtitld-Setup.exe" "Subtitld $VERSION_NUMBER Installer.exe"
-        shell: pwsh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: |
-            Subtitld*Portable.exe
-            Subtitld*Installer.exe
-          retention-days: 30
-
-  deploy_windows:
-    needs: build_windows
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows
-      - run: |
-          sudo apt-get install -y sshpass
-          export SSHPASS=${{ secrets.USER_PASS }}
-          sshpass -e scp -o stricthostkeychecking=no *.exe subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
