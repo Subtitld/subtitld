@@ -155,9 +155,10 @@ jobs:
       - name: Build NSIS installer
         shell: pwsh
         run: |
-          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
-          refreshenv
-          makensis nsis-installer.nsi
+          $nsis = Get-ChildItem -Path 'C:\Program Files*','C:\ProgramData\chocolatey\lib' -Filter 'makensis.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $nsis) { throw 'makensis.exe not found after choco install nsis' }
+          Write-Host "Using makensis: $nsis"
+          & $nsis nsis-installer.nsi
       - name: Rename artifact
         run: |
           Move-Item Subtitld-Setup.exe "Subtitld-${{ needs.prep.outputs.version }}-Setup.exe"

@@ -43,16 +43,12 @@ modules:
         url: https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz
         sha256: 8684f4b00f94b85461884c3719382f1261f0d9eb3d59640a1f4ac0873616f968
 
+  - python-modules.json
+
   - name: subtitld
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app .
-      - pip3 install --prefix=/app
-          PySide6==6.10.0
-          PySideSix-Frameless-Window
-          python-i18n python-docx pycaption chardet==6.0.0 pysubs2
-          translate autohex platformdirs psutil
-          soundfile
+      - pip3 install --no-deps --no-build-isolation --prefix=/app .
       - install -Dm644 flatpak/org.subtitld.Subtitld.desktop
           /app/share/applications/org.subtitld.Subtitld.desktop
       - install -Dm644 flatpak/org.subtitld.Subtitld.appdata.xml

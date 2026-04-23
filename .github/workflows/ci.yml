@@ -98,8 +98,9 @@ jobs:
           $VERSION_NUMBER = Get-Date -Format "yy.MM.dd.HHmm"
           choco install vcredist-all -y
           choco install nsis -y
-          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
-          refreshenv
+          $nsis = Get-ChildItem -Path 'C:\Program Files*','C:\ProgramData\chocolatey\lib' -Filter 'makensis.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $nsis) { throw 'makensis.exe not found after choco install nsis' }
+          Write-Host "Using makensis: $nsis"
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "."
           $ffmpegDir = Get-ChildItem -Directory -Filter "ffmpeg-*" | Select-Object -First 1
@@ -109,7 +110,7 @@ jobs:
           python -m PyInstaller subtitld-windows.spec
           python -m PyInstaller subtitld-windows-onefile.spec
           Move-Item dist/Subtitld-Portable.exe "Subtitld $VERSION_NUMBER Portable.exe"
-          makensis nsis-installer.nsi
+          & $nsis nsis-installer.nsi
           Move-Item "Subtitld-Setup.exe" "Subtitld $VERSION_NUMBER Installer.exe"
         shell: pwsh
       - uses: actions/upload-artifact@v4
