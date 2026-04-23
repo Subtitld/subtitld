@@ -60,7 +60,7 @@ class PlayerWidget(QWidget):
                 else:
                     video_rect = QRectF(item_rect)
 
-                painter.setFont(QFont(session.CONFIG.get('videoplayer', {}).get('font_family', 'Ubuntu'), session.CONFIG.get('videoplayer', {}).get('font_size', 40)))
+                painter.setFont(QFont(session.CONFIG.get('videoplayer', {}).get('font_family', 'Montserrat'), session.CONFIG.get('videoplayer', {}).get('font_size', 40)))
 
                 title_safe_margin_qrect = video_rect - QMarginsF(
                     (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100) * video_rect.width(),

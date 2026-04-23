@@ -16,16 +16,24 @@ def _safe_piece(name):
     return ''.join(c if c.isalnum() or c in '-_.' else '_' for c in str(name)) or 'x'
 
 
-def _background_audio_path():
-    """Path to the cached background-only FLAC for the current video, if present."""
+def _separation_path(kind):
+    """Path to the cached <kind>.flac (`background` or `vocals`) for the current video."""
     video_path = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
     if not video_path:
         return None
     key = utils.get_cache_key(video_path)
     if not key:
         return None
-    path = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, key + '_background.flac')
+    path = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, f'{key}_{kind}.flac')
     return path if os.path.exists(path) else None
+
+
+def _background_audio_path():
+    return _separation_path('background')
+
+
+def _vocals_audio_path():
+    return _separation_path('vocals')
 
 
 def _load_audio(path, samplerate):
@@ -168,6 +176,20 @@ def bounce(output_path, audio_format, mode, audio_engine=None,
         return padded
 
     dub_tracks = list((getattr(audio_engine, 'speaker_tracks', {}) or {}).values())
+
+    if mode in ('background_only', 'vocals_only'):
+        src = _background_audio_path() if mode == 'background_only' else _vocals_audio_path()
+        if not src:
+            raise ValueError(f'No cached audio available for mode {mode}')
+        buffer = _load_audio(src, samplerate)
+        if audio_format == 'MP4':
+            video = session.VIDEO.get('filepath')
+            if not video:
+                raise ValueError('No video loaded for MP4 mux')
+            _mux_mp4(video, buffer, samplerate, output_path)
+        else:
+            _write_audio(output_path, buffer, samplerate, audio_format)
+        return
 
     if mode == 'mixdown':
         buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=dub_tracks)

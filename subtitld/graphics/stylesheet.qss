@@ -1,9 +1,9 @@
 QPushButton {
     border-radius: 2px;
-    border: 0;
-    background-color: #3e5363;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
     padding: 6px 12px;
     outline: none;
+    font-family: 'Montserrat';
     font-size: 11px;
     font-weight: 700;
     color: #b8cee0;
@@ -15,6 +15,7 @@ QLabel {
 }
 
 QLabel[class='widget_label'] {
+    font-family: 'Montserrat';
     font-size: 9px;
     font-weight: 700;
     color: #b8cee0;
@@ -36,28 +37,47 @@ QCheckBox {
 }
 
 QPushButton[class="danger"] {
-    background-color: #a94444;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c55252, stop:1 #a94444);
+    color: #ffffff;
 }
 
 QPushButton[class="danger"]:hover {
-    background-color: #c55252;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d46464, stop:1 #b05050);
 }
 
 QPushButton[class="secondary"] {
-    background-color: #b8cee0;
-    color: #3e5363
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
+    color: #3e5363;
 }
 
 QPushButton[class="secondary"]:hover {
-    background-color: #e5b8cee0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
+}
+
+QPushButton[class="primary"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7a8494, stop:1 #6a7483);
+    color: #ffffff;
+}
+
+QPushButton[class="primary"]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8a94a4, stop:1 #7a8494);
 }
 
 QPushButton::hover {
-    background-color: #cc3e5363;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f84, stop:1 #4a5f70);
 }
 
 QPushButton::pressed {
-    background-color: #304251;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2e3e4c, stop:1 #3a4d5d);
+    border-top-color: rgba(0, 0, 0, 64);
+    border-bottom-color: rgba(255, 255, 255, 20);
+}
+
+QPushButton::disabled {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #40566a80, stop:1 #3e536380);
+    color: #66b8cee0;
+    border-top-color: rgba(255, 255, 255, 15);
+    border-bottom-color: rgba(0, 0, 0, 20);
 }
 
 QMainWindow {
@@ -235,6 +255,7 @@ LabeledComboBox QComboBox::drop-down {
 LabeledComboBox QLabel,
 LabeledLabel #top_label,
 LabeledLineEdit #top_label {
+    font-family: 'Montserrat';
     font-size: 9px;
     color:#b8cee0;
     text-transform: uppercase;
@@ -385,22 +406,42 @@ QGroupBox::indicator:disabled {
 }
 
 #titleBar_left_save_button[class=saved] {
-    background-color: #b8cee0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
+}
+
+#titleBar_left_save_button[class=saved]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
+}
+
+#titleBar_left_save_button[class=saved]:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #a3bdd1, stop:1 #b8cee0);
+    border-top-color: rgba(0, 0, 0, 64);
+    border-bottom-color: rgba(255, 255, 255, 20);
 }
 
 #titleBar_left_save_button[class=unsaved] {
-    background-color: #67ff4d;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #67ff4d, stop:1 #55d43f);
+}
+
+#titleBar_left_save_button[class=unsaved]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8cff6e, stop:1 #67ff4d);
+}
+
+#titleBar_left_save_button[class=unsaved]:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3caa2a, stop:1 #55d43f);
+    border-top-color: rgba(0, 0, 0, 64);
+    border-bottom-color: rgba(255, 255, 255, 20);
 }
 
 #titleBar_left_export_button {
-    padding: 8px 16px;
+    padding: 8px;
     icon: url(graphics:left_panel_export.svg);
-    background-color: #336a7483;
-    color: white;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7a8494, stop:1 #6a7483);
+    color: #ffffff;
 }
 
 #titleBar_left_export_button:hover {
-    background-color: #556a7483;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8a94a4, stop:1 #7a8494);
 }
 
 #titleBar_left_information_container QLabel {
@@ -521,7 +562,6 @@ QWidget[class='transparent_panel'] {
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 1px;
     padding: 7px 12px;
     margin-right: 2px;
     border: none;
@@ -737,6 +777,16 @@ QWidget[class='transparent_panel'] {
     font-weight: 700;
     color: rgba(106, 116, 131,100);
     font-family: "Ubuntu Mono", monospace;
+}
+
+
+#playercontrols_widget QPushButton {
+    border: unset;
+}
+
+#playercontrols_widget QPushButton:pressed,
+#playercontrols_widget QPushButton:disabled {
+    border: unset;
 }
 
 #playercontrols_widget_left_top_line {

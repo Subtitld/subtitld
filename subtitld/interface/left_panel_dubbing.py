@@ -106,10 +106,12 @@ class EdgeTTSEngine:
     def _on_speech_ready(uid, original_subtitle, file_path):
         for subtitle in session.SUBTITLE['segments']:
             if subtitle.get('start') == original_subtitle['start']:
-                subtitle.setdefault('dubbing', []).insert(0, {
+                dubs = subtitle.setdefault('dubbing', [])
+                inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
+                dubs.insert(0, {
                     'engine': 'edge-tts',
                     'path': file_path,
-                    'start': subtitle['start'],
+                    'start': inherited_start,
                     'end': subtitle['end'],
                     'uid': uid,
                     'rate': original_subtitle.get('rate', 0),

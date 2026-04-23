@@ -445,7 +445,7 @@ def show(self):
 
 def update(self):
     self.global_panel_interface_videoplayer_fontsize_spinbox.setValue(session.CONFIG['videoplayer'].get('font_size', 40))
-    self.global_panel_interface_videoplayer_fontfamily_combobox.setCurrentText(session.CONFIG['videoplayer'].get('font_family', 'Ubuntu'))
+    self.global_panel_interface_videoplayer_fontfamily_combobox.setCurrentText(session.CONFIG['videoplayer'].get('font_family', 'Montserrat'))
     self.global_panel_interface_videoplayer_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('color', '#ffffffff') + ' }')
     self.global_panel_interface_videoplayer_shadow_group.setChecked(session.CONFIG['videoplayer'].get('shadow_enabled', True))
     self.global_panel_interface_videoplayer_shadow_x_position.setValue(session.CONFIG['videoplayer'].get('shadow_x', 2))

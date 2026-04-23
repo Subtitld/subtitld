@@ -201,9 +201,11 @@ def toppanel_export_button_clicked(self):
     if audio_format is not None:
         from subtitld.modules import bounce as _bounce
         has_background = _bounce._background_audio_path() is not None
+        has_vocals = _bounce._vocals_audio_path() is not None
         audio_dialog = export_audio_dialog(parent=self, title=f'Export {audio_format}',
                                             is_mp4=(audio_format == 'MP4'),
-                                            has_background=has_background)
+                                            has_background=has_background,
+                                            has_vocals=has_vocals)
         config = audio_dialog.exec_and_get_values()
         if config:
             engine = getattr(self.preview_panel_player, '_audio_device', None)
@@ -249,29 +251,46 @@ class export_json_dialog(utils.SimpleDialog):
 
 
 class export_audio_dialog(utils.SimpleDialog):
-    def __init__(self, parent=None, title='', is_mp4=False, has_background=False):
+    def __init__(self, parent=None, title='', is_mp4=False, has_background=False, has_vocals=False):
         super().__init__(parent, title)
 
         self.mode_group = QButtonGroup(self)
         self.mode_mixdown = QRadioButton(_('export_audio_dialog.mode_mixdown'))
         self.mode_stems = QRadioButton(_('export_audio_dialog.mode_stems'))
         self.mode_clips = QRadioButton(_('export_audio_dialog.mode_clips'))
+        self.mode_background_only = QRadioButton(_('export_audio_dialog.mode_background_only'))
+        self.mode_vocals_only = QRadioButton(_('export_audio_dialog.mode_vocals_only'))
         self.mode_mixdown.setChecked(True)
-        self.mode_group.addButton(self.mode_mixdown)
-        self.mode_group.addButton(self.mode_stems)
-        self.mode_group.addButton(self.mode_clips)
-        self.content.layout().addWidget(self.mode_mixdown)
-        self.content.layout().addWidget(self.mode_stems)
-        self.content.layout().addWidget(self.mode_clips)
+        for btn in (self.mode_mixdown, self.mode_stems, self.mode_clips,
+                    self.mode_background_only, self.mode_vocals_only):
+            self.mode_group.addButton(btn)
+            self.content.layout().addWidget(btn)
 
         if is_mp4:
             self.mode_clips.setEnabled(False)
+
+        self.mode_background_only.setEnabled(has_background)
+        if not has_background:
+            self.mode_background_only.setToolTip(_('export_audio_dialog.background_unavailable'))
+
+        self.mode_vocals_only.setEnabled(has_vocals)
+        if not has_vocals:
+            self.mode_vocals_only.setToolTip(_('export_audio_dialog.vocals_unavailable'))
 
         self.include_background_checkbox = QCheckBox(_('export_audio_dialog.include_background'))
         self.include_background_checkbox.setEnabled(has_background)
         if not has_background:
             self.include_background_checkbox.setToolTip(_('export_audio_dialog.background_unavailable'))
         self.content.layout().addWidget(self.include_background_checkbox)
+
+        # Hide the "include background" checkbox for the two pass-through modes
+        # since mixing doesn't make sense when exporting a single track.
+        def _refresh_checkbox_state():
+            is_passthrough = self.mode_background_only.isChecked() or self.mode_vocals_only.isChecked()
+            self.include_background_checkbox.setDisabled(is_passthrough or not has_background)
+        for btn in (self.mode_mixdown, self.mode_stems, self.mode_clips,
+                    self.mode_background_only, self.mode_vocals_only):
+            btn.toggled.connect(_refresh_checkbox_state)
 
     def exec_and_get_values(self):
         if self.exec() == QDialog.Accepted:
@@ -280,6 +299,10 @@ class export_audio_dialog(utils.SimpleDialog):
                 mode = 'stems'
             elif self.mode_clips.isChecked():
                 mode = 'clips'
+            elif self.mode_background_only.isChecked():
+                mode = 'background_only'
+            elif self.mode_vocals_only.isChecked():
+                mode = 'vocals_only'
             return {
                 'mode': mode,
                 'include_background': self.include_background_checkbox.isChecked() and self.include_background_checkbox.isEnabled(),
