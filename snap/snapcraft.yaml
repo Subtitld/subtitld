@@ -15,7 +15,7 @@ architectures:
 
 apps:
   subtitld:
-    command: bin/subtitld
+    command: bin/subtitld-launcher
     extensions:
       - kde-neon-6
     environment:
@@ -61,3 +61,15 @@ parts:
           sed -i '1s|^#!.*|#!/usr/bin/env python3|' "$f"
         fi
       done
+      # The kde-neon-6 extension stages its own Qt6 under $SNAP/kf6/...
+      # and prepends it to LD_LIBRARY_PATH. PySide6's pip wheel bundles
+      # a different Qt6 under site-packages/PySide6/Qt/lib. Mixing the
+      # two produces "undefined symbol ... Qt_6_PRIVATE_API" at import.
+      # This launcher runs after the extension's command-chain and
+      # forces PySide6's bundled Qt to be found first.
+      cat > "$CRAFT_PART_INSTALL/bin/subtitld-launcher" <<'LAUNCHER'
+      #!/bin/bash
+      export LD_LIBRARY_PATH="$SNAP/lib/python3.10/site-packages/PySide6/Qt/lib:$LD_LIBRARY_PATH"
+      exec "$SNAP/bin/subtitld" "$@"
+      LAUNCHER
+      chmod +x "$CRAFT_PART_INSTALL/bin/subtitld-launcher"
