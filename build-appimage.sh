@@ -35,9 +35,14 @@ sed -i 's/^Info=/X-Info=/' $APP_DIR/subtitld.desktop
 sed -i 's/Categories=Application;Multimedia/Categories=AudioVideo;/' $APP_DIR/subtitld.desktop
 
 # Create AppRun
+# QT_XCB_GL_INTEGRATION=none avoids bundled libGLX/libstdc++ clashing
+# with host drivers (GLX FBConfig fails on some systems otherwise).
+# QtMultimedia renders video via its own bundled ffmpeg, so disabling
+# Qt's GLX integration has no visible effect on playback.
 cat > $APP_DIR/AppRun << 'EOF'
 #!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")"
+export QT_XCB_GL_INTEGRATION=${QT_XCB_GL_INTEGRATION:-none}
 exec "$APPDIR/usr/bin/subtitld/subtitld" "$@"
 EOF
 chmod +x $APP_DIR/AppRun
