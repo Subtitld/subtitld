@@ -48,6 +48,21 @@ New-Item -ItemType Directory -Path $StagingDir | Out-Null
 # Copy PyInstaller bundle contents into staging root
 Copy-Item -Path (Join-Path $DistDir '*') -Destination $StagingDir -Recurse -Force
 
+# Remove files/directories MakeAppx rejects (build metadata, pycache, editable
+# install artifacts). Not needed at runtime.
+Get-ChildItem -Path $StagingDir -Recurse -Force -Directory -Include '__pycache__', '*.dist-info', '*.egg-info' -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item -Recurse -Force -LiteralPath $_.FullName }
+# Flag any filenames with characters MSIX rejects (backslash/colon in name,
+# trailing dot/space, or Windows reserved names).
+$bad = Get-ChildItem -Path $StagingDir -Recurse -Force -File | Where-Object {
+    $n = $_.Name
+    $n -match '[<>:"/\\|?*]' -or $n -match '[. ]$' -or $n -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)'
+}
+if ($bad) {
+    Write-Warning "Problematic filenames detected (MSIX may reject):"
+    $bad | ForEach-Object { Write-Warning "  $($_.FullName)" }
+}
+
 # Copy icon assets
 $AssetsSrc = Join-Path $ScriptDir 'assets'
 $AssetsDst = Join-Path $StagingDir 'Assets'
@@ -81,7 +96,7 @@ if (-not $MakeAppx) {
 Write-Host "Using makeappx: $MakeAppx"
 Write-Host "Packaging $StagingDir -> $OutputMsix"
 
-& $MakeAppx pack /d $StagingDir /p $OutputMsix /o
+& $MakeAppx pack /v /d $StagingDir /p $OutputMsix /o
 if ($LASTEXITCODE -ne 0) {
     throw "makeappx failed with exit code $LASTEXITCODE"
 }
