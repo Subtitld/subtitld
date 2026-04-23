@@ -19,7 +19,7 @@ jobs:
       - run: pip install build
       - run: |
           VERSION=$(date +%y.%m.%d.%H%M)
-          sed -i "s/__version__ = '.*'/__version__ = '$VERSION'/" subtitld/__init__.py
+          sed -i "s/__version__ = '.*'/__version__ = '$VERSION'/" src/subtitld/__init__.py
           python -m build
       - uses: actions/upload-artifact@v4
         with:
