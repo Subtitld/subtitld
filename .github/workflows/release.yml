@@ -45,10 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: version
+        # Date-based version (UTC, YY.MM.DD.HHMM) is the single source of
+        # truth for every build — tag names are free-form labels.
         run: |
-          v=$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)
+          v=$(date -u +'%y.%m.%d.%H%M')
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "Detected version: $v"
+          echo "Computed version: $v"
       - id: channel
         env:
           HEAD_MSG: ${{ github.event.head_commit.message }}
@@ -73,11 +75,15 @@ jobs:
     if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.prep.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Apply version
+        run: python .github/scripts/inject-version.py "$VERSION"
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -91,7 +97,7 @@ jobs:
         run: bash build-appimage.sh
       - name: Rename artifact
         run: |
-          mv Subtitld-*-x86_64.AppImage "Subtitld-${{ needs.prep.outputs.version }}-x86_64.AppImage"
+          mv Subtitld-*-x86_64.AppImage "Subtitld-${VERSION}-x86_64.AppImage"
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
@@ -104,8 +110,12 @@ jobs:
     if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.prep.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+      - name: Apply version
+        run: python3 .github/scripts/inject-version.py "$VERSION"
       - uses: snapcore/action-build@v1
         id: snapcraft
       - uses: actions/upload-artifact@v4
@@ -123,8 +133,12 @@ jobs:
     container:
       image: bilelmoussaoui/flatpak-github-actions:kde-6.7
       options: --privileged
+    env:
+      VERSION: ${{ needs.prep.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+      - name: Apply version
+        run: python3 .github/scripts/inject-version.py "$VERSION"
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: subtitld-${{ needs.prep.outputs.version }}.flatpak
@@ -168,11 +182,15 @@ jobs:
     if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.prep.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Apply version
+        run: python .github/scripts/inject-version.py "$env:VERSION"
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -191,7 +209,7 @@ jobs:
           & $nsis nsis-installer.nsi
       - name: Rename artifact
         run: |
-          Move-Item Subtitld-Setup.exe "Subtitld-${{ needs.prep.outputs.version }}-Setup.exe"
+          Move-Item Subtitld-Setup.exe "Subtitld-$env:VERSION-Setup.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
@@ -205,12 +223,15 @@ jobs:
     needs: prep
     runs-on: windows-latest
     env:
+      VERSION: ${{ needs.prep.outputs.version }}
       MSIX_VERSION: ${{ needs.prep.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Apply version
+        run: python .github/scripts/inject-version.py "$env:VERSION"
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -230,7 +251,7 @@ jobs:
           if-no-files-found: ignore
       - name: Rename artifact
         shell: pwsh
-        run: Move-Item Subtitld.msix "Subtitld-${{ needs.prep.outputs.version }}.msix"
+        run: Move-Item Subtitld.msix "Subtitld-$env:VERSION.msix"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-msix
@@ -243,11 +264,15 @@ jobs:
     if: needs.prep.outputs.channel != ''
     needs: prep
     runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.prep.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Apply version
+        run: python .github/scripts/inject-version.py "$VERSION"
       - name: Install system dependencies
         run: |
           brew install ffmpeg create-dmg
@@ -266,7 +291,7 @@ jobs:
             --icon-size 96 \
             --icon "Subtitld.app" 140 190 \
             --app-drop-link 400 190 \
-            "Subtitld-${{ needs.prep.outputs.version }}.dmg" \
+            "Subtitld-${VERSION}.dmg" \
             "dist/Subtitld.app"
       - uses: actions/upload-artifact@v4
         with:
@@ -391,7 +416,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Subtitld ${{ needs.prep.outputs.version }}
+          # Model B: tag is a free-form label, build version is the date;
+          # release title shows tag, body shows the internal version.
+          name: Subtitld ${{ github.ref_name }}
+          body: |
+            Build version: `${{ needs.prep.outputs.version }}`
+          append_body: true
           files: artifacts/*
           generate_release_notes: true
 

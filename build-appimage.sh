@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION=$(date +%y.%m.%d.%H%M)
+VERSION=${VERSION:-$(date -u +%y.%m.%d.%H%M)}
 APP_DIR="Subtitld.AppDir"
 
 # Install dependencies and build with PyInstaller
