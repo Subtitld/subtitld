@@ -1,0 +1,54 @@
+name: subtitld
+base: core22
+adopt-info: subtitld
+summary: Create and edit subtitles
+description: |
+  Subtitld is a professional subtitle editor and dubbing application with
+  support for transcription, translation, waveform visualization, and
+  multi-speaker dubbing.
+grade: stable
+confinement: strict
+compression: lzo
+
+architectures:
+  - build-on: amd64
+
+apps:
+  subtitld:
+    command: bin/subtitld
+    extensions:
+      - kde-neon-6
+    environment:
+      PYTHONPATH: $SNAP/lib/python3.10/site-packages:$PYTHONPATH
+    plugs:
+      - home
+      - removable-media
+      - audio-playback
+      - audio-record
+      - pulseaudio
+      - network
+      - opengl
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+
+parts:
+  subtitld:
+    plugin: python
+    source: .
+    build-packages:
+      - python3-dev
+      - build-essential
+    stage-packages:
+      - ffmpeg
+      - libpulse0
+      - libportaudio2
+      - libsndfile1
+    override-pull: |
+      craftctl default
+      craftctl set version="$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)"
+    override-build: |
+      craftctl default
+      # Install the package itself (with all extras) into the snap
+      $CRAFT_PART_INSTALL/bin/pip install --no-compile "$CRAFT_PART_SRC"

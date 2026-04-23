@@ -1,5 +1,5 @@
 include README.md
 include LICENSE
-recursive-include subtitld/graphics *
-recursive-include subtitld/locale *.json
-recursive-include subtitld/ftfy *.dat
+recursive-include src/subtitld/graphics *
+recursive-include src/subtitld/locale *.json
+recursive-include src/subtitld/ftfy *.dat

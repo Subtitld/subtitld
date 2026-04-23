@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Subtitld
+Name[pt_BR]=Subtitld
+GenericName=Subtitle Editor
+Comment=Create and edit subtitles
+Comment[pt_BR]=Crie e edite legendas
+Exec=subtitld %f
+Icon=org.subtitld.Subtitld
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;
+StartupNotify=true
+MimeType=application/x-subrip;text/vtt;application/x-subtitld;
+Keywords=subtitle;caption;srt;vtt;transcription;dubbing;

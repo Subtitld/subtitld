@@ -1,0 +1,46 @@
+# Maintainer: Jonatã Bolzan Loss <jbopen@gmail.com>
+pkgname=subtitld
+pkgver=26.03.0.0
+pkgrel=1
+pkgdesc="Professional subtitle editor and dubbing application"
+arch=('any')
+url="https://subtitld.org"
+license=('GPL-3.0-or-later')
+depends=(
+    'python'
+    'pyside6'
+    'python-pycaption'
+    'python-pysubs2'
+    'python-chardet'
+    'python-platformdirs'
+    'python-psutil'
+    'python-soundfile'
+    'python-i18n'
+    'python-docx'
+    'ffmpeg'
+)
+optdepends=(
+    'vosk-api: offline transcription'
+    'python-mediapipe: speaker face detection'
+    'python-opencv: speaker face detection'
+    'python-edge-tts: dubbing with Microsoft Edge voices'
+    'python-deep-translator: translation'
+)
+makedepends=(
+    'python-build'
+    'python-installer'
+    'python-wheel'
+    'python-setuptools'
+)
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Subtitld/subtitld/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+}

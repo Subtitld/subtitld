@@ -44,6 +44,26 @@ dependencies = [
     "edge-tts"
 ]
 
+# Optional feature groups. For now these mirror deps already in `dependencies`
+# above; once the relevant panels guard their imports with try/except, the
+# corresponding packages can be removed from `dependencies` so that
+# `pip install subtitld` installs only the core runtime and users opt into
+# features via e.g. `pip install subtitld[transcribe]`.
+[project.optional-dependencies]
+transcribe = ["vosk", "assemblyai"]
+translate = ["translate", "deep_translator"]
+vision = ["mediapipe==0.10.21", "opencv-python"]
+dub = ["edge-tts"]
+all = [
+    "vosk",
+    "assemblyai",
+    "translate",
+    "deep_translator",
+    "mediapipe==0.10.21",
+    "opencv-python",
+    "edge-tts",
+]
+
 [project.urls]
 Homepage = "https://subtitld.org"
 Issues = "https://gitlab.com/jonata/subtitld/issues"
@@ -55,7 +75,7 @@ subtitld = "subtitld.__main__:main"
 version = {attr = "subtitld.__version__"}
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["subtitld*"]
 
 [tool.setuptools.package-data]

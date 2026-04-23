@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="24" height="24" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
- <path d="m20 0v4h1v-4h-1zm1 4v20h3v-20h-3zm-1 0h-18c-1.108 0-2 0.892-2 2v16c0 1.108 0.892 2 2 2h18v-20zm-17 5 10 5-10 5v-10z" fill="#304251" style="isolation:auto;mix-blend-mode:normal;text-decoration-color:#000000;text-decoration-line:none;text-decoration-style:solid;text-indent:0;text-transform:none;white-space:normal"/>
- <path d="m20 0v1h1v-1zm-18 4c-1.108 0-2 0.892-2 2v1c0-1.108 0.892-2 2-2h22v-1zm10 10.5-9 4.5v1l10-5z" color="#000000" color-rendering="auto" fill="#f9f9f9" fill-opacity=".08" image-rendering="auto" shape-rendering="auto" solid-color="#000000" style="isolation:auto;mix-blend-mode:normal;text-decoration-color:#000000;text-decoration-line:none;text-decoration-style:solid;text-indent:0;text-transform:none;white-space:normal"/>
-</svg>

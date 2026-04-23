@@ -17,13 +17,13 @@ if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
 
 a = Analysis(
-    ['subtitld/__main__.py'],
+    ['src/subtitld/__main__.py'],
     pathex=[],
     binaries=binaries_list,
     datas=[
-        ('subtitld/graphics', 'subtitld/graphics'),
-        ('subtitld/locale', 'subtitld/locale'),
-        ('subtitld/ftfy', 'subtitld/ftfy'),
+        ('src/subtitld/graphics', 'subtitld/graphics'),
+        ('src/subtitld/locale', 'subtitld/locale'),
+        ('src/subtitld/ftfy', 'subtitld/ftfy'),
     ],
     hiddenimports=[
         'PySide6.QtCore',

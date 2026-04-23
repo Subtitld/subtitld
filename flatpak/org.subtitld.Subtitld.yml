@@ -1,0 +1,65 @@
+app-id: org.subtitld.Subtitld
+runtime: org.kde.Platform
+runtime-version: '6.7'
+sdk: org.kde.Sdk
+base: io.qt.PySide.BaseApp
+base-version: '6.7'
+command: subtitld
+rename-icon: subtitld
+rename-desktop-file: org.subtitld.Subtitld.desktop
+rename-appdata-file: org.subtitld.Subtitld.appdata.xml
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=all
+  - --filesystem=home
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-music
+  - --filesystem=xdg-download
+  - --filesystem=host-os:ro
+  - --env=QT_QPA_PLATFORMTHEME=gtk3
+
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+
+modules:
+  - name: ffmpeg
+    config-opts:
+      - --disable-debug
+      - --disable-doc
+      - --disable-static
+      - --enable-shared
+      - --enable-gpl
+      - --enable-libmp3lame
+      - --enable-libopus
+      - --enable-libvorbis
+      - --enable-libvpx
+      - --enable-libx264
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz
+        sha256: 8684f4b00f94b85461884c3719382f1261f0d9eb3d59640a1f4ac0873616f968
+
+  - name: subtitld
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-deps --prefix=/app .
+      - pip3 install --prefix=/app
+          PySide6==6.10.0
+          PySideSix-Frameless-Window
+          python-i18n python-docx pycaption chardet==6.0.0 pysubs2
+          translate autohex platformdirs psutil
+          soundfile
+      - install -Dm644 flatpak/org.subtitld.Subtitld.desktop
+          /app/share/applications/org.subtitld.Subtitld.desktop
+      - install -Dm644 flatpak/org.subtitld.Subtitld.appdata.xml
+          /app/share/metainfo/org.subtitld.Subtitld.appdata.xml
+      - install -Dm644 src/subtitld/graphics/subtitld.png
+          /app/share/icons/hicolor/256x256/apps/org.subtitld.Subtitld.png
+    sources:
+      - type: dir
+        path: ..

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fields marked PLACEHOLDER_* must be substituted at build time with values
+  obtained from Microsoft Partner Center after the "Subtitld" app reservation:
+    PLACEHOLDER_PUBLISHER_ID       app Package Identity Name prefix (e.g. "12345SubtitldStudio.Subtitld")
+    PLACEHOLDER_PUBLISHER_CN       Publisher certificate subject (e.g. "CN=ABCD1234-...")
+    PLACEHOLDER_VERSION            four-part version matching pyproject.toml (e.g. 26.3.0.0)
+    PLACEHOLDER_PUBLISHER_DISPLAY  friendly publisher name shown in Store
+  The build-msix.ps1 script does this substitution before calling makeappx.
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap rescap">
+
+  <Identity
+      Name="PLACEHOLDER_PUBLISHER_ID"
+      Publisher="PLACEHOLDER_PUBLISHER_CN"
+      Version="PLACEHOLDER_VERSION"
+      ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Subtitld</DisplayName>
+    <PublisherDisplayName>PLACEHOLDER_PUBLISHER_DISPLAY</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Professional subtitle editor and dubbing application</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="pt-br" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Subtitld"
+                 Executable="Subtitld.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+          DisplayName="Subtitld"
+          Description="Create and edit subtitles"
+          BackgroundColor="transparent"
+          Square150x150Logo="Assets\Square150x150Logo.png"
+          Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+            Wide310x150Logo="Assets\Wide310x150Logo.png"
+            Square71x71Logo="Assets\Square71x71Logo.png"
+            Square310x310Logo="Assets\Square310x310Logo.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="subtitleformats">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.srt</uap:FileType>
+              <uap:FileType>.vtt</uap:FileType>
+              <uap:FileType>.ass</uap:FileType>
+              <uap:FileType>.ssa</uap:FileType>
+              <uap:FileType>.subtitld</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>

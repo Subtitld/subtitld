@@ -1,0 +1,306 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Also run publish steps (Store, AUR, GitHub Release). Only effective on tag pushes normally.'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  # MSStore publisher identity (public values — safe in repo)
+  MSIX_PUBLISHER_ID: '62905jonata.org.subtitld'
+  MSIX_PUBLISHER_CN: 'CN=BED8C990-8289-49D1-B2A9-438CB5220AAF'
+  MSIX_PUBLISHER_DISPLAY: 'jonata.org'
+  MSSTORE_SELLER_ID: '80111150'
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # prep — extract version from src/subtitld/__init__.py
+  # ────────────────────────────────────────────────────────────────
+  prep:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_tag: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          v=$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $v"
+
+  # ────────────────────────────────────────────────────────────────
+  # Linux: AppImage
+  # ────────────────────────────────────────────────────────────────
+  build-appimage:
+    needs: prep
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libpulse0 libportaudio2 libsndfile1 wget file
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install .
+      - name: Build AppImage
+        run: bash build-appimage.sh
+      - name: Rename artifact
+        run: |
+          mv Subtitld-*-x86_64.AppImage "Subtitld-${{ needs.prep.outputs.version }}-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: Subtitld-*.AppImage
+
+  # ────────────────────────────────────────────────────────────────
+  # Linux: Snap
+  # ────────────────────────────────────────────────────────────────
+  build-snap:
+    needs: prep
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snap
+          path: ${{ steps.snapcraft.outputs.snap }}
+
+  # ────────────────────────────────────────────────────────────────
+  # Linux: Flatpak
+  # ────────────────────────────────────────────────────────────────
+  build-flatpak:
+    needs: prep
+    runs-on: ubuntu-22.04
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:kde-6.7
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: subtitld-${{ needs.prep.outputs.version }}.flatpak
+          manifest-path: flatpak/org.subtitld.Subtitld.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+  # ────────────────────────────────────────────────────────────────
+  # Linux: AUR PKGBUILD validation
+  # ────────────────────────────────────────────────────────────────
+  validate-aur:
+    needs: prep
+    runs-on: ubuntu-22.04
+    container:
+      image: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tooling
+        run: pacman -Sy --noconfirm base-devel namcap sudo
+      - name: Create build user (makepkg refuses to run as root)
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+      - name: Lint PKGBUILD with namcap
+        run: namcap packaging/aur/PKGBUILD || true
+      - name: Verify .SRCINFO matches PKGBUILD
+        run: |
+          cd packaging/aur
+          chown -R builder:builder .
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO.generated
+          if ! diff -q .SRCINFO .SRCINFO.generated; then
+            echo "::error::.SRCINFO is out of date. Regenerate with: makepkg --printsrcinfo > .SRCINFO"
+            diff .SRCINFO .SRCINFO.generated || true
+            exit 1
+          fi
+
+  # ────────────────────────────────────────────────────────────────
+  # Windows: NSIS standalone installer
+  # ────────────────────────────────────────────────────────────────
+  build-windows-nsis:
+    needs: prep
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install .
+      - name: Build with PyInstaller
+        run: pyinstaller subtitld-windows.spec --clean --noconfirm
+      - name: Build NSIS installer
+        run: makensis nsis-installer.nsi
+      - name: Rename artifact
+        run: |
+          Move-Item Subtitld-Setup.exe "Subtitld-${{ needs.prep.outputs.version }}-Setup.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: Subtitld-*-Setup.exe
+
+  # ────────────────────────────────────────────────────────────────
+  # Windows: MSIX for Microsoft Store
+  # ────────────────────────────────────────────────────────────────
+  build-windows-msix:
+    needs: prep
+    runs-on: windows-latest
+    env:
+      MSIX_VERSION: ${{ needs.prep.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install .
+      - name: Build with PyInstaller
+        run: pyinstaller subtitld-windows.spec --clean --noconfirm
+      - name: Build MSIX
+        shell: pwsh
+        run: pwsh ./packaging/msix/build-msix.ps1
+      - name: Rename artifact
+        shell: pwsh
+        run: Move-Item Subtitld.msix "Subtitld-${{ needs.prep.outputs.version }}.msix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-msix
+          path: Subtitld-*.msix
+
+  # ────────────────────────────────────────────────────────────────
+  # macOS: .dmg
+  # ────────────────────────────────────────────────────────────────
+  build-macos-dmg:
+    needs: prep
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install system dependencies
+        run: |
+          brew install ffmpeg create-dmg
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install .
+      - name: Build with PyInstaller
+        run: pyinstaller subtitld-macos.spec --clean --noconfirm
+      - name: Create DMG
+        run: |
+          create-dmg \
+            --volname "Subtitld" \
+            --window-size 540 380 \
+            --icon-size 96 \
+            --icon "Subtitld.app" 140 190 \
+            --app-drop-link 400 190 \
+            "Subtitld-${{ needs.prep.outputs.version }}.dmg" \
+            "dist/Subtitld.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: Subtitld-*.dmg
+
+  # ────────────────────────────────────────────────────────────────
+  # Publish: GitHub Release (tag only)
+  # ────────────────────────────────────────────────────────────────
+  publish-github-release:
+    if: needs.prep.outputs.is_tag == 'true'
+    needs:
+      - prep
+      - build-appimage
+      - build-snap
+      - build-flatpak
+      - validate-aur
+      - build-windows-nsis
+      - build-windows-msix
+      - build-macos-dmg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Subtitld ${{ needs.prep.outputs.version }}
+          files: artifacts/*
+          generate_release_notes: true
+
+  # ────────────────────────────────────────────────────────────────
+  # Publish: Microsoft Store (tag only)
+  # ────────────────────────────────────────────────────────────────
+  publish-msstore:
+    if: needs.prep.outputs.is_tag == 'true'
+    needs:
+      - prep
+      - build-windows-msix
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-msix
+          path: .
+      - uses: microsoft/setup-msstore-cli@v1
+      - name: Configure msstore CLI
+        shell: pwsh
+        run: |
+          msstore reconfigure `
+            --tenantId "${{ secrets.MSSTORE_TENANT_ID }}" `
+            --sellerId "${{ env.MSSTORE_SELLER_ID }}" `
+            --clientId "${{ secrets.MSSTORE_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.MSSTORE_CLIENT_SECRET }}"
+      - name: Publish to Microsoft Store
+        shell: pwsh
+        run: |
+          $msix = Get-ChildItem -Filter 'Subtitld-*.msix' | Select-Object -First 1
+          msstore publish $msix.FullName
+
+  # ────────────────────────────────────────────────────────────────
+  # Publish: AUR (tag only)
+  # ────────────────────────────────────────────────────────────────
+  publish-aur:
+    if: needs.prep.outputs.is_tag == 'true'
+    needs:
+      - prep
+      - validate-aur
+    runs-on: ubuntu-latest
+    continue-on-error: true  # remove once AUR_SSH_PRIVATE_KEY is configured
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish PKGBUILD to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: subtitld
+          pkgbuild: packaging/aur/PKGBUILD
+          commit_username: ${{ github.actor }}
+          commit_email: ${{ github.actor }}@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ needs.prep.outputs.version }}
+          ssh_keyscan_types: rsa,ecdsa,ed25519
