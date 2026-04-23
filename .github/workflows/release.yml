@@ -333,7 +333,6 @@ jobs:
       - prep
       - build-snap
     runs-on: ubuntu-22.04
-    continue-on-error: true  # remove once SNAPCRAFT_STORE_CREDENTIALS is configured
     steps:
       - uses: actions/download-artifact@v4
         with:

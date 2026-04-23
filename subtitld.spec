@@ -8,6 +8,7 @@ import shutil
 
 vosk_path = os.path.dirname(vosk.__file__)
 ffmpeg_path = shutil.which('ffmpeg')
+ffprobe_path = shutil.which('ffprobe')
 
 binaries_list = [
     (os.path.join(vosk_path, 'libvosk.so'), 'vosk'),
@@ -15,6 +16,8 @@ binaries_list = [
 
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
+if ffprobe_path:
+    binaries_list.append((ffprobe_path, '.'))
 
 a = Analysis(
     ['src/subtitld/__main__.py'],

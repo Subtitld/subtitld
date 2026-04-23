@@ -24,19 +24,13 @@ PATH_TEMP = tempdir.name
 
 if sys.platform == 'darwin':
     ACTUAL_OS = 'macos'
-    
-    # FFMPEG_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffmpeg'
-    # FFPROBE_EXECUTABLE = PATH_SUBTITLD_USER_CONFIG / 'ffprobe'
-    # try:
-    #     from Foundation import NSURL
-    # except ImportError:
-    #     sys.path.append('/System/Library/Frameworks/Python.framework/Versions/2.7/Extras/lib/python/PyObjC')
-    #     from Foundation import NSURL
+    if getattr(sys, "frozen", False):
+        FFMPEG_EXECUTABLE = str(pathlib.Path(PATH_SUBTITLD).parent / 'ffmpeg')
+        FFPROBE_EXECUTABLE = str(pathlib.Path(PATH_SUBTITLD).parent / 'ffprobe')
 elif sys.platform == 'win32':
     ACTUAL_OS = 'windows'
-    
+
     if getattr(sys, "frozen", False):
-        # PATH_SUBTITLD = pathlib.Path(PATH_SUBTITLD).parent
         FFMPEG_EXECUTABLE = pathlib.Path(PATH_SUBTITLD).parent / 'ffmpeg.exe'
         FFPROBE_EXECUTABLE = pathlib.Path(PATH_SUBTITLD).parent / 'ffprobe.exe'
     else:
@@ -48,10 +42,13 @@ elif sys.platform == 'win32':
     STARTUPINFO.wShowWindow = subprocess.SW_HIDE
     import multiprocessing
     multiprocessing.freeze_support()
-
-
-    # FFMPEG_EXECUTABLE = pathlib.Path('ffmpeg').resolve()
-    # FFPROBE_EXECUTABLE = pathlib.Path('ffprobe').resolve()
+else:
+    # Linux (AppImage, Snap, Flatpak, pip install). When frozen by
+    # PyInstaller we ship ffmpeg/ffprobe next to the main executable;
+    # for regular installs we fall back to whatever the distro provides.
+    if getattr(sys, "frozen", False):
+        FFMPEG_EXECUTABLE = str(pathlib.Path(PATH_SUBTITLD).parent / 'ffmpeg')
+        FFPROBE_EXECUTABLE = str(pathlib.Path(PATH_SUBTITLD).parent / 'ffprobe')
 
 if not PATH_SUBTITLD_USER_CONFIG.exists():
     PATH_SUBTITLD_USER_CONFIG.mkdir(parents=True)
