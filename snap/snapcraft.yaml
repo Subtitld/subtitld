@@ -52,3 +52,12 @@ parts:
       craftctl default
       # Install the package itself (with all extras) into the snap
       $CRAFT_PART_INSTALL/bin/pip install --no-compile "$CRAFT_PART_SRC"
+      # snapcraft's python plugin normalizes shebangs during the build
+      # step, but scripts created by the pip install above still carry
+      # the build-staging path ($CRAFT_PART_INSTALL/bin/python3). Rewrite
+      # them to resolve via PATH at runtime.
+      for f in "$CRAFT_PART_INSTALL"/bin/*; do
+        if [ -f "$f" ] && head -1 "$f" | grep -q '^#!.*python'; then
+          sed -i '1s|^#!.*|#!/usr/bin/env python3|' "$f"
+        fi
+      done
