@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - ci-setup
   workflow_dispatch:
     inputs:
       publish:
