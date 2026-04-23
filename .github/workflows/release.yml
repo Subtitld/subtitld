@@ -95,9 +95,6 @@ jobs:
           pip install .
       - name: Build AppImage
         run: bash build-appimage.sh
-      - name: Rename artifact
-        run: |
-          mv Subtitld-*-x86_64.AppImage "Subtitld-${VERSION}-x86_64.AppImage"
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
