@@ -71,6 +71,13 @@ parts:
       cat > "$CRAFT_PART_INSTALL/bin/subtitld-launcher" <<'LAUNCHER'
       #!/bin/bash
       export LD_LIBRARY_PATH="$SNAP/lib/python3.10/site-packages/PySide6/Qt/lib:$LD_LIBRARY_PATH"
+      # Force ALSA to read our staged config (which includes the
+      # libasound2-plugins drop-in that sets pulse as the default PCM)
+      # and find the pulse plugin lib we staged. Without these, ALSA
+      # reads the base snap's alsa.conf, which has no pulse default,
+      # and PortAudio finds zero devices.
+      export ALSA_CONFIG_PATH="$SNAP/usr/share/alsa/alsa.conf"
+      export ALSA_PLUGIN_DIR="$SNAP/usr/lib/x86_64-linux-gnu/alsa-lib"
       exec "$SNAP/bin/subtitld" "$@"
       LAUNCHER
       chmod +x "$CRAFT_PART_INSTALL/bin/subtitld-launcher"
