@@ -28,6 +28,7 @@ env:
   MSIX_PUBLISHER_CN: 'CN=BED8C990-8289-49D1-B2A9-438CB5220AAF'
   MSIX_PUBLISHER_DISPLAY: 'jonata.org'
   MSSTORE_SELLER_ID: '80111150'
+  MSSTORE_APP_ID: '9MXLZSL8JPQH'
 
 jobs:
   # ────────────────────────────────────────────────────────────────
@@ -383,9 +384,9 @@ jobs:
               Write-Warning "MSSTORE_BETA_FLIGHT_ID secret not set — skipping MS Store beta publish."
               exit 0
             }
-            msstore publish --flightId $env:BETA_FLIGHT_ID $msix.FullName
+            msstore publish --appId $env:MSSTORE_APP_ID --flightId $env:BETA_FLIGHT_ID $msix.FullName
           } else {
-            msstore publish $msix.FullName
+            msstore publish --appId $env:MSSTORE_APP_ID $msix.FullName
           }
 
   # ────────────────────────────────────────────────────────────────
