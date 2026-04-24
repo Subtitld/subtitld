@@ -34,12 +34,16 @@ foreach ($var in @('MSIX_PUBLISHER_ID', 'MSIX_PUBLISHER_CN', 'MSIX_PUBLISHER_DIS
     }
 }
 
-# MSIX requires a four-part version with no leading zeros in any component
-# (pattern: (0|[1-9][0-9]{0,3}|...)). Normalize '26.03.0.0' -> '26.3.0.0'.
+# Our canonical build version is YY.MM.DD.HHMM (e.g. 26.04.24.0340),
+# but Microsoft Store rejects MSIX packages where the revision (4th)
+# component is non-zero. Repack the date into YYYY.MMDD.HHMM.0 so each
+# field stays < 65535 and ordering is preserved across days.
 $parts = $env:MSIX_VERSION.Split('.') | ForEach-Object { [int]$_ }
-while ($parts.Count -lt 4) { $parts += 0 }
-$MsixVersion = ($parts[0..3] -join '.')
-Write-Host "Normalized MSIX version: $env:MSIX_VERSION -> $MsixVersion"
+$year     = 2000 + $parts[0]
+$monthDay = $parts[1] * 100 + $parts[2]
+$hhmm     = $parts[3]
+$MsixVersion = "$year.$monthDay.$hhmm.0"
+Write-Host "MSIX version: $env:MSIX_VERSION -> $MsixVersion"
 
 # Fresh staging dir
 if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
