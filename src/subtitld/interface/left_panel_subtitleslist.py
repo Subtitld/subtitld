@@ -287,9 +287,19 @@ def load(self):
 
     # self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_properties)
 
+    self.left_panel_subtitleslist_textedit_bottom_line.addStretch()
+    
+    self.left_panel_subtitleslist_regenerate_dub_button = QPushButton()
+    self.left_panel_subtitleslist_regenerate_dub_button.setObjectName('left_panel_subtitleslist_regenerate_dub_button')
+    self.left_panel_subtitleslist_regenerate_dub_button.setFixedHeight(36)
+    self.left_panel_subtitleslist_regenerate_dub_button.setIconSize(QSize(16, 16))
+    self.left_panel_subtitleslist_regenerate_dub_button.setCursor(Qt.PointingHandCursor)
+    self.left_panel_subtitleslist_regenerate_dub_button.setVisible(False)
+    self.left_panel_subtitleslist_regenerate_dub_button.clicked.connect(lambda: regenerate_dub_for_selected(self))
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_regenerate_dub_button, 0, Qt.AlignRight | Qt.AlignBottom)
+
     self.left_panel_subtitleslist_speaker_selector = SpeakerSelector()
     self.left_panel_subtitleslist_speaker_selector.setObjectName('left_panel_subtitleslist_speaker_selector')
-
     self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_speaker_selector, 0, Qt.AlignRight | Qt.AlignBottom)
 
     # self.left_panel_subtitleslist_textedit.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
@@ -427,6 +437,10 @@ def update(self):
         
         self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE['selected'].get('speaker', 'A'))
 
+        dubbing_enabled = bool(session.CONFIG.get('dubbing', {}).get('enabled', False))
+        has_dub = bool(session.SUBTITLE['selected'].get('dubbing'))
+        self.left_panel_subtitleslist_regenerate_dub_button.setVisible(dubbing_enabled and has_dub)
+
         self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['start'], ms=True))
         self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), ms=True))
         self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
@@ -488,6 +502,32 @@ def _changed(self, selection):
         session.SUBTITLE['selected']['speaker'] = self.left_panel_subtitleslist_speaker_selector.currentText()
 
 
+def regenerate_dub_for_selected(self):
+    """Regenerate the dub for the currently-selected subtitle using the latest
+    text/speaker settings. Only meaningful when the subtitle already has a dub
+    take; the button that triggers this is only visible in that case."""
+    import secrets
+    selected = session.SUBTITLE.get('selected')
+    if not selected or not selected.get('dubbing'):
+        return
+    from subtitld.interface.left_panel_dubbing import EdgeTTSEngine
+    speaker_name = selected.get('speaker', 'A')
+    speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
+    overrides = selected.get('dubbing_options', {})
+    selected['locked'] = True
+    EdgeTTSEngine.generate_speeches([{
+        'uid': secrets.token_hex(4),
+        'text': selected['text'],
+        'speaker': speaker_name,
+        'start': selected['start'],
+        'end': selected['end'],
+        'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
+        'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
+        'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+    }])
+    self.timeline_widget.update()
+
+
 def on_clicked(self):
     new_name = None
     if self.left_panel_speakers_new_name_dialog.exec() == QDialog.Accepted:
@@ -503,6 +543,7 @@ def translate(self):
     self.subtitles_panel_simplelist_properties_duration_timing_label.setText(_('left_panel_subtitleslist.duration'))
     self.subtitles_panel_simplelist_properties_ending_timing_label.setText(_('left_panel_subtitleslist.end'))
     self.left_panel_subtitleslist_speaker_selector.label.setText(_('left_panel_subtitleslist.speaker'))
+    self.left_panel_subtitleslist_regenerate_dub_button.setToolTip(_('left_panel_subtitleslist.regenerate_dub_tooltip'))
 
     # self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     # self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))

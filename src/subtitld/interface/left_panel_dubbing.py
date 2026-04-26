@@ -103,6 +103,42 @@ class EdgeTTSEngine:
         thread.start()
 
     @staticmethod
+    def stretch(subtitle, ratio):
+        """Re-render `subtitle`'s dub with a speech rate derived from the visual
+        stretch ratio. `ratio` is original_visual_width / new_visual_width —
+        values < 1 mean the user made the clip longer (slower speech); > 1
+        means shorter (faster). Locks the subtitle while regenerating; the
+        new clip will land at index 0 via the normal speech_ready handler.
+
+        Returns True when a regeneration was kicked off, False if the ratio
+        was a no-op (rate didn't move)."""
+        if ratio <= 0 or not subtitle:
+            return False
+        speaker_name = subtitle.get('speaker', 'A')
+        speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
+        overrides = subtitle.setdefault('dubbing_options', {})
+        current_rate = int(overrides.get('rate', speaker_dubbing.get('rate', 0)) or 0)
+        # edge-tts rate is a percentage offset from 100% speed.
+        current_speed_pct = 100 + current_rate
+        new_rate = int(round(current_speed_pct * ratio - 100))
+        new_rate = max(-100, min(100, new_rate))
+        if new_rate == current_rate:
+            return False
+        overrides['rate'] = new_rate
+        subtitle['locked'] = True
+        EdgeTTSEngine.generate_speeches([{
+            'uid': secrets.token_hex(4),
+            'text': subtitle['text'],
+            'speaker': speaker_name,
+            'start': subtitle['start'],
+            'end': subtitle['end'],
+            'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
+            'rate': new_rate,
+            'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+        }])
+        return True
+
+    @staticmethod
     def _on_speech_ready(uid, original_subtitle, file_path):
         for subtitle in session.SUBTITLE['segments']:
             if subtitle.get('start') == original_subtitle['start']:
@@ -117,6 +153,7 @@ class EdgeTTSEngine:
                     'rate': original_subtitle.get('rate', 0),
                     'pitch': original_subtitle.get('pitch', 0),
                 })
+                subtitle['locked'] = False
                 break
         for window in QApplication.topLevelWidgets():
             preview = getattr(window, 'preview_panel_player', None)
@@ -126,6 +163,12 @@ class EdgeTTSEngine:
             if preview is not None:
                 preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
             if timeline_widget is not None:
+                pending = getattr(timeline_widget, 'dub_stretching', None)
+                if pending is not None and pending.get('subtitle', None) is not None:
+                    for subtitle in session.SUBTITLE['segments']:
+                        if subtitle.get('start') == original_subtitle['start'] and pending['subtitle'] is subtitle:
+                            timeline_widget.dub_stretching = None
+                            break
                 timeline_widget.update()
             session.set_unsaved()
             break
@@ -219,6 +262,7 @@ class EdgeTTSEngine:
             for subtitle in session.SUBTITLE['segments']:
                 if subtitle.get('speaker', 'A') == speaker_name:
                     overrides = subtitle.get('dubbing_options', {})
+                    subtitle['locked'] = True
                     speeches_to_generate.append({
                         'uid': secrets.token_hex(4),
                         'text': subtitle['text'],
@@ -346,6 +390,7 @@ class EdgeTTSEngine:
             speaker_name = selected.get('speaker', 'A')
             speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
             overrides = selected.get('dubbing_options', {})
+            selected['locked'] = True
             EdgeTTSEngine.generate_speeches([{
                 'uid': secrets.token_hex(4),
                 'text': selected['text'],
@@ -356,6 +401,10 @@ class EdgeTTSEngine:
                 'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
                 'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
             }])
+            window = widget.window()
+            timeline_widget = getattr(window, 'timeline_widget', None)
+            if timeline_widget is not None:
+                timeline_widget.update()
 
         def update(widget):
             selected = session.SUBTITLE.get('selected')

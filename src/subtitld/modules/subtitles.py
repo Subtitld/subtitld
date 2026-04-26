@@ -2,6 +2,8 @@
 
 """
 
+import os
+import secrets
 from bisect import bisect
 from subtitld.modules import history, session
 
@@ -64,6 +66,52 @@ def slice_subtitle(selected_subtitle=False, position=0.0, last_text='', next_tex
         add_subtitle(position=position_to_cut, duration=new_duration, text=next_text)
 
 
+def _concatenate_first_dubs(first_subtitle, second_subtitle):
+    """Concatenate the first dub of `second_subtitle` onto the first dub of
+    `first_subtitle` and return the resulting dub dict (a fresh wav written to
+    the dubbing cache). Returns None when neither subtitle has any dubs; falls
+    back to whichever single dub exists when only one is present."""
+    first_dubs = first_subtitle.get('dubbing') or []
+    second_dubs = second_subtitle.get('dubbing') or []
+
+    if not first_dubs and not second_dubs:
+        return None
+    if not second_dubs:
+        return dict(first_dubs[0])
+    if not first_dubs:
+        return dict(second_dubs[0])
+
+    a, b = first_dubs[0], second_dubs[0]
+    a_path, b_path = a.get('path'), b.get('path')
+    if not (a_path and b_path and os.path.exists(a_path) and os.path.exists(b_path)):
+        return dict(a)
+
+    try:
+        import soundfile as sf
+        import numpy as np
+    except ImportError:
+        return dict(a)
+
+    a_data, a_sr = sf.read(a_path, always_2d=False)
+    b_data, b_sr = sf.read(b_path, always_2d=False)
+    if a_sr != b_sr or a_data.ndim != b_data.ndim:
+        return dict(a)
+
+    combined = np.concatenate([a_data, b_data])
+    new_uid = secrets.token_hex(4)
+    cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'dubbing')
+    os.makedirs(cache_dir, exist_ok=True)
+    new_path = os.path.join(cache_dir, f'{new_uid}.wav')
+    sf.write(new_path, combined, a_sr)
+
+    result = dict(a)
+    result['uid'] = new_uid
+    result['path'] = new_path
+    duration = combined.shape[0] / float(a_sr)
+    result['end'] = a.get('start', first_subtitle['start']) + duration
+    return result
+
+
 def merge_back_subtitle(selected_subtitle=False):
     """Function to merge a subtitle to one subtitle back in the main subtitle list"""
     if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
@@ -71,17 +119,21 @@ def merge_back_subtitle(selected_subtitle=False):
 
         subt = sorted([subtitle['end'] for subtitle in session.SUBTITLE['segments'] if subtitle['end'] <= selected_subtitle['start']])
         nearest_subttile = [subtitle for subtitle in session.SUBTITLE['segments'] if subtitle['end'] == subt[-1]][0]
-        
+
         nearest_subttile['end'] = selected_subtitle['end']
         nearest_subttile['text'] += ' ' + selected_subtitle['text']
-        
+
         if 'translations' in nearest_subttile and 'translations' in selected_subtitle:
             for language in nearest_subttile['translations']:
                 if language in nearest_subttile['translations'] and language in selected_subtitle['translations']:
                     nearest_subttile['translations'][language] += ' ' + selected_subtitle['translations'][language]
                 else:
                     nearest_subttile['translations'][language] = selected_subtitle['translations'][language]
-            
+
+        new_dub = _concatenate_first_dubs(nearest_subttile, selected_subtitle)
+        if new_dub is not None:
+            nearest_subttile['dubbing'] = [new_dub]
+
         remove_subtitle(selected_subtitle=selected_subtitle)
 
         return nearest_subttile
@@ -97,7 +149,7 @@ def merge_next_subtitle(selected_subtitle=False):
 
         selected_subtitle['end'] = nearest_subttile['end']
         selected_subtitle['text'] += ' ' + nearest_subttile['text']
-        
+
         if 'translations' in selected_subtitle and 'translations' in nearest_subttile:
             for language in selected_subtitle['translations']:
                 if language in selected_subtitle['translations']:
@@ -105,15 +157,32 @@ def merge_next_subtitle(selected_subtitle=False):
                 else:
                     selected_subtitle['translations'][language] = nearest_subttile['translations'][language]
 
+        new_dub = _concatenate_first_dubs(selected_subtitle, nearest_subttile)
+        if new_dub is not None:
+            selected_subtitle['dubbing'] = [new_dub]
+
         remove_subtitle(selected_subtitle=nearest_subttile)
-        
+
         return selected_subtitle
+
+
+def _shift_locked_dubs(subtitle, delta):
+    """Shift any dubs flagged as locked-to-subtitle by `delta` seconds."""
+    if not delta:
+        return
+    for dub in subtitle.get('dubbing', []) or []:
+        if dub.get('locked'):
+            if 'start' in dub:
+                dub['start'] = dub['start'] + delta
+            if 'end' in dub:
+                dub['end'] = dub['end'] + delta
 
 
 def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False):
     """Function to move a subtitle in the main subtitle list"""
     if selected_subtitle:
         history.history_append(session.SUBTITLE['segments'])
+        old_start = selected_subtitle['start']
         if absolute_time:
             duration = selected_subtitle['end'] - selected_subtitle['start']
             selected_subtitle['start'] = absolute_time
@@ -121,12 +190,14 @@ def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False):
         else:
             selected_subtitle['start'] += amount
             selected_subtitle['end'] += amount
+        _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
 def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False):
     """Function to move the start a subtitle in the main subtitle list"""
     if selected_subtitle:
         history.history_append(session.SUBTITLE['segments'])
+        old_start = selected_subtitle['start']
         if move_nereast:
             subt = [item['end'] for item in session.SUBTITLE['segments']]
             nearest = bisect(subt, selected_subtitle['start']) - 1
@@ -139,6 +210,7 @@ def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False
             selected_subtitle['start'] = absolute_time
         else:
             selected_subtitle['start'] += amount
+        _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
 def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False):

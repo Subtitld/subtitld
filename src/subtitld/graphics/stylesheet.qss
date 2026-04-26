@@ -696,6 +696,24 @@ QWidget[class='transparent_panel'] {
     background-color: qlineargradient( x1:0 y1:0, x2:0 y2:.4, stop:0 rgba(7,9,11,0.2), stop:1 rgba(26,35,43,0));
 }
 
+#left_panel_subtitleslist_regenerate_dub_button {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    icon: url(graphics:regenerate_dub_icon.svg);
+    outline: none;
+}
+
+#left_panel_subtitleslist_regenerate_dub_button:hover {
+    background: transparent;
+    icon: url(graphics:regenerate_dub_icon_hover.svg);
+}
+
+#left_panel_subtitleslist_regenerate_dub_button:pressed {
+    background: transparent;
+    icon: url(graphics:regenerate_dub_icon_pressed.svg);
+}
+
 #left_panel_subtitleslist_speaker_selector {
     border-top: 1px solid #0affffff;
     border-left: 1px solid #0affffff;
@@ -1679,6 +1697,10 @@ QWidget[class='transparent_panel'] {
 
 #dubbing_container_hideexpand_button:checked {
     icon: url(graphics:dubbing_container_expand_icon.svg);
+}
+
+#dubbing_container_hideexpand_button:disabled {
+    icon: url(graphics:dubbing_container_collapse_icon_disabled.svg);
 }
 
 #left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_remove_button {

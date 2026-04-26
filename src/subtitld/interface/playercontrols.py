@@ -1640,6 +1640,12 @@ def playercontrols_play_from_next_start_button_clicked(self):
 
 
 @shortcut('add_new_subtitle_to_current_position', 'Add new subtitle to current position', ['Enter'])
+def add_subtitle_command(self):
+    if self.focusWidget() is not self.timeline_widget:
+        return
+    add_subtitle_button_clicked(self)
+
+
 def add_subtitle_button_clicked(self):
     duration = session.CONFIG['default_new_subtitle_duration']
     if session.CONFIG.get('new_subtitle_to_next_start', False):
@@ -1669,8 +1675,22 @@ def remove_selected_subtitle_button_clicked(self):
     session.set_unsaved()
 
 
+@shortcut('toggle_lock_current_subtitle', 'Toggle lock on current subtitle', ['L'])
+def toggle_lock_selected_subtitle(self):
+    """Lock / unlock the selected subtitle. Locked subtitles and their dub
+    clips cannot be dragged or resized on the timeline."""
+    selected = session.SUBTITLE.get('selected')
+    if not selected:
+        return
+    selected['locked'] = not selected.get('locked', False)
+    self.timeline_widget.update()
+    session.set_unsaved()
+
+
 @shortcut('slice_current_subtitle', 'Slice current subtitle', ['/'])
 def slice_selected_subtitle_command(self):
+    if self.focusWidget() is not self.timeline_widget:
+        return
     slice_selected_subtitle_button_clicked(self)
     slice_selected_subtitle_button_update(self)
 
@@ -1730,6 +1750,7 @@ def merge_back_selected_subtitle_button_clicked(self):
         session.SUBTITLE['selected'] = subtitles.merge_back_subtitle(selected_subtitle=session.SUBTITLE['selected'])
         timeline.update(self)
         left_panel.update(self)
+        self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
         self.timeline_widget.setFocus(Qt.TabFocusReason)
         session.set_unsaved()
 
@@ -1740,6 +1761,7 @@ def merge_next_selected_subtitle_button_clicked(self):
         session.SUBTITLE['selected'] = subtitles.merge_next_subtitle(selected_subtitle=session.SUBTITLE['selected'])
         timeline.update(self)
         left_panel.update(self)
+        self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
         self.timeline_widget.setFocus(Qt.TabFocusReason)
         session.set_unsaved()
 

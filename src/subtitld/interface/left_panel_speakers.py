@@ -520,8 +520,15 @@ class rename_speaker_name_dialog(utils.SimpleDialog):
 
 
 class remove_speaker_name_dialog(utils.SimpleDialog):
+    REASSIGN = 'reassign'
+    DELETE = 'delete'
+
     def __init__(self, parent=None, title=''):
         super().__init__(parent, title)
+
+        self.prompt_label = QLabel()
+        self.prompt_label.setWordWrap(True)
+        self.content.layout().addWidget(self.prompt_label)
 
         self.input_line = QWidget()
         self.input_line.setLayout(QHBoxLayout())
@@ -535,10 +542,22 @@ class remove_speaker_name_dialog(utils.SimpleDialog):
 
         self.content.layout().addWidget(self.input_line)
 
+        self.delete_button = QPushButton()
+        self.delete_button.setProperty('class', 'danger')
+        self.accept_button.parent().layout().insertWidget(1, self.delete_button)
+        self.delete_button.clicked.connect(self._delete_clicked)
+        self._action = None
+
+    def _delete_clicked(self):
+        self._action = self.DELETE
+        self.accept()
 
     def exec_and_get_values(self):
+        self._action = None
         if self.exec() == QDialog.Accepted:
-            return self.select.currentText()
+            action = self._action or self.REASSIGN
+            target = self.select.currentText() if action == self.REASSIGN else None
+            return (action, target)
         return None
 
 
@@ -620,36 +639,57 @@ def export_button_clicked(widget):
 
 
 def remove_button_clicked(widget):
-    if len(session.SPEAKERS) == 2:
-        remove_alert = utils.SimpleDialog(widget.window(), _('subtitles_panel_widget_speakers.remove_speaker'))
-        remove_alert.content.layout().addWidget(QLabel(_('subtitles_panel_widget_speakers.sure_to_remove_speaker')))
-        result = remove_alert.exec()
-        if result:
-            last_speaker = [speaker_name for speaker_name in session.SPEAKERS.keys() if speaker_name != widget.speaker_name][0]
-            for segment in session.SUBTITLE['segments']:
-                if segment['speaker'] == widget.speaker_name:
-                    segment['speaker'] = last_speaker
-            del session.SPEAKERS[widget.speaker_name]
-            update_speakers_list(widget.window())
+    speaker_name = widget.speaker_name
+    used_segments = [s for s in session.SUBTITLE['segments'] if s.get('speaker', 'A') == speaker_name]
+    other_speakers = [name for name in session.SPEAKERS.keys() if name != speaker_name]
 
-    elif len(session.SPEAKERS) < 2:
+    if len(session.SPEAKERS) < 2:
         no_remove_alert = utils.SimpleDialog(widget.window(), _('subtitles_panel_widget_speakers.remove_speaker'))
         no_remove_alert.content.layout().addWidget(QLabel(_('subtitles_panel_widget_speakers.cannot_remove_last_speaker')))
         no_remove_alert.reject_button.setVisible(False)
         no_remove_alert.exec()
-    else:
-        widget.window().left_panel_speakers_remove_dialog.set_title(_('subtitles_panel_widget_speakers.remove_speaker'))
-        widget.window().left_panel_speakers_remove_dialog.select.clear()
-        widget.window().left_panel_speakers_remove_dialog.select.addItems([speaker_name for speaker_name in session.SPEAKERS.keys() if speaker_name != widget.speaker_name])
-        
-        value = widget.window().left_panel_speakers_remove_dialog.exec_and_get_values()
+        return
 
-        if value:
-            for segment in session.SUBTITLE['segments']:
-                if segment['speaker'] == widget.speaker_name:
-                    segment['speaker'] = value
-            del session.SPEAKERS[widget.speaker_name]
+    if not used_segments:
+        remove_alert = utils.SimpleDialog(widget.window(), _('subtitles_panel_widget_speakers.remove_speaker'))
+        remove_alert.content.layout().addWidget(QLabel(_('subtitles_panel_widget_speakers.sure_to_remove_speaker')))
+        if remove_alert.exec():
+            del session.SPEAKERS[speaker_name]
             update_speakers_list(widget.window())
+            session.set_unsaved()
+        return
+
+    dialog = widget.window().left_panel_speakers_remove_dialog
+    dialog.set_title(_('subtitles_panel_widget_speakers.remove_speaker'))
+    dialog.prompt_label.setText(_('subtitles_panel_widget_speakers.remove_speaker_with_subtitles_prompt').format(speaker=speaker_name, count=len(used_segments)))
+    dialog.input_label.setText(_('subtitles_panel_widget_speakers.reassign_to'))
+    dialog.select.clear()
+    dialog.select.addItems(other_speakers)
+    dialog.accept_button.setText(_('subtitles_panel_widget_speakers.reassign_subtitles'))
+    dialog.delete_button.setText(_('subtitles_panel_widget_speakers.delete_subtitles'))
+
+    result = dialog.exec_and_get_values()
+    if not result:
+        return
+
+    action, target = result
+    if action == dialog.DELETE:
+        for segment in list(used_segments):
+            session.SUBTITLE['segments'].remove(segment)
+        if session.SUBTITLE.get('selected') in used_segments:
+            session.SUBTITLE['selected'] = None
+    elif action == dialog.REASSIGN and target:
+        for segment in used_segments:
+            segment['speaker'] = target
+    else:
+        return
+
+    del session.SPEAKERS[speaker_name]
+    update_speakers_list(widget.window())
+    session.set_unsaved()
+    timeline_widget = getattr(widget.window(), 'timeline_widget', None)
+    if timeline_widget is not None:
+        timeline_widget.update()
 
 
 def rename_button_clicked(widget):
@@ -727,7 +767,7 @@ def left_panel_speakers_add_speaker_button_clicked(self):
     subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
 
     if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
-        session.SPEAKERS.append(new_name)
+        session.SPEAKERS[new_name] = {}
         update_speakers_list(self)
     
 
