@@ -350,10 +350,13 @@ jobs:
           release: ${{ needs.prep.outputs.channel }}
 
   # ────────────────────────────────────────────────────────────────
-  # Publish: Microsoft Store — beta via Package Flight, stable to main
+  # Publish: Microsoft Store — stable releases only
   # ────────────────────────────────────────────────────────────────
+  # Beta builds intentionally skip the Store: we don't have a
+  # Package Flight set up for pre-release distribution there, so
+  # the only Store submissions go to the main listing on stable.
   publish-msstore:
-    if: needs.prep.outputs.channel != ''
+    if: needs.prep.outputs.channel == 'stable'
     needs:
       - prep
       - build-windows-msix
@@ -374,20 +377,9 @@ jobs:
             --clientSecret "${{ secrets.MSSTORE_CLIENT_SECRET }}"
       - name: Publish to Microsoft Store
         shell: pwsh
-        env:
-          CHANNEL: ${{ needs.prep.outputs.channel }}
-          BETA_FLIGHT_ID: ${{ secrets.MSSTORE_BETA_FLIGHT_ID }}
         run: |
           $msix = Get-ChildItem -Filter 'Subtitld-*.msix' | Select-Object -First 1
-          if ($env:CHANNEL -eq 'beta') {
-            if (-not $env:BETA_FLIGHT_ID) {
-              Write-Warning "MSSTORE_BETA_FLIGHT_ID secret not set — skipping MS Store beta publish."
-              exit 0
-            }
-            msstore publish --appId $env:MSSTORE_APP_ID --flightId $env:BETA_FLIGHT_ID $msix.FullName
-          } else {
-            msstore publish --appId $env:MSSTORE_APP_ID $msix.FullName
-          }
+          msstore publish --appId $env:MSSTORE_APP_ID $msix.FullName
 
   # ────────────────────────────────────────────────────────────────
   # Publish: GitHub Release — stable (tag) only
