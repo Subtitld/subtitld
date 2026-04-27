@@ -91,9 +91,19 @@ parts:
       # and PortAudio finds zero devices.
       export ALSA_CONFIG_PATH="$SNAP/usr/share/alsa/alsa.conf"
       export ALSA_PLUGIN_DIR="$SNAP/usr/lib/x86_64-linux-gnu/alsa-lib"
+      # PulseAudio: snapd bind-mounts the host's pulse runtime dir at
+      # /run/user/$UID/pulse/ when audio-playback is connected, but the
+      # snap's $XDG_RUNTIME_DIR points to /run/user/$UID/snap.subtitld/
+      # instead — so libpulse's default socket discovery
+      # ($XDG_RUNTIME_DIR/pulse/native) misses it, ALSA's pulse plugin
+      # fails to open the default PCM, and PortAudio enumerates zero
+      # devices. Point PULSE_SERVER at the bind-mounted socket.
+      PULSE_RUNTIME="/run/user/$(id -u)/pulse"
+      export PULSE_SERVER="unix:$PULSE_RUNTIME/native"
+      export PULSE_RUNTIME_PATH="$PULSE_RUNTIME"
       # One-shot diagnostic: log whether the launcher runs and whether
-      # the ALSA bits we expect are actually staged. Set
-      # SUBTITLD_DEBUG_AUDIO=0 in the environment to silence.
+      # the ALSA + pulse bits we expect are actually present at runtime.
+      # Set SUBTITLD_DEBUG_AUDIO=0 in the environment to silence.
       if [ "${SUBTITLD_DEBUG_AUDIO:-1}" != "0" ]; then
         {
           echo "[subtitld-launcher] $(date -Is)"
@@ -104,6 +114,7 @@ parts:
             echo "  plugins: $(ls "$ALSA_PLUGIN_DIR" 2>/dev/null | tr '\n' ' ')"
           fi
           echo "  alsa.conf.d: $(ls "$SNAP/usr/share/alsa/alsa.conf.d" 2>/dev/null | tr '\n' ' ')"
+          echo "  PULSE_SERVER=$PULSE_SERVER (socket=$([ -S "$PULSE_RUNTIME/native" ] && echo yes || echo NO))"
         } >&2
       fi
       exec "$SNAP/bin/subtitld" "$@"
