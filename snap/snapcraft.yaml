@@ -71,19 +71,46 @@ parts:
       craftctl default
       # Install the package itself (with all extras) into the snap
       $CRAFT_PART_INSTALL/bin/pip install --no-compile "$CRAFT_PART_SRC"
-      # Patch the staged alsa.conf so its drop-in directory resolves
-      # to a path inside the snap. The stock conf computes the dir as
-      #   { @func concat strings [ { @func datadir } "/alsa.conf.d" ] }
-      # and `@func datadir` returns the compile-time /usr/share/alsa
-      # — a path that does not exist inside the snap mount namespace,
-      # so the 50-pulseaudio.conf drop-in (which sets pcm.!default to
-      # pulse) is silently never loaded. Replace `@func datadir` with
-      # `$SNAP/usr/share/alsa` via @func getenv so the same drop-ins
-      # we ship are actually picked up at runtime.
-      ALSACONF="$CRAFT_PART_INSTALL/usr/share/alsa/alsa.conf"
-      if [ -f "$ALSACONF" ]; then
-        sed -i 's|{ @func datadir }|{ @func concat strings [ { @func getenv vars [ "SNAP" ] default "" } "/usr/share/alsa" ] }|g' "$ALSACONF"
-      fi
+      # Ship a minimal self-contained alsa.conf that routes the
+      # default PCM through PulseAudio. The stock alsa.conf in
+      # core22 loads its real definitions from
+      # /usr/share/alsa/alsa.conf.d/*.conf, but inside a strict snap
+      # those drop-ins never end up being parsed (we tried patching
+      # `@func datadir` to use $SNAP via getenv — the rewrite landed
+      # but `aplay -L` still saw only the built-in `null` PCM, so
+      # something else in the drop-in chain bails out silently).
+      # PortAudio only needs a hinted `default`/`pulse` it can open,
+      # and the pulse plugin module + libpulse are already staged,
+      # so cut out alsa.conf.d entirely.
+      mkdir -p "$CRAFT_PART_INSTALL/etc"
+      cat > "$CRAFT_PART_INSTALL/etc/subtitld-alsa.conf" <<'ALSACONF'
+      # Subtitld snap: minimal ALSA config — route default PCM via
+      # PulseAudio. Loaded via $ALSA_CONFIG_PATH from
+      # bin/subtitld-launcher; replaces /usr/share/alsa/alsa.conf
+      # because the drop-ins that file relies on don't load inside
+      # the snap mount namespace.
+
+      pcm.!default {
+          type pulse
+          hint {
+              show on
+              description "Default ALSA Output (PulseAudio Sound Server)"
+          }
+      }
+      ctl.!default {
+          type pulse
+      }
+      pcm.pulse {
+          type pulse
+          hint {
+              show on
+              description "PulseAudio Sound Server"
+          }
+      }
+      ctl.pulse {
+          type pulse
+      }
+      ALSACONF
       # snapcraft's python plugin normalizes shebangs during the build
       # step, but scripts created by the pip install above still carry
       # the build-staging path ($CRAFT_PART_INSTALL/bin/python3). Rewrite
@@ -102,12 +129,13 @@ parts:
       cat > "$CRAFT_PART_INSTALL/bin/subtitld-launcher" <<'LAUNCHER'
       #!/bin/bash
       export LD_LIBRARY_PATH="$SNAP/lib/python3.10/site-packages/PySide6/Qt/lib:$LD_LIBRARY_PATH"
-      # Force ALSA to read our staged config (which includes the
-      # libasound2-plugins drop-in that sets pulse as the default PCM)
-      # and find the pulse plugin lib we staged. Without these, ALSA
-      # reads the base snap's alsa.conf, which has no pulse default,
-      # and PortAudio finds zero devices.
-      export ALSA_CONFIG_PATH="$SNAP/usr/share/alsa/alsa.conf"
+      # Force ALSA to read our self-contained minimal conf (built in
+      # override-build) and to find pulse + rate plugins under the
+      # staged plugin dir. The minimal conf defines only `default`
+      # and `pulse` PCMs (both routed to libasound_module_pcm_pulse),
+      # which is enough for PortAudio's ALSA host to enumerate at
+      # least one device and stop raising "Error querying device -1".
+      export ALSA_CONFIG_PATH="$SNAP/etc/subtitld-alsa.conf"
       export ALSA_PLUGIN_DIR="$SNAP/usr/lib/x86_64-linux-gnu/alsa-lib"
       # PulseAudio: snapd bind-mounts the host's pulse runtime dir at
       # /run/user/$UID/pulse/ when audio-playback is connected, but the
