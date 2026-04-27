@@ -46,6 +46,19 @@ parts:
       - libportaudio2
       - libsndfile1
       - libasound2-plugins
+      # libasound2 alone does not ship /usr/share/alsa/alsa.conf — that
+      # lives in libasound2-data, which apt would normally pull as a
+      # Recommends. snapcraft installs stage-packages with
+      # --no-install-recommends, so without this entry alsa.conf is
+      # missing and ALSA falls back to compile-time defaults that don't
+      # know about the pulse plugin → PortAudio enumerates zero devices
+      # → sounddevice raises "Error querying device -1".
+      - libasound2-data
+      # QtMultimedia tries to dlopen libpipewire-0.3 first and otherwise
+      # logs "Couldn't load pipewire-0.3 library". Stage it so Qt has the
+      # option; it still falls back to PulseAudio if the pipewire socket
+      # isn't accessible at runtime.
+      - libpipewire-0.3-0
     override-pull: |
       craftctl default
       craftctl set version="$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)"
@@ -78,6 +91,21 @@ parts:
       # and PortAudio finds zero devices.
       export ALSA_CONFIG_PATH="$SNAP/usr/share/alsa/alsa.conf"
       export ALSA_PLUGIN_DIR="$SNAP/usr/lib/x86_64-linux-gnu/alsa-lib"
+      # One-shot diagnostic: log whether the launcher runs and whether
+      # the ALSA bits we expect are actually staged. Set
+      # SUBTITLD_DEBUG_AUDIO=0 in the environment to silence.
+      if [ "${SUBTITLD_DEBUG_AUDIO:-1}" != "0" ]; then
+        {
+          echo "[subtitld-launcher] $(date -Is)"
+          echo "  SNAP=$SNAP"
+          echo "  ALSA_CONFIG_PATH=$ALSA_CONFIG_PATH (exists=$([ -f "$ALSA_CONFIG_PATH" ] && echo yes || echo NO))"
+          echo "  ALSA_PLUGIN_DIR=$ALSA_PLUGIN_DIR (exists=$([ -d "$ALSA_PLUGIN_DIR" ] && echo yes || echo NO))"
+          if [ -d "$ALSA_PLUGIN_DIR" ]; then
+            echo "  plugins: $(ls "$ALSA_PLUGIN_DIR" 2>/dev/null | tr '\n' ' ')"
+          fi
+          echo "  alsa.conf.d: $(ls "$SNAP/usr/share/alsa/alsa.conf.d" 2>/dev/null | tr '\n' ' ')"
+        } >&2
+      fi
       exec "$SNAP/bin/subtitld" "$@"
       LAUNCHER
       chmod +x "$CRAFT_PART_INSTALL/bin/subtitld-launcher"
