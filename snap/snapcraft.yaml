@@ -59,6 +59,11 @@ parts:
       # option; it still falls back to PulseAudio if the pipewire socket
       # isn't accessible at runtime.
       - libpipewire-0.3-0
+      # Diagnostic-only (aplay -L, pactl info) to triangulate audio
+      # plumbing inside strict confinement. Cheap; can be dropped once
+      # the audio path is solid.
+      - alsa-utils
+      - pulseaudio-utils
     override-pull: |
       craftctl default
       craftctl set version="$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)"
@@ -128,8 +133,14 @@ parts:
           fi
           echo "  alsa.conf.d: $(ls "$SNAP/usr/share/alsa/alsa.conf.d" 2>/dev/null | tr '\n' ' ')"
           echo "  PULSE_SERVER=$PULSE_SERVER (socket=$([ -S "$PULSE_RUNTIME/native" ] && echo yes || echo NO))"
-          echo "  sounddevice probe:"
-          "$SNAP/bin/python3" -c "import sounddevice as sd; [print('   ', d) for d in sd.query_devices()]; print('    default:', sd.default.device)" 2>&1 | sed 's/^/    /' | head -20
+          echo "  alsa.conf patch grep:"
+          grep -nE 'datadir|getenv|alsa\.conf\.d' "$ALSA_CONFIG_PATH" 2>/dev/null | head -5 | sed 's/^/    /'
+          echo "  aplay -L (PCMs ALSA can see):"
+          "$SNAP/usr/bin/aplay" -L 2>&1 | sed 's/^/    /' | head -25
+          echo "  pactl info (pulse server reachable?):"
+          "$SNAP/usr/bin/pactl" info 2>&1 | sed 's/^/    /' | head -10
+          echo "  sounddevice host apis + devices:"
+          "$SNAP/bin/python3" -c "import sounddevice as sd; print('hostapis:', [a['name'] for a in sd.query_hostapis()]); print('devices:', list(sd.query_devices())); print('default:', sd.default.device)" 2>&1 | sed 's/^/    /'
         } >&2
       fi
       exec "$SNAP/bin/subtitld" "$@"
