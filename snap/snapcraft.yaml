@@ -59,11 +59,6 @@ parts:
       # option; it still falls back to PulseAudio if the pipewire socket
       # isn't accessible at runtime.
       - libpipewire-0.3-0
-      # Diagnostic-only (aplay -L, pactl info) to triangulate audio
-      # plumbing inside strict confinement. Cheap; can be dropped once
-      # the audio path is solid.
-      - alsa-utils
-      - pulseaudio-utils
     override-pull: |
       craftctl default
       craftctl set version="$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)"
@@ -147,30 +142,6 @@ parts:
       PULSE_RUNTIME="/run/user/$(id -u)/pulse"
       export PULSE_SERVER="unix:$PULSE_RUNTIME/native"
       export PULSE_RUNTIME_PATH="$PULSE_RUNTIME"
-      # One-shot diagnostic: log whether the launcher runs and whether
-      # the ALSA + pulse bits we expect are actually present at runtime.
-      # Set SUBTITLD_DEBUG_AUDIO=0 in the environment to silence.
-      if [ "${SUBTITLD_DEBUG_AUDIO:-1}" != "0" ]; then
-        {
-          echo "[subtitld-launcher] $(date -Is)"
-          echo "  SNAP=$SNAP"
-          echo "  ALSA_CONFIG_PATH=$ALSA_CONFIG_PATH (exists=$([ -f "$ALSA_CONFIG_PATH" ] && echo yes || echo NO))"
-          echo "  ALSA_PLUGIN_DIR=$ALSA_PLUGIN_DIR (exists=$([ -d "$ALSA_PLUGIN_DIR" ] && echo yes || echo NO))"
-          if [ -d "$ALSA_PLUGIN_DIR" ]; then
-            echo "  plugins: $(ls "$ALSA_PLUGIN_DIR" 2>/dev/null | tr '\n' ' ')"
-          fi
-          echo "  alsa.conf.d: $(ls "$SNAP/usr/share/alsa/alsa.conf.d" 2>/dev/null | tr '\n' ' ')"
-          echo "  PULSE_SERVER=$PULSE_SERVER (socket=$([ -S "$PULSE_RUNTIME/native" ] && echo yes || echo NO))"
-          echo "  alsa.conf patch grep:"
-          grep -nE 'datadir|getenv|alsa\.conf\.d' "$ALSA_CONFIG_PATH" 2>/dev/null | head -5 | sed 's/^/    /'
-          echo "  aplay -L (PCMs ALSA can see):"
-          "$SNAP/usr/bin/aplay" -L 2>&1 | sed 's/^/    /' | head -25
-          echo "  pactl info (pulse server reachable?):"
-          "$SNAP/usr/bin/pactl" info 2>&1 | sed 's/^/    /' | head -10
-          echo "  sounddevice host apis + devices:"
-          "$SNAP/bin/python3" -c "import sounddevice as sd; print('hostapis:', [a['name'] for a in sd.query_hostapis()]); print('devices:', list(sd.query_devices())); print('default:', sd.default.device)" 2>&1 | sed 's/^/    /'
-        } >&2
-      fi
       exec "$SNAP/bin/subtitld" "$@"
       LAUNCHER
       chmod +x "$CRAFT_PART_INSTALL/bin/subtitld-launcher"
