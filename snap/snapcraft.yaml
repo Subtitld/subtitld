@@ -66,6 +66,19 @@ parts:
       craftctl default
       # Install the package itself (with all extras) into the snap
       $CRAFT_PART_INSTALL/bin/pip install --no-compile "$CRAFT_PART_SRC"
+      # Patch the staged alsa.conf so its drop-in directory resolves
+      # to a path inside the snap. The stock conf computes the dir as
+      #   { @func concat strings [ { @func datadir } "/alsa.conf.d" ] }
+      # and `@func datadir` returns the compile-time /usr/share/alsa
+      # — a path that does not exist inside the snap mount namespace,
+      # so the 50-pulseaudio.conf drop-in (which sets pcm.!default to
+      # pulse) is silently never loaded. Replace `@func datadir` with
+      # `$SNAP/usr/share/alsa` via @func getenv so the same drop-ins
+      # we ship are actually picked up at runtime.
+      ALSACONF="$CRAFT_PART_INSTALL/usr/share/alsa/alsa.conf"
+      if [ -f "$ALSACONF" ]; then
+        sed -i 's|{ @func datadir }|{ @func concat strings [ { @func getenv vars [ "SNAP" ] default "" } "/usr/share/alsa" ] }|g' "$ALSACONF"
+      fi
       # snapcraft's python plugin normalizes shebangs during the build
       # step, but scripts created by the pip install above still carry
       # the build-staging path ($CRAFT_PART_INSTALL/bin/python3). Rewrite
@@ -115,6 +128,8 @@ parts:
           fi
           echo "  alsa.conf.d: $(ls "$SNAP/usr/share/alsa/alsa.conf.d" 2>/dev/null | tr '\n' ' ')"
           echo "  PULSE_SERVER=$PULSE_SERVER (socket=$([ -S "$PULSE_RUNTIME/native" ] && echo yes || echo NO))"
+          echo "  sounddevice probe:"
+          "$SNAP/bin/python3" -c "import sounddevice as sd; [print('   ', d) for d in sd.query_devices()]; print('    default:', sd.default.device)" 2>&1 | sed 's/^/    /' | head -20
         } >&2
       fi
       exec "$SNAP/bin/subtitld" "$@"
