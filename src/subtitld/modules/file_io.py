@@ -10,9 +10,10 @@ from pycaption.exceptions import CaptionReadSyntaxError, CaptionReadNoCaptions
 import chardet
 import pysubs2
 import datetime
+from bs4 import BeautifulSoup
 
 from PySide6.QtWidgets import QFileDialog
-from PySide6.QtCore import QThread, Signal, QByteArray, QBuffer, QIODevice
+from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import timecode
@@ -287,17 +288,47 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     if path and not os.path.isabs(path):
                         dub['path'] = os.path.join(extract_dir, path)
 
-            # If the bundle ships the original video, adopt it as the project's video
-            # (this lets a USFX opened on another machine find its source).
+            # Resolve the project's source video. Priority: bundled video file →
+            # original-path entry recorded in the manifest → same-folder match
+            # against the manifest basename. Fall back is leaving session.VIDEO
+            # empty so the start screen prompts the user.
+            if not isinstance(session.VIDEO, dict):
+                session.VIDEO = {}
+
             bundled_video_dir = os.path.join(extract_dir, 'assets', 'video')
             if os.path.isdir(bundled_video_dir):
                 for fname in sorted(os.listdir(bundled_video_dir)):
                     candidate = os.path.join(bundled_video_dir, fname)
                     if os.path.isfile(candidate):
-                        if not isinstance(session.VIDEO, dict):
-                            session.VIDEO = {}
                         session.VIDEO['filepath'] = candidate
                         break
+
+            manifest_path = os.path.join(extract_dir, 'manifest.xml')
+            manifest_soup = None
+            if os.path.isfile(manifest_path):
+                try:
+                    manifest_soup = BeautifulSoup(open(manifest_path, encoding='utf-8').read(), 'lxml-xml')
+                except Exception:
+                    manifest_soup = None
+
+            if not session.VIDEO.get('filepath') and manifest_soup is not None:
+                source_tag = manifest_soup.find('source')
+                if source_tag is not None:
+                    recorded_path = source_tag.get('path', '') or ''
+                    recorded_basename = source_tag.get('basename', '') or os.path.basename(recorded_path)
+                    usfx_dir = os.path.dirname(os.path.abspath(subtitle_file))
+                    for candidate in (recorded_path, os.path.join(usfx_dir, recorded_basename) if recorded_basename else ''):
+                        if candidate and os.path.isfile(candidate):
+                            session.VIDEO['filepath'] = candidate
+                            break
+
+            if manifest_soup is not None:
+                voicemix_tag = manifest_soup.find('voicemix')
+                if voicemix_tag is not None and voicemix_tag.get('volume') is not None:
+                    try:
+                        session.VIDEO['music_voice_separation_volume_pending'] = float(voicemix_tag.get('volume'))
+                    except (TypeError, ValueError):
+                        pass
 
             # Copy bundled caches to the cache directories, keyed against the current video.
             current_video = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
@@ -827,6 +858,16 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                               '<manifest version="1.0">',
                               '  <format>USFX</format>',
                               '  <generator>Subtitld</generator>']
+            if video_path:
+                escaped_path = video_path.replace('&', '&amp;').replace('"', '&quot;')
+                escaped_basename = os.path.basename(video_path).replace('&', '&amp;').replace('"', '&quot;')
+                manifest_lines.append(f'  <source path="{escaped_path}" basename="{escaped_basename}"/>')
+            mvs = session.VIDEO.get('music_voice_separation') if isinstance(session.VIDEO, dict) else None
+            if isinstance(mvs, dict) and 'volume' in mvs:
+                try:
+                    manifest_lines.append(f'  <voicemix volume="{float(mvs["volume"]):.4f}"/>')
+                except (TypeError, ValueError):
+                    pass
             for path, mime in manifest_entries:
                 manifest_lines.append(f'  <entry path="{path}" type="{mime}"/>')
             manifest_lines.append('</manifest>')
@@ -853,18 +894,177 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 raise
 
 
-def autosave_backup_timer_timeout():
-    if session.SUBTITLE:
-        if not 'filepath' in session.SUBTITLE:
-            filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
-        else:
-            filename = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
-        if not filename:
-            filename = os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
-        save_file(os.path.join(session.PATH_SUBTITLD_DATA_BACKUP, filename + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + '.usfx'), 'USFX', session.CONFIG.get('selected_language', 'en'))
+def peek_usfx_video(usfx_path):
+    """Inspect a USFX bundle and return the resolved video path without
+    loading the full project. Used by the start screen so it can skip the
+    'select video' prompt when the project remembers (or bundles) it.
+    Returns the absolute path on success, otherwise None."""
+    if not usfx_path or not os.path.isfile(usfx_path):
+        return None
+    try:
+        with zipfile.ZipFile(usfx_path, 'r') as zf:
+            usfx_dir = os.path.dirname(os.path.abspath(usfx_path))
+
+            # Bundled video first.
+            for name in zf.namelist():
+                if name.startswith('assets/video/') and not name.endswith('/'):
+                    extract_dir = _usfx_extract_dir(usfx_path)
+                    target = os.path.join(extract_dir, name)
+                    if not os.path.isfile(target):
+                        zf.extract(name, extract_dir)
+                    if os.path.isfile(target):
+                        return target
+
+            try:
+                manifest_data = zf.read('manifest.xml').decode('utf-8')
+            except KeyError:
+                return None
+
+        soup = BeautifulSoup(manifest_data, 'lxml-xml')
+        source = soup.find('source')
+        if source is None:
+            return None
+
+        recorded_path = source.get('path', '') or ''
+        recorded_basename = source.get('basename', '') or os.path.basename(recorded_path)
+
+        for candidate in (recorded_path, os.path.join(usfx_dir, recorded_basename) if recorded_basename else ''):
+            if candidate and os.path.isfile(candidate):
+                return candidate
+    except Exception:
+        return None
+    return None
+
+
+def _autosave_filename_stem():
+    if session.SUBTITLE.get('filepath'):
+        stem = os.path.basename(session.SUBTITLE['filepath']).rsplit('.', 1)[0]
+        if stem:
+            return stem
+    if session.VIDEO.get('filepath'):
+        return os.path.basename(session.VIDEO['filepath']).rsplit('.', 1)[0]
+    return ''
+
+
+def _prune_backups(stem):
+    max_count = int(session.CONFIG.get('autosave', {}).get('backup_max_count', 20))
+    if max_count <= 0:
+        return
+    backup_dir = str(session.PATH_SUBTITLD_DATA_BACKUP)
+    try:
+        candidates = [
+            os.path.join(backup_dir, name)
+            for name in os.listdir(backup_dir)
+            if name.startswith(stem + '_') and name.endswith('.usfx')
+        ]
+    except OSError:
+        return
+    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    for stale in candidates[max_count:]:
+        try:
+            os.unlink(stale)
+        except OSError:
+            pass
+
+
+class SaveFileThread(QThread):
+    """Run `save_file()` on a background thread so the UI stays responsive
+    while USFX bundles are zipped and assets are written to disk."""
+    save_finished = Signal(str, bool, str)  # (filepath, success, error)
+
+    def __init__(self, final_file, subtitle_format, language, parent=None):
+        super().__init__(parent)
+        self._final_file = final_file
+        self._subtitle_format = subtitle_format
+        self._language = language
+
+    def run(self):
+        try:
+            save_file(self._final_file, self._subtitle_format, self._language)
+            self.save_finished.emit(self._final_file, True, '')
+        except Exception as exc:
+            self.save_finished.emit(self._final_file, False, str(exc))
+
+
+_active_save_threads = []
+
+
+def wait_for_save_threads():
+    """Block until every in-flight save thread finishes. Call before exit so
+    autosave/manual saves still flush even when the user closes the window
+    while a write is queued or running."""
+    for thread in list(_active_save_threads):
+        try:
+            thread.wait()
+        except RuntimeError:
+            pass
+
+
+def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=None, parent=None):
+    """Spawn a `SaveFileThread`, optionally wire `on_done(path, ok, err)`,
+    keep a reference so the QThread isn't garbage-collected mid-save."""
+    thread = SaveFileThread(final_file, subtitle_format, language, parent=parent)
+
+    def _cleanup(path, success, error):
+        if on_done is not None:
+            on_done(path, success, error)
+        if thread in _active_save_threads:
+            _active_save_threads.remove(thread)
+        thread.deleteLater()
+
+    thread.save_finished.connect(_cleanup, Qt.QueuedConnection)
+    _active_save_threads.append(thread)
+    thread.start()
+    return thread
+
+
+def autosave_backup_timer_timeout(force=False):
+    if not session.SUBTITLE:
+        return
+    if not force and not session.AUTOSAVE_BACKUP_DIRTY:
+        return
+    stem = _autosave_filename_stem()
+    if not stem:
+        return
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+    def _on_done(path, success, _error):
+        if not success:
+            return
+        _prune_backups(stem)
+        session.AUTOSAVE_BACKUP_DIRTY = False
+        session.AUTOSAVE_LAST_BACKUP = datetime.datetime.now()
+        for callback in session._autosave_status_callbacks:
+            callback()
+
+    save_file_async(
+        os.path.join(str(session.PATH_SUBTITLD_DATA_BACKUP), f'{stem}_{timestamp}.usfx'),
+        'USFX',
+        session.CONFIG.get('selected_language', 'en'),
+        on_done=_on_done,
+    )
 
 
 def autosave_original_timer_timeout():
-    if session.SUBTITLE and session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'):
-        save_file(session.SUBTITLE['filepath'], 'USFX', session.CONFIG['selected_language'])
-        
+    if not session.SUBTITLE:
+        return
+    if not session.UNSAVED:
+        return
+    if not session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'):
+        return
+
+    def _on_done(_path, success, _error):
+        if not success:
+            return
+        session.set_unsaved(False)
+        session.AUTOSAVE_BACKUP_DIRTY = False
+        session.AUTOSAVE_LAST_ORIGINAL = datetime.datetime.now()
+        for callback in session._autosave_status_callbacks:
+            callback()
+
+    save_file_async(
+        session.SUBTITLE['filepath'],
+        'USFX',
+        session.CONFIG['selected_language'],
+        on_done=_on_done,
+    )

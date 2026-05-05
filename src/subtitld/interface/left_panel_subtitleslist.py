@@ -181,8 +181,32 @@ def load(self):
     left_panel_subtitles_panel.layout().setContentsMargins(0, 0, 0, 0)
 
 
-    subtitles_panel_simplelist_qsplitter = QSplitter(Qt.Vertical)
-    
+    self.subtitles_panel_empty_state = QWidget()
+    self.subtitles_panel_empty_state.setObjectName('subtitles_panel_empty_state')
+    self.subtitles_panel_empty_state.setLayout(QVBoxLayout())
+    self.subtitles_panel_empty_state.layout().setAlignment(Qt.AlignCenter)
+    self.subtitles_panel_empty_state.layout().setSpacing(12)
+
+    self.subtitles_panel_empty_state_label = QLabel()
+    self.subtitles_panel_empty_state_label.setObjectName('subtitles_panel_empty_state_label')
+    self.subtitles_panel_empty_state_label.setAlignment(Qt.AlignCenter)
+    self.subtitles_panel_empty_state_label.setWordWrap(True)
+    self.subtitles_panel_empty_state.layout().addWidget(self.subtitles_panel_empty_state_label)
+
+    self.subtitles_panel_empty_state_button = QPushButton()
+    self.subtitles_panel_empty_state_button.setObjectName('subtitles_panel_empty_state_button')
+    self.subtitles_panel_empty_state_button.setProperty('class', 'primary')
+    self.subtitles_panel_empty_state_button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'add_subtitle_icon.svg')))
+    self.subtitles_panel_empty_state_button.setIconSize(QSize(20, 20))
+    self.subtitles_panel_empty_state_button.setFixedSize(40, 40)
+    self.subtitles_panel_empty_state_button.clicked.connect(lambda: subtitles_panel_empty_state_button_clicked(self))
+    self.subtitles_panel_empty_state.layout().addWidget(self.subtitles_panel_empty_state_button, 0, Qt.AlignCenter)
+
+    left_panel_subtitles_panel.layout().addWidget(self.subtitles_panel_empty_state)
+
+    self.subtitles_panel_simplelist_qsplitter = QSplitter(Qt.Vertical)
+    subtitles_panel_simplelist_qsplitter = self.subtitles_panel_simplelist_qsplitter
+
     self.subtitles_panel_qlistwidget = subtitles_panel_qlistwidget()
     subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_qlistwidget)
 
@@ -260,8 +284,8 @@ def load(self):
     self.properties_information_stats.layout().addSpacing(-5)
 
     self.properties_information_cpl = QLabel()
+    self.properties_information_cpl.setAlignment(Qt.AlignCenter)
     self.properties_information_cpl.setObjectName('properties_information_cpl')
-    self.properties_information_cpl.setFixedWidth(30)
     self.properties_information_stats.layout().addWidget(self.properties_information_cpl)
 
     self.properties_information.layout().addWidget(self.properties_information_stats)
@@ -391,6 +415,19 @@ def load(self):
     self.left_panel_subtitleslist_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
 
 
+def subtitles_panel_empty_state_button_clicked(self):
+    """Add the project's first subtitle at 5s with the configured default
+    duration, select it, and refresh the timeline + panel so the empty-state
+    UI is replaced by the regular subtitle list."""
+    duration = session.CONFIG['default_new_subtitle_duration']
+    subtitles.add_subtitle(position=5.0, duration=duration)
+    if session.SUBTITLE.get('segments'):
+        session.SUBTITLE['selected'] = session.SUBTITLE['segments'][0]
+    self.timeline_widget.update()
+    update(self)
+    session.set_unsaved()
+
+
 def left_panel_subtitleslist_textedit_changed(self):
     if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
         session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
@@ -409,6 +446,10 @@ def left_panel_subtitleslist_translation_textedit_changed(self):
 
 def update(self):
     self.subtitles_panel_qlistwidget.update_content()
+
+    has_segments = bool(session.SUBTITLE.get('segments'))
+    self.subtitles_panel_empty_state.setVisible(not has_segments)
+    self.subtitles_panel_simplelist_qsplitter.setVisible(has_segments)
 
     self.left_panel_subtitleslist_bottom_panel.setVisible(bool(session.SUBTITLE.get('selected', False)))
     self.properties_information.setVisible(bool(session.SUBTITLE.get('selected', False)) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
@@ -445,32 +486,57 @@ def update(self):
         self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), ms=True))
         self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
                 
-        if session.CONFIG.get('quality_check', {}).get('enabled', False):
-            text = ''
-            reasons = []
-            issues = []
+        show_statistics = session.CONFIG.get('quality_check', {}).get('show_statistics', False)
+        quality_check_enabled = session.CONFIG.get('quality_check', {}).get('enabled', False)
 
-            _, reasons, issues = quality_check.check_subtitle(session.SUBTITLE['selected'])
-
-            n_words = len(session.SUBTITLE['selected']['text'].replace('\n', ' ').split(' '))
-            n_char = len(session.SUBTITLE['selected']['text'].replace('\n', '').replace(' ', ''))
-
-            self.properties_information_word_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'wpm' not in issues else '#aa9e1a1a') + '}')
-            self.properties_information_wpm.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'wpm' not in issues else '#bb9e1a1a') + '}')
-            self.properties_information_character_counter.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'cps' not in issues else '#aa9e1a1a') + '}')
-            self.properties_information_cps.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cps' not in issues else '#bb9e1a1a') + '}')
-            self.properties_information_sub_duration.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'duration' not in issues else '#bb9e1a1a') + '}')
-            self.properties_information_number_of_lines.setStyleSheet('QLabel { background-color: ' + ('#55d43f' if 'number_of_lines' not in issues else '#bb9e1a1a') + '}')
-            self.properties_information_cpl.setStyleSheet('QLabel { background-color: ' + ('#bb55d43f' if 'cpl' not in issues else '#bb9e1a1a') + '}')
+        if show_statistics:
+            sel = session.SUBTITLE['selected']
+            duration = sel['end'] - sel['start']
+            n_words = len(sel['text'].replace('\n', ' ').split(' '))
+            n_char = len(sel['text'].replace('\n', '').replace(' ', ''))
 
             self.properties_information_word_counter.setText(str(n_words))
-            self.properties_information_wpm.setText(str(int(n_words / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 60))))
+            self.properties_information_wpm.setText(str(int(n_words / (duration / 60))) if duration > 0 else '0')
             self.properties_information_character_counter.setText(str(n_char))
-            self.properties_information_cps.setText(str(int(n_char / ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start'])))))
-            self.properties_information_sub_duration.setText(str(round((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), 3)))
-            self.properties_information_number_of_lines.setText(str(int(len(session.SUBTITLE['selected']['text'].split('\n')))))
+            self.properties_information_cps.setText(str(int(n_char / duration)) if duration > 0 else '0')
+            self.properties_information_sub_duration.setText(str(round(duration, 3)))
+            self.properties_information_number_of_lines.setText(str(int(len(sel['text'].split('\n')))))
+            self.properties_information_cpl.setText(str(int(n_char / len(sel['text'].split('\n')))) if len(sel['text'].split('\n')) > 0 else '0')
 
-            self.properties_information.setToolTip('\n'.join(reasons))
+            stat_badges = (
+                self.properties_information_word_counter,
+                self.properties_information_wpm,
+                self.properties_information_character_counter,
+                self.properties_information_cps,
+                self.properties_information_sub_duration,
+                self.properties_information_number_of_lines,
+                self.properties_information_cpl,
+            )
+
+            if quality_check_enabled:
+                _, reasons, issues = quality_check.check_subtitle(sel)
+
+                ok_solid = '#5a55d43f'
+                ok_soft = '#3355d43f'
+                bad_solid = '#a09e1a1a'
+                bad_soft = '#7a9e1a1a'
+
+                self.properties_information_word_counter.setStyleSheet('QLabel#properties_information_word_counter { background-color: ' + (ok_solid if 'wpm' not in issues else bad_solid) + '; color: #ffffff; }')
+                self.properties_information_wpm.setStyleSheet('QLabel#properties_information_wpm { background-color: ' + (ok_soft if 'wpm' not in issues else bad_soft) + '; color: #ffffff; }')
+                self.properties_information_character_counter.setStyleSheet('QLabel#properties_information_character_counter { background-color: ' + (ok_solid if 'cps' not in issues else bad_solid) + '; color: #ffffff; }')
+                self.properties_information_cps.setStyleSheet('QLabel#properties_information_cps { background-color: ' + (ok_soft if 'cps' not in issues else bad_soft) + '; color: #ffffff; }')
+                self.properties_information_sub_duration.setStyleSheet('QLabel#properties_information_sub_duration { background-color: ' + (ok_solid if 'duration' not in issues else bad_solid) + '; color: #ffffff; }')
+                self.properties_information_number_of_lines.setStyleSheet('QLabel#properties_information_number_of_lines { background-color: ' + (ok_solid if 'number_of_lines' not in issues else bad_solid) + '; color: #ffffff; }')
+                self.properties_information_cpl.setStyleSheet('QLabel#properties_information_cpl { background-color: ' + (ok_soft if 'cpl' not in issues else bad_soft) + '; color: #ffffff; }')
+
+                self.properties_information.setToolTip('\n'.join(reasons))
+            else:
+                for badge in stat_badges:
+                    badge.setStyleSheet('')
+                    badge.style().unpolish(badge)
+                    badge.style().polish(badge)
+                    badge.update()
+                self.properties_information.setToolTip('')
 
             # self.properties_information_reason.setVisible(bool(reasons))
             # self.properties_information_reason.setText('\n'.join(reasons))
@@ -544,6 +610,8 @@ def translate(self):
     self.subtitles_panel_simplelist_properties_ending_timing_label.setText(_('left_panel_subtitleslist.end'))
     self.left_panel_subtitleslist_speaker_selector.label.setText(_('left_panel_subtitleslist.speaker'))
     self.left_panel_subtitleslist_regenerate_dub_button.setToolTip(_('left_panel_subtitleslist.regenerate_dub_tooltip'))
+    self.subtitles_panel_empty_state_label.setText(_('left_panel_subtitleslist.empty_state_label'))
+    self.subtitles_panel_empty_state_button.setToolTip(_('left_panel_subtitleslist.empty_state_button'))
 
     # self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     # self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))

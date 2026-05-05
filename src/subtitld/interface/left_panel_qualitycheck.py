@@ -38,10 +38,11 @@ def load(self):
     self.global_panel_tabwidget_quality_enable_groupbox.setCheckable(True)
     self.global_panel_tabwidget_quality_enable_groupbox.setLayout(QVBoxLayout())
     self.global_panel_tabwidget_quality_enable_groupbox.clicked.connect(lambda: save_quality_settings(self))
-    self.global_panel_tabwidget_quality_enable_groupbox.layout().setContentsMargins(10, 10, 10, 10)
+    self.global_panel_tabwidget_quality_enable_groupbox.layout().setContentsMargins(0, 0, 0, 0)
     self.global_panel_tabwidget_quality_enable_groupbox.layout().setSpacing(20)
 
     self.global_panel_tabwidget_quality_readingspeed_vbox = QVBoxLayout()
+    self.global_panel_tabwidget_quality_readingspeed_vbox.setObjectName('global_panel_tabwidget_quality_readingspeed_vbox')
     self.global_panel_tabwidget_quality_readingspeed_vbox.setContentsMargins(0, 0, 0, 0)
     self.global_panel_tabwidget_quality_readingspeed_vbox.setSpacing(2)
 
@@ -259,4 +260,10 @@ def save_quality_settings(self):
     session.CONFIG['quality_check']['balance_ratio_enabled'] = self.global_panel_tabwidget_quality_balanceratio_checkbox.isChecked()
     session.CONFIG['quality_check']['balance_ratio'] = self.global_panel_tabwidget_quality_balanceratio_slider.value()
     session.CONFIG['quality_check']['break_text_when_sending_text_to_adjacent'] = self.left_panel_qualitycheck_break_text_when_sending_text_to_adjacent_checkbox.isChecked()
+
+    from subtitld.interface import left_panel_subtitleslist
+    left_panel_subtitleslist.update(self)
+    timeline_widget = getattr(self, 'timeline_widget', None)
+    if timeline_widget is not None:
+        timeline_widget.update()
     

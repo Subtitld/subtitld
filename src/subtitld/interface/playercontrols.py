@@ -3,7 +3,7 @@ from bisect import bisect
 import subprocess
 
 from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer
 
 
 class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
@@ -118,10 +118,16 @@ class MusicAudioExtractorThread(QThread):
                 startupinfo=session.STARTUPINFO
             )
 
+        default_volume = 0.5
+        try:
+            default_volume = float(session.CONFIG.get('videoplayer', {}).get('music_voice_separation_volume', 0.5))
+        except (TypeError, ValueError):
+            default_volume = 0.5
+
         self.response.emit({
             'vocals': vocals_filepath,
             'background': background_filepath,
-            'volume': .5
+            'volume': default_volume
         })
 
 
@@ -563,8 +569,14 @@ def load(self):
     self.music_voice_separation_slider.raise_()
 
     def music_voice_separation_thread_finished(response):
+        pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
+        if pending_volume is not None:
+            try:
+                response['volume'] = float(pending_volume)
+            except (TypeError, ValueError):
+                pass
         session.VIDEO['music_voice_separation'] = response
-        self.preview_panel_player._audio_device.original_track.enabled = False  
+        self.preview_panel_player._audio_device.original_track.enabled = False
 
         background_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['background'])
         background_clip = self.preview_panel_player._audio_device.load_clip(background_source)
@@ -1437,12 +1449,23 @@ def zoomout_button_clicked(self):
 
 
 def zoom_buttons_update(self):
-    """Function to update zoom buttons"""
+    """Function to update zoom buttons. Defers the heavy `setGeometry` +
+    repaint to the next event-loop tick so rapid zoom presses don't pile up
+    blocking the UI; the timer is restarted on every call so consecutive
+    zooms within ~30ms coalesce into one resize."""
     self.zoomout_button.setEnabled(True if session.CONFIG['timeline_zoom'] - 10.0 > 0.0 else False)
     self.zoomin_button.setEnabled(True if session.CONFIG['timeline_zoom'] + 10.0 < 500.0 else False)
+
+    if not hasattr(self, '_zoom_apply_timer') or self._zoom_apply_timer is None:
+        self._zoom_apply_timer = QTimer(self)
+        self._zoom_apply_timer.setSingleShot(True)
+        self._zoom_apply_timer.timeout.connect(lambda: _apply_zoom_geometry(self))
+    self._zoom_apply_timer.start(30)
+
+
+def _apply_zoom_geometry(self):
     proportion = ((session.SUBTITLE.get('position', 0) * self.timeline_widget.width_proportion) - self.timeline_scroll.horizontalScrollBar().value()) / self.timeline_scroll.width()
     self.timeline_widget.setGeometry(0, 0, int(round(session.VIDEO.get('duration', 0.01) * session.CONFIG['timeline_zoom'])), self.timeline_scroll.height() - 20)
-    # timeline.zoom_update_waveform(self)
     timeline.update_scrollbar(self, position=proportion)
 
 
@@ -1691,6 +1714,7 @@ def toggle_lock_selected_subtitle(self):
 def slice_selected_subtitle_command(self):
     if self.focusWidget() is not self.timeline_widget:
         return
+    self.slice_selected_subtitle_button.toggle()
     slice_selected_subtitle_button_clicked(self)
     slice_selected_subtitle_button_update(self)
 
@@ -2260,31 +2284,43 @@ def music_voice_separation_slider_update(self):
     self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
 
 def music_voice_separation_slider_changed(self):
+    new_volume = self.music_voice_separation_slider.value() / 100.0
     if session.VIDEO.get('music_voice_separation', False):
-        session.VIDEO['music_voice_separation']['volume'] = self.music_voice_separation_slider.value() / 100.0
-    
+        session.VIDEO['music_voice_separation']['volume'] = new_volume
+    if not isinstance(session.CONFIG.get('videoplayer'), dict):
+        session.CONFIG['videoplayer'] = {}
+    session.CONFIG['videoplayer']['music_voice_separation_volume'] = new_volume
+    session.set_unsaved()
+
     music_voice_separation_buttons_update(self)
 
+    audio_device = self.preview_panel_player._audio_device
+    original_track = getattr(audio_device, 'original_track', None)
+    background_sound = getattr(audio_device, 'background_sound', None)
+    vocals_sound = getattr(audio_device, 'vocals_sound', None)
+    if original_track is None or background_sound is None or vocals_sound is None:
+        return
+
     if session.VIDEO['music_voice_separation']['volume'] == .5:
-        self.preview_panel_player._audio_device.original_track.enabled = True
-        self.preview_panel_player._audio_device.background_sound.enabled = False
-        self.preview_panel_player._audio_device.vocals_sound.enabled = False
+        original_track.enabled = True
+        background_sound.enabled = False
+        vocals_sound.enabled = False
         self.music_voice_separation_slider.setProperty('class', 'middle')
         self.music_voice_separation_slider.style().unpolish(self.music_voice_separation_slider)
         self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
     else:
-        self.preview_panel_player._audio_device.original_track.enabled = False
-        self.preview_panel_player._audio_device.background_sound.enabled = True
-        self.preview_panel_player._audio_device.vocals_sound.enabled = True
+        original_track.enabled = False
+        background_sound.enabled = True
+        vocals_sound.enabled = True
         self.music_voice_separation_slider.setProperty('class', '')
         self.music_voice_separation_slider.style().unpolish(self.music_voice_separation_slider)
         self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
 
         background_volume = 1 if session.VIDEO['music_voice_separation']['volume'] < .5 else (1 - ((session.VIDEO['music_voice_separation']['volume'] - .5) * 2))
         voice_volume = 1 if session.VIDEO['music_voice_separation']['volume'] > .5 else (session.VIDEO['music_voice_separation']['volume'] * 2)
-        
-        self.preview_panel_player._audio_device.background_sound.gain = background_volume
-        self.preview_panel_player._audio_device.vocals_sound.gain = voice_volume
+
+        background_sound.gain = background_volume
+        vocals_sound.gain = voice_volume
 
 
 def timeline_show_speaker_color_button_clicked(self):

@@ -48,7 +48,7 @@ class Window(FramelessMainWindow):
 
         self.central_widget = QWidget(self)
         self.central_widget.setLayout(QStackedLayout())
-        self.central_widget.layout().setContentsMargins(0, 0, 0, 0)
+        self.central_widget.layout().setContentsMargins(0, self.titleBar.minimumHeight(), 0, 0)
         self.setCentralWidget(self.central_widget)
 
         startscreen.load(self)
@@ -186,6 +186,8 @@ class Window(FramelessMainWindow):
         if self.timeline_widget.audio_thread.isRunning():
             self.timeline_widget.audio_thread.cancel()
             self.timeline_widget.audio_thread.wait()
+
+        file_io.wait_for_save_threads()
 
         session.CONFIG.save()
 

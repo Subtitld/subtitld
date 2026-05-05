@@ -38,12 +38,35 @@ class PlayerWidget(QWidget):
         widget._graphics_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         widget._graphics_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
        
+        outer = widget
+
         class graphicsvideoitem(QGraphicsVideoItem):
             def __init__(self):
                 super().__init__()
-            
+
             def paint(self, painter, option, widget):
                 super().paint(painter, option, widget)
+
+                # If the QMediaPlayer has nothing in its sink right now (which
+                # happens when playback hits EndOfMedia and Qt clears the last
+                # frame to black), overpaint the cached `_last_video_frame`
+                # so the picture stays visible.
+                sink = self.videoSink()
+                current = sink.videoFrame() if sink is not None else None
+                cached = outer._last_video_frame
+                if (current is None or not current.isValid()) and cached is not None and cached.isValid():
+                    try:
+                        image = cached.toImage()
+                    except Exception:
+                        image = None
+                    if image is not None and not image.isNull():
+                        item_rect = self.boundingRect()
+                        scale = min(item_rect.width() / image.width(), item_rect.height() / image.height())
+                        vw = image.width() * scale
+                        vh = image.height() * scale
+                        vx = item_rect.x() + (item_rect.width() - vw) / 2.0
+                        vy = item_rect.y() + (item_rect.height() - vh) / 2.0
+                        painter.drawImage(QRectF(vx, vy, vw, vh), image)
 
                 painter.setRenderHint(QPainter.Antialiasing)
 
@@ -138,6 +161,7 @@ class PlayerWidget(QWidget):
         widget._graphics_scene.addItem(widget._graphics_video_item)
         widget._media_player.setVideoOutput(widget._graphics_video_item)
         widget._media_player.positionChanged.connect(lambda position: widget.position_changed(position))
+        widget._media_player.mediaStatusChanged.connect(widget._on_media_status_changed)
 
         widget._last_video_frame = None
         widget._graphics_video_item.videoSink().videoFrameChanged.connect(widget._on_video_frame)
@@ -151,6 +175,48 @@ class PlayerWidget(QWidget):
         widget.update_subtitle_layer()
         widget.position_changed_signal.emit()
 
+        # Stop ~1 frame before the end so QMediaPlayer never reaches EndOfMedia
+        # — once it does, the QGraphicsVideoItem clears the last frame to black
+        # and the picture vanishes. Pausing pre-emptively keeps the final
+        # rendered frame on screen.
+        if widget._media_player.playbackState() == QMediaPlayer.PlayingState:
+            duration_ms = widget._media_player.duration()
+            if duration_ms > 0:
+                fps = widget._media_player.metaData().value(QMediaMetaData.VideoFrameRate) or 25
+                try:
+                    safety_ms = max(40, int(round(2000 / float(fps))))
+                except (TypeError, ValueError):
+                    safety_ms = 80
+                if position >= duration_ms - safety_ms:
+                    widget._media_player.pause()
+                    widget._audio_device.pause()
+                    window = widget.window()
+                    if hasattr(window, 'playercontrols_playpause_button'):
+                        from subtitld.interface import playercontrols
+                        playercontrols.update_playercontrols_playpause_button(window)
+
+    def _on_media_status_changed(widget, status):
+        """Last-resort safety net if the proactive pause in `position_changed`
+        missed (e.g. the player jumped past the end without firing position
+        updates). Pause both engines and step back so the player isn't stuck
+        at EndOfMedia state."""
+        if status != QMediaPlayer.EndOfMedia:
+            return
+        widget._media_player.pause()
+        widget._audio_device.pause()
+        duration_ms = widget._media_player.duration()
+        if duration_ms > 0:
+            fps = widget._media_player.metaData().value(QMediaMetaData.VideoFrameRate) or 25
+            try:
+                step = max(1, int(round(1000 / float(fps))))
+            except (TypeError, ValueError):
+                step = 40
+            widget._media_player.setPosition(max(0, duration_ms - step))
+        window = widget.window()
+        if hasattr(window, 'playercontrols_playpause_button'):
+            from subtitld.interface import playercontrols
+            playercontrols.update_playercontrols_playpause_button(window)
+
     def update_subtitle_layer(widget):
         session.SUBTITLE['current'] = subtitles.subtitle_under_current_position()
         widget.update()
@@ -163,7 +229,8 @@ class PlayerWidget(QWidget):
 
     def loadfile(widget, filepath):
         if os.path.isfile(filepath):
-            widget._media_player.setSource(str(filepath))
+            from PySide6.QtCore import QUrl
+            widget._media_player.setSource(QUrl.fromLocalFile(str(filepath)))
             # widget._audio_device.load(filepath)
             widget.play()
             widget.pause()
@@ -377,7 +444,7 @@ def load(self):
     self.preview_panel = QWidget(self.preview_panel_container)
     self.preview_panel.setLayout(QVBoxLayout())
     self.preview_panel.setObjectName('preview_panel')
-    self.preview_panel.layout().setContentsMargins(0, 0, 0, 0)
+    self.preview_panel.layout().setContentsMargins(0, self.titleBar.height() - 1, 0, 0)
     self.preview_panel.opacity = QGraphicsOpacityEffect()
     self.preview_panel.opacity.setOpacity(0)
     self.preview_panel.setGraphicsEffect(self.preview_panel.opacity)

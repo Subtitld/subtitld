@@ -3,7 +3,7 @@ import secrets
 import asyncio
 import edge_tts
 
-from PySide6.QtWidgets import QStackedWidget, QWidget, QVBoxLayout, QHBoxLayout, QSpinBox, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QApplication
+from PySide6.QtWidgets import QStackedWidget, QWidget, QVBoxLayout, QHBoxLayout, QSpinBox, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QApplication, QRadioButton, QButtonGroup
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor
 from PySide6.QtCore import QThread, QObject, Signal, Qt, QSize
 
@@ -15,15 +15,34 @@ from subtitld.modules import session
 from subtitld.modules import subtitles
 
 
+def _parse_timecode_input(text):
+    """Parse 'HH:MM:SS.mmm' / 'MM:SS.mmm' / 'SS.mmm' into seconds, or None."""
+    if not text:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        parts = text.split(':')
+        seconds = float(parts[-1])
+        if len(parts) >= 2:
+            seconds += int(parts[-2]) * 60
+        if len(parts) >= 3:
+            seconds += int(parts[-3]) * 3600
+        return seconds
+    except (TypeError, ValueError):
+        return None
+
+
 class _EdgeTTSSignals(QObject):
-    speech_ready = Signal(str, dict, str)   # (uid, output_file)
-    speech_error = Signal(str, str)   # (uid, message)
+    speech_ready = Signal(str, dict, str)   # (uid, subtitle, output_file)
+    speech_error = Signal(str, dict, str)   # (uid, subtitle, message)
     voices_updated = Signal()
 
 
 class _EdgeTTSSpeechThread(QThread):
     speech_ready = Signal(str, dict, str)
-    speech_error = Signal(str, str)
+    speech_error = Signal(str, dict, str)
 
     def __init__(self, text_list):
         super().__init__()
@@ -41,9 +60,18 @@ class _EdgeTTSSpeechThread(QThread):
             output_file = os.path.join(cache_dir, f'{subtitle["uid"]}.wav')
             try:
                 loop.run_until_complete(self._generate(subtitle, output_file))
+                size = os.path.getsize(output_file) if os.path.exists(output_file) else 0
+                if size <= 0:
+                    if os.path.exists(output_file):
+                        try:
+                            os.remove(output_file)
+                        except OSError:
+                            pass
+                    self.speech_error.emit(subtitle['uid'], subtitle, 'edge-tts returned empty audio')
+                    continue
                 self.speech_ready.emit(subtitle['uid'], subtitle, output_file)
             except Exception as e:
-                self.speech_error.emit(subtitle['uid'], str(e))
+                self.speech_error.emit(subtitle['uid'], subtitle, str(e))
 
         loop.close()
 
@@ -140,6 +168,10 @@ class EdgeTTSEngine:
 
     @staticmethod
     def _on_speech_ready(uid, original_subtitle, file_path):
+        size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
+        if size <= 0:
+            EdgeTTSEngine._on_speech_error(uid, original_subtitle, 'edge-tts produced an empty audio file')
+            return
         for subtitle in session.SUBTITLE['segments']:
             if subtitle.get('start') == original_subtitle['start']:
                 dubs = subtitle.setdefault('dubbing', [])
@@ -172,6 +204,22 @@ class EdgeTTSEngine:
                 timeline_widget.update()
             session.set_unsaved()
             break
+
+    @staticmethod
+    def _on_speech_error(uid, original_subtitle, message):
+        """Unlock the source subtitle so the user can retry, and refresh the
+        timeline so the locked-state visual goes away. Empty/failed clips
+        never enter the project's dub list."""
+        print('edge-tts error:', uid, message)
+        target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
+        for subtitle in session.SUBTITLE.get('segments', []) or []:
+            if target_start is not None and subtitle.get('start') == target_start:
+                subtitle['locked'] = False
+                break
+        for window in QApplication.topLevelWidgets():
+            timeline_widget = getattr(window, 'timeline_widget', None)
+            if timeline_widget is not None:
+                timeline_widget.update()
 
     class speaker_panel(QWidget):
         def __init__(widget, parent=None):
@@ -218,6 +266,47 @@ class EdgeTTSEngine:
 
             widget.layout().addLayout(settings_line)
 
+            scope_box = QWidget()
+            scope_box.setLayout(QHBoxLayout())
+            scope_box.layout().setContentsMargins(0, 0, 0, 0)
+            scope_box.layout().setSpacing(8)
+            widget.layout().addWidget(scope_box)
+
+            widget.scope_label = QLabel()
+            widget.scope_label.setProperty('class', 'widget_label')
+            scope_box.layout().addWidget(widget.scope_label)
+
+            widget.scope_group = QButtonGroup(widget)
+            widget.scope_all = QRadioButton()
+            widget.scope_selected = QRadioButton()
+            widget.scope_range = QRadioButton()
+            widget.scope_all.setChecked(True)
+            for btn in (widget.scope_all, widget.scope_selected, widget.scope_range):
+                widget.scope_group.addButton(btn)
+                scope_box.layout().addWidget(btn)
+            scope_box.layout().addStretch()
+
+            widget.scope_range_box = QWidget()
+            widget.scope_range_box.setLayout(QHBoxLayout())
+            widget.scope_range_box.layout().setContentsMargins(0, 0, 0, 0)
+            widget.scope_range_box.layout().setSpacing(6)
+            widget.scope_range_box.setVisible(False)
+            widget.layout().addWidget(widget.scope_range_box)
+
+            widget.scope_range_from_label = QLabel()
+            widget.scope_range_box.layout().addWidget(widget.scope_range_from_label)
+            widget.scope_range_from = QLineEdit()
+            widget.scope_range_from.setPlaceholderText('00:00:00.000')
+            widget.scope_range_box.layout().addWidget(widget.scope_range_from, 1)
+
+            widget.scope_range_to_label = QLabel()
+            widget.scope_range_box.layout().addWidget(widget.scope_range_to_label)
+            widget.scope_range_to = QLineEdit()
+            widget.scope_range_to.setPlaceholderText('00:00:00.000')
+            widget.scope_range_box.layout().addWidget(widget.scope_range_to, 1)
+
+            widget.scope_range.toggled.connect(lambda checked: widget.scope_range_box.setVisible(checked))
+
             widget.generate_all_speeches_button = QPushButton()
             widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
             widget.layout().addWidget(widget.generate_all_speeches_button, 0, Qt.AlignRight)
@@ -234,7 +323,7 @@ class EdgeTTSEngine:
             if current:
                 widget.voice_combobox.setCurrentText(current)
 
-        def _on_speech_error(widget, uid, message):
+        def _on_speech_error(widget, uid, _subtitle, message):
             print('edge-tts error:', uid, message)
 
         def voice_combobox_changed(widget):
@@ -255,24 +344,37 @@ class EdgeTTSEngine:
             if speaker_name and speaker_name in session.SPEAKERS:
                 session.SPEAKERS[speaker_name]['dubbing']['pitch'] = value
 
+        def _scoped_segments_for_speaker(widget, speaker_name):
+            segments = session.SUBTITLE.get('segments', []) or []
+            speaker_segments = [s for s in segments if s.get('speaker', 'A') == speaker_name]
+            if widget.scope_selected.isChecked():
+                sel = session.SUBTITLE.get('selected')
+                return [sel] if sel and sel.get('speaker', 'A') == speaker_name else []
+            if widget.scope_range.isChecked():
+                rng_from = _parse_timecode_input(widget.scope_range_from.text()) or 0.0
+                raw_to = _parse_timecode_input(widget.scope_range_to.text())
+                rng_to = float('inf') if raw_to is None else raw_to
+                return [s for s in speaker_segments if s.get('end', 0) > rng_from and s.get('start', 0) < rng_to]
+            return speaker_segments
+
         def generate_all_speeches_button_clicked(widget):
             speaker_name = widget.property('speaker')
             speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
+            scoped = widget._scoped_segments_for_speaker(speaker_name)
             speeches_to_generate = []
-            for subtitle in session.SUBTITLE['segments']:
-                if subtitle.get('speaker', 'A') == speaker_name:
-                    overrides = subtitle.get('dubbing_options', {})
-                    subtitle['locked'] = True
-                    speeches_to_generate.append({
-                        'uid': secrets.token_hex(4),
-                        'text': subtitle['text'],
-                        'speaker': speaker_name,
-                        'start': subtitle['start'],
-                        'end': subtitle['end'],
-                        'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
-                        'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
-                        'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
-                    })
+            for subtitle in scoped:
+                overrides = subtitle.get('dubbing_options', {})
+                subtitle['locked'] = True
+                speeches_to_generate.append({
+                    'uid': secrets.token_hex(4),
+                    'text': subtitle['text'],
+                    'speaker': speaker_name,
+                    'start': subtitle['start'],
+                    'end': subtitle['end'],
+                    'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
+                    'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
+                    'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+                })
             if speeches_to_generate:
                 EdgeTTSEngine.generate_speeches(speeches_to_generate)
 
@@ -299,6 +401,12 @@ class EdgeTTSEngine:
             widget.voice_rate_label.setText(_('subtitles_panel_widget_dubbing.rate'))
             widget.voice_pitch_label.setText(_('subtitles_panel_widget_dubbing.pitch'))
             widget.generate_all_speeches_button.setText(_('subtitles_panel_widget_dubbing.generate_all_speeches'))
+            widget.scope_label.setText(_('panel_scope.label'))
+            widget.scope_all.setText(_('panel_scope.all'))
+            widget.scope_selected.setText(_('panel_scope.selected'))
+            widget.scope_range.setText(_('panel_scope.range'))
+            widget.scope_range_from_label.setText(_('panel_scope.from'))
+            widget.scope_range_to_label.setText(_('panel_scope.to'))
 
     class dubbingPanel(QWidget):
         def __init__(widget, parent=None):
@@ -306,25 +414,14 @@ class EdgeTTSEngine:
             widget.parent = parent
             widget.setLayout(QVBoxLayout())
             widget.layout().setContentsMargins(0, 0, 0, 0)
-            widget.layout().setSpacing(10)
+            widget.layout().setSpacing(5)
             widget.setProperty('dubbing_engine', 'edge-tts')
             widget.setProperty('class', 'transparent_panel')
-
-            widget.no_subtitle_label = QLabel()
-            widget.no_subtitle_label.setWordWrap(True)
-            widget.no_subtitle_label.setAlignment(Qt.AlignCenter)
-            widget.layout().addWidget(widget.no_subtitle_label)
-
-            widget.settings_container = QWidget()
-            widget.settings_container.setLayout(QVBoxLayout())
-            widget.settings_container.layout().setContentsMargins(0, 0, 0, 0)
-            widget.settings_container.layout().setSpacing(5)
-            widget.layout().addWidget(widget.settings_container)
 
             widget.voice_combobox = utils.LabeledComboBox()
             widget.voice_combobox.addItems(session.CONFIG.get('dubbing', {}).get('edge-tts', {}).get('voices', {}).keys())
             widget.voice_combobox.activated.connect(lambda: widget.voice_combobox_changed())
-            widget.settings_container.layout().addWidget(widget.voice_combobox)
+            widget.layout().addWidget(widget.voice_combobox)
 
             settings_line = QHBoxLayout()
             widget.voice_rate_label = QLabel()
@@ -344,11 +441,11 @@ class EdgeTTSEngine:
             widget.voice_pitch.valueChanged.connect(lambda: widget.voice_pitch_changed())
             settings_line.addWidget(widget.voice_pitch)
             settings_line.addStretch()
-            widget.settings_container.layout().addLayout(settings_line)
+            widget.layout().addLayout(settings_line)
 
             widget.generate_speech_button = QPushButton()
             widget.generate_speech_button.clicked.connect(lambda: widget.generate_speech_button_clicked())
-            widget.settings_container.layout().addWidget(widget.generate_speech_button, 0, Qt.AlignRight)
+            widget.layout().addWidget(widget.generate_speech_button, 0, Qt.AlignRight)
 
             EdgeTTSEngine.signals.voices_updated.connect(widget._refresh_voices)
 
@@ -409,11 +506,7 @@ class EdgeTTSEngine:
         def update(widget):
             selected = session.SUBTITLE.get('selected')
             if not selected:
-                widget.no_subtitle_label.setVisible(True)
-                widget.settings_container.setVisible(False)
                 return
-            widget.no_subtitle_label.setVisible(False)
-            widget.settings_container.setVisible(True)
 
             speaker_dubbing = session.SPEAKERS.get(selected.get('speaker', 'A'), {}).get('dubbing', {})
             overrides = selected.get('dubbing_options', {})
@@ -435,7 +528,6 @@ class EdgeTTSEngine:
             widget.voice_pitch.blockSignals(False)
 
         def translate(widget):
-            widget.no_subtitle_label.setText(_('subtitles_panel_widget_dubbing.no_subtitle_selected'))
             widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
             widget.voice_rate_label.setText(_('subtitles_panel_widget_dubbing.rate'))
             widget.voice_pitch_label.setText(_('subtitles_panel_widget_dubbing.pitch'))
@@ -443,6 +535,7 @@ class EdgeTTSEngine:
 
 
 EdgeTTSEngine.signals.speech_ready.connect(EdgeTTSEngine._on_speech_ready)
+EdgeTTSEngine.signals.speech_error.connect(EdgeTTSEngine._on_speech_error)
 
 
 def load(self):
@@ -460,10 +553,21 @@ def load(self):
     self.left_panel_dubbing_enable_checkbox.clicked.connect(lambda: left_panel_dubbing_enable_checkbox_clicked(self))
     left_panel_dubbing_panel.layout().addWidget(self.left_panel_dubbing_enable_checkbox)
 
+    self.left_panel_dubbing_no_subtitle_label = QLabel()
+    self.left_panel_dubbing_no_subtitle_label.setWordWrap(True)
+    self.left_panel_dubbing_no_subtitle_label.setAlignment(Qt.AlignCenter)
+    left_panel_dubbing_panel.layout().addWidget(self.left_panel_dubbing_no_subtitle_label)
+
+    self.left_panel_dubbing_subtitle_settings = QWidget()
+    self.left_panel_dubbing_subtitle_settings.setLayout(QVBoxLayout())
+    self.left_panel_dubbing_subtitle_settings.layout().setContentsMargins(0, 0, 0, 0)
+    self.left_panel_dubbing_subtitle_settings.layout().setSpacing(10)
+    left_panel_dubbing_panel.layout().addWidget(self.left_panel_dubbing_subtitle_settings)
+
     self.left_panel_dubbing_engine_combobox = utils.LabeledComboBox()
     self.left_panel_dubbing_engine_combobox.setProperty('class', 'button')
     self.left_panel_dubbing_engine_combobox.activated.connect(lambda: left_panel_dubbing_engine_combobox_activated(self))
-    left_panel_dubbing_panel.layout().addWidget(self.left_panel_dubbing_engine_combobox)
+    self.left_panel_dubbing_subtitle_settings.layout().addWidget(self.left_panel_dubbing_engine_combobox)
 
     self.global_panel_dubbing_tabwidget = QStackedWidget()
     self.global_panel_dubbing_tabwidget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
@@ -473,14 +577,26 @@ def load(self):
     self.left_panel_speakers_list_of_available_dubbing_engine['edge-tts'] = global_panel_dubbing_edgetts_engine
     self.left_panel_dubbing_engine_combobox.addItem('edge-tts')
 
-    left_panel_dubbing_panel.layout().addWidget(self.global_panel_dubbing_tabwidget)
+    self.left_panel_dubbing_subtitle_settings.layout().addWidget(self.global_panel_dubbing_tabwidget)
     left_panel_dubbing_panel.layout().addStretch()
 
     update(self)
 
 
 def left_panel_dubbing_enable_checkbox_clicked(self):
-    session.CONFIG['dubbing']['enabled'] = self.left_panel_dubbing_enable_checkbox.isChecked()
+    enabled = self.left_panel_dubbing_enable_checkbox.isChecked()
+    session.CONFIG['dubbing']['enabled'] = enabled
+
+    for window in QApplication.topLevelWidgets():
+        preview = getattr(window, 'preview_panel_player', None)
+        if preview is not None:
+            engine = getattr(preview, '_audio_device', None)
+            if engine is not None and hasattr(engine, 'speaker_tracks'):
+                for track in engine.speaker_tracks.values():
+                    track.enabled = enabled
+        timeline_widget = getattr(window, 'timeline_widget', None)
+        if timeline_widget is not None:
+            timeline_widget.update()
 
 
 def left_panel_dubbing_engine_combobox_activated(self):
@@ -489,8 +605,13 @@ def left_panel_dubbing_engine_combobox_activated(self):
 
 
 def update(self):
-    self.left_panel_dubbing_enable_checkbox.setChecked(session.CONFIG['dubbing'].get('enabled', False))
+    enabled = session.CONFIG['dubbing'].get('enabled', False)
+    self.left_panel_dubbing_enable_checkbox.setChecked(enabled)
     self.left_panel_dubbing_engine_combobox.setCurrentText(session.CONFIG['dubbing'].get('selected_engine', 'edge-tts'))
+
+    has_selection = session.SUBTITLE.get('selected') is not None
+    self.left_panel_dubbing_no_subtitle_label.setVisible(not has_selection)
+    self.left_panel_dubbing_subtitle_settings.setVisible(has_selection)
 
     selected_engine = self.left_panel_dubbing_engine_combobox.currentText()
     for widget in self.global_panel_dubbing_tabwidget.findChildren(QWidget):
@@ -498,10 +619,18 @@ def update(self):
             widget.update_callback()
             break
 
+    preview = getattr(self, 'preview_panel_player', None)
+    if preview is not None:
+        engine = getattr(preview, '_audio_device', None)
+        if engine is not None and hasattr(engine, 'speaker_tracks'):
+            for track in engine.speaker_tracks.values():
+                track.enabled = enabled
+
 
 def translate(self):
     self.left_panel_dubbing_enable_checkbox.setText(_('subtitles_panel_widget_dubbing.enable_dubbing'))
     self.left_panel_dubbing_engine_combobox.setLabel(_('subtitles_panel_widget_dubbing.engine'))
+    self.left_panel_dubbing_no_subtitle_label.setText(_('subtitles_panel_widget_dubbing.no_subtitle_selected'))
     for widget in self.global_panel_dubbing_tabwidget.findChildren(QWidget):
         if widget.property('dubbing_engine') == self.left_panel_dubbing_engine_combobox.currentText():
             widget.translate_callback()

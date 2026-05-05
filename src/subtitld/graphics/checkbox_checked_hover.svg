@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="26" height="14" version="1.1" viewBox="0 0 26 14" xmlns="http://www.w3.org/2000/svg">
- <g transform="translate(.51852 -21.889)">
-  <path d="m1.4815 21.889h22c1.108 0 2 0.892 2 2v10c0 1.108-0.892 2-2 2h-22c-1.108 0-2-0.892-2-2v-10c0-1.108 0.892-2 2-2z" fill="#3e5363" fill-opacity=".6" stop-color="#000000"/>
-  <path d="m9.4823 22.889h14c0.5713 0 1 0.4287 1 1v10c0 0.57129-0.4287 1-1 1h-14c-0.5713 0-1-0.42871-1-1v-10c0-0.5713 0.4287-1 1-1z" fill="#b8cee0" stop-color="#000000"/>
-  <path d="m20.725 25.061a1 1 0 0 0-0.70703 0.29297l-4.9492 4.9492-2.1211-2.1211a1 1 0 0 0-1.4141 0 1 1 0 0 0 0 1.4141l2.8281 2.8281a1.0001 1.0001 0 0 0 1.4141 0l5.6562-5.6562a1 1 0 0 0 0-1.4141 1 1 0 0 0-0.70703-0.29297z" fill="#3e5363" stop-color="#000000" stroke-linecap="round" stroke-linejoin="round" style="paint-order:fill markers stroke"/>
- </g>
+<svg width="24" height="24" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+ <defs>
+  <linearGradient id="linearGradient52" x1="72.136" x2="72.136" y1="10" y2="34" gradientTransform="rotate(180,40,17)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#bfd4e4" offset="0"/>
+   <stop stop-color="#b8cee0" offset="1"/>
+  </linearGradient>
+ </defs>
+ <path d="m21 24c1.662 0 3-1.338 3-3v-18c0-1.662-1.338-3-3-3h-18c-1.662 0-3 1.338-3 3v18c0 1.662 1.338 3 3 3z" fill="url(#linearGradient52)" stroke-linecap="square" stroke-width="2" style="paint-order:fill markers stroke"/>
+ <path d="m6.1428 12.463 3.8572 4 7.7143-8" fill="none" stroke="#304251" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+ <path d="m0.87695 23.123 0.70117-0.70117c-0.35934-0.35934-0.57812-0.85923-0.57812-1.4219v-18c0-1.1253 0.8747-2 2-2h18c0.56265 0 1.0625 0.21879 1.4219 0.57812l0.70117-0.70117c-0.54225-0.54225-1.292-0.87695-2.123-0.87695h-18c-1.662 0-3 1.338-3 3v18c0 0.831 0.3347 1.5808 0.87695 2.123z" fill-opacity=".2" stop-color="#000000" stroke-linecap="square" style="paint-order:fill markers stroke"/>
+ <path d="m23.123 0.87695-0.70117 0.70117c0.35934 0.35934 0.57812 0.85923 0.57812 1.4219v18c0 1.1253-0.8747 2-2 2h-18c-0.56265 0-1.0625-0.21879-1.4219-0.57812l-0.70117 0.70117c0.54225 0.54225 1.292 0.87695 2.123 0.87695h18c1.662 0 3-1.338 3-3v-18c0-0.831-0.3347-1.5808-0.87695-2.123z" fill="#fff" fill-opacity=".3" stop-color="#000000" stroke-linecap="square" style="paint-order:fill markers stroke"/>
 </svg>

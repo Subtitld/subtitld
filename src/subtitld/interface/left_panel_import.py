@@ -1,14 +1,21 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QLineEdit, QSizePolicy, QStackedWidget, QProgressBar
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QLineEdit, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog
 from PySide6.QtCore import Qt, QThread, Signal
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.interface import utils
 from subtitld.modules import session
+from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
+from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
+
+_list_of_supported_import_extensions = []
+for _exttype in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS:
+    for _ext in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS[_exttype]['extensions']:
+        _list_of_supported_import_extensions.append(_ext)
 
 
 def _audio_source_for_transcription():
@@ -229,25 +236,25 @@ class VoskPanel(QWidget):
         widget.layout().addWidget(widget.model_line) 
 
         widget.model_combobox = utils.LabeledComboBox()
-        widget.model_combobox.setObjectName('global_panel_transcription_vosk_transcription_model_combobox')
+        widget.model_combobox.setObjectName('global_panel_import_vosk_transcription_model_combobox')
         widget.model_combobox.activated.connect(lambda: widget.model_combobox_activated())
         widget.model_line.layout().addWidget(widget.model_combobox, 1)
 
         widget.download_model_button = QPushButton()
         widget.download_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-        widget.download_model_button.setObjectName('global_panel_transcription_vosk_transcription_download_model_button')
+        widget.download_model_button.setObjectName('global_panel_import_vosk_transcription_download_model_button')
         widget.download_model_button.clicked.connect(lambda: widget.download_model_button_clicked())
         widget.model_combobox.bottom_line.addWidget(widget.download_model_button)
 
         widget.update_model_button = QPushButton()
         widget.update_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-        widget.update_model_button.setObjectName('global_panel_transcription_vosk_transcription_update_model_button')
+        widget.update_model_button.setObjectName('global_panel_import_vosk_transcription_update_model_button')
         widget.update_model_button.clicked.connect(lambda: widget.update_model_button_clicked())
         widget.model_combobox.bottom_line.addWidget(widget.update_model_button)
 
         widget.remove_model_button = QPushButton()
         widget.remove_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-        widget.remove_model_button.setObjectName('global_panel_transcription_vosk_transcription_remove_model_button')
+        widget.remove_model_button.setObjectName('global_panel_import_vosk_transcription_remove_model_button')
         widget.remove_model_button.setProperty('class', 'danger')
         widget.remove_model_button.clicked.connect(lambda: widget.remove_model_button_clicked())
         widget.model_combobox.bottom_line.addWidget(widget.remove_model_button)
@@ -357,10 +364,16 @@ class VoskPanel(QWidget):
                             result = rec.Result()
                             result = re.sub(r'(\d),(\d)', r'\1.\2', result)
                             result = json.loads(result)
-                            self.progress.emit(10 + int((float(result['result'][0]['start'])/float(session.VIDEO.get('duration', 60.0))) * 90))
-                            self.response.emit(result)
+                            words = result.get('result') or []
+                            if words:
+                                self.progress.emit(10 + int((float(words[0]['start']) / float(session.VIDEO.get('duration', 60.0))) * 90))
+                                self.response.emit(result)
 
-                    self.response.emit(rec.FinalResult())
+                    final = rec.FinalResult()
+                    final = re.sub(r'(\d),(\d)', r'\1.\2', final)
+                    final = json.loads(final)
+                    if final.get('result'):
+                        self.response.emit(final)
 
         def translate_thread_response(response):
             if isinstance(response, dict) and all(k in response for k in ('result', 'text')):
@@ -494,7 +507,7 @@ class AssemblyAIPanel(QWidget):
         widget.setProperty('class', 'transparent_panel')
 
         widget.api_key = utils.LabeledLineEdit()
-        widget.api_key.setObjectName('global_panel_transcription_assemblyai_transcription_api_key')
+        widget.api_key.setObjectName('global_panel_import_assemblyai_transcription_api_key')
         widget.api_key.lineedit.setEchoMode(QLineEdit.Password)
         widget.api_key.editingFinished.connect(lambda value: widget.api_key_activated(value))
         widget.layout().addWidget(widget.api_key, 1)
@@ -624,69 +637,74 @@ class AssemblyAIPanel(QWidget):
 
 
 def load(self):
-    tab_name = 'transcription'
-    
-    left_panel_transcription_panel = left_panel.left_panel(
+    tab_name = 'import'
+
+    left_panel_import_panel = left_panel.left_panel(
         parent=self,
         tab_name=tab_name,
         update_callback=update,
         translate_callback=translate
     )
 
-    self.global_panel_transcription_language_combobox = utils.LabeledComboBox()
-    self.global_panel_transcription_language_combobox.addItems(LANGUAGE_DESCRIPTIONS)
-    self.global_panel_transcription_language_combobox.activated.connect(lambda: global_panel_transcription_language_combobox_activated(self))
-    left_panel_transcription_panel.layout().addWidget(self.global_panel_transcription_language_combobox, 1)
+    self.global_subtitlesvideo_import_button = QPushButton()
+    self.global_subtitlesvideo_import_button.setProperty('class', 'button')
+    self.global_subtitlesvideo_import_button.clicked.connect(lambda: global_subtitlesvideo_import_button_clicked(self))
+    left_panel_import_panel.layout().addWidget(self.global_subtitlesvideo_import_button)
 
-    self.global_panel_transcription_engine_combobox = utils.LabeledComboBox()
-    self.global_panel_transcription_engine_combobox.setProperty('class', 'button')
-    self.global_panel_transcription_engine_combobox.addItems(['Vosk', 'AssemblyAI'])
-    self.global_panel_transcription_engine_combobox.activated.connect(lambda: global_panel_transcription_engine_combobox_activated(self))
-    left_panel_transcription_panel.layout().addWidget(self.global_panel_transcription_engine_combobox)
+    self.global_panel_import_language_combobox = utils.LabeledComboBox()
+    self.global_panel_import_language_combobox.addItems(LANGUAGE_DESCRIPTIONS)
+    self.global_panel_import_language_combobox.activated.connect(lambda: global_panel_import_language_combobox_activated(self))
+    left_panel_import_panel.layout().addWidget(self.global_panel_import_language_combobox, 1)
 
-    self.global_panel_transcription_tabwidget = QStackedWidget()
+    self.global_panel_import_engine_combobox = utils.LabeledComboBox()
+    self.global_panel_import_engine_combobox.setProperty('class', 'button')
+    self.global_panel_import_engine_combobox.addItems(['Vosk', 'AssemblyAI'])
+    self.global_panel_import_engine_combobox.activated.connect(lambda: global_panel_import_engine_combobox_activated(self))
+    left_panel_import_panel.layout().addWidget(self.global_panel_import_engine_combobox)
 
-    self.global_panel_transcription_vosk_transcription_widget = VoskPanel()
-    self.global_panel_transcription_vosk_transcription_widget.transcript_started.connect(lambda: global_panel_transcription_start_transcription_progress_start(self))
-    self.global_panel_transcription_vosk_transcription_widget.transcript_progress.connect(lambda value: global_panel_transcription_start_transcription_progress_update(self, value))
-    self.global_panel_transcription_vosk_transcription_widget.transcript_finished.connect(lambda: global_panel_transcription_start_transcription_progress_finish(self))
-    self.global_panel_transcription_tabwidget.addWidget(self.global_panel_transcription_vosk_transcription_widget)
+    self.global_panel_import_tabwidget = QStackedWidget()
 
-    self.global_panel_transcription_assemblyai_transcription_widget = AssemblyAIPanel()
-    self.global_panel_transcription_assemblyai_transcription_widget.transcript_started.connect(lambda: global_panel_transcription_start_transcription_progress_start(self))
-    self.global_panel_transcription_assemblyai_transcription_widget.transcript_progress.connect(lambda value: global_panel_transcription_start_transcription_progress_update(self, value))
-    self.global_panel_transcription_assemblyai_transcription_widget.transcript_finished.connect(lambda: global_panel_transcription_start_transcription_progress_finish(self))
-    self.global_panel_transcription_tabwidget.addWidget(self.global_panel_transcription_assemblyai_transcription_widget)
+    self.global_panel_import_vosk_transcription_widget = VoskPanel()
+    self.global_panel_import_vosk_transcription_widget.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
+    self.global_panel_import_vosk_transcription_widget.transcript_progress.connect(lambda value: global_panel_import_start_transcription_progress_update(self, value))
+    self.global_panel_import_vosk_transcription_widget.transcript_finished.connect(lambda: global_panel_import_start_transcription_progress_finish(self))
+    self.global_panel_import_tabwidget.addWidget(self.global_panel_import_vosk_transcription_widget)
 
-    left_panel_transcription_panel.layout().addWidget(self.global_panel_transcription_tabwidget, 1)
+    self.global_panel_import_assemblyai_transcription_widget = AssemblyAIPanel()
+    self.global_panel_import_assemblyai_transcription_widget.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
+    self.global_panel_import_assemblyai_transcription_widget.transcript_progress.connect(lambda value: global_panel_import_start_transcription_progress_update(self, value))
+    self.global_panel_import_assemblyai_transcription_widget.transcript_finished.connect(lambda: global_panel_import_start_transcription_progress_finish(self))
+    self.global_panel_import_tabwidget.addWidget(self.global_panel_import_assemblyai_transcription_widget)
+
+    left_panel_import_panel.layout().addWidget(self.global_panel_import_tabwidget, 1)
 
     bottom_line = QHBoxLayout()
     bottom_line.setContentsMargins(0, 0, 0, 0)
     bottom_line.setSpacing(0)
-    left_panel_transcription_panel.layout().addLayout(bottom_line)
+    left_panel_import_panel.layout().addLayout(bottom_line)
 
-    def global_panel_transcription_start_transcription_progress_start(self):
-        self.global_panel_transcription_start_transcription_progress.setVisible(True)
-        self.global_panel_transcription_start_transcription_progress.setValue(0)
-        self.global_panel_transcription_start_transcription_progress.setMaximum(100)
-        self.global_panel_transcription_start_transcription_button.setVisible(False)
+    def global_panel_import_start_transcription_progress_start(self):
+        self.global_panel_import_start_transcription_progress.setVisible(True)
+        self.global_panel_import_start_transcription_progress.setValue(0)
+        self.global_panel_import_start_transcription_progress.setMaximum(100)
+        self.global_panel_import_start_transcription_button.setVisible(False)
     
-    def global_panel_transcription_start_transcription_progress_update(self, value):
-        self.global_panel_transcription_start_transcription_progress.setValue(value)
+    def global_panel_import_start_transcription_progress_update(self, value):
+        self.global_panel_import_start_transcription_progress.setValue(value)
 
-    def global_panel_transcription_start_transcription_progress_finish(self):
-        self.global_panel_transcription_start_transcription_progress.setVisible(False)
-        self.global_panel_transcription_start_transcription_button.setVisible(True)
+    def global_panel_import_start_transcription_progress_finish(self):
+        self.global_panel_import_start_transcription_progress.setVisible(False)
+        self.global_panel_import_start_transcription_button.setVisible(True)
 
-    self.global_panel_transcription_start_transcription_progress = QProgressBar()
-    self.global_panel_transcription_start_transcription_progress.setVisible(False)
-    self.global_panel_transcription_start_transcription_progress.setProperty('class', 'secondary')
-    bottom_line.addWidget(self.global_panel_transcription_start_transcription_progress)
+    self.global_panel_import_start_transcription_progress = QProgressBar()
+    self.global_panel_import_start_transcription_progress.setVisible(False)
+    self.global_panel_import_start_transcription_progress.setProperty('class', 'secondary')
+    bottom_line.addWidget(self.global_panel_import_start_transcription_progress)
 
-    self.global_panel_transcription_start_transcription_button = QPushButton()
-    self.global_panel_transcription_start_transcription_button.setProperty('class', 'secondary')
-    self.global_panel_transcription_start_transcription_button.clicked.connect(lambda: global_panel_transcription_start_transcription_button_clicked(self))
-    bottom_line.addWidget(self.global_panel_transcription_start_transcription_button, 0, Qt.AlignRight)
+    self.global_panel_import_start_transcription_button = QPushButton()
+    self.global_panel_import_start_transcription_button.setProperty('class', 'secondary')
+    self.global_panel_import_start_transcription_button.clicked.connect(lambda: global_panel_import_start_transcription_button_clicked(self))
+    bottom_line.addWidget(self.global_panel_import_start_transcription_button, 0, Qt.AlignRight)
 
     update(self)
 
@@ -697,34 +715,38 @@ def show(self):
 
 def update(self):
     if not session.SUBTITLE.get('language', False):
-        session.SUBTITLE['language'] = 'en-us'
+        session.SUBTITLE['language'] = session.CONFIG.get('transcription', {}).get('language', 'en-us')
     selected_language_name = 'English (United States)'
     for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
         if language_code == session.SUBTITLE['language']:
             selected_language_name = language_name
             break
-    self.global_panel_transcription_language_combobox.setCurrentText(selected_language_name)
+    self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
 
-    self.global_panel_transcription_engine_combobox.setCurrentText(session.CONFIG['transcription'].get('engine', 'Vosk'))
+    self.global_panel_import_engine_combobox.setCurrentText(session.CONFIG['transcription'].get('engine', 'Vosk'))
 
-    global_panel_transcription_tabwidget_update(self)
+    global_panel_import_tabwidget_update(self)
     
 
 def hide(self):
     pass
 
 
-def global_panel_transcription_language_combobox_activated(self):
-    session.SUBTITLE['language'] = session.LANGUAGE_DICT_LIST[self.global_panel_transcription_language_combobox.currentText()]
-    global_panel_transcription_tabwidget_update(self)
+def global_panel_import_language_combobox_activated(self):
+    chosen = session.LANGUAGE_DICT_LIST[self.global_panel_import_language_combobox.currentText()]
+    session.SUBTITLE['language'] = chosen
+    if not isinstance(session.CONFIG.get('transcription'), dict):
+        session.CONFIG['transcription'] = {}
+    session.CONFIG['transcription']['language'] = chosen
+    global_panel_import_tabwidget_update(self)
 
 
-def global_panel_transcription_engine_combobox_activated(self):
-    session.CONFIG['transcription']['engine'] = self.global_panel_transcription_engine_combobox.currentText()
-    global_panel_transcription_tabwidget_update(self)
+def global_panel_import_engine_combobox_activated(self):
+    session.CONFIG['transcription']['engine'] = self.global_panel_import_engine_combobox.currentText()
+    global_panel_import_tabwidget_update(self)
 
 
-def global_panel_transcription_start_transcription_button_clicked(self):
+def global_panel_import_start_transcription_button_clicked(self):
     confirm_transcript = False
     if session.SUBTITLE['segments']:
         confirm_dialog = utils.SimpleDialog(self, title=_('transcription_panel.start_transcription'))
@@ -736,25 +758,41 @@ def global_panel_transcription_start_transcription_button_clicked(self):
     if confirm_transcript or not session.SUBTITLE['segments']:
         session.SUBTITLE['segments'] = []
         self.timeline_widget.update()
-        for widget in self.global_panel_transcription_tabwidget.findChildren(QWidget):
-            if widget.property('transcription_engine') == self.global_panel_transcription_engine_combobox.currentText():
+        for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
+            if widget.property('transcription_engine') == self.global_panel_import_engine_combobox.currentText():
                 widget.transcript_callback()
                 break
                
 
-def global_panel_transcription_tabwidget_update(self):
-    for widget in self.global_panel_transcription_tabwidget.findChildren(QWidget):
-        if widget.property('transcription_engine') == self.global_panel_transcription_engine_combobox.currentText():
-            self.global_panel_transcription_tabwidget.setCurrentWidget(widget)
+def global_panel_import_tabwidget_update(self):
+    for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
+        if widget.property('transcription_engine') == self.global_panel_import_engine_combobox.currentText():
+            self.global_panel_import_tabwidget.setCurrentWidget(widget)
             widget.update_callback()
             break
-    
 
-def translate(self):    
-    self.global_panel_transcription_language_combobox.setLabel(_('transcription_panel.language'))
-    self.global_panel_transcription_start_transcription_button.setText(_('transcription_panel.start_transcription'))
-    self.global_panel_transcription_engine_combobox.setLabel(_('transcription_panel.engine'))
-    for widget in self.global_panel_transcription_tabwidget.findChildren(QWidget):
+
+def global_subtitlesvideo_import_button_clicked(self):
+    """Import subtitles from an existing file (SRT, DOCX, TXT, ...)."""
+    supported_import_files = 'Text files' + ' ({})'.format(' '.join('*.{}'.format(fo) for fo in _list_of_supported_import_extensions))
+    file_to_open = QFileDialog.getOpenFileName(parent=self, caption='Select the file to import', dir=os.path.expanduser('~'), filter=supported_import_files)[0]
+    if file_to_open:
+        session.SUBTITLE['segments'] += file_io.import_file(filename=file_to_open)[0]
+        session.SUBTITLE['segments'].sort(key=lambda s: s.get('start', 0))
+        timeline_widget = getattr(self, 'timeline_widget', None)
+        if timeline_widget is not None:
+            timeline_widget.update()
+        from subtitld.interface import left_panel as _lp
+        _lp.update(self)
+        session.set_unsaved()
+
+
+def translate(self):
+    self.global_subtitlesvideo_import_button.setText(_('import_panel.import'))
+    self.global_panel_import_language_combobox.setLabel(_('transcription_panel.language'))
+    self.global_panel_import_start_transcription_button.setText(_('transcription_panel.start_transcription'))
+    self.global_panel_import_engine_combobox.setLabel(_('transcription_panel.engine'))
+    for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
         if 'translate_callback' in dir(widget):
             widget.translate_callback()
 

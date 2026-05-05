@@ -371,7 +371,11 @@ class Track:
         if not self.enabled:
             return out
 
-        for clip in self.clips:
+        # Snapshot the clip list so the audio callback can't be torn apart
+        # by `Track.add_clip` / `track.clips.remove(...)` running on the main
+        # thread (e.g. via SoundDeviceAudioEngine.sync_subtitle_dubs while
+        # bulk dub generation is delivering new clips).
+        for clip in tuple(self.clips):
             clip_data = clip.read(playhead, frames, samplerate, buffer_pool)
             out += clip_data
             buffer_pool.release(clip_data)
@@ -445,7 +449,10 @@ class SoundDeviceAudioEngine:
         with self._playhead_lock:
             current_playhead = self._playhead
 
-        for track in self.tracks:
+        # Snapshot self.tracks: sync_subtitle_dubs (main thread) appends/
+        # removes tracks during bulk dub generation, which would otherwise
+        # mutate this list mid-iteration on the audio thread and crash.
+        for track in tuple(self.tracks):
             track_data = track.read(current_playhead, frames, self.samplerate, self.buffer_pool)
             outdata += track_data
             self.buffer_pool.release(track_data)

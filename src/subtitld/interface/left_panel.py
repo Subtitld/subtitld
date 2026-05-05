@@ -12,9 +12,8 @@ from subtitld.interface import left_panel_qualitycheck
 from subtitld.interface import left_panel_global
 from subtitld.interface import left_panel_interface
 from subtitld.interface import left_panel_keyboard
-from subtitld.interface import left_panel_transcription
-from subtitld.interface import left_panel_translation
 from subtitld.interface import left_panel_import
+from subtitld.interface import left_panel_translation
 from subtitld.interface import left_panel_export
 from subtitld.interface import left_panel_autosave
 from subtitld.interface import utils
@@ -45,6 +44,7 @@ class navigation_button(QPushButton):
         self.setCheckable(True)
         self.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
         self.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / f'left_panel_{tab_name}.svg')))
+        self.setToolTip(_(f'left_panel.tab_{tab_name}'))
     
     def mousePressEvent(self, e):
         stacked_tabs = self.window().findChild(QStackedWidget, 'left_panel_stackedwidgets')
@@ -110,9 +110,8 @@ def load(self):
     left_panel_global.load(self)
     left_panel_interface.load(self)
     left_panel_keyboard.load(self)
-    left_panel_transcription.load(self)
-    left_panel_translation.load(self)
     left_panel_import.load(self)
+    left_panel_translation.load(self)
     left_panel_export.load(self)
     left_panel_autosave.load(self)
 
@@ -142,3 +141,5 @@ def add_panel(widget):
 def translate(self):
     for widget in self.left_panel_stackedwidgets.findChildren(left_panel):
         widget.translate(self)
+    for button in self.left_panel_navigation.findChildren(navigation_button):
+        button.setToolTip(_(f'left_panel.tab_{button.tab_name}'))

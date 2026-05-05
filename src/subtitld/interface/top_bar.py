@@ -3,8 +3,9 @@ import os
 import datetime
 
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget, QSizePolicy, QLabel, QSpacerItem, QGraphicsOpacityEffect, QFileDialog, QDialog, QCheckBox, QRadioButton, QButtonGroup, QApplication
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QTimer
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QTimer, Signal
 
+import subtitld
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
@@ -17,7 +18,8 @@ def load(self):
     self.titleBar_left_container = QWidget(self)
     self.titleBar_left_container.setObjectName('titleBar_left_container')
     self.titleBar_left_container.setLayout(QHBoxLayout())
-    self.titleBar_left_container.layout().setContentsMargins(0, 0, 0, 0)
+    self.titleBar_left_container.layout().setContentsMargins(0, 0, 0, 1)
+    self.titleBar_left_container.layout().setSpacing(0)
     self.titleBar_left_container.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
     self.titleBar_left_container.setAttribute(Qt.WA_StyledBackground, True)
     self.titleBar_left_container.opacity = QGraphicsOpacityEffect()
@@ -27,7 +29,7 @@ def load(self):
     self.titleBar_left_container.animation.setEasingCurve(QEasingCurve.OutQuint)
     
     self.titleBar.layout().setAlignment(Qt.AlignTop)
-    self.titleBar.setFixedHeight(50)
+    self.titleBar.setFixedHeight(37)
     self.titleBar.setObjectName('titleBar')
     self.titleBar.setAttribute(Qt.WA_StyledBackground, True)
         
@@ -46,18 +48,6 @@ def load(self):
     self.titleBar.layout().insertWidget(0, self.titleBar_left_container)
 
     class titleBar_left_save_button(QPushButton):
-        def __init__(widget, parent=None):
-            super().__init__(parent)
-            widget.key_modifiers = []
-
-        def keyPressEvent(widget, event):
-            widget.key_modifiers = event.modifiers()
-            event.accept()
-
-        def keyReleaseEvent(widget, event):
-            widget.key_modifiers = []
-            event.accept()
-        
         def update_state(widget):
             widget.setProperty(
                 'class',
@@ -71,36 +61,100 @@ def load(self):
     self.titleBar_left_save_button.setObjectName('titleBar_left_save_button')
     self.titleBar_left_save_button.setProperty('class', 'saved')
     self.titleBar_left_save_button.setIconSize(QSize(16, 16))
+    self.titleBar_left_save_button.setFixedWidth(50)
     self.titleBar_left_save_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
     self.titleBar_left_save_button.clicked.connect(lambda: toppanel_save_button_clicked(self))
     session._unsaved_change_callbacks.append(self.titleBar_left_save_button.update_state)
     self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignVCenter)
 
-    self.titleBar_left_export_button = QPushButton(self)
-    self.titleBar_left_export_button.setObjectName('titleBar_left_export_button')
-    self.titleBar_left_export_button.setIconSize(QSize(16, 16))
-    self.titleBar_left_export_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    class titleBar_left_export_button(QPushButton):
+        clicked = Signal()
+        def __init__(widget, parent=None):
+            super().__init__(parent)
+            widget.setObjectName('titleBar_left_export_button')
+            widget.setLayout(QHBoxLayout())
+            widget.setAttribute(Qt.WA_LayoutOnEntireRect, False)
+            widget.setAutoFillBackground(True)
+            widget.layout().setContentsMargins(0, 0, 0, 0)
+            widget.layout().setSpacing(0)
+            # widget.setFixedHeight(30)
+            widget.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
+            widget_icon = QLabel()
+            widget_icon.setObjectName('titleBar_left_export_button_icon')
+            widget_icon.setFixedSize(QSize(36, 36))
+            widget.layout().addWidget(widget_icon)
+
+        def sizeHint(widget):
+            return widget.layout().sizeHint() if widget.layout() else super().sizeHint()
+
+        def minimumSizeHint(widget):
+            return widget.layout().minimumSize() if widget.layout() else super().minimumSizeHint()
+        
+        # def enterEvent(widget, event):
+        #     widget.setProperty('class', 'hover')
+        #     widget.style().unpolish(widget)
+        #     widget.style().polish(widget)
+        #     super().enterEvent(event)
+        
+        # def leaveEvent(widget, event):
+        #     widget.setProperty('class', 'normal')
+        #     widget.style().unpolish(widget)
+        #     widget.style().polish(widget)
+        #     super().leaveEvent(event)
+        
+        # def mousePressEvent(widget, event):
+        #     if event.button() == Qt.LeftButton:
+        #         widget.setProperty('class', 'pressed')
+        #         widget.style().unpolish(widget)
+        #         widget.style().polish(widget)
+        #         widget.clicked.emit()
+
+    self.titleBar_left_export_button = titleBar_left_export_button(self)
     self.titleBar_left_export_button.clicked.connect(lambda: toppanel_export_button_clicked(self))
-    self.titleBar_left_container.layout().addWidget(self.titleBar_left_export_button, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+    self.titleBar_left_container.layout().addWidget(self.titleBar_left_export_button, 0)
+
+    self.titleBar_left_export_quick_button = QPushButton('SRT')
+    self.titleBar_left_export_quick_button.setObjectName('titleBar_left_export_quick_button')
+    self.titleBar_left_export_quick_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.titleBar_left_export_quick_button.clicked.connect(lambda: toppanel_export_quick_button_clicked(self))
+    self.titleBar_left_export_quick_button.setFixedHeight(14)
+    self.titleBar_left_export_quick_button.setVisible(False)
+    self.titleBar_left_export_button.layout().addWidget(self.titleBar_left_export_quick_button, 1)
+
+    def _refresh_quick_export_button():
+        info = session.LAST_EXPORT
+        if info and info.get('extension'):
+            self.titleBar_left_export_quick_button.setText(info['extension'].upper())
+            self.titleBar_left_export_quick_button.setToolTip(_('top_bar.quick_export').format(path=info['filepath']))
+            self.titleBar_left_export_quick_button.setVisible(True)
+        else:
+            self.titleBar_left_export_quick_button.setVisible(False)
+        self.titleBar_left_export_button.adjustSize()
+        self.titleBar_left_export_button.updateGeometry()
+
+    self._refresh_quick_export_button = _refresh_quick_export_button
+    session._last_export_callbacks.append(_refresh_quick_export_button)
+    _refresh_quick_export_button()
 
     self.titleBar_left_information_container = QWidget(self)
     self.titleBar_left_information_container.setObjectName('titleBar_left_information_container')
     self.titleBar_left_information_container.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
     self.titleBar_left_information_container.setLayout(QHBoxLayout())
-    self.titleBar_left_information_container.layout().setContentsMargins(0, 0, 0, 0)
+    self.titleBar_left_information_container.layout().setContentsMargins(10, 0, 0, 0)
     self.titleBar_left_container.layout().addWidget(self.titleBar_left_information_container)
 
     self.titleBar_left_information_label = QLabel(self)
     self.titleBar_left_information_label.setObjectName('titleBar_left_information_label')
+    self.titleBar_left_information_label.setAlignment(Qt.AlignCenter)
     self.titleBar_left_information_label.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
-    self.titleBar_left_information_container.layout().addWidget(self.titleBar_left_information_label, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+    self.titleBar_left_information_container.layout().addWidget(self.titleBar_left_information_label, 1)
     self.titleBar_left_information_label.setText('<b>filename.usf</b><br /><small>subtitle format</small>')
 
     self.tilteBar_subtitld_label = QLabel(self)
     self.tilteBar_subtitld_label.setObjectName('tilteBar_subtitld_label')
     self.tilteBar_subtitld_label.setAttribute(Qt.WA_StyledBackground, True)
-    self.titleBar.layout().insertWidget(1, self.tilteBar_subtitld_label, alignment=Qt.AlignRight | Qt.AlignTop)
-    self.tilteBar_subtitld_label.setText('<b>SUBTITLD</b>  v25.08.01.01')
+    self.titleBar.layout().insertWidget(1, self.tilteBar_subtitld_label, alignment=Qt.AlignRight | Qt.AlignVCenter)
+    self.tilteBar_subtitld_label.setText(f'<b>SUBTITLD</b>  v{subtitld.__version__}')
 
 
 def update(self):
@@ -110,7 +164,7 @@ def update(self):
         filename = pathlib.Path(session.SUBTITLE.get('filepath', '')).name
         filepath = pathlib.Path(session.SUBTITLE.get('filepath', '')).parent
             
-    self.titleBar_left_information_label.setText(f'<b>{filename}</b><br /><small>{filepath}</small>')
+    self.titleBar_left_information_label.setText(f'<small>{filepath}</small><br /><b>{filename}</b>')
 
 
 def show(self):
@@ -125,34 +179,20 @@ def translate(self):
 
 
 def toppanel_save_button_clicked(self):
-    """Save the project as USFX. Shift+click forces Save As. Ctrl+click
-    forwards to the Export button for backwards compatibility."""
-    live_modifiers = QApplication.keyboardModifiers()
-    button_modifiers = self.titleBar_left_save_button.key_modifiers or Qt.KeyboardModifier.NoModifier
-    ctrl_pressed = bool(live_modifiers & Qt.ControlModifier) or bool(button_modifiers & Qt.ControlModifier)
-    shift_pressed = bool(live_modifiers & Qt.ShiftModifier) or bool(button_modifiers & Qt.ShiftModifier)
-
-    if ctrl_pressed:
-        toppanel_export_button_clicked(self)
-        return
-
+    """Save the project as USFX. Prompts for a path the first time (or when
+    the current file isn't .usfx); subsequent clicks save in place."""
     usfx_filter = session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['USFX']['description'] + ' (*.usfx)'
 
     current_filepath = session.SUBTITLE.get('filepath') or ''
-    needs_dialog = (
-        shift_pressed
-        or not current_filepath
-        or not current_filepath.lower().endswith('.usfx')
-    )
+    needs_dialog = not current_filepath or not current_filepath.lower().endswith('.usfx')
 
     if needs_dialog:
         suggested_dir = os.path.dirname(current_filepath) if current_filepath else os.path.dirname(session.VIDEO.get('filepath', ''))
         base_source = current_filepath or session.VIDEO.get('filepath', '')
         suggested_filename = (os.path.splitext(os.path.basename(base_source))[0] or 'subtitle') + '.usfx'
         suggested = os.path.join(suggested_dir, suggested_filename)
-        title = 'Save subtitle as' if shift_pressed else 'Save subtitle'
 
-        filedialog = QFileDialog.getSaveFileName(parent=self, caption=title, dir=suggested, filter=usfx_filter)
+        filedialog = QFileDialog.getSaveFileName(parent=self, caption='Save subtitle', dir=suggested, filter=usfx_filter)
         if not filedialog[0]:
             return
         filepath = filedialog[0]
@@ -160,73 +200,139 @@ def toppanel_save_button_clicked(self):
             filepath += '.usfx'
         session.SUBTITLE['filepath'] = filepath
 
-    session.set_unsaved(False)
     session.FORMAT['format'] = 'USFX'
-    file_io.save_file(session.SUBTITLE['filepath'], 'USFX', session.CONFIG['selected_language'])
+
+    self.titleBar_left_save_button.setEnabled(False)
+    session.set_unsaved(False)
+    session.AUTOSAVE_BACKUP_DIRTY = False
+
+    def _on_save_done(_path, success, _error):
+        self.titleBar_left_save_button.setEnabled(True)
+        if success:
+            session.add_to_recent_files(session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath', ''))
+        else:
+            session.set_unsaved(True)
+
+    file_io.save_file_async(
+        session.SUBTITLE['filepath'],
+        'USFX',
+        session.CONFIG['selected_language'],
+        on_done=_on_save_done,
+        parent=self,
+    )
 
 
 def toppanel_export_button_clicked(self):
-    """Export to any format other than the project's native USFX."""
-    filter_entries = []
-    for fmt, info in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.items():
-        if fmt == 'USFX':
-            continue
-        filter_entries.append(info['description'] + ' (' + ' '.join(f'*.{e}' for e in info['extensions']) + ')')
-    for fmt, info in session.LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS.items():
-        filter_entries.append(info['description'] + ' (' + ' '.join(f'*.{e}' for e in info['extensions']) + ')')
-    export_filter = ';;'.join(filter_entries)
+    """Open the unified export dialog, then prompt for a save path filtered to
+    the chosen format and run the appropriate exporter."""
+    from subtitld.interface.export_dialog import ExportDialog
+    from subtitld.modules import bounce as _bounce
+
+    has_background = _bounce._background_audio_path() is not None
+    has_vocals = _bounce._vocals_audio_path() is not None
+    last = session.LAST_EXPORT or {}
+    initial_category = last.get('category')
+
+    dialog = ExportDialog(parent=self,
+                          has_background=has_background,
+                          has_vocals=has_vocals,
+                          initial_category=initial_category)
+    config = dialog.exec_and_get_values()
+    if not config:
+        return
+
+    fmt = config.get('format')
+    category = config.get('category')
+
+    extensions = []
+    description = fmt
+    if category == 'subtitles' and fmt in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
+        info = session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
+    elif category in ('audio', 'video') and fmt in session.LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS:
+        info = session.LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
+    elif category == 'documents' and fmt in session.LIST_OF_SUPPORTED_EXPORT_EXTENSIONS:
+        info = session.LIST_OF_SUPPORTED_EXPORT_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
+
+    if not extensions:
+        return
+
+    file_filter = description + ' (' + ' '.join(f'*.{e}' for e in extensions) + ')'
 
     suggested_dir = os.path.dirname(session.SUBTITLE.get('filepath', '') or session.VIDEO.get('filepath', ''))
     base = os.path.basename(session.SUBTITLE.get('filepath', '') or session.VIDEO.get('filepath', '')) or 'subtitle'
-    suggested = os.path.join(suggested_dir, os.path.splitext(base)[0] + '.srt')
+    suggested = os.path.join(suggested_dir, os.path.splitext(base)[0] + '.' + extensions[0])
 
-    filedialog = QFileDialog.getSaveFileName(parent=self, caption='Export as', dir=suggested, filter=export_filter)
-    if not filedialog[0] or not filedialog[1]:
+    filedialog = QFileDialog.getSaveFileName(parent=self, caption=f'Export {fmt}', dir=suggested, filter=file_filter)
+    if not filedialog[0]:
         return
 
     filepath = filedialog[0]
-    selected_extensions = filedialog[1].rsplit('(', 1)[-1].split(')', 1)[0].replace('*.', '').split(' ')
-    if not filepath.rsplit('.', 1)[-1].lower() in selected_extensions:
-        filepath += f'.{selected_extensions[0]}'
-        selected_extension = selected_extensions[0]
-    else:
-        selected_extension = filepath.rsplit('.', 1)[-1].lower()
+    if filepath.rsplit('.', 1)[-1].lower() not in extensions:
+        filepath += f'.{extensions[0]}'
+    selected_extension = filepath.rsplit('.', 1)[-1].lower()
 
-    audio_format = None
-    for fmt, info in session.LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS.items():
-        if selected_extension in info['extensions']:
-            audio_format = fmt
-            break
-
-    if audio_format is not None:
-        from subtitld.modules import bounce as _bounce
-        has_background = _bounce._background_audio_path() is not None
-        has_vocals = _bounce._vocals_audio_path() is not None
-        audio_dialog = export_audio_dialog(parent=self, title=f'Export {audio_format}',
-                                            is_mp4=(audio_format == 'MP4'),
-                                            has_background=has_background,
-                                            has_vocals=has_vocals)
-        config = audio_dialog.exec_and_get_values()
-        if config:
-            engine = getattr(self.preview_panel_player, '_audio_device', None)
-            _bounce.bounce(filepath, audio_format, config['mode'],
-                           audio_engine=engine,
-                           include_background=config['include_background'])
+    if category in ('audio', 'video'):
+        audio_config = config.get('audio_config') or {'mode': 'mixdown', 'include_background': False}
+        engine = getattr(self.preview_panel_player, '_audio_device', None)
+        _bounce.bounce(filepath, fmt, audio_config['mode'],
+                       audio_engine=engine,
+                       include_background=audio_config.get('include_background', False))
+        session.set_last_export({
+            'filepath': filepath,
+            'extension': selected_extension,
+            'category': category,
+            'format': fmt,
+            'audio_format': fmt,
+            'audio_config': audio_config,
+        })
         return
 
-    selected_format = modules_utils.get_format_from_extension(selected_extension)
+    if category == 'subtitles' and 'options' in config:
+        session.FORMAT['options'] = config['options']
 
-    if selected_format == 'JSON' and 'options' not in session.FORMAT:
-        json_dialog = export_json_dialog(parent=self, title='JSON options')
-        config = json_dialog.exec_and_get_values()
-        if config:
-            session.FORMAT['options'] = config
-    elif selected_format == 'USF' and 'options' not in session.FORMAT:
-        usf_dialog = export_usf_dialog(parent=self, title='USF options')
-        config = usf_dialog.exec_and_get_values()
-        if config:
-            session.FORMAT['options'] = config
+    file_io.save_file(filepath, fmt, session.CONFIG['selected_language'])
+    session.set_last_export({
+        'filepath': filepath,
+        'extension': selected_extension,
+        'category': category,
+        'format': fmt,
+        'audio_format': None,
+        'audio_config': None,
+        'options': config.get('options'),
+    })
 
+
+def toppanel_export_quick_button_clicked(self):
+    """Re-run the most recent export using its stored format/path. No dialogs."""
+    info = session.LAST_EXPORT
+    if not info or not info.get('filepath'):
+        return
+
+    filepath = info['filepath']
+    category = info.get('category')
+
+    if category in ('audio', 'video'):
+        from subtitld.modules import bounce as _bounce
+        audio_format = info.get('audio_format') or info.get('format')
+        config = info.get('audio_config') or {'mode': 'mixdown', 'include_background': False}
+        engine = getattr(self.preview_panel_player, '_audio_device', None)
+        _bounce.bounce(filepath, audio_format, config['mode'],
+                       audio_engine=engine,
+                       include_background=config.get('include_background', False))
+        return
+
+    if info.get('options'):
+        session.FORMAT['options'] = info['options']
+
+    selected_format = info.get('format')
+    if not selected_format:
+        return
     file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
 
 

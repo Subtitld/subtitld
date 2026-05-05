@@ -142,13 +142,18 @@ def start_screen_open_button_clicked(self):
         if filepath.rsplit('.', 1)[-1].upper() in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS.keys():
             selected_video_filepath = filepath
             break
-    
+
+    if not selected_video_filepath and selected_subtitle_filepath and selected_subtitle_filepath.lower().endswith('.usfx'):
+        peeked = file_io.peek_usfx_video(selected_subtitle_filepath)
+        if peeked:
+            selected_video_filepath = peeked
+
     if not selected_video_filepath:
         supported_video_files = _('file_io.video_files') + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in list_of_supported_video_extensions]))
         selected_video_filepath = QFileDialog.getOpenFileName(
-            parent=self, 
-            caption=_('file_io.all_supported_files'), 
-            dir=str(session.PATH_HOME), 
+            parent=self,
+            caption=_('file_io.all_supported_files'),
+            dir=str(session.PATH_HOME),
             filter=supported_video_files
         )[0]
         
@@ -168,10 +173,16 @@ def load_productionscreen(self):
 
         self.preview_panel_player.loadfile(session.VIDEO['filepath'])
 
-        self.music_voice_separation_thread.filename = session.VIDEO['filepath']
-        self.music_voice_separation_thread.start()
-
         session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+
+        has_audio = bool(session.VIDEO.get('audio_is_present', False))
+        self.music_voice_separation_box.setVisible(has_audio)
+        if hasattr(self, 'global_panel_import_start_transcription_button'):
+            self.global_panel_import_start_transcription_button.setEnabled(has_audio)
+            self.global_panel_import_start_transcription_button.setToolTip('' if has_audio else _('startscreen.no_audio_in_video'))
+        if has_audio:
+            self.music_voice_separation_thread.filename = session.VIDEO['filepath']
+            self.music_voice_separation_thread.start()
 
         if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
             session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
@@ -182,17 +193,7 @@ def load_productionscreen(self):
             if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
                 self.preview_panel_player.seek(session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])].get('last_position', 0))
 
-            recent_files = session.CONFIG.get('recent_files', {})
-            if not str(session.SUBTITLE['filepath']) in recent_files:
-                recent_files[str(session.SUBTITLE['filepath'])] = {
-                    'video_filepath': str(session.VIDEO['filepath']),
-                    'last_position': 10
-                }
-                
-            if str(session.SUBTITLE['filepath']) in recent_files:
-                session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])]['last_opened'] = str(datetime.datetime.now().timestamp())
-
-            session.CONFIG['recent_files'] = recent_files
+            session.add_to_recent_files(session.SUBTITLE['filepath'], session.VIDEO.get('filepath', ''))
 
         QTimer.singleShot(0, self.timeline_widget.load_waveform)
 

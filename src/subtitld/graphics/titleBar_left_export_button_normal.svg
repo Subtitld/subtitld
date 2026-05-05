@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg width="30" height="30" version="1.1" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+ <defs>
+  <linearGradient id="linearGradient52" x1="72.136" x2="72.136" y1="10" y2="40" gradientTransform="translate(-50,-10)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#bfd4e4" offset="0"/>
+   <stop stop-color="#b8cee0" offset="1"/>
+  </linearGradient>
+ </defs>
+ <g stroke-linecap="square">
+  <path d="m0 0v30h27c1.662 0 3-1.338 3-3v-24c0-1.662-1.338-3-3-3z" fill="url(#linearGradient52)" stroke-width="2" style="paint-order:fill markers stroke"/>
+  <path d="m28.422 1.578c0.35934 0.35934 0.57801 0.85934 0.57801 1.422v24c0 1.1253-0.8747 2-2 2h-26l-1 1h27c1.662 0 3-1.338 3-3v-24c0-0.831-0.3345-1.581-0.87675-2.1232z" fill-opacity=".1" stop-color="#000000" style="paint-order:fill markers stroke"/>
+  <path d="m0 0v30l1-1v-28h26c0.56265 0 1.0626 0.21868 1.422 0.57801l0.70126-0.70126c-0.54225-0.54225-1.2922-0.87675-2.1232-0.87675z" fill="#fff" fill-opacity=".13" stop-color="#000000" style="paint-order:fill markers stroke"/>
+ </g>
+</svg>

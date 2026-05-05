@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import subprocess
+import datetime
 import subtitld
 import platformdirs
 
@@ -256,14 +257,46 @@ VIDEO = {}
 
 FORMAT = {}
 
+LAST_EXPORT = None  # {'filepath', 'format', 'audio_format', 'audio_config', 'extension'}
+_last_export_callbacks = []
+def set_last_export(info):
+    global LAST_EXPORT
+    LAST_EXPORT = info
+    for callback in _last_export_callbacks:
+        callback()
+
 REPEAT_DURATION_BUFFER = []
 
+def add_to_recent_files(subtitle_filepath, video_filepath=None):
+    """Insert (or refresh) a recent-files entry for the given subtitle file.
+    Refreshes `last_opened`, preserves `last_position`, and updates the linked
+    video path when one is provided. Safe to call repeatedly."""
+    if not subtitle_filepath:
+        return
+    if not isinstance(CONFIG, dict):
+        return
+    key = str(subtitle_filepath)
+    recent = CONFIG.setdefault('recent_files', {})
+    entry = recent.setdefault(key, {'last_position': 0})
+    if video_filepath:
+        entry['video_filepath'] = str(video_filepath)
+    elif 'video_filepath' not in entry:
+        entry['video_filepath'] = ''
+    entry['last_opened'] = str(datetime.datetime.now().timestamp())
+
+
 UNSAVED = False
+AUTOSAVE_BACKUP_DIRTY = False
+AUTOSAVE_LAST_BACKUP = None
+AUTOSAVE_LAST_ORIGINAL = None
 _unsaved_change_callbacks = []
+_autosave_status_callbacks = []
 def set_unsaved(value=True):
-    global UNSAVED
+    global UNSAVED, AUTOSAVE_BACKUP_DIRTY
     old_value = UNSAVED
     UNSAVED = value
+    if value:
+        AUTOSAVE_BACKUP_DIRTY = True
     if old_value != value:
         for callback in _unsaved_change_callbacks:
             callback()

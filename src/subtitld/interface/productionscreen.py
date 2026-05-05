@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QSplitter
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from subtitld.modules import file_io
 from subtitld.modules import session
@@ -34,6 +34,15 @@ def load(self):
 
     if session.CONFIG.get('autosave', {}).get('backup_enabled', True):
         self.autosave_backup_timer.start()
+        # The regular timer interval defaults to 5 min — too long for a fresh
+        # project the user just started editing. Fire an early dirty-check
+        # 30s after the production screen loads so the first backup lands
+        # quickly (autosave_backup_timer_timeout itself bails when nothing
+        # is dirty, so this is a no-op for read-only browsing).
+        QTimer.singleShot(30000, lambda: file_io.autosave_backup_timer_timeout())
+
+    if session.CONFIG.get('autosave', {}).get('original_enabled', True) and session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'):
+        self.autosave_original_timer.start()
 
 
 def main_horizontal_splitter_changed(self, pos, index):
