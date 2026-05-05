@@ -2,8 +2,11 @@ import pathlib
 import os
 import datetime
 
+import math
+
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget, QSizePolicy, QLabel, QSpacerItem, QGraphicsOpacityEffect, QFileDialog, QDialog, QCheckBox, QRadioButton, QButtonGroup, QApplication
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QTimer, Signal
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QTimer, Signal, QEvent, Property, QPointF
+from PySide6.QtGui import QPainter, QColor, QRadialGradient
 
 import subtitld
 from subtitld.interface import utils
@@ -12,6 +15,96 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
+
+
+class _SaveWaveOverlay(QWidget):
+    """Radial wave that ripples outward from a point when the document is
+    saved. Painted on a transparent overlay covering the host (e.g., the main
+    window) — transparent for mouse so it never blocks input. Tracks the host
+    via an event filter so geometry stays in sync on resize."""
+
+    def __init__(self, host, color='#5de845'):
+        super().__init__(host)
+        self._host = host
+        self._progress = 0.0
+        self._origin = QPointF(0.0, 0.0)
+        self._max_radius = 0.0
+        self._wave_width = 360.0  # ring thickness — keep wide for a soft sweep
+        self._color = QColor(color)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setGeometry(host.rect())
+        host.installEventFilter(self)
+        self._anim = QPropertyAnimation(self, b'progress', self)
+        self._anim.setDuration(1100)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.finished.connect(self.hide)
+        self.hide()
+
+    def _get_progress(self):
+        return self._progress
+
+    def _set_progress(self, value):
+        self._progress = value
+        self.update()
+
+    progress = Property(float, _get_progress, _set_progress)
+
+    def eventFilter(self, obj, event):
+        if obj is self._host and event.type() == QEvent.Resize:
+            self.setGeometry(self._host.rect())
+        return False
+
+    def trigger(self, origin_x, origin_y):
+        self._origin = QPointF(float(origin_x), float(origin_y))
+        w = self._host.width()
+        h = self._host.height()
+        # Distance to the farthest corner — the ring needs to reach there
+        # before we stop drawing.
+        corners = ((0, 0), (w, 0), (0, h), (w, h))
+        self._max_radius = max(
+            math.hypot(origin_x - cx, origin_y - cy) for cx, cy in corners
+        )
+        if self._max_radius <= 0.0:
+            return
+        self._anim.stop()
+        self._anim.setStartValue(0.0)
+        self._anim.setEndValue(1.0)
+        self.setGeometry(self._host.rect())
+        self.show()
+        self.raise_()
+        self._anim.start()
+
+    def paintEvent(self, event):
+        if self._progress <= 0.0 or self._progress >= 1.0 or self._max_radius <= 0.0:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Ring: the leading edge sweeps from origin to max_radius. The
+        # envelope decays sharply near the end so the ring fades out as it
+        # reaches the opposite edge instead of clipping.
+        radius = self._max_radius * self._progress
+        half = self._wave_width / 2.0
+
+        envelope = (1.0 - self._progress) ** 1.5
+        peak = QColor(self._color)
+        peak.setAlphaF(0.20 * envelope)
+        edge = QColor(self._color)
+        edge.setAlphaF(0.0)
+
+        outer = radius + half
+        inner_stop = max(0.0, (radius - half) / outer) if outer > 0 else 0.0
+        mid_stop = radius / outer if outer > 0 else 0.0
+
+        gradient = QRadialGradient(self._origin, outer)
+        gradient.setColorAt(0.0, edge)
+        gradient.setColorAt(inner_stop, edge)
+        gradient.setColorAt(mid_stop, peak)
+        gradient.setColorAt(1.0, edge)
+        painter.fillRect(self.rect(), gradient)
+        painter.end()
 
 
 def load(self):
@@ -32,7 +125,19 @@ def load(self):
     self.titleBar.setFixedHeight(37)
     self.titleBar.setObjectName('titleBar')
     self.titleBar.setAttribute(Qt.WA_StyledBackground, True)
-        
+
+    self.app_save_wave = _SaveWaveOverlay(self)
+
+    def _trigger_save_wave():
+        save_btn = getattr(self, 'titleBar_left_save_button', None)
+        if save_btn is None:
+            return
+        origin = save_btn.mapTo(self, save_btn.rect().center())
+        self.app_save_wave.trigger(origin.x(), origin.y())
+
+    self._trigger_save_wave = _trigger_save_wave
+    session._save_success_callbacks.append(_trigger_save_wave)
+
     # Rearrange icons to top
     self.titleBar.layout().setAlignment(self.titleBar.minBtn, Qt.AlignTop)
     self.titleBar.layout().setAlignment(self.titleBar.maxBtn, Qt.AlignTop)
@@ -210,6 +315,7 @@ def toppanel_save_button_clicked(self):
         self.titleBar_left_save_button.setEnabled(True)
         if success:
             session.add_to_recent_files(session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath', ''))
+            session.notify_save_success()
         else:
             session.set_unsaved(True)
 

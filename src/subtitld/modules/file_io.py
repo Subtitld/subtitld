@@ -1059,6 +1059,7 @@ def autosave_original_timer_timeout():
         session.set_unsaved(False)
         session.AUTOSAVE_BACKUP_DIRTY = False
         session.AUTOSAVE_LAST_ORIGINAL = datetime.datetime.now()
+        session.notify_save_success()
         for callback in session._autosave_status_callbacks:
             callback()
 

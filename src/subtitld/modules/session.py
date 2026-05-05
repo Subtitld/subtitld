@@ -291,6 +291,7 @@ AUTOSAVE_LAST_BACKUP = None
 AUTOSAVE_LAST_ORIGINAL = None
 _unsaved_change_callbacks = []
 _autosave_status_callbacks = []
+_save_success_callbacks = []
 def set_unsaved(value=True):
     global UNSAVED, AUTOSAVE_BACKUP_DIRTY
     old_value = UNSAVED
@@ -300,4 +301,16 @@ def set_unsaved(value=True):
     if old_value != value:
         for callback in _unsaved_change_callbacks:
             callback()
+
+
+def notify_save_success():
+    """Fire after the document is successfully saved (manual save or autosave
+    of the original file). UI hooks listen to play a 'save success' visual
+    cue. Backup snapshots intentionally don't fire this — they're too frequent
+    to tie to a noticeable animation."""
+    for callback in _save_success_callbacks:
+        try:
+            callback()
+        except Exception:
+            pass
 
