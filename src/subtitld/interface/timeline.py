@@ -39,10 +39,14 @@ class TimelineScroll(QScrollArea):
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()
             if delta != 0:
-                step = 10.0 if delta > 0 else -10.0
-                new_zoom = session.CONFIG.get('timeline_zoom', 100.0) + step
+                # Multiplicative step: each notch (≈120 units) scales zoom by
+                # ~12%. Feels linear across the 10 → 490 range, where a fixed
+                # additive step is too coarse at low zoom and too fine at high.
+                notches = delta / 120.0
+                current = session.CONFIG.get('timeline_zoom', 100.0)
+                new_zoom = current * (1.12 ** notches)
                 new_zoom = max(10.0, min(490.0, new_zoom))
-                if new_zoom != session.CONFIG.get('timeline_zoom', 100.0):
+                if abs(new_zoom - current) >= 0.5:
                     session.CONFIG['timeline_zoom'] = new_zoom
                     playercontrols.zoom_buttons_update(widget.window())
             event.accept()
@@ -158,6 +162,7 @@ class WaveformManager:
         self.levels = {}  # zoom_key -> (mins, maxs, samples_per_bucket)
         self.workers = {}  # zoom_key -> worker thread
         self.cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+        self._cache_save_timer = None
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
         if samples is not None:
@@ -218,16 +223,23 @@ class WaveformManager:
 
     def _on_worker_finished(self, zoom_key, payload):
         mins, maxs, samples_per_bucket = payload
-        # store; convert to numpy if possible for speed
-
         mins = np.asarray(mins, dtype=np.float32)
         maxs = np.asarray(maxs, dtype=np.float32)
         self.levels[zoom_key] = (mins, maxs, samples_per_bucket)
-        # save to unified cache
-        self._save_to_cache()
-        # cleanup worker ref
+        # Schedule a coalesced cache write rather than saving on every worker
+        # finish — at high zoom many workers complete in quick succession and
+        # each np.save() blocks the main thread with a large disk write,
+        # which is what made Ctrl+wheel feel stuck.
+        self._schedule_cache_save()
         if zoom_key in self.workers:
             del self.workers[zoom_key]
+
+    def _schedule_cache_save(self):
+        if self._cache_save_timer is None:
+            self._cache_save_timer = QTimer()
+            self._cache_save_timer.setSingleShot(True)
+            self._cache_save_timer.timeout.connect(self._save_to_cache)
+        self._cache_save_timer.start(2000)
             
     def get_level(self, samples_per_pixel, start_sample=0, end_sample=None):
         """
@@ -257,8 +269,11 @@ class WaveformManager:
         if zoom_key < base:
             zoom_key = base
 
-        # trigger generation for exact target (use target as zoom_key too), and for our normalised zoom_key
-        self._start_worker_if_missing(target)
+        # Trigger generation only for the normalised zoom_key. Earlier we
+        # also spawned one for the exact `target`, but during a wheel-zoom
+        # the target shifts every frame and the cost of starting a fresh
+        # worker (plus the corresponding cache write) per frame stalls the
+        # main thread. The normalised key is close enough visually.
         self._start_worker_if_missing(zoom_key)
 
         # choose best available level: prefer exact target, else nearest coarser (bigger samples_per_bucket)
@@ -447,39 +462,56 @@ class Timeline(QWidget):
         grid_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483')), 1, Qt.SolidLine)
         painter.setFont(QFont('Ubuntu Mono', 8))
         
-        xpos = 0
-        for sec in range(int(session.VIDEO.get('duration', 60))):
-            if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
-                if (session.CONFIG.get('timeline_zoom', 1) > 75) or (session.CONFIG.get('timeline_zoom', 1) > 50 and session.CONFIG.get('timeline_zoom', 1) <= 75 and not int((sec % 2))) or (session.CONFIG.get('timeline_zoom', 1) > 25 and session.CONFIG.get('timeline_zoom', 1) <= 50 and not int((sec % 4))) or (session.CONFIG.get('timeline_zoom', 1) <= 25 and not int((sec % 8))):
-                    lim_rect = QRectF(
-                        xpos + 3,
-                        27,
-                        50,
-                        20
-                    )
-                    painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#806a7483')))
-                    painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
+        # Iterate only the visible range. Earlier we walked every second of
+        # the video and skipped via an inline `if xpos >= scroll_position …`,
+        # which made paint scale O(duration) — at zoom 490 on a 60-min video
+        # that's 3,600 iterations per repaint per scroll tick, which is what
+        # made Ctrl+wheel feel sluggish.
+        duration = float(session.VIDEO.get('duration', 60))
+        wpp = widget.width_proportion or 1.0
+        visible_right = scroll_position + scroll_width
+        sec_start = max(0, int(scroll_position / wpp))
+        sec_end = min(int(duration), int(visible_right / wpp) + 1)
+        zoom = session.CONFIG.get('timeline_zoom', 1)
+        timeline_cfg = session.CONFIG.get('timeline', {})
+        show_grid = timeline_cfg.get('show_grid', False)
+        grid_type = timeline_cfg.get('grid_type', False)
+        text_color = QColor(timeline_cfg.get('time_text_color', '#806a7483'))
 
-                if session.CONFIG.get('timeline', {}).get('show_grid', False) and session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds':
+        for sec in range(sec_start, sec_end):
+            xpos = sec * wpp
+            if (zoom > 75) or (zoom > 50 and zoom <= 75 and not int((sec % 2))) or (zoom > 25 and zoom <= 50 and not int((sec % 4))) or (zoom <= 25 and not int((sec % 8))):
+                lim_rect = QRectF(xpos + 3, 27, 50, 20)
+                painter.setPen(text_color)
+                painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
+
+            if show_grid and grid_type == 'seconds':
+                painter.setPen(grid_pen)
+                painter.drawLine(xpos, 0, xpos, widget.height())
+
+        if show_grid:
+            if grid_type == 'frames':
+                framerate = session.VIDEO.get('framerate') or 25
+                pixels_per_frame = wpp / framerate
+                # Skip if frames are sub-pixel — drawing them is wasted work.
+                if pixels_per_frame >= 1.0:
                     painter.setPen(grid_pen)
-                    painter.drawLine(xpos, 0, xpos, widget.height())
-            
-            xpos += widget.width_proportion
-
-        if session.CONFIG.get('timeline', {}).get('show_grid', False):
-            if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
+                    frame_start = max(0, int(scroll_position / pixels_per_frame))
+                    frame_end = int(visible_right / pixels_per_frame) + 1
+                    h = widget.height()
+                    for frame_i in range(frame_start, frame_end):
+                        xpos = frame_i * pixels_per_frame
+                        painter.drawLine(xpos, 0, xpos, h)
+            elif grid_type == 'scenes' and session.VIDEO.get('scenes'):
                 painter.setPen(grid_pen)
-                xpos = 0.0
-                for _frame_i in range(int(session.VIDEO.get('duration', 60) * session.VIDEO['framerate'])):
-                    if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
-                        painter.drawLine(xpos, 0, xpos, widget.height())
-                    xpos += widget.width_proportion / session.VIDEO['framerate']
-            elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and session.VIDEO['scenes']:
-                painter.setPen(grid_pen)
+                h = widget.height()
+                visible_start_sec = scroll_position / wpp
+                visible_end_sec = visible_right / wpp
                 for scene in session.VIDEO['scenes']:
-                    xpos = (scene * widget.width_proportion)
-                    if xpos >= scroll_position and xpos <= (scroll_position + widget.parent().parent().width()):
-                        painter.drawLine(xpos, 0, xpos, widget.height())
+                    if scene < visible_start_sec or scene > visible_end_sec:
+                        continue
+                    xpos = scene * wpp
+                    painter.drawLine(xpos, 0, xpos, h)
 
         if session.REPEAT_DURATION_BUFFER:
             rep_rect = QRectF(
@@ -590,28 +622,34 @@ class Timeline(QWidget):
                 ordered_segments.remove(selected_subtitle)
                 ordered_segments.append(selected_subtitle)
 
-            for subtitle in ordered_segments:
-                if (subtitle['start'] / session.VIDEO.get('duration', 0.01)) > ((scroll_position + scroll_width) / widget.width()):
-                    continue
-                elif (subtitle['end']) / session.VIDEO.get('duration', 0.01) < (scroll_position / widget.width()):
-                    continue
-                else:
-                    painter.setPen(Qt.NoPen)
-                    if session.SUBTITLE.get('selected', False) == subtitle:
-                        painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_fill_color', '#cc3e5363')))
-                    else:
-                        fill_color = QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#c8dbe9'))
-                        fill_color.setAlphaF(0.9)
-                        painter.setBrush(fill_color)
+            # Compare in seconds (cheap) instead of dividing each subtitle's
+            # start/end by duration on every iteration.
+            visible_start_sec = scroll_position / wpp
+            visible_end_sec = visible_right / wpp
+            speakers_keys = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
+            speakers_index = {name: i for i, name in enumerate(speakers_keys)}
+            speakers_count = len(speakers_keys)
+            selected_fill = QColor(timeline_cfg.get('selected_subtitle_fill_color', '#cc3e5363'))
+            unselected_fill = QColor(timeline_cfg.get('subtitle_fill_color', '#c8dbe9'))
+            unselected_fill.setAlphaF(0.9)
+            current_selected = session.SUBTITLE.get('selected', False)
 
-                    subtitle_track = [0, 1] # [index, number of tracks]
-                    if widget.show_speaker_tracks and session.SPEAKERS:
-                        speakers_keys = list(session.SPEAKERS.keys())
-                        speaker_name = subtitle.get('speaker', 'A')
-                        subtitle_track = [
-                            speakers_keys.index(speaker_name) if speaker_name in speakers_keys else 0,
-                            len(speakers_keys)
-                        ]
+            for subtitle in ordered_segments:
+                if subtitle['start'] > visible_end_sec:
+                    continue
+                if subtitle['end'] < visible_start_sec:
+                    continue
+
+                painter.setPen(Qt.NoPen)
+                if current_selected == subtitle:
+                    painter.setBrush(selected_fill)
+                else:
+                    painter.setBrush(unselected_fill)
+
+                subtitle_track = [0, 1]
+                if speakers_count:
+                    speaker_name = subtitle.get('speaker', 'A')
+                    subtitle_track = [speakers_index.get(speaker_name, 0), speakers_count]
 
                     subtitle_rect = QRectF(
                         subtitle['start'] * widget.width_proportion,

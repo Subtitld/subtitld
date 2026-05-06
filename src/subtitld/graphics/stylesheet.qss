@@ -1173,6 +1173,7 @@ QWidget[class='transparent_panel'] {
 #playercontrols_widget_top_line #repeat_playback #repeat_playback_x_label {
     font-weight:bold;
     color: #B8C6E0;
+    padding: 4 4 0 4;
 }
 
 #gap_hbox #gap_subtitle_duration, 

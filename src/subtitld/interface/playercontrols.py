@@ -1,4 +1,5 @@
 import os
+import time
 from bisect import bisect
 import subprocess
 
@@ -362,7 +363,7 @@ def load(self):
     self.change_playback_speed.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
     self.change_playback_speed.setFixedHeight(48) 
     self.change_playback_speed.setIconSize(QSize(22, 22))
-    self.change_playback_speed.layout().setContentsMargins(16, 15, 40, 16)
+    self.change_playback_speed.layout().setContentsMargins(16, 15, 30, 16)
     self.change_playback_speed.layout().setSpacing(0)
     self.change_playback_speed.clicked.connect(lambda: change_playback_speed_clicked(self))
 
@@ -509,7 +510,7 @@ def load(self):
     self.repeat_playback.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
     self.repeat_playback.setFixedHeight(48)
     self.repeat_playback.setIconSize(QSize(22, 22))
-    self.repeat_playback.layout().setContentsMargins(40, 15, 16, 16)
+    self.repeat_playback.layout().setContentsMargins(50, 12, 16, 18)
     self.repeat_playback.layout().setSpacing(0)
     self.repeat_playback.clicked.connect(lambda: repeat_playback_clicked(self))
 
@@ -517,23 +518,23 @@ def load(self):
     self.repeat_playback_duration.setProperty('class', 'spin_playercontrols')
     self.repeat_playback_duration.setMinimum(.1)
     self.repeat_playback_duration.setMaximum(60.)
-    self.repeat_playback_duration.setFixedWidth(50)
+    self.repeat_playback_duration.setFixedHeight(24)
     self.repeat_playback_duration.valueChanged.connect(lambda: repeat_playback_duration_changed(self))
-    self.repeat_playback_duration.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.repeat_playback.layout().addWidget(self.repeat_playback_duration)
+    self.repeat_playback_duration.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
+    self.repeat_playback.layout().addWidget(self.repeat_playback_duration, 0, alignment=Qt.AlignBottom)
 
     self.repeat_playback_x_label = QLabel('x')
     self.repeat_playback_x_label.setAlignment(Qt.AlignCenter)
-    self.repeat_playback_x_label.setFixedWidth(10)
+    # self.repeat_playback_x_label.setFixedWidth(10)
     self.repeat_playback_x_label.setObjectName('repeat_playback_x_label')
-    self.repeat_playback_x_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.repeat_playback.layout().addWidget(self.repeat_playback_x_label)
+    self.repeat_playback_x_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+    self.repeat_playback.layout().addWidget(self.repeat_playback_x_label, 0)
 
     self.repeat_playback_times = QSpinBox()
     self.repeat_playback_times.setProperty('class', 'spin_playercontrols')
     self.repeat_playback_times.setMinimum(1)
     self.repeat_playback_times.setMaximum(20)
-    self.repeat_playback_times.setFixedWidth(30)
+    self.repeat_playback_times.setFixedHeight(24)
     self.repeat_playback_times.valueChanged.connect(lambda: repeat_playback_times_changed(self))
     self.repeat_playback_times.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.repeat_playback.layout().addWidget(self.repeat_playback_times)
@@ -1479,10 +1480,12 @@ def zoomout_button_clicked(self):
 
 
 def zoom_buttons_update(self):
-    """Function to update zoom buttons. Defers the heavy `setGeometry` +
-    repaint to the next event-loop tick so rapid zoom presses don't pile up
-    blocking the UI; the timer is restarted on every call so consecutive
-    zooms within ~30ms coalesce into one resize."""
+    """Function to update zoom buttons. Throttles the heavy `setGeometry` +
+    repaint so continuous wheel-scroll feels smooth: applies immediately if
+    the previous apply finished more than ~16ms ago (≈60fps), otherwise
+    schedules a single follow-up apply for the remaining gap. Earlier
+    versions debounced via timer.start() on every call, but that meant the
+    geometry never applied while the user kept scrolling — felt stuck."""
     self.zoomout_button.setEnabled(True if session.CONFIG['timeline_zoom'] - 10.0 > 0.0 else False)
     self.zoomin_button.setEnabled(True if session.CONFIG['timeline_zoom'] + 10.0 < 500.0 else False)
 
@@ -1490,10 +1493,20 @@ def zoom_buttons_update(self):
         self._zoom_apply_timer = QTimer(self)
         self._zoom_apply_timer.setSingleShot(True)
         self._zoom_apply_timer.timeout.connect(lambda: _apply_zoom_geometry(self))
-    self._zoom_apply_timer.start(30)
+        self._zoom_last_apply_ms = 0
+
+    interval_ms = 16
+    now_ms = int(time.monotonic() * 1000)
+    elapsed = now_ms - getattr(self, '_zoom_last_apply_ms', 0)
+    if elapsed >= interval_ms and not self._zoom_apply_timer.isActive():
+        self._zoom_last_apply_ms = now_ms
+        _apply_zoom_geometry(self)
+    elif not self._zoom_apply_timer.isActive():
+        self._zoom_apply_timer.start(max(0, interval_ms - elapsed))
 
 
 def _apply_zoom_geometry(self):
+    self._zoom_last_apply_ms = int(time.monotonic() * 1000)
     proportion = ((session.SUBTITLE.get('position', 0) * self.timeline_widget.width_proportion) - self.timeline_scroll.horizontalScrollBar().value()) / self.timeline_scroll.width()
     self.timeline_widget.setGeometry(0, 0, int(round(session.VIDEO.get('duration', 0.01) * session.CONFIG['timeline_zoom'])), self.timeline_scroll.height() - 20)
     timeline.update_scrollbar(self, position=proportion)
@@ -2039,11 +2052,15 @@ def repeat_playback_clicked(self):
 def repeat_playback_duration_changed(self):
     """Function to call when playback repeat duration is changed"""
     session.CONFIG['playback_repeat_duration'] = self.repeat_playback_duration.value()
+    session.REPEAT_DURATION_BUFFER = []
+    timeline.update(self)
 
 
 def repeat_playback_times_changed(self):
     """Function to call when playback repeat number of times is changed"""
     session.CONFIG['playback_repeat_times'] = self.repeat_playback_times.value()
+    session.REPEAT_DURATION_BUFFER = []
+    timeline.update(self)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
 
 
