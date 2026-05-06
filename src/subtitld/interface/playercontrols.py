@@ -35,6 +35,26 @@ from subtitld.modules.shortcuts import shortcut
 STEPS_LIST = ['Frames', 'Seconds']
 
 
+def _attach_collapsible(button, *children):
+    """Bind `children` to `button` so they can be hidden together when the
+    button is unchecked. The button also gets an `expanded` Qt property that
+    QSS reads to swap the wide-form padding for icon-only padding, so the
+    button visually shrinks when its controls hide."""
+    button._collapsible_children = list(children)
+
+
+def _set_collapsed(button, collapsed, animate=True):
+    children = getattr(button, '_collapsible_children', None)
+    if children is None:
+        return
+    button.setProperty('expanded', not collapsed)
+    button.style().unpolish(button)
+    button.style().polish(button)
+    for child in children:
+        child.setVisible(not collapsed)
+    button.adjustSize()
+
+
 
 class MusicAudioExtractorThread(QThread):
     response = Signal(dict)
@@ -340,7 +360,7 @@ def load(self):
     self.change_playback_speed.setCheckable(True)
     self.change_playback_speed.setLayout(QHBoxLayout())
     self.change_playback_speed.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.change_playback_speed.setFixedHeight(48) # TODO remove
+    self.change_playback_speed.setFixedHeight(48) 
     self.change_playback_speed.setIconSize(QSize(22, 22))
     self.change_playback_speed.layout().setContentsMargins(16, 15, 40, 16)
     self.change_playback_speed.layout().setSpacing(0)
@@ -378,6 +398,12 @@ def load(self):
     self.change_playback_speed_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     self.change_playback_speed_label.setFixedWidth(50)
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_label)
+
+    _attach_collapsible(self.change_playback_speed,
+                        self.change_playback_speed_decrease,
+                        self.change_playback_speed_slider,
+                        self.change_playback_speed_increase,
+                        self.change_playback_speed_label)
 
     self.playercontrols_widget_left_top_line.layout().addWidget(self.change_playback_speed, 1, Qt.AlignTop)
 
@@ -480,11 +506,10 @@ def load(self):
     self.repeat_playback.setObjectName('repeat_playback')
     self.repeat_playback.setCheckable(True)
     self.repeat_playback.setLayout(QHBoxLayout())
+    self.repeat_playback.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
     self.repeat_playback.setFixedHeight(48)
     self.repeat_playback.setIconSize(QSize(22, 22))
-    self.repeat_playback.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.repeat_playback.layout().setSizeConstraint(QLayout.SetMinimumSize)
-    self.repeat_playback.layout().setContentsMargins(56, 12, 16, 12)
+    self.repeat_playback.layout().setContentsMargins(40, 15, 16, 16)
     self.repeat_playback.layout().setSpacing(0)
     self.repeat_playback.clicked.connect(lambda: repeat_playback_clicked(self))
 
@@ -499,7 +524,7 @@ def load(self):
 
     self.repeat_playback_x_label = QLabel('x')
     self.repeat_playback_x_label.setAlignment(Qt.AlignCenter)
-    self.repeat_playback_x_label.setFixedWidth(16)
+    self.repeat_playback_x_label.setFixedWidth(10)
     self.repeat_playback_x_label.setObjectName('repeat_playback_x_label')
     self.repeat_playback_x_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.repeat_playback.layout().addWidget(self.repeat_playback_x_label)
@@ -512,6 +537,11 @@ def load(self):
     self.repeat_playback_times.valueChanged.connect(lambda: repeat_playback_times_changed(self))
     self.repeat_playback_times.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.repeat_playback.layout().addWidget(self.repeat_playback_times)
+
+    _attach_collapsible(self.repeat_playback,
+                        self.repeat_playback_duration,
+                        self.repeat_playback_x_label,
+                        self.repeat_playback_times)
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback)
 
@@ -1595,22 +1625,24 @@ def update_snap_buttons(self):
     self.timeline_widget.update()
 
 
-def update_playback_speed_buttons(self):
+def update_playback_speed_buttons(self, animate=False):
     if not session.CONFIG['playback_speed'] == 1.0 and not self.change_playback_speed.isChecked():
         self.change_playback_speed.setChecked(True)
-    # self.change_playback_speed_icon_label.setEnabled(self.change_playback_speed.isChecked())
-    self.change_playback_speed_decrease.setEnabled(self.change_playback_speed.isChecked())
-    self.change_playback_speed_slider.setEnabled(self.change_playback_speed.isChecked())
-    self.change_playback_speed_increase.setEnabled(self.change_playback_speed.isChecked())
     self.change_playback_speed_label.setText('x' + str(session.CONFIG['playback_speed']))
     self.change_playback_speed_slider.setValue(int(session.CONFIG['playback_speed'] * 100))
+    _set_collapsed(self.change_playback_speed,
+                   not self.change_playback_speed.isChecked(),
+                   animate=animate)
 
 
-def update_playback_repeat_buttons(self):
+def update_playback_repeat_buttons(self, animate=False):
     if session.CONFIG['repeat_activated']:
         self.repeat_playback.setChecked(True)
     self.repeat_playback_duration.setValue(float(session.CONFIG.get('playback_repeat_duration', 10.0)))
     self.repeat_playback_times.setValue(int(session.CONFIG.get('playback_repeat_times', 3)))
+    _set_collapsed(self.repeat_playback,
+                   not self.repeat_playback.isChecked(),
+                   animate=animate)
     timeline.update(self)
 
 
@@ -1964,10 +1996,10 @@ def next_end_to_current_position_button_clicked(self):
 
 def change_playback_speed_clicked(self):
     """Function to call when playback speed button is clicked"""
-    # if not self.change_playback_speed.isChecked():
-    session.CONFIG['playback_speed'] = 1.0
-    self.preview_panel_player.update_speed()
-    update_playback_speed_buttons(self)
+    if not self.change_playback_speed.isChecked():
+        session.CONFIG['playback_speed'] = 1.0
+        self.preview_panel_player.update_speed()
+    update_playback_speed_buttons(self, animate=True)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
 
 
@@ -2000,8 +2032,8 @@ def change_playback_speed_increase_clicked(self):
 def repeat_playback_clicked(self):
     session.CONFIG['repeat_activated'] = self.repeat_playback.isChecked()
     session.REPEAT_DURATION_BUFFER = []
+    update_playback_repeat_buttons(self, animate=True)
     self.timeline_widget.setFocus(Qt.TabFocusReason)
-    timeline.update(self)
 
 
 def repeat_playback_duration_changed(self):

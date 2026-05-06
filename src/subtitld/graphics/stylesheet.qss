@@ -480,50 +480,47 @@ QGroupBox::title {
 
 #titleBar_left_export_button {
     border-radius: 0;
-    border-width: 3 3 1 1;
+    border-width: 1 15 1 1;
     padding: 0;
-    color: #304251;
-    border-image: url(graphics:titleBar_left_export_button_normal.svg) 3 3 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_button_normal.svg) 1 15 1 1 stretch stretch;
+    background: transparent;
+}
+
+#titleBar_left_export_button:hover {
+    border-image: url(graphics:titleBar_left_export_button_hover.svg) 1 15 1 1 stretch stretch;
+}
+
+#titleBar_left_export_button:pressed {
+    border-image: url(graphics:titleBar_left_export_button_pressed.svg) 1 15 1 1 stretch stretch;
 }
 
 #titleBar_left_export_button #titleBar_left_export_button_icon {
     background-image: url('graphics:left_panel_export.svg');
     background-repeat: no-repeat;
-    background-position: center center;
+    background-position: center center;    
 }
 
 #titleBar_left_export_button #titleBar_left_export_quick_button {
-    padding: 0 1 0 2;
-}
-
-#titleBar_left_export_button:hover {
-    border-image: url(graphics:titleBar_left_export_button_hover.svg) 3 3 1 1 stretch stretch;
-}
-
-#titleBar_left_export_button:pressed {
-    border-image: url(graphics:titleBar_left_export_button_pressed.svg) 3 3 1 1 stretch stretch;
-}
-
-#titleBar_left_export_quick_button {
     border-radius: 0;
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
-    border-width: 2 1 2 2;
-    border-image: url(graphics:titleBar_left_export_quick_button_normal.svg) 2 1 2 2 stretch stretch;
-    background-color: #4a5f70;
+    border-width: 0 10 0 2;
+    border-image: url(graphics:titleBar_left_export_quick_button_normal.svg) 0 10 0 2 stretch stretch;
+    background-color: transparent;
     color: #ffffff;
     font-family: 'Montserrat';
     font-size: 7px;
     font-weight: 700;
     text-transform: uppercase;
+    padding: 0 1 0 2;
 }
 
-#titleBar_left_export_quick_button:hover {
-    border-image: url(graphics:titleBar_left_export_quick_button_hover.svg) 2 1 2 2 stretch stretch;
+#titleBar_left_export_button #titleBar_left_export_quick_button:hover {
+    border-image: url(graphics:titleBar_left_export_quick_button_hover.svg) 0 10 0 2 stretch stretch;
 }
 
-#titleBar_left_export_quick_button:pressed {
-    border-image: url(graphics:titleBar_left_export_quick_button_pressed.svg) 2 1 2 2 stretch stretch;
+#titleBar_left_export_button #titleBar_left_export_quick_button:pressed {
+    border-image: url(graphics:titleBar_left_export_quick_button_pressed.svg) 0 10 0 2 stretch stretch;
 }
 
 #titleBar_left_information_container QLabel {
@@ -532,14 +529,12 @@ QGroupBox::title {
 }
 
 #tilteBar_subtitld_label {
+    border-width: 1 1 1 15;
+    border-image: url(graphics:titleBar_right_version_background.svg) 1 1 1 15 stretch stretch;
     color: white;
-    padding-right: 10px;
-    border-width: 1px;
-    border-style: solid;
-    border-color: transparent #08ffffff transparent transparent;
+    padding: 0 10px;
     color: #26ffffff;
     font-size: 12px;
-    padding: 8;
     font-family: Montserrat;
 }
 
@@ -1095,6 +1090,11 @@ QWidget[class='transparent_panel'] {
     padding-right: 0;
 }
 
+#playercontrols_widget_left_top_line #change_playback_speed[expanded="false"] {
+    padding-left: 0;
+    padding-right: 0;
+}
+
 #playercontrols_widget_left_top_line #change_playback_speed:hover:pressed,
 #playercontrols_widget_left_top_line #change_playback_speed:hover {
     border-image: url(graphics:playbackspeed_border_hover.svg) 0 16 0 16 stretch stretch;
@@ -1153,6 +1153,11 @@ QWidget[class='transparent_panel'] {
     border-image: url(graphics:repeat_playback_border.svg) 0 16 0 16 stretch stretch;
     padding-right: 140;
     padding-left: 0;
+}
+
+#playercontrols_widget_top_line #repeat_playback[expanded="false"] {
+    padding-left: 0;
+    padding-right: 0;
 }
 
 #playercontrols_widget_top_line #repeat_playback:hover:pressed,

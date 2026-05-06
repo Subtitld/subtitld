@@ -178,16 +178,17 @@ def load(self):
             super().__init__(parent)
             widget.setObjectName('titleBar_left_export_button')
             widget.setLayout(QHBoxLayout())
-            widget.setAttribute(Qt.WA_LayoutOnEntireRect, False)
+            # widget.setAttribute(Qt.WA_LayoutOnEntireRect, True)
             widget.setAutoFillBackground(True)
             widget.layout().setContentsMargins(0, 0, 0, 0)
             widget.layout().setSpacing(0)
-            # widget.setFixedHeight(30)
+            widget.setMinimumWidth(46)
             widget.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
             widget_icon = QLabel()
             widget_icon.setObjectName('titleBar_left_export_button_icon')
             widget_icon.setFixedSize(QSize(36, 36))
-            widget.layout().addWidget(widget_icon)
+            widget.layout().addWidget(widget_icon, 0, alignment=Qt.AlignLeft)
+            # widget.layout().addSpacing(10)
 
         def sizeHint(widget):
             return widget.layout().sizeHint() if widget.layout() else super().sizeHint()
@@ -257,7 +258,8 @@ def load(self):
 
     self.tilteBar_subtitld_label = QLabel(self)
     self.tilteBar_subtitld_label.setObjectName('tilteBar_subtitld_label')
-    self.tilteBar_subtitld_label.setAttribute(Qt.WA_StyledBackground, True)
+    self.tilteBar_subtitld_label.setFixedHeight(36)
+    # self.tilteBar_subtitld_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.MinimumExpanding))
     self.titleBar.layout().insertWidget(1, self.tilteBar_subtitld_label, alignment=Qt.AlignRight | Qt.AlignVCenter)
     self.tilteBar_subtitld_label.setText(f'<b>SUBTITLD</b>  v{subtitld.__version__}')
 

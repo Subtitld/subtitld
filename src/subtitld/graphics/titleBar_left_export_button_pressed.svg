@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
-<svg width="30" height="30" version="1.1" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+<svg width="30" height="36" version="1.1" viewBox="0 0 30 36" xmlns="http://www.w3.org/2000/svg">
  <defs>
-  <linearGradient id="linearGradient52" x1="72.136" x2="72.136" y1="10" y2="40" gradientTransform="translate(-50,-10)" gradientUnits="userSpaceOnUse">
-   <stop stop-color="#8e9eaa" offset="0"/>
-   <stop stop-color="#a3b6c6" offset="1"/>
+  <linearGradient id="linearGradient52" x1="63.5" x2="63.5" y1="46" y2="10" gradientTransform="translate(-50,-10)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#9daebb" offset="0"/>
+   <stop stop-color="#a8bccc" offset="1"/>
   </linearGradient>
  </defs>
- <g stroke-linecap="square">
-  <path d="m0 0v30h27c1.662 0 3-1.338 3-3v-24c0-1.662-1.338-3-3-3z" fill="url(#linearGradient52)" stroke-width="2" style="paint-order:fill markers stroke"/>
-  <path d="m28.422 1.578c0.35934 0.35934 0.57801 0.85934 0.57801 1.422v24c0 1.1253-0.8747 2-2 2h-26l-1 1h27c1.662 0 3-1.338 3-3v-24c0-0.831-0.3345-1.581-0.87675-2.1232z" fill="#fff" fill-opacity=".1" stop-color="#000000" style="paint-order:fill markers stroke"/>
-  <path d="m0 0v30l1-1v-28h26c0.56265 0 1.0626 0.21868 1.422 0.57801l0.70126-0.70126c-0.54225-0.54225-1.2922-0.87675-2.1232-0.87675z" fill-opacity=".1" stop-color="#000000" style="paint-order:fill markers stroke"/>
- </g>
+ <path d="m0 0v36h16.352c1.108 0 2.2403-0.892 2.5371-2l2.5449-9.5 2.2773-8.5 3.752-14c0.2968-1.108 1.4291-2 2.5371-2h-30z" fill="url(#linearGradient52)" stroke-linecap="square" style="paint-order:fill markers stroke"/>
+ <path d="m0 0v36l1-1v-34h25.783c0.19363-0.37638 0.44756-0.71402 0.74805-1-0.21531 0.0017003-0.4438 0-0.53125 0h-27z" fill-opacity=".1" stroke-linecap="square" style="paint-order:fill markers stroke"/>
+ <path d="m27.531 0c-0.48691 0.46342-0.85308 1.0625-1.0352 1.7422l-3.752 13.998-2.2773 8.502-2.5449 9.5c-0.16703 0.62354-0.99902 1.2578-1.5703 1.2578h-15.352l-1 1h16.352c1.108 0 2.2403-0.892 2.5371-2l2.5449-9.5 2.2773-8.5 3.752-14c0.2968-1.108 1.4291-2 2.5371-2z" fill="#fff" fill-opacity=".098039" stop-color="#000000"/>
 </svg>
