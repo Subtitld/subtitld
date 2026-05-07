@@ -9,6 +9,7 @@ from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
+from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
@@ -290,6 +291,7 @@ def global_panel_translation_invert_translation_button_clicked(self):
     confirm_dialog.exec()
     confirm_translation = bool(confirm_dialog.result() == 1)
     if confirm_translation:
+        history.history_append()
         target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
         original_language = session.SUBTITLE.get('language', 'en-us')
         for segment in session.SUBTITLE['segments']:
@@ -300,14 +302,15 @@ def global_panel_translation_invert_translation_button_clicked(self):
             translated_text = str(translations[target_language])
             segment['text'] = translated_text
             segment.setdefault('translations', {})[original_language] = original_text
-        
+
         session.SUBTITLE['language'] = target_language
         if not 'translations' in session.SUBTITLE:
             session.SUBTITLE['translations'] = {}
         session.CONFIG['translation']['engine_options']['target_language'] = original_language
 
+        session.set_unsaved(True)
         update(self)
-        
+
         self.timeline_widget.update()
 
 

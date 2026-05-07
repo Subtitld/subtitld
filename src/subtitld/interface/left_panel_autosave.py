@@ -11,6 +11,7 @@ from subtitld.interface import utils as interface_utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import file_io
+from subtitld.modules import history
 from subtitld.modules import utils
 from subtitld.modules import shortcuts
 from subtitld.modules import subtitles
@@ -237,6 +238,7 @@ def _open_backup_into_session(self, backup_path):
 
     # Reset session containers so segments/speakers from the previous project
     # don't leak in.
+    history.history_clear()
     session.SUBTITLE['segments'] = []
     session.SUBTITLE['selected'] = None
     session.SPEAKERS.clear()

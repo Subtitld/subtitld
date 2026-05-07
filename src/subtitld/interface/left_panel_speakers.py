@@ -13,6 +13,7 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
+from subtitld.modules import history
 
 
 class FaceExtractorThread(QThread):
@@ -211,8 +212,9 @@ class dubbing_container(QWidget):
         
         if speaker_name and speaker_name in session.SPEAKERS:
             if not 'dubbing' in session.SPEAKERS[speaker_name]:
-                session.SPEAKERS[speaker_name]['dubbing'] = {}    
+                session.SPEAKERS[speaker_name]['dubbing'] = {}
             session.SPEAKERS[speaker_name]['dubbing']['engine'] = value
+            session.set_unsaved(True)
         widget.update()
 
     def hideexpand_button_clicked(widget):
@@ -705,15 +707,17 @@ def rename_button_clicked(widget):
     else:
         return
 
+    history.history_append()
     old_speaker = session.SPEAKERS[widget.speaker_name]
     session.SPEAKERS[new_name] = old_speaker
 
     for segment in session.SUBTITLE['segments']:
-        if segment['speaker'] == widget.speaker_name:
+        if segment.get('speaker') == widget.speaker_name:
             segment['speaker'] = new_name
 
     del session.SPEAKERS[widget.speaker_name]
 
+    session.set_unsaved(True)
     update_speakers_list(widget.window())
 
 

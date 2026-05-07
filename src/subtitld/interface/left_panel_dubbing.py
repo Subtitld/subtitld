@@ -331,18 +331,21 @@ class EdgeTTSEngine:
             speaker_name = widget.property('speaker')
             if speaker_name and speaker_name in session.SPEAKERS:
                 session.SPEAKERS[speaker_name]['dubbing']['voice'] = value
+                session.set_unsaved(True)
 
         def voice_rate_changed(widget):
             value = widget.voice_rate.value()
             speaker_name = widget.property('speaker')
             if speaker_name and speaker_name in session.SPEAKERS:
                 session.SPEAKERS[speaker_name]['dubbing']['rate'] = value
+                session.set_unsaved(True)
 
         def voice_pitch_changed(widget):
             value = widget.voice_pitch.value()
             speaker_name = widget.property('speaker')
             if speaker_name and speaker_name in session.SPEAKERS:
                 session.SPEAKERS[speaker_name]['dubbing']['pitch'] = value
+                session.set_unsaved(True)
 
         def _scoped_segments_for_speaker(widget, speaker_name):
             segments = session.SUBTITLE.get('segments', []) or []

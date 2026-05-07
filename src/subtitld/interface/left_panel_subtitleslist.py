@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QHBoxLayout, QSplitter, QPushButton, QListView, QStyledItemDelegate, QFrame, QLabel, QTextEdit, QSizePolicy, QLineEdit, QStyle, QDialog, QListWidget, QListWidgetItem, QAbstractScrollArea, QGraphicsOpacityEffect
-from PySide6.QtCore import Qt, QAbstractListModel, QRect, QMargins, QSize, Signal, QPoint, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QAbstractListModel, QRect, QMargins, QSize, Signal, QPoint, QPropertyAnimation, QEasingCurve, QObject, QEvent
 from PySide6.QtGui import QColor, QFontMetrics, QFont, QIcon, QPixmap
 
 from subtitld.interface import utils
@@ -9,8 +9,38 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
+from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import quality_check
+
+
+class _TextEditHistoryFilter(QObject):
+    """Pushes one undo snapshot per editing session on the bound text edit.
+    Heuristic: snapshot on the first keystroke after the editor gains focus
+    (so a focus-only click doesn't waste a slot, and a continuous typing
+    burst stays as a single undo entry until the user moves focus elsewhere
+    and comes back). Also marks the document as unsaved on first edit since
+    the textedit handlers mutate `selected['text']` directly without going
+    through the `subtitles.change_subtitle_text` helper."""
+
+    def __init__(self, window, textedit):
+        super().__init__(textedit)
+        self._window = window
+        self._textedit = textedit
+        self._needs_snapshot = True
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if obj is self._textedit:
+            if et == QEvent.FocusIn:
+                self._needs_snapshot = True
+            elif et in (QEvent.KeyPress, QEvent.InputMethod) and self._needs_snapshot:
+                if self._textedit.isReadOnly():
+                    return False
+                history.history_append()
+                session.set_unsaved(True)
+                self._needs_snapshot = False
+        return False
 
 
 
@@ -221,12 +251,14 @@ def load(self):
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
     self.left_panel_subtitleslist_textedit.setAcceptRichText(False)
     self.left_panel_subtitleslist_textedit.textChanged.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
+    self.left_panel_subtitleslist_textedit.installEventFilter(_TextEditHistoryFilter(self, self.left_panel_subtitleslist_textedit))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
 
     self.left_panel_subtitleslist_translation_textedit = QTextEdit()
     self.left_panel_subtitleslist_translation_textedit.setObjectName('left_panel_subtitleslist_translation_textedit')
     self.left_panel_subtitleslist_translation_textedit.setAcceptRichText(False)
     self.left_panel_subtitleslist_translation_textedit.textChanged.connect(lambda: left_panel_subtitleslist_translation_textedit_changed(self))
+    self.left_panel_subtitleslist_translation_textedit.installEventFilter(_TextEditHistoryFilter(self, self.left_panel_subtitleslist_translation_textedit))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_translation_textedit)
 
     self.left_panel_subtitleslist_textedit_bottom_line = QHBoxLayout()
@@ -431,6 +463,7 @@ def subtitles_panel_empty_state_button_clicked(self):
 def left_panel_subtitleslist_textedit_changed(self):
     if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
         session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
+        session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
 
@@ -440,6 +473,7 @@ def left_panel_subtitleslist_translation_textedit_changed(self):
         if not 'translations' in session.SUBTITLE['selected']:
             session.SUBTITLE['selected']['translations'] = {}
         session.SUBTITLE['selected']['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
+        session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
 
@@ -457,10 +491,18 @@ def update(self):
     if session.SUBTITLE.get('selected', None) is None:
         self.subtitles_panel_qlistwidget.clearSelection()
     else:
+        # Block textChanged while we sync the editor to the model — otherwise
+        # the textedit_changed handler fires and would (a) mark the document
+        # unsaved on a no-op refresh and (b) overwrite `selected['text']`
+        # with the same value but at the wrong moment in flow.
+        self.left_panel_subtitleslist_textedit.blockSignals(True)
         self.left_panel_subtitleslist_textedit.setText(session.SUBTITLE['selected']['text'])
-        
+        self.left_panel_subtitleslist_textedit.blockSignals(False)
+
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
+        self.left_panel_subtitleslist_translation_textedit.blockSignals(True)
         self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+        self.left_panel_subtitleslist_translation_textedit.blockSignals(False)
 
         qalignment = TEXT_ALIGNMENTS[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
         self.left_panel_subtitleslist_textedit.setAlignment(qalignment)
@@ -565,7 +607,9 @@ def hide(self):
 
 def _changed(self, selection):
     if session.SUBTITLE.get('selected', False):
+        history.history_append()
         session.SUBTITLE['selected']['speaker'] = self.left_panel_subtitleslist_speaker_selector.currentText()
+        session.set_unsaved(True)
 
 
 def regenerate_dub_for_selected(self):
@@ -598,8 +642,10 @@ def on_clicked(self):
     new_name = None
     if self.left_panel_speakers_new_name_dialog.exec() == QDialog.Accepted:
         new_name = self.left_panel_speakers_new_name_dialog.name
+        history.history_append()
         session.SUBTITLE['selected']['speaker'] = new_name
         session.SPEAKERS[new_name] = {}
+        session.set_unsaved(True)
         self.left_panel_subtitleslist_speaker_selector.update_list(self)
         update(self)
 
@@ -840,7 +886,9 @@ class SpeakerSelector(QWidget):
 
     def speaker_selected(self, item):
         speaker = self.selector_list.list_widget.itemWidget(item).property('speaker_name')
+        history.history_append()
         session.SUBTITLE['selected']['speaker'] = speaker
+        session.set_unsaved(True)
         self.set_current_speaker(speaker)
         self.selector_list.hide()
 
@@ -872,8 +920,10 @@ class SpeakerSelector(QWidget):
         
         subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
         if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
+            history.history_append()
             session.SUBTITLE['selected']['speaker'] = new_name
             session.SPEAKERS[new_name] = {}
+            session.set_unsaved(True)
             self.set_current_speaker(new_name)
 
 

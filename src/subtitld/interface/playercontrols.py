@@ -31,6 +31,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import subtitles
 from subtitld.modules import session
 from subtitld.modules import utils
+from subtitld.modules import history
 from subtitld.modules.shortcuts import shortcut
 
 STEPS_LIST = ['Frames', 'Seconds']
@@ -1600,6 +1601,39 @@ def update(self):
     update_grid_buttons(self)
     update_step_buttons(self)
     music_voice_separation_box_update(self)
+
+
+def _focus_is_text_widget(self):
+    """Return True when an editable text widget owns focus — Ctrl+Z then
+    belongs to that widget's own undo, not the document undo."""
+    from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox
+    fw = self.focusWidget()
+    if fw is None:
+        return False
+    return isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox))
+
+
+def _refresh_after_history(self):
+    """Fan out UI refresh after an undo/redo flips the document state."""
+    from subtitld.interface import left_panel_subtitleslist
+    left_panel_subtitleslist.update(self)
+    self.timeline_widget.update()
+
+
+@shortcut('history_undo', 'Undo last action', ['Ctrl+Z'])
+def history_undo_command(self):
+    if _focus_is_text_widget(self):
+        return
+    if history.history_undo():
+        _refresh_after_history(self)
+
+
+@shortcut('history_redo', 'Redo last undone action', ['Ctrl+Shift+Z', 'Ctrl+Y'])
+def history_redo_command(self):
+    if _focus_is_text_widget(self):
+        return
+    if history.history_redo():
+        _refresh_after_history(self)
 
 
 @shortcut('zoom_in', 'Zoom in', ['+'])

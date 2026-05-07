@@ -683,9 +683,11 @@ QWidget[class='transparent_panel'] {
 }
 
 #left_panel_navigation QPushButton[class=navigation_button]::checked {
-    border-left: 10px solid #80b8cee0;
-    background-color: #09b8cee0;
+    border-left: 10px solid #c8dbe9;
+    background-color: #0affffff; 
 }
+
+/* 09b8cee0; */
 
 #left_panel_stackedwidgets {
     border-left: 1px solid #0affffff;

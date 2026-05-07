@@ -7,6 +7,7 @@ from PySide6.QtGui import QPixmap
 
 from subtitld.modules import file_io
 from subtitld.modules import session
+from subtitld.modules import history
 
 from subtitld.interface import productionscreen
 from subtitld.interface import utils
@@ -167,6 +168,9 @@ def start_screen_open_button_clicked(self):
         
 
 def load_productionscreen(self):
+    # Fresh project means a fresh undo stack — otherwise Ctrl+Z could
+    # restore segments from the previously-loaded document.
+    history.history_clear()
     if session.VIDEO.get('filepath', False):
         top_bar.show(self)
         QTimer().singleShot(200, lambda: productionscreen.show(self))
