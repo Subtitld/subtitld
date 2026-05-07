@@ -4,7 +4,7 @@ from bisect import bisect
 import subprocess
 
 from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 
 
 class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
@@ -54,6 +54,70 @@ def _set_collapsed(button, collapsed, animate=True):
     for child in children:
         child.setVisible(not collapsed)
     button.adjustSize()
+
+
+class _SplitterHandleButton(QPushButton):
+    """Acts as the visible drag handle for the main vertical splitter. The
+    splitter's own handle is hidden (handleWidth=0); this button replaces it
+    and lives at the top-right of the playercontrols panel, slightly
+    overlapping the panel's top edge so it visually sits *on* the seam.
+    Parented to the top-level window (not the panel) so it isn't clipped by
+    the panel's boundary."""
+
+    def __init__(self, splitter, on_drag=None, parent=None):
+        super().__init__(parent)
+        self._splitter = splitter
+        self._on_drag = on_drag
+        self._drag_origin_y = None
+        self._origin_sizes = None
+        self.setObjectName('playercontrols_top_handle')
+        self.setCursor(Qt.SizeVerCursor)
+        self.setFixedSize(16, 7)
+        self.setFocusPolicy(Qt.NoFocus)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_origin_y = event.globalPosition().y()
+            self._origin_sizes = list(self._splitter.sizes())
+            # QAbstractButton tracks the pressed state via isDown(); set it
+            # explicitly so QSS :pressed selectors apply during the drag.
+            self.setDown(True)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_origin_y is not None and self._origin_sizes and len(self._origin_sizes) >= 2:
+            delta = event.globalPosition().y() - self._drag_origin_y
+            sizes = list(self._origin_sizes)
+            sizes[0] = max(0, int(sizes[0] + delta))
+            sizes[-1] = max(0, int(sizes[-1] - delta))
+            self._splitter.setSizes(sizes)
+            if self._on_drag is not None:
+                self._on_drag()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_origin_y = None
+        self._origin_sizes = None
+        self.setDown(False)
+        super().mouseReleaseEvent(event)
+
+
+class _ChildResizeWatcher(QObject):
+    """Calls a callback whenever the watched widget resizes. Used to keep the
+    floating splitter-handle button glued to the right edge of the panel."""
+
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._cb = callback
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Resize, QEvent.Show, QEvent.Move):
+            self._cb()
+        return False
 
 
 
@@ -191,6 +255,74 @@ def load(self):
     self.playercontrols_widget.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_animation = QPropertyAnimation(self.playercontrols_widget, b'minimumHeight')
     self.playercontrols_widget_animation.setEasingCurve(QEasingCurve.OutQuint)
+
+    # Custom splitter handle: the main_vertical_splitter's own handle is
+    # hidden (handleWidth=0 set in productionscreen.py). This button sits at
+    # the top-right of the playercontrols panel, straddling the seam between
+    # the two panes. Parented to the top-level window so the part above the
+    # panel isn't clipped by the panel's boundary.
+    def _handle_target_pos():
+        panel = self.playercontrols_widget
+        btn = self.playercontrols_handle_button
+        anchor = panel.mapTo(self, QPoint(panel.width() - btn.width(), 0))
+        return QPoint(anchor.x(), anchor.y() - 3)
+
+    def _reposition_handle():
+        btn = self.playercontrols_handle_button
+        panel = self.playercontrols_widget
+        if not panel.isVisible() or panel.width() == 0:
+            btn.hide()
+            return
+        if self._handle_pending_show or self._handle_slidein_anim.state() == QPropertyAnimation.Running:
+            # Don't override the slide-in trajectory mid-flight, and don't
+            # show prematurely — the bottom_panel's slide-in is still going
+            # or about to start.
+            return
+        if not btn.isVisible():
+            return
+        target = _handle_target_pos()
+        btn.move(target)
+        btn.raise_()
+
+    def _slide_in_handle():
+        btn = self.playercontrols_handle_button
+        panel = self.playercontrols_widget
+        if not panel.isVisible() or panel.width() == 0:
+            return
+        target = _handle_target_pos()
+        start = QPoint(target.x() + 32, target.y())
+        btn.move(start)
+        btn.show()
+        btn.raise_()
+        anim = self._handle_slidein_anim
+        anim.stop()
+        anim.setStartValue(start)
+        anim.setEndValue(target)
+        anim.start()
+
+    self.playercontrols_handle_button = _SplitterHandleButton(
+        self.main_vertical_splitter, on_drag=_reposition_handle, parent=self
+    )
+    self.playercontrols_handle_button.hide()
+
+    self._handle_slidein_anim = QPropertyAnimation(self.playercontrols_handle_button, b'pos', self)
+    self._handle_slidein_anim.setDuration(450)
+    self._handle_slidein_anim.setEasingCurve(QEasingCurve.OutQuint)
+
+    self._handle_pending_show = False
+
+    def _on_bottom_panel_anim_finished():
+        if self._handle_pending_show:
+            self._handle_pending_show = False
+            _slide_in_handle()
+
+    self.bottom_panel.animation.finished.connect(_on_bottom_panel_anim_finished)
+    self._slide_in_handle = _slide_in_handle
+
+    self._playercontrols_handle_watcher = _ChildResizeWatcher(_reposition_handle, self.playercontrols_widget)
+    self.playercontrols_widget.installEventFilter(self._playercontrols_handle_watcher)
+    self._main_window_handle_watcher = _ChildResizeWatcher(_reposition_handle, self)
+    self.installEventFilter(self._main_window_handle_watcher)
     # self.playercontrols_widget_animation.finished.connect(lambda: self.playercontrols_widget.setMinimumHeight(0))
 
     self.playercontrols_widget_top_line = QWidget()
@@ -1444,6 +1576,11 @@ def update_playercontrols_playpause_button(self):
 
 def show(self):
     update(self)
+    # Hide the splitter handle while the bottom_panel slides up; the
+    # bottom_panel.animation.finished hook (set up in load) will animate it
+    # in once the panel is in place.
+    self.playercontrols_handle_button.hide()
+    self._handle_pending_show = True
 
 
 def update(self):

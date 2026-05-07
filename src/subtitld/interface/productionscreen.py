@@ -13,6 +13,7 @@ from subtitld.interface.translation import _
 
 def load(self):
     self.main_horizontal_splitter = QSplitter(Qt.Horizontal)
+    self.main_horizontal_splitter.setHandleWidth(0)
     self.main_horizontal_splitter.splitterMoved.connect(lambda pos, index: main_horizontal_splitter_changed(self, pos, index))
 
     left_panel.load(self)
@@ -22,7 +23,11 @@ def load(self):
     self.main_horizontal_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_horizontal', [25, 75]))
 
     self.main_vertical_splitter = QSplitter(Qt.Vertical)
+    self.main_vertical_splitter.setObjectName('main_vertical_splitter')
     self.main_vertical_splitter.splitterMoved.connect(lambda pos, index: main_vertical_splitter_changed(self, pos, index))
+    # Hide the native splitter handle — playercontrols renders its own
+    # custom drag button at its top-right that drives the splitter sizes.
+    self.main_vertical_splitter.setHandleWidth(0)
 
     self.main_vertical_splitter.addWidget(self.main_horizontal_splitter)
     

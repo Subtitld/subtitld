@@ -108,6 +108,10 @@ QSplitter::hover {
     background-color: transparent;
 }
 
+#main_vertical_splitter::handle {
+    margin-top:-1px;
+}
+
 QScrollBar:vertical {
     background: transparent;
     width: 8px;
@@ -893,6 +897,23 @@ QWidget[class='transparent_panel'] {
 #playercontrols_widget QPushButton:pressed,
 #playercontrols_widget QPushButton:disabled {
     border: unset;
+}
+
+#playercontrols_top_handle {
+    border-radius: unset;
+    background: transparent;
+    border-image: url(graphics:horizontal_splitter_right_normal.svg) 1 1 1 4 stretch stretch;
+    border-width: 1 0 1 4;
+    padding: 0;
+    margin: 0;
+}
+
+#playercontrols_top_handle:hover {
+    border-image: url(graphics:horizontal_splitter_right_hover.svg) 1 1 1 4 stretch stretch;
+}
+
+#playercontrols_top_handle:pressed {
+    border-image: url(graphics:horizontal_splitter_right_pressed.svg) 1 1 1 4 stretch stretch;
 }
 
 #playercontrols_widget_left_top_line {

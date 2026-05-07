@@ -651,362 +651,362 @@ class Timeline(QWidget):
                     speaker_name = subtitle.get('speaker', 'A')
                     subtitle_track = [speakers_index.get(speaker_name, 0), speakers_count]
 
-                    subtitle_rect = QRectF(
-                        subtitle['start'] * widget.width_proportion,
-                        widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0]),
-                        (subtitle['end'] - subtitle['start']) * widget.width_proportion,
-                        widget.subtitle_height / subtitle_track[1]
-                    )
+                subtitle_rect = QRectF(
+                    subtitle['start'] * widget.width_proportion,
+                    widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0]),
+                    (subtitle['end'] - subtitle['start']) * widget.width_proportion,
+                    widget.subtitle_height / subtitle_track[1]
+                )
 
-                    subtitle_locked = subtitle.get('locked', False)
-                    full_subtitle_rect = QRectF(subtitle_rect)
-                    if subtitle_locked:
-                        painter.save()
-                        painter.setOpacity(0.18)
+                subtitle_locked = subtitle.get('locked', False)
+                full_subtitle_rect = QRectF(subtitle_rect)
+                if subtitle_locked:
+                    painter.save()
+                    painter.setOpacity(0.18)
 
-                    painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
+                painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
 
-                    if subtitle.get('dubbing') and session.CONFIG.get('dubbing', {}).get('enabled', False):
-                        dub = subtitle['dubbing'][0]
-                        dub_path = dub.get('path')
-                        if dub_path:
-                            widget._request_dub_peaks(dub_path)
-                            peaks = widget.dub_peaks.get(dub_path)
-                            if peaks is not None:
-                                mins, maxs, duration = peaks
-                                dub_start = dub.get('start', subtitle['start'])
-                                dub_x = dub_start * widget.width_proportion
-                                dub_w = duration * widget.width_proportion
-                                if widget.dub_stretching is not None and widget.dub_stretching['subtitle'] is subtitle:
-                                    dub_w = widget.dub_stretching['current_width']
-                                if dub_w > 1:
-                                    band_ratio = 0.25
-                                    dub_inset = QRectF(
-                                        dub_x,
-                                        subtitle_rect.top() + subtitle_rect.height() * (1.0 - band_ratio),
-                                        dub_w,
-                                        subtitle_rect.height() * band_ratio,
-                                    )
-                                    speaker_color = QColor(session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', '#1a73a8'))
-                                    fill_color = QColor(speaker_color)
-                                    fill_color.setAlpha(204)
+                if subtitle.get('dubbing') and session.CONFIG.get('dubbing', {}).get('enabled', False):
+                    dub = subtitle['dubbing'][0]
+                    dub_path = dub.get('path')
+                    if dub_path:
+                        widget._request_dub_peaks(dub_path)
+                        peaks = widget.dub_peaks.get(dub_path)
+                        if peaks is not None:
+                            mins, maxs, duration = peaks
+                            dub_start = dub.get('start', subtitle['start'])
+                            dub_x = dub_start * widget.width_proportion
+                            dub_w = duration * widget.width_proportion
+                            if widget.dub_stretching is not None and widget.dub_stretching['subtitle'] is subtitle:
+                                dub_w = widget.dub_stretching['current_width']
+                            if dub_w > 1:
+                                band_ratio = 0.25
+                                dub_inset = QRectF(
+                                    dub_x,
+                                    subtitle_rect.top() + subtitle_rect.height() * (1.0 - band_ratio),
+                                    dub_w,
+                                    subtitle_rect.height() * band_ratio,
+                                )
+                                speaker_color = QColor(session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', '#1a73a8'))
+                                fill_color = QColor(speaker_color)
+                                fill_color.setAlpha(204)
+                                painter.save()
+                                painter.setPen(Qt.NoPen)
+                                painter.setBrush(fill_color)
+
+                                subtitle_start_x = subtitle['start'] * widget.width_proportion
+                                subtitle_end_x = subtitle['end'] * widget.width_proportion
+                                bl_inside = subtitle_start_x <= dub_x <= subtitle_end_x
+                                br_inside = subtitle_start_x <= (dub_x + dub_w) <= subtitle_end_x
+                                r = 3.0
+                                px = dub_inset.x()
+                                py = dub_inset.y()
+                                pw = dub_inset.width()
+                                ph = dub_inset.height()
+                                dub_path_shape = QPainterPath()
+                                dub_path_shape.moveTo(px + r, py)
+                                dub_path_shape.lineTo(px + pw - r, py)
+                                dub_path_shape.arcTo(px + pw - 2 * r, py, 2 * r, 2 * r, 90, -90)
+                                if br_inside:
+                                    dub_path_shape.lineTo(px + pw, py + ph)
+                                else:
+                                    dub_path_shape.lineTo(px + pw, py + ph - r)
+                                    dub_path_shape.arcTo(px + pw - 2 * r, py + ph - 2 * r, 2 * r, 2 * r, 0, -90)
+                                if bl_inside:
+                                    dub_path_shape.lineTo(px, py + ph)
+                                else:
+                                    dub_path_shape.lineTo(px + r, py + ph)
+                                    dub_path_shape.arcTo(px, py + ph - 2 * r, 2 * r, 2 * r, 270, -90)
+                                dub_path_shape.lineTo(px, py + r)
+                                dub_path_shape.arcTo(px, py, 2 * r, 2 * r, 180, -90)
+                                dub_path_shape.closeSubpath()
+                                painter.drawPath(dub_path_shape)
+
+                                # Lock badge — anchors the clip to the subtitle.
+                                clip_locked = bool(dub.get('locked'))
+                                lock_hovered = (widget.dub_lock_hovered == id(subtitle))
+                                if clip_locked or lock_hovered:
+                                    badge_h = 14.0
+                                    badge_r = badge_h / 2.0
+                                    if dub_x < subtitle_start_x:
+                                        circle_x = dub_x
+                                        extent_to = subtitle_start_x
+                                    elif dub_x > subtitle_end_x:
+                                        circle_x = subtitle_end_x
+                                        extent_to = dub_x
+                                    else:
+                                        circle_x = dub_x
+                                        extent_to = dub_x
+                                    badge_left = min(circle_x, extent_to) - badge_r
+                                    badge_right = max(circle_x, extent_to) + badge_r
+                                    badge_cy = dub_inset.bottom()
+                                    if clip_locked and lock_hovered:
+                                        badge_alpha = 0.7
+                                    elif clip_locked:
+                                        badge_alpha = 1.0
+                                    else:
+                                        badge_alpha = 0.45
                                     painter.save()
+                                    painter.setOpacity(badge_alpha)
+                                    sub_border_color = QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483'))
                                     painter.setPen(Qt.NoPen)
-                                    painter.setBrush(fill_color)
-
-                                    subtitle_start_x = subtitle['start'] * widget.width_proportion
-                                    subtitle_end_x = subtitle['end'] * widget.width_proportion
-                                    bl_inside = subtitle_start_x <= dub_x <= subtitle_end_x
-                                    br_inside = subtitle_start_x <= (dub_x + dub_w) <= subtitle_end_x
-                                    r = 3.0
-                                    px = dub_inset.x()
-                                    py = dub_inset.y()
-                                    pw = dub_inset.width()
-                                    ph = dub_inset.height()
-                                    dub_path_shape = QPainterPath()
-                                    dub_path_shape.moveTo(px + r, py)
-                                    dub_path_shape.lineTo(px + pw - r, py)
-                                    dub_path_shape.arcTo(px + pw - 2 * r, py, 2 * r, 2 * r, 90, -90)
-                                    if br_inside:
-                                        dub_path_shape.lineTo(px + pw, py + ph)
-                                    else:
-                                        dub_path_shape.lineTo(px + pw, py + ph - r)
-                                        dub_path_shape.arcTo(px + pw - 2 * r, py + ph - 2 * r, 2 * r, 2 * r, 0, -90)
-                                    if bl_inside:
-                                        dub_path_shape.lineTo(px, py + ph)
-                                    else:
-                                        dub_path_shape.lineTo(px + r, py + ph)
-                                        dub_path_shape.arcTo(px, py + ph - 2 * r, 2 * r, 2 * r, 270, -90)
-                                    dub_path_shape.lineTo(px, py + r)
-                                    dub_path_shape.arcTo(px, py, 2 * r, 2 * r, 180, -90)
-                                    dub_path_shape.closeSubpath()
-                                    painter.drawPath(dub_path_shape)
-
-                                    # Lock badge — anchors the clip to the subtitle.
-                                    clip_locked = bool(dub.get('locked'))
-                                    lock_hovered = (widget.dub_lock_hovered == id(subtitle))
-                                    if clip_locked or lock_hovered:
-                                        badge_h = 14.0
-                                        badge_r = badge_h / 2.0
-                                        if dub_x < subtitle_start_x:
-                                            circle_x = dub_x
-                                            extent_to = subtitle_start_x
-                                        elif dub_x > subtitle_end_x:
-                                            circle_x = subtitle_end_x
-                                            extent_to = dub_x
-                                        else:
-                                            circle_x = dub_x
-                                            extent_to = dub_x
-                                        badge_left = min(circle_x, extent_to) - badge_r
-                                        badge_right = max(circle_x, extent_to) + badge_r
-                                        badge_cy = dub_inset.bottom()
-                                        if clip_locked and lock_hovered:
-                                            badge_alpha = 0.7
-                                        elif clip_locked:
-                                            badge_alpha = 1.0
-                                        else:
-                                            badge_alpha = 0.45
-                                        painter.save()
-                                        painter.setOpacity(badge_alpha)
-                                        sub_border_color = QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483'))
-                                        painter.setPen(Qt.NoPen)
-                                        painter.setBrush(sub_border_color)
-                                        badge_rect = QRectF(badge_left, badge_cy - badge_r, badge_right - badge_left, badge_h)
-                                        painter.drawRoundedRect(badge_rect, badge_r, badge_r, Qt.AbsoluteSize)
-                                        # Padlock glyph centered on circle_x
-                                        painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
-                                        painter.setBrush(Qt.NoBrush)
-                                        shackle = QRectF(circle_x - 2.4, badge_cy - 4.0, 4.8, 4.4)
-                                        painter.drawArc(shackle, 0, 180 * 16)
-                                        painter.setPen(Qt.NoPen)
-                                        painter.setBrush(QColor(255, 255, 255, 230))
-                                        body = QRectF(circle_x - 3.2, badge_cy - 0.5, 6.4, 5.0)
-                                        painter.drawRoundedRect(body, 1.0, 1.0, Qt.AbsoluteSize)
-                                        painter.restore()
-
-                                    if not subtitle_locked:
-                                        subtitle_id = id(subtitle)
-                                        hovered_edge = widget.dub_hovered_handle[1] if widget.dub_hovered_handle and widget.dub_hovered_handle[0] == subtitle_id else None
-                                        bar_color = QColor(255, 255, 255, 255) if hovered_edge == 'end' else QColor(255, 255, 255, 180)
-
-                                        if widget.dub_stretching is not None and widget.dub_stretching.get('subtitle') is subtitle:
-                                            state = widget.dub_stretching
-                                            stretch_ratio = (state['current_width'] / state['original_width']) if state.get('original_width', 0) > 0 else 1.0
-                                        else:
-                                            rate_value = dub.get('rate', 0) or 0
-                                            stretch_ratio = 100.0 / (100.0 + rate_value) if (100 + rate_value) > 0 else 1.0
-
-                                        bar_h = 10.0
-                                        bar_top = dub_inset.top() + 3
-                                        bar_bottom = bar_top + bar_h
-                                        right_x = dub_inset.right() - 5
-                                        mid_y = (bar_top + bar_bottom) / 2.0
-
-                                        if abs(stretch_ratio - 1.0) < 0.02:
-                                            right_x += 1
-                                            left_x = right_x - 4
-                                            left_offset = 0.0
-                                            right_offset = 0.0
-                                        elif stretch_ratio > 1.0:
-                                            left_x = right_x - 4
-                                            left_offset = -2.0
-                                            right_offset = 2.0
-                                        else:
-                                            right_x += 1
-                                            left_x = right_x - 7
-                                            left_offset = 2.0
-                                            right_offset = -2.0
-
-                                        bar_pen = QPen(bar_color, 2)
-                                        bar_pen.setCapStyle(Qt.RoundCap)
-                                        bar_pen.setJoinStyle(Qt.RoundJoin)
-                                        painter.setPen(bar_pen)
-                                        painter.setBrush(Qt.NoBrush)
-                                        bar_path = QPainterPath()
-                                        bar_path.moveTo(right_x, bar_top)
-                                        bar_path.lineTo(right_x + right_offset, mid_y)
-                                        bar_path.lineTo(right_x, bar_bottom)
-                                        bar_path.moveTo(left_x, bar_top)
-                                        bar_path.lineTo(left_x + left_offset, mid_y)
-                                        bar_path.lineTo(left_x, bar_bottom)
-                                        painter.drawPath(bar_path)
-
-                                        if abs(stretch_ratio - 1.0) > 0.02:
-                                            text = f"{stretch_ratio:.3f}x"
-                                            speed_font = QFont('Montserrat', 6)
-                                            speed_font.setBold(True)
-                                            painter.setFont(speed_font)
-                                            fm = painter.fontMetrics()
-                                            text_w = fm.horizontalAdvance(text)
-                                            painter.setPen(QColor(255, 255, 255, 130))
-                                            painter.drawText(QRectF(left_x - 4 - text_w, bar_top, text_w, bar_h), Qt.AlignLeft | Qt.AlignVCenter, text)
-
-                                    count = len(mins)
-                                    if count > 0:
-                                        painter.setClipRect(dub_inset)
-                                        center = dub_inset.center().y()
-                                        scale = dub_inset.height() * 0.45
-                                        pixel_per_bucket = dub_inset.width() / count
-                                        wf = QPainterPath()
-                                        upper = []
-                                        x = dub_inset.left()
-                                        for i in range(count):
-                                            upper.append((x, center - float(maxs[i]) * scale))
-                                            x += pixel_per_bucket
-                                        lower = []
-                                        x -= pixel_per_bucket
-                                        for i in range(count - 1, -1, -1):
-                                            lower.append((x, center - float(mins[i]) * scale))
-                                            x -= pixel_per_bucket
-                                        wf.moveTo(upper[0][0], upper[0][1])
-                                        for (xx, yy) in upper[1:]:
-                                            wf.lineTo(xx, yy)
-                                        for (xx, yy) in lower:
-                                            wf.lineTo(xx, yy)
-                                        wf.closeSubpath()
-                                        painter.setPen(Qt.NoPen)
-                                        painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('dub_waveform_color', '#ffffffff')))
-                                        painter.drawPath(wf)
+                                    painter.setBrush(sub_border_color)
+                                    badge_rect = QRectF(badge_left, badge_cy - badge_r, badge_right - badge_left, badge_h)
+                                    painter.drawRoundedRect(badge_rect, badge_r, badge_r, Qt.AbsoluteSize)
+                                    # Padlock glyph centered on circle_x
+                                    painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
+                                    painter.setBrush(Qt.NoBrush)
+                                    shackle = QRectF(circle_x - 2.4, badge_cy - 4.0, 4.8, 4.4)
+                                    painter.drawArc(shackle, 0, 180 * 16)
+                                    painter.setPen(Qt.NoPen)
+                                    painter.setBrush(QColor(255, 255, 255, 230))
+                                    body = QRectF(circle_x - 3.2, badge_cy - 0.5, 6.4, 5.0)
+                                    painter.drawRoundedRect(body, 1.0, 1.0, Qt.AbsoluteSize)
                                     painter.restore()
 
-                    if widget.show_speaker_color and session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', None):
-                        sr = 3.0
-                        strip_h = 3.0
-                        sx = subtitle_rect.left()
-                        sw = subtitle_rect.width()
-                        sy = subtitle_rect.top()
-                        strip = QPainterPath()
-                        strip.moveTo(sx + sr, sy)
-                        strip.lineTo(sx + sw - sr, sy)
-                        strip.arcTo(sx + sw - 2 * sr, sy, 2 * sr, 2 * sr, 90, -90)
-                        strip.lineTo(sx + sw, sy + strip_h)
-                        strip.lineTo(sx, sy + strip_h)
-                        strip.lineTo(sx, sy + sr)
-                        strip.arcTo(sx, sy, 2 * sr, 2 * sr, 180, -90)
-                        strip.closeSubpath()
-                        painter.setPen(Qt.NoPen)
-                        painter.setBrush(QColor(session.SPEAKERS[subtitle.get('speaker', 'A')].get('color', '#b8cee0')))
-                        painter.drawPath(strip)
+                                if not subtitle_locked:
+                                    subtitle_id = id(subtitle)
+                                    hovered_edge = widget.dub_hovered_handle[1] if widget.dub_hovered_handle and widget.dub_hovered_handle[0] == subtitle_id else None
+                                    bar_color = QColor(255, 255, 255, 255) if hovered_edge == 'end' else QColor(255, 255, 255, 180)
 
-                    if session.CONFIG.get('quality_check', {}).get('enabled', False):
-                        approved, _qc_reasons, _qc_issues = quality_check.check_subtitle(subtitle)
-                        if not approved:
-                            painter.setPen(QColor('#9e1a1a'))
-                        elif session.SUBTITLE.get('selected', False) == subtitle:
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#ffffffff')))
-                        else:
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#ff304251')))
+                                    if widget.dub_stretching is not None and widget.dub_stretching.get('subtitle') is subtitle:
+                                        state = widget.dub_stretching
+                                        stretch_ratio = (state['current_width'] / state['original_width']) if state.get('original_width', 0) > 0 else 1.0
+                                    else:
+                                        rate_value = dub.get('rate', 0) or 0
+                                        stretch_ratio = 100.0 / (100.0 + rate_value) if (100 + rate_value) > 0 else 1.0
+
+                                    bar_h = 10.0
+                                    bar_top = dub_inset.top() + 3
+                                    bar_bottom = bar_top + bar_h
+                                    right_x = dub_inset.right() - 5
+                                    mid_y = (bar_top + bar_bottom) / 2.0
+
+                                    if abs(stretch_ratio - 1.0) < 0.02:
+                                        right_x += 1
+                                        left_x = right_x - 4
+                                        left_offset = 0.0
+                                        right_offset = 0.0
+                                    elif stretch_ratio > 1.0:
+                                        left_x = right_x - 4
+                                        left_offset = -2.0
+                                        right_offset = 2.0
+                                    else:
+                                        right_x += 1
+                                        left_x = right_x - 7
+                                        left_offset = 2.0
+                                        right_offset = -2.0
+
+                                    bar_pen = QPen(bar_color, 2)
+                                    bar_pen.setCapStyle(Qt.RoundCap)
+                                    bar_pen.setJoinStyle(Qt.RoundJoin)
+                                    painter.setPen(bar_pen)
+                                    painter.setBrush(Qt.NoBrush)
+                                    bar_path = QPainterPath()
+                                    bar_path.moveTo(right_x, bar_top)
+                                    bar_path.lineTo(right_x + right_offset, mid_y)
+                                    bar_path.lineTo(right_x, bar_bottom)
+                                    bar_path.moveTo(left_x, bar_top)
+                                    bar_path.lineTo(left_x + left_offset, mid_y)
+                                    bar_path.lineTo(left_x, bar_bottom)
+                                    painter.drawPath(bar_path)
+
+                                    if abs(stretch_ratio - 1.0) > 0.02:
+                                        text = f"{stretch_ratio:.3f}x"
+                                        speed_font = QFont('Montserrat', 6)
+                                        speed_font.setBold(True)
+                                        painter.setFont(speed_font)
+                                        fm = painter.fontMetrics()
+                                        text_w = fm.horizontalAdvance(text)
+                                        painter.setPen(QColor(255, 255, 255, 130))
+                                        painter.drawText(QRectF(left_x - 4 - text_w, bar_top, text_w, bar_h), Qt.AlignLeft | Qt.AlignVCenter, text)
+
+                                count = len(mins)
+                                if count > 0:
+                                    painter.setClipRect(dub_inset)
+                                    center = dub_inset.center().y()
+                                    scale = dub_inset.height() * 0.45
+                                    pixel_per_bucket = dub_inset.width() / count
+                                    wf = QPainterPath()
+                                    upper = []
+                                    x = dub_inset.left()
+                                    for i in range(count):
+                                        upper.append((x, center - float(maxs[i]) * scale))
+                                        x += pixel_per_bucket
+                                    lower = []
+                                    x -= pixel_per_bucket
+                                    for i in range(count - 1, -1, -1):
+                                        lower.append((x, center - float(mins[i]) * scale))
+                                        x -= pixel_per_bucket
+                                    wf.moveTo(upper[0][0], upper[0][1])
+                                    for (xx, yy) in upper[1:]:
+                                        wf.lineTo(xx, yy)
+                                    for (xx, yy) in lower:
+                                        wf.lineTo(xx, yy)
+                                    wf.closeSubpath()
+                                    painter.setPen(Qt.NoPen)
+                                    painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('dub_waveform_color', '#ffffffff')))
+                                    painter.drawPath(wf)
+                                painter.restore()
+
+                if widget.show_speaker_color and session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', None):
+                    sr = 3.0
+                    strip_h = 3.0
+                    sx = subtitle_rect.left()
+                    sw = subtitle_rect.width()
+                    sy = subtitle_rect.top()
+                    strip = QPainterPath()
+                    strip.moveTo(sx + sr, sy)
+                    strip.lineTo(sx + sw - sr, sy)
+                    strip.arcTo(sx + sw - 2 * sr, sy, 2 * sr, 2 * sr, 90, -90)
+                    strip.lineTo(sx + sw, sy + strip_h)
+                    strip.lineTo(sx, sy + strip_h)
+                    strip.lineTo(sx, sy + sr)
+                    strip.arcTo(sx, sy, 2 * sr, 2 * sr, 180, -90)
+                    strip.closeSubpath()
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(session.SPEAKERS[subtitle.get('speaker', 'A')].get('color', '#b8cee0')))
+                    painter.drawPath(strip)
+
+                if session.CONFIG.get('quality_check', {}).get('enabled', False):
+                    approved, _qc_reasons, _qc_issues = quality_check.check_subtitle(subtitle)
+                    if not approved:
+                        painter.setPen(QColor('#9e1a1a'))
+                    elif session.SUBTITLE.get('selected', False) == subtitle:
+                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#ffffffff')))
                     else:
-                        if session.SUBTITLE.get('selected', False) == subtitle:
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
-                        else:
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
-
-                    if subtitle.get('dubbing'):
-                        subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
-
-                    subtitle_rect -= QMarginsF(26, 6, 26, 6)
-
-                    painter.setFont(QFont('Montserrat', 10))
-
-                    if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
-                        original_subtitle_rect = subtitle_rect - QMarginsF(0, 0, 0, subtitle_rect.height()*.5)
-
-                        if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and 'position' in widget.is_smart_splicing and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
-                            pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
-                            if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
-                                left_side = widget.is_smart_splicing['left']
-                                right_side = widget.is_smart_splicing['right']
-                                painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
-                                painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
-                                painter.setPen(QColor("#1a000000"))
-                                painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
-                            if widget.is_smart_splicing['mode'] == 'split':
-                                painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
-                                painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
-                        else:
-                            # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
-                            painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
-
-                        translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
-
-                        if session.SUBTITLE.get('selected', False) == subtitle:
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
-                        else:
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
-
-                        painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
-
-                        painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#40304251')), 1))
-                        painter.setBrush(Qt.NoBrush)
-                        painter.drawLine(translated_subtitle_rect.left(), translated_subtitle_rect.top(), translated_subtitle_rect.right(), translated_subtitle_rect.top())
+                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#ff304251')))
+                else:
+                    if session.SUBTITLE.get('selected', False) == subtitle:
+                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
                     else:
-                        original_subtitle_rect = subtitle_rect - QMarginsF(0, 5, 0, 5)
-                        if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and 'position' in widget.is_smart_splicing and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
-                            pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
-                            if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
-                                left_side = widget.is_smart_splicing['left']
-                                right_side = widget.is_smart_splicing['right']
-                                painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
-                                painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
-                                painter.setPen(QColor("#1a000000"))
-                                painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
-                            if widget.is_smart_splicing['mode'] == 'split':
-                                painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
-                                painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
+                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+
+                if subtitle.get('dubbing'):
+                    subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
+
+                subtitle_rect -= QMarginsF(26, 6, 26, 6)
+
+                painter.setFont(QFont('Montserrat', 10))
+
+                if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
+                    original_subtitle_rect = subtitle_rect - QMarginsF(0, 0, 0, subtitle_rect.height()*.5)
+
+                    if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and 'position' in widget.is_smart_splicing and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
+                        pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
+                        if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
+                            left_side = widget.is_smart_splicing['left']
+                            right_side = widget.is_smart_splicing['right']
+                            painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
+                            painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
+                            painter.setPen(QColor("#1a000000"))
+                            painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
+                        if widget.is_smart_splicing['mode'] == 'split':
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
+                            painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
+                    else:
+                        # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
+                        painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
+
+                    translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
+
+                    if session.SUBTITLE.get('selected', False) == subtitle:
+                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
+                    else:
+                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+
+                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+
+                    painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#40304251')), 1))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawLine(translated_subtitle_rect.left(), translated_subtitle_rect.top(), translated_subtitle_rect.right(), translated_subtitle_rect.top())
+                else:
+                    original_subtitle_rect = subtitle_rect - QMarginsF(0, 5, 0, 5)
+                    if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and 'position' in widget.is_smart_splicing and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
+                        pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
+                        if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
+                            left_side = widget.is_smart_splicing['left']
+                            right_side = widget.is_smart_splicing['right']
+                            painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
+                            painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
+                            painter.setPen(QColor("#1a000000"))
+                            painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
+                        if widget.is_smart_splicing['mode'] == 'split':
+                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
+                            painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
+                    else:
+                        painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
+
+                if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
+                    track_height = widget.subtitle_height / subtitle_track[1]
+                    limiter_height = track_height
+                    limiter_top = widget.subtitle_y + (track_height * subtitle_track[0])
+
+                    edge_hovered = widget.subtitle_edge_hovered
+                    edge_hovered_side = edge_hovered[1] if edge_hovered and edge_hovered[0] == id(subtitle) else None
+
+                    if edge_hovered_side in ('start', 'end'):
+                        handle_w = 20.0
+                        er = 3.0
+                        ey = limiter_top
+                        eh = limiter_height
+                        if edge_hovered_side == 'end':
+                            ex_outer = subtitle['end'] * widget.width_proportion
+                            ex_inner = ex_outer - handle_w
+                            left, right = ex_inner, ex_outer
+                            edge_path = QPainterPath()
+                            edge_path.moveTo(left, ey)
+                            edge_path.lineTo(right - er, ey)
+                            edge_path.arcTo(right - 2 * er, ey, 2 * er, 2 * er, 90, -90)
+                            edge_path.lineTo(right, ey + eh - er)
+                            edge_path.arcTo(right - 2 * er, ey + eh - 2 * er, 2 * er, 2 * er, 0, -90)
+                            edge_path.lineTo(left, ey + eh)
+                            grad = QLinearGradient(ex_outer, 0, ex_inner, 0)
                         else:
-                            painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
-
-                    if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
-                        track_height = widget.subtitle_height / subtitle_track[1]
-                        limiter_height = track_height
-                        limiter_top = widget.subtitle_y + (track_height * subtitle_track[0])
-
-                        edge_hovered = widget.subtitle_edge_hovered
-                        edge_hovered_side = edge_hovered[1] if edge_hovered and edge_hovered[0] == id(subtitle) else None
-
-                        if edge_hovered_side in ('start', 'end'):
-                            handle_w = 20.0
-                            er = 3.0
-                            ey = limiter_top
-                            eh = limiter_height
-                            if edge_hovered_side == 'end':
-                                ex_outer = subtitle['end'] * widget.width_proportion
-                                ex_inner = ex_outer - handle_w
-                                left, right = ex_inner, ex_outer
-                                edge_path = QPainterPath()
-                                edge_path.moveTo(left, ey)
-                                edge_path.lineTo(right - er, ey)
-                                edge_path.arcTo(right - 2 * er, ey, 2 * er, 2 * er, 90, -90)
-                                edge_path.lineTo(right, ey + eh - er)
-                                edge_path.arcTo(right - 2 * er, ey + eh - 2 * er, 2 * er, 2 * er, 0, -90)
-                                edge_path.lineTo(left, ey + eh)
-                                grad = QLinearGradient(ex_outer, 0, ex_inner, 0)
-                            else:
-                                ex_outer = subtitle['start'] * widget.width_proportion
-                                ex_inner = ex_outer + handle_w
-                                left, right = ex_outer, ex_inner
-                                edge_path = QPainterPath()
-                                edge_path.moveTo(right, ey)
-                                edge_path.lineTo(left + er, ey)
-                                edge_path.arcTo(left, ey, 2 * er, 2 * er, 90, 90)
-                                edge_path.lineTo(left, ey + eh - er)
-                                edge_path.arcTo(left, ey + eh - 2 * er, 2 * er, 2 * er, 180, 90)
-                                edge_path.lineTo(right, ey + eh)
-                                grad = QLinearGradient(ex_outer, 0, ex_inner, 0)
-                            grad.setColorAt(0, QColor(255, 255, 255, 255))
-                            grad.setColorAt(1, QColor(255, 255, 255, 0))
-                            edge_pen = QPen(QBrush(grad), 2)
-                            painter.setPen(edge_pen)
-                            painter.setBrush(Qt.NoBrush)
-                            painter.drawPath(edge_path)
-
-                    if subtitle_locked:
-                        painter.restore()
-                        badge_size = 10.0
-                        badge_margin = 4.0
-                        badge_rect = QRectF(
-                            full_subtitle_rect.right() - badge_size - badge_margin,
-                            full_subtitle_rect.top() + badge_margin,
-                            badge_size,
-                            badge_size,
-                        )
-                        painter.save()
-                        painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
+                            ex_outer = subtitle['start'] * widget.width_proportion
+                            ex_inner = ex_outer + handle_w
+                            left, right = ex_outer, ex_inner
+                            edge_path = QPainterPath()
+                            edge_path.moveTo(right, ey)
+                            edge_path.lineTo(left + er, ey)
+                            edge_path.arcTo(left, ey, 2 * er, 2 * er, 90, 90)
+                            edge_path.lineTo(left, ey + eh - er)
+                            edge_path.arcTo(left, ey + eh - 2 * er, 2 * er, 2 * er, 180, 90)
+                            edge_path.lineTo(right, ey + eh)
+                            grad = QLinearGradient(ex_outer, 0, ex_inner, 0)
+                        grad.setColorAt(0, QColor(255, 255, 255, 255))
+                        grad.setColorAt(1, QColor(255, 255, 255, 0))
+                        edge_pen = QPen(QBrush(grad), 2)
+                        painter.setPen(edge_pen)
                         painter.setBrush(Qt.NoBrush)
-                        shackle = QRectF(
-                            badge_rect.center().x() - 2.2, badge_rect.top() + 1.6,
-                            4.4, 4.0,
-                        )
-                        painter.drawArc(shackle, 0, 180 * 16)
-                        painter.setPen(Qt.NoPen)
-                        painter.setBrush(QColor(255, 255, 255, 230))
-                        body = QRectF(
-                            badge_rect.center().x() - 3.0, badge_rect.top() + 4.2,
-                            6.0, 4.6,
-                        )
-                        painter.drawRoundedRect(body, 1.0, 1.0, Qt.AbsoluteSize)
-                        painter.restore()
+                        painter.drawPath(edge_path)
+
+                if subtitle_locked:
+                    painter.restore()
+                    badge_size = 10.0
+                    badge_margin = 4.0
+                    badge_rect = QRectF(
+                        full_subtitle_rect.right() - badge_size - badge_margin,
+                        full_subtitle_rect.top() + badge_margin,
+                        badge_size,
+                        badge_size,
+                    )
+                    painter.save()
+                    painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
+                    painter.setBrush(Qt.NoBrush)
+                    shackle = QRectF(
+                        badge_rect.center().x() - 2.2, badge_rect.top() + 1.6,
+                        4.4, 4.0,
+                    )
+                    painter.drawArc(shackle, 0, 180 * 16)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(255, 255, 255, 230))
+                    body = QRectF(
+                        badge_rect.center().x() - 3.0, badge_rect.top() + 4.2,
+                        6.0, 4.6,
+                    )
+                    painter.drawRoundedRect(body, 1.0, 1.0, Qt.AbsoluteSize)
+                    painter.restore()
 
             painter.setOpacity(1)
 

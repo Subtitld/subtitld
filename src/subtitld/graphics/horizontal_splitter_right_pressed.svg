@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg width="8" height="7" version="1.1" viewBox="0 0 8 7" xmlns="http://www.w3.org/2000/svg">
+ <path d="m3 6.9998-3-3.5 3-3.5 5.0001 2e-4v7z" fill="#2e3e49" stop-color="#000000" style="paint-order:fill markers stroke"/>
+ <path d="m8 4.4998h-4" fill="#f7b834" opacity=".5" stroke="#000" stroke-opacity=".2" style="paint-order:fill markers stroke"/>
+ <path d="m8 2.4998h-4" fill="#f7b834" opacity=".5" stroke="#000" stroke-opacity=".2" style="paint-order:fill markers stroke"/>
+ <path d="m2e-4 3.5 3-3.5h4.9999l1e-4 1h-4.541l-2.1425 2.5z" fill-opacity=".05" stop-color="#000000" style="paint-order:fill markers stroke"/>
+ <path d="m2e-4 3.5 3 3.5h4.9999l1e-4 -1h-4.541l-2.1425-2.5z" fill="#fff" fill-opacity=".05" stop-color="#000000" style="paint-order:fill markers stroke"/>
+</svg>
