@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget
-from PySide6.QtCore import Qt, QMimeData
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtCore import Qt, QMimeData, QSize
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
+import os
 import json
 import copy
 
@@ -12,7 +13,7 @@ from subtitld.modules import session
 from subtitld.modules.config import Config
 
 
-class DragDropWidget(QWidget):    
+class DragDropWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
@@ -130,6 +131,10 @@ def load(self):
         update_callback=update,
         translate_callback=translate
     )
+    # The shared `left_panel` class applies a 10px margin around its content;
+    # the global config panel hosts a tab widget that should sit flush with
+    # the panel edges, so override the margin here.
+    left_panel_global_panel.layout().setContentsMargins(0, 0, 0, 0)
 
     left_panel_global_panel_scroll = QScrollArea()
     left_panel_global_panel_scroll.setObjectName('left_panel_global_panel_scroll')
@@ -148,6 +153,49 @@ def load(self):
     self.left_panel_global_tabs = QTabWidget()
     self.left_panel_global_tabs.setObjectName('left_panel_global_tabs')
     self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_tabs)
+
+    # --- Subtitles tab ---
+    self.left_panel_global_tab_subtitles = QWidget()
+    self.left_panel_global_tab_subtitles.setProperty('class', 'transparent_panel')
+    self.left_panel_global_tab_subtitles.setLayout(QVBoxLayout())
+    self.left_panel_global_tab_subtitles.layout().setContentsMargins(10, 10, 10, 10)
+    self.left_panel_global_tab_subtitles.layout().setSpacing(10)
+    self.left_panel_global_tabs.addTab(self.left_panel_global_tab_subtitles, '')
+
+    self.global_panel_general_minimum_duration_line = QVBoxLayout()
+    self.global_panel_general_minimum_duration_line.setContentsMargins(0, 0, 0, 0)
+    self.global_panel_general_minimum_duration_line.setSpacing(2)
+
+    self.global_panel_general_minimum_duration_label = QLabel()
+    self.global_panel_general_minimum_duration_label.setProperty('class', 'widget_label')
+    self.global_panel_general_minimum_duration_line.addWidget(self.global_panel_general_minimum_duration_label, 0, Qt.AlignLeft)
+
+    self.global_panel_general_minimum_duration_line_2 = QHBoxLayout()
+    self.global_panel_general_minimum_duration_line_2.setContentsMargins(0, 0, 0, 0)
+    self.global_panel_general_minimum_duration_line_2.setSpacing(5)
+
+    self.global_panel_general_minimum_duration_spinbox = QDoubleSpinBox()
+    self.global_panel_general_minimum_duration_spinbox.setMinimum(.1)
+    self.global_panel_general_minimum_duration_spinbox.setMaximum(999.999)
+    self.global_panel_general_minimum_duration_spinbox.valueChanged.connect(lambda: global_panel_general_minimum_duration_spinbox_changed(self))
+    self.global_panel_general_minimum_duration_line_2.addWidget(self.global_panel_general_minimum_duration_spinbox, 0, Qt.AlignLeft)
+
+    self.global_panel_general_minimum_duration_seconds_label = QLabel()
+    self.global_panel_general_minimum_duration_seconds_label.setProperty('class', 'units_label')
+    self.global_panel_general_minimum_duration_line_2.addWidget(self.global_panel_general_minimum_duration_seconds_label, 0, Qt.AlignLeft)
+
+    self.global_panel_general_minimum_duration_line_2.addStretch()
+
+    self.global_panel_general_minimum_duration_line.addLayout(self.global_panel_general_minimum_duration_line_2)
+
+    self.left_panel_global_tab_subtitles.layout().addLayout(self.global_panel_general_minimum_duration_line)
+
+    self.left_panel_global_subtitle_alignment = utils.LabeledComboBox()
+    self.left_panel_global_subtitle_alignment.addItems(['Left', 'Center', 'Right'])
+    self.left_panel_global_subtitle_alignment.activated.connect(lambda: left_panel_global_subtitle_alignment_activated(self))
+    self.left_panel_global_tab_subtitles.layout().addWidget(self.left_panel_global_subtitle_alignment)
+
+    self.left_panel_global_tab_subtitles.layout().addStretch()
 
     # --- General tab ---
     self.left_panel_global_tab_general = QWidget()
@@ -179,39 +227,6 @@ def load(self):
     self.global_panel_general_save_as_line.addWidget(self.global_panel_general_save_copy, 0, Qt.AlignLeft)
 
     self.left_panel_global_tab_general.layout().addLayout(self.global_panel_general_save_as_line)
-
-    self.global_panel_general_minimum_duration_line = QVBoxLayout()
-    self.global_panel_general_minimum_duration_line.setContentsMargins(0, 0, 0, 0)
-    self.global_panel_general_minimum_duration_line.setSpacing(2)
-
-    self.global_panel_general_minimum_duration_label = QLabel()
-    self.global_panel_general_minimum_duration_label.setProperty('class', 'widget_label')
-    self.global_panel_general_minimum_duration_line.addWidget(self.global_panel_general_minimum_duration_label, 0, Qt.AlignLeft)
-
-    self.global_panel_general_minimum_duration_line_2 = QHBoxLayout()
-    self.global_panel_general_minimum_duration_line_2.setContentsMargins(0, 0, 0, 0)
-    self.global_panel_general_minimum_duration_line_2.setSpacing(5)
-
-    self.global_panel_general_minimum_duration_spinbox = QDoubleSpinBox()
-    self.global_panel_general_minimum_duration_spinbox.setMinimum(.1)
-    self.global_panel_general_minimum_duration_spinbox.setMaximum(999.999)
-    self.global_panel_general_minimum_duration_spinbox.valueChanged.connect(lambda: global_panel_general_minimum_duration_spinbox_changed(self))
-    self.global_panel_general_minimum_duration_line_2.addWidget(self.global_panel_general_minimum_duration_spinbox, 0, Qt.AlignLeft)
-
-    self.global_panel_general_minimum_duration_seconds_label = QLabel()
-    self.global_panel_general_minimum_duration_seconds_label.setProperty('class', 'units_label')
-    self.global_panel_general_minimum_duration_line_2.addWidget(self.global_panel_general_minimum_duration_seconds_label, 0, Qt.AlignLeft)
-
-    self.global_panel_general_minimum_duration_line_2.addStretch()
-
-    self.global_panel_general_minimum_duration_line.addLayout(self.global_panel_general_minimum_duration_line_2)
-
-    self.left_panel_global_tab_general.layout().addLayout(self.global_panel_general_minimum_duration_line)
-
-    self.left_panel_global_subtitle_alignment = utils.LabeledComboBox()
-    self.left_panel_global_subtitle_alignment.addItems(['Left', 'Center', 'Right'])
-    self.left_panel_global_subtitle_alignment.activated.connect(lambda: left_panel_global_subtitle_alignment_activated(self))
-    self.left_panel_global_tab_general.layout().addWidget(self.left_panel_global_subtitle_alignment)
 
     self.left_panel_global_tab_general.layout().addStretch()
 
@@ -250,10 +265,24 @@ def load(self):
 
     self.left_panel_global_tab_usfx.layout().addStretch()
 
-    # --- Export settings button stays at the bottom, below tabs ---
+    # Export settings: icon-only button docked at the right end of the tab
+    # bar via QTabWidget's corner-widget slot.
     self.left_panel_global_panel_export_settings_button = QPushButton()
+    self.left_panel_global_panel_export_settings_button.setObjectName('left_panel_global_panel_export_settings_button')
+    self.left_panel_global_panel_export_settings_button.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'left_panel_global_export_settings_icon.svg')))
+    self.left_panel_global_panel_export_settings_button.setIconSize(QSize(14, 14))
+    self.left_panel_global_panel_export_settings_button.setFlat(True)
+    self.left_panel_global_panel_export_settings_button.setFixedSize(QSize(28, 28))
     self.left_panel_global_panel_export_settings_button.clicked.connect(lambda: left_panel_global_panel_export_settings_button_clicked(self))
-    self.left_panel_global_panel_widget.layout().addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignRight)
+
+    # Wrap in a top-aligned container so the corner widget hugs the top
+    # edge of the tab bar instead of being vertically centered in the row.
+    _export_corner = QWidget()
+    _export_corner_layout = QVBoxLayout(_export_corner)
+    _export_corner_layout.setContentsMargins(0, 0, 1, 0)
+    _export_corner_layout.setSpacing(0)
+    _export_corner_layout.addWidget(self.left_panel_global_panel_export_settings_button, 0, Qt.AlignTop | Qt.AlignRight)
+    self.left_panel_global_tabs.setCornerWidget(_export_corner, Qt.TopRightCorner)
 
     update(self)
 
@@ -338,8 +367,9 @@ def hide(self):
 
 
 def translate(self):
-    self.left_panel_global_tabs.setTabText(0, _('global_panel.tab_general'))
-    self.left_panel_global_tabs.setTabText(1, _('global_panel.tab_usfx'))
+    self.left_panel_global_tabs.setTabText(0, _('global_panel.tab_subtitles'))
+    self.left_panel_global_tabs.setTabText(1, _('global_panel.tab_general'))
+    self.left_panel_global_tabs.setTabText(2, _('global_panel.tab_usfx'))
     self.left_panel_global_tab_usfx_intro.setText(_('global_panel.usfx_intro'))
     self.usfx_include_speaker_images_checkbox.setText(_('global_panel.usfx_include_speaker_images'))
     self.usfx_include_waveform_cache_checkbox.setText(_('global_panel.usfx_include_waveform_cache'))
@@ -350,7 +380,7 @@ def translate(self):
     self.global_panel_general_save_copy.setText(_('global_panel.save_copy'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
-    self.left_panel_global_panel_export_settings_button.setText(_('global_panel.export_settings'))
+    self.left_panel_global_panel_export_settings_button.setToolTip(_('global_panel.export_settings'))
     self.left_panel_global_subtitle_alignment.setLabel(_('global_panel.subtitle_alignment'))
 
 

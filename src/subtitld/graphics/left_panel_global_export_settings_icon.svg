@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="none" stroke="#b8cee0" stroke-opacity="0.4" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Arrow pointing down into a tray (export/download) -->
+    <path d="M8 2v7"/>
+    <path d="M5.2 6.2 8 9l2.8-2.8"/>
+    <path d="M3 11v2.2A.8.8 0 0 0 3.8 14h8.4a.8.8 0 0 0 .8-.8V11"/>
+  </g>
+</svg>

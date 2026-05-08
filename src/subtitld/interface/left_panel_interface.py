@@ -16,6 +16,9 @@ def load(self):
         update_callback=update,
         translate_callback=translate
     )
+    # Override the shared `left_panel` 10px margin so the tab widget hosted
+    # inside this panel sits flush with the panel's edges.
+    left_panel_interface_panel.layout().setContentsMargins(0, 0, 0, 0)
 
     left_panel_interface_panel_scroll = QScrollArea()
     left_panel_interface_panel_scroll.setObjectName('left_panel_interface_panel_scroll')

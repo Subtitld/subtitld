@@ -43,6 +43,45 @@ QLabel[class='units_label'] {
     padding: 0 4px;
 }
 
+QLabel[class='metadata_field_label'] {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    color: #80b8cee0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding-top: 1px;
+}
+
+QLabel[class='metadata_field_value'] {
+    font-size: 12px;
+    color: #d8e6f2;
+    background: transparent;
+}
+
+QLabel[class='metadata_field_value'][empty='true'] {
+    color: #66b8cee0;
+    font-style: italic;
+}
+
+QLabel[class='metadata_badge'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #d8e6f2;
+    background-color: rgba(184, 206, 224, 0.10);
+    border: 1px solid rgba(184, 206, 224, 0.20);
+    border-radius: 9px;
+    padding: 2px 10px;
+}
+
+QLabel[class='metadata_field_image'] {
+    background: transparent;
+    border: 1px solid rgba(184, 206, 224, 0.15);
+    border-radius: 4px;
+    padding: 0;
+}
+
 QCheckBox {
     font-family: 'Montserrat';
     font-size: 11px;
@@ -622,42 +661,61 @@ QWidget[class='transparent_panel'] {
     border: none;
 }
 
-#left_panel_global_tabs {
+QTabWidget {
     background: transparent;
     border: none;
 }
 
-#left_panel_global_tabs::pane {
+QTabWidget::pane {
     background: transparent;
     border: none;
-    border-top: 1px solid #22ffffff;
+    /* The 1px separator runs along the full width of the tab widget — put
+       it on the pane's top edge (which spans the whole widget) rather than
+       on the tab bar (which is only as wide as the tabs themselves). */
+    border-top: 1px solid #1ac0d4e5;
     margin-top: -1px;
 }
 
-#left_panel_global_tabs QTabBar {
+QTabBar {
     background: transparent;
     border: none;
 }
 
-#left_panel_global_tabs QTabBar::tab {
+QTabBar::tab {
     background: transparent;
     color: #80b8cee0;
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
-    padding: 7px 12px;
-    margin-right: 2px;
+    padding: 6px 10px;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: 1px solid transparent;
 }
 
-#left_panel_global_tabs QTabBar::tab:hover {
+QTabBar::tab:hover {
     color: #b8cee0;
 }
 
-#left_panel_global_tabs QTabBar::tab:selected {
-    color: #ffffff;
-    border-bottom: 2px solid #b8cee0;
+QTabBar::tab:selected {
+    background: qlineargradient(x1:0, y1:1, x2:0, y2:0,
+        stop:0 #1ac0d4e5, stop:1 #00c0d4e5);
+    color: #c8dbe9;
+    border-bottom: 1px solid #b8cee0;
+}
+
+QPushButton#left_panel_global_panel_export_settings_button {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    margin-bottom: 1px;
+}
+
+QPushButton#left_panel_global_panel_export_settings_button:hover {
+    background: rgba(255, 255, 255, 12);
+}
+
+QPushButton#left_panel_global_panel_export_settings_button:pressed {
+    background: rgba(255, 255, 255, 22);
 }
 
 #left_panel_navigation {

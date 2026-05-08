@@ -14,7 +14,6 @@ from subtitld.interface import left_panel_interface
 from subtitld.interface import left_panel_keyboard
 from subtitld.interface import left_panel_import
 from subtitld.interface import left_panel_translation
-from subtitld.interface import left_panel_export
 from subtitld.interface import left_panel_autosave
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -27,6 +26,7 @@ class left_panel(QWidget):
 
         self.setObjectName(f'left_panel_{tab_name}')
         self.setProperty('tab_name', tab_name)
+        self.setProperty('class', 'transparent_panel')
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(10, 10, 10, 10)
 
@@ -112,7 +112,6 @@ def load(self):
     left_panel_keyboard.load(self)
     left_panel_import.load(self)
     left_panel_translation.load(self)
-    left_panel_export.load(self)
     left_panel_autosave.load(self)
 
     self.left_panel_navigation.layout().itemAt(0).widget().click()

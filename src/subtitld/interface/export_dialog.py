@@ -5,8 +5,10 @@ dict; the caller is responsible for the final file picker and dispatch."""
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
-                               QLabel, QSizePolicy, QDialog)
+                               QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
+                               QGroupBox, QSpinBox, QComboBox, QLineEdit)
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontDatabase
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -187,6 +189,378 @@ class _DocumentsPanel(QWidget):
         }
 
 
+class _VideoPanel(QWidget):
+    """Video export panel.
+
+    Lifted verbatim (in structure) from ``left_panel_export.load`` —
+    the FFmpeg sub-tab and the standalone "generate transparent video"
+    button. Signals are wired to local placeholder slots; the user will
+    re-implement actual behaviour later.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(10, 10, 10, 10)
+        self.layout().setSpacing(20)
+
+        self.video_tabwidget = QTabWidget()
+
+        # FFmpeg sub-tab ---------------------------------------------------
+        self.ffmpeg_panel = QWidget()
+        self.ffmpeg_panel.setLayout(QGridLayout())
+        self.ffmpeg_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.ffmpeg_panel.layout().setSpacing(20)
+
+        self.ffmpeg_left_panel = QWidget()
+        self.ffmpeg_left_panel.setLayout(QVBoxLayout())
+        self.ffmpeg_left_panel.layout().setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_left_panel.layout().setSpacing(20)
+
+        # Font group ------------------------------------------------------
+        self.ffmpeg_font_group = QGroupBox('Font')
+        self.ffmpeg_font_group.setLayout(QHBoxLayout())
+        self.ffmpeg_font_group.layout().setContentsMargins(10, 10, 10, 10)
+        self.ffmpeg_font_group.layout().setSpacing(20)
+
+        self.ffmpeg_fontsize_line = QVBoxLayout()
+        self.ffmpeg_fontsize_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_fontsize_line.setSpacing(2)
+
+        self.ffmpeg_fontsize_label = QLabel()
+        self.ffmpeg_fontsize_label.setProperty('class', 'widget_label')
+        self.ffmpeg_fontsize_line.addWidget(self.ffmpeg_fontsize_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_fontsize_line_2 = QHBoxLayout()
+        self.ffmpeg_fontsize_line_2.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_fontsize_line_2.setSpacing(5)
+
+        self.ffmpeg_fontsize_spinbox = QSpinBox()
+        self.ffmpeg_fontsize_spinbox.setMinimum(1)
+        self.ffmpeg_fontsize_spinbox.setMaximum(999)
+        self.ffmpeg_fontsize_spinbox.valueChanged.connect(self._fontsize_changed)
+        self.ffmpeg_fontsize_line_2.addWidget(self.ffmpeg_fontsize_spinbox, 0, Qt.AlignLeft)
+
+        self.ffmpeg_fontsize_seconds_label = QLabel()
+        self.ffmpeg_fontsize_seconds_label.setProperty('class', 'units_label')
+        self.ffmpeg_fontsize_line_2.addWidget(self.ffmpeg_fontsize_seconds_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_fontsize_line.addLayout(self.ffmpeg_fontsize_line_2)
+        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_fontsize_line)
+
+        self.ffmpeg_fontfamily_line = QVBoxLayout()
+        self.ffmpeg_fontfamily_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_fontfamily_line.setSpacing(2)
+
+        self.ffmpeg_fontfamily_label = QLabel()
+        self.ffmpeg_fontfamily_label.setProperty('class', 'widget_label')
+        self.ffmpeg_fontfamily_line.addWidget(self.ffmpeg_fontfamily_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_fontfamily_line_2 = QHBoxLayout()
+        self.ffmpeg_fontfamily_line_2.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_fontfamily_line_2.setSpacing(5)
+
+        fonts = QFontDatabase().families()
+        self.ffmpeg_fontfamily_combobox = QComboBox()
+        self.ffmpeg_fontfamily_combobox.addItems(fonts)
+        self.ffmpeg_fontfamily_combobox.activated.connect(self._fontfamily_changed)
+        self.ffmpeg_fontfamily_line_2.addWidget(self.ffmpeg_fontfamily_combobox, 0, Qt.AlignLeft)
+
+        self.ffmpeg_fontfamily_line.addLayout(self.ffmpeg_fontfamily_line_2)
+        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_fontfamily_line)
+
+        self.ffmpeg_color_vbox = QVBoxLayout()
+        self.ffmpeg_color_vbox.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_color_vbox.setSpacing(2)
+
+        self.ffmpeg_color_label = QLabel()
+        self.ffmpeg_color_label.setProperty('class', 'widget_label')
+        self.ffmpeg_color_vbox.addWidget(self.ffmpeg_color_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_color_button = QPushButton()
+        self.ffmpeg_color_button.setProperty('class', 'color_pick_button')
+        self.ffmpeg_color_button.setFixedWidth(80)
+        self.ffmpeg_color_button.clicked.connect(self._color_button_clicked)
+        self.ffmpeg_color_vbox.addWidget(self.ffmpeg_color_button, 0, Qt.AlignLeft)
+
+        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_color_vbox)
+        self.ffmpeg_font_group.layout().addStretch()
+        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_font_group)
+
+        # Outline ---------------------------------------------------------
+        self.ffmpeg_outline_group = QGroupBox()
+        self.ffmpeg_outline_group.setCheckable(True)
+        self.ffmpeg_outline_group.setLayout(QHBoxLayout())
+        self.ffmpeg_outline_group.toggled.connect(self._outline_group_toggled)
+        self.ffmpeg_outline_group.layout().setContentsMargins(10, 10, 10, 10)
+        self.ffmpeg_outline_group.layout().setSpacing(20)
+
+        self.ffmpeg_outline_vbox = QVBoxLayout()
+        self.ffmpeg_outline_vbox.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_outline_vbox.setSpacing(2)
+
+        self.ffmpeg_outline_label = QLabel()
+        self.ffmpeg_outline_label.setProperty('class', 'widget_label')
+        self.ffmpeg_outline_vbox.addWidget(self.ffmpeg_outline_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_outline_line = QHBoxLayout()
+        self.ffmpeg_outline_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_outline_line.setSpacing(5)
+
+        self.ffmpeg_outline_value = QSpinBox()
+        self.ffmpeg_outline_value.setMinimum(0)
+        self.ffmpeg_outline_value.setMaximum(99999)
+        self.ffmpeg_outline_value.valueChanged.connect(self._outline_value_changed)
+        self.ffmpeg_outline_line.addWidget(self.ffmpeg_outline_value, 0, Qt.AlignLeft)
+
+        self.ffmpeg_outline_value_pixels_label = QLabel()
+        self.ffmpeg_outline_value_pixels_label.setProperty('class', 'units_label')
+        self.ffmpeg_outline_line.addWidget(self.ffmpeg_outline_value_pixels_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_outline_vbox.addLayout(self.ffmpeg_outline_line)
+        self.ffmpeg_outline_group.layout().addLayout(self.ffmpeg_outline_vbox)
+        self.ffmpeg_outline_group.layout().addStretch()
+        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_outline_group)
+
+        # Shadow ----------------------------------------------------------
+        self.ffmpeg_shadow_group = QGroupBox()
+        self.ffmpeg_shadow_group.setCheckable(True)
+        self.ffmpeg_shadow_group.setLayout(QHBoxLayout())
+        self.ffmpeg_shadow_group.toggled.connect(self._shadow_group_toggled)
+        self.ffmpeg_shadow_group.layout().setContentsMargins(10, 10, 10, 10)
+        self.ffmpeg_shadow_group.layout().setSpacing(20)
+
+        self.ffmpeg_shadow_vbox = QVBoxLayout()
+        self.ffmpeg_shadow_vbox.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_shadow_vbox.setSpacing(2)
+
+        self.ffmpeg_shadow_label = QLabel()
+        self.ffmpeg_shadow_label.setProperty('class', 'widget_label')
+        self.ffmpeg_shadow_vbox.addWidget(self.ffmpeg_shadow_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_shadow_line = QHBoxLayout()
+        self.ffmpeg_shadow_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_shadow_line.setSpacing(5)
+
+        self.ffmpeg_shadow_distance = QSpinBox()
+        self.ffmpeg_shadow_distance.setMinimum(-99999)
+        self.ffmpeg_shadow_distance.setMaximum(99999)
+        self.ffmpeg_shadow_distance.valueChanged.connect(self._shadow_distance_changed)
+        self.ffmpeg_shadow_line.addWidget(self.ffmpeg_shadow_distance, 0, Qt.AlignLeft)
+
+        self.ffmpeg_shadow_distance_pixels_label = QLabel()
+        self.ffmpeg_shadow_distance_pixels_label.setProperty('class', 'units_label')
+        self.ffmpeg_shadow_line.addWidget(self.ffmpeg_shadow_distance_pixels_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_shadow_vbox.addLayout(self.ffmpeg_shadow_line)
+        self.ffmpeg_shadow_group.layout().addLayout(self.ffmpeg_shadow_vbox)
+        self.ffmpeg_shadow_group.layout().addStretch()
+        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_shadow_group)
+
+        # Margins ---------------------------------------------------------
+        self.ffmpeg_margins_group = QGroupBox()
+        self.ffmpeg_margins_group.setLayout(QGridLayout())
+        self.ffmpeg_margins_group.layout().setContentsMargins(10, 10, 10, 10)
+        self.ffmpeg_margins_group.layout().setSpacing(20)
+
+        # Left
+        self.ffmpeg_margins_left_vbox = QVBoxLayout()
+        self.ffmpeg_margins_left_vbox.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_margins_left_vbox.setSpacing(2)
+
+        self.ffmpeg_margins_left_label = QLabel()
+        self.ffmpeg_margins_left_label.setProperty('class', 'widget_label')
+        self.ffmpeg_margins_left_vbox.addWidget(self.ffmpeg_margins_left_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_margins_left_line = QHBoxLayout()
+        self.ffmpeg_margins_left_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_margins_left_line.setSpacing(5)
+
+        self.ffmpeg_margins_left_distance = QSpinBox()
+        self.ffmpeg_margins_left_distance.setMinimum(-99999)
+        self.ffmpeg_margins_left_distance.setMaximum(99999)
+        self.ffmpeg_margins_left_distance.valueChanged.connect(self._margins_left_changed)
+        self.ffmpeg_margins_left_line.addWidget(self.ffmpeg_margins_left_distance, 0, Qt.AlignLeft)
+
+        self.ffmpeg_margins_left_distance_pixels_label = QLabel()
+        self.ffmpeg_margins_left_distance_pixels_label.setProperty('class', 'units_label')
+        self.ffmpeg_margins_left_line.addWidget(self.ffmpeg_margins_left_distance_pixels_label, 0, Qt.AlignLeft)
+        self.ffmpeg_margins_left_line.addStretch()
+
+        self.ffmpeg_margins_left_vbox.addLayout(self.ffmpeg_margins_left_line)
+        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_left_vbox, 1, 1, 1, 1)
+
+        # Bottom
+        self.ffmpeg_margins_bottom_vbox = QVBoxLayout()
+        self.ffmpeg_margins_bottom_vbox.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_margins_bottom_vbox.setSpacing(2)
+
+        self.ffmpeg_margins_bottom_label = QLabel()
+        self.ffmpeg_margins_bottom_label.setProperty('class', 'widget_label')
+        self.ffmpeg_margins_bottom_vbox.addWidget(self.ffmpeg_margins_bottom_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_margins_bottom_line = QHBoxLayout()
+        self.ffmpeg_margins_bottom_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_margins_bottom_line.setSpacing(5)
+
+        self.ffmpeg_margins_bottom_distance = QSpinBox()
+        self.ffmpeg_margins_bottom_distance.setMinimum(-99999)
+        self.ffmpeg_margins_bottom_distance.setMaximum(99999)
+        self.ffmpeg_margins_bottom_distance.valueChanged.connect(self._margins_bottom_changed)
+        self.ffmpeg_margins_bottom_line.addWidget(self.ffmpeg_margins_bottom_distance, 0, Qt.AlignLeft)
+
+        self.ffmpeg_margins_bottom_distance_pixels_label = QLabel()
+        self.ffmpeg_margins_bottom_distance_pixels_label.setProperty('class', 'units_label')
+        self.ffmpeg_margins_bottom_line.addWidget(self.ffmpeg_margins_bottom_distance_pixels_label, 0, Qt.AlignLeft)
+        self.ffmpeg_margins_bottom_line.addStretch()
+
+        self.ffmpeg_margins_bottom_vbox.addLayout(self.ffmpeg_margins_bottom_line)
+        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_bottom_vbox, 2, 2, 1, 1)
+
+        # Right
+        self.ffmpeg_margins_right_vbox = QVBoxLayout()
+        self.ffmpeg_margins_right_vbox.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_margins_right_vbox.setSpacing(2)
+
+        self.ffmpeg_margins_right_label = QLabel()
+        self.ffmpeg_margins_right_label.setProperty('class', 'widget_label')
+        self.ffmpeg_margins_right_vbox.addWidget(self.ffmpeg_margins_right_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_margins_right_line = QHBoxLayout()
+        self.ffmpeg_margins_right_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_margins_right_line.setSpacing(5)
+
+        self.ffmpeg_margins_right_distance = QSpinBox()
+        self.ffmpeg_margins_right_distance.setMinimum(-99999)
+        self.ffmpeg_margins_right_distance.setMaximum(99999)
+        self.ffmpeg_margins_right_distance.valueChanged.connect(self._margins_right_changed)
+        self.ffmpeg_margins_right_line.addWidget(self.ffmpeg_margins_right_distance, 0, Qt.AlignLeft)
+
+        self.ffmpeg_margins_right_distance_pixels_label = QLabel()
+        self.ffmpeg_margins_right_distance_pixels_label.setProperty('class', 'units_label')
+        self.ffmpeg_margins_right_line.addWidget(self.ffmpeg_margins_right_distance_pixels_label, 0, Qt.AlignLeft)
+        self.ffmpeg_margins_right_line.addStretch()
+
+        self.ffmpeg_margins_right_vbox.addLayout(self.ffmpeg_margins_right_line)
+        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_right_vbox, 1, 3, 1, 1)
+
+        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_margins_group)
+
+        # Final command + export button ----------------------------------
+        self.ffmpeg_final_line = QHBoxLayout()
+        self.ffmpeg_final_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_final_line.setSpacing(20)
+
+        self.ffmpeg_command_line = QVBoxLayout()
+        self.ffmpeg_command_line.setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_command_line.setSpacing(5)
+
+        self.ffmpeg_command_label = QLabel()
+        self.ffmpeg_command_label.setProperty('class', 'widget_label')
+        self.ffmpeg_command_line.addWidget(self.ffmpeg_command_label, 0, Qt.AlignLeft)
+
+        self.ffmpeg_command_qlineedit = QLineEdit()
+        self.ffmpeg_command_qlineedit.textEdited.connect(self._command_text_edited)
+        self.ffmpeg_command_line.addWidget(self.ffmpeg_command_qlineedit)
+
+        self.ffmpeg_final_line.addLayout(self.ffmpeg_command_line)
+
+        self.ffmpeg_export_button = QPushButton()
+        self.ffmpeg_export_button.setProperty('class', 'button_dark')
+        self.ffmpeg_export_button.clicked.connect(self._export_button_clicked)
+        self.ffmpeg_export_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+        self.ffmpeg_final_line.addWidget(self.ffmpeg_export_button)
+
+        self.ffmpeg_left_panel.layout().addLayout(self.ffmpeg_final_line)
+        self.ffmpeg_left_panel.layout().addStretch()
+
+        self.ffmpeg_panel.layout().addWidget(self.ffmpeg_left_panel, 1, 1, 1, 2)
+
+        # Preview ---------------------------------------------------------
+        self.ffmpeg_preview_panel = QWidget()
+        self.ffmpeg_preview_panel.setLayout(QVBoxLayout())
+        self.ffmpeg_preview_panel.layout().setContentsMargins(0, 0, 0, 0)
+        self.ffmpeg_preview_panel.layout().setSpacing(20)
+
+        self.ffmpeg_preview_label = QLabel()
+        self.ffmpeg_preview_label.setProperty('class', 'widget_label')
+        self.ffmpeg_preview_panel.layout().addWidget(self.ffmpeg_preview_label, 0)
+
+        self.ffmpeg_preview_image = QLabel()
+        self.ffmpeg_preview_image.setProperty('class', 'widget_label')
+        self.ffmpeg_preview_image.setAlignment(Qt.AlignTop)
+        self.ffmpeg_preview_panel.layout().addWidget(self.ffmpeg_preview_image, 1)
+
+        self.ffmpeg_preview_panel.layout().addStretch()
+
+        self.ffmpeg_panel.layout().addWidget(self.ffmpeg_preview_panel, 1, 3, 1, 1)
+
+        self.video_tabwidget.addTab(self.ffmpeg_panel, 'FFMPEG')
+
+        self.layout().addWidget(self.video_tabwidget, 0)
+
+        # Standalone "generate transparent video" button -----------------
+        self.generate_transparent_video_button = QPushButton()
+        self.generate_transparent_video_button.setProperty('class', 'button_dark')
+        self.generate_transparent_video_button.clicked.connect(self._generate_transparent_video_clicked)
+        self.generate_transparent_video_button.setVisible(False)
+        self.layout().addWidget(self.generate_transparent_video_button)
+
+    # ------------------------------------------------------------------
+    # Placeholder slots — user will rewire actual behaviour later.
+    # ------------------------------------------------------------------
+    def _fontsize_changed(self):
+        pass
+
+    def _fontfamily_changed(self):
+        pass
+
+    def _color_button_clicked(self):
+        pass
+
+    def _outline_group_toggled(self):
+        pass
+
+    def _outline_value_changed(self):
+        pass
+
+    def _shadow_group_toggled(self):
+        pass
+
+    def _shadow_distance_changed(self):
+        pass
+
+    def _margins_left_changed(self):
+        pass
+
+    def _margins_bottom_changed(self):
+        pass
+
+    def _margins_right_changed(self):
+        pass
+
+    def _command_text_edited(self):
+        pass
+
+    def _export_button_clicked(self):
+        pass
+
+    def _generate_transparent_video_clicked(self):
+        pass
+
+    def _update_preview(self):
+        # Placeholder; user will reconnect to a worker thread later.
+        pass
+
+    def showEvent(self, event):
+        self._update_preview()
+        return super().showEvent(event)
+
+    def get_config(self):
+        return {'category': 'video'}
+
+
 class ExportDialog(utils.SimpleDialog):
     """Universal export dialog. Returns a config dict via
     `exec_and_get_values()` or None when cancelled."""
@@ -241,8 +615,7 @@ class ExportDialog(utils.SimpleDialog):
         self.audio_panel = _AudioPanel(has_background=has_background, has_vocals=has_vocals)
         self._pages.addWidget(self.audio_panel)
 
-        self.video_panel = _AudioPanel(has_background=has_background, has_vocals=has_vocals,
-                                       formats=VIDEO_FORMATS)
+        self.video_panel = _VideoPanel()
         self._pages.addWidget(self.video_panel)
 
         self.documents_panel = _DocumentsPanel()
