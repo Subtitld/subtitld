@@ -2,7 +2,6 @@ import os
 import copy
 import hashlib
 import shutil
-import subprocess
 import zipfile
 from docx import Document
 import json
@@ -50,74 +49,94 @@ def _downscale_speaker_image(qimg):
     )
 
 
-def _is_riff_wav(path):
-    """True iff `path` starts with the `RIFF....WAVE` header. Used to
-    spot dub files that carry MP3 bytes despite the `.wav` extension —
-    libsndfile can't decode those, so we transcode them on load."""
-    try:
-        with open(path, 'rb') as fh:
-            header = fh.read(12)
-    except OSError:
-        return True  # don't try to transcode something we can't even read
-    return len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WAVE'
-
-
-def _transcode_misnamed_mp3_dubs(segments_list):
-    """Walk every dub in `segments_list` and rewrite any non-RIFF file as
-    a real PCM WAV in place. Touching the file alone is enough — the dub
-    dict's `path` already points at it. No-op for files that ffmpeg can't
-    reach; failures are logged via stderr but don't abort the load."""
-    seen = set()
-    for segment in segments_list:
-        for dub in segment.get('dubbing', []) or []:
-            path = dub.get('path')
-            if not path or path in seen or not os.path.isfile(path):
-                continue
-            seen.add(path)
-            if _is_riff_wav(path):
-                continue
-            tmp_in = path + '.in'
-            try:
-                os.replace(path, tmp_in)
-            except OSError:
-                continue
-            try:
-                subprocess.run(
-                    [
-                        session.FFMPEG_EXECUTABLE,
-                        '-y', '-loglevel', 'error',
-                        '-i', tmp_in,
-                        '-ac', '1',
-                        '-ar', '24000',
-                        '-c:a', 'pcm_s16le',
-                        path,
-                    ],
-                    check=True,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    startupinfo=session.STARTUPINFO,
-                )
-            except Exception:
-                # Restore the original on transcode failure so we don't
-                # lose the data — playback will still be silent for it,
-                # but a re-export from another tool can recover.
-                try:
-                    os.replace(tmp_in, path)
-                except OSError:
-                    pass
-                continue
-            try:
-                os.remove(tmp_in)
-            except OSError:
-                pass
-
-
 def _usfx_extract_dir(usfx_path):
     project_hash = hashlib.md5(os.path.abspath(usfx_path).encode('utf-8')).hexdigest()
     path = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'usfx', project_hash)
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _is_phase1_usfx_member(name):
+    """Return True for zip members that must be on disk before the
+    production screen can render — the XML, the speaker thumbnails, the
+    dub WAVs. Heavy caches (audio stems, waveform.npy) are streamed in
+    afterwards by `_USFXBackgroundExtractor`; the bundled video is
+    handled upstream by `peek_usfx_video()`."""
+    if not name or name.endswith('/'):
+        return False
+    if name == 'subtitles.usf' or name == 'manifest.xml':
+        return True
+    if name.startswith('assets/speakers/') or name.startswith('assets/dubs/'):
+        return True
+    # Tolerate `.usf` at the zip root with an unusual filename.
+    if '/' not in name and name.lower().endswith('.usf'):
+        return True
+    return False
+
+
+class _USFXBackgroundExtractor(QThread):
+    """Stream the heavy USFX members (audio stems + waveform cache) into
+    their final cache locations after the production screen is already
+    visible. Phase 1 extracts only the assets needed for first paint;
+    this thread picks up the rest without blocking the open.
+
+    All members handled here are nice-to-have caches:
+      * `assets/waveform.npy` → `<cache>/waveform/<key>_waveform.npy`
+      * `assets/audio/<kind>.flac` → `<audiosep>/<key>_<kind>.flac`
+
+    If a downstream feature (audio separation, zoom-out) is invoked before
+    this finishes, the affected code paths fall back to recomputing — no
+    user-visible error. Writes are atomic via `.tmp` + `os.replace` so a
+    crash mid-extract leaves clean state, not a half-written cache.
+    """
+    def __init__(self, usfx_path, cache_key, parent=None):
+        super().__init__(parent)
+        self._usfx_path = usfx_path
+        self._cache_key = cache_key
+
+    def _stream(self, zf, arcname, target_path):
+        if os.path.exists(target_path):
+            return
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        tmp = target_path + '.tmp'
+        try:
+            with zf.open(arcname) as src, open(tmp, 'wb') as dst:
+                shutil.copyfileobj(src, dst, length=1 << 20)  # 1 MiB chunks
+            os.replace(tmp, target_path)
+        except Exception:
+            if os.path.exists(tmp):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+
+    def run(self):
+        if not self._cache_key or not os.path.isfile(self._usfx_path):
+            return
+        try:
+            with zipfile.ZipFile(self._usfx_path, 'r') as zf:
+                names = set(zf.namelist())
+
+                if 'assets/waveform.npy' in names:
+                    target = os.path.join(
+                        session.PATH_SUBTITLD_USER_CACHE, 'waveform',
+                        f'{self._cache_key}_waveform.npy',
+                    )
+                    self._stream(zf, 'assets/waveform.npy', target)
+
+                for kind in ('original', 'vocals', 'background'):
+                    arc = f'assets/audio/{kind}.flac'
+                    if arc not in names:
+                        continue
+                    target = os.path.join(
+                        session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                        f'{self._cache_key}_{kind}.flac',
+                    )
+                    self._stream(zf, arc, target)
+        except Exception:
+            # Background pre-cache is best-effort; any failure just means
+            # the affected feature will recompute on demand later.
+            pass
 
 
 USFX_OPTION_DEFAULTS = {
@@ -332,8 +351,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = 'USFX'
             extract_dir = _usfx_extract_dir(subtitle_file)
 
+            # Phase 1: extract only what the production screen needs to
+            # render — USF/manifest/speakers/dubs. Heavy assets (FLAC
+            # stems, waveform.npy) stream in afterwards via
+            # _USFXBackgroundExtractor; bundled video is handled upstream
+            # by peek_usfx_video().
             with zipfile.ZipFile(subtitle_file, 'r') as zf:
-                zf.extractall(extract_dir)
+                for member in zf.namelist():
+                    if _is_phase1_usfx_member(member):
+                        zf.extract(member, extract_dir)
 
             inner_usf = os.path.join(extract_dir, 'subtitles.usf')
             if not os.path.exists(inner_usf):
@@ -378,14 +404,6 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     if path and not os.path.isabs(path):
                         dub['path'] = os.path.join(extract_dir, path)
 
-            # Older USFX bundles ship edge-tts dubs as MP3 bytes saved with
-            # a `.wav` extension (the dub generator used to forward MP3
-            # straight from edge-tts without transcoding). The audio engine
-            # reads dubs through libsndfile, which can't decode MP3, so
-            # those clips silently fail to play. One-shot migration here
-            # rewrites them as real PCM WAVs in place.
-            _transcode_misnamed_mp3_dubs(segments_list)
-
             # Resolve the project's source video. Priority: bundled video file →
             # original-path entry recorded in the manifest → same-folder match
             # against the manifest basename. Fall back is leaving session.VIDEO
@@ -428,30 +446,20 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     except (TypeError, ValueError):
                         pass
 
-            # Copy bundled caches to the cache directories, keyed against the current video.
+            # Spawn the Phase 2 extractor to stream heavy assets (FLAC
+            # stems, waveform.npy) into their final cache locations in
+            # the background. The reference is parked on the session
+            # module so the QThread isn't garbage-collected mid-run; a
+            # subsequent project open replaces it (the old thread either
+            # finishes or its remaining writes no-op against existing
+            # cache files via the `os.path.exists` guard in `_stream`).
             current_video = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
             current_key = utils.get_cache_key(current_video) if current_video else None
             if current_key:
-                wf_bundled = os.path.join(extract_dir, 'assets', 'waveform.npy')
-                if os.path.isfile(wf_bundled):
-                    wf_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
-                    os.makedirs(wf_dir, exist_ok=True)
-                    wf_target = os.path.join(wf_dir, f'{current_key}_waveform.npy')
-                    if not os.path.exists(wf_target):
-                        try:
-                            shutil.copy(wf_bundled, wf_target)
-                        except Exception:
-                            pass
-
-                for kind in ('original', 'vocals', 'background'):
-                    bundled = os.path.join(extract_dir, 'assets', 'audio', f'{kind}.flac')
-                    if os.path.isfile(bundled):
-                        target = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION, f'{current_key}_{kind}.flac')
-                        if not os.path.exists(target):
-                            try:
-                                shutil.copy(bundled, target)
-                            except Exception:
-                                pass
+                session.USFX_BACKGROUND_LOAD = _USFXBackgroundExtractor(
+                    subtitle_file, current_key,
+                )
+                session.USFX_BACKGROUND_LOAD.start()
 
             if not isinstance(session.FORMAT, dict):
                 session.FORMAT = {}

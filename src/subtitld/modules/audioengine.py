@@ -376,16 +376,30 @@ class SubtitleDubClip:
             np.clip(mono, -1.0, 1.0, out=mono)
             packed = (mono * 32767.0).astype(np.int16)
             self._loaded[path] = (packed, self.samplerate, len(packed))
-            # Evict stale entries: each clip's `read()` only ever consults
-            # the current dub's path (`_current_dub()`), so older paths
+            # Evict stale entries: `read()` consults the current dub's
+            # segment paths (or the legacy single path); older paths
             # left in `_loaded` from previous regenerations are dead
             # memory. A single 3-second mono int16 dub at 48 kHz is
             # 287 KB; across a 500-subtitle project with even modest
-            # regeneration history this still leaks tens of MB. We keep
-            # only the path we just loaded — the audio thread's
-            # `.get(path)` lookup is atomic, so dropping siblings here
-            # is callback-safe.
-            stale = [p for p in self._loaded if p != path]
+            # regeneration history this still leaks tens of MB.
+            #
+            # Keep:
+            #   - the path we just loaded
+            #   - every audio-segment path in the current dub (multi-path
+            #     dubs created by split-with-reference or future
+            #     ASR-replace flows would otherwise self-evict their
+            #     segments as each new file finishes loading)
+            #
+            # The audio thread's `.get(path)` lookup is atomic, so
+            # dropping siblings here is callback-safe.
+            from subtitld.modules import dub_clip
+            keep = {path}
+            dub = self._current_dub()
+            if dub is not None:
+                for p in dub_clip.collect_segment_paths(dub):
+                    if p:
+                        keep.add(p)
+            stale = [p for p in self._loaded if p not in keep]
             for p in stale:
                 self._loaded.pop(p, None)
         except Exception:
@@ -452,93 +466,170 @@ class SubtitleDubClip:
         dub = self._current_dub()
         if not dub:
             return None
-        path = dub.get('path')
-        if not path:
-            return None
-        loaded = self._loaded.get(path)
-        if loaded is None:
-            # Not loaded yet — punt to the background thread. NEVER open
-            # a SoundFile from here: a synchronous disk read on a cold
-            # path can stall the audio callback past one block budget
-            # (42.7 ms at 48 kHz / 2048) and the user hears a crackle in
-            # what should be silence.
-            self._request_async_preload(path)
-            return None
-        data, src_sr, total_frames = loaded
-        start_time = float(dub.get('start', 0.0))
-        clip_end = start_time + total_frames / src_sr
+
+        base = float(dub.get('start', 0.0))
+
+        # Segment list of (seg_t0, seg_t1, seg) to render. Legacy dubs
+        # (no `segments` key) collapse to a single virtual segment built
+        # from `dub['path']` + the loaded frame count — NO file I/O on
+        # the audio thread. `segments == []` means "explicitly empty
+        # take" → return silence (None).
+        segments_field = dub.get('segments')
+        legacy_virtual = None
+        if segments_field is None:
+            path = dub.get('path')
+            if not path:
+                return None
+            loaded = self._loaded.get(path)
+            if loaded is None:
+                self._request_async_preload(path)
+                return None
+            _, src_sr, total_frames = loaded
+            seg_dur = total_frames / src_sr if src_sr > 0 else 0.0
+            if seg_dur <= 0.0:
+                return None
+            legacy_virtual = {
+                'type': 'audio', 'path': path,
+                'start': 0.0, 'end': seg_dur,
+            }
+            segments_iter = (legacy_virtual,)
+            total_dur = seg_dur
+        else:
+            if not segments_field:
+                return None
+            segments_iter = segments_field
+            total_dur = 0.0
+            for seg in segments_iter:
+                if seg.get('type', 'audio') == 'silence':
+                    total_dur += max(0.0, float(seg.get('duration', 0.0) or 0.0))
+                else:
+                    end = seg.get('end')
+                    if end is not None:
+                        total_dur += max(0.0, float(end) - float(seg.get('start', 0.0)))
+
         t0 = playhead
         t1 = playhead + frames / samplerate
-        if t1 <= start_time or t0 >= clip_end:
+        clip_end = base + total_dur
+        if t1 <= base or t0 >= clip_end:
             return None
-        out = buffer_pool.get((frames, 2), dtype=np.float32)
-        clip_t0 = max(t0, start_time)
-        clip_t1 = min(t1, clip_end)
-        out_start = round((clip_t0 - t0) * samplerate)
-        out_end = round((clip_t1 - t0) * samplerate)
-        num_output_frames = out_end - out_start
-        if num_output_frames <= 0:
-            return out
-        is_clip_start = clip_t0 <= start_time + 1.0 / samplerate
-        is_clip_end = clip_t1 >= clip_end - 1.0 / samplerate
 
-        # `data` is int16 mono at engine samplerate. Convert + scale to
-        # float32 in [-1, 1] via one np.multiply, then broadcast to both
-        # output channels. The scale factor folds the gain in so there's
-        # exactly one multiply pass over the samples.
+        # Find first/last audio-segment indices so fades land only at
+        # genuine discontinuities (dub outer bounds and silence joins).
+        # Internal audio→audio splits stay seamless — both halves point
+        # at contiguous source samples, so a fade there would create a
+        # dip the user never asked for.
+        first_audio_idx = -1
+        last_audio_idx = -1
+        for i, seg in enumerate(segments_iter):
+            if seg.get('type', 'audio') != 'silence':
+                if first_audio_idx == -1:
+                    first_audio_idx = i
+                last_audio_idx = i
+
+        # `data` int16 mono is converted+scaled to float32 in [-1, 1]
+        # via one np.multiply per segment slice; gain folds in so we
+        # do exactly one multiply pass.
         scale = np.float32(self.gain) * _INT16_TO_FLOAT32
 
-        # Fast path: source samplerate matches engine and no stretch in
-        # flight. Just slice the int16 source, convert+scale once, write
-        # the result into both output channels.
-        if src_sr == samplerate and self.speed == 1.0:
-            src_frame_start = int(round((clip_t0 - start_time) * src_sr))
-            avail = total_frames - src_frame_start
-            if avail <= 0:
-                return out
-            n = min(num_output_frames, avail)
-            # One alloc: int16 → float32 with gain baked in. Cheap (n
-            # ≤ blocksize = 2048 → 8 KB).
-            mono_f32 = np.multiply(
-                data[src_frame_start:src_frame_start + n], scale,
-                dtype=np.float32, casting='unsafe',
-            )
-            out[out_start:out_start + n, 0] = mono_f32
-            out[out_start:out_start + n, 1] = mono_f32
-        else:
-            # Slow path: speed != 1.0 (live stretch preview). Completed
-            # stretches re-render the WAV file at the new rate so the
-            # callback usually hits the fast path; this exists only so
-            # the user-drag preview stays audible.
-            ratio = (src_sr / samplerate) * self.speed
-            src_frame_start = (clip_t0 - start_time) * src_sr
-            src_idx = np.arange(num_output_frames, dtype=np.float64) * ratio + src_frame_start
-            i0 = np.floor(src_idx).astype(np.int64)
-            i1 = i0 + 1
-            valid = (i0 >= 0) & (i1 < total_frames)
-            valid_count = int(np.count_nonzero(valid))
-            if valid_count == 0:
-                return out
-            i0v = i0[valid]
-            i1v = i1[valid]
-            fracv = (src_idx[valid] - i0v).astype(np.float32)
-            # `data` is int16 mono → fancy-index produces int16 1-D
-            # arrays. Lift to float32 for the interp arithmetic.
-            s0 = data[i0v].astype(np.float32)
-            s1 = data[i1v].astype(np.float32)
-            mono_f32 = ((1.0 - fracv) * s0 + fracv * s1) * scale
-            out[out_start:out_start + valid_count, 0] = mono_f32
-            out[out_start:out_start + valid_count, 1] = mono_f32
+        out = None  # allocate lazily on first rendered slice
+        cursor = base
+        for i, seg in enumerate(segments_iter):
+            seg_type = seg.get('type', 'audio')
+            if seg_type == 'silence':
+                cursor += max(0.0, float(seg.get('duration', 0.0) or 0.0))
+                continue
+            end = seg.get('end')
+            if end is None:
+                # Unresolved end — skip rather than guess. Editing
+                # helpers in dub_clip.py always set `end`; only stale
+                # data on disk could land us here.
+                continue
+            seg_source_start = float(seg.get('start', 0.0))
+            seg_dur = max(0.0, float(end) - seg_source_start)
+            seg_t0 = cursor
+            seg_t1 = cursor + seg_dur
+            cursor = seg_t1
+            if seg_t1 <= t0 or seg_t0 >= t1:
+                continue
 
-        fade_len = min(FADE_FRAMES, num_output_frames)
-        if is_clip_start:
-            # Pre-built (FADE_FRAMES, 1) ramp shared by every clip in
-            # the engine — broadcasts against the (n, 2) stereo slice
-            # without any per-callback allocation.
-            out[out_start:out_start + fade_len] *= _FADE_IN_RAMP[:fade_len]
-        if is_clip_end:
-            end = out_start + num_output_frames
-            out[end - fade_len:end] *= _FADE_OUT_RAMP[:fade_len]
+            path = seg.get('path')
+            if not path:
+                continue
+            loaded = self._loaded.get(path)
+            if loaded is None:
+                self._request_async_preload(path)
+                continue
+            data, src_sr, total_frames = loaded
+
+            clip_t0 = max(t0, seg_t0)
+            clip_t1 = min(t1, seg_t1)
+            out_start = round((clip_t0 - t0) * samplerate)
+            out_end = round((clip_t1 - t0) * samplerate)
+            n_out = out_end - out_start
+            if n_out <= 0:
+                continue
+
+            if out is None:
+                out = buffer_pool.get((frames, 2), dtype=np.float32)
+
+            # Fast path: source samplerate matches engine and no stretch
+            # in flight. Slice the int16 source, convert+scale once,
+            # write into both output channels.
+            if src_sr == samplerate and self.speed == 1.0:
+                src_frame_start = int(round(
+                    (clip_t0 - seg_t0 + seg_source_start) * src_sr
+                ))
+                avail = total_frames - src_frame_start
+                if avail <= 0:
+                    continue
+                n = min(n_out, avail)
+                mono_f32 = np.multiply(
+                    data[src_frame_start:src_frame_start + n], scale,
+                    dtype=np.float32, casting='unsafe',
+                )
+                out[out_start:out_start + n, 0] = mono_f32
+                out[out_start:out_start + n, 1] = mono_f32
+                rendered_n = n
+            else:
+                # Slow path: speed != 1.0 (live stretch preview).
+                ratio = (src_sr / samplerate) * self.speed
+                src_frame_start = (clip_t0 - seg_t0 + seg_source_start) * src_sr
+                src_idx = np.arange(n_out, dtype=np.float64) * ratio + src_frame_start
+                i0 = np.floor(src_idx).astype(np.int64)
+                i1 = i0 + 1
+                valid = (i0 >= 0) & (i1 < total_frames)
+                valid_count = int(np.count_nonzero(valid))
+                if valid_count == 0:
+                    continue
+                i0v = i0[valid]
+                i1v = i1[valid]
+                fracv = (src_idx[valid] - i0v).astype(np.float32)
+                s0 = data[i0v].astype(np.float32)
+                s1 = data[i1v].astype(np.float32)
+                mono_f32 = ((1.0 - fracv) * s0 + fracv * s1) * scale
+                out[out_start:out_start + valid_count, 0] = mono_f32
+                out[out_start:out_start + valid_count, 1] = mono_f32
+                rendered_n = valid_count
+
+            # Per-segment fades — only at real discontinuities (dub
+            # outer bound or adjacent silence). audio→audio internal
+            # splits stay seamless: both halves point at contiguous
+            # source bytes, so any fade there would create an audible
+            # dip the user never asked for.
+            prev_is_silence = (i > 0
+                               and segments_iter[i - 1].get('type', 'audio') == 'silence')
+            next_is_silence = (i + 1 < len(segments_iter)
+                               and segments_iter[i + 1].get('type', 'audio') == 'silence')
+            seg_starts_at_window = clip_t0 <= seg_t0 + 1.0 / samplerate
+            seg_ends_at_window = clip_t1 >= seg_t1 - 1.0 / samplerate
+            fade_len = min(FADE_FRAMES, rendered_n)
+            if fade_len > 0:
+                if seg_starts_at_window and (i == first_audio_idx or prev_is_silence):
+                    out[out_start:out_start + fade_len] *= _FADE_IN_RAMP[:fade_len]
+                if seg_ends_at_window and (i == last_audio_idx or next_is_silence):
+                    end_idx = out_start + rendered_n
+                    out[end_idx - fade_len:end_idx] *= _FADE_OUT_RAMP[:fade_len]
+
         return out
 
     def clear_cache(self):
@@ -1017,8 +1108,12 @@ class SoundDeviceAudioEngine:
                         break
 
             dub = sub['dubbing'][0]
-            path = dub.get('path')
-            if path:
+            # Preload every audio path the dub references — segments may
+            # reference multiple files after a clone-ref split, or after
+            # ASR-driven trims that swap part of the take. The helper
+            # falls back to `dub['path']` for legacy single-file dubs.
+            from subtitld.modules import dub_clip
+            for path in dub_clip.collect_segment_paths(dub):
                 clip.preload(path)
 
         for sub_id in list(self.subtitle_clips):

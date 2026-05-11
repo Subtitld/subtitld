@@ -86,6 +86,12 @@ if not PATH_SUBTITLD_DATA_AUDIOSEPARATION.exists():
 
 PATH_SUBTITLD_USER_CONFIG_FILE = PATH_SUBTITLD_USER_CONFIG / 'subtitld.config'
 
+# Reference handle for the background extractor that streams heavy USFX
+# assets (audio stems, waveform cache) after a project open. Parked here
+# so the QThread object stays alive for its lifetime; replaced on each
+# project open. None when no extraction is in flight.
+USFX_BACKGROUND_LOAD = None
+
 # VERSION_NUMBER = '20.07.0.0'
 # if os.path.isfile(os.path.join(PATH_SUBTITLD, 'current_version')):
 #     VERSION_NUMBER = open(os.path.join(PATH_SUBTITLD, 'current_version')).read().strip()

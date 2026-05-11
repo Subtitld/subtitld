@@ -1861,6 +1861,71 @@ def history_redo_command(self):
         _refresh_after_history(self)
 
 
+def _dub_segment_at_cursor(self):
+    """Locate the dub segment that contains the playback cursor. Returns
+    (subtitle, dub, segment_index, offset_within_segment, segment) or None."""
+    from subtitld.modules import dub_clip
+    cursor = float(session.SUBTITLE.get('position', 0.0) or 0.0)
+    for subtitle in session.SUBTITLE.get('segments', []) or []:
+        if not subtitle.get('dubbing'):
+            continue
+        dub = subtitle['dubbing'][0]
+        for idx, (t0, t1, seg) in enumerate(dub_clip.iter_segment_ranges(dub)):
+            if t0 <= cursor < t1:
+                return (subtitle, dub, idx, cursor - t0, seg)
+    return None
+
+
+def _refresh_dub_after_edit(self):
+    """Push the updated dub state to the audio engine and repaint the
+    timeline. Mirrors Timeline._refresh_dub_after_edit so split/gap
+    shortcuts behave like the right-click menu items."""
+    self.timeline_widget.update()
+    preview = getattr(self, 'preview_panel_player', None)
+    if preview is not None:
+        device = getattr(preview, '_audio_device', None)
+        if device is not None and hasattr(device, 'sync_subtitle_dubs'):
+            device.sync_subtitle_dubs(session.SUBTITLE.get('segments', []) or [])
+
+
+@shortcut('split_dub_at_cursor', 'Split dub clip at cursor', ['Shift+S'])
+def split_dub_at_cursor(self):
+    if _focus_is_text_widget(self):
+        return
+    from subtitld.modules import dub_clip
+    hit = _dub_segment_at_cursor(self)
+    if hit is None:
+        return
+    _subtitle, dub, idx, offset, seg = hit
+    if seg.get('type', 'audio') != 'audio':
+        return
+    history.history_append()
+    if dub_clip.split_audio_segment(dub, idx, offset):
+        session.set_unsaved()
+        _refresh_dub_after_edit(self)
+
+
+@shortcut('insert_gap_at_cursor', 'Insert silence gap at cursor inside dub clip', ['Shift+G'])
+def insert_gap_at_cursor(self):
+    if _focus_is_text_widget(self):
+        return
+    from subtitld.modules import dub_clip
+    hit = _dub_segment_at_cursor(self)
+    if hit is None:
+        return
+    _subtitle, dub, idx, offset, seg = hit
+    history.history_append()
+    seg_dur = dub_clip.segment_duration(seg)
+    if seg.get('type', 'audio') == 'audio' and 0 < offset < seg_dur:
+        # Split the audio first so the gap goes exactly at the cursor —
+        # otherwise it'd land after the whole segment, which is rarely
+        # what the user wants when they pressed the shortcut mid-clip.
+        dub_clip.split_audio_segment(dub, idx, offset)
+    dub_clip.insert_silence_after(dub, idx, 0.5)
+    session.set_unsaved()
+    _refresh_dub_after_edit(self)
+
+
 @shortcut('zoom_in', 'Zoom in', ['+'])
 def zoomin_button_clicked(self):
     """Function to call when zoonin button is clicked"""

@@ -414,11 +414,172 @@ def case_speaker_image_downscale():
     print(f'  256×1024 → {out_tall.width()}×{out_tall.height()} ✓')
 
 
+def case_usfx_phase1_member_selection():
+    """The USFX load splits zip members into Phase 1 (extract synchronously
+    so the production screen can render) and Phase 2 (stream in a
+    background thread because they're big). The predicate
+    `_is_phase1_usfx_member` is the contract: anything it returns True
+    for blocks the open; everything else doesn't. A regression on which
+    side a member lands on is a regression on perceived open time."""
+    print('\n=== USFX Phase 1 selects only fast-path members ===')
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    from subtitld.modules.file_io import _is_phase1_usfx_member
+
+    keep = [
+        'subtitles.usf',
+        'manifest.xml',
+        'assets/speakers/Alice.png',
+        'assets/speakers/Bob_2.jpg',
+        'assets/dubs/abc123.wav',
+        'assets/dubs/uid-42.mp3',
+        'project.usf',           # tolerated odd-name USF at root
+    ]
+    skip = [
+        # Heavy caches that Phase 2 owns.
+        'assets/waveform.npy',
+        'assets/audio/original.flac',
+        'assets/audio/vocals.flac',
+        'assets/audio/background.flac',
+        # Bundled video is handled by peek_usfx_video upstream.
+        'assets/video/My Movie.mkv',
+        # Directory entries — extractor would skip; predicate must too.
+        'assets/speakers/',
+        'assets/dubs/',
+        '',
+    ]
+
+    for name in keep:
+        assert _is_phase1_usfx_member(name), (
+            f'expected Phase 1 to keep {name!r}, predicate said skip')
+    for name in skip:
+        assert not _is_phase1_usfx_member(name), (
+            f'expected Phase 1 to skip {name!r}, predicate said keep')
+    print(f'  {len(keep)} kept, {len(skip)} skipped ✓')
+
+
+def case_usfx_background_extractor_streams_caches():
+    """_USFXBackgroundExtractor copies the heavy USFX members (waveform
+    cache + audio stems) into their final cache target dirs, atomically.
+    Without it Phase 1 is fast but the user loses the bundled caches.
+
+    Drive a fake USFX zip through it and confirm:
+      * Cache target files exist with the right bytes.
+      * No `.tmp` leftover (atomicity).
+      * Re-running against an existing target is a no-op (no overwrite,
+        no crash).
+      * Missing zip members are tolerated (best-effort)."""
+    print('\n=== USFX Phase 2 streams heavy assets to cache ===')
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    import zipfile
+
+    # Patch session paths to a clean temp tree so we can assert against
+    # them without touching the user's real cache.
+    from subtitld.modules import session
+    workdir = tempfile.mkdtemp(prefix='usfx-phase2-test-')
+    real_cache = session.PATH_SUBTITLD_USER_CACHE
+    real_audiosep = session.PATH_SUBTITLD_DATA_AUDIOSEPARATION
+    try:
+        session.PATH_SUBTITLD_USER_CACHE = workdir
+        audiosep = os.path.join(workdir, 'audiosep')
+        os.makedirs(audiosep, exist_ok=True)
+        session.PATH_SUBTITLD_DATA_AUDIOSEPARATION = audiosep
+
+        # Build a fake USFX zip with both Phase 1 and Phase 2 members.
+        usfx_path = os.path.join(workdir, 'project.usfx')
+        wf_bytes = b'WAVEFORM_NPY_PAYLOAD' * 1024  # ~20 KB
+        orig_bytes = b'FLAC_ORIGINAL_PAYLOAD' * 2048
+        vocals_bytes = b'FLAC_VOCALS_PAYLOAD' * 2048
+        # Note: background.flac intentionally absent — we want to confirm
+        # the extractor doesn't crash on a missing optional member.
+        with zipfile.ZipFile(usfx_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('subtitles.usf', b'<usf/>')
+            zf.writestr('manifest.xml', b'<manifest/>')
+            zf.writestr('assets/speakers/Foo.png', b'PNG_BYTES')
+            zf.writestr('assets/dubs/uid1.wav', b'WAV_BYTES')
+            zf.writestr('assets/waveform.npy', wf_bytes)
+            zf.writestr('assets/audio/original.flac', orig_bytes)
+            zf.writestr('assets/audio/vocals.flac', vocals_bytes)
+
+        from subtitld.modules.file_io import _USFXBackgroundExtractor
+
+        cache_key = 'cachekey_abc'
+        ex = _USFXBackgroundExtractor(usfx_path, cache_key)
+        ex.start()
+        assert ex.wait(10_000), 'Phase 2 extractor did not finish in 10s'
+
+        wf_target = os.path.join(workdir, 'waveform',
+                                 f'{cache_key}_waveform.npy')
+        orig_target = os.path.join(audiosep,
+                                   f'{cache_key}_original.flac')
+        vocals_target = os.path.join(audiosep,
+                                     f'{cache_key}_vocals.flac')
+        bg_target = os.path.join(audiosep,
+                                 f'{cache_key}_background.flac')
+
+        assert os.path.isfile(wf_target), 'waveform cache not extracted'
+        assert os.path.isfile(orig_target), 'original stem not extracted'
+        assert os.path.isfile(vocals_target), 'vocals stem not extracted'
+        assert not os.path.exists(bg_target), (
+            'background stem should not exist — it was absent from the zip')
+
+        with open(wf_target, 'rb') as fh:
+            assert fh.read() == wf_bytes, 'waveform payload corrupted'
+        with open(orig_target, 'rb') as fh:
+            assert fh.read() == orig_bytes, 'original FLAC payload corrupted'
+
+        # No leftover .tmp files anywhere we wrote.
+        for parent in (os.path.join(workdir, 'waveform'), audiosep):
+            for entry in os.listdir(parent):
+                assert not entry.endswith('.tmp'), (
+                    f'leftover .tmp in {parent}: {entry}')
+        print('  3 of 4 heavy members streamed to cache atomically ✓')
+
+        # Re-run against the same targets: must be a silent no-op (no
+        # rewrite, no crash). We touch the files first and confirm mtime
+        # doesn't change.
+        before = {p: os.stat(p).st_mtime_ns
+                  for p in (wf_target, orig_target, vocals_target)}
+        ex2 = _USFXBackgroundExtractor(usfx_path, cache_key)
+        ex2.start()
+        assert ex2.wait(10_000), 'second extractor run did not finish'
+        for p, mtime in before.items():
+            assert os.stat(p).st_mtime_ns == mtime, (
+                f'{os.path.basename(p)} was rewritten on re-extract '
+                '— os.path.exists guard broken')
+        print('  re-run against existing caches is a no-op ✓')
+
+        # Missing zip → silent best-effort (no crash, no creation).
+        gone = os.path.join(workdir, 'does-not-exist.usfx')
+        ex3 = _USFXBackgroundExtractor(gone, 'other_key')
+        ex3.start()
+        assert ex3.wait(5_000)
+        print('  missing zip → no crash ✓')
+
+        # Empty cache_key → no work done (guards against a degenerate
+        # "no video resolved" path).
+        ex4 = _USFXBackgroundExtractor(usfx_path, '')
+        ex4.start()
+        assert ex4.wait(5_000)
+        print('  empty cache_key → skipped ✓')
+    finally:
+        # Restore session paths so subsequent test cases use the real
+        # cache dirs.
+        session.PATH_SUBTITLD_USER_CACHE = real_cache
+        session.PATH_SUBTITLD_DATA_AUDIOSEPARATION = real_audiosep
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def main():
     case_waveform_int16_storage()
-    case_dub_cache_eviction()
+    case_usfx_phase1_member_selection()
+    case_usfx_background_extractor_streams_caches()
     case_dub_storage_is_int16_mono()
     case_speaker_image_downscale()
+    case_dub_cache_eviction()
     print('\nMemory cap cases passed.')
     return 0
 

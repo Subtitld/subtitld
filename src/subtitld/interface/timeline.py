@@ -498,6 +498,13 @@ class Timeline(QWidget):
         widget.dragging_dub = None
         widget.dragging_dub_offset = 0.0
 
+        # Per-segment dub editing state. `dub_segment_boundary_hovered` is
+        # populated by mouseMoveEvent so paintEvent / mousePressEvent can
+        # reuse the hit. `dub_segment_drag` holds the boundary being
+        # dragged (set on mousePress, cleared on release).
+        widget.dub_segment_boundary_hovered = None
+        widget.dub_segment_drag = None
+
         widget._left_arrow_cursor = _make_arrow_cursor('left')
         widget._right_arrow_cursor = _make_arrow_cursor('right')
 
@@ -789,7 +796,13 @@ class Timeline(QWidget):
                             mins, maxs, duration = peaks
                             dub_start = dub.get('start', subtitle['start'])
                             dub_x = dub_start * widget.width_proportion
-                            dub_w = duration * widget.width_proportion
+                            # Segment-aware width: silences inserted into the
+                            # take stretch the band, trims shrink it. Falls
+                            # back to source-file duration for legacy /
+                            # not-yet-edited dubs.
+                            from subtitld.modules import dub_clip as _dub_clip
+                            total_dub_dur = _dub_clip.clip_total_duration(dub) or duration
+                            dub_w = total_dub_dur * widget.width_proportion
                             if widget.dub_stretching is not None and widget.dub_stretching['subtitle'] is subtitle:
                                 dub_w = widget.dub_stretching['current_width']
                             if dub_w > 1:
@@ -833,6 +846,44 @@ class Timeline(QWidget):
                                 dub_path_shape.arcTo(px, py, 2 * r, 2 * r, 180, -90)
                                 dub_path_shape.closeSubpath()
                                 painter.drawPath(dub_path_shape)
+
+                                # Render silence segments as a darker stripe
+                                # over the dub band, plus a thin separator
+                                # line at every internal segment boundary so
+                                # split / gap edits are visible. Hovered
+                                # boundary draws thicker so the user can see
+                                # which one they'd grab.
+                                segment_ranges = list(_dub_clip.iter_segment_ranges(dub))
+                                if len(segment_ranges) > 1 or any(
+                                        s.get('type') == 'silence' for _, _, s in segment_ranges):
+                                    silence_brush = QColor(0, 0, 0, 110)
+                                    hovered_boundary = widget.dub_segment_boundary_hovered
+                                    hovered_idx = -1
+                                    if hovered_boundary and hovered_boundary['dub'] is dub:
+                                        hovered_idx = hovered_boundary['boundary_index']
+                                    for seg_t0, seg_t1, seg in segment_ranges:
+                                        if seg.get('type') != 'silence':
+                                            continue
+                                        sx0 = seg_t0 * widget.width_proportion
+                                        sx1 = seg_t1 * widget.width_proportion
+                                        sil_rect = QRectF(
+                                            sx0, dub_inset.top(),
+                                            max(0.0, sx1 - sx0), dub_inset.height(),
+                                        )
+                                        painter.save()
+                                        painter.setPen(Qt.NoPen)
+                                        painter.setBrush(silence_brush)
+                                        painter.drawRect(sil_rect)
+                                        painter.restore()
+                                    for boundary_idx in range(len(segment_ranges) - 1):
+                                        bx = segment_ranges[boundary_idx][1] * widget.width_proportion
+                                        is_hovered = (boundary_idx == hovered_idx)
+                                        line_color = QColor(255, 255, 255,
+                                                            220 if is_hovered else 130)
+                                        line_width = 2 if is_hovered else 1
+                                        painter.setPen(QPen(line_color, line_width))
+                                        painter.drawLine(int(bx), int(dub_inset.top()),
+                                                         int(bx), int(dub_inset.bottom()))
 
                                 # Lock badge — anchors the clip to the subtitle.
                                 clip_locked = bool(dub.get('locked'))
@@ -1255,6 +1306,23 @@ class Timeline(QWidget):
             event.ignore()
             return
 
+        # Dub-segment boundary drag — must run BEFORE the dub-stretch /
+        # dub-drag handlers so a boundary inside the band wins over the
+        # full-clip handlers (the band lives inside the subtitle rect, so
+        # otherwise the click would be consumed by drag-the-dub-start).
+        boundary_hit = widget._dub_segment_boundary_at_position(event.pos())
+        if boundary_hit is not None:
+            from subtitld.modules import history
+            history.history_append()
+            widget.dub_segment_drag = {
+                'subtitle': boundary_hit['subtitle'],
+                'dub': boundary_hit['dub'],
+                'boundary_index': boundary_hit['boundary_index'],
+            }
+            widget.is_cursor_pressing = True
+            event.accept()
+            return
+
         if widget.empty_state_hover_x is not None and not session.SUBTITLE.get('segments'):
             position = event.pos().x() / widget.width_proportion
             duration = float(session.CONFIG.get('default_new_subtitle_duration', 3.0) or 3.0)
@@ -1413,6 +1481,14 @@ class Timeline(QWidget):
         event.accept()
 
     def mouseReleaseEvent(widget, event):
+        if widget.dub_segment_drag is not None:
+            widget.dub_segment_drag = None
+            widget.is_cursor_pressing = False
+            session.set_unsaved()
+            widget._refresh_dub_after_edit()
+            event.accept()
+            return
+
         if widget.dub_stretch_active and widget.dub_stretching is not None:
             state = widget.dub_stretching
             widget.dub_stretch_active = False
@@ -1488,6 +1564,35 @@ class Timeline(QWidget):
         event.accept()
 
     def mouseMoveEvent(widget, event):
+        # Dragging a dub-segment boundary live: convert mouse x to a
+        # timeline position and ask dub_clip to apply the move. The helper
+        # rejects negative-duration moves so we don't need to clamp here.
+        if widget.dub_segment_drag is not None:
+            from subtitld.modules import dub_clip
+            new_t = max(0.0, event.pos().x() / widget.width_proportion)
+            dub_clip.move_boundary(
+                widget.dub_segment_drag['dub'],
+                widget.dub_segment_drag['boundary_index'],
+                new_t,
+            )
+            widget.update()
+            event.accept()
+            return
+
+        # Hover detection for boundary handles — set the hovered state and
+        # cursor when over an internal segment boundary, clear otherwise.
+        # Only when no other drag is in progress, so the cursor doesn't
+        # flicker between resize and the active drag's own shape.
+        if not widget.dub_stretch_active and not widget.dub_start_is_clicked:
+            boundary_hit = widget._dub_segment_boundary_at_position(event.pos())
+            if boundary_hit != widget.dub_segment_boundary_hovered:
+                widget.dub_segment_boundary_hovered = boundary_hit
+                widget.update()
+            if boundary_hit is not None:
+                widget.setCursor(Qt.SizeHorCursor)
+            elif widget.cursor().shape() == Qt.SizeHorCursor:
+                widget.unsetCursor()
+
         if widget.dub_stretch_active and widget.dub_stretching is not None:
             state = widget.dub_stretching
             delta = event.pos().x() - state['start_x']
@@ -1855,6 +1960,150 @@ class Timeline(QWidget):
             if rect is not None and rect.contains(pos):
                 return (subtitle, subtitle['dubbing'][0])
         return None
+
+    def _dub_band_rect_for(widget, subtitle):
+        """Return (dub, dub_band_rect) for `subtitle`'s first dub take, or
+        None when there's no dub or its width is 0. Geometry mirrors the
+        paint code so hit-testing stays in sync."""
+        from subtitld.modules import dub_clip
+        dubs = subtitle.get('dubbing') or []
+        if not dubs:
+            return None
+        dub = dubs[0]
+        total_dur = dub_clip.clip_total_duration(dub)
+        if total_dur <= 0:
+            return None
+        speakers = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
+        if speakers:
+            speaker_name = subtitle.get('speaker', 'A')
+            track_index = speakers.index(speaker_name) if speaker_name in speakers else 0
+            track_count = len(speakers)
+        else:
+            track_index, track_count = 0, 1
+        track_h = widget.subtitle_height / track_count
+        sub_top = widget.subtitle_y + track_h * track_index
+        band_ratio = 0.25
+        band_top = sub_top + track_h * (1.0 - band_ratio)
+        band_bottom = sub_top + track_h
+        dub_x = float(dub.get('start', subtitle['start'])) * widget.width_proportion
+        dub_w = total_dur * widget.width_proportion
+        return (dub, QRectF(dub_x, band_top, dub_w, band_bottom - band_top))
+
+    def _dub_segment_at_position(widget, pos):
+        """Find which dub segment is under `pos`. Returns a dict
+        {subtitle, dub, segment_index, segment_t0, segment_t1, segment,
+        time_at_x} or None."""
+        from subtitld.modules import dub_clip
+        if widget.width_proportion <= 0:
+            return None
+        time_at_x = pos.x() / widget.width_proportion
+        for subtitle in session.SUBTITLE.get('segments', []) or []:
+            info = widget._dub_band_rect_for(subtitle)
+            if info is None:
+                continue
+            dub, rect = info
+            if not rect.contains(QPointF(pos.x(), pos.y())):
+                continue
+            for idx, (t0, t1, seg) in enumerate(dub_clip.iter_segment_ranges(dub)):
+                if t0 <= time_at_x < t1:
+                    return {
+                        'subtitle': subtitle, 'dub': dub,
+                        'segment_index': idx, 'segment_t0': t0,
+                        'segment_t1': t1, 'segment': seg,
+                        'time_at_x': time_at_x,
+                    }
+        return None
+
+    def _dub_segment_boundary_at_position(widget, pos, threshold_px=4):
+        """Find an internal segment boundary near `pos`. Returns a dict
+        {subtitle, dub, boundary_index, boundary_time} or None."""
+        from subtitld.modules import dub_clip
+        if widget.width_proportion <= 0:
+            return None
+        for subtitle in session.SUBTITLE.get('segments', []) or []:
+            info = widget._dub_band_rect_for(subtitle)
+            if info is None:
+                continue
+            dub, rect = info
+            # Allow some Y slack so the boundary stays grabbable even at
+            # the band's edges where the cursor crosses sub-pixel.
+            if not (rect.top() - 4 <= pos.y() <= rect.bottom() + 4):
+                continue
+            ranges = list(dub_clip.iter_segment_ranges(dub))
+            for idx in range(len(ranges) - 1):
+                boundary_time = ranges[idx][1]
+                if abs(boundary_time * widget.width_proportion - pos.x()) <= threshold_px:
+                    return {
+                        'subtitle': subtitle, 'dub': dub,
+                        'boundary_index': idx, 'boundary_time': boundary_time,
+                    }
+        return None
+
+    def _refresh_dub_after_edit(widget):
+        """After a dub-segment edit, push the new state to the audio engine
+        and repaint the timeline."""
+        widget.update()
+        window = widget.window()
+        preview = getattr(window, 'preview_panel_player', None)
+        if preview is None:
+            return
+        device = getattr(preview, '_audio_device', None)
+        if device is not None and hasattr(device, 'sync_subtitle_dubs'):
+            device.sync_subtitle_dubs(session.SUBTITLE.get('segments', []) or [])
+
+    def contextMenuEvent(widget, event):
+        from PySide6.QtWidgets import QMenu
+        from subtitld.modules import dub_clip, history
+        hit = widget._dub_segment_at_position(event.pos())
+        if hit is None:
+            event.ignore()
+            return
+        seg_type = hit['segment'].get('type', 'audio')
+        menu = QMenu(widget)
+
+        if seg_type == 'audio':
+            act_split = menu.addAction(_('timeline.dub.split_here'))
+            act_gap = menu.addAction(_('timeline.dub.insert_gap_here'))
+
+            def do_split():
+                history.history_append()
+                offset = hit['time_at_x'] - hit['segment_t0']
+                if dub_clip.split_audio_segment(hit['dub'], hit['segment_index'], offset):
+                    session.set_unsaved()
+                    widget._refresh_dub_after_edit()
+
+            def do_gap():
+                history.history_append()
+                offset = hit['time_at_x'] - hit['segment_t0']
+                seg_dur = hit['segment_t1'] - hit['segment_t0']
+                inserted_at = hit['segment_index']
+                # If the click landed inside an audio segment (not on its
+                # outer edge), split first so the gap goes exactly at the
+                # cursor instead of after the whole segment.
+                if 0 < offset < seg_dur:
+                    dub_clip.split_audio_segment(hit['dub'], hit['segment_index'], offset)
+                dub_clip.insert_silence_after(hit['dub'], inserted_at, 0.5)
+                session.set_unsaved()
+                widget._refresh_dub_after_edit()
+
+            act_split.triggered.connect(do_split)
+            act_gap.triggered.connect(do_gap)
+
+        # Removing is allowed for any segment as long as more than one
+        # exists — removing the only segment would leave an empty take.
+        if len(list(dub_clip.iter_segment_ranges(hit['dub']))) > 1:
+            act_remove = menu.addAction(_('timeline.dub.remove_segment'))
+
+            def do_remove():
+                history.history_append()
+                if dub_clip.remove_segment(hit['dub'], hit['segment_index']):
+                    session.set_unsaved()
+                    widget._refresh_dub_after_edit()
+
+            act_remove.triggered.connect(do_remove)
+
+        menu.exec(event.globalPos())
+        event.accept()
 
     def _dub_cache_path(widget, path):
         cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
