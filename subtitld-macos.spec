@@ -5,20 +5,13 @@ block_cipher = None
 import os
 import shutil
 
-try:
-    import vosk
-    vosk_path = os.path.dirname(vosk.__file__)
-except ImportError:
-    vosk_path = None
+# Vosk used to be bundled here (libvosk.dyld at `vosk/`). It's now shipped
+# as an external add-on, so the host bundle no longer carries it.
 
 ffmpeg_path = shutil.which('ffmpeg')
 ffprobe_path = shutil.which('ffprobe')
 
 binaries_list = []
-if vosk_path:
-    libvosk = os.path.join(vosk_path, 'libvosk.dyld')
-    if os.path.exists(libvosk):
-        binaries_list.append((libvosk, 'vosk'))
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))
 if ffprobe_path:

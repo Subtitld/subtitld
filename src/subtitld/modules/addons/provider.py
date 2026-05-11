@@ -1,0 +1,266 @@
+"""Abstract provider interfaces — the contract every TTS/ASR/translation
+backend has to satisfy, regardless of whether it lives in-process (built-ins
+like Edge TTS, AssemblyAI) or out-of-process (subprocess add-ons that
+speak the JSON-line protocol from `protocol.py`).
+
+The shapes here are deliberately aligned with the existing `EdgeTTSEngine`
+signal layout in `left_panel_dubbing.py` so the rest of the app doesn't need
+to be rewritten when we swap a hardcoded engine reference for a provider
+lookup. In particular `speech_ready(uid, subtitle, path)` matches verbatim.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from PySide6.QtCore import QObject, Signal
+
+
+# ---------------------------------------------------------------------------
+# Capability tasks. Strings are the wire-level identifiers used in both the
+# add-on manifest (`tasks: [...]`) and the protocol (`type` field of a request
+# frame). Don't rename without bumping `protocol.PROTOCOL_VERSION`.
+# ---------------------------------------------------------------------------
+TASK_TTS_SYNTHESIZE = 'tts.synthesize'
+TASK_ASR_TRANSCRIBE = 'asr.transcribe'
+TASK_TRANSLATE = 'translate.text'
+TASK_AUDIO_SEPARATE = 'audio.separate'
+
+
+class Provider(QObject):
+    """Common provider base.
+
+    Subclasses (`TTSProvider`, `ASRProvider`, ...) add task-specific signals
+    and methods. The `id` is what gets stored in saved projects (e.g.
+    `subtitle['dubbing'][0]['engine']`) and what the UI uses for combobox
+    selection — must be stable across versions.
+    """
+
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+
+    # ---- identity -------------------------------------------------------
+    @property
+    def id(self) -> str:  # noqa: A003 — name mirrors manifest field
+        raise NotImplementedError
+
+    @property
+    def display_name(self) -> str:
+        return self.id
+
+    @property
+    def is_builtin(self) -> bool:
+        """Built-in providers ship inside the Subtitld binary; external ones
+        live under `PATH_SUBTITLD_ADDONS`. The UI uses this to gate the
+        Uninstall button."""
+        return False
+
+    @property
+    def tasks(self) -> list[str]:
+        """Wire-level task identifiers this provider can serve."""
+        raise NotImplementedError
+
+    @property
+    def languages(self) -> list[str]:
+        """BCP-47 lowercased tags this provider can produce/consume.
+
+        Used by the AddonsPanel filter row to surface providers matching a
+        user-selected language. Empty list means "no language metadata
+        declared" — the provider still appears under the "Any" filter.
+
+        Default returns []; built-ins override with a hardcoded list,
+        add-on providers read it from the manifest in `AddonProvider.__init__`.
+        """
+        return []
+
+    @property
+    def config_schema(self) -> dict | None:
+        """Optional declarative schema describing per-instance settings (voice
+        defaults, API keys, model selection). When present, the AddonsDialog
+        and per-speaker panels render UI from it. `None` means no settings."""
+        return None
+
+    # ---- lifecycle ------------------------------------------------------
+    def start(self) -> None:
+        """Lazy initialisation. For in-process providers this is a no-op; for
+        subprocess add-ons it spawns the child and waits for the `hello` ack.
+        Calling twice is safe."""
+
+    def shutdown(self) -> None:
+        """Tear down resources. Called on app quit."""
+
+    # ---- introspection --------------------------------------------------
+    def health(self) -> dict:
+        """Return a status dict for diagnostics: `{state, last_error?, pid?}`.
+        Default is `{'state': 'idle'}`."""
+        return {'state': 'idle'}
+
+
+class TTSProvider(Provider):
+    """Text-to-speech provider.
+
+    Signals
+    -------
+    speech_ready(uid: str, subtitle: dict, path: str)
+        Emitted when one synthesis job finishes successfully. `path` points
+        to a WAV file under `PATH_SUBTITLD_USER_CACHE/dubbing/`.
+    speech_error(uid: str, subtitle: dict, message: str)
+        Emitted on a per-job failure. The provider stays usable — only this
+        single subtitle's dub failed.
+    voices_updated()
+        Emitted when `list_voices()` finishes populating its cache. UI panels
+        listen to refresh their voice combobox.
+    """
+
+    speech_ready = Signal(str, dict, str)
+    speech_error = Signal(str, dict, str)
+    voices_updated = Signal()
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_TTS_SYNTHESIZE]
+
+    # ---- voice catalog --------------------------------------------------
+    def list_voices(self) -> list[dict]:
+        """Return the currently-known voice list. May be empty until the
+        provider has finished its initial fetch (signal `voices_updated`)."""
+        return []
+
+    def refresh_voices(self) -> None:
+        """Trigger a (possibly async) refresh of `list_voices()`. Default is
+        a no-op; cloud providers like Edge TTS override to pull the catalog
+        on-demand."""
+
+    # ---- synthesis ------------------------------------------------------
+    def generate_speeches(self, text_list: list[dict]) -> None:
+        """Kick off TTS for a batch of subtitles. Each item:
+
+            {
+                'uid': str,         # caller-allocated, echoed in speech_ready
+                'text': str,
+                'speaker': str,     # key into session.SPEAKERS for fallbacks
+                'start': float, 'end': float,
+                'voice': str,       # provider-specific voice id
+                'rate': int,        # provider-specific (often -100..+100 %)
+                'pitch': int,
+                # ... provider-specific extras (e.g. voice_ref_audio for XTTS)
+            }
+
+        Implementations MUST emit either `speech_ready` or `speech_error` per
+        input item. Order is not guaranteed."""
+        raise NotImplementedError
+
+    def stretch(self, subtitle: dict, ratio: float) -> bool:
+        """Re-render a subtitle's dub at a different speech rate to fit a new
+        visual width. Returns True if a job was actually scheduled (False if
+        the ratio is a no-op or the provider doesn't support time-stretching).
+
+        Default implementation is a no-op so providers that lack rate control
+        (e.g. naïve TTS engines) just decline silently."""
+        return False
+
+
+class ASRProvider(Provider):
+    """Automatic-speech-recognition provider.
+
+    Signals
+    -------
+    transcript_started()
+        Emitted when transcription begins (UI shows a spinner).
+    partial(segment: dict)
+        Emitted per-segment as soon as one is finalized. Useful for streaming
+        the timeline as transcription progresses on long files. Shape:
+        `{'start': float, 'end': float, 'text': str}`.
+    transcript_finished(segments: list)
+        Emitted exactly once after the last `partial`. `segments` is the full
+        ordered list (caller can ignore individual `partial`s and just use
+        this).
+    error(message: str)
+        Emitted on terminal failure. No `transcript_finished` follows.
+    progress(value: float, message: str)
+        0..1 progress; multiple emits permitted. `message` is freeform.
+    """
+
+    transcript_started = Signal()
+    partial = Signal(dict)
+    transcript_finished = Signal(list)
+    error = Signal(str)
+    progress = Signal(float, str)
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_ASR_TRANSCRIBE]
+
+    def transcribe(self, audio_path: str, language: str, options: dict | None = None) -> None:
+        """Start transcription. `audio_path` is host-allocated 16kHz mono WAV
+        (host pre-converts before calling). `options` is provider-specific
+        (e.g. `{'model': 'small', 'beam_size': 5}` for whisper)."""
+        raise NotImplementedError
+
+    def cancel(self) -> None:
+        """Best-effort cancellation. Implementations should emit `error` with
+        a `cancelled` message if a job was actually aborted."""
+
+
+class AudioSeparatorProvider(Provider):
+    """Audio source-separation provider — splits a media file into a
+    vocals stem and a background (instrumental) stem.
+
+    Used by the player's music/voice slider, the export-vocals dialog,
+    and the clone-ref reference picker (which prefers the isolated
+    vocals track when available so XTTS/F5/Qwen3 clone voices aren't
+    contaminated by music).
+
+    Two implementations ship by default:
+      - `ffmpeg` (built-in) — fast mid/side stereo trick. No model, runs
+        on any media in seconds; quality is mediocre on songs with
+        center-panned instruments.
+      - subprocess add-on `audio-separator` — wraps
+        nomadkaraoke/python-audio-separator (UVR, MDX, Demucs models).
+        High quality but heavy: model download on first use, GPU-friendly.
+
+    Signals
+    -------
+    separation_ready(input_path: str, vocals_path: str, background_path: str)
+        Emitted exactly once per successful job. Both output paths point
+        at FLAC/WAV files the host can map for playback or export.
+    separation_error(input_path: str, message: str)
+        Emitted on terminal failure. No `separation_ready` follows.
+    progress(value: float, message: str)
+        0..1 progress; multiple emits permitted.
+    """
+
+    separation_ready = Signal(str, str, str)
+    separation_error = Signal(str, str)
+    progress = Signal(float, str)
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_AUDIO_SEPARATE]
+
+    def separate(self, input_path: str, output_dir: str,
+                 options: dict | None = None) -> None:
+        """Kick off separation of `input_path`. Output files land under
+        `output_dir`; the provider is free to choose the exact filenames
+        but MUST report them via `separation_ready`. `options` is
+        provider-specific (e.g. `{'model': 'UVR-MDX-NET-Inst_HQ_3'}`)."""
+        raise NotImplementedError
+
+    def cancel(self) -> None:
+        """Best-effort cancellation. Default is a no-op."""
+
+
+class TranslationProvider(Provider):
+    """Translation provider stub for v1. Declared now so v0 add-on manifests
+    can already advertise `translate.text` capability without breaking the
+    discovery code."""
+
+    translation_ready = Signal(str, str)  # (request_id, translated_text)
+    error = Signal(str, str)              # (request_id, message)
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_TRANSLATE]
+
+    def translate(self, request_id: str, text: str, source: str, target: str,
+                  options: dict | None = None) -> None:
+        raise NotImplementedError

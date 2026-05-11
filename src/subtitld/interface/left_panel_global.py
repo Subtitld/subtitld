@@ -8,6 +8,7 @@ import copy
 
 from subtitld.interface import left_panel
 from subtitld.interface import utils
+from subtitld.interface.addons_dialog import AddonsPanel
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.config import Config
@@ -228,6 +229,26 @@ def load(self):
 
     self.left_panel_global_tab_general.layout().addLayout(self.global_panel_general_save_as_line)
 
+    # Audio-separator engine picker. Lists every provider registered for
+    # the `audio.separate` task — always at least the built-in
+    # `ffmpeg-separator` (fast mid/side trick), plus any installed
+    # add-on (e.g. python-audio-separator with UVR/MDX/Demucs models).
+    # Persists to `CONFIG['addons']['defaults']['audio.separate']` via
+    # the addon registry so the manager picks the same one on next
+    # startup.
+    self.global_panel_audio_separator_combobox = utils.LabeledComboBox()
+    self.global_panel_audio_separator_combobox.activated.connect(
+        lambda: global_panel_audio_separator_combobox_activated(self)
+    )
+    self.left_panel_global_tab_general.layout().addWidget(self.global_panel_audio_separator_combobox)
+
+    # Listen for addon registration changes so installing/uninstalling
+    # an audio-separator add-on at runtime refreshes the combobox.
+    from subtitld.modules import addons as _addons_module
+    _addons_module.get_manager().providers_changed.connect(
+        lambda: global_panel_audio_separator_combobox_populate(self)
+    )
+
     self.left_panel_global_tab_general.layout().addStretch()
 
     # --- USFX tab ---
@@ -264,6 +285,20 @@ def load(self):
     self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_original_video_checkbox, 0, Qt.AlignLeft)
 
     self.left_panel_global_tab_usfx.layout().addStretch()
+
+    # --- Add-ons tab ---
+    # Hosts the Browse / Installed sub-tabs for the local AI add-on system.
+    # Embedded here (instead of a top-bar dialog) so the entry point lives
+    # next to other app-wide preferences.
+    self.left_panel_global_tab_addons = QWidget()
+    self.left_panel_global_tab_addons.setProperty('class', 'transparent_panel')
+    self.left_panel_global_tab_addons.setLayout(QVBoxLayout())
+    self.left_panel_global_tab_addons.layout().setContentsMargins(0, 0, 0, 0)
+    self.left_panel_global_tab_addons.layout().setSpacing(0)
+    self.left_panel_global_tabs.addTab(self.left_panel_global_tab_addons, '')
+
+    self.left_panel_global_addons_panel = AddonsPanel()
+    self.left_panel_global_tab_addons.layout().addWidget(self.left_panel_global_addons_panel)
 
     # Export settings: icon-only button docked at the right end of the tab
     # bar via QTabWidget's corner-widget slot.
@@ -310,7 +345,57 @@ def usfx_option_changed(self, key, value):
     session.CONFIG.setdefault('default_values', {})['usfx_options'] = options
 
 
+def global_panel_audio_separator_combobox_populate(self):
+    """Rebuild the audio-separator engine combobox from the live list of
+    providers registered for the `audio.separate` task. Stores the raw
+    provider id in user-data so config writes go through stable ids."""
+    if not hasattr(self, 'global_panel_audio_separator_combobox'):
+        return
+    from subtitld.modules import addons
+    from subtitld.modules.addons import registry
+    from subtitld.modules.addons.provider import TASK_AUDIO_SEPARATE
+
+    combobox = self.global_panel_audio_separator_combobox
+    inner = combobox.combobox
+    previous_data = inner.currentData()
+    inner.blockSignals(True)
+    try:
+        combobox.clear()
+        manager = addons.get_manager()
+        providers = manager.providers_for_task(TASK_AUDIO_SEPARATE)
+        # Built-in (`ffmpeg-separator`) first, then add-ons in id order.
+        providers.sort(key=lambda p: (not p.is_builtin, p.id))
+        for provider in providers:
+            label = getattr(provider, 'display_name', None) or provider.id
+            inner.addItem(label, provider.id)
+
+        # Restore selection: previous → CONFIG'd default → first entry.
+        configured = registry.default_for_task(TASK_AUDIO_SEPARATE)
+        target = previous_data or configured or ''
+        idx = inner.findData(target) if target else -1
+        if idx >= 0:
+            inner.setCurrentIndex(idx)
+        elif inner.count() > 0:
+            inner.setCurrentIndex(0)
+    finally:
+        inner.blockSignals(False)
+
+
+def global_panel_audio_separator_combobox_activated(self):
+    """Persist the user's selection to the addon registry so the new
+    pick is what `MusicAudioExtractorThread` resolves on the next
+    media load."""
+    from subtitld.modules.addons import registry
+    from subtitld.modules.addons.provider import TASK_AUDIO_SEPARATE
+    inner = self.global_panel_audio_separator_combobox.combobox
+    provider_id = inner.currentData()
+    if provider_id:
+        registry.set_default_for_task(TASK_AUDIO_SEPARATE, provider_id)
+
+
 def update(self):
+    global_panel_audio_separator_combobox_populate(self)
+
     for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
         if session.CONFIG['default_values'] and item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USFX')):
             self.global_subtitlesvideo_save_as_combobox.setCurrentText(item)
@@ -370,6 +455,9 @@ def translate(self):
     self.left_panel_global_tabs.setTabText(0, _('global_panel.tab_subtitles'))
     self.left_panel_global_tabs.setTabText(1, _('global_panel.tab_general'))
     self.left_panel_global_tabs.setTabText(2, _('global_panel.tab_usfx'))
+    self.left_panel_global_tabs.setTabText(3, _('global_panel.tab_addons'))
+    if hasattr(self, 'left_panel_global_addons_panel'):
+        self.left_panel_global_addons_panel.retranslate()
     self.left_panel_global_tab_usfx_intro.setText(_('global_panel.usfx_intro'))
     self.usfx_include_speaker_images_checkbox.setText(_('global_panel.usfx_include_speaker_images'))
     self.usfx_include_waveform_cache_checkbox.setText(_('global_panel.usfx_include_waveform_cache'))
@@ -382,6 +470,8 @@ def translate(self):
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
     self.left_panel_global_panel_export_settings_button.setToolTip(_('global_panel.export_settings'))
     self.left_panel_global_subtitle_alignment.setLabel(_('global_panel.subtitle_alignment'))
+    if hasattr(self, 'global_panel_audio_separator_combobox'):
+        self.global_panel_audio_separator_combobox.setLabel(_('global_panel.audio_separator'))
 
 
 

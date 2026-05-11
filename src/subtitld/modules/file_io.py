@@ -2,6 +2,7 @@ import os
 import copy
 import hashlib
 import shutil
+import subprocess
 import zipfile
 from docx import Document
 import json
@@ -26,6 +27,90 @@ from subtitld.modules import utils
 def _safe_asset_name(name):
     safe = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in str(name))
     return safe or 'unnamed'
+
+
+# Speaker thumbnails only render at ~64 px in the speakers panel. Original
+# captures from `preview_panel._apply_face_selection` were the full face
+# crop at video resolution — easily 400×400+ for HD source. A project with
+# 30 speakers at 600×600 ARGB is ~40 MB held resident for nothing; at 4K
+# face crops it can balloon past 200 MB. Cap on load so old projects
+# benefit without touching their files. Kept in sync with the cap in
+# `interface/preview_panel.py`.
+SPEAKER_IMAGE_MAX_DIM = 256
+
+
+def _downscale_speaker_image(qimg):
+    if qimg is None or qimg.isNull():
+        return qimg
+    if max(qimg.width(), qimg.height()) <= SPEAKER_IMAGE_MAX_DIM:
+        return qimg
+    return qimg.scaled(
+        SPEAKER_IMAGE_MAX_DIM, SPEAKER_IMAGE_MAX_DIM,
+        Qt.KeepAspectRatio, Qt.SmoothTransformation,
+    )
+
+
+def _is_riff_wav(path):
+    """True iff `path` starts with the `RIFF....WAVE` header. Used to
+    spot dub files that carry MP3 bytes despite the `.wav` extension —
+    libsndfile can't decode those, so we transcode them on load."""
+    try:
+        with open(path, 'rb') as fh:
+            header = fh.read(12)
+    except OSError:
+        return True  # don't try to transcode something we can't even read
+    return len(header) >= 12 and header[:4] == b'RIFF' and header[8:12] == b'WAVE'
+
+
+def _transcode_misnamed_mp3_dubs(segments_list):
+    """Walk every dub in `segments_list` and rewrite any non-RIFF file as
+    a real PCM WAV in place. Touching the file alone is enough — the dub
+    dict's `path` already points at it. No-op for files that ffmpeg can't
+    reach; failures are logged via stderr but don't abort the load."""
+    seen = set()
+    for segment in segments_list:
+        for dub in segment.get('dubbing', []) or []:
+            path = dub.get('path')
+            if not path or path in seen or not os.path.isfile(path):
+                continue
+            seen.add(path)
+            if _is_riff_wav(path):
+                continue
+            tmp_in = path + '.in'
+            try:
+                os.replace(path, tmp_in)
+            except OSError:
+                continue
+            try:
+                subprocess.run(
+                    [
+                        session.FFMPEG_EXECUTABLE,
+                        '-y', '-loglevel', 'error',
+                        '-i', tmp_in,
+                        '-ac', '1',
+                        '-ar', '24000',
+                        '-c:a', 'pcm_s16le',
+                        path,
+                    ],
+                    check=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    startupinfo=session.STARTUPINFO,
+                )
+            except Exception:
+                # Restore the original on transcode failure so we don't
+                # lose the data — playback will still be silent for it,
+                # but a re-export from another tool can recover.
+                try:
+                    os.replace(tmp_in, path)
+                except OSError:
+                    pass
+                continue
+            try:
+                os.remove(tmp_in)
+            except OSError:
+                pass
 
 
 def _usfx_extract_dir(usfx_path):
@@ -204,6 +289,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = 'USF'
             reader = usf.USFReader()
             segments_list = reader.read(open(subtitle_file).read())
+            if reader.language:
+                session.SUBTITLE['language'] = reader.language
             for speaker_name, speaker_data in reader.speakers.items():
                 existing = session.SPEAKERS.get(speaker_name, {})
                 if 'color' in speaker_data:
@@ -214,7 +301,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 if image_bytes:
                     qimg = QImage()
                     if qimg.loadFromData(image_bytes):
-                        existing['image'] = qimg
+                        existing['image'] = _downscale_speaker_image(qimg)
                 session.SPEAKERS[speaker_name] = existing
 
             if not isinstance(session.FORMAT, dict):
@@ -259,6 +346,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             with open(inner_usf, encoding='utf-8') as fh:
                 segments_list = reader.read(fh.read())
 
+            if reader.language:
+                session.SUBTITLE['language'] = reader.language
+
             speakers_dir = os.path.join(extract_dir, 'assets', 'speakers')
             for speaker_name, speaker_data in reader.speakers.items():
                 existing = session.SPEAKERS.get(speaker_name, {})
@@ -270,7 +360,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 if image_bytes:
                     qimg = QImage()
                     if qimg.loadFromData(image_bytes):
-                        existing['image'] = qimg
+                        existing['image'] = _downscale_speaker_image(qimg)
                 else:
                     safe_name = _safe_asset_name(speaker_name)
                     for ext in ('png', 'jpg', 'jpeg'):
@@ -278,7 +368,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         if os.path.exists(candidate):
                             qimg = QImage()
                             if qimg.load(candidate):
-                                existing['image'] = qimg
+                                existing['image'] = _downscale_speaker_image(qimg)
                             break
                 session.SPEAKERS[speaker_name] = existing
 
@@ -287,6 +377,14 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     path = dub.get('path', '')
                     if path and not os.path.isabs(path):
                         dub['path'] = os.path.join(extract_dir, path)
+
+            # Older USFX bundles ship edge-tts dubs as MP3 bytes saved with
+            # a `.wav` extension (the dub generator used to forward MP3
+            # straight from edge-tts without transcoding). The audio engine
+            # reads dubs through libsndfile, which can't decode MP3, so
+            # those clips silently fail to play. One-shot migration here
+            # rewrites them as real PCM WAVs in place.
+            _transcode_misnamed_mp3_dubs(segments_list)
 
             # Resolve the project's source video. Priority: bundled video file →
             # original-path entry recorded in the manifest → same-folder match
@@ -646,7 +744,15 @@ def export_file(filename=False, export_format='TXT', options=False):
 
 
 def save_file(final_file, subtitle_format='USFX', language='en'):
-    """Function to save the subtitle project. A subtitles dict and the format is given."""
+    """Function to save the subtitle project. A subtitles dict and the format is given.
+
+    The `language` argument is treated as a fallback — the document's own
+    `session.SUBTITLE['language']` (set on import / transcription / by the
+    user) wins when present so reloading a USFX restores the language the
+    user actually picked, not the UI-default."""
+    document_language = (session.SUBTITLE.get('language') or '').strip()
+    if document_language:
+        language = document_language
     if session.SUBTITLE['segments']:
         # if not final_file.lower().endswith('.' + format.lower()):
         #     final_file += '.' + format.lower()

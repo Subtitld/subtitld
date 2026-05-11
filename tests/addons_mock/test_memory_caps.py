@@ -1,0 +1,427 @@
+"""Memory-footprint regression tests.
+
+Why this exists
+---------------
+Loading a single project shouldn't pin 2-3 GB of RAM. The three biggest
+offenders we fixed:
+
+  1. **Waveform samples stored as float32.** A 1-hour project at 48 kHz
+     is 691 MB of float32 — pure waste, since the waveform is already
+     normalized to [-1.0, 1.0] and the only consumers downstream
+     (WaveformWorker min/max bucketing, paint at integer pixel
+     coordinates) don't need >16-bit precision. We pack to int16 and
+     halve the footprint.
+
+  2. **`SubtitleDubClip._loaded` grew without bound.** Every time a dub
+     was regenerated (TTS rerun, voice change, edit), the new path got
+     loaded and the old path stuck around in `_loaded` forever. For a
+     500-subtitle project with even modest re-dubbing history, that's
+     hundreds of MB of stale audio. The audio callback only ever asks
+     for `_current_dub()`'s path — older entries are dead. We evict
+     siblings on each successful preload.
+
+  3. **Speaker images cached at video resolution.** The face-extraction
+     UI cropped at source resolution (often 1024×1024+ from HD video),
+     stored full-resolution ARGB QImage on `session.SPEAKERS[name]
+     ['image']`, then displayed it at ~64 px in the speakers panel. A
+     30-speaker project at 4K crops = 200+ MB held for thumbnail
+     display. We downscale to 256 px max dimension on both fresh
+     extraction (`preview_panel._apply_face_selection`) and project
+     load (`file_io._downscale_speaker_image`, called from USF/USFX
+     readers).
+
+What this asserts
+-----------------
+Each case is a direct invariant check on the public API. If somebody
+later "optimizes" set_samples back to float32, or removes the eviction
+loop in preload, or drops the downscale call in file_io, one of these
+assertions trips.
+
+Run directly:
+    python3 tests/addons_mock/test_memory_caps.py
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import struct
+import sys
+import tempfile
+import wave
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(REPO, 'src'))
+
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+
+
+def _stub_module(name):
+    """Insert an empty module under `name` into sys.modules so importers
+    that just do `from subtitld.interface import foo` get a benign
+    namespace, not an ImportError. Only safe when the importer doesn't
+    actually call into the stubbed names — which is the case for the
+    `from subtitld.interface import left_panel` at module top of
+    timeline.py: we only need WaveformManager, which never touches
+    left_panel."""
+    import types
+    if name not in sys.modules:
+        sys.modules[name] = types.ModuleType(name)
+
+
+def _stub_heavy_imports():
+    """Make timeline.py importable without dragging in the entire UI
+    tree. Stubs out everything imported at top-of-module that
+    WaveformManager itself doesn't actually call. If WaveformManager
+    ever grows a dependency on one of these, the test will fail loudly
+    on attribute access — that's fine, just remove the stub."""
+    _stub_module('subtitld.interface.left_panel')
+    _stub_module('subtitld.interface.playercontrols')
+    _stub_module('subtitld.interface.translation')
+    # The `from … import _` form needs an attribute on the stub.
+    sys.modules['subtitld.interface.translation']._ = lambda s, **kw: s
+
+
+def _stub_file_io_deps():
+    """file_io.py imports a small ecosystem of file-format parsers
+    (python-docx, pycaption, chardet, pysubs2, beautifulsoup4) at
+    top of module. None of them are touched by the speaker-image
+    helpers we test — but a missing one trips the import. Stub the
+    optional ones; if any actually IS installed, the real module
+    stays."""
+    import types
+    for name in ('docx', 'pycaption', 'pycaption.exceptions',
+                 'chardet', 'pysubs2', 'bs4'):
+        try:
+            __import__(name)
+        except ImportError:
+            sys.modules[name] = types.ModuleType(name)
+    # Provide the symbols file_io reaches in via `from x import Y`.
+    sys.modules.setdefault('docx', types.ModuleType('docx'))
+    if not hasattr(sys.modules['docx'], 'Document'):
+        sys.modules['docx'].Document = object
+    pyc_exc = sys.modules.setdefault(
+        'pycaption.exceptions', types.ModuleType('pycaption.exceptions'))
+    for sym in ('CaptionReadSyntaxError', 'CaptionReadNoCaptions'):
+        if not hasattr(pyc_exc, sym):
+            setattr(pyc_exc, sym, type(sym, (Exception,), {}))
+    bs4 = sys.modules.setdefault('bs4', types.ModuleType('bs4'))
+    if not hasattr(bs4, 'BeautifulSoup'):
+        bs4.BeautifulSoup = object
+
+
+def _stub_i18n_if_missing():
+    """timeline.py → left_panel → utils → translation → i18n. Stub it
+    out if the dev env doesn't have python-i18n installed — the tests
+    here don't care about translation, they care about dtype/cache
+    invariants. Must run before importing the timeline module."""
+    try:
+        import i18n  # noqa: F401
+        return
+    except ImportError:
+        pass
+
+    import types
+
+    fake = types.ModuleType('i18n')
+    fake.load_path = []
+
+    class _Config(dict):
+        def get(self, key, default=None):
+            # The defaults translation.py reads: file_format='json',
+            # namespace_delimiter='.'. Anything else we don't care.
+            return super().get(key, default if default is not None
+                               else {'file_format': 'json',
+                                     'namespace_delimiter': '.'}.get(key, ''))
+
+    fake.config = _Config()
+    fake.set = lambda *a, **kw: None
+    fake.t = lambda text, **kw: text  # identity translation
+    sys.modules['i18n'] = fake
+
+
+def _ensure_qt():
+    """A QGuiApplication is enough for QImage/QThread to behave. We
+    don't need QApplication (QtWidgets) — and avoiding it sidesteps the
+    full timeline.py import that pulls in left_panel, playercontrols,
+    etc."""
+    from PySide6.QtGui import QGuiApplication
+    return QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+
+
+def _make_dub_wav(path: str, duration_sec: float, sample_rate: int = 24000):
+    """Mono 16-bit sine — same helper as test_audio_callback_perf."""
+    n = int(duration_sec * sample_rate)
+    with wave.open(path, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        for i in range(n):
+            v = int(0.2 * 32767 * math.sin(2 * math.pi * 440.0 * i / sample_rate))
+            wf.writeframesraw(struct.pack('<h', v))
+
+
+def case_waveform_int16_storage():
+    """A float32 input to WaveformManager.set_samples must be packed to
+    int16 — halving the resident memory of the raw samples buffer.
+
+    We feed a normalized 1-second sample array and check both the dtype
+    and the byte count. The float32 case would be 4× the array length;
+    int16 is 2×. Anything else means the dtype hop was skipped."""
+    print('\n=== waveform samples stored as int16 ===')
+    import numpy as np
+
+    # set_samples spawns a QThread (WaveformWorker). It runs async and
+    # we don't wait for it — we only care about self.samples right
+    # after the call. But QThread.start() requires a QCoreApplication
+    # in this thread.
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_heavy_imports()
+
+    # timeline.py drags in the whole UI tree (left_panel,
+    # playercontrols, translation). With those stubbed out we get just
+    # the WaveformManager class, which is all this test needs.
+    from subtitld.interface.timeline import WaveformManager
+
+    n = 48000  # 1 second at 48 kHz
+    samples_f32 = (np.sin(np.linspace(0, 2 * np.pi * 440, n))
+                   .astype(np.float32))
+    # WaveformManager normalizes upstream — we mirror that.
+    samples_f32 /= max(1e-9, float(np.max(np.abs(samples_f32))))
+
+    mgr = WaveformManager(samples=samples_f32, filepath=None)
+    stored = mgr.samples
+    assert stored is not None, 'set_samples did not store anything'
+    assert stored.dtype == np.int16, (
+        f'expected int16 storage, got {stored.dtype} — '
+        'the dtype pack was reverted?')
+    # Float32 would be 4 bytes/sample; int16 is 2.
+    assert stored.nbytes == n * 2, (
+        f'expected {n * 2} bytes (int16), got {stored.nbytes}')
+    print(f'  n={n} samples → stored={stored.nbytes / 1024:.1f} KiB '
+          f'(int16) vs {n * 4 / 1024:.1f} KiB (float32) ✓')
+
+    # And int16 input is accepted as-is, no double conversion.
+    samples_i16 = (samples_f32 * 32767.0).astype(np.int16)
+    mgr2 = WaveformManager(samples=samples_i16, filepath=None)
+    assert mgr2.samples.dtype == np.int16, (
+        'int16 input should pass through, but dtype changed')
+    print('  int16 input passes through unchanged ✓')
+
+    # Wait for the WaveformWorkers to finish so they're not destroyed
+    # mid-run when these managers go out of scope. Without this, Qt
+    # prints "QThread: Destroyed while thread is still running" and on
+    # some hosts the abort propagates into the next test case.
+    for mgr_obj in (mgr, mgr2):
+        for w in list(mgr_obj.workers.values()):
+            w.wait(5000)
+
+
+def case_dub_cache_eviction():
+    """SubtitleDubClip._loaded must hold only the currently-relevant
+    dub. Without eviction, regenerating dubs N times leaks N old
+    arrays — easy gigabytes on a real project."""
+    print('\n=== dub cache evicts stale paths on preload ===')
+    try:
+        import sounddevice  # noqa: F401
+    except Exception as exc:
+        print(f'  SKIP — sounddevice import failed: {exc}')
+        return
+
+    from subtitld.modules import audioengine
+
+    workdir = tempfile.mkdtemp(prefix='dub-cache-test-')
+    try:
+        path_a = os.path.join(workdir, 'a.wav')
+        path_b = os.path.join(workdir, 'b.wav')
+        path_c = os.path.join(workdir, 'c.wav')
+        for p in (path_a, path_b, path_c):
+            _make_dub_wav(p, duration_sec=0.5)
+
+        sub = {
+            'speaker': 'X', 'start': 0.0, 'end': 1.0, 'text': 't',
+            'dubbing': [{'engine': 'edge-tts', 'voice': 'fake',
+                         'rate': 0, 'path': path_a, 'start': 0.0}],
+        }
+        clip = audioengine.SubtitleDubClip(sub, samplerate=48000)
+
+        clip.preload(path_a)
+        assert path_a in clip._loaded, 'first preload did not populate cache'
+        assert len(clip._loaded) == 1
+
+        clip.preload(path_b)
+        # The interesting invariant: path_a is evicted by path_b.
+        assert path_b in clip._loaded, 'second preload not present'
+        assert path_a not in clip._loaded, (
+            f'stale path leaked: _loaded keys = {list(clip._loaded)}')
+        assert len(clip._loaded) == 1, (
+            f'cache should hold exactly 1 entry, has {len(clip._loaded)}')
+
+        clip.preload(path_c)
+        assert list(clip._loaded.keys()) == [path_c], (
+            f'after 3rd preload, _loaded should hold only path_c, '
+            f'has {list(clip._loaded.keys())}')
+
+        # Re-preloading the same path is a no-op — must not double the
+        # entry or somehow drop itself.
+        before_id = id(clip._loaded[path_c])
+        clip.preload(path_c)
+        assert list(clip._loaded.keys()) == [path_c]
+        assert id(clip._loaded[path_c]) == before_id, (
+            'no-op preload re-allocated the cached entry')
+
+        print(f'  3 sequential preloads → _loaded size = 1 (path={os.path.basename(path_c)}) ✓')
+    finally:
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def case_dub_storage_is_int16_mono():
+    """SubtitleDubClip._loaded packs each dub as int16 mono at engine
+    samplerate. The historical format was stereo float32 — 4× larger.
+    On a 500-subtitle project that change is hundreds of MB.
+
+    Assert the shape and dtype of what preload() actually stored. A
+    revert to float32 or stereo would trip this immediately."""
+    print('\n=== dub cache stores int16 mono ===')
+    try:
+        import sounddevice  # noqa: F401
+    except Exception as exc:
+        print(f'  SKIP — sounddevice import failed: {exc}')
+        return
+
+    import numpy as np
+    from subtitld.modules import audioengine
+
+    workdir = tempfile.mkdtemp(prefix='dub-storage-test-')
+    try:
+        # 2-second dub at 24 kHz (typical TTS rate) — exercises both
+        # the mono downmix path (file is already mono, so no-op) and
+        # the resample path (24 kHz → 48 kHz engine rate).
+        path = os.path.join(workdir, 'a.wav')
+        _make_dub_wav(path, duration_sec=2.0, sample_rate=24000)
+
+        sub = {
+            'speaker': 'X', 'start': 0.0, 'end': 2.0, 'text': 't',
+            'dubbing': [{'engine': 'edge-tts', 'voice': 'fake',
+                         'rate': 0, 'path': path, 'start': 0.0}],
+        }
+        clip = audioengine.SubtitleDubClip(sub, samplerate=48000)
+        clip.preload(path)
+        assert path in clip._loaded, 'preload did not populate cache'
+
+        data, src_sr, n_frames = clip._loaded[path]
+        # Dtype: int16 (not float32). 2 bytes/frame.
+        assert data.dtype == np.int16, (
+            f'expected int16 dub storage, got {data.dtype} — '
+            'revert to float32 detected')
+        # Shape: 1-D mono (not (N, 2) stereo).
+        assert data.ndim == 1, (
+            f'expected mono dub storage (ndim=1), got shape {data.shape}')
+        # Resampled to engine SR.
+        assert src_sr == 48000, f'expected engine SR 48000, got {src_sr}'
+        # Duration: 2 s at 48 kHz = 96000 frames (± a few from resampling).
+        assert 95900 <= n_frames <= 96100, (
+            f'expected ~96000 frames for 2 s @ 48 kHz, got {n_frames}')
+        # Bytes: int16 mono = 2 bytes/frame, vs old format = 8 (stereo
+        # float32). Confirm the 4× shrink.
+        bytes_new = data.nbytes
+        bytes_old = n_frames * 2 * 4  # stereo float32 baseline
+        ratio = bytes_old / bytes_new
+        assert ratio >= 3.9, (
+            f'expected ≥4× shrink vs stereo float32; got {ratio:.2f}×')
+        print(f'  2 s dub @ 24 kHz → {bytes_new / 1024:.1f} KiB '
+              f'int16 mono @ 48 kHz (was {bytes_old / 1024:.1f} KiB '
+              f'stereo float32 → {ratio:.1f}× shrink) ✓')
+
+        # And the audio callback's fast path must still produce
+        # non-zero output from int16 storage. Drive one block of
+        # samples through clip.read() and check the rendered float32
+        # buffer is non-silent.
+        pool = audioengine.BufferPool(max_size=4)
+        out = clip.read(playhead=0.5, frames=2048, samplerate=48000,
+                        buffer_pool=pool)
+        assert out is not None, 'clip.read returned None on in-window read'
+        assert out.dtype == np.float32, (
+            f'audio callback output dtype: {out.dtype}, expected float32')
+        assert out.shape == (2048, 2), (
+            f'audio callback output shape: {out.shape}, expected (2048, 2)')
+        # Both channels should be identical (mono broadcast).
+        assert np.array_equal(out[:, 0], out[:, 1]), (
+            'mono→stereo broadcast should write identical channels')
+        # Non-trivial signal — 440 Hz sine at 0.2 amplitude → peak ~0.2.
+        peak = float(np.max(np.abs(out)))
+        assert peak > 0.05, (
+            f'rendered output is near-silent (peak={peak:.4f}); '
+            'int16 conversion or gain may be wrong')
+        print(f'  clip.read() → (2048, 2) float32, mono channels '
+              f'matched, peak={peak:.3f} ✓')
+    finally:
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def case_speaker_image_downscale():
+    """Speaker thumbnails are cached at ≤256 px max dim. A bigger image
+    in must come out at ≤256 px, preserving aspect ratio. An image
+    already at-or-below 256 must be returned untouched (no resize cost,
+    no quality loss)."""
+    print('\n=== speaker images downscaled on load ===')
+    _ensure_qt()
+    _stub_file_io_deps()
+    from PySide6.QtGui import QImage
+    from subtitld.modules.file_io import (
+        _downscale_speaker_image, SPEAKER_IMAGE_MAX_DIM,
+    )
+
+    cap = SPEAKER_IMAGE_MAX_DIM
+
+    # 1024×768 → should shrink so that max dim == cap, aspect preserved.
+    big = QImage(1024, 768, QImage.Format_ARGB32)
+    big.fill(0xFF112233)
+    out = _downscale_speaker_image(big)
+    assert max(out.width(), out.height()) <= cap, (
+        f'1024×768 downscale exceeded cap: {out.width()}×{out.height()}')
+    # Aspect within 1 px of the original 4:3.
+    assert abs(out.width() / out.height() - 1024 / 768) < 0.02, (
+        f'aspect ratio drifted: {out.width()}×{out.height()}')
+    print(f'  1024×768 → {out.width()}×{out.height()} ✓')
+
+    # 200×200 → already under cap; should pass through untouched (same
+    # object, not a scaled copy — cheaper and avoids any quality loss).
+    small = QImage(200, 200, QImage.Format_ARGB32)
+    small.fill(0xFFAABBCC)
+    out_small = _downscale_speaker_image(small)
+    assert out_small.width() == 200 and out_small.height() == 200, (
+        'sub-cap image got resized — that wastes CPU and quality')
+    print(f'  200×200 (below cap) → unchanged ✓')
+
+    # Null QImage → returned as-is, no crash.
+    null = QImage()
+    out_null = _downscale_speaker_image(null)
+    assert out_null is null or out_null.isNull(), (
+        'null QImage should round-trip through downscale unchanged')
+    print('  null QImage → no crash ✓')
+
+    # Portrait 256×1024 → height clamped, width scaled down.
+    tall = QImage(256, 1024, QImage.Format_ARGB32)
+    tall.fill(0xFF445566)
+    out_tall = _downscale_speaker_image(tall)
+    assert max(out_tall.width(), out_tall.height()) <= cap, (
+        f'tall downscale exceeded cap: {out_tall.width()}×{out_tall.height()}')
+    print(f'  256×1024 → {out_tall.width()}×{out_tall.height()} ✓')
+
+
+def main():
+    case_waveform_int16_storage()
+    case_dub_cache_eviction()
+    case_dub_storage_is_int16_mono()
+    case_speaker_image_downscale()
+    print('\nMemory cap cases passed.')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

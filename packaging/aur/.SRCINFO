@@ -20,7 +20,6 @@ pkgbase = subtitld
 	depends = python-i18n
 	depends = python-docx
 	depends = ffmpeg
-	optdepends = vosk-api: offline transcription
 	optdepends = python-mediapipe: speaker face detection
 	optdepends = python-opencv: speaker face detection
 	optdepends = python-edge-tts: dubbing with Microsoft Edge voices

@@ -427,6 +427,20 @@ class PlayerWidget(QWidget):
         if cropped.isNull():
             return
 
+        # Downscale to a sane upper bound. Display code always shows the
+        # speaker thumbnail at 36×36 (subtitle-list rows, speakers panel,
+        # selector). Keeping the full-resolution crop in memory wastes
+        # RAM — a 1080×1080 RGBA crop is ~4.7 MB; 256×256 is ~260 KB.
+        # 256 px leaves headroom for high-DPI scaling without ballooning
+        # the project's footprint. We keep aspect ratio in case the user
+        # cropped a non-square region.
+        SPEAKER_IMAGE_MAX_DIM = 256
+        if max(cropped.width(), cropped.height()) > SPEAKER_IMAGE_MAX_DIM:
+            cropped = cropped.scaled(
+                SPEAKER_IMAGE_MAX_DIM, SPEAKER_IMAGE_MAX_DIM,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation,
+            )
+
         speaker_name = widget._face_selection_speaker
         from subtitld.modules import session as _session
         _session.SPEAKERS.setdefault(speaker_name, {})['image'] = cropped

@@ -172,6 +172,27 @@ class AccordionArrowWidget(QWidget):
         painter.drawPolygon(arrow)
 
 
+def _stacked_resize_to_current(stacked):
+    """Make a QStackedWidget size to its *current* page rather than to the
+    largest page across the stack. We flip each page's size policy so only
+    the visible one contributes to the stack's sizeHint — Qt then collapses
+    the empty rows that would otherwise be reserved for taller siblings."""
+    current = stacked.currentWidget()
+    for i in range(stacked.count()):
+        page = stacked.widget(i)
+        if page is None:
+            continue
+        policy = page.sizePolicy()
+        policy.setVerticalPolicy(QSizePolicy.Preferred if page is current else QSizePolicy.Ignored)
+        page.setSizePolicy(policy)
+    if current is not None:
+        current.adjustSize()
+    stacked.adjustSize()
+    parent = stacked.parentWidget()
+    if parent is not None:
+        parent.adjustSize()
+
+
 class dubbing_container(QWidget):
     def __init__(widget, parent=None):
         super().__init__(parent)
@@ -202,14 +223,24 @@ class dubbing_container(QWidget):
         widget.content = QStackedWidget()
         widget.content.setObjectName('left_panel_speakers_panel_content_item_dubbing_content')
         widget.content.setVisible(False)
+        # Without this, the stacked widget reserves space for the *tallest*
+        # page across all engines, leaving big gaps when the active engine
+        # has a shorter panel. `setCurrentChanged` flips each page's size
+        # policy so only the visible one contributes to the stack's sizeHint.
+        widget.content.currentChanged.connect(lambda i, sw=widget.content: _stacked_resize_to_current(sw))
         widget.layout().addWidget(widget.content)
 
         widget.update()
 
     def combobox_changed(widget):
-        value = widget.combobox.currentText()
+        # The combobox stores the engine id as user data behind a localized
+        # display name — read the data, not the displayed text.
+        inner = widget.combobox.combobox
+        value = inner.currentData()
+        if not value:
+            value = inner.currentText()
         speaker_name = widget.property('speaker')
-        
+
         if speaker_name and speaker_name in session.SPEAKERS:
             if not 'dubbing' in session.SPEAKERS[speaker_name]:
                 session.SPEAKERS[speaker_name]['dubbing'] = {}
@@ -222,18 +253,27 @@ class dubbing_container(QWidget):
         widget.update()
     
     def update(widget):
-        has_engine = widget.combobox.combobox.currentIndex() >= 0
+        idx = widget.combobox.combobox.currentIndex()
+        has_engine = idx >= 0
         widget.hideexpand_button.setEnabled(has_engine)
         if not has_engine:
             widget.setProperty('is_expanded', False)
+
+        # Engine panels were added to the QStackedWidget in the same order
+        # as combobox items in `update_dubbing_options`, so the indices map
+        # 1:1. Keep them in sync so selecting an engine swaps the panel.
+        if has_engine and widget.content.currentIndex() != idx:
+            widget.content.setCurrentIndex(idx)
+        elif has_engine:
+            # currentChanged didn't fire (already at idx) — recompute size
+            # anyway so first-show / re-expand picks up the right height.
+            _stacked_resize_to_current(widget.content)
 
         if widget.property('is_expanded'):
             if not widget.hideexpand_button.isChecked():
                 widget.hideexpand_button.setChecked(True)
             if not widget.content.isVisible():
                 widget.content.setVisible(True)
-
-                # widget.content.setCurrentWidget()
         else:
             if widget.hideexpand_button.isChecked():
                 widget.hideexpand_button.setChecked(False)
@@ -326,6 +366,15 @@ class speakers_list_item(QWidget):
         widget.change_image_button.setToolTip(_('left_panel_speakers.change_image_tooltip'))
         widget.change_image_button.clicked.connect(lambda: change_image_button_clicked(widget))
         up_line.layout().addWidget(widget.change_image_button)
+
+        widget.visibility_button = QPushButton()
+        widget.visibility_button.setObjectName('left_panel_speakers_panel_content_item_visibility_button')
+        widget.visibility_button.setFixedSize(24, 24)
+        widget.visibility_button.setIconSize(QSize(16, 16))
+        widget.visibility_button.setCheckable(True)
+        widget.visibility_button.setToolTip(_('left_panel_speakers.toggle_visibility_tooltip'))
+        widget.visibility_button.clicked.connect(lambda: toggle_visibility_button_clicked(widget))
+        up_line.layout().addWidget(widget.visibility_button)
 
         widget.export_button = QPushButton()
         widget.export_button.setObjectName('left_panel_speakers_panel_content_item_export_button')
@@ -451,25 +500,40 @@ class speakers_list_item(QWidget):
                 w.update()
 
     def update_dubbing_options(widget, options):
+        from subtitld.interface.left_panel_dubbing import _addon_display_name
+        inner = widget.dubbing_container.combobox.combobox
         widget.dubbing_container.combobox.clear()
-        widget.dubbing_container.combobox.addItems(list(options.keys()))
 
         while widget.dubbing_container.content.count():
             w = widget.dubbing_container.content.widget(0)
             widget.dubbing_container.content.removeWidget(w)
             w.deleteLater()
 
-        for option, engine in options.items():
-            new_dubbing_panel = engine.speaker_panel()
+        for option_id, engine in options.items():
+            # Engine objects carry an `id` + `display_name`. Use those to
+            # build a localizable label; fall back to the dict key for
+            # ill-formed engines.
+            label = _addon_display_name(engine) if hasattr(engine, 'id') else option_id
+            inner.addItem(label, option_id)
+
+            # Parent the panel to the stacked widget up-front so it never
+            # exists as a parentless QWidget, which would otherwise be
+            # eligible to flash as a top-level window before addWidget
+            # reparents it (the source of the multi-window pop-up bug
+            # when many speakers were rebuilt in quick succession).
+            new_dubbing_panel = engine.speaker_panel(widget.dubbing_container.content)
             new_dubbing_panel.setProperty('speaker', widget.speaker_name)
             widget.dubbing_container.content.addWidget(new_dubbing_panel)
             new_dubbing_panel.update()
 
         saved_engine = session.SPEAKERS.get(widget.speaker_name, {}).get('dubbing', {}).get('engine')
         if saved_engine and saved_engine in options:
-            widget.dubbing_container.combobox.setCurrentText(saved_engine)
+            for i in range(inner.count()):
+                if inner.itemData(i) == saved_engine:
+                    inner.setCurrentIndex(i)
+                    break
         else:
-            widget.dubbing_container.combobox.combobox.setCurrentIndex(-1)
+            inner.setCurrentIndex(-1)
 
         widget.dubbing_container.update()
         widget.update()
@@ -640,6 +704,55 @@ def export_button_clicked(widget):
     pass
 
 
+def toggle_visibility_button_clicked(widget):
+    """Flip the speaker's hidden flag and refresh affected views."""
+    speaker_name = widget.speaker_name
+    if speaker_name not in session.SPEAKERS:
+        return
+    new_hidden = bool(widget.visibility_button.isChecked())
+    session.SPEAKERS[speaker_name]['hidden'] = new_hidden
+    session.set_unsaved(True)
+    _apply_speaker_visibility(widget.window())
+
+
+def _apply_speaker_visibility(window):
+    """Push the per-speaker `hidden` flag out to timeline rendering and the
+    audio engine. Subtitles for hidden speakers stay in the model; only the
+    rendering / playback ignore them."""
+    timeline_widget = getattr(window, 'timeline_widget', None)
+    if timeline_widget is not None:
+        timeline_widget.update()
+    preview = getattr(window, 'preview_panel_player', None)
+    if preview is not None:
+        engine = getattr(preview, '_audio_device', None)
+        if engine is not None and hasattr(engine, 'speaker_tracks'):
+            dub_enabled = bool(session.CONFIG.get('dubbing', {}).get('enabled', False))
+            for name, track in engine.speaker_tracks.items():
+                hidden = bool(session.SPEAKERS.get(name, {}).get('hidden', False))
+                track.enabled = dub_enabled and not hidden
+
+
+def highlight_speaker_for_selection(window):
+    """Mark the speaker matching the currently-selected subtitle. Called by
+    the subtitles list whenever the selection changes so the user sees which
+    speaker the active subtitle belongs to."""
+    speakers_list = getattr(window, 'left_panel_speakers_list', None)
+    if speakers_list is None:
+        return
+    selected_speaker = (session.SUBTITLE.get('selected') or {}).get('speaker', '') or ''
+    layout = speakers_list.layout()
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        widget = item.widget() if item is not None else None
+        if not isinstance(widget, speakers_list_item):
+            continue
+        is_match = widget.speaker_name == selected_speaker
+        if widget.property('selected_speaker') != is_match:
+            widget.setProperty('selected_speaker', is_match)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+
 def remove_button_clicked(widget):
     speaker_name = widget.speaker_name
     used_segments = [s for s in session.SUBTITLE['segments'] if s.get('speaker', 'A') == speaker_name]
@@ -734,16 +847,20 @@ def update_speakers_list(self):
         if not speaker_data.get('color', False):
             gen = AutoHex()
             speaker_data['color'] = f'{gen.gen(speaker_name)}'
-        
+
         widget = speakers_list_item(speaker_name, speaker_data)
-        
+        widget.visibility_button.setChecked(bool(speaker_data.get('hidden', False)))
+
         if not speaker_data.get('image', None) and not self.left_panel_speakers_image_test_thread.isRunning():
             self.left_panel_speakers_image_test_thread.name = speaker_name
             self.left_panel_speakers_image_test_thread.start()
 
         self.left_panel_speakers_list.layout().addWidget(widget)
-        
+
         widget.update_dubbing_options(self.left_panel_speakers_list_of_available_dubbing_engine)
+
+    highlight_speaker_for_selection(self)
+    _apply_speaker_visibility(self)
     
 
 def update(self):

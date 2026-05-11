@@ -1,6 +1,9 @@
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
+import gc
+import os
+import sys
 from pathlib import Path
 from threading import Thread, Lock
 from queue import Queue, Empty
@@ -9,6 +12,41 @@ import time
 
 
 FADE_FRAMES = 64
+
+# Prebuilt fade ramps — applied at every clip boundary. Shared by every
+# clip in the engine so the audio callback never allocates a ramp via
+# np.linspace, which used to be a per-clip-boundary allocation. Reshape
+# to (N, 1) once at module load so the per-callback `out[...] *= ramp`
+# can broadcast against a (N, 2) stereo slice without any further
+# allocation.
+_FADE_IN_RAMP = np.linspace(0.0, 1.0, FADE_FRAMES, dtype=np.float32).reshape(-1, 1)
+_FADE_OUT_RAMP = np.linspace(1.0, 0.0, FADE_FRAMES, dtype=np.float32).reshape(-1, 1)
+
+# Reciprocal of int16 full-scale. The dub cache stores int16 mono — the
+# audio callback converts to float32 in [-1, 1] by multiplying by this
+# scalar (rolled into `gain` so one np.multiply does both). 32768 keeps
+# +1.0 exactly representable; the int16 minimum (-32768) maps to a hair
+# past -1.0 which is harmless since the engine clips the mix anyway.
+_INT16_TO_FLOAT32 = np.float32(1.0 / 32768.0)
+
+# Toggle realtime audio-callback debug logging. Off by default — the
+# diagnostic itself (per-callback timing, the 100Hz watchdog thread, the GC
+# callback, and stderr writes from the audio thread) is a noticeable
+# real-time hazard on hosts already close to underrun. Set
+# SUBTITLD_AUDIO_DEBUG=1 only when actively chasing a chunkiness bug.
+DEBUG_AUDIO = os.environ.get('SUBTITLD_AUDIO_DEBUG', '0') != '0'
+
+
+def _decode_callback_status(status):
+    """Sounddevice CallbackFlags → human-readable list. Empty list = clean."""
+    if not status:
+        return []
+    flags = []
+    for name in ('input_underflow', 'input_overflow', 'output_underflow',
+                 'output_overflow', 'priming_output'):
+        if getattr(status, name, False):
+            flags.append(name)
+    return flags or [str(status)]
 
 
 class AudioSource:
@@ -78,19 +116,20 @@ class Clip:
         self._cache_size = 131072  # ~2.7 seconds at 48kHz
         self._cache_lock = Lock()
 
-        # FIX 1: Pre-allocated index buffer to avoid per-callback allocations
+        # Pre-allocated index buffer reused every callback for the
+        # linear-resample math — saves one (blocksize * speed)-sized
+        # np.arange allocation per callback. `* 4` covers up to 4x
+        # playback speed before the slice spills.
         self._src_idx_buf = np.empty(blocksize * 4, dtype=np.float64)
 
-        # FIX 2: Background prefetch thread
+        # Background prefetch: disk I/O for the next cache chunk runs on
+        # this thread so the audio callback never blocks waiting for
+        # bytes off the platter.
         self._prefetch_queue = Queue(maxsize=1)
         self._prefetch_running = True
         self._prefetch_threshold = 0.75  # start loading when 75% through current cache
         self._prefetch_thread = Thread(target=self._prefetch_worker, daemon=True)
         self._prefetch_thread.start()
-
-    # ------------------------------------------------------------------
-    # FIX 2: Background prefetch — disk I/O never blocks the audio thread
-    # ------------------------------------------------------------------
 
     def _prefetch_worker(self):
         while self._prefetch_running:
@@ -143,21 +182,20 @@ class Clip:
 
             return target_cache
 
-    # ------------------------------------------------------------------
-    # FIX 3: Boundary fades — eliminates clicks at clip start/end
-    # ------------------------------------------------------------------
-
     def _apply_boundary_fades(self, out, out_start, num_output_frames, is_clip_start, is_clip_end):
+        """Multiply a fade-in ramp into the first FADE_FRAMES of the
+        clip and a fade-out ramp into the last FADE_FRAMES. Eliminates
+        the click that would otherwise happen at any clip boundary."""
+        # Reuse the module-level ramps — same as SubtitleDubClip. The
+        # previous np.linspace-per-callback allocated 256 bytes × 2 ramps
+        # × however-many in-window clips, which is malloc pressure on
+        # the audio thread for no audible benefit.
         fade_len = min(FADE_FRAMES, num_output_frames)
-
         if is_clip_start:
-            ramp = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
-            out[out_start:out_start + fade_len] *= ramp[:, None]
-
+            out[out_start:out_start + fade_len] *= _FADE_IN_RAMP[:fade_len]
         if is_clip_end:
-            ramp = np.linspace(1.0, 0.0, fade_len, dtype=np.float32)
             end = out_start + num_output_frames
-            out[end - fade_len:end] *= ramp[:, None]
+            out[end - fade_len:end] *= _FADE_OUT_RAMP[:fade_len]
 
     def read(self, playhead, frames, samplerate, buffer_pool):
         """Read audio with double-buffered streaming and background prefetch."""
@@ -181,7 +219,8 @@ class Clip:
         clip_t0 = max(t0, self.start_time)
         clip_t1 = min(t1, clip_end)
 
-        # FIX 4: Use round() instead of int() to avoid off-by-one frame errors
+        # round() rather than int() so an unlucky float rounding doesn't
+        # drop one output frame at the clip boundary (audible click).
         out_start = round((clip_t0 - t0) * samplerate)
         out_end = round((clip_t1 - t0) * samplerate)
         num_output_frames = out_end - out_start
@@ -203,7 +242,8 @@ class Clip:
 
         cache_offset = src_frame_start - cache['start']
 
-        # FIX 5: Re-use pre-allocated index buffer — no per-callback allocation
+        # Reuse pre-allocated index buffer to avoid one np.arange-sized
+        # alloc per callback.
         src_idx = self._src_idx_buf[:num_output_frames]
         np.multiply(np.arange(num_output_frames), self.speed, out=src_idx)
         src_idx += cache_offset
@@ -226,7 +266,6 @@ class Clip:
         interpolated = (1.0 - frac_valid[:, None]) * s0 + frac_valid[:, None] * s1
         out[out_start:out_start + np.count_nonzero(valid)] = interpolated * self.gain
 
-        # FIX 3: Apply fades at clip boundaries
         self._apply_boundary_fades(out, out_start, num_output_frames, is_clip_start, is_clip_end)
 
         return out
@@ -248,7 +287,26 @@ class SubtitleDubClip:
 
     Reads `path` and `start` live each callback so timeline drags / playlist swaps
     take effect immediately without engine re-sync. Loaded WAV samples are kept
-    in a small per-instance dict keyed by file path."""
+    in a small per-instance dict keyed by file path.
+
+    Storage format (since the int16-mono refactor):
+        _loaded[path] = (data: int16 ndarray shape (N,), engine_samplerate, N)
+
+    int16 instead of float32 halves the bytes; mono instead of stereo halves
+    them again — 4× shrink overall. TTS sources are universally mono (Edge
+    TTS, Piper, Coqui XTTS all emit 24 kHz mono), so the historical
+    `np.repeat(data, 2, axis=1)` was pure waste. The audio callback converts
+    + broadcasts to stereo float32 in one vectorized pass, costing a single
+    (n,) ndarray allocation per in-window clip per callback — still well
+    under the 42.7 ms block budget."""
+
+    # Background loader, lazily created the first time a clip needs to
+    # pull a WAV off disk. Shared across all clips — one thread is enough
+    # because the queue serializes loads anyway, and we never want
+    # competing reads thrashing the same disk.
+    _bg_loader_thread = None
+    _bg_loader_queue: Queue = Queue()
+    _bg_loader_lock = threading.Lock()
 
     def __init__(self, subtitle, samplerate):
         self.subtitle = subtitle
@@ -256,97 +314,231 @@ class SubtitleDubClip:
         self.gain = 1.0
         self.speed = 1.0
         self.enabled = True
-        self._loaded = {}  # path -> (data ndarray (N,2), src_samplerate, frame_count)
+        # path -> (int16 mono ndarray of shape (N,), engine_samplerate, N).
+        # See class docstring for the rationale behind int16 mono storage.
+        self._loaded = {}
+        # Paths we've already asked the background loader to fetch — keeps
+        # us from re-queueing the same path on every audio callback. We
+        # don't store the actual data here; that goes into `_loaded` once
+        # the loader thread is done.
+        self._load_pending: set[str] = set()
 
     def _current_dub(self):
         dubs = self.subtitle.get('dubbing')
         return dubs[0] if dubs else None
 
     def preload(self, path):
+        """Synchronous load — only safe to call from the MAIN thread (e.g.
+        from `sync_subtitle_dubs`) or the background loader. NEVER from
+        the audio callback: a cold-cache SoundFile open can stall for tens
+        of milliseconds, which is guaranteed underrun territory at
+        blocksize=2048.
+
+        Resamples to engine samplerate, downmixes to mono, and packs as
+        int16 — all up-front so the audio callback only has to multiply
+        by a scaling constant and broadcast across two output channels.
+        Storage is 1/4 the size of the original (stereo, float32, engine
+        SR) representation; the in-callback cost is one (n,) float32
+        allocation per in-window clip, which fits comfortably under the
+        block budget."""
         if path in self._loaded:
             return
         try:
             with sf.SoundFile(path, 'r') as f:
                 data = f.read(dtype='float32', always_2d=True)
-                if data.shape[1] == 1:
-                    data = np.tile(data, (1, 2))
-                self._loaded[path] = (data, f.samplerate, len(data))
+                src_sr = f.samplerate
+            # Downmix to mono: TTS sources are mono in practice (Edge,
+            # Piper, Coqui all emit single-channel) so this is a no-op
+            # in the common case. For genuinely stereo inputs, average
+            # the channels — that's what every L+R-to-mono downmix
+            # does.
+            if data.shape[1] == 1:
+                mono = data[:, 0]
+            else:
+                mono = data.mean(axis=1, dtype=np.float32)
+            # Resample to engine rate. Linear interp at load is what the
+            # callback's slow path used to do per-frame — amortizing it
+            # here removes 12 numpy allocations from each in-window
+            # callback. Same audible result.
+            if src_sr != self.samplerate:
+                src_frames = len(mono)
+                ratio = self.samplerate / src_sr
+                dst_frames = int(round(src_frames * ratio))
+                if dst_frames <= 0:
+                    return
+                src_idx = np.linspace(0.0, src_frames - 1, dst_frames, dtype=np.float64)
+                xp = np.arange(src_frames, dtype=np.float64)
+                mono = np.interp(src_idx, xp, mono).astype(np.float32)
+            # Pack to int16. Clip before cast to keep the high-bit
+            # interpretation predictable — TTS output is normally well
+            # below full scale but we never want a wraparound on an
+            # over-the-top sample.
+            np.clip(mono, -1.0, 1.0, out=mono)
+            packed = (mono * 32767.0).astype(np.int16)
+            self._loaded[path] = (packed, self.samplerate, len(packed))
+            # Evict stale entries: each clip's `read()` only ever consults
+            # the current dub's path (`_current_dub()`), so older paths
+            # left in `_loaded` from previous regenerations are dead
+            # memory. A single 3-second mono int16 dub at 48 kHz is
+            # 287 KB; across a 500-subtitle project with even modest
+            # regeneration history this still leaks tens of MB. We keep
+            # only the path we just loaded — the audio thread's
+            # `.get(path)` lookup is atomic, so dropping siblings here
+            # is callback-safe.
+            stale = [p for p in self._loaded if p != path]
+            for p in stale:
+                self._loaded.pop(p, None)
         except Exception:
             pass
 
+    @classmethod
+    def _ensure_bg_loader(cls):
+        """Spin up the shared background-loader thread on first use."""
+        with cls._bg_loader_lock:
+            if cls._bg_loader_thread is not None and cls._bg_loader_thread.is_alive():
+                return
+            cls._bg_loader_thread = threading.Thread(
+                target=cls._bg_loader_run, name='subtitle-dub-loader', daemon=True,
+            )
+            cls._bg_loader_thread.start()
+
+    @classmethod
+    def _bg_loader_run(cls):
+        """Drain (clip, path) pairs forever. The clip stuffs the result
+        into its own `_loaded` dict — no shared structure, so no lock
+        needed for the write itself."""
+        while True:
+            try:
+                clip, path = cls._bg_loader_queue.get()
+            except Exception:
+                continue
+            if clip is None:
+                continue
+            try:
+                clip.preload(path)
+            except Exception:
+                pass
+            finally:
+                # Drop the pending marker either way — if the load failed
+                # the audio thread will just keep producing silence for
+                # this clip until something retriggers preload (e.g. the
+                # path changes, or sync_subtitle_dubs runs again).
+                clip._load_pending.discard(path)
+
+    def _request_async_preload(self, path):
+        """Audio-thread-safe: enqueue a background load and mark the path
+        as pending so subsequent callbacks don't enqueue it again."""
+        if path in self._load_pending:
+            return
+        self._load_pending.add(path)
+        SubtitleDubClip._ensure_bg_loader()
+        try:
+            SubtitleDubClip._bg_loader_queue.put_nowait((self, path))
+        except Exception:
+            # Queue is unbounded so this shouldn't happen, but if anything
+            # fails just drop the pending marker so a future callback can
+            # retry. Better silent dub than blocked audio thread.
+            self._load_pending.discard(path)
+
     def read(self, playhead, frames, samplerate, buffer_pool):
-        out = buffer_pool.get((frames, 2), dtype=np.float32)
-
+        # Fast outer-bound skip — with hundreds of dubs in a project only
+        # a handful are inside the audio window. Returning None lets
+        # Track.read skip the per-clip alloc + add + zero-fill, which
+        # otherwise dominates the audio callback (the buffer pool tops
+        # out at ~30 buffers, so each off-window clip falls through to a
+        # fresh np.zeros allocation).
         if not self.enabled:
-            return out
-
+            return None
         dub = self._current_dub()
         if not dub:
-            return out
-
+            return None
         path = dub.get('path')
         if not path:
-            return out
-
-        if path not in self._loaded:
-            self.preload(path)
+            return None
         loaded = self._loaded.get(path)
         if loaded is None:
-            return out
+            # Not loaded yet — punt to the background thread. NEVER open
+            # a SoundFile from here: a synchronous disk read on a cold
+            # path can stall the audio callback past one block budget
+            # (42.7 ms at 48 kHz / 2048) and the user hears a crackle in
+            # what should be silence.
+            self._request_async_preload(path)
+            return None
         data, src_sr, total_frames = loaded
-
         start_time = float(dub.get('start', 0.0))
         clip_end = start_time + total_frames / src_sr
-
         t0 = playhead
         t1 = playhead + frames / samplerate
-
         if t1 <= start_time or t0 >= clip_end:
-            return out
-
+            return None
+        out = buffer_pool.get((frames, 2), dtype=np.float32)
         clip_t0 = max(t0, start_time)
         clip_t1 = min(t1, clip_end)
-
         out_start = round((clip_t0 - t0) * samplerate)
         out_end = round((clip_t1 - t0) * samplerate)
         num_output_frames = out_end - out_start
-
         if num_output_frames <= 0:
             return out
-
         is_clip_start = clip_t0 <= start_time + 1.0 / samplerate
         is_clip_end = clip_t1 >= clip_end - 1.0 / samplerate
 
-        ratio = (src_sr / samplerate) * self.speed
-        src_frame_start = (clip_t0 - start_time) * src_sr
-        src_idx = np.arange(num_output_frames, dtype=np.float64) * ratio + src_frame_start
+        # `data` is int16 mono at engine samplerate. Convert + scale to
+        # float32 in [-1, 1] via one np.multiply, then broadcast to both
+        # output channels. The scale factor folds the gain in so there's
+        # exactly one multiply pass over the samples.
+        scale = np.float32(self.gain) * _INT16_TO_FLOAT32
 
-        i0 = np.floor(src_idx).astype(np.int64)
-        i1 = i0 + 1
-        frac = (src_idx - i0).astype(np.float32)
-
-        valid = (i0 >= 0) & (i1 < total_frames)
-        valid_count = int(np.count_nonzero(valid))
-        if valid_count == 0:
-            return out
-
-        i0v = i0[valid]
-        i1v = i1[valid]
-        fracv = frac[valid]
-        s0 = data[i0v]
-        s1 = data[i1v]
-        interp = (1.0 - fracv[:, None]) * s0 + fracv[:, None] * s1
-        out[out_start:out_start + valid_count] = interp * self.gain
+        # Fast path: source samplerate matches engine and no stretch in
+        # flight. Just slice the int16 source, convert+scale once, write
+        # the result into both output channels.
+        if src_sr == samplerate and self.speed == 1.0:
+            src_frame_start = int(round((clip_t0 - start_time) * src_sr))
+            avail = total_frames - src_frame_start
+            if avail <= 0:
+                return out
+            n = min(num_output_frames, avail)
+            # One alloc: int16 → float32 with gain baked in. Cheap (n
+            # ≤ blocksize = 2048 → 8 KB).
+            mono_f32 = np.multiply(
+                data[src_frame_start:src_frame_start + n], scale,
+                dtype=np.float32, casting='unsafe',
+            )
+            out[out_start:out_start + n, 0] = mono_f32
+            out[out_start:out_start + n, 1] = mono_f32
+        else:
+            # Slow path: speed != 1.0 (live stretch preview). Completed
+            # stretches re-render the WAV file at the new rate so the
+            # callback usually hits the fast path; this exists only so
+            # the user-drag preview stays audible.
+            ratio = (src_sr / samplerate) * self.speed
+            src_frame_start = (clip_t0 - start_time) * src_sr
+            src_idx = np.arange(num_output_frames, dtype=np.float64) * ratio + src_frame_start
+            i0 = np.floor(src_idx).astype(np.int64)
+            i1 = i0 + 1
+            valid = (i0 >= 0) & (i1 < total_frames)
+            valid_count = int(np.count_nonzero(valid))
+            if valid_count == 0:
+                return out
+            i0v = i0[valid]
+            i1v = i1[valid]
+            fracv = (src_idx[valid] - i0v).astype(np.float32)
+            # `data` is int16 mono → fancy-index produces int16 1-D
+            # arrays. Lift to float32 for the interp arithmetic.
+            s0 = data[i0v].astype(np.float32)
+            s1 = data[i1v].astype(np.float32)
+            mono_f32 = ((1.0 - fracv) * s0 + fracv * s1) * scale
+            out[out_start:out_start + valid_count, 0] = mono_f32
+            out[out_start:out_start + valid_count, 1] = mono_f32
 
         fade_len = min(FADE_FRAMES, num_output_frames)
         if is_clip_start:
-            ramp = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
-            out[out_start:out_start + fade_len] *= ramp[:, None]
+            # Pre-built (FADE_FRAMES, 1) ramp shared by every clip in
+            # the engine — broadcasts against the (n, 2) stereo slice
+            # without any per-callback allocation.
+            out[out_start:out_start + fade_len] *= _FADE_IN_RAMP[:fade_len]
         if is_clip_end:
-            ramp = np.linspace(1.0, 0.0, fade_len, dtype=np.float32)
             end = out_start + num_output_frames
-            out[end - fade_len:end] *= ramp[:, None]
-
+            out[end - fade_len:end] *= _FADE_OUT_RAMP[:fade_len]
         return out
 
     def clear_cache(self):
@@ -361,12 +553,18 @@ class Track:
         self.clips = []
         self.gain = 1.0
         self.enabled = True
+        # Updated each Track.read() — read by the engine's debug printer.
+        self.last_in_window_clips = 0
+        self.last_total_clips = 0
 
     def add_clip(self, clip):
         self.clips.append(clip)
 
     def read(self, playhead, frames, samplerate, buffer_pool):
         out = buffer_pool.get((frames, 2), dtype=np.float32)
+        # DEBUG: how many clips actually rendered audio this callback.
+        self.last_in_window_clips = 0
+        self.last_total_clips = 0
 
         if not self.enabled:
             return out
@@ -375,8 +573,15 @@ class Track:
         # by `Track.add_clip` / `track.clips.remove(...)` running on the main
         # thread (e.g. via SoundDeviceAudioEngine.sync_subtitle_dubs while
         # bulk dub generation is delivering new clips).
-        for clip in tuple(self.clips):
+        clips_snapshot = tuple(self.clips)
+        self.last_total_clips = len(clips_snapshot)
+        for clip in clips_snapshot:
             clip_data = clip.read(playhead, frames, samplerate, buffer_pool)
+            if clip_data is None:
+                # Out-of-window clip — saves a per-clip add + zero-fill
+                # at hundreds of off-window clips per audio callback.
+                continue
+            self.last_in_window_clips += 1
             out += clip_data
             buffer_pool.release(clip_data)
 
@@ -392,7 +597,9 @@ class SoundDeviceAudioEngine:
         self.playing = False
         self.speed = 1.0
 
-        # FIX 6: Thread-safe playhead access
+        # Playhead is read by the audio thread on every callback and
+        # written by the main thread on seek/play — guard with a lock
+        # so a torn read can't make the callback render the wrong block.
         self._playhead_lock = threading.Lock()
         self._playhead = 0.0
 
@@ -403,6 +610,79 @@ class SoundDeviceAudioEngine:
         self.speaker_tracks = {}
         self.subtitle_clips = {}
 
+        # ---- DEBUG INSTRUMENTATION ----------------------------------
+        # Aggregates filled by _callback (audio thread) and dumped by the
+        # printer (main thread) once per second so the realtime callback
+        # never blocks on stderr.
+        self._dbg_lock = threading.Lock()
+        self._dbg_callbacks = 0
+        self._dbg_xruns = 0
+        self._dbg_last_status_flags = []
+        self._dbg_max_callback_ms = 0.0
+        self._dbg_sum_callback_ms = 0.0
+        self._dbg_over_budget = 0  # callbacks that ran >80% of the budget
+        self._dbg_max_in_window = 0
+        self._dbg_last_total_clips = 0
+        self._dbg_budget_ms = (self.blocksize / self.samplerate) * 1000.0
+        self._dbg_running = DEBUG_AUDIO
+        # Tracks the wall-clock at end of previous callback so we can spot
+        # gaps where the audio thread didn't get scheduled at all (GIL
+        # starvation, GC pause, OS preemption).
+        self._dbg_prev_callback_end = 0.0
+        self._dbg_max_gap_ms = 0.0
+        self._dbg_gap_starvations = 0
+        self._dbg_expected_interval_ms = self._dbg_budget_ms
+        # GC monitor — a stop-the-world gen-2 collection is the classic
+        # cause of a multi-frame audio dropout in long-running Python apps.
+        self._dbg_gc_collections = [0, 0, 0]
+        self._dbg_gc_during_playback = 0
+        # Bounded queue the audio callback puts XRUN/SLOW/STARVED events
+        # onto. The printer thread drains it. put_nowait drops events when
+        # full — by design: the callback must never block on a queue.
+        self._dbg_event_queue = Queue(maxsize=64)
+        if DEBUG_AUDIO:
+            sys.stderr.write(
+                f'[audioengine] DEBUG ON  sr={self.samplerate} '
+                f'blocksize={self.blocksize} budget={self._dbg_budget_ms:.1f}ms\n'
+            )
+            sys.stderr.flush()
+
+            def _gc_cb(phase, info):
+                if phase != 'stop':
+                    return
+                gen = info.get('generation', 0)
+                with self._dbg_lock:
+                    if 0 <= gen < 3:
+                        self._dbg_gc_collections[gen] += 1
+                    if self.playing:
+                        self._dbg_gc_during_playback += 1
+                        # Don't write to stderr here — gc.callbacks can fire
+                        # on any thread, including the audio callback if it
+                        # ever allocates. Stats are surfaced by the printer.
+
+            self._dbg_gc_cb = _gc_cb
+            gc.callbacks.append(_gc_cb)
+
+            self._dbg_thread = threading.Thread(
+                target=self._dbg_printer_loop, daemon=True, name='audioengine-debug'
+            )
+            self._dbg_thread.start()
+
+            # Watchdog: a plain Python thread that sleeps 10ms and notes any
+            # gap > 30ms between wakes. If this thread also experiences large
+            # gaps during playback, the GIL is being held by something else
+            # (and the audio callback's gaps are explained too). If the
+            # watchdog stays smooth while audio still chunks, the problem is
+            # below Python (PortAudio/PipeWire/OS scheduling) and we should
+            # stop optimizing Python.
+            self._dbg_watchdog_max_gap_ms = 0.0
+            self._dbg_watchdog_long_gaps = 0
+            self._dbg_watchdog_ticks = 0
+            self._dbg_watchdog_thread = threading.Thread(
+                target=self._dbg_watchdog_loop, daemon=True, name='audioengine-watchdog'
+            )
+            self._dbg_watchdog_thread.start()
+
         self.stream = sd.OutputStream(
             samplerate=self.samplerate,
             blocksize=self.blocksize,
@@ -411,7 +691,6 @@ class SoundDeviceAudioEngine:
             callback=self._callback
         )
 
-    # FIX 6: Property-based thread-safe playhead
     @property
     def playhead(self):
         with self._playhead_lock:
@@ -439,9 +718,16 @@ class SoundDeviceAudioEngine:
     def generate_track(self):
         return Track()
 
-    def _callback(self, outdata, frames, time, status):
-        if status:
-            pass
+    def _callback(self, outdata, frames, _time_info, status):
+        cb_t0 = time.perf_counter() if DEBUG_AUDIO else 0.0
+
+        # Inter-callback gap = time the audio thread was *not* running. If
+        # this exceeds the expected interval, the audio thread was starved
+        # (GIL contention, GC, OS scheduler) — a fast callback alone can't
+        # save us if it gets called late.
+        gap_ms = 0.0
+        if DEBUG_AUDIO and self._dbg_prev_callback_end > 0.0:
+            gap_ms = (cb_t0 - self._dbg_prev_callback_end) * 1000.0
 
         outdata.fill(0.0)
 
@@ -452,18 +738,217 @@ class SoundDeviceAudioEngine:
         # Snapshot self.tracks: sync_subtitle_dubs (main thread) appends/
         # removes tracks during bulk dub generation, which would otherwise
         # mutate this list mid-iteration on the audio thread and crash.
+        in_window_total = 0
+        clips_total = 0
         for track in tuple(self.tracks):
             track_data = track.read(current_playhead, frames, self.samplerate, self.buffer_pool)
             outdata += track_data
             self.buffer_pool.release(track_data)
+            in_window_total += getattr(track, 'last_in_window_clips', 0)
+            clips_total += getattr(track, 'last_total_clips', 0)
 
         np.clip(outdata, -1.0, 1.0, out=outdata)
 
         with self._playhead_lock:
             self._playhead += (frames / self.samplerate) * self.speed
 
+        if DEBUG_AUDIO:
+            cb_end = time.perf_counter()
+            cb_ms = (cb_end - cb_t0) * 1000.0
+            flags = _decode_callback_status(status) if status else []
+            # An inter-callback gap >1.5× the expected interval means the
+            # audio thread was held off CPU (GIL/GC/scheduler) — that's the
+            # actual cause of underruns when per-callback work is fast.
+            starved = (
+                self._dbg_prev_callback_end > 0.0
+                and gap_ms > self._dbg_expected_interval_ms * 1.5
+            )
+            # Hand events off to the printer thread instead of writing to
+            # stderr here. Inline stderr.write/flush from the audio thread
+            # can block on the pipe and itself causes the underrun the
+            # message is reporting — feedback loop.
+            if flags or cb_ms > self._dbg_budget_ms * 0.8 or starved:
+                event = (
+                    'XRUN' if flags
+                    else ('SLOW' if cb_ms > self._dbg_budget_ms * 0.8 else 'STARVED'),
+                    cb_ms, gap_ms, in_window_total, clips_total,
+                    current_playhead, tuple(flags),
+                )
+                try:
+                    self._dbg_event_queue.put_nowait(event)
+                except Exception:
+                    pass  # queue full → drop, don't block the audio thread
+            with self._dbg_lock:
+                self._dbg_callbacks += 1
+                if flags:
+                    self._dbg_xruns += 1
+                    self._dbg_last_status_flags = flags
+                if cb_ms > self._dbg_budget_ms * 0.8:
+                    self._dbg_over_budget += 1
+                if cb_ms > self._dbg_max_callback_ms:
+                    self._dbg_max_callback_ms = cb_ms
+                self._dbg_sum_callback_ms += cb_ms
+                if in_window_total > self._dbg_max_in_window:
+                    self._dbg_max_in_window = in_window_total
+                self._dbg_last_total_clips = clips_total
+                if gap_ms > self._dbg_max_gap_ms:
+                    self._dbg_max_gap_ms = gap_ms
+                if starved:
+                    self._dbg_gap_starvations += 1
+            self._dbg_prev_callback_end = cb_end
+
+    def _dbg_watchdog_loop(self):
+        """Pure-Python loop that sleeps 10ms and measures gaps. Used to
+        distinguish GIL contention (everyone gets gaps) from audio-stack
+        latency (only the callback gets gaps).
+
+        When a long gap is observed AND playback is happening, capture all
+        other threads' stack frames — whichever thread held the GIL during
+        the gap is the one we want to find. We snapshot the stacks here on
+        the watchdog thread (which got the GIL the moment the holder
+        released it), then aggregate the most-seen top frame for the
+        per-second printer to dump."""
+        self._dbg_top_frames = {}  # 'file:line:func' -> count
+        prev = time.perf_counter()
+        my_tid = threading.get_ident()
+        while self._dbg_running:
+            time.sleep(0.010)
+            now = time.perf_counter()
+            gap_ms = (now - prev) * 1000.0
+            prev = now
+            stacks_to_record = None
+            if gap_ms > 30.0 and self.playing:
+                # Capture frames immediately while the just-released GIL
+                # holder's call site is still likely on top of its stack.
+                frames = sys._current_frames()
+                stacks_to_record = []
+                for tid, frame in frames.items():
+                    if tid == my_tid:
+                        continue
+                    # Top of stack: most recent line being executed.
+                    stacks_to_record.append((tid, frame.f_code.co_filename,
+                                             frame.f_lineno, frame.f_code.co_name))
+            with self._dbg_lock:
+                self._dbg_watchdog_ticks += 1
+                if gap_ms > self._dbg_watchdog_max_gap_ms:
+                    self._dbg_watchdog_max_gap_ms = gap_ms
+                if gap_ms > 30.0:
+                    self._dbg_watchdog_long_gaps += 1
+                if stacks_to_record:
+                    for _tid, fname, lineno, func in stacks_to_record:
+                        # Drop the absolute path prefix to keep the line short.
+                        short = fname.split('/subtitld/')[-1] if '/subtitld/' in fname else fname.rsplit('/', 1)[-1]
+                        key = f'{short}:{lineno}:{func}'
+                        self._dbg_top_frames[key] = self._dbg_top_frames.get(key, 0) + 1
+
+    def _dbg_printer_loop(self):
+        """Background thread — prints aggregated audio-callback stats every
+        second. Runs off the realtime audio thread so stderr I/O can't stall
+        the callback."""
+        while self._dbg_running:
+            time.sleep(1.0)
+            with self._dbg_lock:
+                cb = self._dbg_callbacks
+                xruns = self._dbg_xruns
+                over = self._dbg_over_budget
+                mx = self._dbg_max_callback_ms
+                avg = (self._dbg_sum_callback_ms / cb) if cb else 0.0
+                last_flags = self._dbg_last_status_flags
+                max_in = self._dbg_max_in_window
+                total = self._dbg_last_total_clips
+                max_gap = self._dbg_max_gap_ms
+                starvations = self._dbg_gap_starvations
+                gc_g0, gc_g1, gc_g2 = self._dbg_gc_collections
+                gc_play = self._dbg_gc_during_playback
+                wd_max = self._dbg_watchdog_max_gap_ms
+                wd_long = self._dbg_watchdog_long_gaps
+                wd_ticks = self._dbg_watchdog_ticks
+                top_frames = self._dbg_top_frames
+                self._dbg_watchdog_max_gap_ms = 0.0
+                self._dbg_watchdog_long_gaps = 0
+                self._dbg_watchdog_ticks = 0
+                self._dbg_top_frames = {}
+                self._dbg_callbacks = 0
+                self._dbg_xruns = 0
+                self._dbg_over_budget = 0
+                self._dbg_max_callback_ms = 0.0
+                self._dbg_sum_callback_ms = 0.0
+                self._dbg_max_in_window = 0
+                self._dbg_last_status_flags = []
+                self._dbg_max_gap_ms = 0.0
+                self._dbg_gap_starvations = 0
+                self._dbg_gc_collections = [0, 0, 0]
+                self._dbg_gc_during_playback = 0
+            # Drain per-callback events queued by the audio thread. These
+            # are the SLOW/STARVED/XRUN messages that used to be written
+            # inline from _callback (a real-time hazard). Cap the drain so
+            # a burst can't keep us in this loop for too long.
+            drained = 0
+            while drained < 32:
+                try:
+                    kind, cb_ms, gap_ms, in_win, total_clips, ph, flags = \
+                        self._dbg_event_queue.get_nowait()
+                except Empty:
+                    break
+                drained += 1
+                if kind == 'XRUN':
+                    sys.stderr.write(
+                        f'[audioengine] XRUN flags={",".join(flags)} '
+                        f'cb_ms={cb_ms:.1f} gap_ms={gap_ms:.1f} '
+                        f'budget={self._dbg_budget_ms:.1f} '
+                        f'in_window={in_win}/{total_clips} '
+                        f'playhead={ph:.2f}s\n'
+                    )
+                elif kind == 'SLOW':
+                    sys.stderr.write(
+                        f'[audioengine] SLOW cb_ms={cb_ms:.1f} gap_ms={gap_ms:.1f} '
+                        f'budget={self._dbg_budget_ms:.1f} '
+                        f'in_window={in_win}/{total_clips} '
+                        f'playhead={ph:.2f}s\n'
+                    )
+                else:  # STARVED
+                    sys.stderr.write(
+                        f'[audioengine] STARVED gap_ms={gap_ms:.1f} '
+                        f'expected={self._dbg_expected_interval_ms:.1f} '
+                        f'cb_ms={cb_ms:.1f} '
+                        f'in_window={in_win}/{total_clips} '
+                        f'playhead={ph:.2f}s\n'
+                    )
+            if cb == 0 and not self.playing:
+                if drained:
+                    sys.stderr.flush()
+                continue
+            sys.stderr.write(
+                f'[audioengine] 1s: callbacks={cb} xruns={xruns} '
+                f'over_budget={over} starved={starvations} '
+                f'avg_ms={avg:.2f} max_ms={mx:.2f} max_gap_ms={max_gap:.1f} '
+                f'gc=g0:{gc_g0}/g1:{gc_g1}/g2:{gc_g2} gc_during_play={gc_play} '
+                f'wd=ticks={wd_ticks}/exp~100 long_gaps={wd_long} max={wd_max:.1f}ms '
+                f'max_in_window={max_in}/{total} clips '
+                f'playing={self.playing}'
+                + (f' last_flags={",".join(last_flags)}' if last_flags else '')
+                + '\n'
+            )
+            if top_frames:
+                # Top 5 frames seen at the moment of long-gap events.
+                ranked = sorted(top_frames.items(), key=lambda kv: kv[1], reverse=True)[:5]
+                sys.stderr.write(
+                    '[audioengine] 1s top GIL holders during gaps: '
+                    + ' | '.join(f'{loc}={n}' for loc, n in ranked)
+                    + '\n'
+                )
+            sys.stderr.flush()
+
     def play(self, position=0.0):
         if not self.playing:
+            # Cyclic GC is the dominant cause of audio underruns in projects
+            # with hundreds of dubs: each scan of the object graph blocks for
+            # 30-100ms (longer than one audio block at 48kHz/2048), which the
+            # OS sees as the callback never showing up. Refcounting still
+            # frees everything immediately; we just defer cycle detection
+            # until pause/stop, when a chunk on the audio thread is harmless.
+            self._gc_was_enabled = gc.isenabled()
+            gc.disable()
             self.seek(position)
             self.stream.start()
             self.playing = True
@@ -472,6 +957,11 @@ class SoundDeviceAudioEngine:
         if self.playing:
             self.stream.stop()
             self.playing = False
+            if getattr(self, '_gc_was_enabled', True):
+                gc.enable()
+            # Catch up on any cycles that accumulated while playback was
+            # suppressing collection.
+            gc.collect()
 
     def stop(self):
         self.pause()
@@ -597,7 +1087,14 @@ class SoundDeviceAudioEngine:
         return out
 
     def get_memory_usage(self):
-        """Estimate current memory usage in MB"""
+        """Estimate current resident audio memory in MB. Covers:
+          * the BufferPool (small, ~half a MB cap)
+          * Clip disk-streaming caches (~2 MB per Clip)
+          * SubtitleDubClip preloaded dub data (the big one on dub-heavy
+            projects — int16 mono at engine SR, ~96 KB/s of dub speech)
+
+        Used for diagnostics, not for any sizing decision. Cheap enough
+        to call from a UI status line."""
         total_bytes = 0
 
         for buf in self.buffer_pool.pool:
@@ -605,9 +1102,19 @@ class SoundDeviceAudioEngine:
 
         for track in self.tracks:
             for clip in track.clips:
-                if clip._cache_a['data'] is not None:
-                    total_bytes += clip._cache_a['data'].nbytes
-                if clip._cache_b['data'] is not None:
-                    total_bytes += clip._cache_b['data'].nbytes
+                # Streaming-audio Clips have double-buffered caches.
+                cache_a = getattr(clip, '_cache_a', None)
+                cache_b = getattr(clip, '_cache_b', None)
+                if cache_a is not None and cache_a.get('data') is not None:
+                    total_bytes += cache_a['data'].nbytes
+                if cache_b is not None and cache_b.get('data') is not None:
+                    total_bytes += cache_b['data'].nbytes
+                # SubtitleDubClips hold one preloaded dub each.
+                loaded = getattr(clip, '_loaded', None)
+                if loaded:
+                    for entry in loaded.values():
+                        data = entry[0] if entry else None
+                        if data is not None:
+                            total_bytes += data.nbytes
 
         return total_bytes / (1024 * 1024)

@@ -3,16 +3,16 @@
 block_cipher = None
 
 import os
-import vosk
 import shutil
 
-vosk_path = os.path.dirname(vosk.__file__)
+# Vosk used to be bundled here as a built-in ASR provider — `libvosk.so`
+# would ship inside the binary at `vosk/`. It's now an external add-on,
+# so the host binary no longer carries it. Users who want offline
+# transcription install it via the AddonsPanel.
 ffmpeg_path = shutil.which('ffmpeg')
 ffprobe_path = shutil.which('ffprobe')
 
-binaries_list = [
-    (os.path.join(vosk_path, 'libvosk.so'), 'vosk'),
-]
+binaries_list = []
 
 if ffmpeg_path:
     binaries_list.append((ffmpeg_path, '.'))

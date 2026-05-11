@@ -10,6 +10,8 @@ from subtitld.interface import utils
 from subtitld.modules import session
 from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
+from subtitld.modules import addons
+from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 
 _list_of_supported_import_extensions = []
@@ -41,456 +43,18 @@ def _audio_source_for_transcription():
 
     return None
 
-from vosk import Model, KaldiRecognizer
-import requests
-import zipfile
-import wave
 import subprocess
-import re
-import shutil
 import assemblyai as aai
 
+# Vosk used to be a built-in ASR provider here. It's now distributed as an
+# external add-on (see https://github.com/Subtitld/addon-vosk) so the
+# Subtitld binary stays lean — neither the `vosk` Python wheel nor the
+# `~50 MB` to `~1.6 GB` model zips ship inside the app. Users who want
+# offline transcription install the add-on via the AddonsPanel; it then
+# appears in the engine combobox alongside AssemblyAI through the
+# generic `_GenericASRPanel` path below.
+
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
-
-VOSK_CONFIG = {
-  "en": [
-    {
-      "name": "vosk-model-small-en-us-0.15",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
-      "size": "40M",
-      "license": "Apache 2.0",
-      "description": "Small English (US) model. Lightweight, low memory usage, suitable for mobile and embedded/offline applications."
-    },
-    {
-      "name": "vosk-model-en-us-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip",
-      "size": "1.8G",
-      "license": "Apache 2.0",
-      "description": "Full-size English (US) model. Higher accuracy, recommended for server or desktop environments."
-    },
-    {
-      "name": "vosk-model-en-us-0.22-lgraph",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip",
-      "size": "128M",
-      "license": "Apache 2.0",
-      "description": "English (US) model with compact language graph. Balanced size and accuracy."
-    },
-    {
-      "name": "vosk-model-en-us-0.42-gigaspeech",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.42-gigaspeech.zip",
-      "size": "2.3G",
-      "license": "Apache 2.0",
-      "description": "Large English model trained on GigaSpeech dataset. Improved accuracy for diverse speech."
-    }
-  ],
-  "pt": [
-    {
-      "name": "vosk-model-small-pt-0.3",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip",
-      "size": "31M",
-      "license": "Apache 2.0",
-      "description": "Small Portuguese model. Lightweight and suitable for offline/mobile applications."
-    },
-    {
-      "name": "vosk-model-pt-fb-v0.1.1-20220516_2113",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-pt-fb-v0.1.1-20220516_2113.zip",
-      "size": "1.6G",
-      "license": "GPLv3.0",
-      "description": "Full-size Portuguese model (Facebook training). Higher accuracy, requires more memory."
-    }
-  ],
-  "es": [
-    {
-      "name": "vosk-model-small-es-0.42",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip",
-      "size": "39M",
-      "license": "Apache 2.0",
-      "description": "Small Spanish model. Lightweight, optimized for embedded and offline usage."
-    },
-    {
-      "name": "vosk-model-es-0.42",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-es-0.42.zip",
-      "size": "1.4G",
-      "license": "Apache 2.0",
-      "description": "Full-size Spanish model. Higher recognition accuracy for desktop/server usage."
-    }
-  ],
-  "fr": [
-    {
-      "name": "vosk-model-small-fr-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip",
-      "size": "41M",
-      "license": "Apache 2.0",
-      "description": "Small French model. Lightweight and efficient for offline/mobile systems."
-    },
-    {
-      "name": "vosk-model-fr-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-fr-0.22.zip",
-      "size": "1.4G",
-      "license": "Apache 2.0",
-      "description": "Full-size French model. Improved accuracy, recommended for powerful systems."
-    }
-  ],
-  "de": [
-    {
-      "name": "vosk-model-small-de-0.15",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-de-0.15.zip",
-      "size": "45M",
-      "license": "Apache 2.0",
-      "description": "Small German model. Suitable for low-resource and embedded applications."
-    },
-    {
-      "name": "vosk-model-de-0.21",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-de-0.21.zip",
-      "size": "1.9G",
-      "license": "Apache 2.0",
-      "description": "Full-size German model. Higher accuracy for server/desktop environments."
-    }
-  ],
-  "it": [
-    {
-      "name": "vosk-model-small-it-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-it-0.22.zip",
-      "size": "48M",
-      "license": "Apache 2.0",
-      "description": "Small Italian model. Lightweight and optimized for offline usage."
-    },
-    {
-      "name": "vosk-model-it-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-it-0.22.zip",
-      "size": "1.2G",
-      "license": "Apache 2.0",
-      "description": "Full-size Italian model. Better accuracy for production/server applications."
-    }
-  ],
-  "ru": [
-    {
-      "name": "vosk-model-small-ru-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip",
-      "size": "45M",
-      "license": "Apache 2.0",
-      "description": "Small Russian model. Lightweight and suitable for offline systems."
-    },
-    {
-      "name": "vosk-model-ru-0.42",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-ru-0.42.zip",
-      "size": "1.8G",
-      "license": "Apache 2.0",
-      "description": "Full-size Russian model. Higher accuracy for complex speech recognition tasks."
-    }
-  ],
-  "zh": [
-    {
-      "name": "vosk-model-small-cn-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip",
-      "size": "42M",
-      "license": "Apache 2.0",
-      "description": "Small Chinese model. Compact and suitable for embedded/offline use."
-    },
-    {
-      "name": "vosk-model-cn-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip",
-      "size": "1.3G",
-      "license": "Apache 2.0",
-      "description": "Full-size Chinese model. Higher recognition accuracy for server environments."
-    }
-  ],
-  "ja": [
-    {
-      "name": "vosk-model-small-ja-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip",
-      "size": "48M",
-      "license": "Apache 2.0",
-      "description": "Small Japanese model. Lightweight for offline/mobile applications."
-    },
-    {
-      "name": "vosk-model-ja-0.22",
-      "url": "https://alphacephei.com/vosk/models/vosk-model-ja-0.22.zip",
-      "size": "1Gb",
-      "license": "Apache 2.0",
-      "description": "Full-size Japanese model. Higher accuracy for desktop/server usage."
-    }
-  ]
-}
-
-
-class VoskPanel(QWidget):
-    transcript_started = Signal()
-    transcript_progress = Signal(int)
-    transcript_finished = Signal()
-    def __init__(widget, parent=None):
-        super().__init__(parent=None)
-        widget.parent = parent
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
-        widget.layout().setSpacing(10)
-        widget.setProperty('transcription_engine', 'Vosk')
-        widget.setProperty('class', 'transparent_panel')
-
-        widget.selected_model = False
-
-        widget.model_line = QWidget()
-        widget.model_line.setLayout(QHBoxLayout())
-        widget.model_line.layout().setContentsMargins(0, 0, 0, 0)
-        widget.model_line.layout().setSpacing(5)
-        widget.layout().addWidget(widget.model_line) 
-
-        widget.model_combobox = utils.LabeledComboBox()
-        widget.model_combobox.setObjectName('global_panel_import_vosk_transcription_model_combobox')
-        widget.model_combobox.activated.connect(lambda: widget.model_combobox_activated())
-        widget.model_line.layout().addWidget(widget.model_combobox, 1)
-
-        widget.download_model_button = QPushButton()
-        widget.download_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-        widget.download_model_button.setObjectName('global_panel_import_vosk_transcription_download_model_button')
-        widget.download_model_button.clicked.connect(lambda: widget.download_model_button_clicked())
-        widget.model_combobox.bottom_line.addWidget(widget.download_model_button)
-
-        widget.update_model_button = QPushButton()
-        widget.update_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-        widget.update_model_button.setObjectName('global_panel_import_vosk_transcription_update_model_button')
-        widget.update_model_button.clicked.connect(lambda: widget.update_model_button_clicked())
-        widget.model_combobox.bottom_line.addWidget(widget.update_model_button)
-
-        widget.remove_model_button = QPushButton()
-        widget.remove_model_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
-        widget.remove_model_button.setObjectName('global_panel_import_vosk_transcription_remove_model_button')
-        widget.remove_model_button.setProperty('class', 'danger')
-        widget.remove_model_button.clicked.connect(lambda: widget.remove_model_button_clicked())
-        widget.model_combobox.bottom_line.addWidget(widget.remove_model_button)
-
-        widget.no_model_available_label = QLabel()
-        widget.layout().addWidget(widget.no_model_available_label)
-
-        widget.details_line = QHBoxLayout()
-        widget.details_line.setContentsMargins(0, 0, 0, 0)
-        widget.details_line.setSpacing(10)
-
-        widget.description_label = QLabel()
-        widget.description_label.setWordWrap(True)
-        widget.details_line.addWidget(widget.description_label, 1, Qt.AlignLeft | Qt.AlignTop)
-
-        widget.license_label = utils.LabeledLabel()
-        widget.details_line.addWidget(widget.license_label, 0, Qt.AlignTop)
-
-        widget.size_label = utils.LabeledLabel()
-        widget.details_line.addWidget(widget.size_label, 0, Qt.AlignTop)
-
-        widget.layout().addLayout(widget.details_line)
-
-        widget.layout().addStretch()
-
-        class download_thread(QThread):
-            response = Signal(float)
-            url = None
-            final_path = None
-            def run(self):
-                if self.url is not None and self.final_path is not None:
-                    r = requests.get(self.url, stream=True)
-                    total_size = int(r.headers.get('content-length', 0))
-                    size_counter = 0
-                    with open(self.final_path, 'wb') as f:
-                        for chunk in r.iter_content(chunk_size = 1024 * 1024):
-                            if chunk:
-                                f.write(chunk)
-                                size_counter += len(chunk)
-                                self.response.emit(float(size_counter) / float(total_size))
-                                                                  
-                    with zipfile.ZipFile(self.final_path, 'r') as zip_ref:
-                        zip_ref.extractall(session.PATH_SUBTITLD_DATA_MODELS)        
-        
-        def download_started():
-            widget.model_combobox.setEnabled(False)
-            widget.size_label.setLabel(_('transcription_panel.downloading'))
-
-        def download_progress_changed(value):
-            widget.size_label.setText(f'{widget.selected_model["size"]} ({int(value * 100)}%)')
-
-        def download_finished():
-            widget.size_label.setLabel(_('transcription_panel.size'))
-            widget.model_combobox.setEnabled(True)
-            widget.models_update()
-
-        widget.download_thread = download_thread()
-        widget.download_thread.response.connect(lambda value: download_progress_changed(value))
-        widget.download_thread.started.connect(lambda: download_started())
-        widget.download_thread.finished.connect(lambda: download_finished())
-
-        class VoskThread(QThread):
-            response = Signal(object)
-            progress = Signal(int)
-            model_path = None
-            audio_file = None
-            
-            def run(self):
-                if self.model_path and self.audio_file:
-                    temp_audio_file = os.path.join(session.PATH_TEMP, f'vosk_transcribe_{os.path.basename(self.audio_file)}')
-
-                    self.progress.emit(1)
-
-                    subprocess.Popen(
-                        [
-                            session.FFMPEG_EXECUTABLE,
-                            '-i', self.audio_file,
-                            '-acodec', 'pcm_s16le',
-                            '-ar', '16000',
-                            '-ac', '1',
-                            '-f', 'wav',
-                            temp_audio_file
-                        ],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL, 
-                        startupinfo=session.STARTUPINFO
-                    ).wait()
-
-                    self.progress.emit(8)
-
-                    model = Model(self.model_path)
-
-                    self.progress.emit(9)
-
-                    wf = wave.open(temp_audio_file, "rb")
-
-                    self.progress.emit(10)
-
-                    rec = KaldiRecognizer(model, wf.getframerate())
-                    rec.SetWords(True)
-
-                    while True:
-                        data = wf.readframes(4000)
-                        if len(data) == 0:
-                            break
-                        if rec.AcceptWaveform(data):
-                            result = rec.Result()
-                            result = re.sub(r'(\d),(\d)', r'\1.\2', result)
-                            result = json.loads(result)
-                            words = result.get('result') or []
-                            if words:
-                                self.progress.emit(10 + int((float(words[0]['start']) / float(session.VIDEO.get('duration', 60.0))) * 90))
-                                self.response.emit(result)
-
-                    final = rec.FinalResult()
-                    final = re.sub(r'(\d),(\d)', r'\1.\2', final)
-                    final = json.loads(final)
-                    if final.get('result'):
-                        self.response.emit(final)
-
-        def translate_thread_response(response):
-            if isinstance(response, dict) and all(k in response for k in ('result', 'text')):
-                session.SUBTITLE['segments'].append({
-                    'start': response['result'][0]['start'],
-                    'end': response['result'][-1]['end'],
-                    'text': response['text'],
-                    'speaker': 'A'
-                })
-                if not response['result'][0]['speaker'] in session.SPEAKERS:
-                    session.SPEAKERS[response['result'][0]['speaker']] = {
-                        'image': None
-                    }
-                widget.window().timeline_widget.update()
-                session.set_unsaved()
-
-        widget.translate_thread = VoskThread()
-        widget.translate_thread.response.connect(translate_thread_response)
-        widget.translate_thread.started.connect(lambda: widget.transcript_started.emit())
-        widget.translate_thread.progress.connect(lambda value: widget.transcript_progress.emit(value))        
-        widget.translate_thread.finished.connect(lambda: widget.transcript_finished.emit())
-
-        widget.update_callback = widget.update
-        widget.transcript_callback = widget.transcript
-        widget.translate_callback = widget.translate
-
-    def update(widget):
-        widget.model_line.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
-        widget.no_model_available_label.setVisible(not bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
-        widget.description_label.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
-        widget.license_label.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
-        widget.size_label.setVisible(bool(session.SUBTITLE.get('language', 'en-us')[:2] in VOSK_CONFIG))
-
-        if widget.model_line.isVisible():
-            list_of_available_models = [item['name'] for item in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]]
-            widget.model_combobox.clear()
-            widget.model_combobox.addItems(list_of_available_models)
-
-            selected_model_from_config = session.CONFIG['transcription'].get('engine_options', {}).get('Vosk', {}).get('selected_model', False)
-            if selected_model_from_config:
-                widget.model_combobox.setCurrentText(selected_model_from_config)
-
-        widget.models_update()
-
-    def remove_model_button_clicked(widget):
-        confirm_dialog = utils.SimpleDialog(widget, title=_('transcription_panel.remove_model_confirm'))
-        label = QLabel(_('transcription_panel.remove_model_confirm_text'))
-        confirm_dialog.content.layout().addWidget(label)
-        confirm_dialog.exec()
-        if confirm_dialog.result() == 1:
-            widget.selected_model = {}
-            for model in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]:
-                if model['name'] == widget.model_combobox.currentText():
-                    widget.selected_model = model
-                    break
-
-            model_path = os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])
-
-            if os.path.isdir(model_path):
-                shutil.rmtree(model_path)
-
-            widget.models_update()
-
-    def models_update(widget):
-        if widget.model_line.isVisible():
-            widget.selected_model = {}
-            for model in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]:
-                if model['name'] == widget.model_combobox.currentText():
-                    widget.selected_model = model
-                    break
-
-            widget.download_model_button.setVisible(not os.path.isdir(os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])))
-            widget.update_model_button.setVisible(os.path.isdir(os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])))
-            widget.remove_model_button.setVisible(os.path.isdir(os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])))
-            widget.description_label.setText(widget.selected_model['description'])
-            widget.license_label.setText(widget.selected_model['license'])
-            widget.size_label.setText(widget.selected_model['size'])
-
-    def model_combobox_activated(widget):
-        if not 'engine_options' in session.CONFIG['transcription']:
-            session.CONFIG['transcription']['engine_options'] = {}
-        if not 'Vosk' in session.CONFIG['transcription']['engine_options']:
-            session.CONFIG['transcription']['engine_options']['Vosk'] = {}
-
-        session.CONFIG['transcription']['engine_options']['Vosk']['selected_model'] = widget.model_combobox.currentText()
-
-        widget.models_update()
-
-    def download_model_button_clicked(widget):
-        widget.selected_model = {}
-        for model in VOSK_CONFIG[session.SUBTITLE.get('language', 'en-us')[:2]]:
-            if model['name'] == widget.model_combobox.currentText():
-                widget.selected_model = model
-                break
-
-        widget.download_thread.url = widget.selected_model['url']
-        widget.download_thread.final_path = os.path.join(session.PATH_TEMP, widget.selected_model['name'])
-        widget.download_thread.start()
-
-    def update_model_button_clicked(widget):
-        widget.remove_model_button_clicked()
-        widget.download_model_button_clicked()
-
-    def transcript(widget):
-        if widget.selected_model:
-            audio_file = _audio_source_for_transcription()
-            if not audio_file:
-                return
-            widget.translate_thread.model_path = os.path.join(session.PATH_SUBTITLD_DATA_MODELS, widget.selected_model['name'])
-            widget.translate_thread.audio_file = audio_file
-            widget.translate_thread.start()
-
-    def translate(widget):
-        widget.model_combobox.setLabel(_('transcription_panel.model'))
-        widget.license_label.setLabel(_('transcription_panel.license'))
-        widget.size_label.setLabel(_('transcription_panel.size'))
-        widget.no_model_available_label.setText(_('transcription_panel.no_model_available'))
 
 
 class AssemblyAIPanel(QWidget):
@@ -636,6 +200,184 @@ class AssemblyAIPanel(QWidget):
         widget.api_key.lineedit.setToolTip(_('transcription_panel.api_key'))
 
 
+class _GenericASRPanel(QWidget):
+    """Generic transcription panel for an arbitrary `ASRProvider`.
+
+    Used for ASR add-ons discovered at runtime — handles `transcribe()`
+    invocation and routes the provider's `partial`/`transcript_finished`/
+    `error` signals back to the host UI. The built-in AssemblyAI keeps
+    its bespoke panel (API-key field) above; this is the fallback when
+    there's no engine-specific UI to render — including for the Vosk
+    add-on, whose generic schema-driven UI is configured via the
+    AddonsPanel rather than an embedded panel here.
+    """
+
+    transcript_started = Signal()
+    transcript_progress = Signal(int)
+    transcript_finished = Signal()
+
+    def __init__(widget, provider, parent=None):
+        super().__init__(parent=None)
+        widget.parent = parent
+        widget.provider = provider
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(10)
+        widget.setProperty('transcription_engine', provider.id)
+        widget.setProperty('class', 'transparent_panel')
+
+        widget.info_label = QLabel()
+        widget.info_label.setWordWrap(True)
+        widget.info_label.setText(provider.display_name)
+        widget.layout().addWidget(widget.info_label)
+
+        widget.layout().addStretch()
+
+        # Wire provider signals through to the host's progress UI.
+        try:
+            provider.transcript_started.connect(lambda: widget.transcript_started.emit())
+        except Exception:
+            pass
+        try:
+            provider.progress.connect(lambda v, _msg='': widget.transcript_progress.emit(int(v * 100)))
+        except Exception:
+            pass
+        try:
+            provider.transcript_finished.connect(lambda segments: widget._on_finished(segments))
+        except Exception:
+            pass
+        try:
+            provider.partial.connect(lambda seg: widget._on_partial(seg))
+        except Exception:
+            pass
+        try:
+            provider.error.connect(lambda msg: widget._on_error(msg))
+        except Exception:
+            pass
+
+        widget.update_callback = widget.update
+        widget.transcript_callback = widget.transcript
+        widget.translate_callback = widget.translate
+
+    def _on_partial(widget, segment):
+        # Append directly so live updates show on the timeline.
+        if not isinstance(segment, dict):
+            return
+        session.SUBTITLE.setdefault('segments', []).append({
+            'start': float(segment.get('start', 0.0)),
+            'end': float(segment.get('end', 0.0)),
+            'text': segment.get('text', ''),
+            'speaker': segment.get('speaker', 'A'),
+        })
+        speaker = segment.get('speaker', 'A')
+        if speaker not in session.SPEAKERS:
+            session.SPEAKERS[speaker] = {'image': None}
+        try:
+            widget.window().timeline_widget.update()
+        except Exception:
+            pass
+        session.set_unsaved()
+
+    def _on_finished(widget, segments):
+        if isinstance(segments, list) and segments:
+            session.SUBTITLE['segments'] = list(segments)
+            for seg in segments:
+                speaker = seg.get('speaker', 'A')
+                if speaker not in session.SPEAKERS:
+                    session.SPEAKERS[speaker] = {'image': None}
+            try:
+                widget.window().timeline_widget.update()
+            except Exception:
+                pass
+            session.set_unsaved()
+        widget.transcript_finished.emit()
+
+    def _on_error(widget, message):
+        try:
+            error_dialog = utils.SimpleDialog(widget, title=_('transcription_panel.error'))
+            label = QLabel(str(message))
+            error_dialog.content.layout().addWidget(label)
+            error_dialog.reject_button.setVisible(False)
+            error_dialog.exec()
+        except Exception:
+            pass
+        widget.transcript_finished.emit()
+
+    def update(widget):
+        pass
+
+    def transcript(widget):
+        audio_file = _audio_source_for_transcription()
+        if not audio_file:
+            return
+        widget.transcript_started.emit()
+        language = session.SUBTITLE.get('language', 'en-us')
+        opts = session.CONFIG.get('transcription', {}).get('engine_options', {}).get(widget.provider.id, {})
+        widget.provider.transcribe(audio_file, language, dict(opts) if isinstance(opts, dict) else {})
+
+    def translate(widget):
+        widget.info_label.setText(widget.provider.display_name)
+
+
+# Built-in transcription provider IDs. Their panels are constructed once at
+# load() time because they own expensive state (AssemblyAI API-key field) we
+# can't afford to discard every time a user installs/removes an unrelated
+# add-on. Vosk used to live here too — it's now an add-on; see
+# `_populate_asr_addons` below.
+_BUILTIN_ASR_IDS = {'assemblyai'}
+
+# Index of the first add-on slot in the engine combobox / stacked widget.
+# Equals the number of built-in entries seeded in `load()` (currently just
+# AssemblyAI). Bumping this in lockstep with `_BUILTIN_ASR_IDS` keeps the
+# rebuild logic correct without per-id arithmetic.
+_BUILTIN_ASR_COUNT = 1
+
+
+def _populate_asr_addons(self):
+    """(Re)build only the add-on tail of the transcription engine combobox
+    and stacked widget. Idempotent — safe to call after `providers_changed`.
+
+    The combobox always starts with the built-in entry ('AssemblyAI');
+    add-ons live AFTER `_BUILTIN_ASR_COUNT`, so we chop the tail and
+    re-add. Using `removeItem` on the underlying QComboBox rather than
+    `clear()` preserves the built-in entry and its selection state.
+    """
+    if not hasattr(self, 'global_panel_import_engine_combobox'):
+        return  # `load()` hasn't finished yet
+
+    combobox = self.global_panel_import_engine_combobox.combobox
+    stack = self.global_panel_import_tabwidget
+
+    previous_selection = combobox.currentText()
+    combobox.blockSignals(True)
+    try:
+        # Drop combobox entries past the built-ins.
+        while combobox.count() > _BUILTIN_ASR_COUNT:
+            combobox.removeItem(combobox.count() - 1)
+        # Drop add-on widgets in the stacked widget — also past the built-ins.
+        while stack.count() > _BUILTIN_ASR_COUNT:
+            widget = stack.widget(stack.count() - 1)
+            stack.removeWidget(widget)
+            widget.deleteLater()
+
+        for provider in addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE):
+            if provider.id in _BUILTIN_ASR_IDS:
+                continue
+            panel = _GenericASRPanel(provider)
+            panel.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
+            panel.transcript_progress.connect(lambda value: global_panel_import_start_transcription_progress_update(self, value))
+            panel.transcript_finished.connect(lambda: global_panel_import_start_transcription_progress_finish(self))
+            stack.addWidget(panel)
+            combobox.addItem(provider.id)
+
+        if previous_selection:
+            combobox.setCurrentText(previous_selection)
+    finally:
+        combobox.blockSignals(False)
+
+    global_panel_import_tabwidget_update(self)
+
+
 def load(self):
     tab_name = 'import'
 
@@ -658,23 +400,33 @@ def load(self):
 
     self.global_panel_import_engine_combobox = utils.LabeledComboBox()
     self.global_panel_import_engine_combobox.setProperty('class', 'button')
-    self.global_panel_import_engine_combobox.addItems(['Vosk', 'AssemblyAI'])
     self.global_panel_import_engine_combobox.activated.connect(lambda: global_panel_import_engine_combobox_activated(self))
     left_panel_import_panel.layout().addWidget(self.global_panel_import_engine_combobox)
 
     self.global_panel_import_tabwidget = QStackedWidget()
 
-    self.global_panel_import_vosk_transcription_widget = VoskPanel()
-    self.global_panel_import_vosk_transcription_widget.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
-    self.global_panel_import_vosk_transcription_widget.transcript_progress.connect(lambda value: global_panel_import_start_transcription_progress_update(self, value))
-    self.global_panel_import_vosk_transcription_widget.transcript_finished.connect(lambda: global_panel_import_start_transcription_progress_finish(self))
-    self.global_panel_import_tabwidget.addWidget(self.global_panel_import_vosk_transcription_widget)
-
+    # Built-in panel: AssemblyAI (rich UI with API-key field). Its
+    # `transcription_engine` property uses the legacy 'AssemblyAI' label so
+    # config files round-trip unchanged. (Vosk used to live here too —
+    # it's now distributed as an add-on.)
     self.global_panel_import_assemblyai_transcription_widget = AssemblyAIPanel()
     self.global_panel_import_assemblyai_transcription_widget.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
     self.global_panel_import_assemblyai_transcription_widget.transcript_progress.connect(lambda value: global_panel_import_start_transcription_progress_update(self, value))
     self.global_panel_import_assemblyai_transcription_widget.transcript_finished.connect(lambda: global_panel_import_start_transcription_progress_finish(self))
     self.global_panel_import_tabwidget.addWidget(self.global_panel_import_assemblyai_transcription_widget)
+    self.global_panel_import_engine_combobox.addItem('AssemblyAI')
+
+    # Add-on ASR providers discovered at runtime. The AssemblyAI built-in is
+    # NOT churned on rebuild because its panel carries the user's API key —
+    # we'd lose it on every `providers_changed` emission. We only refresh
+    # the add-on tail.
+    _populate_asr_addons(self)
+
+    # Wire add-on registry to the UI. A user installing/uninstalling an
+    # ASR add-on at runtime triggers `providers_changed`; we rebuild the
+    # add-on portion of the combobox + stacked widget without restarting
+    # the app.
+    addons.get_manager().providers_changed.connect(lambda: _populate_asr_addons(self))
 
     left_panel_import_panel.layout().addWidget(self.global_panel_import_tabwidget, 1)
 
@@ -723,7 +475,11 @@ def update(self):
             break
     self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
 
-    self.global_panel_import_engine_combobox.setCurrentText(session.CONFIG['transcription'].get('engine', 'Vosk'))
+    # Default ASR engine: AssemblyAI (the only built-in left after Vosk
+    # was extracted). Existing user configs that store `'Vosk'` here will
+    # silently fall through to AssemblyAI when the saved engine isn't in
+    # the combobox — `setCurrentText` is a no-op for unknown text.
+    self.global_panel_import_engine_combobox.setCurrentText(session.CONFIG['transcription'].get('engine', 'AssemblyAI'))
 
     global_panel_import_tabwidget_update(self)
     
@@ -795,7 +551,5 @@ def translate(self):
     for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
         if 'translate_callback' in dir(widget):
             widget.translate_callback()
-
-    
 
     

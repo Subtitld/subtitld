@@ -6,7 +6,7 @@ import subprocess
 
 from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QFontMetrics, QPixmap, QCursor, QBrush
-from PySide6.QtCore import Qt, QRectF, QPointF, QThread, Signal, QMarginsF, QTimer, QMargins
+from PySide6.QtCore import Qt, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import session
 from subtitld.modules import utils
@@ -142,7 +142,18 @@ class WaveformWorker(QThread):
         self.samples_per_bucket = int(samples_per_bucket)
 
     def run(self):
-        arr = np.asarray(self.samples, dtype=np.float32)
+        # Accept either int16 (the new compact storage) or float32 (legacy,
+        # for caches saved before the dtype change). For int16 we compute
+        # min/max in-place and normalize to float32 [-1, 1] just before
+        # emit — that's all the display code expects. For ~172 M samples
+        # (1 hour @ 48 kHz), the int16 path uses half the RAM of float32
+        # during the bucket reshape.
+        src = self.samples
+        is_int16 = getattr(src, 'dtype', None) == np.int16
+        if is_int16:
+            arr = src  # no copy; min/max work on int16 directly
+        else:
+            arr = np.asarray(src, dtype=np.float32)
         length = (len(arr) // self.samples_per_bucket) * self.samples_per_bucket
         if length == 0:
             mins = np.array([], dtype=np.float32)
@@ -152,6 +163,12 @@ class WaveformWorker(QThread):
             buckets = arr.reshape(-1, self.samples_per_bucket)
             mins = buckets.min(axis=1)
             maxs = buckets.max(axis=1)
+            if is_int16:
+                # Convert to float32 [-1, 1] for the display code. Scale
+                # by 32768 (the int16 range) — anything that was clipped
+                # at +/-1.0 before conversion stays at +/-1.0 after.
+                mins = (mins.astype(np.float32) / 32768.0)
+                maxs = (maxs.astype(np.float32) / 32768.0)
         self.finished.emit(self.zoom_key, (mins, maxs, self.samples_per_bucket))
     
 
@@ -184,10 +201,23 @@ class WaveformManager:
         cache_path = self._cache_path()
         if not cache_path or not os.path.exists(cache_path):
             return False
-        
+
         try:
             data = np.load(cache_path, allow_pickle=True).item()
-            self.samples = data.get('samples')
+            samples = data.get('samples')
+            # Migrate legacy float32 caches to int16 on read so we don't
+            # pay double the RAM forever just because the cache was
+            # written before the dtype change. The worker tolerates both
+            # but ongoing storage costs half as much in int16.
+            if samples is not None and samples.dtype != np.int16:
+                samples_f = samples.astype(np.float32, copy=False)
+                np.clip(samples_f, -1.0, 1.0, out=samples_f)
+                samples = (samples_f * 32767.0).astype(np.int16)
+                # Rewrite the cache in the new format on a future save.
+                # _schedule_cache_save isn't invoked here on purpose — we
+                # let the next worker_finished do it so we don't block
+                # project-open on disk I/O.
+            self.samples = samples
             self.levels = data.get('levels', {})
             return self.samples is not None
         except Exception:
@@ -208,7 +238,20 @@ class WaveformManager:
             pass  # Silently fail if cache write fails
 
     def set_samples(self, samples):
-        self.samples = np.asarray(samples, dtype=np.float32)
+        # Compact storage: int16 instead of float32 cuts the RAM cost of
+        # the raw waveform in half. For a 1-hour project at 48 kHz mono
+        # that's 691 MB → 345 MB. The waveform is normalized to
+        # [-1.0, 1.0] upstream (AudioLoaderThread divides by max abs), so
+        # we can pack it into int16 by multiplying by 32767 and clipping
+        # before cast. The worker handles both dtypes for backwards
+        # compatibility with cached float32 samples on disk.
+        arr = np.asarray(samples)
+        if arr.dtype == np.int16:
+            self.samples = arr
+        else:
+            arr_f = arr.astype(np.float32, copy=False)
+            np.clip(arr_f, -1.0, 1.0, out=arr_f)
+            self.samples = (arr_f * 32767.0).astype(np.int16)
         self._start_worker_if_missing(512)
 
     def _start_worker_if_missing(self, zoom_key):
@@ -436,6 +479,15 @@ class Timeline(QWidget):
 
         widget.dub_peaks = {}     # path -> (mins, maxs, duration)
         widget.dub_workers = {}   # path -> DubPeaksWorker
+        # Cache the constructed waveform QPainterPath per
+        # (dub_path, rounded_width, rounded_height). Building one path is
+        # ~800 Python→Qt lineTo() calls per dub; rebuilding 30 visible
+        # dubs per paint at 10Hz dominates the audio thread (each paint
+        # holds the GIL ~60ms). The path is geometry-only (relative to
+        # 0,0), so we translate at draw time. Invalidated lazily — old
+        # entries simply get evicted as the cache grows past _DUB_PATH_CACHE_MAX.
+        widget._dub_waveform_path_cache = {}
+        widget._DUB_PATH_CACHE_MAX = 512
         widget.dub_hovered_handle = None  # (subtitle_id, 'start' | 'end') or None
         widget.subtitle_edge_hovered = None  # (subtitle_id, 'start' | 'end') or None
         widget.dub_lock_hovered = None  # subtitle_id or None — clip-lock badge hover
@@ -461,7 +513,7 @@ class Timeline(QWidget):
 
         grid_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483')), 1, Qt.SolidLine)
         painter.setFont(QFont('Ubuntu Mono', 8))
-        
+
         # Iterate only the visible range. Earlier we walked every second of
         # the video and skipped via an inline `if xpos >= scroll_position …`,
         # which made paint scale O(duration) — at zoom 490 on a 60-min video
@@ -470,8 +522,28 @@ class Timeline(QWidget):
         duration = float(session.VIDEO.get('duration', 60))
         wpp = widget.width_proportion or 1.0
         visible_right = scroll_position + scroll_width
-        sec_start = max(0, int(scroll_position / wpp))
-        sec_end = min(int(duration), int(visible_right / wpp) + 1)
+
+        # Region-targeted iteration. When the playhead-strip timer fires at
+        # 30 Hz it calls `widget.update(QRect(...))` with a narrow strip
+        # around the cursor — Qt's clip spares the rasterizer outside that
+        # rect, but the *Python* loops (per-second grid, per-subtitle,
+        # waveform buckets, …) would still walk the whole viewport and
+        # hold the GIL away from the audio callback. Clip those loops to
+        # the intersection of (viewport, event.rect()).
+        #
+        # event.rect() is in widget coordinates — same coord system as
+        # scroll_position — so we intersect directly. Fallback to the full
+        # viewport if the intersection is degenerate (defensive; Qt should
+        # always give us a rect that overlaps the visible area).
+        ev_rect = event.rect()
+        iter_left = max(scroll_position, ev_rect.left())
+        iter_right = min(visible_right, ev_rect.right() + 1)
+        if iter_right <= iter_left:
+            iter_left = scroll_position
+            iter_right = visible_right
+
+        sec_start = max(0, int(iter_left / wpp))
+        sec_end = min(int(duration), int(iter_right / wpp) + 1)
         zoom = session.CONFIG.get('timeline_zoom', 1)
         timeline_cfg = session.CONFIG.get('timeline', {})
         show_grid = timeline_cfg.get('show_grid', False)
@@ -496,8 +568,10 @@ class Timeline(QWidget):
                 # Skip if frames are sub-pixel — drawing them is wasted work.
                 if pixels_per_frame >= 1.0:
                     painter.setPen(grid_pen)
-                    frame_start = max(0, int(scroll_position / pixels_per_frame))
-                    frame_end = int(visible_right / pixels_per_frame) + 1
+                    # iter_left/iter_right narrows to the dirty strip — see
+                    # the comment block at the top of paintEvent.
+                    frame_start = max(0, int(iter_left / pixels_per_frame))
+                    frame_end = int(iter_right / pixels_per_frame) + 1
                     h = widget.height()
                     for frame_i in range(frame_start, frame_end):
                         xpos = frame_i * pixels_per_frame
@@ -505,8 +579,8 @@ class Timeline(QWidget):
             elif grid_type == 'scenes' and session.VIDEO.get('scenes'):
                 painter.setPen(grid_pen)
                 h = widget.height()
-                visible_start_sec = scroll_position / wpp
-                visible_end_sec = visible_right / wpp
+                visible_start_sec = iter_left / wpp
+                visible_end_sec = iter_right / wpp
                 for scene in session.VIDEO['scenes']:
                     if scene < visible_start_sec or scene > visible_end_sec:
                         continue
@@ -532,8 +606,11 @@ class Timeline(QWidget):
             painter.fillRect(rep_rect, grad)
 
         if widget.waveform_manager.samples is not None:
-            visible_start_sec = scroll_position / widget.width_proportion
-            visible_end_sec = (scroll_position + scroll_width) / widget.width_proportion
+            # iter_left/iter_right narrows the waveform bucket range to the
+            # dirty strip; outside the strip Qt keeps the previously-painted
+            # waveform from the backing store.
+            visible_start_sec = iter_left / widget.width_proportion
+            visible_end_sec = iter_right / widget.width_proportion
             sr = session.VIDEO.get('samplerate', 48000)
             start_sample = int(visible_start_sec * sr)
             end_sample = int(visible_end_sec * sr)
@@ -623,9 +700,12 @@ class Timeline(QWidget):
                 ordered_segments.append(selected_subtitle)
 
             # Compare in seconds (cheap) instead of dividing each subtitle's
-            # start/end by duration on every iteration.
-            visible_start_sec = scroll_position / wpp
-            visible_end_sec = visible_right / wpp
+            # start/end by duration on every iteration. iter_left/iter_right
+            # narrows to the dirty strip: at 30 Hz playhead repaints, this
+            # is what keeps the per-subtitle loop cheap enough to stay
+            # inside one audio block budget.
+            visible_start_sec = iter_left / wpp
+            visible_end_sec = iter_right / wpp
             speakers_keys = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
             speakers_index = {name: i for i, name in enumerate(speakers_keys)}
             speakers_count = len(speakers_keys)
@@ -634,11 +714,45 @@ class Timeline(QWidget):
             unselected_fill.setAlphaF(0.9)
             current_selected = session.SUBTITLE.get('selected', False)
 
+            # ---- Per-paint invariants ----
+            # Every subtitle in the loop was paying the cost of these dict
+            # lookups + QColor allocations: with ~100 visible subtitles
+            # this is ~600 dict-walks and ~6 QColor allocs per paint, on
+            # the main thread, holding the GIL away from the audio
+            # callback. Hoist once.
+            dubbing_enabled = session.CONFIG.get('dubbing', {}).get('enabled', False)
+            quality_check_enabled = session.CONFIG.get('quality_check', {}).get('enabled', False)
+            translation_cfg = session.CONFIG.get('translation', {})
+            translation_opts = translation_cfg.get('engine_options', {}) if isinstance(translation_cfg, dict) else {}
+            show_translations = translation_opts.get('show_translations', False)
+            translation_target_lang = translation_opts.get('target_language', 'en-us')
+            dub_waveform_color = QColor(timeline_cfg.get('dub_waveform_color', '#ffffffff'))
+            subtitle_border_color = QColor(timeline_cfg.get('subtitle_border_color', '#ff6a7483'))
+            # Two text-color states (selected / unselected) for both the
+            # normal and quality-check-failed cases.
+            text_color_unselected = QColor(timeline_cfg.get('subtitle_text_color', '#304251'))
+            text_color_selected = QColor(timeline_cfg.get('selected_subtitle_text_color', '#b8cee0'))
+            qc_text_color_unselected = QColor(timeline_cfg.get('subtitle_text_color', '#ff304251'))
+            qc_text_color_selected = QColor(timeline_cfg.get('selected_subtitle_text_color', '#ffffffff'))
+            qc_failed_color = QColor('#9e1a1a')
+            translation_separator_color = QPen(QColor(timeline_cfg.get('subtitle_text_color', '#40304251')), 1)
+            smart_splice_line_color = QColor(timeline_cfg.get('subtitle_fill_color', '#ccb8cee0'))
+            smart_splice_divider_color = QColor("#1a000000")
+            subtitle_font = QFont('Montserrat', 10)
+
             for subtitle in ordered_segments:
                 if subtitle['start'] > visible_end_sec:
                     continue
                 if subtitle['end'] < visible_start_sec:
                     continue
+                # Skip subtitles whose speaker is hidden via the eye toggle
+                # in the speakers panel — keeps them in the model but stops
+                # rendering them on the timeline.
+                speaker_name = subtitle.get('speaker', 'A')
+                speaker_data = session.SPEAKERS.get(speaker_name) or {}
+                if speaker_data.get('hidden'):
+                    continue
+                speaker_color_str = speaker_data.get('color')
 
                 painter.setPen(Qt.NoPen)
                 if current_selected == subtitle:
@@ -648,7 +762,6 @@ class Timeline(QWidget):
 
                 subtitle_track = [0, 1]
                 if speakers_count:
-                    speaker_name = subtitle.get('speaker', 'A')
                     subtitle_track = [speakers_index.get(speaker_name, 0), speakers_count]
 
                 subtitle_rect = QRectF(
@@ -666,7 +779,7 @@ class Timeline(QWidget):
 
                 painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
 
-                if subtitle.get('dubbing') and session.CONFIG.get('dubbing', {}).get('enabled', False):
+                if subtitle.get('dubbing') and dubbing_enabled:
                     dub = subtitle['dubbing'][0]
                     dub_path = dub.get('path')
                     if dub_path:
@@ -687,8 +800,7 @@ class Timeline(QWidget):
                                     dub_w,
                                     subtitle_rect.height() * band_ratio,
                                 )
-                                speaker_color = QColor(session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', '#1a73a8'))
-                                fill_color = QColor(speaker_color)
+                                fill_color = QColor(speaker_color_str or '#1a73a8')
                                 fill_color.setAlpha(204)
                                 painter.save()
                                 painter.setPen(Qt.NoPen)
@@ -748,9 +860,8 @@ class Timeline(QWidget):
                                         badge_alpha = 0.45
                                     painter.save()
                                     painter.setOpacity(badge_alpha)
-                                    sub_border_color = QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483'))
                                     painter.setPen(Qt.NoPen)
-                                    painter.setBrush(sub_border_color)
+                                    painter.setBrush(subtitle_border_color)
                                     badge_rect = QRectF(badge_left, badge_cy - badge_r, badge_right - badge_left, badge_h)
                                     painter.drawRoundedRect(badge_rect, badge_r, badge_r, Qt.AbsoluteSize)
                                     # Padlock glyph centered on circle_x
@@ -824,32 +935,49 @@ class Timeline(QWidget):
                                 count = len(mins)
                                 if count > 0:
                                     painter.setClipRect(dub_inset)
-                                    center = dub_inset.center().y()
-                                    scale = dub_inset.height() * 0.45
-                                    pixel_per_bucket = dub_inset.width() / count
-                                    wf = QPainterPath()
-                                    upper = []
-                                    x = dub_inset.left()
-                                    for i in range(count):
-                                        upper.append((x, center - float(maxs[i]) * scale))
-                                        x += pixel_per_bucket
-                                    lower = []
-                                    x -= pixel_per_bucket
-                                    for i in range(count - 1, -1, -1):
-                                        lower.append((x, center - float(mins[i]) * scale))
+                                    # Build the waveform shape ONCE per
+                                    # (dub_path, width, height), cached
+                                    # relative to (0, vertical-center) and
+                                    # translated at draw time. See cache
+                                    # init in __init__.
+                                    cache_w = round(dub_inset.width())
+                                    cache_h = round(dub_inset.height())
+                                    cache_key = (dub_path, cache_w, cache_h)
+                                    wf = widget._dub_waveform_path_cache.get(cache_key)
+                                    if wf is None:
+                                        scale = cache_h * 0.45
+                                        pixel_per_bucket = cache_w / count
+                                        wf = QPainterPath()
+                                        x0 = 0.0
+                                        # Top edge, left → right.
+                                        wf.moveTo(x0, -float(maxs[0]) * scale)
+                                        x = x0 + pixel_per_bucket
+                                        for i in range(1, count):
+                                            wf.lineTo(x, -float(maxs[i]) * scale)
+                                            x += pixel_per_bucket
+                                        # Bottom edge, right → left.
                                         x -= pixel_per_bucket
-                                    wf.moveTo(upper[0][0], upper[0][1])
-                                    for (xx, yy) in upper[1:]:
-                                        wf.lineTo(xx, yy)
-                                    for (xx, yy) in lower:
-                                        wf.lineTo(xx, yy)
-                                    wf.closeSubpath()
+                                        for i in range(count - 1, -1, -1):
+                                            wf.lineTo(x, -float(mins[i]) * scale)
+                                            x -= pixel_per_bucket
+                                        wf.closeSubpath()
+                                        # Crude eviction — drop arbitrary
+                                        # entries so the cache can't grow
+                                        # without bound on dub regen / zoom
+                                        # changes.
+                                        if len(widget._dub_waveform_path_cache) > widget._DUB_PATH_CACHE_MAX:
+                                            for k in list(widget._dub_waveform_path_cache)[:128]:
+                                                del widget._dub_waveform_path_cache[k]
+                                        widget._dub_waveform_path_cache[cache_key] = wf
+                                    center = dub_inset.center().y()
                                     painter.setPen(Qt.NoPen)
-                                    painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('dub_waveform_color', '#ffffffff')))
+                                    painter.setBrush(dub_waveform_color)
+                                    painter.translate(dub_inset.left(), center)
                                     painter.drawPath(wf)
+                                    painter.translate(-dub_inset.left(), -center)
                                 painter.restore()
 
-                if widget.show_speaker_color and session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('color', None):
+                if widget.show_speaker_color and speaker_color_str:
                     sr = 3.0
                     strip_h = 3.0
                     sx = subtitle_rect.left()
@@ -865,31 +993,32 @@ class Timeline(QWidget):
                     strip.arcTo(sx, sy, 2 * sr, 2 * sr, 180, -90)
                     strip.closeSubpath()
                     painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(session.SPEAKERS[subtitle.get('speaker', 'A')].get('color', '#b8cee0')))
+                    painter.setBrush(QColor(speaker_color_str))
                     painter.drawPath(strip)
 
-                if session.CONFIG.get('quality_check', {}).get('enabled', False):
+                subtitle_is_selected = current_selected == subtitle
+                if quality_check_enabled:
                     approved, _qc_reasons, _qc_issues = quality_check.check_subtitle(subtitle)
                     if not approved:
-                        painter.setPen(QColor('#9e1a1a'))
-                    elif session.SUBTITLE.get('selected', False) == subtitle:
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#ffffffff')))
+                        painter.setPen(qc_failed_color)
+                    elif subtitle_is_selected:
+                        painter.setPen(qc_text_color_selected)
                     else:
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#ff304251')))
+                        painter.setPen(qc_text_color_unselected)
                 else:
-                    if session.SUBTITLE.get('selected', False) == subtitle:
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
+                    if subtitle_is_selected:
+                        painter.setPen(text_color_selected)
                     else:
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+                        painter.setPen(text_color_unselected)
 
                 if subtitle.get('dubbing'):
                     subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
 
                 subtitle_rect -= QMarginsF(26, 6, 26, 6)
 
-                painter.setFont(QFont('Montserrat', 10))
+                painter.setFont(subtitle_font)
 
-                if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
+                if show_translations:
                     original_subtitle_rect = subtitle_rect - QMarginsF(0, 0, 0, subtitle_rect.height()*.5)
 
                     if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and 'position' in widget.is_smart_splicing and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
@@ -899,10 +1028,10 @@ class Timeline(QWidget):
                             right_side = widget.is_smart_splicing['right']
                             painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
                             painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
-                            painter.setPen(QColor("#1a000000"))
+                            painter.setPen(smart_splice_divider_color)
                             painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
                         if widget.is_smart_splicing['mode'] == 'split':
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
+                            painter.setPen(smart_splice_line_color)
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
                         # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
@@ -910,14 +1039,14 @@ class Timeline(QWidget):
 
                     translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
 
-                    if session.SUBTITLE.get('selected', False) == subtitle:
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_text_color', '#b8cee0')))
+                    if subtitle_is_selected:
+                        painter.setPen(text_color_selected)
                     else:
-                        painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251')))
+                        painter.setPen(text_color_unselected)
 
-                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle.get('translations', {}).get(translation_target_lang, ''))
 
-                    painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#40304251')), 1))
+                    painter.setPen(translation_separator_color)
                     painter.setBrush(Qt.NoBrush)
                     painter.drawLine(translated_subtitle_rect.left(), translated_subtitle_rect.top(), translated_subtitle_rect.right(), translated_subtitle_rect.top())
                 else:
@@ -929,10 +1058,10 @@ class Timeline(QWidget):
                             right_side = widget.is_smart_splicing['right']
                             painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
                             painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
-                            painter.setPen(QColor("#1a000000"))
+                            painter.setPen(smart_splice_divider_color)
                             painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
                         if widget.is_smart_splicing['mode'] == 'split':
-                            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('subtitle_fill_color', '#ccb8cee0')))
+                            painter.setPen(smart_splice_line_color)
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
                         painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
@@ -1022,8 +1151,17 @@ class Timeline(QWidget):
 
         if session.SUBTITLE.get('position', 0) is not None:
             painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000')), 2, Qt.SolidLine))
-            cursor_pos = int(session.SUBTITLE.get('position', 0) * widget.width_proportion)
-            painter.drawLine(cursor_pos, 0, cursor_pos, widget.height())
+            # Sub-pixel cursor position. Truncating to int (the old code
+            # did `int(position * width_proportion)`) snaps the cursor
+            # to the nearest pixel column every frame, which at 60 Hz
+            # makes it visibly "step" instead of glide. QLineF with
+            # antialiasing renders the 2-px-wide line at sub-pixel x
+            # by distributing coverage across adjacent columns — so a
+            # cursor at x=200.3 vs x=200.7 looks subtly different and
+            # the eye reads the motion as continuous.
+            cursor_pos_f = float(session.SUBTITLE.get('position', 0)) * widget.width_proportion
+            cursor_pos = int(cursor_pos_f)  # kept for the badge geometry below
+            painter.drawLine(QLineF(cursor_pos_f, 0.0, cursor_pos_f, float(widget.height())))
 
             if (session.REPEAT_DURATION_BUFFER and session.SUBTITLE.get('position', 0) > session.REPEAT_DURATION_BUFFER[0][0]) or (not session.CONFIG['playback_speed'] == 1.0):
                 cfont = QFont('Ubuntu Mono', 10)
@@ -1108,6 +1246,15 @@ class Timeline(QWidget):
         event.accept()
 
     def mousePressEvent(widget, event):
+        # Right- (and middle-) clicks must NOT initiate any drag — they're
+        # for the context menu. The release event for right-click is
+        # swallowed by the menu, so any drag flag set here would stay
+        # active and the user would see the clip following the cursor
+        # after they dismiss the menu.
+        if event.button() != Qt.LeftButton:
+            event.ignore()
+            return
+
         if widget.empty_state_hover_x is not None and not session.SUBTITLE.get('segments'):
             position = event.pos().x() / widget.width_proportion
             duration = float(session.CONFIG.get('default_new_subtitle_duration', 3.0) or 3.0)
@@ -1142,10 +1289,25 @@ class Timeline(QWidget):
                 return
             dub_path = dub.get('path')
             peaks = widget.dub_peaks.get(dub_path) if dub_path else None
-            if peaks is None:
-                event.accept()
-                return
-            _, _, duration = peaks
+            if peaks is not None:
+                _, _, duration = peaks
+            else:
+                # Peaks worker may not have finished computing for a
+                # freshly-regenerated dub; probe the file directly so the
+                # stretch can start on the first press instead of being
+                # silently consumed.
+                duration = 0.0
+                if dub_path:
+                    try:
+                        import soundfile as sf
+                        with sf.SoundFile(dub_path, 'r') as f:
+                            if f.samplerate > 0:
+                                duration = f.frames / f.samplerate
+                    except Exception:
+                        pass
+                if duration <= 0:
+                    event.accept()
+                    return
             original_width = duration * widget.width_proportion
             widget.dub_stretching = {
                 'subtitle': parent_subtitle,
@@ -1261,8 +1423,25 @@ class Timeline(QWidget):
             regenerated = False
             if original_w > 0 and current_w > 0 and abs(current_w - original_w) > 2.0:
                 ratio = original_w / current_w
-                from subtitld.interface.left_panel_dubbing import EdgeTTSEngine
-                regenerated = EdgeTTSEngine.stretch(subtitle, ratio)
+                # Route to the provider that produced the existing dub —
+                # otherwise a Piper-generated dub would get re-rendered through
+                # Edge TTS (cloud round-trip, wrong voice). Built-in EdgeTTS
+                # does cloud re-synthesis; add-on TTS does host-side ffmpeg
+                # stretch on the cached raw WAV — no engine re-run.
+                dubs = subtitle.get('dubbing') or []
+                engine_id = (dubs[0].get('engine') if dubs else None) or 'edge-tts'
+                regenerated = False
+                try:
+                    from subtitld.modules.addons import get_manager
+                    provider = get_manager().get(engine_id)
+                except Exception:
+                    provider = None
+                if provider is not None and hasattr(provider, 'stretch'):
+                    regenerated = provider.stretch(subtitle, ratio)
+                else:
+                    # Fallback for tests / pre-manager bootstrap.
+                    from subtitld.interface.left_panel_dubbing import EdgeTTSEngine
+                    regenerated = EdgeTTSEngine.stretch(subtitle, ratio)
             if not regenerated:
                 widget.dub_stretching = None
             widget.update()
@@ -1726,7 +1905,13 @@ def load(self):
     self.timeline_widget.seek.connect(lambda pos: self.preview_panel_player.seek(pos))
     self.timeline_widget.subtitle_clicked.connect(lambda: update_subtitles_panel_subtitle_selected(self))
 
-    self.preview_panel_player.position_changed_signal.connect(lambda: self.timeline_widget.update())
+    # Disabled: this used to fire `self.timeline_widget.update()` per
+    # QMediaPlayer position update (~30Hz). With ~hundreds of dub clips
+    # each paint takes 30-60ms, holding the GIL and starving the audio
+    # thread. The throttled `_timeline_repaint_timer` in playercontrols
+    # already drives the periodic repaint at 4Hz; we don't need a second
+    # connection here.
+    # self.preview_panel_player.position_changed_signal.connect(lambda: self.timeline_widget.update())
 
     self.timeline_scroll.setWidget(self.timeline_widget)
 

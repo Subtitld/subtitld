@@ -20,7 +20,6 @@ depends=(
     'ffmpeg'
 )
 optdepends=(
-    'vosk-api: offline transcription'
     'python-mediapipe: speaker face detection'
     'python-opencv: speaker face detection'
     'python-edge-tts: dubbing with Microsoft Edge voices'

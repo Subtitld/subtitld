@@ -37,7 +37,6 @@ dependencies = [
     "autohex",
     "platformdirs",
     "psutil",
-    "vosk",
     "assemblyai",
     "deep_translator",
     "soundfile",
@@ -50,12 +49,11 @@ dependencies = [
 # `pip install subtitld` installs only the core runtime and users opt into
 # features via e.g. `pip install subtitld[transcribe]`.
 [project.optional-dependencies]
-transcribe = ["vosk", "assemblyai"]
+transcribe = ["assemblyai"]
 translate = ["translate", "deep_translator"]
 vision = ["mediapipe==0.10.21", "opencv-python"]
 dub = ["edge-tts"]
 all = [
-    "vosk",
     "assemblyai",
     "translate",
     "deep_translator",

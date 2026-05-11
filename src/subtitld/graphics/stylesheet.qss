@@ -75,6 +75,194 @@ QLabel[class='metadata_badge'] {
     padding: 2px 10px;
 }
 
+QPushButton[class='filter_pill'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #b8cee0;
+    background-color: rgba(184, 206, 224, 0.06);
+    border: 1px solid rgba(184, 206, 224, 0.15);
+    border-radius: 11px;
+    padding: 3px 12px;
+    text-transform: none;
+}
+
+QPushButton[class='filter_pill']:hover {
+    background-color: rgba(184, 206, 224, 0.12);
+    border-color: rgba(184, 206, 224, 0.28);
+}
+
+QPushButton[class='filter_pill']:checked {
+    color: #1a2632;
+    background-color: #b8cee0;
+    border-color: #b8cee0;
+}
+
+QPushButton[class='filter_pill']:checked:hover {
+    background-color: #c8d8e8;
+    border-color: #c8d8e8;
+}
+
+/* Combobox flavour of the filter pill — used for the language picker
+   so it sits visually inside the same row as the toggle pills. We
+   mirror the closed-state look of the QPushButton variant (rounded,
+   same color tokens, same font) and reserve a strip of right padding
+   for the dropdown arrow. The :on selector fires while the popup is
+   open and matches the QPushButton :checked treatment so the picker
+   reads "active" the same way an active toggle does. */
+QComboBox[class='filter_pill'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #b8cee0;
+    background-color: rgba(184, 206, 224, 0.06);
+    border: 1px solid rgba(184, 206, 224, 0.15);
+    border-radius: 11px;
+    padding: 3px 22px 3px 12px;
+    min-height: 16px;
+}
+
+QComboBox[class='filter_pill']:hover {
+    background-color: rgba(184, 206, 224, 0.12);
+    border-color: rgba(184, 206, 224, 0.28);
+}
+
+QComboBox[class='filter_pill']:on {
+    color: #1a2632;
+    background-color: #b8cee0;
+    border-color: #b8cee0;
+}
+
+QComboBox[class='filter_pill']::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 18px;
+    border: none;
+    background: transparent;
+}
+
+/* Tiny CSS-only chevron via border tricks so we don't have to ship a
+   PNG. Color matches the pill text in both rest and active states. */
+QComboBox[class='filter_pill']::down-arrow {
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid #b8cee0;
+    margin-right: 8px;
+}
+
+QComboBox[class='filter_pill']:on::down-arrow {
+    border-top-color: #1a2632;
+}
+
+/* The popup list itself — keep it readable rather than pill-shaped.
+   Slightly lifted background so it stands off the dialog's surface. */
+QComboBox[class='filter_pill'] QAbstractItemView {
+    font-family: 'Montserrat';
+    font-size: 11px;
+    color: #d8e6f2;
+    background-color: #2a3845;
+    border: 1px solid rgba(184, 206, 224, 0.25);
+    border-radius: 4px;
+    padding: 2px;
+    selection-background-color: #b8cee0;
+    selection-color: #1a2632;
+    outline: none;
+}
+
+QLabel[class='addons_empty_state'] {
+    font-family: 'Montserrat';
+    font-size: 12px;
+    color: #66b8cee0;
+    background: transparent;
+    padding: 24px;
+}
+
+/* Add-on card — one widget per add-on in the list. Replaces the older
+   QListWidgetItem-based row so each entry can host its own action buttons
+   and word-wrap nicely on narrow widths. */
+QWidget[class='addon_card'] {
+    background-color: rgba(184, 206, 224, 0.05);
+    border: 1px solid rgba(184, 206, 224, 0.15);
+    border-radius: 6px;
+}
+
+QWidget[class='addon_card']:hover {
+    background-color: rgba(184, 206, 224, 0.08);
+    border-color: rgba(184, 206, 224, 0.25);
+}
+
+QLabel[class='addon_card_title'] {
+    font-family: 'Montserrat';
+    font-size: 13px;
+    font-weight: 600;
+    color: #e8f0f8;
+    background: transparent;
+}
+
+QLabel[class='addon_card_version'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #98b0c4;
+    background: transparent;
+}
+
+QLabel[class='addon_card_badge'] {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #1a2632;
+    background-color: #b8cee0;
+    border-radius: 3px;
+    padding: 2px 6px;
+}
+
+QLabel[class='addon_card_badge_update'] {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #1a2632;
+    background-color: #f0c060;
+    border-radius: 3px;
+    padding: 2px 6px;
+}
+
+QLabel[class='addon_card_summary'] {
+    font-family: 'Montserrat';
+    font-size: 11px;
+    color: #c8d8e8;
+    background: transparent;
+}
+
+QLabel[class='addon_card_meta'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    color: #88a0b4;
+    background: transparent;
+}
+
+QLabel[class='addon_card_state'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-style: italic;
+    color: #88a0b4;
+    background: transparent;
+}
+
+QScrollArea#addons_panel_scroll {
+    background: transparent;
+    border: none;
+}
+
+QWidget#addons_panel_scroll_inner {
+    background: transparent;
+}
+
 QLabel[class='metadata_field_image'] {
     background: transparent;
     border: 1px solid rgba(184, 206, 224, 0.15);
@@ -345,6 +533,22 @@ QProgressBar::chunk {
     border-radius: 2px;
 }
 
+QProgressBar#addon_card_progress_bar {
+    background: rgba(184, 206, 224, 0.10);
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    margin: 4px 0;
+    min-height: 1px;
+    max-height: 1px;
+}
+
+QProgressBar#addon_card_progress_bar::chunk {
+    background-color: #b8cee0;
+    border-radius: 0;
+    margin: 0;
+}
+
 QSpinBox::up-button,
 QDoubleSpinBox::up-button {
     subcontrol-origin: border;
@@ -581,8 +785,6 @@ QGroupBox::title {
     font-family: Montserrat;
 }
 
-
-
 #start_screen_bottom_line {
     border-image: url(graphics:start_screen_top_shadow.svg) 150 10 0 10 stretch;
     border: 150 0 0 0;
@@ -687,7 +889,7 @@ QTabBar::tab {
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
-    padding: 6px 10px;
+    padding: 7px 10px 6px 10px;
     border: none;
     border-bottom: 1px solid transparent;
 }
@@ -792,7 +994,8 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     font-weight: 500;
 }
 
-#subtitles_panel_empty_state_label {
+#subtitles_panel_empty_state_label,
+#left_panel_dubbing_no_subtitle_label {
     color: #50b8cee0;
     font-size: 11px;
 }
@@ -1817,6 +2020,15 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: #6a7483;
 }
 
+#left_panel_speakers_panel_content_item[selected_speaker=true] {
+    background-color: #4a5d6f;
+    border-left: 2px solid #b8cee0;
+}
+
+#left_panel_speakers_panel_content_item[selected_speaker=true]::hover {
+    background-color: #56697b;
+}
+
 #left_panel_speakers_panel_content_item QPushButton {
     background-color: transparent;
 }
@@ -1882,6 +2094,14 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 #left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_export_button:hover {
     icon: url(graphics:speaker_list_item_export_icon_hover.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_visibility_button {
+    icon: url(graphics:left_panel_speakers_panel_content_item_visible_icon.svg);
+}
+
+#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_visibility_button:checked {
+    icon: url(graphics:left_panel_speakers_panel_content_item_hidden_icon.svg);
 }
 
 #left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_bottom_line {

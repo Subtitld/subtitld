@@ -595,9 +595,23 @@ def update(self):
     # if not self.left_panel_subtitleslist_textedit.hasFocus():
     #     self.left_panel_subtitleslist_textedit.setText(text)
     # self.properties_information_stats.setVisible(bool(session.SUBTITLE['selected']) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
-    
-    
-def show(self):    
+
+    # Selection drives the per-subtitle dubbing controls; refresh the
+    # dubbing panel so its voice/rate/pitch reflect the new selection.
+    # Imported lazily to avoid the circular import (dubbing → subtitleslist).
+    if hasattr(self, 'global_panel_dubbing_tabwidget'):
+        from subtitld.interface import left_panel_dubbing
+        left_panel_dubbing.update(self)
+
+    # Mirror the subtitle's speaker as a visual selection in the speakers
+    # panel — gives a quick "which speaker said this?" hint without forcing
+    # the user to switch panels.
+    if hasattr(self, 'left_panel_speakers_list'):
+        from subtitld.interface import left_panel_speakers
+        left_panel_speakers.highlight_speaker_for_selection(self)
+
+
+def show(self):
     update(self)
 
 
@@ -613,28 +627,113 @@ def _changed(self, selection):
 
 
 def regenerate_dub_for_selected(self):
-    """Regenerate the dub for the currently-selected subtitle using the latest
-    text/speaker settings. Only meaningful when the subtitle already has a dub
-    take; the button that triggers this is only visible in that case."""
+    """Regenerate the dub for the currently-selected subtitle, re-rolling
+    the *existing take* with its own engine/voice/rate/pitch — not whatever
+    the dubbing-panel combobox currently points at. Only meaningful when
+    the subtitle already has a dub take; the button is only visible in
+    that case.
+
+    The latest clip is the source of truth: `dubbing[0].engine` picks the
+    provider, `dubbing[0].voice/rate/pitch` populate the request. Falls
+    back to per-subtitle / speaker / panel-currently-selected settings
+    only when the clip is missing fields (legacy projects), or when the
+    add-on that produced the clip is no longer installed."""
     import secrets
     selected = session.SUBTITLE.get('selected')
     if not selected or not selected.get('dubbing'):
         return
-    from subtitld.interface.left_panel_dubbing import EdgeTTSEngine
+
+    from subtitld.modules import addons
+    from subtitld.modules import clone_ref
+    from subtitld.modules.addons.provider import TASK_TTS_SYNTHESIZE
+    from subtitld.interface.left_panel_dubbing import _project_tts_language, _voices_clone_first
+
     speaker_name = selected.get('speaker', 'A')
     speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
     overrides = selected.get('dubbing_options', {})
+    last_dub = (selected.get('dubbing') or [{}])[0]
+
+    # Engine: prefer the existing clip's recorded engine so "regenerate"
+    # is faithful to the take it replaces. Fall back to the dubbing-panel
+    # selection (and then edge-tts) only when that engine has been
+    # uninstalled — without this, a project saved with qwen3-tts and
+    # opened on a machine without the addon would silently fail.
+    manager = addons.get_manager()
+    available = manager.providers_for_task(TASK_TTS_SYNTHESIZE)
+    available_by_id = {p.id: p for p in available}
+
+    last_engine = last_dub.get('engine', '')
+    panel_engine = session.CONFIG.get('dubbing', {}).get('selected_engine', 'edge-tts')
+    provider = (available_by_id.get(last_engine)
+                or available_by_id.get(panel_engine)
+                or available_by_id.get('edge-tts'))
+    if provider is None:
+        return
+
+    # Voice: clip wins, but only if it belongs to the resolved provider
+    # (i.e. we didn't have to fall back because the original engine is
+    # gone — in that case the saved voice id is meaningless). Then
+    # per-subtitle override / speaker default, again gated on the provider
+    # match. Final fallback is the provider's first voice (clone-first).
+    voice_id = ''
+    if last_dub.get('engine') == provider.id:
+        voice_id = (last_dub.get('voice', '')
+                    or overrides.get('voice', '')
+                    or speaker_dubbing.get('voice', ''))
+    if not voice_id:
+        provider_voices = _voices_clone_first(provider.list_voices())
+        if provider_voices:
+            voice_id = provider_voices[0].get('id', '')
+    if not voice_id:
+        # Provider has no voices at all — bail rather than dispatch a
+        # request the addon will reject. Unlock the subtitle so the UI
+        # doesn't get stuck.
+        selected['locked'] = False
+        self.timeline_widget.update()
+        return
+
+    # Rate / pitch: clip's recorded values first (whether or not the
+    # engine matches — these are scalar parameters, not engine-specific
+    # tokens). Then per-subtitle override, speaker default, and finally 0.
+    rate = last_dub.get('rate',
+                         overrides.get('rate',
+                                       speaker_dubbing.get('rate', 0)))
+    pitch = last_dub.get('pitch',
+                          overrides.get('pitch',
+                                        speaker_dubbing.get('pitch', 0)))
+
     selected['locked'] = True
-    EdgeTTSEngine.generate_speeches([{
+    request = {
         'uid': secrets.token_hex(4),
         'text': selected['text'],
         'speaker': speaker_name,
         'start': selected['start'],
         'end': selected['end'],
-        'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
-        'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
-        'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
-    }])
+        'voice': voice_id,
+        # Multilingual providers (Coqui XTTS, Qwen3-TTS) need the
+        # project language to drive the model's text-frontend. Edge
+        # ignores it (voice already encodes language). Language is a
+        # project-level setting, not stored per-clip — pull from the
+        # project regardless of which engine produced the original.
+        'language': _project_tts_language(),
+        'rate': rate,
+        'pitch': pitch,
+    }
+    # Clone voices (xtts-clone, qwen3-clone, f5-clone) need a reference
+    # WAV — auto-extract from the speaker's source audio. Mirrors the
+    # dubbing-panel behaviour at `generate_speech_button_clicked`.
+    # Also forward `voice_ref_text` (the subtitle text on those spans):
+    # without it, the clone-capable engines fall back to "x-vector only"
+    # mode and bleed their training-set accent into the output (most
+    # noticeably an English accent on Portuguese / Italian / Spanish
+    # clones with the qwen3 model).
+    if clone_ref.voice_id_requires_ref_audio(provider, voice_id):
+        ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
+        if ref_path:
+            request['voice_ref_audio'] = ref_path
+            if ref_text:
+                request['voice_ref_text'] = ref_text
+    provider.generate_speeches([request])
     self.timeline_widget.update()
 
 

@@ -14,6 +14,10 @@ PATH_LOCALE = PATH_SUBTITLD / 'locale'
 PATH_SUBTITLD_GRAPHICS = PATH_SUBTITLD / 'graphics'
 PATH_SUBTITLD_USER_CONFIG = pathlib.Path(platformdirs.user_config_dir('subtitld'))
 PATH_SUBTITLD_USER_CACHE = pathlib.Path(platformdirs.user_cache_dir('subtitld'))
+# User-data dir is *persistent* (unlike cache, which some systems wipe). Used
+# for installed AI add-ons that the user explicitly downloaded — losing them
+# on a cache cleanup would force a multi-hundred-MB redownload.
+PATH_SUBTITLD_USER_DATA = pathlib.Path(platformdirs.user_data_dir('subtitld'))
 FFMPEG_EXECUTABLE = 'ffmpeg'
 FFPROBE_EXECUTABLE = 'ffprobe'
 STARTUPINFO = None
@@ -56,6 +60,14 @@ if not PATH_SUBTITLD_USER_CONFIG.exists():
 
 if not PATH_SUBTITLD_USER_CACHE.exists():
     PATH_SUBTITLD_USER_CACHE.mkdir(parents=True)
+
+if not PATH_SUBTITLD_USER_DATA.exists():
+    PATH_SUBTITLD_USER_DATA.mkdir(parents=True)
+
+PATH_SUBTITLD_ADDONS = PATH_SUBTITLD_USER_DATA / 'addons'
+
+if not PATH_SUBTITLD_ADDONS.exists():
+    PATH_SUBTITLD_ADDONS.mkdir(parents=True)
 
 PATH_SUBTITLD_DATA_BACKUP = PATH_SUBTITLD_USER_CACHE / 'backup'
 

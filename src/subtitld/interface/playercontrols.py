@@ -5,6 +5,7 @@ import subprocess
 
 from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
+from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
 
 
 class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
@@ -122,7 +123,67 @@ class _ChildResizeWatcher(QObject):
 
 
 
-class MusicAudioExtractorThread(QThread):
+class _OriginalDecodeThread(QThread):
+    """Decodes the source media to a 48 kHz mono FLAC sidecar at
+    `<cache>/audioseparation/<hash>_original.flac`. Used as the playback
+    track until vocals/background separation finishes — and as the
+    fallback audio source for ASR/clone-ref when separation hasn't been
+    requested yet. Cheap (a straight ffmpeg copy/decode), so we always
+    do this regardless of which separator provider is active."""
+
+    decoded = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, filename: str, output_path: str, parent=None):
+        super().__init__(parent)
+        self.filename = filename
+        self.output_path = output_path
+
+    def run(self):
+        if not os.path.exists(self.output_path):
+            cmd = [
+                session.FFMPEG_EXECUTABLE,
+                "-hide_banner", "-loglevel", "error",
+                "-i", self.filename,
+                "-vn",
+                "-ar", '48000', '-y',
+                self.output_path,
+            ]
+            try:
+                subprocess.run(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    startupinfo=session.STARTUPINFO,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.error.emit(str(exc))
+                return
+        if os.path.exists(self.output_path):
+            self.decoded.emit(self.output_path)
+        else:
+            self.error.emit('original decode produced no output')
+
+
+class MusicAudioExtractorThread(QObject):
+    """Player-controls helper that emits `original` (the 48 kHz mono
+    decode of the source, used for playback) and `response` (vocals +
+    background paths for the music/voice slider) signals.
+
+    Historically this was a `QThread` doing the ffmpeg work inline; now
+    it's a controller that:
+
+      1. Spawns a small worker thread for the cheap original-decode step
+         (always ffmpeg — independent of which separator is active).
+      2. Looks up the active `AudioSeparatorProvider` via the addon
+         manager and dispatches the vocals/background split to it.
+
+    The user picks the separator provider via the global-options panel
+    (`session.CONFIG['audio_separation']['engine']`); when none is
+    configured, falls back to the first available provider, which is
+    always the built-in `ffmpeg-separator`.
+    """
+
     response = Signal(dict)
     original = Signal(str)
     error = Signal(str)
@@ -130,91 +191,104 @@ class MusicAudioExtractorThread(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.filename = None
+        self._decode_thread: _OriginalDecodeThread | None = None
+        self._active_provider = None
+        self._connected_provider = None
 
-    def run(self):
+    def start(self):
         if not self.filename:
             return
-        
-        filename_hash = utils.get_cache_key(self.filename)
 
+        filename_hash = utils.get_cache_key(self.filename)
         original_filepath = os.path.join(
             session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-            filename_hash + "_original.flac"
+            f'{filename_hash}_original.flac',
         )
 
-        if not os.path.exists(original_filepath):
-            cmd = [
-                session.FFMPEG_EXECUTABLE,
-                "-hide_banner", "-loglevel", "error",
-                "-i", self.filename,
-                "-vn",
-                "-ar", '48000', '-y',
-                original_filepath
-            ]
+        # Step 1: original decode. Always ffmpeg, on a worker thread so
+        # the UI stays responsive while we wait. When done, emit
+        # `original` and kick off step 2.
+        thread = _OriginalDecodeThread(self.filename, original_filepath, parent=self)
+        thread.decoded.connect(self._on_original_decoded)
+        thread.error.connect(self.error)
+        self._decode_thread = thread
+        thread.start()
 
-            subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                startupinfo=session.STARTUPINFO
-            )
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _on_original_decoded(self, original_path: str) -> None:
+        self.original.emit(original_path)
 
-        self.original.emit(original_filepath)
+        # Step 2: dispatch separation to the active provider.
+        # Imported lazily so the module-level import graph stays tight
+        # (this file already imports a lot of Qt/UI machinery).
+        from subtitld.modules import addons
+        from subtitld.modules.addons import registry
+        from subtitld.modules.addons.provider import TASK_AUDIO_SEPARATE
 
-        vocals_filepath = os.path.join(
-            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-            filename_hash + "_vocals.flac"
+        manager = addons.get_manager()
+        configured_id = registry.default_for_task(TASK_AUDIO_SEPARATE)
+        provider = None
+        if configured_id:
+            candidate = manager.get(configured_id)
+            if candidate is not None and TASK_AUDIO_SEPARATE in candidate.tasks:
+                provider = candidate
+        if provider is None:
+            provider = manager.default_for_task(TASK_AUDIO_SEPARATE)
+        if provider is None:
+            self.error.emit('no audio separator provider available')
+            return
+
+        # Disconnect any previous wiring so we don't double-fire when
+        # the user runs separation a second time on a new file.
+        self._disconnect_provider()
+        provider.separation_ready.connect(self._on_separation_ready)
+        provider.separation_error.connect(self._on_separation_error)
+        self._connected_provider = provider
+
+        provider.separate(
+            self.filename,
+            str(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION),
+            options=registry.options_for(provider.id) or None,
         )
 
-        background_filepath = os.path.join(
-            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-            filename_hash + "_background.flac"
-        )
-
-        if not (os.path.exists(vocals_filepath) and os.path.exists(background_filepath)):
-            cmd = [
-                session.FFMPEG_EXECUTABLE,
-                "-hide_banner", "-loglevel", "error",
-                "-i", self.filename, '-y',
-                "-vn",
-                "-filter_complex",
-                (
-                    "[0:a]asplit=2[a1][a2];"
-                    "[a1]pan=mono|c0=0.5*c0+0.5*c1[vocals];"
-                    "[a2]pan=mono|c0=c0-c1[background]"
-                ),
-
-                # vocals (center)
-                "-map", "[vocals]",
-                "-ac", "1",
-                "-ar", '48000',
-                vocals_filepath,
-
-                # background (sides)
-                "-map", "[background]",
-                "-ac", "1",
-                "-ar", '48000',
-                background_filepath,
-            ]
-
-            subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                startupinfo=session.STARTUPINFO
-            )
-
+    def _on_separation_ready(self, input_path: str, vocals_path: str, background_path: str) -> None:
+        # Filter — providers are app-singletons, this slot fires for
+        # every separation finish. Drop anything that isn't ours.
+        if input_path and self.filename and os.path.abspath(input_path) != os.path.abspath(self.filename):
+            return
         default_volume = 0.5
         try:
             default_volume = float(session.CONFIG.get('videoplayer', {}).get('music_voice_separation_volume', 0.5))
         except (TypeError, ValueError):
             default_volume = 0.5
-
         self.response.emit({
-            'vocals': vocals_filepath,
-            'background': background_filepath,
-            'volume': default_volume
+            'vocals': vocals_path,
+            'background': background_path,
+            'volume': default_volume,
         })
+        self._disconnect_provider()
+
+    def _on_separation_error(self, input_path: str, message: str) -> None:
+        if input_path and self.filename and os.path.abspath(input_path) != os.path.abspath(self.filename):
+            return
+        self.error.emit(message)
+        self._disconnect_provider()
+
+    def _disconnect_provider(self) -> None:
+        provider = self._connected_provider
+        if provider is None:
+            return
+        try:
+            provider.separation_ready.disconnect(self._on_separation_ready)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            provider.separation_error.disconnect(self._on_separation_error)
+        except (TypeError, RuntimeError):
+            pass
+        self._connected_provider = None
 
 
 class QLeftTabBar(QTabBar):
@@ -1104,7 +1178,158 @@ def load(self):
     self.playercontrols_timecode_label = playercontrols_timecode_label()
     self.playercontrols_widget_center_bottom_line.layout().addWidget(self.playercontrols_timecode_label)
     self.preview_panel_player.position_changed_signal.connect(self.playercontrols_timecode_label.update_time)
-    self.preview_panel_player.position_changed_signal.connect(lambda: timeline.update(self))
+    # Playhead repaint cadence during playback.
+    #
+    # Originally this was a direct connect to `timeline.update(self)` per
+    # QMediaPlayer position update (~30/sec). Each call invalidates the
+    # whole timeline → full paintEvent → 30-60 ms of Python+Qt work
+    # holding the GIL, starving the audio callback (42.7 ms block budget).
+    # That was the audio-chunkiness root cause.
+    #
+    # We then throttled to 4 Hz, which fixed the audio but made the
+    # playhead visibly jerky (250 ms steps = ~8 px jumps at typical zoom).
+    #
+    # Now that the audio engine is allocation-free (no SoundFile opens, no
+    # np.linspace / np.interp on the realtime thread — see
+    # SubtitleDubClip.read fast path), the GIL pressure from a paint
+    # event is bounded by the C++ paint pipeline, not the Python loop.
+    # We can run at ~30 Hz comfortably AND we ask for a targeted region
+    # invalidation — only the old + new playhead strips, not the whole
+    # widget — so the paint loop short-circuits early most of the time.
+    #
+    # Subtle: QMediaPlayer.positionChanged fires at only ~10 Hz on most
+    # backends (Qt6 doesn't expose setNotifyInterval). If we just read
+    # session.SUBTITLE['position'] at 30 Hz, we'd be repainting the
+    # *same* x three times then jumping a big chunk — visibly chunky.
+    # So we extrapolate: anchor (last reported position, wall-clock
+    # time) on each QMediaPlayer emit, then advance by (elapsed
+    # wall-clock × playback_speed) on every timer tick. Result: the
+    # playhead glides instead of stepping.
+    import time as _time
+    self._timeline_repaint_timer = QTimer(self)
+    # 60 Hz: matches the typical monitor refresh rate. At 30 Hz the
+    # cursor visibly "steps" because every timer frame is duplicated
+    # for 2 monitor refreshes. At 60 Hz the cursor advances on every
+    # display frame, which is the bar for "smooth" on a 60 Hz panel.
+    # The strip-clipped paintEvent fits comfortably in the 16.7 ms
+    # budget (~5 ms on a 100-sub project; see test_timeline_paint_perf).
+    self._timeline_repaint_timer.setInterval(16)  # ~60 Hz
+    self._last_playhead_x = -1.0
+    # Anchor state for position extrapolation. Set on every
+    # QMediaPlayer positionChanged emit.
+    self._pos_anchor_sec = 0.0
+    self._pos_anchor_walltime = 0.0
+    # Cap extrapolation so that if QMediaPlayer stalls (e.g. seeking,
+    # buffering) the playhead doesn't fly off into the future.
+    self._pos_extrapolation_cap_sec = 0.25
+
+    def _is_playing():
+        """True iff QMediaPlayer is in PlayingState right now. Used to
+        gate extrapolation: when the player is paused/stopped, wall
+        clock keeps advancing but playback does NOT, so multiplying
+        elapsed × speed makes the cursor slide off the click position
+        on every timer tick (see bug from 2026-05). Read live each
+        call — playbackStateChanged is async and we want the answer
+        for THIS tick, not the last one we observed."""
+        mp = getattr(self.preview_panel_player, '_media_player', None)
+        if mp is None:
+            return False
+        return mp.playbackState() == QMediaPlayer.PlayingState
+
+    def _smoothed_position_sec():
+        """Return the playhead position to draw *now*, extrapolated from
+        the last QMediaPlayer-reported anchor using wall-clock × speed.
+        Falls back to session.SUBTITLE['position'] if we haven't seen an
+        anchor yet (first paint after load, before any emit).
+
+        When the player is NOT playing — e.g. user just clicked the
+        timeline to seek while paused — extrapolation must NOT run:
+        the anchor is correct, but wall-clock keeps advancing, so any
+        non-zero elapsed × speed slides the cursor away from where the
+        user clicked. Returning the raw anchor pins the cursor exactly
+        at the seek position until either play resumes or another seek
+        re-anchors."""
+        if self._pos_anchor_walltime <= 0:
+            return float(session.SUBTITLE.get('position', 0) or 0)
+        if not _is_playing():
+            return self._pos_anchor_sec
+        elapsed = _time.perf_counter() - self._pos_anchor_walltime
+        if elapsed < 0:
+            elapsed = 0.0
+        if elapsed > self._pos_extrapolation_cap_sec:
+            elapsed = self._pos_extrapolation_cap_sec
+        speed = float(session.CONFIG.get('playback_speed', 1.0) or 1.0)
+        return self._pos_anchor_sec + elapsed * speed
+
+    def _repaint_playhead_strip():
+        from PySide6.QtCore import QRect
+        tl_widget = getattr(self, 'timeline_widget', None)
+        if tl_widget is None:
+            timeline.update(self)
+            return
+        smoothed = _smoothed_position_sec()
+        # Write the smoothed value back so timeline.paintEvent draws the
+        # cursor at the interpolated x (and so anything else that polls
+        # the current position sees the gliding value). The next
+        # positionChanged emit will overwrite with the canonical value
+        # and re-anchor — see _on_position_changed.
+        session.SUBTITLE['position'] = smoothed
+        wpp = getattr(tl_widget, 'width_proportion', 1.0) or 1.0
+        new_x = smoothed * wpp
+        old_x = self._last_playhead_x
+        self._last_playhead_x = new_x
+        # Strip wide enough to catch the cursor (2 px) + the speed/repeat
+        # badge that extends ~80 px to the left of it, with safety pad.
+        pad_left = 96
+        pad_right = 8
+        h = tl_widget.height()
+        if old_x < 0:
+            # First frame after play() — we don't know the previous x, so
+            # invalidate broadly. Still cheaper than full update because
+            # we cap the strip width.
+            tl_widget.update(QRect(int(new_x) - pad_left, 0,
+                                   pad_left + pad_right, h))
+        else:
+            left = int(min(old_x, new_x)) - pad_left
+            right = int(max(old_x, new_x)) + pad_right
+            tl_widget.update(QRect(left, 0, right - left, h))
+
+    self._timeline_repaint_timer.timeout.connect(_repaint_playhead_strip)
+
+    def _on_position_changed():
+        """Re-anchor the extrapolation each time QMediaPlayer reports a
+        real position. Starts the repaint timer the first time — but
+        ONLY while playing. A seek-while-paused (click on the timeline)
+        also fires positionChanged; if we started the timer there we'd
+        leak 60 Hz repaints forever (no playbackStateChanged would ever
+        stop it, since the state didn't change), and the cursor would
+        slide because _smoothed_position_sec extrapolates from the
+        anchor. Update the anchor regardless so that when playback
+        resumes, the first tick already has fresh state."""
+        # Note: by the time this fires, preview_panel.position_changed
+        # has already written the canonical (non-extrapolated) seconds
+        # value into session.SUBTITLE['position']. We pick it up here as
+        # the new anchor.
+        self._pos_anchor_sec = float(session.SUBTITLE.get('position', 0) or 0)
+        self._pos_anchor_walltime = _time.perf_counter()
+        if _is_playing() and not self._timeline_repaint_timer.isActive():
+            self._last_playhead_x = -1.0
+            self._timeline_repaint_timer.start()
+
+    def _stop_timeline_repaint_timer():
+        self._timeline_repaint_timer.stop()
+        self._last_playhead_x = -1.0
+        self._pos_anchor_walltime = 0.0
+        # One last full update so the playhead lands on the final frame
+        # and any partial-strip artifacts disappear.
+        timeline.update(self)
+
+    self.preview_panel_player.position_changed_signal.connect(_on_position_changed)
+    # Stop the timer when playback pauses so the timeline isn't repainting
+    # forever after.
+    self.preview_panel_player._media_player.playbackStateChanged.connect(
+        lambda state: _stop_timeline_repaint_timer() if state != QMediaPlayer.PlayingState else None
+    )
 
     self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_center_bottom_line)
 

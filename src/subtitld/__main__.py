@@ -20,6 +20,10 @@ from subtitld.modules import session
 from subtitld.modules import config
 from subtitld.modules import file_io
 from subtitld.modules import shortcuts
+from subtitld.modules import addons
+from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provider
+from subtitld.modules.addons.builtin import assemblyai_provider as _assemblyai_provider
+from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
 
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
@@ -223,6 +227,28 @@ def main():
                 break
         
     app = QApplication(sys.argv)
+
+    # ---- Add-on registry bootstrap ------------------------------------
+    # Built-in providers (Edge TTS for TTS, AssemblyAI for ASR) are
+    # registered first so they always show up in the engine comboboxes
+    # even when nothing else is installed. Vosk used to be a built-in too
+    # but was extracted to a separate add-on so the Subtitld binary stays
+    # lean — users who want offline transcription install it via the
+    # add-ons panel. Subprocess add-ons under
+    # ~/.local/share/subtitld/addons/ are discovered next; they may depend
+    # on a QApplication being live (provider QObjects are auto-parented to
+    # it), so this happens after `QApplication(sys.argv)`.
+    addon_manager = addons.get_manager()
+    addon_manager.register_builtin(_edge_tts_provider.get_provider())
+    addon_manager.register_builtin(_assemblyai_provider.get_provider())
+    addon_manager.register_builtin(_ffmpeg_separator_provider.get_provider())
+    try:
+        discovered = addon_manager.discover()
+        if discovered:
+            print(f'Loaded add-ons: {", ".join(discovered)}')
+    except Exception as exc:
+        print(f'Add-on discovery failed: {exc}')
+    app.aboutToQuit.connect(addon_manager.shutdown_all)
 
     QDir.addSearchPath('graphics', session.PATH_SUBTITLD_GRAPHICS)
 
