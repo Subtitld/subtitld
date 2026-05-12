@@ -431,11 +431,16 @@ def case_usfx_phase1_member_selection():
         'manifest.xml',
         'assets/speakers/Alice.png',
         'assets/speakers/Bob_2.jpg',
-        'assets/dubs/abc123.wav',
-        'assets/dubs/uid-42.mp3',
         'project.usf',           # tolerated odd-name USF at root
     ]
     skip = [
+        # Dubs deferred to Phase 2 — historically the single biggest
+        # contributor to "frozen production screen on open" on projects
+        # with hundreds of subtitles. Moving them out of Phase 1 is the
+        # core of the perceived-latency win; if they leak back in, this
+        # case is the canary.
+        'assets/dubs/abc123.wav',
+        'assets/dubs/uid-42.mp3',
         # Heavy caches that Phase 2 owns.
         'assets/waveform.npy',
         'assets/audio/original.flac',
@@ -456,6 +461,205 @@ def case_usfx_phase1_member_selection():
         assert not _is_phase1_usfx_member(name), (
             f'expected Phase 1 to skip {name!r}, predicate said keep')
     print(f'  {len(keep)} kept, {len(skip)} skipped ✓')
+
+
+def case_usfx_background_extractor_emits_progress():
+    """The background extractor must drive the global progress signal
+    hub through 0..100 so the UI's thin progress bar can show a credible
+    fill. Subscribe before starting the thread and assert at minimum:
+    * the per-instance `progress` signal fires at least once,
+    * the final value is 100 (extraction actually completes),
+    * values are monotonically non-decreasing (no jitter that would make
+      the bar jump backward)."""
+    print('\n=== USFX Phase 2 emits monotonic 0..100 progress ===')
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    import zipfile
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    from subtitld.modules import session
+    workdir = tempfile.mkdtemp(prefix='usfx-progress-test-')
+    real_cache = session.PATH_SUBTITLD_USER_CACHE
+    real_audiosep = session.PATH_SUBTITLD_DATA_AUDIOSEPARATION
+    try:
+        session.PATH_SUBTITLD_USER_CACHE = workdir
+        audiosep = os.path.join(workdir, 'audiosep')
+        os.makedirs(audiosep, exist_ok=True)
+        session.PATH_SUBTITLD_DATA_AUDIOSEPARATION = audiosep
+
+        # Use a payload large enough that the 1 MiB chunk loop fires
+        # multiple times — we want to see >2 progress emits, otherwise
+        # we're not really exercising the chunked path.
+        usfx_path = os.path.join(workdir, 'project.usfx')
+        big_blob = (b'WAVEFORM_PAYLOAD' * 64) * 4096  # ~4 MiB
+        flac_blob = (b'FLAC_PAYLOAD' * 64) * 4096     # ~3 MiB
+        with zipfile.ZipFile(usfx_path, 'w', zipfile.ZIP_STORED) as zf:
+            zf.writestr('subtitles.usf', b'<usf/>')
+            zf.writestr('assets/waveform.npy', big_blob)
+            zf.writestr('assets/audio/original.flac', flac_blob)
+
+        from subtitld.modules.file_io import _USFXBackgroundExtractor
+        from subtitld.modules.signals import SIGNALS
+
+        ex = _USFXBackgroundExtractor(usfx_path, 'progkey')
+        # Capture from both the per-instance signal (for tests) and the
+        # global hub (the wiring the UI actually uses).
+        instance_progress = []
+        global_progress = []
+        finished_fired = []
+        ex.progress.connect(instance_progress.append)
+        SIGNALS.usfx_background_load_progress.connect(global_progress.append)
+        SIGNALS.usfx_background_load_finished.connect(
+            lambda: finished_fired.append(True))
+        # Wire the same finished bridge production code uses, so the
+        # global `usfx_background_load_finished` actually fires.
+        # Signal-to-signal (not `.emit`) — see file_io.py for why; the
+        # bound-method form silently breaks after a prior extractor has
+        # run in the same process.
+        ex.finished.connect(SIGNALS.usfx_background_load_finished)
+
+        # Drive the local event loop until the thread completes — we
+        # need queued signal deliveries to land in the receiver lists.
+        loop = QEventLoop()
+        ex.finished.connect(loop.quit)
+        ex.start()
+        # Watchdog so a hung extractor doesn't hang the suite.
+        QTimer.singleShot(15_000, loop.quit)
+        loop.exec()
+        assert not ex.isRunning(), 'extractor did not finish under watchdog'
+
+        assert instance_progress, 'no per-instance progress signals emitted'
+        assert global_progress, 'no global-hub progress signals emitted'
+        assert instance_progress[-1] == 100, (
+            f'expected final progress 100, got {instance_progress[-1]}')
+        # Monotonic — no rewind.
+        for a, b in zip(instance_progress[:-1], instance_progress[1:]):
+            assert b >= a, (
+                f'progress rewound from {a} to {b}; sequence='
+                f'{instance_progress}')
+        assert finished_fired, 'finished signal never bubbled to the hub'
+        print(f'  {len(instance_progress)} progress emits '
+              f'({instance_progress[0]}→…→{instance_progress[-1]}), '
+              'finished bubbled ✓')
+
+        # Cleanup signal connections so they don't leak into the next case.
+        try:
+            SIGNALS.usfx_background_load_progress.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            SIGNALS.usfx_background_load_finished.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+    finally:
+        session.PATH_SUBTITLD_USER_CACHE = real_cache
+        session.PATH_SUBTITLD_DATA_AUDIOSEPARATION = real_audiosep
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def case_speaker_image_loader_runs_off_main():
+    """Speaker thumbnail decode/downscale must happen on a worker thread,
+    not the main USFX/USF parse path. We can't directly observe "what
+    thread ran", but we *can* confirm:
+      * the loader QThread is alive between `.start()` and `.wait()`,
+      * by the time the thread finishes, `session.SPEAKERS[name]['image']`
+        is populated with a properly downscaled QImage,
+      * the global `speaker_image_ready` signal fires once per decoded
+        speaker.
+
+    Decode failures must be tolerated silently (the dict stays empty for
+    that name; no `image` key) — a bad PNG should not crash the load."""
+    print('\n=== Speaker thumbnails decoded off main thread ===')
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    from PySide6.QtCore import QEventLoop, QTimer, QByteArray, QBuffer, QIODevice
+    from PySide6.QtGui import QImage
+
+    from subtitld.modules import session
+    from subtitld.modules.file_io import _SpeakerImageLoader, SPEAKER_IMAGE_MAX_DIM
+    from subtitld.modules.signals import SIGNALS
+
+    # Build a real PNG byte stream for "Alice" (1024×768 — over the
+    # downscale cap, so we can assert that the cap was applied) and a
+    # second one written to disk for the "fallback path" code branch.
+    big = QImage(1024, 768, QImage.Format_ARGB32)
+    big.fill(0xFF334455)
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QIODevice.WriteOnly)
+    assert big.save(buf, 'PNG'), 'reference PNG encode failed'
+    buf.close()
+    alice_png = bytes(ba)
+
+    workdir = tempfile.mkdtemp(prefix='speaker-loader-test-')
+    try:
+        bob_path = os.path.join(workdir, 'bob.png')
+        bob = QImage(320, 240, QImage.Format_ARGB32)
+        bob.fill(0xFFAABBCC)
+        assert bob.save(bob_path, 'PNG'), 'Bob PNG file save failed'
+
+        # Reset session.SPEAKERS so we can assert exactly what the loader
+        # writes. Save the prior value to restore at the end.
+        prior_speakers = session.SPEAKERS
+        session.SPEAKERS = {'Alice': {'color': '#111'}, 'Bob': {'color': '#222'}, 'Carol': {}}
+
+        items = [
+            ('Alice', alice_png, None),          # base64 path
+            ('Bob', None, bob_path),             # file fallback path
+            ('Carol', b'NOT A REAL PNG', None),  # decode failure → no image
+        ]
+
+        ready = []
+        SIGNALS.speaker_image_ready.connect(ready.append)
+
+        loader = _SpeakerImageLoader(items)
+        loop = QEventLoop()
+        loader.finished.connect(loop.quit)
+        loader.start()
+        QTimer.singleShot(10_000, loop.quit)  # watchdog
+        loop.exec()
+        assert not loader.isRunning(), 'speaker image loader hung'
+
+        # Alice + Bob should both have images now; Carol must not.
+        alice_img = session.SPEAKERS['Alice'].get('image')
+        bob_img = session.SPEAKERS['Bob'].get('image')
+        assert alice_img is not None and not alice_img.isNull(), (
+            'Alice image not populated by the loader')
+        assert bob_img is not None and not bob_img.isNull(), (
+            'Bob image not populated by the loader')
+        assert 'image' not in session.SPEAKERS['Carol'], (
+            'Carol got a bogus image from corrupt PNG bytes')
+
+        # Downscale was applied to Alice (1024×768 → ≤256 max dim).
+        assert max(alice_img.width(), alice_img.height()) <= SPEAKER_IMAGE_MAX_DIM, (
+            f'Alice not downscaled: {alice_img.width()}×{alice_img.height()}')
+        # Bob (320×240) gets downscaled too.
+        assert max(bob_img.width(), bob_img.height()) <= SPEAKER_IMAGE_MAX_DIM, (
+            f'Bob not downscaled: {bob_img.width()}×{bob_img.height()}')
+
+        # Color metadata was not stomped — we only set 'image', not the
+        # whole speaker dict.
+        assert session.SPEAKERS['Alice']['color'] == '#111'
+        assert session.SPEAKERS['Bob']['color'] == '#222'
+
+        # Two `speaker_image_ready` emits — Alice and Bob, in some order.
+        assert sorted(ready) == ['Alice', 'Bob'], (
+            f'expected ready=[Alice, Bob], got {ready}')
+
+        print(f'  3 jobs in: 2 decoded + downscaled, 1 bad PNG silently '
+              f'skipped; ready={ready} ✓')
+
+        try:
+            SIGNALS.speaker_image_ready.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        session.SPEAKERS = prior_speakers
+    finally:
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 def case_usfx_background_extractor_streams_caches():
@@ -573,10 +777,299 @@ def case_usfx_background_extractor_streams_caches():
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def case_usfx_extractor_emits_member_ready_for_dubs():
+    """The deferred-dub flow only works if the timeline and audio engine
+    learn the instant each dub file lands on disk — `_request_async_preload`
+    has to run, and the hatched placeholder has to clear. The contract is
+    `signals.SIGNALS.usfx_member_ready(arcname, target_path)`.
+
+    Drive a zip with a handful of dubs through `_USFXBackgroundExtractor`
+    (no FLAC, no waveform — pure-dub case) and assert:
+      * one emit per dub, in zip-order (the extractor sorts namelist so
+        playback near the start can begin before tail dubs finish),
+      * target_path matches `<extract_dir>/<arcname>` (the same path the
+        main-thread USFX parse stored in `dub['path']`),
+      * the file exists at target_path by the time the emit fires (the
+        audio engine immediately calls preload on it; a slot that fires
+        before os.replace would race against a missing file)."""
+    print('\n=== USFX Phase 2 emits per-member ready for each dub ===')
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    import zipfile
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    workdir = tempfile.mkdtemp(prefix='usfx-member-ready-test-')
+    try:
+        # Pure-dub zip — no cache_key needed, only extract_dir. This is
+        # the common case for a project without bundled audio separation.
+        usfx_path = os.path.join(workdir, 'project.usfx')
+        dub_arcs = [
+            'assets/dubs/sub_001.wav',
+            'assets/dubs/sub_002.wav',
+            'assets/dubs/sub_003.mp3',
+        ]
+        dub_blobs = {a: (f'DUB_PAYLOAD_{i}_' * 256).encode()
+                     for i, a in enumerate(dub_arcs)}
+        with zipfile.ZipFile(usfx_path, 'w', zipfile.ZIP_STORED) as zf:
+            zf.writestr('subtitles.usf', b'<usf/>')
+            for arc, payload in dub_blobs.items():
+                zf.writestr(arc, payload)
+
+        extract_dir = os.path.join(workdir, 'extracted')
+        os.makedirs(extract_dir, exist_ok=True)
+
+        from subtitld.modules.file_io import _USFXBackgroundExtractor
+        from subtitld.modules.signals import SIGNALS
+
+        # Capture (arcname, target_path, exists_at_emit_time) tuples.
+        captured = []
+
+        def _on_member(arc, tgt):
+            captured.append((arc, tgt, os.path.exists(tgt)))
+
+        SIGNALS.usfx_member_ready.connect(_on_member)
+        try:
+            ex = _USFXBackgroundExtractor(
+                usfx_path, cache_key='', extract_dir=extract_dir,
+            )
+            loop = QEventLoop()
+            ex.finished.connect(loop.quit)
+            ex.start()
+            QTimer.singleShot(10_000, loop.quit)
+            loop.exec()
+            assert not ex.isRunning(), 'pure-dub extractor hung'
+
+            # One emit per dub, regardless of zip order (extractor sorts).
+            emitted_arcs = [c[0] for c in captured]
+            assert sorted(emitted_arcs) == sorted(dub_arcs), (
+                f'expected one emit per dub; got {emitted_arcs}')
+
+            # target_path must match the convention `dub['path']` uses.
+            for arc, tgt, exists in captured:
+                expected = os.path.join(extract_dir, arc.replace('/', os.sep))
+                assert tgt == expected, (
+                    f'arc {arc!r} emitted target {tgt!r}, expected {expected!r}')
+                # The signal must fire AFTER the rename — slots downstream
+                # call open() / preload() immediately and would crash on a
+                # missing file.
+                assert exists, (
+                    f'member_ready fired before {tgt!r} hit disk — '
+                    'os.replace ordering bug')
+
+            # Payloads must be intact (not truncated by the chunk loop).
+            for arc, tgt, _exists in captured:
+                with open(tgt, 'rb') as fh:
+                    assert fh.read() == dub_blobs[arc], (
+                        f'payload mismatch for {arc!r} — chunk loop bug?')
+            print(f'  {len(captured)} per-dub emits, all post-replace ✓')
+
+            # Re-running on a populated extract_dir must still fire the
+            # signal (late listeners need to know the file is available
+            # — e.g. preview_panel wires its slot only AFTER first paint).
+            captured.clear()
+            ex2 = _USFXBackgroundExtractor(
+                usfx_path, cache_key='', extract_dir=extract_dir,
+            )
+            loop2 = QEventLoop()
+            ex2.finished.connect(loop2.quit)
+            ex2.start()
+            QTimer.singleShot(10_000, loop2.quit)
+            loop2.exec()
+            assert sorted([c[0] for c in captured]) == sorted(dub_arcs), (
+                f'second-run emits missing for late listeners: {captured}')
+            print(f'  re-run on populated extract_dir re-emits ({len(captured)} dubs) ✓')
+        finally:
+            try:
+                SIGNALS.usfx_member_ready.disconnect(_on_member)
+            except (TypeError, RuntimeError):
+                pass
+    finally:
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def case_usfx_extractor_extracts_dubs_without_cache_key():
+    """Pure-dub projects (no audio separation bundled, no waveform cache)
+    have an empty `cache_key`. Pre-refactor the extractor bailed in that
+    case, leaving dubs trapped inside the zip — the new gate runs the
+    background extractor whenever `extract_dir` is set, regardless of
+    cache_key.
+
+    Confirm: with cache_key='' and a dubs-only zip, the extractor still
+    streams the dubs out and writes them to extract_dir."""
+    print('\n=== USFX Phase 2 runs for dubs-only projects (no cache_key) ===')
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    import zipfile
+
+    workdir = tempfile.mkdtemp(prefix='usfx-dubs-only-test-')
+    try:
+        usfx_path = os.path.join(workdir, 'project.usfx')
+        with zipfile.ZipFile(usfx_path, 'w', zipfile.ZIP_STORED) as zf:
+            zf.writestr('subtitles.usf', b'<usf/>')
+            zf.writestr('assets/dubs/d1.wav', b'WAV_BYTES_1')
+            zf.writestr('assets/dubs/d2.wav', b'WAV_BYTES_2')
+
+        extract_dir = os.path.join(workdir, 'extracted')
+        os.makedirs(extract_dir, exist_ok=True)
+
+        from subtitld.modules.file_io import _USFXBackgroundExtractor
+
+        ex = _USFXBackgroundExtractor(
+            usfx_path, cache_key='', extract_dir=extract_dir,
+        )
+        ex.start()
+        assert ex.wait(10_000), 'dubs-only extractor did not finish'
+
+        d1 = os.path.join(extract_dir, 'assets', 'dubs', 'd1.wav')
+        d2 = os.path.join(extract_dir, 'assets', 'dubs', 'd2.wav')
+        assert os.path.isfile(d1), 'd1.wav not extracted by dubs-only run'
+        assert os.path.isfile(d2), 'd2.wav not extracted by dubs-only run'
+        with open(d1, 'rb') as fh:
+            assert fh.read() == b'WAV_BYTES_1'
+        with open(d2, 'rb') as fh:
+            assert fh.read() == b'WAV_BYTES_2'
+        print('  2 dubs extracted with empty cache_key ✓')
+
+        # And the inverse: cache_key='' AND extract_dir=None means no
+        # work — the extractor bails cleanly without crashing.
+        ex_bail = _USFXBackgroundExtractor(
+            usfx_path, cache_key='', extract_dir=None,
+        )
+        ex_bail.start()
+        assert ex_bail.wait(5_000), 'no-op extractor hung'
+        print('  no extract_dir AND no cache_key → clean no-op ✓')
+    finally:
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def case_save_button_gate_signals():
+    """The Save button is disabled while the background extractor is
+    streaming — saving mid-stream would re-zip dubs whose source bytes
+    are still inside the original USFX. The gate is implemented as a
+    pair of signal emissions: `usfx_background_load_started` flips the
+    UI to "busy"; `usfx_background_load_finished` flips it back.
+
+    Wire a fake button to those signals exactly like `top_bar.load()`
+    does, run the extractor end-to-end, and assert the button's
+    enabled-state lifecycle matches the extractor's lifecycle."""
+    print('\n=== Save button gates on background extractor lifecycle ===')
+    _ensure_qt()
+    _stub_i18n_if_missing()
+    _stub_file_io_deps()
+    import zipfile
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    from subtitld.modules.signals import SIGNALS
+
+    # Verify the two signals exist (catches an accidental rename).
+    assert hasattr(SIGNALS, 'usfx_background_load_started'), (
+        'usfx_background_load_started signal missing from the hub')
+    assert hasattr(SIGNALS, 'usfx_background_load_finished'), (
+        'usfx_background_load_finished signal missing from the hub')
+
+    # Minimal fake button — just an `_enabled` bool the wiring flips.
+    class FakeButton:
+        def __init__(self):
+            self._enabled = True
+            self._tooltip = 'Save'
+            self.transitions = []  # list of bool states over time
+
+        def setEnabled(self, val):
+            self._enabled = bool(val)
+            self.transitions.append(self._enabled)
+
+        def setToolTip(self, val):
+            self._tooltip = val
+
+    btn = FakeButton()
+
+    def _on_started():
+        btn.setEnabled(False)
+        btn.setToolTip('busy')
+
+    def _on_finished():
+        btn.setEnabled(True)
+        btn.setToolTip('Save')
+
+    SIGNALS.usfx_background_load_started.connect(_on_started)
+    SIGNALS.usfx_background_load_finished.connect(_on_finished)
+    try:
+        # Build a small USFX zip and run the extractor — but mimic the
+        # production wiring in file_io: emit started just before start().
+        workdir = tempfile.mkdtemp(prefix='save-gate-test-')
+        try:
+            usfx_path = os.path.join(workdir, 'project.usfx')
+            with zipfile.ZipFile(usfx_path, 'w', zipfile.ZIP_STORED) as zf:
+                zf.writestr('subtitles.usf', b'<usf/>')
+                zf.writestr('assets/dubs/d1.wav', b'WAV' * 1024)
+
+            extract_dir = os.path.join(workdir, 'extracted')
+            os.makedirs(extract_dir, exist_ok=True)
+
+            from subtitld.modules.file_io import _USFXBackgroundExtractor
+
+            ex = _USFXBackgroundExtractor(
+                usfx_path, cache_key='', extract_dir=extract_dir,
+            )
+            # Signal-to-signal forwarding — matches file_io.py wiring
+            # and avoids the bound-`.emit` quirk that silently drops
+            # deliveries after a prior extractor has run.
+            ex.finished.connect(SIGNALS.usfx_background_load_finished)
+
+            assert btn._enabled, (
+                'button should start enabled before any extractor')
+
+            # Emit started exactly like file_io does, synchronously.
+            SIGNALS.usfx_background_load_started.emit()
+            assert not btn._enabled, (
+                'started signal did not disable the button')
+            assert btn._tooltip == 'busy', (
+                f'started did not swap tooltip; got {btn._tooltip!r}')
+
+            loop = QEventLoop()
+            ex.finished.connect(loop.quit)
+            ex.start()
+            QTimer.singleShot(10_000, loop.quit)
+            loop.exec()
+            assert not ex.isRunning(), 'extractor hung in gate test'
+
+            assert btn._enabled, (
+                'finished signal did not re-enable the button; '
+                f'transitions={btn.transitions}')
+            assert btn._tooltip == 'Save', (
+                f'finished did not restore tooltip; got {btn._tooltip!r}')
+            # Exact transition sequence: True (init) → False (started) →
+            # True (finished). No extra flicker.
+            assert btn.transitions == [False, True], (
+                f'unexpected transition trail: {btn.transitions}')
+            print(f'  transitions={btn.transitions}, tooltip restored ✓')
+        finally:
+            import shutil
+            shutil.rmtree(workdir, ignore_errors=True)
+    finally:
+        try:
+            SIGNALS.usfx_background_load_started.disconnect(_on_started)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            SIGNALS.usfx_background_load_finished.disconnect(_on_finished)
+        except (TypeError, RuntimeError):
+            pass
+
+
 def main():
     case_waveform_int16_storage()
     case_usfx_phase1_member_selection()
     case_usfx_background_extractor_streams_caches()
+    case_usfx_background_extractor_emits_progress()
+    case_usfx_extractor_emits_member_ready_for_dubs()
+    case_usfx_extractor_extracts_dubs_without_cache_key()
+    case_save_button_gate_signals()
+    case_speaker_image_loader_runs_off_main()
     case_dub_storage_is_int16_mono()
     case_speaker_image_downscale()
     case_dub_cache_eviction()

@@ -199,6 +199,31 @@ def load(self):
     session._unsaved_change_callbacks.append(self.titleBar_left_save_button.update_state)
     self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignVCenter)
 
+    # Save is gated on the USFX background extractor: if the user hits
+    # Save while dubs/FLAC/waveform are still inside the original zip,
+    # the new USFX writer would try to re-zip files that don't exist on
+    # disk yet. Disabling the button is the simplest, most predictable
+    # answer — and the auto-restore on `finished` keeps the UI honest
+    # without a manual "saved-once-extraction-done" handler elsewhere.
+    try:
+        from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
+
+        def _on_extraction_started():
+            self.titleBar_left_save_button.setEnabled(False)
+            self.titleBar_left_save_button.setToolTip(_('top_bar.save_busy'))
+
+        def _on_extraction_finished():
+            self.titleBar_left_save_button.setEnabled(True)
+            self.titleBar_left_save_button.setToolTip(_('top_bar.save'))
+
+        # Keep refs so Qt doesn't drop the lambda-like callbacks.
+        self._save_extraction_started_slot = _on_extraction_started
+        self._save_extraction_finished_slot = _on_extraction_finished
+        _SESSION_SIGNALS.usfx_background_load_started.connect(_on_extraction_started)
+        _SESSION_SIGNALS.usfx_background_load_finished.connect(_on_extraction_finished)
+    except Exception:
+        pass
+
     class titleBar_left_export_button(QPushButton):
         clicked = Signal()
         def __init__(widget, parent=None):
@@ -315,6 +340,15 @@ def translate(self):
 def toppanel_save_button_clicked(self):
     """Save the project as USFX. Prompts for a path the first time (or when
     the current file isn't .usfx); subsequent clicks save in place."""
+    # Defensive guard: the button is also disabled by the signal-wired
+    # gate in `load()`, but if a keyboard shortcut or programmatic click
+    # ever bypasses that path while the background extractor is still
+    # streaming dubs/FLAC/waveform out of the original zip, the USFX
+    # writer would re-zip half-extracted assets. Bail early.
+    extractor = getattr(session, 'USFX_BACKGROUND_LOAD', None)
+    if extractor is not None and extractor.isRunning():
+        return
+
     usfx_filter = session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['USFX']['description'] + ' (*.usfx)'
 
     current_filepath = session.SUBTITLE.get('filepath') or ''

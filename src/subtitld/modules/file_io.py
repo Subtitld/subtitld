@@ -21,6 +21,16 @@ from subtitld.modules import session
 from subtitld.modules import waveform
 from subtitld.modules import usf
 from subtitld.modules import utils
+# `signals.SIGNALS` MUST be imported at module-load time, NOT lazily
+# from inside the background extractor's `run()`. SIGNALS is a QObject
+# singleton; its thread affinity is whichever thread imports the module
+# first. If the worker thread is the first importer, the QObject is
+# parented to a QThread that exits shortly afterwards — and every later
+# `emit()` from the main thread silently goes to a dead receiver,
+# breaking the progress bar, the Save-button gate, and the per-dub
+# `usfx_member_ready` repaints. Importing here forces creation on the
+# main thread the first time file_io is loaded (during app startup).
+from subtitld.modules.signals import SIGNALS
 
 
 def _safe_asset_name(name):
@@ -58,15 +68,37 @@ def _usfx_extract_dir(usfx_path):
 
 def _is_phase1_usfx_member(name):
     """Return True for zip members that must be on disk before the
-    production screen can render — the XML, the speaker thumbnails, the
-    dub WAVs. Heavy caches (audio stems, waveform.npy) are streamed in
-    afterwards by `_USFXBackgroundExtractor`; the bundled video is
-    handled upstream by `peek_usfx_video()`."""
+    production screen can render. Everything else streams in via
+    `_USFXBackgroundExtractor` while the UI is already responsive.
+
+    Phase 1 covers:
+      * `subtitles.usf` / `manifest.xml` / a bare-root `.usf` —
+        parsed synchronously to populate the segment list, speakers,
+        and video pointer the production screen needs to render.
+      * `assets/speakers/*` — speaker thumbnails. Total payload is
+        small (< 5 MB even on 30-speaker projects) and the
+        downstream decode/downscale already runs off the main thread
+        via `_SpeakerImageLoader`. Keeping them in Phase 1 means the
+        speakers panel populates within the same paint as the
+        timeline, without a visible "speakers are blank for a second"
+        flash.
+
+    Phase 2 (handled by `_USFXBackgroundExtractor`):
+      * `assets/dubs/*` — TTS dub WAVs. Historically the biggest cost
+        on big projects (hundreds of MB across hundreds of subtitles);
+        moving these off the main thread is the single largest perceived
+        win. The audio engine tolerates missing dub paths and the
+        timeline paints a hatched placeholder until each file lands.
+      * `assets/waveform.npy` — main timeline peaks cache.
+      * `assets/audio/*.flac` — audio-separation stems.
+      * `assets/video/*` — bundled source video, handled upstream by
+        `peek_usfx_video()`.
+    """
     if not name or name.endswith('/'):
         return False
     if name == 'subtitles.usf' or name == 'manifest.xml':
         return True
-    if name.startswith('assets/speakers/') or name.startswith('assets/dubs/'):
+    if name.startswith('assets/speakers/'):
         return True
     # Tolerate `.usf` at the zip root with an unusual filename.
     if '/' not in name and name.lower().endswith('.usf'):
@@ -75,33 +107,102 @@ def _is_phase1_usfx_member(name):
 
 
 class _USFXBackgroundExtractor(QThread):
-    """Stream the heavy USFX members (audio stems + waveform cache) into
-    their final cache locations after the production screen is already
-    visible. Phase 1 extracts only the assets needed for first paint;
-    this thread picks up the rest without blocking the open.
+    """Stream the deferred USFX members to their target paths after the
+    production screen is already visible. Phase 1 extracts only what's
+    needed for first paint (subtitles.usf, manifest.xml, speaker thumbs);
+    this thread handles the rest in the background:
 
-    All members handled here are nice-to-have caches:
+      * `assets/dubs/<uid>.<fmt>` → `<extract_dir>/assets/dubs/<uid>.<fmt>`
+        — the per-subtitle TTS WAVs. On a project with hundreds of dubs
+        this is the single biggest item by total bytes; deferring it is
+        what makes the production screen show up "instantly" on big
+        projects.
       * `assets/waveform.npy` → `<cache>/waveform/<key>_waveform.npy`
       * `assets/audio/<kind>.flac` → `<audiosep>/<key>_<kind>.flac`
 
-    If a downstream feature (audio separation, zoom-out) is invoked before
-    this finishes, the affected code paths fall back to recomputing — no
-    user-visible error. Writes are atomic via `.tmp` + `os.replace` so a
-    crash mid-extract leaves clean state, not a half-written cache.
+    If a downstream feature (audio separation, zoom-out, dub playback) is
+    invoked before this finishes, the affected code paths fall back to
+    silence or a hatched placeholder — no user-visible error. Writes are
+    atomic via `.tmp` + `os.replace`, so a crash mid-extract leaves clean
+    state, not a half-written cache.
+
+    Progress is reported via the process-wide `signals.SIGNALS` hub so the
+    UI can connect once at startup rather than chase per-load instances.
+    Per-member completion (`usfx_member_ready`) lets the timeline repaint
+    each dub clip and the audio engine preload it the instant its file
+    lands — no need to wait for the whole batch.
     """
-    def __init__(self, usfx_path, cache_key, parent=None):
+    # Per-instance progress signal exists primarily for tests that want
+    # to assert without depending on the global signals hub. Production
+    # code connects to `signals.SIGNALS.usfx_background_load_progress`.
+    progress = Signal(int)
+
+    # 1 MiB chunks balance "few progress emits" against responsiveness
+    # for the 50–500 MB items typical here.
+    _CHUNK = 1 << 20
+
+    def __init__(self, usfx_path, cache_key, extract_dir=None, parent=None):
         super().__init__(parent)
         self._usfx_path = usfx_path
         self._cache_key = cache_key
+        # extract_dir is required for dub coverage; legacy callers that
+        # only wanted the waveform/FLAC streaming still work without it
+        # (dubs are simply skipped from the work list).
+        self._extract_dir = extract_dir
+        self._extracted_bytes = 0
+        self._total_bytes = 0
+        self._last_pct = -1
 
-    def _stream(self, zf, arcname, target_path):
+    def _emit_progress(self):
+        if self._total_bytes <= 0:
+            return
+        pct = int(self._extracted_bytes * 100 / self._total_bytes)
+        if pct == self._last_pct:
+            return
+        self._last_pct = pct
+        # Best-effort: the local signal is mainly for tests; the global
+        # hub is what the UI actually listens on.
+        try:
+            self.progress.emit(pct)
+        except Exception:
+            pass
+        # SIGNALS is imported at module load (top of file_io.py) so this
+        # emit always lands on the main-thread QObject — see the comment
+        # at the import site for why the lazy form was wrong.
+        try:
+            SIGNALS.usfx_background_load_progress.emit(pct)
+        except Exception:
+            pass
+
+    def _emit_member_ready(self, arcname, target_path):
+        """Tell listeners (timeline, audio engine) that `arcname` is now
+        on disk at `target_path`. Best-effort — never raises."""
+        try:
+            SIGNALS.usfx_member_ready.emit(arcname, target_path)
+        except Exception:
+            pass
+
+    def _stream(self, zf, arcname, target_path, file_size):
         if os.path.exists(target_path):
+            # Skip but still account the bytes — otherwise the percent
+            # never reaches 100 when a cache already exists.
+            self._extracted_bytes += file_size
+            self._emit_progress()
+            # The file is already there — listeners that connected late
+            # still need to know it's available.
+            self._emit_member_ready(arcname, target_path)
             return
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         tmp = target_path + '.tmp'
         try:
             with zf.open(arcname) as src, open(tmp, 'wb') as dst:
-                shutil.copyfileobj(src, dst, length=1 << 20)  # 1 MiB chunks
+                while True:
+                    chunk = src.read(self._CHUNK)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+                    self._extracted_bytes += len(chunk)
+                    self._emit_progress()
             os.replace(tmp, target_path)
         except Exception:
             if os.path.exists(tmp):
@@ -109,34 +210,158 @@ class _USFXBackgroundExtractor(QThread):
                     os.unlink(tmp)
                 except OSError:
                     pass
+            # Don't emit member_ready if the rename never landed —
+            # downstream listeners would try to read a path that doesn't
+            # exist (the audio engine tolerates it but the timeline's
+            # peaks worker would just bounce off `os.path.exists`).
+            return
+        self._emit_member_ready(arcname, target_path)
+
+    def _heavy_targets(self, names):
+        """Yield (arcname, target_path) for each zip member this thread
+        is responsible for. Called twice: once to sum total bytes for the
+        progress denominator, then again during the actual extract.
+
+        Order matters for perceived speed: dubs first so playback can
+        start as early as possible; waveform next so the main timeline
+        peak band fills in; FLAC stems last because nothing immediate
+        depends on them (audio separation is a deliberate user action).
+        """
+        if self._extract_dir:
+            # zipfile.namelist() returns members in archive order; filter
+            # to the dubs directory. Skip directory entries (trailing /).
+            for name in sorted(names):
+                if not name.startswith('assets/dubs/') or name.endswith('/'):
+                    continue
+                # Map directly: arcname `assets/dubs/uid.wav` lands at
+                # `<extract_dir>/assets/dubs/uid.wav` — same path the
+                # main-thread USFX parse stored in `dub['path']`.
+                target = os.path.join(self._extract_dir, name.replace('/', os.sep))
+                yield name, target
+        if 'assets/waveform.npy' in names:
+            target = os.path.join(
+                session.PATH_SUBTITLD_USER_CACHE, 'waveform',
+                f'{self._cache_key}_waveform.npy',
+            )
+            yield 'assets/waveform.npy', target
+        for kind in ('original', 'vocals', 'background'):
+            arc = f'assets/audio/{kind}.flac'
+            if arc in names:
+                target = os.path.join(
+                    session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                    f'{self._cache_key}_{kind}.flac',
+                )
+                yield arc, target
 
     def run(self):
-        if not self._cache_key or not os.path.isfile(self._usfx_path):
+        # `cache_key` is required for the FLAC/waveform targets; the dub
+        # branch only needs `extract_dir`. If we have neither, nothing to
+        # do — but bail only if BOTH are missing so dub-only zips still
+        # work.
+        if not os.path.isfile(self._usfx_path):
+            return
+        if not self._cache_key and not self._extract_dir:
             return
         try:
             with zipfile.ZipFile(self._usfx_path, 'r') as zf:
                 names = set(zf.namelist())
-
-                if 'assets/waveform.npy' in names:
-                    target = os.path.join(
-                        session.PATH_SUBTITLD_USER_CACHE, 'waveform',
-                        f'{self._cache_key}_waveform.npy',
-                    )
-                    self._stream(zf, 'assets/waveform.npy', target)
-
-                for kind in ('original', 'vocals', 'background'):
-                    arc = f'assets/audio/{kind}.flac'
-                    if arc not in names:
-                        continue
-                    target = os.path.join(
-                        session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
-                        f'{self._cache_key}_{kind}.flac',
-                    )
-                    self._stream(zf, arc, target)
+                # First pass: sum uncompressed bytes across the members
+                # we'll actually handle, so progress is a true percent.
+                pairs = list(self._heavy_targets(names))
+                for arc, _target in pairs:
+                    try:
+                        self._total_bytes += zf.getinfo(arc).file_size
+                    except KeyError:
+                        pass
+                if self._total_bytes <= 0:
+                    return
+                # Second pass: stream each member with progress per chunk.
+                for arc, target in pairs:
+                    try:
+                        size = zf.getinfo(arc).file_size
+                    except KeyError:
+                        size = 0
+                    self._stream(zf, arc, target, size)
+                # If we skipped everything (all caches already present),
+                # the first byte accounting in _stream already emitted
+                # the final 100%. If for some reason _emit_progress
+                # didn't fire 100, force it now.
+                if self._last_pct < 100:
+                    self._extracted_bytes = self._total_bytes
+                    self._emit_progress()
         except Exception:
             # Background pre-cache is best-effort; any failure just means
             # the affected feature will recompute on demand later.
             pass
+
+
+def _start_speaker_image_loader(items):
+    """Spawn a `_SpeakerImageLoader` for `items` if there is any work to
+    do, and park the reference on `session` so the QThread isn't GC'd
+    mid-run. A subsequent project open replaces it; the prior thread
+    either finishes naturally or is gracefully orphaned (its writes go
+    into `session.SPEAKERS` regardless of which project is loaded — but
+    since `session.SPEAKERS` is reset on each open, stale writes from a
+    previous load would be no-ops for absent names)."""
+    if not items:
+        return
+    loader = _SpeakerImageLoader(items)
+    session.SPEAKER_IMAGE_LOAD = loader
+    loader.start()
+
+
+class _SpeakerImageLoader(QThread):
+    """Decode + downscale speaker thumbnails off the main thread.
+
+    QImage is a value class and its `loadFromData` / `load` / `scaled`
+    methods are reentrant — safe to call on a non-GUI thread. Doing the
+    work here removes ~10–50 ms per speaker (HD face crops at 4K source)
+    from the main-thread USF/USFX load.
+
+    Each item is a `(speaker_name, image_bytes_or_None, fallback_path_or_None)`
+    tuple. The first non-empty source that decodes wins. Results are
+    published via `signals.SIGNALS.speaker_image_ready` and written into
+    `session.SPEAKERS[name]['image']` from this thread — dict mutation in
+    CPython is GIL-protected, and the UI re-renders on the queued signal
+    delivery (i.e., after the write has landed).
+    """
+    def __init__(self, items, parent=None):
+        super().__init__(parent)
+        # Copy so the caller can keep mutating the original.
+        self._items = list(items)
+
+    def run(self):
+        # SIGNALS comes from the module-level import — see the long note
+        # at the top of file_io.py. The previous lazy import here was
+        # the bug that broke `speaker_image_ready` deliveries.
+        for name, image_bytes, fallback_path in self._items:
+            qimg = None
+            try:
+                if image_bytes:
+                    qi = QImage()
+                    if qi.loadFromData(image_bytes):
+                        qimg = _downscale_speaker_image(qi)
+                elif fallback_path and os.path.isfile(fallback_path):
+                    qi = QImage()
+                    if qi.load(fallback_path):
+                        qimg = _downscale_speaker_image(qi)
+            except Exception:
+                qimg = None
+            if qimg is None or qimg.isNull():
+                continue
+            # Write into the session dict from the worker — atomic per
+            # CPython's GIL — then signal the UI to redraw. The receive
+            # slot is on the main thread, so Qt queues the delivery; by
+            # the time it fires, the dict already reflects the new image.
+            try:
+                bucket = session.SPEAKERS.setdefault(name, {})
+                bucket['image'] = qimg
+            except Exception:
+                continue
+            try:
+                SIGNALS.speaker_image_ready.emit(name)
+            except Exception:
+                pass
 
 
 USFX_OPTION_DEFAULTS = {
@@ -310,18 +535,21 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             segments_list = reader.read(open(subtitle_file).read())
             if reader.language:
                 session.SUBTITLE['language'] = reader.language
+            # Speaker color/dubbing metadata is cheap — set synchronously.
+            # Image decode + downscale moves to `_SpeakerImageLoader` so
+            # 20 HD face crops don't add 0.5–2 s to the main-thread open.
+            image_jobs = []
             for speaker_name, speaker_data in reader.speakers.items():
                 existing = session.SPEAKERS.get(speaker_name, {})
                 if 'color' in speaker_data:
                     existing['color'] = speaker_data['color']
                 if isinstance(speaker_data.get('dubbing'), dict):
                     existing['dubbing'] = speaker_data['dubbing']
+                session.SPEAKERS[speaker_name] = existing
                 image_bytes = speaker_data.get('image_bytes')
                 if image_bytes:
-                    qimg = QImage()
-                    if qimg.loadFromData(image_bytes):
-                        existing['image'] = _downscale_speaker_image(qimg)
-                session.SPEAKERS[speaker_name] = existing
+                    image_jobs.append((speaker_name, bytes(image_bytes), None))
+            _start_speaker_image_loader(image_jobs)
 
             if not isinstance(session.FORMAT, dict):
                 session.FORMAT = {}
@@ -375,28 +603,36 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if reader.language:
                 session.SUBTITLE['language'] = reader.language
 
+            # Speaker color/dubbing metadata stays inline; image decode
+            # is dispatched to `_SpeakerImageLoader` (same rationale as
+            # the USF branch above). The fallback file-path resolution
+            # also moves into the loader so its disk reads come off main.
             speakers_dir = os.path.join(extract_dir, 'assets', 'speakers')
+            image_jobs = []
             for speaker_name, speaker_data in reader.speakers.items():
                 existing = session.SPEAKERS.get(speaker_name, {})
                 if 'color' in speaker_data:
                     existing['color'] = speaker_data['color']
                 if isinstance(speaker_data.get('dubbing'), dict):
                     existing['dubbing'] = speaker_data['dubbing']
+                session.SPEAKERS[speaker_name] = existing
                 image_bytes = speaker_data.get('image_bytes')
                 if image_bytes:
-                    qimg = QImage()
-                    if qimg.loadFromData(image_bytes):
-                        existing['image'] = _downscale_speaker_image(qimg)
+                    image_jobs.append((speaker_name, bytes(image_bytes), None))
                 else:
+                    # Try the first extension that exists on disk; the
+                    # loader will load it. Cheap path-exists checks stay
+                    # on main — they're a handful of stat() calls.
                     safe_name = _safe_asset_name(speaker_name)
+                    fallback = None
                     for ext in ('png', 'jpg', 'jpeg'):
                         candidate = os.path.join(speakers_dir, f'{safe_name}.{ext}')
                         if os.path.exists(candidate):
-                            qimg = QImage()
-                            if qimg.load(candidate):
-                                existing['image'] = _downscale_speaker_image(qimg)
+                            fallback = candidate
                             break
-                session.SPEAKERS[speaker_name] = existing
+                    if fallback:
+                        image_jobs.append((speaker_name, None, fallback))
+            _start_speaker_image_loader(image_jobs)
 
             for segment in segments_list:
                 for dub in segment.get('dubbing', []) or []:
@@ -453,13 +689,38 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # subsequent project open replaces it (the old thread either
             # finishes or its remaining writes no-op against existing
             # cache files via the `os.path.exists` guard in `_stream`).
+            #
+            # The `finished` signal is re-emitted on the global session
+            # signal hub so the UI's progress-bar overlay can connect
+            # once at startup and never has to track per-load instances.
             current_video = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
             current_key = utils.get_cache_key(current_video) if current_video else None
-            if current_key:
-                session.USFX_BACKGROUND_LOAD = _USFXBackgroundExtractor(
-                    subtitle_file, current_key,
+            # Spawn the extractor whenever there's *anything* deferred to
+            # do: a cache_key for FLAC/waveform targets, or just the
+            # extract_dir for dubs. Most USFX zips have at least dubs, so
+            # the cache_key absence (e.g. video not yet resolved) is no
+            # longer a reason to skip the whole background pass.
+            if current_key or extract_dir:
+                extractor = _USFXBackgroundExtractor(
+                    subtitle_file, current_key, extract_dir=extract_dir,
                 )
-                session.USFX_BACKGROUND_LOAD.start()
+                try:
+                    # Signal-to-signal forwarding (not signal-to-`.emit`
+                    # bound method). Both forms work now that SIGNALS is
+                    # imported at module load and so lives on the main
+                    # thread, but signal-to-signal is the idiomatic Qt
+                    # pattern and avoids relying on PySide6's tracking
+                    # of a bound-method receiver.
+                    extractor.finished.connect(SIGNALS.usfx_background_load_finished)
+                    # Emit synchronously *before* start() so listeners
+                    # (e.g. Save-button gate) flip to "loading" state
+                    # without a race against the first emitted frame from
+                    # the worker thread.
+                    SIGNALS.usfx_background_load_started.emit()
+                except Exception:
+                    pass
+                session.USFX_BACKGROUND_LOAD = extractor
+                extractor.start()
 
             if not isinstance(session.FORMAT, dict):
                 session.FORMAT = {}

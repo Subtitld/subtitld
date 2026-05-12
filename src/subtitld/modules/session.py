@@ -92,6 +92,11 @@ PATH_SUBTITLD_USER_CONFIG_FILE = PATH_SUBTITLD_USER_CONFIG / 'subtitld.config'
 # project open. None when no extraction is in flight.
 USFX_BACKGROUND_LOAD = None
 
+# Reference handle for the off-main-thread speaker thumbnail decoder.
+# Same lifetime story as `USFX_BACKGROUND_LOAD`: parked here so the
+# QThread isn't GC'd mid-decode; replaced on each project open.
+SPEAKER_IMAGE_LOAD = None
+
 # VERSION_NUMBER = '20.07.0.0'
 # if os.path.isfile(os.path.join(PATH_SUBTITLD, 'current_version')):
 #     VERSION_NUMBER = open(os.path.join(PATH_SUBTITLD, 'current_version')).read().strip()

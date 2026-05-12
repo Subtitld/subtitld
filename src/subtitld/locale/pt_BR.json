@@ -239,6 +239,7 @@
     "export_panel.preview": "Visualizar",
     "export_panel.generate_transparent_video": "Gerar vídeo transparente",
     "top_bar.save": "Salvar",
+    "top_bar.save_busy": "Carregando recursos do projeto — Salvar voltará em instantes…",
     "subtitles_panel_widget_speakers.new_speaker": "Novo locutor",
     "subtitles_panel_widget_speakers.enter_speaker_name": "Por favor, insira o nome do locutor:",
     "subtitles_panel_widget_speakers.rename_speaker": "Renomear locutor",

@@ -64,8 +64,12 @@ class Window(FramelessMainWindow):
         self.showMaximized()
 
         if session.SUBTITLE.get('filepath', False) and session.VIDEO.get('filepath', False):
-            session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
-            session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+            # `load_productionscreen` itself runs `process_subtitles_file`
+            # + `process_video_file` + `sync_subtitle_dubs`. Don't run them
+            # here first — doing so would double the Phase 1 zip extract,
+            # ffprobe, and USF parse on the main thread before the screen
+            # transition. See the matching note in
+            # `start_screen_recent_listwidget_item_clicked`.
             startscreen.load_productionscreen(self)
         else:
             startscreen.show(self)

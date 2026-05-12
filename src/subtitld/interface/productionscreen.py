@@ -1,14 +1,92 @@
-from PySide6.QtWidgets import QSplitter
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QSplitter, QWidget
+from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtGui import QPainter, QColor
 
 from subtitld.modules import file_io
 from subtitld.modules import session
+from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
 from subtitld.interface import bottom_panel
 from subtitld.interface import top_bar
 from subtitld.interface.translation import _
+
+
+class _BackgroundLoadProgressBar(QWidget):
+    """Thin progress strip pinned to the bottom edge of the host window.
+
+    Visible only while a USFX background load is reporting progress; hides
+    itself a short time after completion (so the eye registers "done"
+    before the bar disappears). Transparent to mouse events so it never
+    blocks clicks on the timeline directly above it.
+
+    Wiring is via `signals.SIGNALS.usfx_background_load_*`, which the
+    Phase 2 extractor emits from its worker thread. Qt auto-promotes
+    those signal deliveries to `Qt.QueuedConnection`, so the slot runs
+    on the main thread safely.
+    """
+    _HEIGHT_PX = 3
+    _AUTO_HIDE_MS = 800
+
+    def __init__(self, host):
+        super().__init__(host)
+        self._host = host
+        self._progress = 0
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        host.installEventFilter(self)
+        self._sync_geometry()
+        self.hide()
+
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(self._AUTO_HIDE_MS)
+        self._hide_timer.timeout.connect(self._fade_out)
+
+        _SESSION_SIGNALS.usfx_background_load_progress.connect(self._on_progress)
+        _SESSION_SIGNALS.usfx_background_load_finished.connect(self._on_finished)
+
+    def _sync_geometry(self):
+        r = self._host.rect()
+        self.setGeometry(0, r.height() - self._HEIGHT_PX,
+                         r.width(), self._HEIGHT_PX)
+        self.raise_()
+
+    def eventFilter(self, obj, event):
+        if obj is self._host and event.type() == QEvent.Resize:
+            self._sync_geometry()
+        return False
+
+    def _on_progress(self, pct):
+        self._progress = max(0, min(100, int(pct)))
+        if not self.isVisible():
+            self._sync_geometry()
+            self.show()
+        self.update()
+        if self._progress >= 100:
+            self._hide_timer.start()
+
+    def _on_finished(self):
+        # If progress already hit 100 the hide timer is running; just
+        # let it complete. If not (extraction aborted), force a hide.
+        self._progress = 100
+        self.update()
+        self._hide_timer.start()
+
+    def _fade_out(self):
+        self.hide()
+        self._progress = 0
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        # Subtle track + accent fill — same green as the save-wave overlay
+        # so it reads as "Subtitld is doing something useful".
+        p.fillRect(self.rect(), QColor(26, 26, 26, 180))
+        if self._progress > 0:
+            w = int(self.width() * self._progress / 100)
+            p.fillRect(0, 0, w, self.height(), QColor('#5de845'))
 
 
 def load(self):
@@ -36,6 +114,12 @@ def load(self):
     self.central_widget.layout().addWidget(self.main_vertical_splitter)
 
     self.main_vertical_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_vertical', [70, 30]))
+
+    # Pin a 3-px progress strip to the bottom of the main window. It
+    # tracks geometry on resize, so it stays at the bottom edge no
+    # matter how the user drags the splitters around. Wires itself to
+    # the USFX Phase 2 signals at construction; nothing else to do here.
+    self.background_load_progress_bar = _BackgroundLoadProgressBar(self)
 
     if session.CONFIG.get('autosave', {}).get('backup_enabled', True):
         self.autosave_backup_timer.start()

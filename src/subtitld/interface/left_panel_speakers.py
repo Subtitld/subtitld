@@ -14,6 +14,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import history
+from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
 
 class FaceExtractorThread(QThread):
@@ -176,7 +177,14 @@ def _stacked_resize_to_current(stacked):
     """Make a QStackedWidget size to its *current* page rather than to the
     largest page across the stack. We flip each page's size policy so only
     the visible one contributes to the stack's sizeHint — Qt then collapses
-    the empty rows that would otherwise be reserved for taller siblings."""
+    the empty rows that would otherwise be reserved for taller siblings.
+
+    The parent is signalled via updateGeometry() rather than adjustSize() —
+    adjustSize() snaps the parent's width down to its sizeHint, which then
+    shrinks any siblings (like the dubbing-engine combobox) whose policy
+    allows them to follow the parent's narrower width. updateGeometry()
+    invalidates the layout cache and lets Qt reflow vertically while
+    leaving the parent's horizontal extent alone."""
     current = stacked.currentWidget()
     for i in range(stacked.count()):
         page = stacked.widget(i)
@@ -190,7 +198,7 @@ def _stacked_resize_to_current(stacked):
     stacked.adjustSize()
     parent = stacked.parentWidget()
     if parent is not None:
-        parent.adjustSize()
+        parent.updateGeometry()
 
 
 class dubbing_container(QWidget):
@@ -672,7 +680,15 @@ def load(self):
 
     self.left_panel_speakers_image_test_thread = FaceExtractorThread(parent=self)
     self.left_panel_speakers_image_test_thread.result.connect(handle_face_result)
-    
+
+    # Off-main-thread speaker-thumbnail decode (file_io._SpeakerImageLoader)
+    # writes into session.SPEAKERS[name]['image'] from a worker thread and
+    # emits `speaker_image_ready(name)` on the global signal hub. We
+    # re-render the speakers list on each arrival so the placeholder icon
+    # is replaced as soon as the decode lands. The signal delivery is
+    # queued (cross-thread), so this slot always runs on the main thread.
+    _SESSION_SIGNALS.speaker_image_ready.connect(lambda _name: update_speakers_list(self))
+
     self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
 
     self.left_panel_speakers_rename_dialog = rename_speaker_name_dialog(parent=self)

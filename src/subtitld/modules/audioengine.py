@@ -21,6 +21,12 @@ FADE_FRAMES = 64
 # allocation.
 _FADE_IN_RAMP = np.linspace(0.0, 1.0, FADE_FRAMES, dtype=np.float32).reshape(-1, 1)
 _FADE_OUT_RAMP = np.linspace(1.0, 0.0, FADE_FRAMES, dtype=np.float32).reshape(-1, 1)
+# 1-D variants used by SubtitleDubClip — its independent-subclip path
+# applies fades to the mono float32 source before `+=`-mixing into the
+# stereo buffer, so overlapping subclips don't have their fade ramp
+# attenuate each other's samples.
+_FADE_IN_RAMP_1D = _FADE_IN_RAMP.reshape(-1)
+_FADE_OUT_RAMP_1D = _FADE_OUT_RAMP.reshape(-1)
 
 # Reciprocal of int16 full-scale. The dub cache stores int16 mono — the
 # audio callback converts to float32 in [-1, 1] by multiplying by this
@@ -469,13 +475,11 @@ class SubtitleDubClip:
 
         base = float(dub.get('start', 0.0))
 
-        # Segment list of (seg_t0, seg_t1, seg) to render. Legacy dubs
-        # (no `segments` key) collapse to a single virtual segment built
-        # from `dub['path']` + the loaded frame count — NO file I/O on
-        # the audio thread. `segments == []` means "explicitly empty
-        # take" → return silence (None).
+        # Build the iteration list. Legacy dubs (no `segments` key)
+        # collapse to one virtual subclip built from `dub['path']` and
+        # the loaded frame count — NO file I/O on the audio thread.
+        # `segments == []` means "explicitly empty take" → silence.
         segments_field = dub.get('segments')
-        legacy_virtual = None
         if segments_field is None:
             path = dub.get('path')
             if not path:
@@ -488,67 +492,58 @@ class SubtitleDubClip:
             seg_dur = total_frames / src_sr if src_sr > 0 else 0.0
             if seg_dur <= 0.0:
                 return None
-            legacy_virtual = {
-                'type': 'audio', 'path': path,
-                'start': 0.0, 'end': seg_dur,
-            }
-            segments_iter = (legacy_virtual,)
-            total_dur = seg_dur
+            segments_iter = (
+                {'type': 'audio', 'path': path,
+                 'start': 0.0, 'end': seg_dur, 'offset': 0.0},
+            )
+        elif not segments_field:
+            return None
         else:
-            if not segments_field:
-                return None
             segments_iter = segments_field
-            total_dur = 0.0
-            for seg in segments_iter:
-                if seg.get('type', 'audio') == 'silence':
-                    total_dur += max(0.0, float(seg.get('duration', 0.0) or 0.0))
-                else:
-                    end = seg.get('end')
-                    if end is not None:
-                        total_dur += max(0.0, float(end) - float(seg.get('start', 0.0)))
 
         t0 = playhead
         t1 = playhead + frames / samplerate
-        clip_end = base + total_dur
-        if t1 <= base or t0 >= clip_end:
-            return None
 
-        # Find first/last audio-segment indices so fades land only at
-        # genuine discontinuities (dub outer bounds and silence joins).
-        # Internal audio→audio splits stay seamless — both halves point
-        # at contiguous source samples, so a fade there would create a
-        # dip the user never asked for.
-        first_audio_idx = -1
-        last_audio_idx = -1
-        for i, seg in enumerate(segments_iter):
-            if seg.get('type', 'audio') != 'silence':
-                if first_audio_idx == -1:
-                    first_audio_idx = i
-                last_audio_idx = i
-
-        # `data` int16 mono is converted+scaled to float32 in [-1, 1]
-        # via one np.multiply per segment slice; gain folds in so we
-        # do exactly one multiply pass.
-        scale = np.float32(self.gain) * _INT16_TO_FLOAT32
-
-        out = None  # allocate lazily on first rendered slice
-        cursor = base
-        for i, seg in enumerate(segments_iter):
-            seg_type = seg.get('type', 'audio')
-            if seg_type == 'silence':
-                cursor += max(0.0, float(seg.get('duration', 0.0) or 0.0))
+        # Fast outer-bound skip — bail before doing any per-subclip work
+        # if the whole dub is out of the audio window. Subclips are
+        # independent so we need min(timeline_start), max(timeline_end).
+        extent_lo = None
+        extent_hi = None
+        for seg in segments_iter:
+            if seg.get('type', 'audio') != 'audio':
                 continue
             end = seg.get('end')
             if end is None:
-                # Unresolved end — skip rather than guess. Editing
-                # helpers in dub_clip.py always set `end`; only stale
-                # data on disk could land us here.
+                continue
+            seg_offset = float(seg.get('offset', 0.0))
+            seg_t0 = base + seg_offset
+            seg_t1 = seg_t0 + max(0.0, float(end) - float(seg.get('start', 0.0)))
+            if extent_lo is None or seg_t0 < extent_lo:
+                extent_lo = seg_t0
+            if extent_hi is None or seg_t1 > extent_hi:
+                extent_hi = seg_t1
+        if extent_lo is None or t1 <= extent_lo or t0 >= extent_hi:
+            return None
+
+        # `data` int16 mono → float32 in [-1, 1] via one np.multiply per
+        # subclip slice; gain folds in so we do exactly one multiply.
+        scale = np.float32(self.gain) * _INT16_TO_FLOAT32
+
+        out = None  # allocate lazily on first rendered slice
+
+        for i, seg in enumerate(segments_iter):
+            if seg.get('type', 'audio') != 'audio':
+                continue
+            end = seg.get('end')
+            if end is None:
                 continue
             seg_source_start = float(seg.get('start', 0.0))
-            seg_dur = max(0.0, float(end) - seg_source_start)
-            seg_t0 = cursor
-            seg_t1 = cursor + seg_dur
-            cursor = seg_t1
+            seg_dur = float(end) - seg_source_start
+            if seg_dur <= 0:
+                continue
+            seg_offset = float(seg.get('offset', 0.0))
+            seg_t0 = base + seg_offset
+            seg_t1 = seg_t0 + seg_dur
             if seg_t1 <= t0 or seg_t0 >= t1:
                 continue
 
@@ -573,8 +568,8 @@ class SubtitleDubClip:
                 out = buffer_pool.get((frames, 2), dtype=np.float32)
 
             # Fast path: source samplerate matches engine and no stretch
-            # in flight. Slice the int16 source, convert+scale once,
-            # write into both output channels.
+            # in flight. Slice int16 source → mono float32 with gain
+            # folded in.
             if src_sr == samplerate and self.speed == 1.0:
                 src_frame_start = int(round(
                     (clip_t0 - seg_t0 + seg_source_start) * src_sr
@@ -587,8 +582,6 @@ class SubtitleDubClip:
                     data[src_frame_start:src_frame_start + n], scale,
                     dtype=np.float32, casting='unsafe',
                 )
-                out[out_start:out_start + n, 0] = mono_f32
-                out[out_start:out_start + n, 1] = mono_f32
                 rendered_n = n
             else:
                 # Slow path: speed != 1.0 (live stretch preview).
@@ -607,28 +600,60 @@ class SubtitleDubClip:
                 s0 = data[i0v].astype(np.float32)
                 s1 = data[i1v].astype(np.float32)
                 mono_f32 = ((1.0 - fracv) * s0 + fracv * s1) * scale
-                out[out_start:out_start + valid_count, 0] = mono_f32
-                out[out_start:out_start + valid_count, 1] = mono_f32
                 rendered_n = valid_count
 
-            # Per-segment fades — only at real discontinuities (dub
-            # outer bound or adjacent silence). audio→audio internal
-            # splits stay seamless: both halves point at contiguous
-            # source bytes, so any fade there would create an audible
-            # dip the user never asked for.
-            prev_is_silence = (i > 0
-                               and segments_iter[i - 1].get('type', 'audio') == 'silence')
-            next_is_silence = (i + 1 < len(segments_iter)
-                               and segments_iter[i + 1].get('type', 'audio') == 'silence')
+            # Fades — applied to `mono_f32` BEFORE the `+=` mix so
+            # overlapping subclips don't attenuate each other's samples.
+            # Skip the fade at any edge that's contiguous with another
+            # subclip in this dub (same path, same source offset adjacent
+            # in source, same timeline offset adjacent in timeline) so
+            # a fresh split with both halves still aligned plays without
+            # an audible dip at the seam. After the user moves or trims
+            # either half, contiguity breaks and the fade applies.
             seg_starts_at_window = clip_t0 <= seg_t0 + 1.0 / samplerate
             seg_ends_at_window = clip_t1 >= seg_t1 - 1.0 / samplerate
+            fade_in_needed = seg_starts_at_window
+            fade_out_needed = seg_ends_at_window
+            if (fade_in_needed or fade_out_needed) and len(segments_iter) > 1:
+                # O(N) scan against the rest of the subclip list. With
+                # ~tens of subclips per dub max this is cheap; we skip
+                # the whole check when there's only one subclip anyway.
+                for j, other in enumerate(segments_iter):
+                    if j == i:
+                        continue
+                    if other.get('type', 'audio') != 'audio':
+                        continue
+                    if other.get('path') != path:
+                        continue
+                    other_end = other.get('end')
+                    if other_end is None:
+                        continue
+                    other_start = float(other.get('start', 0.0))
+                    other_offset = float(other.get('offset', 0.0))
+                    other_dur = float(other_end) - other_start
+                    # Other ends where this one starts (in both source
+                    # and timeline) → no fade-in for this subclip.
+                    if (fade_in_needed
+                            and abs(float(other_end) - seg_source_start) < 1e-6
+                            and abs(other_offset + other_dur - seg_offset) < 1e-6):
+                        fade_in_needed = False
+                    # Other starts where this one ends → no fade-out.
+                    if (fade_out_needed
+                            and abs(other_start - float(end)) < 1e-6
+                            and abs(other_offset - (seg_offset + seg_dur)) < 1e-6):
+                        fade_out_needed = False
             fade_len = min(FADE_FRAMES, rendered_n)
             if fade_len > 0:
-                if seg_starts_at_window and (i == first_audio_idx or prev_is_silence):
-                    out[out_start:out_start + fade_len] *= _FADE_IN_RAMP[:fade_len]
-                if seg_ends_at_window and (i == last_audio_idx or next_is_silence):
-                    end_idx = out_start + rendered_n
-                    out[end_idx - fade_len:end_idx] *= _FADE_OUT_RAMP[:fade_len]
+                if fade_in_needed:
+                    mono_f32[:fade_len] *= _FADE_IN_RAMP_1D[:fade_len]
+                if fade_out_needed:
+                    mono_f32[rendered_n - fade_len:rendered_n] *= _FADE_OUT_RAMP_1D[:fade_len]
+
+            # `+=` because subclips can overlap on the timeline — both
+            # via intentional user placement and as a transient state
+            # while dragging.
+            out[out_start:out_start + rendered_n, 0] += mono_f32
+            out[out_start:out_start + rendered_n, 1] += mono_f32
 
         return out
 
@@ -1108,13 +1133,30 @@ class SoundDeviceAudioEngine:
                         break
 
             dub = sub['dubbing'][0]
-            # Preload every audio path the dub references — segments may
-            # reference multiple files after a clone-ref split, or after
-            # ASR-driven trims that swap part of the take. The helper
+            # Warm every audio path the dub references through the
+            # background loader queue. Segments may reference multiple
+            # files after a clone-ref split or ASR-driven trim; the helper
             # falls back to `dub['path']` for legacy single-file dubs.
+            #
+            # Why async, not `clip.preload()`: on a 300-subtitle project
+            # this loop fires 300+ `sf.SoundFile.read()` + resample + int16
+            # pack operations. Synchronously on the main thread that's
+            # seconds of frozen UI right after the user opens a recent
+            # file — the dominant cost left after Phase 1 zip extract was
+            # shrunk. The background loader is already running, already
+            # designed for exactly this pattern (used on audio-callback
+            # cache miss), and the audio engine tolerates a not-yet-loaded
+            # dub by producing silence + re-enqueueing through `read()`.
+            #
+            # Race note: if a USFX dub file hasn't landed on disk yet
+            # (Phase 2 extractor still streaming), the bg loader's
+            # `sf.SoundFile` open raises FileNotFoundError → caught by
+            # `preload()`'s catch-all → `_load_pending` is dropped in the
+            # loader's `finally`. When `on_usfx_member_ready` fires for
+            # that same path it re-enqueues and the load succeeds.
             from subtitld.modules import dub_clip
             for path in dub_clip.collect_segment_paths(dub):
-                clip.preload(path)
+                clip._request_async_preload(path)
 
         for sub_id in list(self.subtitle_clips):
             if sub_id in seen:
@@ -1125,6 +1167,38 @@ class SoundDeviceAudioEngine:
                     track.clips.remove(clip)
                     break
             clip.shutdown()
+
+    def on_usfx_member_ready(self, arcname, target_path):
+        """Slot for `signals.SIGNALS.usfx_member_ready`.
+
+        Called when the USFX Phase 2 extractor has finished writing a
+        deferred zip member. For dub WAVs, find the matching subtitle
+        clip and enqueue a preload through the existing background
+        loader, so the audio data is cached before the playhead reaches
+        the clip. Other arcnames (waveform.npy, FLAC stems) are no-ops
+        here — they belong to the timeline / audio-separation paths.
+
+        Safe to call from any thread because:
+          * `subtitle_clips.values()` reads a dict that's mutated only
+            from the main thread; the wrapper that connects this slot
+            (in `preview_panel`) routes through a main-thread QObject so
+            Qt's auto-promote puts us on the main thread already.
+          * `_request_async_preload` enqueues onto a Queue (thread-safe
+            by construction) and never blocks.
+        """
+        if not arcname.startswith('assets/dubs/'):
+            return
+        for clip in self.subtitle_clips.values():
+            dub = clip._current_dub()
+            if dub is None:
+                continue
+            # Match by full resolved path — the USFX parse stored the
+            # extract_dir-joined arcname in `dub['path']`, and the
+            # extractor writes to that same path. Identity match is
+            # cheap; legacy multi-segment dubs would also match if any
+            # segment shares the path.
+            if dub.get('path') == target_path:
+                clip._request_async_preload(target_path)
 
     def shutdown(self):
         """Cleanly shut down the engine and all clip prefetch threads."""

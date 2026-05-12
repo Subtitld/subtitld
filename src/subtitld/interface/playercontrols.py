@@ -1878,8 +1878,8 @@ def _dub_segment_at_cursor(self):
 
 def _refresh_dub_after_edit(self):
     """Push the updated dub state to the audio engine and repaint the
-    timeline. Mirrors Timeline._refresh_dub_after_edit so split/gap
-    shortcuts behave like the right-click menu items."""
+    timeline. Mirrors Timeline._refresh_dub_after_edit so the split
+    shortcut behaves like the right-click menu items."""
     self.timeline_widget.update()
     preview = getattr(self, 'preview_panel_player', None)
     if preview is not None:
@@ -1903,27 +1903,6 @@ def split_dub_at_cursor(self):
     if dub_clip.split_audio_segment(dub, idx, offset):
         session.set_unsaved()
         _refresh_dub_after_edit(self)
-
-
-@shortcut('insert_gap_at_cursor', 'Insert silence gap at cursor inside dub clip', ['Shift+G'])
-def insert_gap_at_cursor(self):
-    if _focus_is_text_widget(self):
-        return
-    from subtitld.modules import dub_clip
-    hit = _dub_segment_at_cursor(self)
-    if hit is None:
-        return
-    _subtitle, dub, idx, offset, seg = hit
-    history.history_append()
-    seg_dur = dub_clip.segment_duration(seg)
-    if seg.get('type', 'audio') == 'audio' and 0 < offset < seg_dur:
-        # Split the audio first so the gap goes exactly at the cursor —
-        # otherwise it'd land after the whole segment, which is rarely
-        # what the user wants when they pressed the shortcut mid-clip.
-        dub_clip.split_audio_segment(dub, idx, offset)
-    dub_clip.insert_silence_after(dub, idx, 0.5)
-    session.set_unsaved()
-    _refresh_dub_after_edit(self)
 
 
 @shortcut('zoom_in', 'Zoom in', ['+'])

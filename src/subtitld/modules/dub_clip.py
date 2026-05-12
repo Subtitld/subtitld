@@ -1,35 +1,34 @@
-"""Helpers for the dub-clip segment list.
+"""Helpers for the dub-clip subclip list.
 
 A dub take in `subtitle['dubbing']` represents *what gets played* for a
-subtitle. Historically each take was a single rendered audio file pointed at
-by `dub['path']`. We now model a take as a *list of segments* the audio
-engine plays in sequence:
+subtitle. The legacy model was a single rendered audio file pointed at by
+`dub['path']`. The new model is a list of *independent subclips* the audio
+engine plays as parallel placed clips (DAW-style):
 
     dub['segments'] = [
-        {'type': 'audio', 'path': '...', 'start': 0.0, 'end': 1.7},
-        {'type': 'silence', 'duration': 0.4},
-        {'type': 'audio', 'path': '...', 'start': 1.7, 'end': 2.9},
+        {'type': 'audio', 'path': '...', 'start': 0.0, 'end': 1.0, 'offset': 0.0},
+        {'type': 'audio', 'path': '...', 'start': 1.0, 'end': 2.9, 'offset': 1.5},
     ]
 
-This subsumes three operations from one schema:
+Field semantics for each subclip:
+  - `start` / `end` are SOURCE-file offsets, in seconds. They define the
+    region of the on-disk file that plays.
+  - `offset` is the TIMELINE offset of this subclip's start, measured from
+    `dub['start']`. So the subclip plays from `dub['start'] + offset` to
+    `dub['start'] + offset + (end - start)`.
 
-  - **Split**     – one `audio` segment becomes two pointing at the same
-    source with adjusted start/end offsets.
-  - **Insert gap** – insert a `silence` segment between two segments.
-  - **Trim range** – split, then remove the middle segment.
-
+Subclips are independent — gaps and overlaps are both allowed (the audio
+engine sums overlapping subclips, the absence of a subclip is silence).
 Source files on disk are never modified, so undo is just data.
 
 `dub['path']` is kept as the legacy fallback so old projects (and the
 generic dub-peaks pipeline that draws the waveform on the timeline) keep
-working. Code paths that need the per-segment view call `normalize_segments`
-to lazily synthesise a one-segment list from the legacy path.
+working. Code paths that need the per-subclip view call `normalize_segments`
+to lazily synthesise a one-subclip list from the legacy path.
 
-Realtime contract: this module only does file I/O in `normalize_segments` /
-`clip_total_duration` (the legacy fallback probes the source file once to
-fill `end`). Both are MAIN-THREAD only — never call them from the audio
-callback. The audio engine reads `dub['segments']` directly and bails to
-its existing single-path code if missing.
+Realtime contract: file I/O only in `normalize_segments` /
+`clip_total_duration` for the legacy fallback. Never call those from the
+audio callback. The audio engine reads `dub['segments']` directly.
 """
 
 from __future__ import annotations
@@ -40,8 +39,10 @@ from typing import Iterable
 import soundfile as sf
 
 
-def _audio_segment_default(path: str, end: float | None = None) -> dict:
-    return {'type': 'audio', 'path': path, 'start': 0.0, 'end': end}
+def _audio_subclip(path: str, source_start: float = 0.0,
+                   source_end: float | None = None, offset: float = 0.0) -> dict:
+    return {'type': 'audio', 'path': path,
+            'start': source_start, 'end': source_end, 'offset': offset}
 
 
 def _file_duration_seconds(path: str) -> float:
@@ -58,214 +59,153 @@ def _file_duration_seconds(path: str) -> float:
         return 0.0
 
 
-def normalize_segments(dub: dict) -> list[dict]:
-    """Ensure `dub` has a `segments` list; synthesise one from the legacy
-    `dub['path']` if missing. Probes the source file for total duration so
-    the synthesised segment carries a concrete `end` (the audio engine and
-    UI never have to re-probe). Returns the list (mutates `dub`).
+def _migrate_legacy_sequential(segments: list[dict]) -> None:
+    """In-place migration of old-schema sequential segments (silence
+    entries + audio entries without `offset`, played in order) into the
+    new independent-subclip schema (audio-only with `offset`).
 
-    MAIN THREAD ONLY — opens the source file."""
+    Triggered when any segment is `type=silence` OR lacks the `offset`
+    field. Silences collapse into the gap between adjacent subclips."""
+    if not segments:
+        return
+    if not any(s.get('type', 'audio') == 'silence' or 'offset' not in s
+               for s in segments):
+        return
+    cursor = 0.0
+    new_list: list[dict] = []
+    for seg in segments:
+        seg_type = seg.get('type', 'audio')
+        if seg_type == 'silence':
+            cursor += max(0.0, float(seg.get('duration', 0.0) or 0.0))
+            continue
+        end = seg.get('end')
+        if end is None:
+            # Skip un-resolvable entries on migration — they were
+            # placeholders in the old schema too.
+            continue
+        dur = max(0.0, float(end) - float(seg.get('start', 0.0)))
+        new_seg = dict(seg)
+        new_seg['offset'] = cursor
+        new_seg.pop('duration', None)
+        new_list.append(new_seg)
+        cursor += dur
+    segments[:] = new_list
+
+
+def normalize_segments(dub: dict) -> list[dict]:
+    """Ensure `dub` has a `segments` list of new-schema subclips.
+
+    - Missing segments: synthesise one subclip from the legacy `dub['path']`.
+      Probes the source file for duration so the subclip carries a concrete
+      `end`. MAIN THREAD ONLY (file I/O).
+    - Old-schema segments (silence entries, missing `offset`): migrate
+      in place — silences collapse into gaps between offsets.
+
+    Returns the list (mutates `dub`)."""
     segments = dub.get('segments')
     if segments is not None:
+        _migrate_legacy_sequential(segments)
         return segments
     path = dub.get('path')
     if not path:
         dub['segments'] = []
         return dub['segments']
     end = _file_duration_seconds(path) or None
-    dub['segments'] = [_audio_segment_default(path, end)]
+    dub['segments'] = [_audio_subclip(path, 0.0, end, 0.0)]
     return dub['segments']
 
 
-def segment_duration(seg: dict) -> float:
-    """Duration in seconds the segment occupies in the dub timeline.
-    Audio segments must have a concrete `end` — a missing `end` returns 0
-    (the file-probe responsibility lives in `normalize_segments`, not in
-    the realtime audio loop)."""
-    seg_type = seg.get('type', 'audio')
-    if seg_type == 'silence':
-        return max(0.0, float(seg.get('duration', 0.0) or 0.0))
+def subclip_duration(seg: dict) -> float:
+    """Playback duration of one subclip — `end - start` in source seconds.
+    Independent of `offset`. Returns 0 for unresolved `end`."""
     end = seg.get('end')
     if end is None:
         return 0.0
     return max(0.0, float(end) - float(seg.get('start', 0.0)))
 
 
-def clip_total_duration(dub: dict) -> float:
-    """Total playback duration of the dub, summing all segments. Falls
-    back to a one-shot file probe of the legacy `dub['path']` when there
-    are no segments. MAIN THREAD ONLY for the legacy path."""
+# Legacy alias — older call sites used `segment_duration`. Same semantic
+# in the new schema (duration of the playback region in source seconds).
+segment_duration = subclip_duration
+
+
+def subclip_timeline_range(dub: dict, seg: dict) -> tuple[float, float]:
+    """Return (timeline_start, timeline_end) for a subclip — its
+    `offset` + `dub['start']` plus its duration."""
+    base = float(dub.get('start', 0.0))
+    offset = float(seg.get('offset', 0.0))
+    dur = subclip_duration(seg)
+    return (base + offset, base + offset + dur)
+
+
+def clip_extent(dub: dict) -> tuple[float, float]:
+    """Return the (min_timeline, max_timeline) bounding interval of the
+    dub. The dub band's outer rect is drawn over this range. For empty
+    dubs returns (dub_start, dub_start)."""
+    base = float(dub.get('start', 0.0))
     segments = dub.get('segments')
     if not segments:
-        return _file_duration_seconds(dub.get('path', ''))
-    return sum(segment_duration(seg) for seg in segments)
+        end = _file_duration_seconds(dub.get('path', ''))
+        return (base, base + end)
+    lo = None
+    hi = None
+    for seg in segments:
+        if seg.get('type', 'audio') != 'audio':
+            continue
+        end = seg.get('end')
+        if end is None:
+            continue
+        offset = float(seg.get('offset', 0.0))
+        dur = float(end) - float(seg.get('start', 0.0))
+        t0 = base + offset
+        t1 = t0 + dur
+        if lo is None or t0 < lo:
+            lo = t0
+        if hi is None or t1 > hi:
+            hi = t1
+    if lo is None:
+        return (base, base)
+    return (lo, hi)
+
+
+def clip_total_duration(dub: dict) -> float:
+    """Width of the dub's extent on the timeline (max_end - min_start).
+    Used for the dub band's outer rect."""
+    lo, hi = clip_extent(dub)
+    return max(0.0, hi - lo)
 
 
 def iter_segment_ranges(dub: dict) -> Iterable[tuple[float, float, dict]]:
-    """Yield `(start_time, end_time, segment)` tuples laid out sequentially
-    starting at `dub['start']`. For legacy dubs with no segments field, yields
-    a single synthesised audio segment (and probes the file for duration —
-    MAIN THREAD ONLY in that path)."""
+    """Yield `(timeline_start, timeline_end, segment)` for each audio
+    subclip. Order matches the segments list (NOT sorted by timeline_start).
+
+    For legacy dubs (no segments field), yields a single synthesised
+    subclip — probes the source file for duration (MAIN THREAD ONLY)."""
     base = float(dub.get('start', 0.0))
-    cursor = base
     segments = dub.get('segments')
     if not segments:
         path = dub.get('path')
         if not path:
             return
         end = _file_duration_seconds(path)
-        seg = _audio_segment_default(path, end)
-        yield (cursor, cursor + end, seg)
+        seg = _audio_subclip(path, 0.0, end, 0.0)
+        yield (base, base + end, seg)
         return
     for seg in segments:
-        d = segment_duration(seg)
-        yield (cursor, cursor + d, seg)
-        cursor += d
-
-
-# ---------------------------------------------------------------------------
-# Editing helpers — pure data, no I/O
-# ---------------------------------------------------------------------------
-def split_audio_segment(dub: dict, segment_index: int, offset_within_segment: float) -> bool:
-    """Split the audio segment at `segment_index` into two at
-    `offset_within_segment` seconds from its playback start. Both halves
-    point at the same source file; the cut moves `start` / `end` offsets.
-
-    Returns True if a split happened. Returns False on bad index, non-audio
-    segment, or when the cut falls outside the segment's range (a no-op
-    split would create a zero-duration segment, which we don't want)."""
-    segments = normalize_segments(dub)
-    if not (0 <= segment_index < len(segments)):
-        return False
-    seg = segments[segment_index]
-    if seg.get('type', 'audio') != 'audio':
-        return False
-    seg_start = float(seg.get('start', 0.0))
-    end = seg.get('end')
-    if end is None:
-        return False
-    seg_end = float(end)
-    cut_offset = max(0.0, float(offset_within_segment))
-    cut_point = seg_start + min(cut_offset, seg_end - seg_start)
-    if cut_point <= seg_start or cut_point >= seg_end:
-        return False
-    new_seg = dict(seg)
-    seg['end'] = cut_point
-    new_seg['start'] = cut_point
-    new_seg['end'] = seg_end
-    segments.insert(segment_index + 1, new_seg)
-    return True
-
-
-def insert_silence_after(dub: dict, segment_index: int, duration: float) -> int:
-    """Insert a silence segment after `segment_index`. Returns the new
-    segment's index (or -1 on bad input). Pass `segment_index=-1` to
-    insert at the very start of the dub."""
-    segments = normalize_segments(dub)
-    duration = max(0.0, float(duration))
-    if duration <= 0.0 or segment_index < -1 or segment_index >= len(segments):
-        return -1
-    insert_at = segment_index + 1
-    segments.insert(insert_at, {'type': 'silence', 'duration': duration})
-    return insert_at
-
-
-def remove_segment(dub: dict, segment_index: int) -> bool:
-    """Drop the segment at `segment_index`. No-op if index is out of range."""
-    segments = normalize_segments(dub)
-    if not (0 <= segment_index < len(segments)):
-        return False
-    segments.pop(segment_index)
-    return True
-
-
-def move_boundary(dub: dict, boundary_index: int, new_timeline_position: float) -> bool:
-    """Move the boundary between segments `boundary_index` and `boundary_index+1`
-    to `new_timeline_position` (absolute seconds in the dub timeline). Lengthens
-    the left segment and shortens the right one in lock-step.
-
-    For audio segments the change is applied to the source-file offsets
-    (`end` for the left, `start` for the right) so both halves keep
-    pointing at the same on-disk file with the cut moving inside it.
-    For silence segments the change applies to `duration`.
-
-    Returns True if the move was applied. Returns False on bad index, or
-    when the move would push a segment below zero duration."""
-    segments = normalize_segments(dub)
-    if not (0 <= boundary_index < len(segments) - 1):
-        return False
-
-    base = float(dub.get('start', 0.0))
-    cursor = base
-    boundary_pos = None
-    for i, seg in enumerate(segments):
-        cursor += segment_duration(seg)
-        if i == boundary_index:
-            boundary_pos = cursor
-            break
-    if boundary_pos is None:
-        return False
-
-    delta = float(new_timeline_position) - boundary_pos
-    left = segments[boundary_index]
-    right = segments[boundary_index + 1]
-    left_dur = segment_duration(left)
-    right_dur = segment_duration(right)
-    new_left_dur = left_dur + delta
-    new_right_dur = right_dur - delta
-    if new_left_dur < 0 or new_right_dur < 0:
-        return False
-
-    if left.get('type') == 'silence':
-        left['duration'] = new_left_dur
-    else:
-        left['end'] = float(left.get('start', 0.0)) + new_left_dur
-
-    if right.get('type') == 'silence':
-        right['duration'] = new_right_dur
-    else:
-        # Keep the right segment's source `end` fixed, move `start` to
-        # absorb the delta — this is what "drag the cut point inside the
-        # source" means for an audio-audio pair pointing at the same file.
-        original_end = right.get('end')
-        if original_end is None:
-            return False
-        right['start'] = float(original_end) - new_right_dur
-
-    return True
-
-
-def merge_adjacent_audio(dub: dict) -> int:
-    """Collapse adjacent audio segments that point at the same source file
-    AND are contiguous (segment N's end == segment N+1's start). Returns
-    the number of merges performed. Useful after a no-op split is undone
-    or after a sequence of edits leaves contiguous halves dangling."""
-    segments = dub.get('segments')
-    if not segments:
-        return 0
-    merged = 0
-    i = 0
-    while i < len(segments) - 1:
-        a = segments[i]
-        b = segments[i + 1]
-        if (a.get('type') == 'audio' and b.get('type') == 'audio'
-                and a.get('path') and a.get('path') == b.get('path')):
-            a_end = a.get('end')
-            b_start = float(b.get('start', 0.0))
-            if a_end is not None and abs(float(a_end) - b_start) < 1e-9:
-                a['end'] = b.get('end')
-                segments.pop(i + 1)
-                merged += 1
-                continue
-        i += 1
-    return merged
+        if seg.get('type', 'audio') != 'audio':
+            continue
+        end = seg.get('end')
+        if end is None:
+            continue
+        offset = float(seg.get('offset', 0.0))
+        dur = float(end) - float(seg.get('start', 0.0))
+        yield (base + offset, base + offset + dur, seg)
 
 
 def collect_segment_paths(dub: dict) -> list[str]:
-    """Unique audio paths referenced by `dub`'s segments (or just `dub['path']`
-    for legacy dubs). Used by the audio engine to know which files to preload
-    via the background loader. Order is preserved so the first segment loads
-    first."""
+    """Unique audio paths referenced by `dub`'s subclips (or just
+    `dub['path']` for legacy dubs). Order preserved so the bg loader
+    queues the first subclip first."""
     seen: set[str] = set()
     out: list[str] = []
     segments = dub.get('segments')
@@ -282,3 +222,139 @@ def collect_segment_paths(dub: dict) -> list[str]:
             seen.add(path)
             out.append(path)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Editing helpers — pure data, no I/O.
+# ---------------------------------------------------------------------------
+def split_audio_segment(dub: dict, segment_index: int,
+                        offset_within_segment: float) -> bool:
+    """Split the subclip at `segment_index` into two independent halves
+    at `offset_within_segment` seconds from its playback start. Together
+    the halves cover the same timeline range and the same source range
+    as the original — the user can then drag them apart.
+
+    Returns True on success. False on bad index, non-audio subclip, or
+    when the cut falls outside the subclip (a no-op split would create a
+    zero-duration subclip)."""
+    segments = normalize_segments(dub)
+    if not (0 <= segment_index < len(segments)):
+        return False
+    seg = segments[segment_index]
+    if seg.get('type', 'audio') != 'audio':
+        return False
+    source_start = float(seg.get('start', 0.0))
+    end = seg.get('end')
+    if end is None:
+        return False
+    source_end = float(end)
+    seg_dur = source_end - source_start
+    cut = max(0.0, float(offset_within_segment))
+    if cut <= 0.0 or cut >= seg_dur:
+        return False
+    cut_source = source_start + cut
+    seg_offset = float(seg.get('offset', 0.0))
+    new_seg = dict(seg)
+    seg['end'] = cut_source
+    new_seg['start'] = cut_source
+    new_seg['end'] = source_end
+    new_seg['offset'] = seg_offset + cut
+    segments.insert(segment_index + 1, new_seg)
+    return True
+
+
+def move_subclip(dub: dict, segment_index: int,
+                 new_timeline_offset: float) -> bool:
+    """Drop a subclip at a new `offset` (from `dub['start']`). Source
+    range unchanged — this is the body-drag interaction.
+
+    Negative offsets are allowed: the subclip can sit before `dub['start']`
+    on the timeline (and therefore before the subtitle's own start). The
+    audio engine doesn't enforce subtitle bounds — only the timeline
+    window matters — so this just makes the dub physically extend past
+    the subtitle rect when drawn."""
+    segments = normalize_segments(dub)
+    if not (0 <= segment_index < len(segments)):
+        return False
+    seg = segments[segment_index]
+    if seg.get('type', 'audio') != 'audio':
+        return False
+    seg['offset'] = float(new_timeline_offset)
+    return True
+
+
+def trim_subclip_left(dub: dict, segment_index: int,
+                      new_timeline_offset: float,
+                      source_min: float = 0.0) -> bool:
+    """Move the left edge of a subclip. `offset` and source `start`
+    shift by the same delta so the audio under the new edge is the same
+    sample that was under the previous edge — there's no glitch.
+
+    Clamped so source `start` stays in [source_min, end). Returns True
+    if the move was applied."""
+    segments = normalize_segments(dub)
+    if not (0 <= segment_index < len(segments)):
+        return False
+    seg = segments[segment_index]
+    if seg.get('type', 'audio') != 'audio':
+        return False
+    end = seg.get('end')
+    if end is None:
+        return False
+    old_offset = float(seg.get('offset', 0.0))
+    old_source_start = float(seg.get('start', 0.0))
+    delta = float(new_timeline_offset) - old_offset
+    new_source_start = old_source_start + delta
+    if new_source_start < source_min:
+        # Clamp by hitting the source floor — also clamp the offset by
+        # the same amount so the visible left edge moves in lock-step.
+        clamp_delta = source_min - new_source_start
+        new_source_start = source_min
+        new_offset = old_offset + delta + clamp_delta
+    else:
+        new_offset = float(new_timeline_offset)
+    if new_source_start >= float(end):
+        return False
+    # Negative offsets are intentional — the subclip can extend before
+    # `dub['start']` (and thus before the subtitle's own start). Source
+    # bounds (`source_min`, `end`) are the real constraints; the offset
+    # is just visual placement.
+    seg['start'] = new_source_start
+    seg['offset'] = new_offset
+    return True
+
+
+def trim_subclip_right(dub: dict, segment_index: int,
+                       new_timeline_end_offset: float,
+                       source_max: float | None = None) -> bool:
+    """Move the right edge of a subclip. Adjusts source `end` so the
+    audio cuts off at the new edge. Clamped so source `end` is > `start`
+    and <= source_max (when provided — typically the source-file
+    duration)."""
+    segments = normalize_segments(dub)
+    if not (0 <= segment_index < len(segments)):
+        return False
+    seg = segments[segment_index]
+    if seg.get('type', 'audio') != 'audio':
+        return False
+    seg_offset = float(seg.get('offset', 0.0))
+    source_start = float(seg.get('start', 0.0))
+    new_dur = float(new_timeline_end_offset) - seg_offset
+    if new_dur <= 0:
+        return False
+    new_source_end = source_start + new_dur
+    if source_max is not None and new_source_end > source_max:
+        new_source_end = source_max
+    if new_source_end <= source_start:
+        return False
+    seg['end'] = new_source_end
+    return True
+
+
+def remove_segment(dub: dict, segment_index: int) -> bool:
+    """Drop the subclip at `segment_index`. No-op if index is out of range."""
+    segments = normalize_segments(dub)
+    if not (0 <= segment_index < len(segments)):
+        return False
+    segments.pop(segment_index)
+    return True

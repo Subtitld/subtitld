@@ -171,14 +171,51 @@ def load_productionscreen(self):
     # Fresh project means a fresh undo stack — otherwise Ctrl+Z could
     # restore segments from the previously-loaded document.
     history.history_clear()
-    if session.VIDEO.get('filepath', False):
-        top_bar.show(self)
-        QTimer().singleShot(200, lambda: productionscreen.show(self))
+    if not session.VIDEO.get('filepath', False):
+        return
 
-        self.preview_panel_player.loadfile(session.VIDEO['filepath'])
+    top_bar.show(self)
 
-        session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+    # Kick the video into the preview player early — QMediaPlayer.setSource
+    # is async (queues onto the player thread), so it costs us nothing to
+    # start it now. The first frame paints once the player thread is ready
+    # — usually after this function returns.
+    self.preview_panel_player.loadfile(session.VIDEO['filepath'])
 
+    # Synchronous data load: this is the minimum the production-screen
+    # widgets need before their first paint. Both calls are
+    # main-thread-blocking and there's no good way to truly background
+    # them without a multi-stage refactor of the widget rendering — but
+    # neither does heavy I/O anymore:
+    #   * `process_subtitles_file` does Phase 1 USFX extract
+    #     (subtitles.usf + manifest.xml + speakers — small) + USF XML
+    #     parse, then spawns `_USFXBackgroundExtractor` for the rest.
+    #   * `process_video_file` is one ffprobe call (~50-300 ms).
+    # Total budget ~200 ms - 1 s on big projects; small enough that the
+    # user perceives the open as "instant" rather than the multi-second
+    # freeze of the pre-refactor path.
+    session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
+
+    if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
+        session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
+        for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
+            session.SPEAKERS.setdefault(name, {})
+
+    # Show the production screen NOW — data the widgets need for first
+    # paint is on hand. Previous code scheduled the show on a 200 ms
+    # QTimer, which was at best wasted time and at worst doubled the
+    # apparent freeze (the timer can't fire until the main thread is
+    # idle, which is after all the synchronous work above). Calling
+    # `productionscreen.show` directly lets the start-screen → production-
+    # screen transition begin within one paint of data being ready.
+    productionscreen.show(self)
+
+    # Everything below is non-blocking (sync_subtitle_dubs is now async
+    # via the bg loader queue) or already deferred — but defer the whole
+    # block via singleShot(0) so the production-screen paint happens on
+    # the very next event-loop tick instead of waiting for these to
+    # finish first.
+    def _post_show_setup():
         has_audio = bool(session.VIDEO.get('audio_is_present', False))
         self.music_voice_separation_box.setVisible(has_audio)
         if hasattr(self, 'global_panel_import_start_transcription_button'):
@@ -189,9 +226,6 @@ def load_productionscreen(self):
             self.music_voice_separation_thread.start()
 
         if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
-            session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
-            for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
-                session.SPEAKERS.setdefault(name, {})
             self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
 
             if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
@@ -199,17 +233,26 @@ def load_productionscreen(self):
 
             session.add_to_recent_files(session.SUBTITLE['filepath'], session.VIDEO.get('filepath', ''))
 
-        QTimer.singleShot(0, self.timeline_widget.load_waveform)
+        self.timeline_widget.load_waveform()
+
+    QTimer.singleShot(0, _post_show_setup)
 
 def start_screen_recent_listwidget_item_clicked(self, item):
+    # Previously this handler did `process_subtitles_file`,
+    # `process_video_file`, and `sync_subtitle_dubs` directly — then called
+    # `load_productionscreen`, which calls all three again. The duplicated
+    # work was the main reason recent-file open felt frozen: Phase 1 USFX
+    # extract + USF parse twice, ffprobe twice. The Phase 2 extractor
+    # spawned by the first redundant call would even finish (progress bar
+    # hitting 100%) before the second redundant call had returned and the
+    # production screen had a chance to paint.
+    #
+    # Keep this handler thin: it only resolves the paths from the recent-
+    # files entry and delegates to the unified open flow, which is the
+    # same path the "Open" button uses.
     config = item.data(Qt.UserRole)
     session.VIDEO['filepath'] = config['video_filepath']
     session.SUBTITLE['filepath'] = config['subtitle_filepath']
-    session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
-    for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
-        session.SPEAKERS.setdefault(name, {})
-    session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
-    self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
     load_productionscreen(self)
     
 

@@ -30,6 +30,28 @@ class PlayerWidget(QWidget):
         
         widget._audio_device = audioengine.SoundDeviceAudioEngine()
 
+        # Bridge USFX Phase 2 per-member completion to the engine: when a
+        # deferred dub WAV lands on disk, ask the engine to preload it
+        # right away instead of waiting for an audio-callback miss.
+        # The signal is emitted from the extractor worker thread, but
+        # `subtitle_clips` is main-thread-only — so we explicitly request
+        # a QueuedConnection. Auto-promote relies on the receiver being
+        # a QObject; a plain closure has no affinity, so we say it out
+        # loud. Because `connect()` runs here on the main thread,
+        # QueuedConnection dispatches the slot through the main event
+        # loop, which is what we want.
+        try:
+            from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
+
+            def _on_member_ready(arcname, target_path):
+                if hasattr(widget, '_audio_device'):
+                    widget._audio_device.on_usfx_member_ready(arcname, target_path)
+
+            widget._usfx_member_ready_slot = _on_member_ready  # keep ref so Qt doesn't drop the connection
+            _SESSION_SIGNALS.usfx_member_ready.connect(_on_member_ready, Qt.QueuedConnection)
+        except Exception:
+            pass
+
         widget._graphics_scene = QGraphicsScene()
         widget._graphics_view = QGraphicsView(widget._graphics_scene)
         widget._graphics_view.setFrameShadow(QFrame.Plain)
