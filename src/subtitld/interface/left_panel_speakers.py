@@ -5,7 +5,7 @@ from autohex import AutoHex
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor
-from PySide6.QtCore import QThread, Signal, Qt, QSize, QRect, QPoint
+from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QPoint
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -325,8 +325,15 @@ class RoundedCornerLabel(QLabel):
 
 
 class speakers_list_item(QWidget):
-    def __init__(widget, speaker_name, speaker_data):
-        super().__init__()
+    def __init__(widget, speaker_name, speaker_data, parent=None):
+        # Pass the parent through to QWidget. Without it the new widget
+        # is briefly a TOP-LEVEL window — the addWidget() reparenting
+        # below happens after construction. With many speakers populated
+        # at once (e.g. right after transcription), each list item
+        # flashes a borderless window on the screen before being absorbed
+        # into the speakers panel. Constructing as a child of the panel
+        # avoids the top-level state entirely.
+        super().__init__(parent)
         widget.speaker_name = speaker_name
         widget.speaker_data = speaker_data
         
@@ -414,8 +421,11 @@ class speakers_list_item(QWidget):
         widget.dubbing_line.layout().addWidget(widget.dubbing_container)
         
         class small_timeline(QLabel):
-            def __init__(widget, speaker_name=False, timeline=[], duration=30):
-                super().__init__()
+            def __init__(widget, speaker_name=False, timeline=[], duration=30, parent=None):
+                # Pass parent through so this isn't briefly a top-level
+                # window before the addWidget() reparenting — same
+                # rationale as `speakers_list_item.__init__`.
+                super().__init__(parent)
                 widget.timeline = timeline
                 widget.duration = duration
                 widget.speaker_name = speaker_name
@@ -442,7 +452,7 @@ class speakers_list_item(QWidget):
                 if color:
                     widget.color = color
 
-        widget.bottom_line = small_timeline(speaker_name=widget.speaker_name)
+        widget.bottom_line = small_timeline(speaker_name=widget.speaker_name, parent=widget)
         widget.bottom_line.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
         widget.bottom_line.setObjectName('left_panel_speakers_panel_content_item_bottom_line')
         widget.bottom_line.setFixedHeight(5)
@@ -688,6 +698,10 @@ def load(self):
     # is replaced as soon as the decode lands. The signal delivery is
     # queued (cross-thread), so this slot always runs on the main thread.
     _SESSION_SIGNALS.speaker_image_ready.connect(lambda _name: update_speakers_list(self))
+    # Re-render whenever transcription (or anything else) mutates
+    # `session.SPEAKERS`. Without this, after-transcription panel
+    # selection shows an empty list until the user re-selects the panel.
+    _SESSION_SIGNALS.speakers_changed.connect(lambda: update_speakers_list(self))
 
     self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
 
@@ -851,29 +865,80 @@ def rename_button_clicked(widget):
 
 
 def update_speakers_list(self):
-    while self.left_panel_speakers_list.layout().count():
-        item = self.left_panel_speakers_list.layout().takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            widget.setParent(None)
-            widget.deleteLater()
-            continue    
+    # Throttle: transcription emits one `speakers_changed` per new
+    # speaker, face recognition emits one result per completed scan —
+    # so this function gets called in rapid bursts. Each call iterates
+    # session.SPEAKERS and touches a widget per speaker; without
+    # throttling, a 50-speaker transcription does ~50 sequential passes.
+    # Coalesce into one pass via a 30 ms single-shot timer (under
+    # human-perception threshold, so feels instant).
+    if getattr(self, '_speakers_list_update_pending', False):
+        return
+    self._speakers_list_update_pending = True
+    QTimer.singleShot(30, lambda: _update_speakers_list_actual(self))
 
-    for speaker_name, speaker_data in session.SPEAKERS.items():
+
+def _update_speakers_list_actual(self):
+    self._speakers_list_update_pending = False
+    # Differential update — keep a per-window registry of name → widget
+    # so we don't tear down and rebuild every item on each call. The
+    # previous implementation did a full destroy + rebuild; each
+    # speakers_list_item creates ~10 sub-widgets plus a dubbing_container
+    # that builds an engine panel for every registered TTS provider, so
+    # rebuilding 50 speakers takes hundreds of ms.
+    layout = self.left_panel_speakers_list.layout()
+    registry = getattr(self, '_speakers_list_widgets', None)
+    if registry is None:
+        registry = {}
+        self._speakers_list_widgets = registry
+
+    current_names = list(session.SPEAKERS.keys())
+    current_name_set = set(current_names)
+    available_engines = self.left_panel_speakers_list_of_available_dubbing_engine
+
+    # Remove widgets for speakers no longer present.
+    for name in list(registry):
+        if name not in current_name_set:
+            stale = registry.pop(name)
+            layout.removeWidget(stale)
+            stale.setParent(None)
+            stale.deleteLater()
+
+    # Add / refresh widgets for each current speaker, in order.
+    for index, speaker_name in enumerate(current_names):
+        speaker_data = session.SPEAKERS[speaker_name]
         if not speaker_data.get('color', False):
             gen = AutoHex()
             speaker_data['color'] = f'{gen.gen(speaker_name)}'
 
-        widget = speakers_list_item(speaker_name, speaker_data)
+        widget = registry.get(speaker_name)
+        if widget is None:
+            # New speaker — construct once, parented to the list, and
+            # build its engine panels.
+            widget = speakers_list_item(speaker_name, speaker_data,
+                                        parent=self.left_panel_speakers_list)
+            registry[speaker_name] = widget
+            layout.insertWidget(index, widget)
+            widget.update_dubbing_options(available_engines)
+        else:
+            # Existing widget — refresh data without recreating it.
+            # `update()` re-renders the icon + name + time stats from
+            # the current speaker_data / session.SUBTITLE; the engine
+            # panels' own `update()` runs inside it.
+            widget.speaker_data = speaker_data
+            widget.update()
+            # Layout order might have changed (rename, reorder). Cheap
+            # to re-pin via insertWidget — Qt detaches first if already
+            # in the layout, so this is a no-op when the position is
+            # already correct.
+            if layout.indexOf(widget) != index:
+                layout.insertWidget(index, widget)
+
         widget.visibility_button.setChecked(bool(speaker_data.get('hidden', False)))
 
         if not speaker_data.get('image', None) and not self.left_panel_speakers_image_test_thread.isRunning():
             self.left_panel_speakers_image_test_thread.name = speaker_name
             self.left_panel_speakers_image_test_thread.start()
-
-        self.left_panel_speakers_list.layout().addWidget(widget)
-
-        widget.update_dubbing_options(self.left_panel_speakers_list_of_available_dubbing_engine)
 
     highlight_speaker_for_selection(self)
     _apply_speaker_visibility(self)

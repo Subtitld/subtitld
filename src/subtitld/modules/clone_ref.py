@@ -42,6 +42,7 @@ from pathlib import Path
 
 from subtitld.modules import session
 from subtitld.modules import utils as modules_utils
+from subtitld.modules.addons import registry as addons_registry
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,70 @@ log = logging.getLogger(__name__)
 # it's too short, which is preferable to refusing to extract.
 _TARGET_MIN_SEC = 3.0
 _TARGET_MAX_SEC = 12.0
+
+
+def _resolve_source_language() -> str | None:
+    """Return the BCP-47 language tag of the *source audio* — the language
+    actually spoken in the project's source media.
+
+    This is distinct from `session.SUBTITLE['language']`, which tracks the
+    current *display* / synthesis language. When the user translates and
+    inverts (`left_panel_translation.global_panel_translation_invert_translation_button_clicked`),
+    `SUBTITLE['language']` flips to the target language and `seg['text']`
+    is overwritten with the translation — but the audio doesn't change.
+
+    Resolution order:
+      1. Explicit `SUBTITLE['source_language']` — preferred, set at
+         transcription time and preserved through invert.
+      2. Fallback to `SUBTITLE['language']` — correct for projects that
+         have not been inverted (the common case), and the only
+         reasonable guess for legacy projects that predate the
+         `source_language` field.
+
+    Returns None only when the project has no language at all (no
+    transcription, no manifest), in which case the caller should skip
+    `voice_ref_text` entirely rather than feed the model a wrong-language
+    transcript.
+    """
+    explicit = (session.SUBTITLE.get('source_language') or '').strip()
+    if explicit:
+        return explicit
+    current = (session.SUBTITLE.get('language') or '').strip()
+    return current or None
+
+
+def _segment_text_for_source_language(seg: dict, source_lang: str | None) -> str:
+    """Pick the subtitle text on `seg` that matches `source_lang`.
+
+    The audio reference clip is in `source_lang`; the `ref_text` we pass
+    to clone-capable addons (qwen3-clone, xtts-clone, f5-clone) must
+    also be in `source_lang` or the model has no aligned transcript to
+    anchor pronunciation against.
+
+    Where the right text lives:
+      * If `source_lang == SUBTITLE['language']` → no invert has
+        happened, `seg['text']` matches the audio. Use it.
+      * Otherwise → invert happened, `seg['text']` is the *translated*
+        string and the original (audio-matching) text was stashed in
+        `seg['translations'][source_lang]` by the invert handler. Use
+        the translations entry.
+      * If neither is present (mismatched language, no translation
+        recorded) → return '' so the caller skips this segment's text.
+        Empty `ref_text` is preferable to wrong-language `ref_text`:
+        empty trips the addon's x-vector-only fallback (lower clone
+        quality), wrong-language actively poisons accent fidelity
+        (audible English bleed on Portuguese, Spanish, Italian — see
+        the qwen3 docs and the bug this function exists to fix).
+    """
+    current = (session.SUBTITLE.get('language') or '').strip()
+    if source_lang and current and source_lang == current:
+        return (seg.get('text') or '').strip()
+    translations = seg.get('translations') if isinstance(seg.get('translations'), dict) else None
+    if translations and source_lang:
+        return (translations.get(source_lang) or '').strip()
+    # No safe text available — fall back to the empty string. Caller
+    # joins texts and the empty strings drop out of the join.
+    return ''
 
 
 def _audio_source_for_clone() -> str | None:
@@ -132,6 +197,9 @@ def _pick_spans_for_speaker(
     discontinuities the embedding extractor doesn't like.
     """
     segments = session.SUBTITLE.get('segments') or []
+    # Resolve once, outside the loop — the source language is a
+    # project-level property, identical for every segment.
+    source_lang = _resolve_source_language()
     # (idx, dur, start, end, text)
     candidates: list[tuple[int, float, float, float, str]] = []
     for idx, seg in enumerate(segments):
@@ -145,7 +213,10 @@ def _pick_spans_for_speaker(
         duration = end - start
         if duration <= 0:
             continue
-        text = (seg.get('text') or '').strip()
+        # Pick the segment's text in the SOURCE-AUDIO language, not the
+        # current display language — see `_segment_text_for_source_language`
+        # for why this matters when the user has translated + inverted.
+        text = _segment_text_for_source_language(seg, source_lang)
         candidates.append((idx, duration, start, end, text))
 
     if not candidates:
@@ -353,6 +424,37 @@ def _build_ffmpeg_cmd(src: str, spans: list[tuple[float, float]],
         '-filter_complex', filter_complex,
         '-map', '[out]',
     ] + encode + [str(out_path)]
+
+
+def should_skip_ref_text(provider_id: str | None) -> bool:
+    """True if the user has opted to suppress `voice_ref_text` for this
+    add-on.
+
+    Driven by the per-add-on `skip_ref_text` boolean in
+    `session.CONFIG['addons']['options'][<id>]`. The dubbing UI sets it via
+    the Configure dialog on the add-on card (see `_AddonConfigDialog` in
+    `addons_dialog.py`).
+
+    Why this exists: even with the source-language fix (see
+    `_resolve_source_language`), some users prefer the addon's auto-
+    transcription path because: a) Whisper / the addon's own ASR may
+    out-perform the user-edited subtitle text for short cloning windows;
+    b) edited subtitles often paraphrase rather than transcribe verbatim,
+    which breaks ICL alignment more than missing ref_text would; c)
+    privacy-conscious users may not want their subtitle text shipped over
+    the wire to a model that logs requests.
+
+    Returns False if `provider_id` is missing or the registry can't be
+    consulted (defensive — fail to *sending* ref_text, which is the legacy
+    behaviour and gives better clone quality on the common case).
+    """
+    if not provider_id:
+        return False
+    try:
+        opts = addons_registry.options_for(provider_id)
+    except Exception:
+        return False
+    return bool(opts.get('skip_ref_text'))
 
 
 def voice_requires_ref_audio(voice: dict | None) -> bool:

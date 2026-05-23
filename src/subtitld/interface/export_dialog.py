@@ -6,7 +6,7 @@ dict; the caller is responsible for the final file picker and dispatch."""
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
-                               QGroupBox, QSpinBox, QComboBox, QLineEdit)
+                               QGroupBox, QSpinBox, QComboBox, QLineEdit, QProgressBar)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase
 
@@ -628,6 +628,101 @@ class ExportDialog(utils.SimpleDialog):
         self._select_category(self.CATEGORY_KEYS.index(start), start)
 
         self.accept_button.setText(_('export_dialog.export_button'))
+
+        # Remember the form-side widgets so `enter_processing_state` can
+        # hide them in one shot, and re-show them if the caller ever
+        # wants to revert (currently unused but cheap to support).
+        self._form_body = body
+        self._form_buttons_parent = self.accept_button.parent()
+        self._processing_widget = None
+        self._processing_label = None
+
+    # ------------------------------------------------------------------
+    # Processing-state UI
+    #
+    # The host (top_bar.toppanel_export_button_clicked) kicks the actual
+    # export off on a background thread. While that thread runs we swap
+    # the form for a small indeterminate-progress widget, leave the
+    # dialog visible and application-modal, and wait for the host to
+    # call `finish_processing()` from the thread's done-callback.
+    #
+    # This keeps the user oriented (the same dialog they clicked Export
+    # in is now showing "Exporting...") instead of a frozen window. The
+    # placeholder spinner is a vanilla `QProgressBar` in indeterminate
+    # mode; when the user ships their custom animation later, drop it
+    # in by replacing `_build_processing_widget` — the public API
+    # (`enter_processing_state` / `finish_processing`) doesn't change.
+    # ------------------------------------------------------------------
+    def _build_processing_widget(self) -> QWidget:
+        widget = QWidget()
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(40, 40, 40, 40)
+        widget.layout().setSpacing(16)
+
+        widget.layout().addStretch()
+
+        label = QLabel('')
+        label.setAlignment(Qt.AlignCenter)
+        label.setWordWrap(True)
+        label.setProperty('class', 'widget_label')
+        widget.layout().addWidget(label, 0, Qt.AlignCenter)
+        self._processing_label = label
+
+        # min=0, max=0 puts the bar into Qt's indeterminate "barber pole"
+        # mode — animated by Qt itself on the GUI thread. The export work
+        # runs on a worker QThread so the GUI event loop stays free to
+        # tick the animation.
+        progress = QProgressBar()
+        progress.setRange(0, 0)
+        progress.setTextVisible(False)
+        progress.setFixedHeight(6)
+        progress.setMinimumWidth(280)
+        widget.layout().addWidget(progress, 0, Qt.AlignCenter)
+
+        widget.layout().addStretch()
+        return widget
+
+    def enter_processing_state(self, message: str) -> None:
+        """Switch the dialog into a busy / processing display: hide the
+        category form + the OK/Cancel buttons, show a centered status
+        label + indeterminate progress bar. Idempotent — calling twice
+        just updates the message. Application-modal so the user can't
+        start a second export from the main window while this one runs.
+        """
+        if self._processing_widget is None:
+            self._processing_widget = self._build_processing_widget()
+            # Append into the same content layout as the body so the
+            # processing widget inherits the dialog's content margins.
+            self.content.layout().addWidget(self._processing_widget)
+
+        self._processing_label.setText(message or '')
+        self._processing_widget.setVisible(True)
+
+        self._form_body.setVisible(False)
+        if self._form_buttons_parent is not None:
+            self._form_buttons_parent.setVisible(False)
+
+        # The dialog was hidden by `accept()` when the user confirmed the
+        # form. Re-show it (non-blocking) and mark it application-modal
+        # so the rest of the app stops responding to clicks while the
+        # export runs. We don't call `exec()` here because the caller
+        # has already spawned the background thread and needs to keep
+        # executing past this point.
+        self.setWindowModality(Qt.ApplicationModal)
+        if not self.isVisible():
+            self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def finish_processing(self) -> None:
+        """Tear down the processing state and close the dialog. Safe to
+        call from any thread — Qt routes the close through the event
+        loop via `QDialog.accept`."""
+        # Use done() with a sentinel return code so any future caller
+        # that wants to know whether the dialog closed via the
+        # processing path can distinguish it from form Accept. For now
+        # the return code isn't read.
+        self.accept()
 
     def _select_category(self, index, key):
         self._pages.setCurrentIndex(index)

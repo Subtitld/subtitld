@@ -174,7 +174,11 @@ def load_productionscreen(self):
     if not session.VIDEO.get('filepath', False):
         return
 
-    top_bar.show(self)
+    # `top_bar.show` runs AFTER the synchronous blocking calls below
+    # rather than before them — see line just before `productionscreen.show`
+    # for the reason. Starting top_bar's QTimer/animation here used to
+    # leave an overdue timer that fired the moment the event loop ran
+    # again, producing the one-frame flash at the final position.
 
     # Kick the video into the preview player early — QMediaPlayer.setSource
     # is async (queues onto the player thread), so it costs us nothing to
@@ -208,6 +212,12 @@ def load_productionscreen(self):
     # idle, which is after all the synchronous work above). Calling
     # `productionscreen.show` directly lets the start-screen → production-
     # screen transition begin within one paint of data being ready.
+    # Start top_bar's animation in the same tick as the production panels
+    # so all the QTimers have fresh deadlines — moving top_bar.show()
+    # back to before the blocking calls would leave its 200 ms timer
+    # overdue and fire the moment the event loop resumes, producing a
+    # one-frame top-bar flash at full opacity at its final position.
+    top_bar.show(self)
     productionscreen.show(self)
 
     # Everything below is non-blocking (sync_subtitle_dubs is now async

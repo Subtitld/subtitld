@@ -1,3 +1,4 @@
+import hashlib
 import os
 import secrets
 
@@ -107,6 +108,40 @@ def _parse_timecode_input(text):
 # classes below stay here because they're tightly coupled to the dubbing
 # panel widgetry; we attach them to the legacy alias at the bottom of this
 # file so callers like `EdgeTTSEngine.dubbingPanel()` keep working.
+
+
+def _stable_seed_for_speaker(speaker_name: str) -> int:
+    """Derive a deterministic 32-bit seed from the speaker name.
+
+    Used by clone-capable TTS add-ons (currently qwen3-tts; future XTTS /
+    F5-TTS / Piper-equivalent will pick this up via the additive `seed`
+    param contract) to lock the sampler's RNG so a given speaker has a
+    stable "voice fingerprint" across runs of "generate all speeches".
+    Without it, autoregressive samplers produce a different waveform on
+    every call even when text/voice/ref_audio/ref_text are byte-identical
+    — which the user perceives as the same speaker drifting in character
+    between regenerations.
+
+    Why speaker_name alone (and not, say, the project file path or the
+    subtitle text):
+
+      * Stable across regenerations of the same speech (regenerating one
+        subtitle twice produces the same audio) — that's the bug fix.
+      * Stable across "generate all" runs (same speaker, same character).
+      * Stable across projects — "Narrator" sounds like "Narrator"
+        whether they appear in project A or B; users who want variety
+        rename the speaker, which is the natural lever.
+      * Different speakers → different seeds → different fingerprints,
+        even with the same reference audio (rare but possible when the
+        user has not yet set per-speaker references).
+
+    We use sha256+truncate rather than Python's built-in `hash()` because
+    PYTHONHASHSEED randomises the latter per process. 32-bit truncation
+    fits torch.manual_seed comfortably (torch internally masks to
+    uint64).
+    """
+    digest = hashlib.sha256((speaker_name or '').encode('utf-8')).digest()
+    return int.from_bytes(digest[:4], 'big')
 
 
 def _voices_clone_first(voices):
@@ -496,16 +531,16 @@ class _GenericTTSDubbingPanel(QWidget):
         widget.voice_combobox.activated.connect(lambda: widget.voice_combobox_changed())
         widget.layout().addWidget(widget.voice_combobox)
 
-        settings_line = QHBoxLayout()
-        widget.voice_rate_label = QLabel()
-        settings_line.addWidget(widget.voice_rate_label)
-        widget.voice_rate = QSpinBox()
-        widget.voice_rate.setMinimum(-100)
-        widget.voice_rate.setMaximum(100)
-        widget.voice_rate.valueChanged.connect(lambda: widget.voice_rate_changed())
-        settings_line.addWidget(widget.voice_rate)
-        settings_line.addStretch()
-        widget.layout().addLayout(settings_line)
+        # Rate / pitch sliders are intentionally Edge-only. None of the
+        # neural add-on engines (Kokoro, Coqui XTTS, Qwen3-TTS, F5-TTS,
+        # Piper) expose a meaningful "rate %" parameter on the request —
+        # Kokoro takes a `speed` float that mostly hurts quality, XTTS
+        # ignores rate entirely, and the clone-capable engines preserve
+        # the reference clip's prosody. Surfacing the sliders for these
+        # engines was confusing in practice (users tweaked them, got no
+        # audible change, blamed the add-on). The request envelope still
+        # carries `rate=0`/`pitch=0` defaults from speaker_dubbing so the
+        # wire protocol shape is unchanged.
 
         widget.generate_speech_button = QPushButton()
         widget.generate_speech_button.clicked.connect(lambda: widget.generate_speech_button_clicked())
@@ -549,13 +584,6 @@ class _GenericTTSDubbingPanel(QWidget):
         selected.setdefault('dubbing_options', {})['voice'] = voice_id
         session.set_unsaved()
 
-    def voice_rate_changed(widget):
-        selected = session.SUBTITLE.get('selected')
-        if selected is None:
-            return
-        selected.setdefault('dubbing_options', {})['rate'] = widget.voice_rate.value()
-        session.set_unsaved()
-
     def generate_speech_button_clicked(widget):
         selected = session.SUBTITLE.get('selected')
         if not selected:
@@ -570,6 +598,26 @@ class _GenericTTSDubbingPanel(QWidget):
                     or speaker_dubbing.get('voice', '')
                     or widget.voice_combobox.combobox.currentData()
                     or '')
+        # Cross-provider stale-id guard. `speaker_dubbing['voice']` and
+        # `overrides['voice']` persist through engine combobox switches
+        # (we deliberately don't clear them on switch — round-tripping
+        # back to a previous engine should restore the previous voice
+        # selection without re-typing). The downside is that a voice id
+        # from a previous provider (e.g. `kokoro-pf-dora` after switching
+        # to coqui-xtts) would otherwise reach the add-on and bounce
+        # with `unsupported_voice`. The combobox is the source of truth
+        # for "voice ids the current provider knows about" — it was just
+        # repopulated by `voices_updated`. If our resolved id is missing
+        # from `findData`, substitute the combobox's currentData and
+        # write it back so the next request stays consistent.
+        if voice_id and widget.voice_combobox.combobox.findData(voice_id) < 0:
+            fallback_id = widget.voice_combobox.combobox.currentData() or ''
+            if fallback_id:
+                voice_id = fallback_id
+                selected.setdefault('dubbing_options', {})['voice'] = voice_id
+                if speaker_name in session.SPEAKERS:
+                    session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = voice_id
+                session.set_unsaved(True)
         selected['locked'] = True
         request = {
             'uid': secrets.token_hex(4),
@@ -586,6 +634,13 @@ class _GenericTTSDubbingPanel(QWidget):
             'language': _project_tts_language(),
             'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
             'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+            # Stable per-speaker seed for autoregressive samplers. Addons
+            # that don't know about `seed` ignore it (additive contract);
+            # qwen3-tts wires it to `torch.manual_seed` before each
+            # generation so the speaker's voice fingerprint stays
+            # consistent across regenerations. See
+            # `_stable_seed_for_speaker` for rationale.
+            'seed': _stable_seed_for_speaker(speaker_name),
         }
         # If the selected voice declares it needs `voice_ref_audio`
         # (manifest `requires: ['voice_ref_audio']` or `clone: true`),
@@ -608,7 +663,11 @@ class _GenericTTSDubbingPanel(QWidget):
                 # Portuguese clones). The subtitle text is exactly the
                 # transcript for the audio span, so forwarding it costs
                 # nothing and unlocks ICL mode in the addon.
-                if ref_text:
+                #
+                # The `skip_ref_text` user opt-out (set per-addon in the
+                # Configure dialog) suppresses this — for users who
+                # prefer the addon's own auto-transcription path.
+                if ref_text and not clone_ref.should_skip_ref_text(widget.provider.id):
                     request['voice_ref_text'] = ref_text
         widget.provider.generate_speeches([request])
         timeline_widget = getattr(widget.window(), 'timeline_widget', None)
@@ -640,17 +699,9 @@ class _GenericTTSDubbingPanel(QWidget):
         elif widget.voice_combobox.combobox.count() > 0:
             widget.voice_combobox.combobox.setCurrentIndex(0)
         widget.voice_combobox.combobox.blockSignals(False)
-        widget.voice_rate.blockSignals(True)
-        if 'rate' in last_dub:
-            effective_rate = last_dub.get('rate', 0)
-        else:
-            effective_rate = overrides.get('rate', speaker_dubbing.get('rate', 0))
-        widget.voice_rate.setValue(int(effective_rate or 0))
-        widget.voice_rate.blockSignals(False)
 
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
-        widget.voice_rate_label.setText(_('subtitles_panel_widget_dubbing.rate'))
         widget.generate_speech_button.setText(_('subtitles_panel_widget_dubbing.generate_speech'))
 
 
@@ -722,6 +773,17 @@ class _GenericTTSSpeakerPanel(QWidget):
         speaker_voice = (speaker_dubbing.get('voice', '')
                          or widget.voice_combobox.combobox.currentData()
                          or '')
+        # Cross-provider stale-id guard — see the matching block in
+        # `_GenericTTSDubbingPanel.generate_speech_button_clicked` for
+        # the rationale. The speaker-level default can be stale after an
+        # engine switch; the combobox is freshly repopulated and is the
+        # authoritative list of valid ids for the current provider.
+        combobox_data = widget.voice_combobox.combobox.currentData() or ''
+        if speaker_voice and widget.voice_combobox.combobox.findData(speaker_voice) < 0 and combobox_data:
+            speaker_voice = combobox_data
+            if speaker_name in session.SPEAKERS:
+                session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = speaker_voice
+                session.set_unsaved(True)
         # Resolve the clone reference once for the whole batch — extraction
         # is cached on the speaker_slug, so doing it here vs. per-subtitle
         # is equivalent but skips the cache hash check on every iteration.
@@ -744,6 +806,18 @@ class _GenericTTSSpeakerPanel(QWidget):
             overrides = subtitle.get('dubbing_options', {})
             subtitle['locked'] = True
             voice_id = overrides.get('voice') or speaker_voice
+            # Per-subtitle override can be stale across an engine switch
+            # (same reason as the speaker-level guard above). If the
+            # override is unknown to the current provider, fall through
+            # to the already-validated speaker_voice and persist the
+            # correction so the per-subtitle row stops carrying a dead id.
+            if (voice_id
+                    and widget.voice_combobox.combobox.findData(voice_id) < 0
+                    and speaker_voice):
+                voice_id = speaker_voice
+                if 'voice' in overrides:
+                    overrides['voice'] = voice_id
+                    session.set_unsaved(True)
             entry = {
                 'uid': secrets.token_hex(4),
                 'text': subtitle['text'],
@@ -758,6 +832,13 @@ class _GenericTTSSpeakerPanel(QWidget):
                 'language': _project_tts_language(),
                 'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
                 'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+                # Stable per-speaker seed — see the single-shot path's
+                # comment and `_stable_seed_for_speaker` for why. We
+                # compute it inside the loop instead of hoisting because
+                # the cost is trivial (one sha256 over a short string)
+                # and inlining keeps the request-shape readable in one
+                # place rather than scattering setup above the loop.
+                'seed': _stable_seed_for_speaker(speaker_name),
             }
             # Auto-attach clone reference whenever the resolved voice
             # requires it. See `_GenericTTSDubbingPanel.generate_speech_button_clicked`
@@ -770,8 +851,11 @@ class _GenericTTSSpeakerPanel(QWidget):
                     # Pair ref_text with ref_audio — see the same logic
                     # in `_GenericTTSDubbingPanel.generate_speech_button_clicked`
                     # for why this is mandatory for accent fidelity on
-                    # non-English source material.
-                    if ref_text:
+                    # non-English source material. Honour the same
+                    # per-addon `skip_ref_text` opt-out the per-subtitle
+                    # path uses, so the user's preference is consistent
+                    # across single-click and batch generation.
+                    if ref_text and not clone_ref.should_skip_ref_text(widget.provider.id):
                         entry['voice_ref_text'] = ref_text
             speeches_to_generate.append(entry)
         if speeches_to_generate:

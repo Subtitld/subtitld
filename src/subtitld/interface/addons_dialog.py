@@ -20,11 +20,13 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -40,6 +42,7 @@ from subtitld.modules import addons
 from subtitld.modules.addons import installer, languages as _languages, registry
 from subtitld.modules.addons.provider import (
     TASK_ASR_TRANSCRIBE,
+    TASK_AUDIO_SEPARATE,
     TASK_TRANSLATE,
     TASK_TTS_SYNTHESIZE,
 )
@@ -189,6 +192,7 @@ _TASK_TRANSLATION_KEYS: dict[str, str] = {
     'tts.synthesize': 'addons_dialog.task_name.tts.synthesize',
     'asr.transcribe': 'addons_dialog.task_name.asr.transcribe',
     'translate.text': 'addons_dialog.task_name.translate.text',
+    'audio.separate': 'addons_dialog.task_name.audio.separate',
 }
 
 
@@ -381,6 +385,7 @@ class _AddonCard(QFrame):
     toggle_clicked = Signal(object)
     reveal_clicked = Signal(object)
     remove_clicked = Signal(object)
+    configure_clicked = Signal(object)
 
     def __init__(
         self,
@@ -514,6 +519,23 @@ class _AddonCard(QFrame):
             toggle.clicked.connect(lambda: self.toggle_clicked.emit(row))
             actions.addWidget(toggle)
 
+            # Configure button: only meaningful when the manifest declares
+            # at least one `config_schema.fields` entry the user can set.
+            # Built-ins don't carry manifests so they currently get no
+            # Configure button — by convention they expose their settings
+            # via the legacy left-panel UIs (Edge TTS rate, AssemblyAI key,
+            # etc.). If we later port built-in providers to also use
+            # `config_schema`, the `getattr` fallback below will pick them
+            # up without any further wiring.
+            schema_source: dict | None = (
+                row.installed_manifest if not row.is_builtin else None
+            )
+            schema = (schema_source or {}).get('config_schema') or {}
+            if (schema.get('fields') or []):
+                configure = QPushButton(_('addons_dialog.actions.configure'))
+                configure.clicked.connect(lambda: self.configure_clicked.emit(row))
+                actions.addWidget(configure)
+
             # Reveal-in-folder only makes sense for filesystem-installed
             # add-ons. Built-ins live inside the binary — nothing to open.
             if not row.is_builtin:
@@ -558,6 +580,160 @@ class _AddonCard(QFrame):
         if row.is_installed:
             return _('addons_dialog.badge.installed')
         return _('addons_dialog.badge.available')
+
+
+# ---------------------------------------------------------------------------
+# Config-schema renderer
+# ---------------------------------------------------------------------------
+class _AddonConfigDialog(utils.SimpleDialog):
+    """Renders an add-on's `manifest['config_schema']['fields']` as a set
+    of Qt widgets, persisting accepted values to `registry.options_for(id)`.
+
+    Supported field types (anything else falls back to a free-form string):
+      * `bool`   — QCheckBox. Truthy default → pre-checked.
+      * `select` — QComboBox. `options[]` may be either plain strings or
+                   `{value, label}` dicts. `default` matches against `value`.
+      * `file`   — QLineEdit + Browse button. Stored as an absolute path
+                   string, or an empty string if the user cleared it.
+      * `string` — QLineEdit. Stored verbatim.
+
+    The dialog reads the **live** options dict at construction time and
+    snapshots current values. On accept it overwrites only the keys it
+    rendered — unknown keys present in `options` are preserved untouched,
+    so callers that bolt non-schema state onto the same dict (e.g. internal
+    runtime cache) won't get clobbered.
+
+    Persistence relies on `Config.save()` being called by the host on app
+    close (see `__main__.py:200`). We don't force-save here — the existing
+    autosave cadence is enough and avoids a surprise disk write per click.
+    """
+
+    def __init__(self, addon_id: str, manifest: dict, parent=None):
+        display_name = (manifest.get('display_name') or addon_id) if manifest else addon_id
+        super().__init__(
+            parent,
+            title=_('addons_dialog.configure.title').format(addon=display_name),
+        )
+        self._addon_id = addon_id
+        # Each entry is `(key, getter)` where `getter()` returns the value
+        # currently shown in the widget. Stored as a list (not a dict) so
+        # multi-instance keys would be possible later without breaking
+        # ordering of field rendering.
+        self._readers: list[tuple[str, callable]] = []
+
+        fields = (manifest or {}).get('config_schema', {}).get('fields') or []
+        if not fields:
+            empty = QLabel(_('addons_dialog.configure.no_fields'))
+            empty.setWordWrap(True)
+            self.content.layout().addWidget(empty)
+            self.reject_button.setVisible(False)
+            return
+
+        current = dict(registry.options_for(addon_id))
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            key = field.get('key')
+            if not key:
+                continue
+            self._render_field(field, current.get(key, field.get('default')))
+
+        # Replace SimpleDialog's accept handler so we persist before
+        # closing. `clicked` is the only connection set in SimpleDialog;
+        # disconnecting is safe.
+        try:
+            self.accept_button.clicked.disconnect()
+        except RuntimeError:
+            pass
+        self.accept_button.clicked.connect(self._on_accept)
+
+    def _render_field(self, field: dict, current_value):
+        key = field['key']
+        ftype = (field.get('type') or 'string').lower()
+        label_text = field.get('label') or key
+        help_text = field.get('help') or ''
+
+        row = QWidget()
+        row.setLayout(QVBoxLayout())
+        row.layout().setContentsMargins(0, 0, 0, 6)
+        row.layout().setSpacing(2)
+
+        if ftype == 'bool':
+            cb = QCheckBox(label_text)
+            cb.setChecked(bool(current_value))
+            row.layout().addWidget(cb)
+            self._readers.append((key, lambda cb=cb: cb.isChecked()))
+        elif ftype == 'select':
+            row.layout().addWidget(QLabel(label_text))
+            combo = QComboBox()
+            options = field.get('options') or []
+            default_val = field.get('default')
+            target = current_value if current_value is not None else default_val
+            selected_idx = 0
+            for i, opt in enumerate(options):
+                if isinstance(opt, dict):
+                    val = opt.get('value')
+                    lbl = opt.get('label', val)
+                else:
+                    val = opt
+                    lbl = str(opt)
+                combo.addItem(str(lbl), val)
+                if target is not None and val == target:
+                    selected_idx = i
+            if combo.count():
+                combo.setCurrentIndex(selected_idx)
+            row.layout().addWidget(combo)
+            # `currentData()` returns whatever was stored as userData (the
+            # raw `value` — string, int, bool — depending on the manifest).
+            self._readers.append((key, lambda c=combo: c.currentData()))
+        elif ftype == 'file':
+            row.layout().addWidget(QLabel(label_text))
+            picker = QHBoxLayout()
+            picker.setSpacing(4)
+            line = QLineEdit(str(current_value) if current_value else '')
+            browse = QPushButton(_('addons_dialog.configure.browse'))
+            def _on_browse(line=line):
+                path, _filt = QFileDialog.getOpenFileName(
+                    self,
+                    _('addons_dialog.configure.file_caption'),
+                    line.text() or os.path.expanduser('~'),
+                )
+                if path:
+                    line.setText(path)
+            browse.clicked.connect(_on_browse)
+            picker.addWidget(line, 1)
+            picker.addWidget(browse)
+            row.layout().addLayout(picker)
+            # Empty string → store '' (not None) so the manifest can tell
+            # "user cleared it" from "field has never been set". Addons
+            # already treat empty string as "no value".
+            self._readers.append((key, lambda l=line: l.text().strip()))
+        else:
+            row.layout().addWidget(QLabel(label_text))
+            line = QLineEdit('' if current_value is None else str(current_value))
+            row.layout().addWidget(line)
+            self._readers.append((key, lambda l=line: l.text()))
+
+        if help_text:
+            help_lbl = QLabel(help_text)
+            help_lbl.setWordWrap(True)
+            # Reuse the muted small-text styling from cards so the help
+            # row reads as secondary information without needing new QSS.
+            help_lbl.setProperty('class', 'addon_card_meta')
+            row.layout().addWidget(help_lbl)
+
+        self.content.layout().addWidget(row)
+
+    def _on_accept(self):
+        # `options_for` returns the live dict — mutate in place so any
+        # other references already handed out stay current.
+        options = registry.options_for(self._addon_id)
+        for key, getter in self._readers:
+            try:
+                options[key] = getter()
+            except Exception:
+                log.exception('addons_dialog: failed to read config field %s', key)
+        self.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -618,7 +794,7 @@ class AddonsPanel(QWidget):
         self._task_group = QButtonGroup(self)
         self._task_group.setExclusive(True)
         self._task_pills: dict[object, QPushButton] = {}  # value -> pill, key None for "any"
-        for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_TRANSLATE):
+        for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_AUDIO_SEPARATE, TASK_TRANSLATE):
             pill = _make_pill('')
             pill.blockSignals(True)
             self._task_group.addButton(pill)
@@ -913,6 +1089,7 @@ class AddonsPanel(QWidget):
             card.toggle_clicked.connect(self._toggle_row)
             card.reveal_clicked.connect(self._reveal_row)
             card.remove_clicked.connect(self._remove_row)
+            card.configure_clicked.connect(self._configure_row)
             self._list_layout.insertWidget(self._list_layout.count() - 1, card)
             self._cards_by_id[row.addon_id] = card
             rendered += 1
@@ -1028,6 +1205,24 @@ class AddonsPanel(QWidget):
         self._rebuild_rows()
         self._render_list()
 
+    def _configure_row(self, row: _Row):
+        # Built-ins shouldn't surface a Configure button (the card render
+        # gates that), but be defensive — if a future built-in ships a
+        # manifest with a config_schema, we'll handle it without crashing.
+        manifest = row.installed_manifest if row else None
+        if not manifest:
+            return
+        dlg = _AddonConfigDialog(row.addon_id, manifest, parent=self)
+        dlg.exec()
+        # Some addons read options at startup only (e.g. device selection
+        # for qwen3/f5 affects model load). The user might need to
+        # restart the addon process for new values to take effect — we
+        # don't auto-restart, because most values (skip_ref_text,
+        # voice_ref_audio path) ARE applied per-request. The few that
+        # aren't fail gracefully (next request after process respawn
+        # picks up the new value). Keep the UX simple and let the user
+        # toggle enable/disable if they want an immediate restart.
+
     def _reveal_row(self, row: _Row):
         if not row or not row.is_installed or not row.installed_manifest:
             return
@@ -1076,6 +1271,7 @@ class AddonsPanel(QWidget):
         self._task_pills[self._TASK_ANY].setText(_('addons_dialog.filter.task.any'))
         self._task_pills[TASK_TTS_SYNTHESIZE].setText(_('addons_dialog.filter.task.tts'))
         self._task_pills[TASK_ASR_TRANSCRIBE].setText(_('addons_dialog.filter.task.asr'))
+        self._task_pills[TASK_AUDIO_SEPARATE].setText(_('addons_dialog.filter.task.separation'))
         self._task_pills[TASK_TRANSLATE].setText(_('addons_dialog.filter.task.translate'))
 
         # Language filter — only the "Any" entry needs translation; the rest

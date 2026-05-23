@@ -118,9 +118,27 @@ def load(self):
 
     
 def show(self):
-    QTimer().singleShot(200, lambda: self.left_panel.opacity.setOpacity(1.0))
+    # Opacity = 1 immediately — setUpdatesEnabled handles flash-hiding.
+    # See preview_panel.show() for the full rationale.
+    self.left_panel.opacity.setOpacity(1.0)
     utils.animate_element(self.left_panel.animation, duration=1000, effect='slide_from_left')
-    left_panel_subtitleslist.show(self)
+    # Defer subtitleslist.show() (which is `update()`) until the slide
+    # finishes — its setVisible() toggles on subtitles_panel_empty_state /
+    # _simplelist_qsplitter / _bottom_panel / properties_information
+    # invalidate the layout chain up to left_panel_container, which then
+    # re-runs setGeometry on self.left_panel and overrides the animation's
+    # pos, producing the one-frame "panel at final position" flash.
+    # setUpdatesEnabled(False) in productionscreen.show suppresses paint
+    # but NOT layout passes, so the override happens even there.
+    # Same fix pattern as preview_panel.show — see _force_resize_update.
+    anim = self.left_panel.animation
+    def _on_finish():
+        try:
+            anim.finished.disconnect(_on_finish)
+        except (TypeError, RuntimeError):
+            pass
+        left_panel_subtitleslist.show(self)
+    anim.finished.connect(_on_finish)
 
 
 def hide(self):

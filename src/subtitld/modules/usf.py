@@ -181,6 +181,29 @@ class USFReader():
                     self.has_embedded_audio_clips = True
                 except Exception:
                     pass
+            # Per-subclip data (independent subclips schema — see
+            # dub_clip.py). Each <subclip> carries source coords (start,
+            # end), timeline offset (offset), and an optional rate/raw_path
+            # for ffmpeg-stretched subclips. Without persisting these the
+            # split/stretch a user did is silently discarded on reload.
+            segs = []
+            for seg_elem in dub_elem.find_all('subclip', recursive=False):
+                seg = {}
+                for key, value in seg_elem.attrs.items():
+                    seg[key] = value
+                for key in ('start', 'end', 'offset'):
+                    if key in seg:
+                        parsed = _parse_numeric(seg[key], float)
+                        if parsed is not None:
+                            seg[key] = parsed
+                if 'rate' in seg:
+                    parsed = _parse_numeric(seg['rate'], int)
+                    if parsed is not None:
+                        seg['rate'] = parsed
+                seg.setdefault('type', 'audio')
+                segs.append(seg)
+            if segs:
+                dub['segments'] = segs
             dubs.append(dub)
         if dubs:
             subtitle['dubbing'] = dubs
@@ -332,12 +355,27 @@ class USFWriter():
         if include_dubs:
             for dub in subtitle.get('dubbing', []):
                 dub_tag = usf.new_tag('dubbing')
-                for key in ('engine', 'path', 'uid'):
+                for key in ('engine', 'path', 'uid', 'voice', 'raw_path'):
                     if key in dub and dub[key] is not None:
                         dub_tag[key] = str(dub[key])
                 for key in ('start', 'end', 'rate', 'pitch'):
                     if key in dub and dub[key] is not None:
                         dub_tag[key] = str(dub[key])
+                # Persist independent subclips (the split/stretch list).
+                # Without these elements the schema collapses on reload to
+                # a single subclip synthesised from `dub['path']` — every
+                # split or per-subclip stretch the user made is lost.
+                for seg in dub.get('segments', []) or []:
+                    seg_tag = usf.new_tag('subclip')
+                    for key in ('type', 'path', 'raw_path'):
+                        if key in seg and seg[key] is not None:
+                            seg_tag[key] = str(seg[key])
+                    for key in ('start', 'end', 'offset'):
+                        if key in seg and seg[key] is not None:
+                            seg_tag[key] = str(seg[key])
+                    if seg.get('rate') is not None:
+                        seg_tag['rate'] = str(seg['rate'])
+                    dub_tag.append(seg_tag)
                 if embed_audio_clips:
                     path = dub.get('path')
                     if path and os.path.isfile(path):

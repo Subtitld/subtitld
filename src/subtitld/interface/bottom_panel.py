@@ -29,7 +29,11 @@ def load(self):
     
     
 def show(self):
-    QTimer().singleShot(100, lambda: self.bottom_panel.opacity.setOpacity(1.0))
+    # Opacity = 1 immediately. setUpdatesEnabled(False) in
+    # productionscreen.show handles flash-hiding; a 0 → 1 opacity fade
+    # would just leave the panel invisible through the OutCubic
+    # easing's fast opening — see preview_panel.show().
+    self.bottom_panel.opacity.setOpacity(1.0)
     utils.animate_element(self.bottom_panel.animation, duration=1000, effect='slide_from_bottom')
     self.timeline_widget.update()
     playercontrols.show(self)

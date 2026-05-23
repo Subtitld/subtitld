@@ -8,6 +8,8 @@ import tempfile
 import numpy as np
 import soundfile as sf
 
+from PySide6.QtCore import Qt, QThread, Signal
+
 from subtitld.modules import session
 from subtitld.modules import utils
 
@@ -227,3 +229,84 @@ def bounce(output_path, audio_format, mode, audio_engine=None,
         return
 
     raise ValueError(f'Unknown bounce mode: {mode}')
+
+
+# ---------------------------------------------------------------------------
+# Async wrapper
+# ---------------------------------------------------------------------------
+class BounceThread(QThread):
+    """Run :func:`bounce` on a background thread so the UI stays responsive
+    while ffmpeg muxes / the audio engine renders the mixdown — both
+    blocking operations that used to freeze the main loop for
+    seconds-to-minutes on long projects.
+
+    Mirrors :class:`file_io.SaveFileThread`'s shape so the caller pattern
+    is consistent: spawn → connect ``bounce_finished`` → start → forget.
+    The signal carries ``(output_path, success, error_message)``.
+    """
+    bounce_finished = Signal(str, bool, str)
+
+    def __init__(self, output_path, audio_format, mode,
+                 audio_engine=None, include_background=False, parent=None):
+        super().__init__(parent)
+        self._output_path = output_path
+        self._audio_format = audio_format
+        self._mode = mode
+        # The audio engine lives on the main thread (QObject) but
+        # `render_buffer` is read-only from its caches; calling it from
+        # the worker is safe under the current implementation. If this
+        # ever stops being true, snapshot the rendered buffer on the
+        # main thread before kicking off the bounce.
+        self._audio_engine = audio_engine
+        self._include_background = include_background
+
+    def run(self):
+        try:
+            bounce(self._output_path, self._audio_format, self._mode,
+                   audio_engine=self._audio_engine,
+                   include_background=self._include_background)
+            self.bounce_finished.emit(self._output_path, True, '')
+        except Exception as exc:
+            self.bounce_finished.emit(self._output_path, False, str(exc))
+
+
+# Module-level reference holder so threads aren't garbage-collected
+# mid-run. Mirrors the pattern in `file_io._active_save_threads`.
+_active_bounce_threads = []
+
+
+def bounce_async(output_path, audio_format, mode, audio_engine=None,
+                 include_background=False, on_done=None, parent=None):
+    """Spawn a :class:`BounceThread`, optionally wire
+    ``on_done(path, ok, error)``, and keep a reference so the QThread
+    survives until ``run()`` returns.
+
+    Returns the thread so the caller can chain extra signal connections
+    if needed (progress bars, etc.)."""
+    thread = BounceThread(output_path, audio_format, mode,
+                          audio_engine=audio_engine,
+                          include_background=include_background,
+                          parent=parent)
+
+    def _cleanup(path, success, error):
+        if on_done is not None:
+            on_done(path, success, error)
+        if thread in _active_bounce_threads:
+            _active_bounce_threads.remove(thread)
+        thread.deleteLater()
+
+    thread.bounce_finished.connect(_cleanup, Qt.QueuedConnection)
+    _active_bounce_threads.append(thread)
+    thread.start()
+    return thread
+
+
+def wait_for_bounce_threads():
+    """Block until every in-flight bounce thread finishes. Call before
+    exit so an export-in-progress doesn't lose its output file when the
+    window closes."""
+    for thread in list(_active_bounce_threads):
+        try:
+            thread.wait()
+        except RuntimeError:
+            pass

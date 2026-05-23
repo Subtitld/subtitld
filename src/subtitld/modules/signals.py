@@ -23,12 +23,10 @@ class _SessionSignals(QObject):
     # only need to re-render. Argument: speaker name.
     speaker_image_ready = Signal(str)
 
-    # USFX Phase 2 (background asset extractor) heartbeat. Argument:
-    # 0..100, monotonically non-decreasing within a single load.
-    usfx_background_load_progress = Signal(int)
-
     # USFX Phase 2 finished (success or best-effort failure).
-    # Listeners use this to hide their progress UI.
+    # Listeners use this to flip "extracting" UI back to normal (the
+    # Save-button gate is the only one left now that the progress bar
+    # was removed).
     usfx_background_load_finished = Signal()
 
     # USFX Phase 2 about to start streaming heavy assets. Fires
@@ -37,6 +35,14 @@ class _SessionSignals(QObject):
     # while assets are still inside the original zip — saving mid-stream
     # would re-zip dubs whose source bytes aren't on disk yet.
     usfx_background_load_started = Signal()
+
+    # `session.SPEAKERS` was mutated (added / removed / renamed). The
+    # left-panel speakers list listens so it can re-render after a
+    # background job — typically transcription — populates speakers
+    # without the user having to click the speakers panel for a
+    # refresh. Emit AFTER the dict mutation so listeners see the new
+    # state when they re-render.
+    speakers_changed = Signal()
 
     # A single zip member finished extracting to its target path. Arguments:
     # `arcname` (the in-zip path, e.g. 'assets/dubs/abc123.wav') and

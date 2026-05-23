@@ -249,6 +249,21 @@ class PlayerWidget(QWidget):
         widget._graphics_view.fitInView(widget._graphics_view.sceneRect(), Qt.KeepAspectRatio)
         event.accept()
 
+    def showEvent(widget, event):
+        # When the player transitions hidden → visible (e.g. on a
+        # project load where the preview panel was kept hidden until
+        # the slide-in animation positioned it), Qt schedules a layout
+        # pass that resizes the player to its real laid-out size. The
+        # `resizeEvent` above then re-fits the scene. BUT — that
+        # scheduling sequence is async, and the player's size in
+        # *this* showEvent is still whatever it was before being
+        # hidden (often tiny if the parent was hidden through
+        # multiple resize cycles). Defer `_force_resize_update` to
+        # the next event-loop tick so it reads the post-layout size
+        # rather than the stale showEvent-time size.
+        super().showEvent(event)
+        QTimer.singleShot(0, widget._force_resize_update)
+
     def loadfile(widget, filepath):
         if os.path.isfile(filepath):
             from PySide6.QtCore import QUrl
@@ -314,7 +329,13 @@ class PlayerWidget(QWidget):
         widget._graphics_view.setSceneRect(QRect(0, 0, size.width(), size.height()))
         widget._graphics_video_item.setSize(size)
         widget._graphics_view.fitInView(widget._graphics_view.sceneRect(), Qt.KeepAspectRatio)
-        widget.updateGeometry()
+        # NOTE: do NOT call widget.updateGeometry() here. This used to be
+        # connected to the panel's slide-in animation on every
+        # valueChanged tick — each updateGeometry() invalidates the
+        # parent layout, which re-runs the layout pass and resets the
+        # animated panel's `pos` back to its laid-out final position.
+        # The result was the panel appearing instantly at its final
+        # spot with no visible slide.
 
     def start_face_selection(widget, speaker_name):
         """Enter face-selection mode. User drags a 1:1 square on the video;
@@ -497,9 +518,25 @@ def load(self):
     
         
 def show(self):
-    self.preview_panel_player._force_resize_update()
-    QTimer().singleShot(100, lambda: self.preview_panel.opacity.setOpacity(1.0))
+    # Opacity = 1 immediately. See bottom_panel.show().
+    self.preview_panel.opacity.setOpacity(1.0)
     utils.animate_element(self.preview_panel.animation, duration=1000, effect='slide_from_right')
+    # Re-fit the QGraphicsVideoItem AFTER the slide-in finishes —
+    # NOT on every tick. The panel's size doesn't change during the
+    # slide (only `pos` is animated), so re-fitting per tick is
+    # wasteful, AND `_force_resize_update`'s `updateGeometry()`
+    # invalidates the parent layout, which re-positions the panel
+    # back to its laid-out final spot and overrides the animation.
+    # One call at the end is enough — by then the panel is at its
+    # final size and the layout is stable.
+    anim = self.preview_panel.animation
+    def _on_finish():
+        try:
+            anim.finished.disconnect(_on_finish)
+        except (TypeError, RuntimeError):
+            pass
+        self.preview_panel_player._force_resize_update()
+    anim.finished.connect(_on_finish)
 
 
 def hide(self):

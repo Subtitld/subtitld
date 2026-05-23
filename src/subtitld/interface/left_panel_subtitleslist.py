@@ -731,7 +731,12 @@ def regenerate_dub_for_selected(self):
         ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
         if ref_path:
             request['voice_ref_audio'] = ref_path
-            if ref_text:
+            # `skip_ref_text` per-addon opt-out — same gate as the two
+            # call sites in `left_panel_dubbing.py`. Keep these three
+            # paths byte-for-byte aligned: a divergence here means the
+            # user's Configure setting only applies to *some* of the
+            # buttons they click, which would be a confusing bug.
+            if ref_text and not clone_ref.should_skip_ref_text(provider.id):
                 request['voice_ref_text'] = ref_text
     provider.generate_speeches([request])
     self.timeline_widget.update()

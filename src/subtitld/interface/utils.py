@@ -6,32 +6,78 @@ from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize
 from subtitld.interface.translation import _
 
 
+def _widget_outer_extent(widget):
+    """Return (width, height) for the widget's slide off-screen origin.
+    `widget.parent().width()` is the natural choice, but during a project
+    load the splitter's layout pass for newly-shown panels hasn't run
+    when animate_element is called — `parent().width()` returns 0 / a
+    tiny sizeHint and the slide collapses to `start_pos == end_pos`.
+    Walk up the parent chain until we find a widget with a meaningful
+    geometry (top-level window is always sized). Fall back to a generous
+    default so the slide is at least visible."""
+    parent = widget.parentWidget()
+    w = h = 0
+    while parent is not None:
+        pw, ph = parent.width(), parent.height()
+        if pw > w:
+            w = pw
+        if ph > h:
+            h = ph
+        if pw > 100 and ph > 100:
+            # Found a substantively-sized ancestor — far enough.
+            return w, h
+        parent = parent.parentWidget()
+    # No ancestor had a real size yet. Use the application screen size
+    # as a last resort so the slide is at least the screen's width.
+    from PySide6.QtGui import QGuiApplication
+    screen = QGuiApplication.primaryScreen()
+    if screen is not None:
+        geom = screen.availableGeometry()
+        return max(w, geom.width()), max(h, geom.height())
+    return max(w, 1920), max(h, 1080)
+
+
 def animate_element(animation, duration=1000, effect='fadein'):
     widget = animation.targetObject()
     animation.setDuration(duration)
+    start_pos = None  # for slide effects, the off-screen origin we snap to NOW
     if effect.startswith('slide_'):
         original_position = widget.pos()
+        outer_w, outer_h = _widget_outer_extent(widget)
     if effect == 'slide_from_left':
-        animation.setStartValue(QPoint(-widget.parent().width(), 0))
+        start_pos = QPoint(-outer_w, 0)
+        animation.setStartValue(start_pos)
         animation.setEndValue(original_position)
     elif effect == 'slide_from_right':
-        animation.setStartValue(QPoint(widget.parent().width(), 0))
+        start_pos = QPoint(outer_w, 0)
+        animation.setStartValue(start_pos)
         animation.setEndValue(original_position)
     elif effect == 'slide_from_bottom':
-        animation.setStartValue(QPoint(0, widget.parent().height()))
+        start_pos = QPoint(0, outer_h)
+        animation.setStartValue(start_pos)
         animation.setEndValue(original_position)
     elif effect == 'slide_from_top':
-        animation.setStartValue(QPoint(0, -widget.parent().height()))
+        start_pos = QPoint(0, -outer_h)
+        animation.setStartValue(start_pos)
         animation.setEndValue(original_position)
     elif effect == 'slide_to_bottom':
         animation.setStartValue(original_position)
-        animation.setEndValue(QPoint(0, widget.parent().height()))
+        animation.setEndValue(QPoint(0, outer_h))
     elif effect == 'fadein':
         animation.setStartValue(widget.opacity() if hasattr(widget, 'opacity') else 0)
         animation.setEndValue(1)
     elif effect == 'fadeout':
         animation.setStartValue(widget.opacity() if hasattr(widget, 'opacity') else 1)
         animation.setEndValue(0)
+    if start_pos is not None:
+        # Snap the widget to start_pos synchronously so any paint between
+        # this call and the animation's first tick reads the off-screen
+        # origin rather than the laid-out final position. For widgets
+        # NOT under a layout this is enough; for layout-managed widgets
+        # (the production panels), `productionscreen.show` uses
+        # `setUpdatesEnabled(False)` for ~80 ms around this call to
+        # suppress paint while the layout pass overrides our move().
+        widget.move(start_pos)
     animation.start()
 
 from datetime import datetime, timedelta

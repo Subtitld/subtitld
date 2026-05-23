@@ -17,11 +17,14 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Qt
+from collections import deque
+
+from PySide6.QtCore import QObject, Qt, QTimer
 
 from subtitld.modules import session
 from subtitld.modules.addons import languages as _languages
 from subtitld.modules.addons import protocol
+from subtitld.modules.addons import registry as _registry
 from subtitld.modules.addons.process import AddonProcess
 from subtitld.modules.addons.provider import (
     ASRProvider,
@@ -34,6 +37,7 @@ from subtitld.modules.addons.provider import (
     TranslationProvider,
 )
 from subtitld.modules import audio_stretch
+from subtitld.modules.utils import get_cache_key
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +48,44 @@ def _dubbing_cache_dir() -> Path:
     cache_dir = Path(session.PATH_SUBTITLD_USER_CACHE) / 'dubbing'
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
+
+
+def _build_addon_env(addon_id: str, options: dict | None) -> dict[str, str]:
+    """Overlay per-add-on `Configure` values onto the host's environment so
+    the subprocess can read them at startup.
+
+    Convention (already adopted by the reference add-ons, e.g. qwen3-tts):
+    addon_id `qwen3-tts` → prefix `QWEN3_TTS_`, key `device` → env var
+    `QWEN3_TTS_DEVICE`. The addon entry point reads these with the manifest
+    `config_schema` default as fallback, so when the user hasn't edited
+    anything the manifest default still applies.
+
+    Why env vars and not request params: most addons load their model once
+    at startup (`device`, `model`, `total_steps`...), well before any
+    per-request frame arrives. Passing those through env keeps the existing
+    addon code shape (`os.environ.get(...)`) and avoids growing the
+    protocol with a separate `configure` request.
+
+    Always returns a complete env dict (started from `os.environ`) because
+    `subprocess.Popen(env=...)` REPLACES the parent's environment rather
+    than extending it — missing PATH/HOME/etc would break the addon's own
+    subprocess spawns (ffmpeg, hugging-face hub network calls, etc.).
+    """
+    env = dict(os.environ)
+    if not options:
+        return env
+    prefix = addon_id.replace('-', '_').upper() + '_'
+    for key, value in options.items():
+        if value is None or value == '':
+            continue
+        env_key = prefix + key.upper()
+        if isinstance(value, bool):
+            env[env_key] = '1' if value else '0'
+        elif isinstance(value, (str, int, float)):
+            env[env_key] = str(value)
+        # Skip anything else: config_schema currently has no list/dict
+        # field types, so this branch is unreachable in practice.
+    return env
 
 
 class _AddonProviderMixin:
@@ -85,7 +127,18 @@ class _AddonProviderMixin:
 
     def _ensure_process(self) -> AddonProcess:
         if self._process is None or not self._process.is_running():
-            self._process = AddonProcess(self._manifest, self._exe_path)
+            # Snapshot the user's `Configure` values at spawn time. The
+            # process keeps those env vars for its entire lifetime; if the
+            # user edits options later, they take effect after the next
+            # respawn (idle GC, crash, or explicit toggle). This matches
+            # the "addons read options at startup only" note in
+            # addons_dialog.py — we deliberately don't auto-restart.
+            env = _build_addon_env(
+                self._addon_id, _registry.options_for(self._addon_id)
+            )
+            self._process = AddonProcess(
+                self._manifest, self._exe_path, env=env
+            )
             self._process.start()
         return self._process
 
@@ -119,20 +172,53 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         self.speech_ready.connect(self._on_speech_ready)
         self.speech_error.connect(self._on_speech_error)
 
+        # Serial dispatch queue.
+        #
+        # The previous implementation fired every request in `text_list`
+        # to the addon's stdin in one tight loop. That meant:
+        #   * N `AddonRequest` objects alive simultaneously (signal
+        #     connections + refs to subtitle dicts), even though the
+        #     addon process serializes inference internally and only
+        #     works one at a time.
+        #   * No back-pressure: a 500-line "generate all" floods stdin,
+        #     and the user can't tell the engine to stop after the first
+        #     few when something's clearly going wrong.
+        #   * Memory grew with batch size for no synthesis-speed benefit.
+        #
+        # Match the edge-tts shape (sequential within a single worker):
+        # `generate_speeches` enqueues, `_drain_next_tts` pops one and
+        # sends it, and the result/error of THAT one triggers the next
+        # pop. At most one request is in flight at any time. Multiple
+        # `generate_speeches` calls just extend the same queue.
+        self._tts_queue: deque[tuple[str, dict, str, dict]] = deque()
+        self._tts_in_flight: bool = False
+
     def list_voices(self) -> list[dict]:
         # Most TTS add-ons declare their voices statically in the manifest;
         # nothing dynamic to fetch. Cloud-backed add-ons can override.
         return self._voices_cache
 
-    def generate_speeches(self, text_list: list[dict]) -> None:
-        cache_dir = _dubbing_cache_dir()
-        try:
-            proc = self._ensure_process()
-        except Exception as exc:
-            for subtitle in text_list:
-                self.speech_error.emit(subtitle.get('uid', ''), subtitle, str(exc))
-            return
+    def shutdown(self) -> None:
+        # Drop any queued (not-yet-dispatched) requests. We do NOT emit
+        # speech_error for them — at shutdown the slots downstream of
+        # speech_error may already be torn down (QApplication going away,
+        # session module unloading), and a stray emit could touch dead
+        # Qt objects. Items still in the queue had `subtitle['locked']`
+        # set by the caller; on next app start the project loads with
+        # those flags re-zeroed via the regular load path, so the user
+        # doesn't see a frozen-forever locked subtitle.
+        self._tts_queue.clear()
+        self._tts_in_flight = False
+        super().shutdown()
 
+    def generate_speeches(self, text_list: list[dict]) -> None:
+        # Pre-compute the per-item request payload up-front so the queue
+        # holds finished tuples and `_drain_next_tts` doesn't have to know
+        # about the subtitle dict shape. We do NOT call `_ensure_process`
+        # here — defer it to drain time so a transient process death
+        # between batches doesn't fail-fast the whole queue (each item
+        # gets its own _ensure_process attempt).
+        cache_dir = _dubbing_cache_dir()
         for subtitle in text_list:
             uid = subtitle.get('uid') or secrets.token_hex(4)
             output_path = str(cache_dir / f'{uid}.wav')
@@ -150,22 +236,86 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
                 if key in subtitle:
                     params[key] = subtitle[key]
 
-            req = proc.request(TASK_TTS_SYNTHESIZE, params)
-            self._wire_synthesis(req, uid, subtitle, output_path)
+            self._tts_queue.append((uid, subtitle, output_path, params))
+
+        # Kick the drain if nothing is currently in flight. If we ARE
+        # in flight, the chained signal handler will pop the new items
+        # on the next pass — calling _drain_next_tts here would be a
+        # no-op anyway (the guard rejects it), but skip the dispatch
+        # round-trip.
+        if not self._tts_in_flight:
+            self._drain_next_tts()
+
+    def _drain_next_tts(self) -> None:
+        """Pop one queued request and send it to the addon process. The
+        request's result/error signals are wired to re-trigger this method
+        when the addon is done with that one item — so at most one
+        synthesis is in flight at any time.
+
+        Called on the main thread only: either directly from
+        `generate_speeches`, or indirectly via the queued result/error
+        signals of the previous in-flight request (which Qt dispatches
+        on the main thread). No locking needed.
+        """
+        if self._tts_in_flight:
+            # Defensive: shouldn't be reachable today (the only callers
+            # gate on this flag), but keeps the invariant explicit.
+            return
+        if not self._tts_queue:
+            return
+
+        uid, subtitle, output_path, params = self._tts_queue.popleft()
+
+        # `_ensure_process` is the one operation that can fail per-item
+        # (the addon binary might be missing / crashed / refusing to
+        # restart). On failure, emit the error for this item and
+        # immediately try the next — same fail-individually semantics
+        # the edge-tts thread has for its per-item exceptions.
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.speech_error.emit(uid, subtitle, str(exc))
+            # Tail call replaced with singleShot(0) to keep the stack
+            # flat across long queues. Identical effect, no recursion
+            # depth risk on a batch of N hundred.
+            QTimer.singleShot(0, self._drain_next_tts)
+            return
+
+        req = proc.request(TASK_TTS_SYNTHESIZE, params)
+        self._tts_in_flight = True
+        self._wire_synthesis(req, uid, subtitle, output_path)
 
     def _wire_synthesis(self, req, uid: str, subtitle: dict, output_path: str) -> None:
         # The provider lives on the main thread (parented to QApplication),
         # so the signals will be queued across the reader-thread boundary
         # automatically by Qt.
+        #
+        # Both handlers MUST flip `_tts_in_flight` back to False and pump
+        # the next item, regardless of which path fires. We do the
+        # bookkeeping in a single `_advance` helper so the result and
+        # error branches can't accidentally drift apart (e.g. an early
+        # `return` on the empty-file guard used to skip the next-pump,
+        # which would have wedged the queue forever).
+        def _advance() -> None:
+            self._tts_in_flight = False
+            # singleShot(0) instead of a direct call: lets Qt finish
+            # dispatching all queued slots connected to this same signal
+            # (notably `_on_speech_ready`, which mutates session.SUBTITLE
+            # and refreshes the timeline) BEFORE we fire the next
+            # synthesis. Keeps the per-item visual feedback ordered.
+            QTimer.singleShot(0, self._drain_next_tts)
+
         def on_result(_data: dict) -> None:
             size = os.path.getsize(output_path) if os.path.isfile(output_path) else 0
             if size <= 0:
                 self.speech_error.emit(uid, subtitle, f'{self._addon_id} produced an empty audio file')
-                return
-            self.speech_ready.emit(uid, subtitle, output_path)
+            else:
+                self.speech_ready.emit(uid, subtitle, output_path)
+            _advance()
 
         def on_error(code: str, message: str) -> None:
             self.speech_error.emit(uid, subtitle, f'[{code}] {message}')
+            _advance()
 
         req.result.connect(on_result, Qt.QueuedConnection)
         req.error.connect(on_error, Qt.QueuedConnection)
@@ -286,6 +436,29 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         current_dub['pitch'] = 0
         overrides['rate'] = new_rate
 
+        # Keep the legacy single-subclip cache in `dub['segments']` in sync
+        # with the new rendered file. The timeline computes the dub's
+        # visible width from `dub_clip.clip_extent`, which reads
+        # `seg['end']` once the segments list is materialised. Without
+        # this rewrite the cached subclip still points at the OLD file's
+        # duration — the rate label updates but the rectangle width
+        # doesn't change (the visible-but-unstretched bug). We only touch
+        # the segments list when it currently holds the auto-synthesised
+        # single subclip; user-split multi-subclip dubs go through
+        # `_apply_subclip_stretch` and never reach this code path.
+        from subtitld.modules import dub_clip
+        segments = current_dub.get('segments')
+        if segments and len(segments) == 1 and segments[0].get('type', 'audio') == 'audio':
+            new_dur = dub_clip._file_duration_seconds(rendered_path)
+            if new_dur > 0:
+                seg = segments[0]
+                seg['path'] = rendered_path
+                seg.setdefault('raw_path', str(raw_path))
+                seg['rate'] = new_rate
+                seg['start'] = 0.0
+                seg['end'] = new_dur
+                seg['offset'] = 0.0
+
         # Mirror the post-process refresh from `_on_speech_ready` so the
         # preview audio device picks up the new file and the timeline redraws.
         from PySide6.QtWidgets import QApplication
@@ -392,6 +565,47 @@ class AddonAudioSeparatorProvider(_AddonProviderMixin, AudioSeparatorProvider):
 
     def separate(self, input_path: str, output_dir: str,
                  options: dict | None = None) -> None:
+        # ------------------------------------------------------------
+        # On-disk caching contract.
+        #
+        # The host (`playercontrols.MusicAudioExtractorThread`) names
+        # its separation cache files `<hash>_vocals.flac` and
+        # `<hash>_background.flac`, where the hash comes from
+        # `utils.get_cache_key(input_path)`. The built-in
+        # `ffmpeg-separator` writes those exact filenames, so on
+        # project reload the host's three-file fast-path
+        # (playercontrols.py:224-236) short-circuits the whole
+        # pipeline.
+        #
+        # The subprocess wrapper, however, names its outputs after the
+        # model (`<input>_(Vocals)_Kim_Inst.flac`, etc.). If we passed
+        # those paths through verbatim, reload would never hit the
+        # host fast-path and every project open would re-run the
+        # model — wasting seconds-to-minutes per project on no work.
+        #
+        # Fix: adopt the same on-disk naming as the built-in. (a)
+        # short-circuit when canonical files are already on disk; (b)
+        # rename the subprocess outputs into place before emitting
+        # `separation_ready`. The host fast-path then works
+        # uniformly across all separator providers.
+        # ------------------------------------------------------------
+        cache_key = get_cache_key(input_path) or 'unkeyed'
+        canonical_vocals = os.path.join(
+            output_dir, f'{cache_key}_vocals.flac')
+        canonical_background = os.path.join(
+            output_dir, f'{cache_key}_background.flac')
+
+        if (os.path.exists(canonical_vocals)
+                and os.path.exists(canonical_background)):
+            # Belt-and-braces: the host's three-file fast-path normally
+            # catches this case before we're even called, but a partial
+            # cache (missing `_original.flac` only) would route through
+            # here. Emit synchronously without spinning up the
+            # subprocess.
+            self.separation_ready.emit(
+                str(input_path), canonical_vocals, canonical_background)
+            return
+
         try:
             proc = self._ensure_process()
         except Exception as exc:
@@ -421,7 +635,31 @@ class AddonAudioSeparatorProvider(_AddonProviderMixin, AudioSeparatorProvider):
                 self.separation_error.emit(str(input_path),
                     f'{self._addon_id} returned no `vocals` path')
                 return
-            self.separation_ready.emit(str(input_path), vocals, background)
+
+            # Normalize subprocess outputs to the host's canonical
+            # filenames so reloads hit the fast-path. `os.replace`
+            # is atomic on the same filesystem (which holds here —
+            # both source and destination are in `output_dir`). If
+            # the rename fails for any reason, fall back to emitting
+            # the original paths so the current request still works.
+            final_vocals = vocals
+            final_background = background
+            try:
+                if vocals and os.path.exists(vocals):
+                    os.replace(vocals, canonical_vocals)
+                    final_vocals = canonical_vocals
+                if background and os.path.exists(background):
+                    os.replace(background, canonical_background)
+                    final_background = canonical_background
+            except OSError as exc:
+                log.warning(
+                    'failed to rename %s output into canonical cache slot '
+                    '(%s); falling back to raw paths',
+                    self._addon_id, exc,
+                )
+
+            self.separation_ready.emit(
+                str(input_path), final_vocals, final_background)
 
         def on_error(code: str, message: str) -> None:
             self._active_request = None

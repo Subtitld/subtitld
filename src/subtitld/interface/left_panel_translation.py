@@ -294,6 +294,15 @@ def global_panel_translation_invert_translation_button_clicked(self):
         history.history_append()
         target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
         original_language = session.SUBTITLE.get('language', 'en-us')
+        # Lock `source_language` to the pre-invert language *before* we
+        # flip `SUBTITLE['language']`. Legacy projects (transcribed under
+        # a Subtitld version that didn't write `source_language`) would
+        # otherwise lose the audio-language reference forever once
+        # `language` swaps to the translation target. clone_ref reads
+        # this field to pick the audio-matching ref_text for clone-
+        # capable TTS addons (qwen3-clone, xtts-clone, f5-clone).
+        if not session.SUBTITLE.get('source_language'):
+            session.SUBTITLE['source_language'] = original_language
         for segment in session.SUBTITLE['segments']:
             translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else None
             if not translations or not translations.get(target_language):

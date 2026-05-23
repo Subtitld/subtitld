@@ -464,13 +464,14 @@ def case_usfx_phase1_member_selection():
 
 
 def case_usfx_background_extractor_emits_progress():
-    """The background extractor must drive the global progress signal
-    hub through 0..100 so the UI's thin progress bar can show a credible
-    fill. Subscribe before starting the thread and assert at minimum:
-    * the per-instance `progress` signal fires at least once,
-    * the final value is 100 (extraction actually completes),
-    * values are monotonically non-decreasing (no jitter that would make
-      the bar jump backward)."""
+    """The background extractor must drive its per-instance `progress`
+    signal through 0..100 so we know the chunked loop actually iterates
+    end-to-end (regression canary against a degenerate write that skips
+    the chunk read). The global hub variant was removed when the
+    progress bar UI went away — per-dub `usfx_member_ready` repaints
+    are the user-visible feedback now. The finished hub signal still
+    matters because it gates the Save button, so this case also asserts
+    the signal-to-signal bridge actually delivers."""
     print('\n=== USFX Phase 2 emits monotonic 0..100 progress ===')
     _ensure_qt()
     _stub_i18n_if_missing()
@@ -503,13 +504,9 @@ def case_usfx_background_extractor_emits_progress():
         from subtitld.modules.signals import SIGNALS
 
         ex = _USFXBackgroundExtractor(usfx_path, 'progkey')
-        # Capture from both the per-instance signal (for tests) and the
-        # global hub (the wiring the UI actually uses).
         instance_progress = []
-        global_progress = []
         finished_fired = []
         ex.progress.connect(instance_progress.append)
-        SIGNALS.usfx_background_load_progress.connect(global_progress.append)
         SIGNALS.usfx_background_load_finished.connect(
             lambda: finished_fired.append(True))
         # Wire the same finished bridge production code uses, so the
@@ -530,7 +527,6 @@ def case_usfx_background_extractor_emits_progress():
         assert not ex.isRunning(), 'extractor did not finish under watchdog'
 
         assert instance_progress, 'no per-instance progress signals emitted'
-        assert global_progress, 'no global-hub progress signals emitted'
         assert instance_progress[-1] == 100, (
             f'expected final progress 100, got {instance_progress[-1]}')
         # Monotonic — no rewind.
@@ -544,10 +540,6 @@ def case_usfx_background_extractor_emits_progress():
               'finished bubbled ✓')
 
         # Cleanup signal connections so they don't leak into the next case.
-        try:
-            SIGNALS.usfx_background_load_progress.disconnect()
-        except (TypeError, RuntimeError):
-            pass
         try:
             SIGNALS.usfx_background_load_finished.disconnect()
         except (TypeError, RuntimeError):

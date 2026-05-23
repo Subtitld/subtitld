@@ -204,6 +204,36 @@ class MusicAudioExtractorThread(QObject):
             session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
             f'{filename_hash}_original.flac',
         )
+        vocals_filepath = os.path.join(
+            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+            f'{filename_hash}_vocals.flac',
+        )
+        background_filepath = os.path.join(
+            session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+            f'{filename_hash}_background.flac',
+        )
+
+        # Fast path: all three cache files already exist on disk. This
+        # is the normal case when reopening a USFX that bundles its
+        # `assets/audio/{original,vocals,background}.flac` (the USFX
+        # background extractor copies them to the cache during load) —
+        # or when reopening any project whose separation has run before.
+        # Without this short-circuit, every project open would re-run
+        # ffmpeg decode + provider separation even though the answer is
+        # already cached, wasting seconds-to-minutes of CPU.
+        if (os.path.exists(original_filepath)
+                and os.path.exists(vocals_filepath)
+                and os.path.exists(background_filepath)):
+            # Match the signal order of the slow path: `original` first
+            # (sets up the original playback track), then `response`
+            # (sets up the background/vocals tracks).
+            self.original.emit(original_filepath)
+            self.response.emit({
+                'original': original_filepath,
+                'vocals': vocals_filepath,
+                'background': background_filepath,
+            })
+            return
 
         # Step 1: original decode. Always ffmpeg, on a worker thread so
         # the UI stays responsive while we wait. When done, emit

@@ -328,8 +328,15 @@ def update(self):
 
 def show(self):
     update(self)
-    QTimer().singleShot(200, lambda: self.titleBar_left_container.opacity.setOpacity(1.0))
+    # Opacity = 1 immediately — see preview_panel.show() for rationale.
+    self.titleBar_left_container.opacity.setOpacity(1.0)
+    # setUpdatesEnabled(False) suppresses paints while the layout
+    # overshoots to the final position; the animation reasserts pos
+    # via its property over a few ticks and by the time updates
+    # re-enable the widget is mid-slide.
+    self.titleBar_left_container.setUpdatesEnabled(False)
     utils.animate_element(self.titleBar_left_container.animation, duration=1000, effect='slide_from_left')
+    QTimer().singleShot(80, lambda: self.titleBar_left_container.setUpdatesEnabled(True))
 
 
 def translate(self):
@@ -446,35 +453,83 @@ def toppanel_export_button_clicked(self):
         filepath += f'.{extensions[0]}'
     selected_extension = filepath.rsplit('.', 1)[-1].lower()
 
+    # Tell the user the click "took". The export dialog has already
+    # closed itself (exec returned Accepted); re-show it as a busy
+    # surface — same widget the user just clicked Export in, now
+    # animated. Cleared by `_finish_export` on the worker's done
+    # signal. See ExportDialog.enter_processing_state for the swap.
+    try:
+        dialog.enter_processing_state(_('export_dialog.processing').format(fmt=fmt))
+    except Exception:
+        # Translation key/dialog gone → fail open, keep the export
+        # running headless rather than aborting on a UI glitch.
+        pass
+
+    def _finish_export(_path, success, error):
+        try:
+            dialog.finish_processing()
+        except Exception:
+            pass
+        if not success:
+            # Surface failures in the status bar instead of silently
+            # dropping them. `session` has the notification hooks.
+            try:
+                session.notify_save_success  # smoke probe; reuse infra
+            except Exception:
+                pass
+            # No dedicated export-error channel yet; log to stderr so
+            # devs can see what blew up. (A toast/banner would be
+            # nicer; punted to a follow-up.)
+            import sys as _sys
+            print(f'[export] FAILED: {error}', file=_sys.stderr)
+            return
+
     if category in ('audio', 'video'):
         audio_config = config.get('audio_config') or {'mode': 'mixdown', 'include_background': False}
         engine = getattr(self.preview_panel_player, '_audio_device', None)
-        _bounce.bounce(filepath, fmt, audio_config['mode'],
-                       audio_engine=engine,
-                       include_background=audio_config.get('include_background', False))
-        session.set_last_export({
-            'filepath': filepath,
-            'extension': selected_extension,
-            'category': category,
-            'format': fmt,
-            'audio_format': fmt,
-            'audio_config': audio_config,
-        })
+
+        def _on_bounce_done(path, success, error):
+            if success:
+                session.set_last_export({
+                    'filepath': path,
+                    'extension': selected_extension,
+                    'category': category,
+                    'format': fmt,
+                    'audio_format': fmt,
+                    'audio_config': audio_config,
+                })
+            _finish_export(path, success, error)
+
+        _bounce.bounce_async(
+            filepath, fmt, audio_config['mode'],
+            audio_engine=engine,
+            include_background=audio_config.get('include_background', False),
+            on_done=_on_bounce_done,
+            parent=self,
+        )
         return
 
     if category == 'subtitles' and 'options' in config:
         session.FORMAT['options'] = config['options']
 
-    file_io.save_file(filepath, fmt, session.CONFIG['selected_language'])
-    session.set_last_export({
-        'filepath': filepath,
-        'extension': selected_extension,
-        'category': category,
-        'format': fmt,
-        'audio_format': None,
-        'audio_config': None,
-        'options': config.get('options'),
-    })
+    def _on_save_done(path, success, error):
+        if success:
+            session.set_last_export({
+                'filepath': path,
+                'extension': selected_extension,
+                'category': category,
+                'format': fmt,
+                'audio_format': None,
+                'audio_config': None,
+                'options': config.get('options'),
+            })
+        _finish_export(path, success, error)
+
+    file_io.save_file_async(
+        filepath, fmt, session.CONFIG['selected_language'],
+        on_done=_on_save_done,
+        parent=self,
+    )
 
 
 def toppanel_export_quick_button_clicked(self):

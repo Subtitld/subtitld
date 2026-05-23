@@ -1,10 +1,8 @@
-from PySide6.QtWidgets import QSplitter, QWidget
-from PySide6.QtCore import Qt, QTimer, QEvent
-from PySide6.QtGui import QPainter, QColor
+from PySide6.QtWidgets import QSplitter
+from PySide6.QtCore import Qt, QTimer
 
 from subtitld.modules import file_io
 from subtitld.modules import session
-from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
@@ -13,80 +11,16 @@ from subtitld.interface import top_bar
 from subtitld.interface.translation import _
 
 
-class _BackgroundLoadProgressBar(QWidget):
-    """Thin progress strip pinned to the bottom edge of the host window.
-
-    Visible only while a USFX background load is reporting progress; hides
-    itself a short time after completion (so the eye registers "done"
-    before the bar disappears). Transparent to mouse events so it never
-    blocks clicks on the timeline directly above it.
-
-    Wiring is via `signals.SIGNALS.usfx_background_load_*`, which the
-    Phase 2 extractor emits from its worker thread. Qt auto-promotes
-    those signal deliveries to `Qt.QueuedConnection`, so the slot runs
-    on the main thread safely.
-    """
-    _HEIGHT_PX = 3
-    _AUTO_HIDE_MS = 800
-
-    def __init__(self, host):
-        super().__init__(host)
-        self._host = host
-        self._progress = 0
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WA_NoSystemBackground)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        host.installEventFilter(self)
-        self._sync_geometry()
-        self.hide()
-
-        self._hide_timer = QTimer(self)
-        self._hide_timer.setSingleShot(True)
-        self._hide_timer.setInterval(self._AUTO_HIDE_MS)
-        self._hide_timer.timeout.connect(self._fade_out)
-
-        _SESSION_SIGNALS.usfx_background_load_progress.connect(self._on_progress)
-        _SESSION_SIGNALS.usfx_background_load_finished.connect(self._on_finished)
-
-    def _sync_geometry(self):
-        r = self._host.rect()
-        self.setGeometry(0, r.height() - self._HEIGHT_PX,
-                         r.width(), self._HEIGHT_PX)
-        self.raise_()
-
-    def eventFilter(self, obj, event):
-        if obj is self._host and event.type() == QEvent.Resize:
-            self._sync_geometry()
-        return False
-
-    def _on_progress(self, pct):
-        self._progress = max(0, min(100, int(pct)))
-        if not self.isVisible():
-            self._sync_geometry()
-            self.show()
-        self.update()
-        if self._progress >= 100:
-            self._hide_timer.start()
-
-    def _on_finished(self):
-        # If progress already hit 100 the hide timer is running; just
-        # let it complete. If not (extraction aborted), force a hide.
-        self._progress = 100
-        self.update()
-        self._hide_timer.start()
-
-    def _fade_out(self):
-        self.hide()
-        self._progress = 0
-
-    def paintEvent(self, _event):
-        p = QPainter(self)
-        # Subtle track + accent fill — same green as the save-wave overlay
-        # so it reads as "Subtitld is doing something useful".
-        p.fillRect(self.rect(), QColor(26, 26, 26, 180))
-        if self._progress > 0:
-            w = int(self.width() * self._progress / 100)
-            p.fillRect(0, 0, w, self.height(), QColor('#5de845'))
+# NOTE: there used to be a thin progress strip pinned to the bottom edge
+# of the main window while the USFX Phase 2 extractor was streaming dubs
+# / waveform / FLAC stems to disk. It's gone now — the per-dub
+# `usfx_member_ready` signal already makes individual clips pop into the
+# timeline as their bytes land, which is more legible than a generic
+# progress bar (the user sees the specific things they're waiting on
+# instead of an abstract percent). The Save-button gate still uses the
+# `usfx_background_load_started` / `usfx_background_load_finished` signal
+# pair — that one matters because saving mid-stream would re-zip dubs
+# whose source bytes aren't on disk yet.
 
 
 def load(self):
@@ -115,12 +49,6 @@ def load(self):
 
     self.main_vertical_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_vertical', [70, 30]))
 
-    # Pin a 3-px progress strip to the bottom of the main window. It
-    # tracks geometry on resize, so it stays at the bottom edge no
-    # matter how the user drags the splitters around. Wires itself to
-    # the USFX Phase 2 signals at construction; nothing else to do here.
-    self.background_load_progress_bar = _BackgroundLoadProgressBar(self)
-
     if session.CONFIG.get('autosave', {}).get('backup_enabled', True):
         self.autosave_backup_timer.start()
         # The regular timer interval defaults to 5 min — too long for a fresh
@@ -143,10 +71,49 @@ def main_vertical_splitter_changed(self, pos, index):
 
 
 def show(self):
+    # Suppress painting on all animated panels via setUpdatesEnabled(False)
+    # before `setCurrentWidget` makes the production splitter visible.
+    # The previous setVisible(False) approach didn't fully work: when the
+    # animation's first valueChanged tick fired and called setVisible(True),
+    # the resulting layout pass overrode the widget's pos to its laid-out
+    # final spot — then Qt painted at FINAL before the animation's next
+    # tick could move it back to start_pos, producing the one-frame "all
+    # panels in place" flash the user kept reporting.
+    #
+    # setUpdatesEnabled(False) is the right tool: the widget still
+    # participates in the layout (so size/geometry settles correctly while
+    # the animation is starting), but Qt suppresses paint events entirely.
+    # We re-enable updates ~80 ms later (~5 animation ticks at 60 Hz),
+    # after the animation has firmly taken ownership of `pos` and the
+    # layout's final-position setGeometry has been overridden by the
+    # animation engine. By then the widget is mid-slide and the first
+    # paint shows it correctly animating in.
+    panels = [w for w in (
+        getattr(self, 'bottom_panel', None),
+        getattr(self, 'preview_panel', None),
+        getattr(self, 'left_panel', None),
+    ) if w is not None]
+    for w in panels:
+        w.setUpdatesEnabled(False)
     self.central_widget.layout().setCurrentWidget(self.main_vertical_splitter)
-    left_panel.show(self)
-    preview_panel.show(self)
-    bottom_panel.show(self)
+    # Defer the per-panel show() calls to the next event-loop tick so
+    # the layout pass triggered by setCurrentWidget has run by then.
+    # Each per-panel show() calls `animate_element`, which reads
+    # `widget.pos()` (for the animation's end-value) and the parent's
+    # geometry (for the slide's off-screen start). Running them
+    # synchronously here captures pre-layout values — the preview's
+    # endValue ends up at (0, 0) and the slide is barely visible. By
+    # the time the singleShot(0) fires, the splitter has sized its
+    # children to their real allocations.
+    def _start_animations():
+        left_panel.show(self)
+        preview_panel.show(self)
+        bottom_panel.show(self)
+        # Re-enable per-panel paints once the animations are firmly
+        # past the layout's "final position" overshoot.
+        for w in panels:
+            QTimer.singleShot(80, lambda w=w: w.setUpdatesEnabled(True))
+    QTimer.singleShot(0, _start_animations)
     
 
 def hide(self):

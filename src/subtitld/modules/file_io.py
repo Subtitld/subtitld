@@ -126,15 +126,21 @@ class _USFXBackgroundExtractor(QThread):
     atomic via `.tmp` + `os.replace`, so a crash mid-extract leaves clean
     state, not a half-written cache.
 
-    Progress is reported via the process-wide `signals.SIGNALS` hub so the
-    UI can connect once at startup rather than chase per-load instances.
+    There used to be a global progress signal driving a thin bar at the
+    bottom of the window; it was removed because the per-dub
+    `usfx_member_ready` repaints already give the user concrete visual
+    feedback (the matching clip un-hatches the instant its bytes land,
+    far more legible than an abstract percent). The per-instance
+    `progress` signal is kept for tests that want to assert the chunked
+    loop actually iterates through to 100%.
+
     Per-member completion (`usfx_member_ready`) lets the timeline repaint
     each dub clip and the audio engine preload it the instant its file
     lands — no need to wait for the whole batch.
     """
-    # Per-instance progress signal exists primarily for tests that want
-    # to assert without depending on the global signals hub. Production
-    # code connects to `signals.SIGNALS.usfx_background_load_progress`.
+    # Per-instance progress signal — observable by tests for chunked
+    # iteration verification. No production listener; the UI relies on
+    # `usfx_member_ready` for visual feedback instead.
     progress = Signal(int)
 
     # 1 MiB chunks balance "few progress emits" against responsiveness
@@ -160,17 +166,11 @@ class _USFXBackgroundExtractor(QThread):
         if pct == self._last_pct:
             return
         self._last_pct = pct
-        # Best-effort: the local signal is mainly for tests; the global
-        # hub is what the UI actually listens on.
+        # Per-instance signal only — the hub variant is gone with the
+        # progress bar. Best-effort: never let a test-only signal raise
+        # into the extractor's hot loop.
         try:
             self.progress.emit(pct)
-        except Exception:
-            pass
-        # SIGNALS is imported at module load (top of file_io.py) so this
-        # emit always lands on the main-thread QObject — see the comment
-        # at the import site for why the lazy form was wrong.
-        try:
-            SIGNALS.usfx_background_load_progress.emit(pct)
         except Exception:
             pass
 
@@ -639,6 +639,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     path = dub.get('path', '')
                     if path and not os.path.isabs(path):
                         dub['path'] = os.path.join(extract_dir, path)
+                    # Mirror the rewrite for subclip paths: the saver
+                    # bundled each unique source under `assets/dubs/`
+                    # and stored the arcname; map back to the extracted
+                    # absolute path so the audio engine / timeline can
+                    # open the file. Skip entries already absolute (came
+                    # from a legacy project or an in-place edit since load).
+                    for seg in dub.get('segments', []) or []:
+                        for key in ('path', 'raw_path'):
+                            p = seg.get(key, '')
+                            if p and not os.path.isabs(p):
+                                seg[key] = os.path.join(extract_dir, p)
 
             # Resolve the project's source video. Priority: bundled video file →
             # original-path entry recorded in the manifest → same-folder match
@@ -1167,13 +1178,40 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             dub_files_to_include = {}
             for segment in segments_copy:
                 for dub in segment.get('dubbing', []) or []:
-                    source_path = dub.get('path')
                     uid = dub.get('uid')
-                    if source_path and uid and os.path.isfile(source_path):
+                    if not uid:
+                        continue
+                    source_path = dub.get('path')
+                    if source_path and os.path.isfile(source_path):
                         ext = (os.path.splitext(source_path)[1].lstrip('.').lower() or 'wav')
                         arcname = f'assets/dubs/{_safe_asset_name(uid)}.{ext}'
                         dub_files_to_include[source_path] = arcname
                         dub['path'] = arcname
+                    # Per-subclip paths (the split/stretch list). Each
+                    # unique source file gets one zip entry; subclips
+                    # referencing the same source (the common case after
+                    # plain splits) collapse onto the same arcname.
+                    # Stretched subclips have a different `path` than the
+                    # dub-level one — they get a uid-namespaced arcname.
+                    # `raw_path` (immutable raw source for re-stretching)
+                    # gets bundled too so stretch-after-reload still works.
+                    counter = [0]
+                    def _register_subclip_path(src):
+                        if not src or not os.path.isfile(src):
+                            return None
+                        if src in dub_files_to_include:
+                            return dub_files_to_include[src]
+                        base = os.path.basename(src)
+                        safe_base = _safe_asset_name(base)
+                        arc = f'assets/dubs/{_safe_asset_name(uid)}__{counter[0]}__{safe_base}'
+                        counter[0] += 1
+                        dub_files_to_include[src] = arc
+                        return arc
+                    for seg in dub.get('segments', []) or []:
+                        for key in ('path', 'raw_path'):
+                            new_arc = _register_subclip_path(seg.get(key))
+                            if new_arc:
+                                seg[key] = new_arc
 
             # Collect optional bundled assets (video + separation caches + waveform cache).
             video_path = session.VIDEO.get('filepath', '') if isinstance(session.VIDEO, dict) else ''

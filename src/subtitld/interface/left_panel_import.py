@@ -13,6 +13,7 @@ from subtitld.modules import utils as modules_utils
 from subtitld.modules import addons
 from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
+from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
 _list_of_supported_import_extensions = []
 for _exttype in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS:
@@ -270,25 +271,35 @@ class _GenericASRPanel(QWidget):
             'speaker': segment.get('speaker', 'A'),
         })
         speaker = segment.get('speaker', 'A')
-        if speaker not in session.SPEAKERS:
+        speaker_added = speaker not in session.SPEAKERS
+        if speaker_added:
             session.SPEAKERS[speaker] = {'image': None}
         try:
             widget.window().timeline_widget.update()
         except Exception:
             pass
+        # Notify the speakers panel to re-render when a NEW speaker
+        # arrives mid-transcription — without this, the speakers list
+        # stays empty until the user manually re-selects the panel.
+        if speaker_added:
+            _SESSION_SIGNALS.speakers_changed.emit()
         session.set_unsaved()
 
     def _on_finished(widget, segments):
         if isinstance(segments, list) and segments:
             session.SUBTITLE['segments'] = list(segments)
+            any_added = False
             for seg in segments:
                 speaker = seg.get('speaker', 'A')
                 if speaker not in session.SPEAKERS:
                     session.SPEAKERS[speaker] = {'image': None}
+                    any_added = True
             try:
                 widget.window().timeline_widget.update()
             except Exception:
                 pass
+            if any_added:
+                _SESSION_SIGNALS.speakers_changed.emit()
             session.set_unsaved()
         widget.transcript_finished.emit()
 
@@ -468,6 +479,12 @@ def show(self):
 def update(self):
     if not session.SUBTITLE.get('language', False):
         session.SUBTITLE['language'] = session.CONFIG.get('transcription', {}).get('language', 'en-us')
+    # `source_language` mirrors `language` at transcription time, then is
+    # frozen — translation/invert flips `language` but never touches
+    # `source_language`. clone_ref uses it to pull the audio-matching
+    # transcript as `voice_ref_text`. See clone_ref._resolve_source_language.
+    if not session.SUBTITLE.get('source_language'):
+        session.SUBTITLE['source_language'] = session.SUBTITLE['language']
     selected_language_name = 'English (United States)'
     for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
         if language_code == session.SUBTITLE['language']:
@@ -491,6 +508,14 @@ def hide(self):
 def global_panel_import_language_combobox_activated(self):
     chosen = session.LANGUAGE_DICT_LIST[self.global_panel_import_language_combobox.currentText()]
     session.SUBTITLE['language'] = chosen
+    # The user is explicitly declaring what's spoken in the source media,
+    # so source_language tracks language here — pre-translation, the two
+    # are the same. Stamping unconditionally (vs. setdefault) so that
+    # correcting a wrong auto-detected language also corrects
+    # source_language; post-translation editors who want to redirect the
+    # synthesis language without changing what's on the audio should use
+    # the invert-translation flow instead.
+    session.SUBTITLE['source_language'] = chosen
     if not isinstance(session.CONFIG.get('transcription'), dict):
         session.CONFIG['transcription'] = {}
     session.CONFIG['transcription']['language'] = chosen

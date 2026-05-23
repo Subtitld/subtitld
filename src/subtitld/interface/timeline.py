@@ -744,13 +744,21 @@ class Timeline(QWidget):
                 ordered_segments.remove(selected_subtitle)
                 ordered_segments.append(selected_subtitle)
 
-            # Compare in seconds (cheap) instead of dividing each subtitle's
-            # start/end by duration on every iteration. iter_left/iter_right
-            # narrows to the dirty strip: at 30 Hz playhead repaints, this
-            # is what keeps the per-subtitle loop cheap enough to stay
-            # inside one audio block budget.
-            visible_start_sec = iter_left / wpp
-            visible_end_sec = iter_right / wpp
+            # Use the SCROLL VIEWPORT range here, NOT the dirty-strip
+            # range. A subtitle's dub band can be drawn wider than the
+            # subtitle's own [start, end] bounds — subclips with
+            # negative offsets extend before the subtitle, stretched /
+            # trimmed subclips after. If we filtered by the strip, a
+            # paint event whose dirty rect is JUST the playhead strip
+            # would skip every subtitle that doesn't overlap the strip
+            # by its own bounds — and the off-strip pixels of any dub
+            # band crossing the strip would never get refreshed,
+            # producing the "split / vanishing left half" glitch the
+            # user reported during playback. Qt still clips the actual
+            # painting to the strip, so we just spend a few extra
+            # checks iterating visible subtitles — cheap.
+            visible_start_sec = scroll_position / wpp
+            visible_end_sec = visible_right / wpp
             speakers_keys = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
             speakers_index = {name: i for i, name in enumerate(speakers_keys)}
             speakers_count = len(speakers_keys)
@@ -889,6 +897,29 @@ class Timeline(QWidget):
                             dub_w = total_dub_dur * widget.width_proportion
                             if widget.dub_stretching is not None and widget.dub_stretching['subtitle'] is subtitle:
                                 dub_w = widget.dub_stretching['current_width']
+                            # Multi-subclip stretch (post-split, ffmpeg
+                            # path) widens a single subclip rather than
+                            # the whole dub — but `dub_inset` (and the
+                            # `setClipRect` below) must still grow to
+                            # cover the stretched subclip's new right
+                            # edge, otherwise the waveform inside the
+                            # stretched portion gets cropped.
+                            elif (widget.dub_subclip_drag is not None
+                                    and widget.dub_subclip_drag.get('mode') == 'stretch'
+                                    and widget.dub_subclip_drag.get('dub') is dub):
+                                drag = widget.dub_subclip_drag
+                                drag_idx = drag.get('segment_index', -1)
+                                seg_list = list(_dub_clip.iter_segment_ranges(dub))
+                                if 0 <= drag_idx < len(seg_list):
+                                    seg_t0_drag, _t1_old, _s = seg_list[drag_idx]
+                                    new_t1 = seg_t0_drag + drag['current_width'] / widget.width_proportion
+                                    new_hi = new_t1
+                                    for _j, (_t0, _t1, _s2) in enumerate(seg_list):
+                                        if _j == drag_idx:
+                                            continue
+                                        if _t1 > new_hi:
+                                            new_hi = _t1
+                                    dub_w = max(0.0, new_hi - extent_lo) * widget.width_proportion
                             if dub_w > 1:
                                 band_ratio = 0.25
                                 # `dub_inset` is the outer band — used for
@@ -1570,24 +1601,53 @@ class Timeline(QWidget):
         # subclip's top-right corner) — must win over the subclip
         # body / edge hit-test below since the handle sits inside the
         # subclip rect and partially overlaps the right edge zone.
-        # Routes to the ffmpeg-based stretch for any subclip count
-        # (single OR multi). The legacy `_dub_end_handle_at_position`
-        # path that re-synthesises via the TTS provider is no longer
-        # reached from the timeline; users must invoke that from the
-        # dubbing panel's rate slider if they want re-synthesis.
+        #
+        # Routing splits by whether the dub has been split into
+        # multiple subclips:
+        #
+        #   * Single un-split clip → set up `dub_stretching` so
+        #     mouseRelease invokes `provider.stretch(subtitle, ratio)`.
+        #     For Edge TTS this re-synthesises the line at the new
+        #     rate (preserving pitch); for Piper/Coqui the provider
+        #     internally falls back to ffmpeg atempo on the cached
+        #     raw WAV. Going through the provider keeps engine-
+        #     specific behaviour intact.
+        #
+        #   * Already-split (>1 subclips) → ffmpeg-only path via
+        #     `dub_subclip_drag` mode='stretch'. Once the user has
+        #     edited a take, the subclips no longer correspond to the
+        #     "line as a whole" the provider was given, so engine
+        #     re-synthesis would either silently overwrite the other
+        #     subclips or produce out-of-sync audio. ffmpeg atempo on
+        #     each subclip's own (possibly already-rate-rendered)
+        #     source is the safe option.
         stretch_hit = widget._dub_subclip_stretch_handle_at_position(event.pos())
         if stretch_hit is not None:
-            from subtitld.modules import history
+            from subtitld.modules import history, dub_clip
+            dub = stretch_hit['dub']
+            n_subs = len(list(dub_clip.iter_segment_ranges(dub)))
             history.history_append()
-            widget.dub_subclip_drag = {
-                'subtitle': stretch_hit['subtitle'],
-                'dub': stretch_hit['dub'],
-                'segment_index': stretch_hit['segment_index'],
-                'mode': 'stretch',
-                'original_width': stretch_hit['current_width'],
-                'current_width': stretch_hit['current_width'],
-                'start_x': event.pos().x(),
-            }
+            if n_subs > 1:
+                # ffmpeg-only path (post-split subclips).
+                widget.dub_subclip_drag = {
+                    'subtitle': stretch_hit['subtitle'],
+                    'dub': dub,
+                    'segment_index': stretch_hit['segment_index'],
+                    'mode': 'stretch',
+                    'original_width': stretch_hit['current_width'],
+                    'current_width': stretch_hit['current_width'],
+                    'start_x': event.pos().x(),
+                }
+            else:
+                # Legacy single-clip path → provider.stretch on release.
+                widget.dub_stretching = {
+                    'subtitle': stretch_hit['subtitle'],
+                    'dub': dub,
+                    'start_x': event.pos().x(),
+                    'original_width': stretch_hit['current_width'],
+                    'current_width': stretch_hit['current_width'],
+                }
+                widget.dub_stretch_active = True
             widget.is_cursor_pressing = True
             event.accept()
             return
@@ -2540,8 +2600,15 @@ class Timeline(QWidget):
         `seg['raw_path']` once any stretch has been applied) so repeated
         stretches don't compound quality loss."""
         from pathlib import Path
-        from subtitld.modules import audio_stretch
-        segments = dub.get('segments')
+        from subtitld.modules import audio_stretch, dub_clip
+        # Materialise the segments list for legacy single-clip dubs
+        # (those that still only have `dub['path']` and no `segments`
+        # field). Without this the early-return on `not segments`
+        # silently swallows every stretch on a freshly-loaded
+        # un-edited dub. normalize_segments is main-thread-safe and
+        # opens the source file once to fill `end` with a concrete
+        # duration.
+        segments = dub_clip.normalize_segments(dub)
         if not segments or not (0 <= segment_index < len(segments)):
             return
         seg = segments[segment_index]
