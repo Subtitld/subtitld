@@ -344,6 +344,25 @@ def translate(self):
     self.titleBar_left_export_button.setToolTip(_('top_bar.export'))
 
 
+def _show_save_error_dialog(window, path, detail):
+    """Friendly error dialog when the async USFX writer reports failure.
+    The atomic-rename guarantee means the on-disk file (if any) is
+    still the previous good version — so the message frames it as
+    "save did not land" rather than "your project is now broken"."""
+    dialog = utils.SimpleDialog(window, title=_('top_bar.save_error_title'))
+    msg = QLabel(_('top_bar.save_error_message').format(filepath=path or ''))
+    msg.setWordWrap(True)
+    dialog.content.layout().addWidget(msg)
+    if detail:
+        detail_label = QLabel(str(detail))
+        detail_label.setWordWrap(True)
+        detail_label.setProperty('class', 'dialog_detail')
+        dialog.content.layout().addWidget(detail_label)
+    if hasattr(dialog, 'reject_button'):
+        dialog.reject_button.hide()
+    dialog.exec()
+
+
 def toppanel_save_button_clicked(self):
     """Save the project as USFX. Prompts for a path the first time (or when
     the current file isn't .usfx); subsequent clicks save in place."""
@@ -385,9 +404,20 @@ def toppanel_save_button_clicked(self):
         self.titleBar_left_save_button.setEnabled(True)
         if success:
             session.add_to_recent_files(session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath', ''))
+            session.persist_current_playback_position()
             session.notify_save_success()
+            # Re-render the title bar so the path/filename labels pick
+            # up `session.SUBTITLE['filepath']` (just set by the
+            # save-as dialog above). Without this, a first-time save
+            # leaves the title showing the parent dir + "Untitled".
+            update(self)
         else:
+            # Atomic-rename guarantees the original .usfx on disk is
+            # untouched — but the in-memory document is still unsaved.
+            # Flag it and tell the user explicitly so they know the
+            # last save did NOT land.
             session.set_unsaved(True)
+            _show_save_error_dialog(self, _path, _error)
 
     file_io.save_file_async(
         session.SUBTITLE['filepath'],

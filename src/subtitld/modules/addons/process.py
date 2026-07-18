@@ -343,6 +343,20 @@ class AddonProcess(QObject):
         except Exception as exc:
             log.warning('AddonProcess[%s]: failed to send cancel: %s', self.addon_id, exc)
 
+    def stream_send(self, req_id: str, frame: dict) -> None:
+        """Write a follow-up frame into an in-flight request (streaming input,
+        e.g. `asr.audio` / `asr.stop`). `frame` must already carry `req_id`.
+        No-op if the request has already retired."""
+        with self._requests_lock:
+            if req_id not in self._requests:
+                return
+        self._last_activity = time.monotonic()
+        try:
+            self._write_frame(frame)
+        except Exception as exc:
+            log.warning('AddonProcess[%s]: stream_send failed for %s: %s',
+                        self.addon_id, req_id, exc)
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

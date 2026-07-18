@@ -1,11 +1,12 @@
 import hashlib
 import os
+import time
 from bisect import bisect
 import numpy as np
 import subprocess
 
 from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QFontMetrics, QPixmap, QCursor, QBrush
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
 from PySide6.QtCore import Qt, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import session
@@ -39,6 +40,17 @@ class TimelineScroll(QScrollArea):
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()
             if delta != 0:
+                # Pivot the zoom on the MOUSE cursor: the timeline point under
+                # the pointer stays fixed on screen while everything scales
+                # around it. `event.position().x()` is in TimelineScroll
+                # viewport coords — the same space _apply_zoom_geometry works
+                # in. Captured now (before the zoom applies) and consumed
+                # there; cleared by the zoom buttons so those keep pivoting
+                # on the playhead.
+                try:
+                    widget.window()._zoom_mouse_pivot_x = float(event.position().x())
+                except Exception:
+                    widget.window()._zoom_mouse_pivot_x = None
                 # Multiplicative step: each notch (≈120 units) scales zoom by
                 # ~12%. Feels linear across the 10 → 490 range, where a fixed
                 # additive step is too coarse at low zoom and too fine at high.
@@ -353,6 +365,115 @@ class WaveformManager:
 
 DUB_PEAKS_SAMPLERATE = 8000
 
+# Onset detection runs at a lower rate than the waveform-display
+# pipeline — 16 kHz is plenty for the spectral-flux bands that fire on
+# plosives/sibilants, and halves the FFT work vs. 48 kHz. Used by both
+# the main-audio onset thread and the per-dub worker.
+ONSET_DETECTION_SAMPLERATE = 16000
+
+
+class OnsetDetectionThread(QThread):
+    """Runs the spectral-flux onset detector on an already-decoded
+    sample buffer (the main video's mono audio that the waveform pass
+    just produced). Emits a numpy array of onset times in seconds."""
+    finished = Signal(object)  # np.ndarray[float32]
+
+    def __init__(self, samples, samplerate, parent=None):
+        super().__init__(parent)
+        self.samples = samples
+        self.samplerate = int(samplerate)
+        self._cancelled = False
+
+    def run(self):
+        try:
+            from subtitld.modules.onset_detection import detect_onsets
+            samples = self.samples
+            # Downsample to ONSET_DETECTION_SAMPLERATE if needed — cheap
+            # decimation (no anti-alias filter) is fine for the
+            # broadband-burst detector; we don't care about precise
+            # spectral content above the new Nyquist.
+            if (samples is not None and self.samplerate > ONSET_DETECTION_SAMPLERATE
+                    and self.samplerate % ONSET_DETECTION_SAMPLERATE == 0):
+                step = self.samplerate // ONSET_DETECTION_SAMPLERATE
+                samples = samples[::step]
+                sr = ONSET_DETECTION_SAMPLERATE
+            else:
+                sr = self.samplerate
+            onsets = detect_onsets(samples, sr)
+            if not self._cancelled:
+                self.finished.emit(onsets)
+        except Exception:
+            pass
+
+    def cancel(self):
+        self._cancelled = True
+
+
+def _detect_onsets_via_ffmpeg(path):
+    """Decode `path` to mono float32 PCM at ONSET_DETECTION_SAMPLERATE
+    via ffmpeg, then run the detector. Returns onset times (seconds) or
+    None on any failure. Shared by DubOnsetsWorker (per-dub) and
+    BackgroundOnsetsFromFileWorker (vocals track)."""
+    cmd = [
+        session.FFMPEG_EXECUTABLE,
+        "-v", "error",
+        "-i", path,
+        "-ac", "1",
+        "-ar", str(ONSET_DETECTION_SAMPLERATE),
+        "-f", "f32le", "-",
+    ]
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        startupinfo=session.STARTUPINFO,
+    )
+    stdout, _ = proc.communicate()
+    if proc.returncode not in (0, None):
+        return None
+    samples = np.frombuffer(stdout, dtype=np.float32).copy()
+    if samples.size == 0:
+        return None
+    from subtitld.modules.onset_detection import detect_onsets
+    return detect_onsets(samples, ONSET_DETECTION_SAMPLERATE)
+
+
+class DubOnsetsWorker(QThread):
+    """Per-dub-file onset extractor. Decodes the dub WAV via ffmpeg at
+    ONSET_DETECTION_SAMPLERATE, runs the detector, emits onset times in
+    seconds (relative to the dub file)."""
+    finished = Signal(str, object)  # path, np.ndarray[float32]
+
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        self.path = path
+
+    def run(self):
+        try:
+            onsets = _detect_onsets_via_ffmpeg(self.path)
+            if onsets is not None:
+                self.finished.emit(self.path, onsets)
+        except Exception:
+            pass
+
+
+class BackgroundOnsetsFromFileWorker(QThread):
+    """Background-pass onset extractor that reads from a file path —
+    used when the vocals-separated track is available (preferred over
+    the full mix, since music transients otherwise crowd out speech
+    plosives in the spectral-flux output)."""
+    finished = Signal(object)  # np.ndarray[float32]
+
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        self.path = path
+
+    def run(self):
+        try:
+            onsets = _detect_onsets_via_ffmpeg(self.path)
+            if onsets is not None:
+                self.finished.emit(onsets)
+        except Exception:
+            pass
+
 
 class DubPeaksWorker(QThread):
     """Loads a small dub WAV via ffmpeg and computes min/max peaks + duration."""
@@ -463,6 +584,20 @@ class Timeline(QWidget):
         widget.show_tug_of_war = False
         widget.tug_of_war_pressed = False
         widget.is_cursor_pressing = False
+        # Wall-clock timestamp (perf_counter seconds) of the last
+        # drag-induced seek + full-widget repaint emitted from
+        # mouseMoveEvent. While playback is running we throttle that
+        # work to ~30 Hz: each mouse move would otherwise emit a
+        # QMediaPlayer setPosition() + a SoundDeviceAudioEngine.seek()
+        # AND schedule a full-widget paint, all on the main thread.
+        # Mouse moves fire at the display refresh rate (60-120 Hz on
+        # most Linux setups), so during a drag-while-playing the GIL
+        # stays held long enough for the audio callback to miss its
+        # window — playback hangs/stutters. Throttling halves the
+        # work; the 60 Hz playhead-strip timer in playercontrols still
+        # provides the smooth cursor animation, so the user doesn't
+        # perceive the drag itself as laggy.
+        widget._drag_throttle_last_t = 0.0
         widget.is_smart_splicing = False
         widget.subtitle_under_the_cursor = False
         widget.show_speaker_color = session.CONFIG['timeline'].get('show_speaker_color', False)
@@ -479,6 +614,27 @@ class Timeline(QWidget):
 
         widget.dub_peaks = {}     # path -> (mins, maxs, duration)
         widget.dub_workers = {}   # path -> DubPeaksWorker
+
+        # Onset markers (visual aid for dub sync — see
+        # `subtitld.modules.onset_detection`). `background_onsets` is
+        # the array of onset times (seconds) detected in the main video
+        # audio; `dub_onsets` mirrors `dub_peaks` per-file. Both can be
+        # None / missing while their workers run — paint just skips.
+        widget.background_onsets = None  # np.ndarray[float32] | None
+        widget.background_onset_thread = None
+        widget.dub_onsets = {}    # path -> np.ndarray[float32]
+        widget.dub_onset_workers = {}  # path -> DubOnsetsWorker
+        # A single selected dub-clip onset mark (plosive). Clicking a mark
+        # selects it (replacing any prior selection — only one at a time).
+        # When a mark is selected and the user stretches that clip, the
+        # stretch pivots around the mark's timeline position instead of
+        # anchoring at the clip's left edge (see _apply_subclip_stretch).
+        #   {'subtitle', 'seg_path', 'source_time'} | None
+        # `source_time` is the onset time in the dub file's own seconds,
+        # which survives re-render (it scales with the file, tracked in
+        # _apply_subclip_stretch), unlike a timeline x that shifts on any
+        # edit. The subtitle ref lets us find the clip on redraw.
+        widget.selected_onset = None
         # Cache the constructed waveform QPainterPath per
         # (dub_path, rounded_width, rounded_height). Building one path is
         # ~800 Python→Qt lineTo() calls per dub; rebuilding 30 visible
@@ -693,6 +849,56 @@ class Timeline(QWidget):
                         painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('waveform_fill_color', '#cc153450')))
                         painter.drawPath(path)
 
+        # Onset markers (consonant-onset visual aid — see
+        # `subtitld.modules.onset_detection`). Drawn AFTER the main
+        # waveform so they read against it, but BEFORE the speaker
+        # tracks / subtitles / dubs so the subtitle rect covers them.
+        #
+        # Suppressed during playback. The markers are a precision
+        # alignment aid (pause + nudge dubs against plosives) — they
+        # have no informational value while the playhead is moving.
+        # Drawing them costs one QPointF allocation per visible
+        # background onset + one QLineF per visible dub-onset; with
+        # 60 s of speech in view that's ~600 + ~600 PyObject
+        # allocations per paintEvent, all on the main thread. At 30 Hz
+        # playhead refresh + ad-hoc scroll repaints, the GIL is held
+        # long enough that the sounddevice callback misses its window
+        # and audio cuts. Honoring the toggle the moment playback
+        # stops feels instant to the user; the cost is zero when paused.
+        _is_playing = False
+        try:
+            _is_playing = not widget.window().preview_panel_player.is_paused()
+        except Exception:
+            pass
+        show_onset_markers = (
+            not _is_playing
+            and bool(session.CONFIG.get('timeline', {}).get('show_onset_markers', False))
+        )
+        if (show_onset_markers
+                and widget.background_onsets is not None
+                and len(widget.background_onsets) > 0
+                and widget.width_proportion > 0):
+            try:
+                onsets = widget.background_onsets
+                wpp = widget.width_proportion
+                pm = widget._onset_marker_pixmap()
+                pm_w = pm.width()
+                # Cull to dirty rect. Each marker tail can leak `pm_w`
+                # px to the right of its line, so widen the left search
+                # to include onsets whose tail crosses into view.
+                t_left = (iter_left - pm_w) / wpp
+                t_right = iter_right / wpp
+                lo = int(np.searchsorted(onsets, t_left, side='left'))
+                hi = int(np.searchsorted(onsets, t_right, side='right'))
+                for i in range(lo, hi):
+                    painter.drawPixmap(QPointF(float(onsets[i]) * wpp, 0.0), pm)
+            except Exception:
+                # Never let onset overlay take down the paint event —
+                # log once and continue so the rest of the timeline
+                # still renders.
+                import traceback, sys
+                traceback.print_exc(file=sys.stderr)
+
         if widget.show_speaker_tracks and widget.show_speaker_color:
             for i, speaker in enumerate(list(session.SPEAKERS.keys())):
                 track_height = widget.subtitle_height / len(list(session.SPEAKERS.keys()))
@@ -882,8 +1088,6 @@ class Timeline(QWidget):
                                 painter.restore()
                         if peaks is not None:
                             mins, maxs, duration = peaks
-                            dub_start = dub.get('start', subtitle['start'])
-                            dub_x = dub_start * widget.width_proportion
                             # Independent-subclip model: the dub band is the
                             # bounding box of all subclips, but each subclip
                             # draws its OWN rounded rect inside the band so
@@ -926,7 +1130,7 @@ class Timeline(QWidget):
                                 # lock-badge / stretch-handle layout and for
                                 # clipping the waveform paint. Anchor it at
                                 # `extent_lo` (the actual leftmost subclip)
-                                # rather than `dub_x` (= `dub['start']`),
+                                # rather than the dub origin (`dub['start']`),
                                 # otherwise subclips offset rightward or
                                 # leftward from the dub origin end up
                                 # outside `dub_inset` and the `setClipRect`
@@ -975,24 +1179,44 @@ class Timeline(QWidget):
                                     and widget.dub_stretching['subtitle'] is subtitle
                                     and len(segment_ranges) == 1
                                 )
-                                # Per-subclip stretch preview lookup — applies
-                                # to multi-subclip dubs and overrides the
-                                # legacy single-subclip preview when this
-                                # specific subclip is the one being dragged.
-                                def _subclip_stretch_width(sub_idx, default_sx1, sx0):
+                                # Live stretch-preview geometry for a subclip.
+                                # Returns the (left, right) screen x to draw
+                                # during a drag. Right edge follows the cursor
+                                # (`current_width` from the ORIGINAL left).
+                                # When a plosive mark is the pivot, the LEFT
+                                # edge also moves so the clip scales about the
+                                # pivot (mark stays put) — matching what
+                                # `_apply_subclip_stretch` commits on release.
+                                # No active drag on this subclip → unchanged.
+                                def _stretch_preview_edges(sub_idx, sx0_default, sx1_default):
                                     drag = widget.dub_subclip_drag
+                                    st = None
                                     if (drag is not None
-                                            and drag['dub'] is dub
-                                            and drag['segment_index'] == sub_idx
+                                            and drag.get('dub') is dub
+                                            and drag.get('segment_index') == sub_idx
                                             and drag.get('mode') == 'stretch'):
-                                        return sx0 + drag['current_width']
-                                    if stretch_active_here and sub_idx == 0:
-                                        return sx0 + widget.dub_stretching['current_width']
-                                    return default_sx1
+                                        st = drag
+                                    elif stretch_active_here and sub_idx == 0:
+                                        st = widget.dub_stretching
+                                    if st is None:
+                                        return sx0_default, sx1_default
+                                    new_right = sx0_default + st['current_width']
+                                    pivot_x = st.get('pivot_x')
+                                    if pivot_x is None:
+                                        return sx0_default, new_right
+                                    denom = sx1_default - pivot_x
+                                    if abs(denom) < 1e-6:
+                                        return sx0_default, new_right
+                                    ratio = (new_right - pivot_x) / denom
+                                    if ratio <= 0:
+                                        return sx0_default, new_right
+                                    new_left = pivot_x + (sx0_default - pivot_x) * ratio
+                                    return new_left, new_right
                                 for sub_idx, (seg_t0, seg_t1, seg) in enumerate(segment_ranges):
-                                    sx0 = seg_t0 * widget.width_proportion
-                                    sx1 = _subclip_stretch_width(
-                                        sub_idx, seg_t1 * widget.width_proportion, sx0,
+                                    sx0, sx1 = _stretch_preview_edges(
+                                        sub_idx,
+                                        seg_t0 * widget.width_proportion,
+                                        seg_t1 * widget.width_proportion,
                                     )
                                     sw = max(0.0, sx1 - sx0)
                                     if sw < 1:
@@ -1098,20 +1322,27 @@ class Timeline(QWidget):
                                         painter.setPen(Qt.NoPen)
 
                                 # Lock badge — anchors the clip to the subtitle.
+                                # Padlock sits at the clip's VISIBLE left edge
+                                # (`dub_inset_left` = extent_lo), not the dub
+                                # origin (`dub_x` = dub['start']). For a clip
+                                # cropped at the start the two diverge, and
+                                # anchoring at the origin left the padlock
+                                # floating away from the clip it locks.
                                 clip_locked = bool(dub.get('locked'))
                                 lock_hovered = (widget.dub_lock_hovered == id(subtitle))
                                 if clip_locked or lock_hovered:
                                     badge_h = 14.0
                                     badge_r = badge_h / 2.0
-                                    if dub_x < subtitle_start_x:
-                                        circle_x = dub_x
+                                    clip_left_x = dub_inset_left
+                                    if clip_left_x < subtitle_start_x:
+                                        circle_x = clip_left_x
                                         extent_to = subtitle_start_x
-                                    elif dub_x > subtitle_end_x:
+                                    elif clip_left_x > subtitle_end_x:
                                         circle_x = subtitle_end_x
-                                        extent_to = dub_x
+                                        extent_to = clip_left_x
                                     else:
-                                        circle_x = dub_x
-                                        extent_to = dub_x
+                                        circle_x = clip_left_x
+                                        extent_to = clip_left_x
                                     badge_left = min(circle_x, extent_to) - badge_r
                                     badge_right = max(circle_x, extent_to) + badge_r
                                     badge_cy = dub_inset.bottom()
@@ -1158,7 +1389,14 @@ class Timeline(QWidget):
                                     )
                                     for sub_idx, (seg_t0, seg_t1, seg) in enumerate(segment_ranges):
                                         # Per-subclip width (with live drag override).
-                                        sub_sx0 = seg_t0 * widget.width_proportion
+                                        # Use the shared pivot-aware edges so the
+                                        # handle/ratio track the same rect the body
+                                        # loop draws (left edge shifts on a pivot).
+                                        sub_sx0, sub_sx1 = _stretch_preview_edges(
+                                            sub_idx,
+                                            seg_t0 * widget.width_proportion,
+                                            seg_t1 * widget.width_proportion,
+                                        )
                                         active_stretch_state = None
                                         if (widget.dub_subclip_drag
                                                 and widget.dub_subclip_drag['dub'] is dub
@@ -1167,10 +1405,6 @@ class Timeline(QWidget):
                                             active_stretch_state = widget.dub_subclip_drag
                                         elif n_subs == 1 and stretch_active_here:
                                             active_stretch_state = widget.dub_stretching
-                                        if active_stretch_state is not None:
-                                            sub_sx1 = sub_sx0 + active_stretch_state['current_width']
-                                        else:
-                                            sub_sx1 = seg_t1 * widget.width_proportion
                                         sub_w_px = sub_sx1 - sub_sx0
                                         # Need at least ~30px to fit the bars+text legibly.
                                         if sub_w_px < 30:
@@ -1253,15 +1487,16 @@ class Timeline(QWidget):
                                     # the file durations differ).
                                     cache_h = round(dub_inset.height())
                                     for sub_idx, (seg_t0, seg_t1, seg) in enumerate(segment_ranges):
-                                        sx0 = seg_t0 * widget.width_proportion
                                         # Same stretch-preview override as
                                         # the rect-paint loop above: the
-                                        # waveform has to widen with the
-                                        # rect while the user drags, or the
-                                        # peaks visibly lag behind the
-                                        # cursor.
-                                        sx1 = _subclip_stretch_width(
-                                            sub_idx, seg_t1 * widget.width_proportion, sx0,
+                                        # waveform has to move/widen with the
+                                        # rect while the user drags (incl. the
+                                        # pivot left-shift), or the peaks
+                                        # visibly lag behind the cursor.
+                                        sx0, sx1 = _stretch_preview_edges(
+                                            sub_idx,
+                                            seg_t0 * widget.width_proportion,
+                                            seg_t1 * widget.width_proportion,
                                         )
                                         sw_px = max(0.0, sx1 - sx0)
                                         if sw_px < 1:
@@ -1280,6 +1515,7 @@ class Timeline(QWidget):
                                             # subclip is visible.
                                             if seg_path:
                                                 widget._request_dub_peaks(seg_path)
+                                                widget._request_dub_onsets(seg_path)
                                             continue
                                         seg_mins, seg_maxs, seg_duration = seg_peaks
                                         seg_count = len(seg_mins)
@@ -1317,6 +1553,70 @@ class Timeline(QWidget):
                                         painter.translate(sx0, center)
                                         painter.drawPath(wf)
                                         painter.translate(-sx0, -center)
+
+                                        # Onset markers spanning the
+                                        # whole timeline height (so the
+                                        # user can sight-align dub edges
+                                        # to the underlying video) —
+                                        # line only, colored to match
+                                        # the dub band. The dub waveform
+                                        # `setClipRect(dub_inset)` would
+                                        # crop them to the band, so we
+                                        # disable clipping briefly. Same
+                                        # source-coord → timeline
+                                        # mapping as the waveform path:
+                                        # the segment plays [src_start,
+                                        # src_end] of its file, spread
+                                        # over sw_px on screen.
+                                        if show_onset_markers:
+                                            try:
+                                                seg_onsets = widget.dub_onsets.get(seg_path)
+                                                if seg_onsets is None:
+                                                    if seg_path:
+                                                        widget._request_dub_onsets(seg_path)
+                                                elif len(seg_onsets) > 0 and src_end > src_start:
+                                                    lo_o = int(np.searchsorted(seg_onsets, src_start, side='left'))
+                                                    hi_o = int(np.searchsorted(seg_onsets, src_end, side='right'))
+                                                    if hi_o > lo_o:
+                                                        onset_pen_color = QColor(speaker_color_str or '#1a73a8')
+                                                        onset_pen_color.setAlpha(128)
+                                                        normal_pen = QPen(onset_pen_color, 1)
+                                                        # Selected mark (pivot) — amber, thicker,
+                                                        # with a triangle handle at the top so it
+                                                        # reads as "grabbed".
+                                                        sel = widget.selected_onset
+                                                        sel_src = (float(sel['source_time'])
+                                                                   if sel and sel.get('seg_path') == seg_path
+                                                                   and sel.get('subtitle') is subtitle
+                                                                   else None)
+                                                        sel_color = QColor('#ffd24a')
+                                                        sel_pen = QPen(sel_color, 2)
+                                                        painter.save()
+                                                        try:
+                                                            painter.setClipping(False)
+                                                            y_top = 0.0
+                                                            y_bot = float(widget.height())
+                                                            scale_x = sw_px / (src_end - src_start)
+                                                            for j in range(lo_o, hi_o):
+                                                                src_t = float(seg_onsets[j])
+                                                                ox = sx0 + (src_t - src_start) * scale_x
+                                                                if sel_src is not None and abs(src_t - sel_src) < 1e-4:
+                                                                    painter.setPen(sel_pen)
+                                                                    painter.drawLine(QLineF(ox, y_top, ox, y_bot))
+                                                                    tri = QPainterPath()
+                                                                    tri.moveTo(ox - 4, y_top)
+                                                                    tri.lineTo(ox + 4, y_top)
+                                                                    tri.lineTo(ox, y_top + 6)
+                                                                    tri.closeSubpath()
+                                                                    painter.fillPath(tri, sel_color)
+                                                                else:
+                                                                    painter.setPen(normal_pen)
+                                                                    painter.drawLine(QLineF(ox, y_top, ox, y_bot))
+                                                        finally:
+                                                            painter.restore()
+                                            except Exception:
+                                                import traceback, sys
+                                                traceback.print_exc(file=sys.stderr)
                                 painter.restore()
 
                 if widget.show_speaker_color and speaker_color_str:
@@ -1625,32 +1925,73 @@ class Timeline(QWidget):
         if stretch_hit is not None:
             from subtitld.modules import history, dub_clip
             dub = stretch_hit['dub']
+            seg_idx = stretch_hit['segment_index']
             n_subs = len(list(dub_clip.iter_segment_ranges(dub)))
+            # If a plosive mark on this subclip is selected, the stretch
+            # pivots around it (whole clip scales about the mark) instead
+            # of anchoring at the left edge. `pivot_x` is its screen x —
+            # the drag preview and release math both read it.
+            pivot_timeline = widget._selected_onset_pivot(dub, seg_idx)
+            pivot_x = (pivot_timeline * widget.width_proportion
+                       if pivot_timeline is not None else None)
             history.history_append()
             if n_subs > 1:
                 # ffmpeg-only path (post-split subclips).
                 widget.dub_subclip_drag = {
                     'subtitle': stretch_hit['subtitle'],
                     'dub': dub,
-                    'segment_index': stretch_hit['segment_index'],
+                    'segment_index': seg_idx,
                     'mode': 'stretch',
                     'original_width': stretch_hit['current_width'],
                     'current_width': stretch_hit['current_width'],
                     'start_x': event.pos().x(),
+                    'pivot_timeline': pivot_timeline,
+                    'pivot_x': pivot_x,
                 }
             else:
-                # Legacy single-clip path → provider.stretch on release.
+                # Legacy single-clip path → provider.stretch on release,
+                # UNLESS a pivot is set — pivot stretches always go through
+                # the ffmpeg subclip path (which can move the left edge to
+                # keep the pivot fixed; provider re-synthesis can't).
                 widget.dub_stretching = {
                     'subtitle': stretch_hit['subtitle'],
                     'dub': dub,
+                    'segment_index': seg_idx,
                     'start_x': event.pos().x(),
                     'original_width': stretch_hit['current_width'],
                     'current_width': stretch_hit['current_width'],
+                    'pivot_timeline': pivot_timeline,
+                    'pivot_x': pivot_x,
                 }
                 widget.dub_stretch_active = True
             widget.is_cursor_pressing = True
             event.accept()
             return
+
+        # Plosive-mark selection — a discrete click on a dub-clip onset
+        # mark selects it (one at a time). Runs after the stretch-handle
+        # check (so the handle still wins) but BEFORE the subclip body /
+        # move handlers, so clicking a mark selects it rather than
+        # starting a clip drag. Only active while the overlay is visible.
+        if bool(session.CONFIG.get('timeline', {}).get('show_onset_markers', False)):
+            onset_hit = widget._dub_onset_at_position(event.pos())
+            if onset_hit is not None:
+                widget.selected_onset = {
+                    'subtitle': onset_hit['subtitle'],
+                    'seg_path': onset_hit['seg_path'],
+                    'source_time': onset_hit['source_time'],
+                }
+                widget.is_cursor_pressing = False
+                widget.update()
+                event.accept()
+                return
+            elif widget.selected_onset is not None:
+                # Clicked away from any mark → deselect, then fall through
+                # so the click still does its normal thing (move clip,
+                # select subtitle, seek…). Grabbing the stretch handle
+                # keeps the selection — that branch already returned above.
+                widget.selected_onset = None
+                widget.update()
 
         # Subclip edge / body interactions — run BEFORE the dub-stretch
         # and full-dub drag handlers so a click inside a subclip's
@@ -1890,10 +2231,18 @@ class Timeline(QWidget):
                 original_w = float(drag.get('original_width', 0.0))
                 current_w = float(drag.get('current_width', original_w))
                 if original_w > 0 and current_w > 0 and abs(current_w - original_w) > 2.0:
-                    ratio = current_w / original_w  # new_dur / old_dur
-                    widget._apply_subclip_stretch(
-                        drag['dub'], drag['segment_index'], ratio,
+                    ratio, pivot = widget._stretch_ratio_and_pivot(
+                        drag['dub'], drag['segment_index'],
+                        original_w, current_w, drag.get('pivot_timeline'),
                     )
+                    if ratio and ratio > 0:
+                        widget._apply_subclip_stretch(
+                            drag['dub'], drag['segment_index'], ratio,
+                            pivot_timeline=pivot,
+                        )
+                # The clip's file re-rendered (new path + shifted onset
+                # times), so a mark selection no longer maps to it — drop it.
+                widget.selected_onset = None
             session.set_unsaved()
             widget._refresh_dub_after_edit()
             event.accept()
@@ -1906,7 +2255,31 @@ class Timeline(QWidget):
             subtitle = state['subtitle']
             original_w = state['original_width']
             current_w = state['current_width']
+            pivot_timeline = state.get('pivot_timeline')
             regenerated = False
+            if (pivot_timeline is not None
+                    and original_w > 0 and current_w > 0
+                    and abs(current_w - original_w) > 2.0):
+                # Pivot stretch — always via the ffmpeg subclip path, even
+                # for a single un-split clip: only it can move the left
+                # edge to keep the mark fixed (provider re-synthesis just
+                # re-renders at a new rate, it can't reposition the clip).
+                seg_idx = state.get('segment_index', 0)
+                ratio, pivot = widget._stretch_ratio_and_pivot(
+                    state['dub'], seg_idx, original_w, current_w, pivot_timeline,
+                )
+                if ratio and ratio > 0:
+                    widget._apply_subclip_stretch(
+                        state['dub'], seg_idx, ratio, pivot_timeline=pivot,
+                    )
+                    session.set_unsaved()
+                    widget._refresh_dub_after_edit()
+                    regenerated = True
+                widget.selected_onset = None
+                widget.dub_stretching = None
+                widget.update()
+                event.accept()
+                return
             if original_w > 0 and current_w > 0 and abs(current_w - original_w) > 2.0:
                 ratio = original_w / current_w
                 # Route to the provider that produced the existing dub —
@@ -2101,8 +2474,14 @@ class Timeline(QWidget):
             return
 
         if widget.dub_start_is_clicked and widget.dragging_dub is not None:
+            # No clamp: a dub may be dragged past both ends of the timeline
+            # (start < 0, or beyond the media duration). The model and audio
+            # engine already tolerate out-of-bounds positions — this matches
+            # the multi-subclip drag path (`move_subclip`), which never
+            # clamped. The part outside [0, duration] is simply clipped by
+            # the timeline viewport when drawn.
             new_start = (event.pos().x() - widget.dragging_dub_offset) / widget.width_proportion
-            widget.dragging_dub['start'] = max(0.0, new_start)
+            widget.dragging_dub['start'] = new_start
             widget.update()
             return
 
@@ -2228,7 +2607,7 @@ class Timeline(QWidget):
                     elif isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'split' and (widget.is_smart_splicing['boundaries'][0] <= event.pos().x() <= widget.is_smart_splicing['boundaries'][1]):
                         widget.is_smart_splicing['position'] = event.pos().x()
 
-        if session.SUBTITLE.get('selected', None) is not None:
+        if session.SUBTITLE.get('selected', None) is not None and session.SUBTITLE['selected'] in session.SUBTITLE['segments']:
             i = session.SUBTITLE['segments'].index(session.SUBTITLE['selected'])
             last = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) - 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) > 0 else {'start': 0, 'end': 0, 'text': ''}
             nextsub = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) + 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) < len(session.SUBTITLE['segments']) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
@@ -2308,11 +2687,35 @@ class Timeline(QWidget):
                     subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=start_position)
 
 
-        if widget.is_cursor_pressing and not (widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked or widget.subtitle_is_clicked):
+        # Throttle the heavy "drag while playing" branch to ~30 Hz.
+        # Mouse moves fire at the display refresh rate; without a gate,
+        # each one fires QMediaPlayer.setPosition() + audio-engine
+        # seek() + a full-widget repaint, holding the GIL long enough
+        # that the sounddevice callback misses its window and audio
+        # hangs. Paused → no gate (full responsiveness); playing → gate.
+        is_paused = widget.window().preview_panel_player.is_paused()
+        should_throttle = (not is_paused) and widget.is_cursor_pressing
+        emit_drag_work = True
+        if should_throttle:
+            now_t = time.perf_counter()
+            if now_t - widget._drag_throttle_last_t < 0.033:  # ~30 Hz
+                emit_drag_work = False
+            else:
+                widget._drag_throttle_last_t = now_t
+
+        if (widget.is_cursor_pressing and emit_drag_work
+                and not (widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked or widget.subtitle_is_clicked)):
             session.SUBTITLE['position'] = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
             widget.seek.emit(session.SUBTITLE.get('position', 0))
 
-        if widget.window().preview_panel_player.is_paused():
+        # Repaint on every move when the user is actively dragging
+        # (edges, body, playhead — anything that sets is_cursor_pressing),
+        # otherwise the drag lags behind the cursor during playback because
+        # the only repaint is the 4Hz throttled timer in playercontrols.
+        # When idle (no press) during playback we still defer to that
+        # timer; the hover-state branches above already call update() on
+        # state changes, so the cursor/hover visuals stay correct.
+        if is_paused or (widget.is_cursor_pressing and emit_drag_work):
             widget.update()
 
     def mouseDoubleClickEvent(widget, event):
@@ -2333,27 +2736,126 @@ class Timeline(QWidget):
         filepath = session.VIDEO.get("filepath")
         if not filepath:
             return
-        
+
         # Update waveform manager filepath for cache key
         widget.waveform_manager.filepath = filepath
-        
+
         # Try to load everything from cache (samples + levels)
         if widget.waveform_manager._load_from_cache():
             # Cache hit - start worker for base zoom level if needed
             widget.waveform_manager._start_worker_if_missing(512)
+            # Onset markers ride alongside the waveform cache: load from
+            # disk if present, otherwise kick off the background detector
+            # on the now-loaded samples.
+            widget._load_or_compute_background_onsets()
             QTimer.singleShot(100, lambda: widget.update())
             return
-        
+
         # Cache miss - load audio from file
         widget.audio_thread.filepath = filepath
         widget.audio_thread.start()
-    
+
     def on_waveform_loaded(widget, samples, samplerate):
         session.VIDEO["samplerate"] = samplerate
         widget.waveform_manager.set_samples(samples)
         # Save samples to cache (levels will be saved as workers complete)
         widget.waveform_manager._save_to_cache()
+        widget._load_or_compute_background_onsets()
         QTimer.singleShot(1000, lambda: widget.update())
+
+    def _background_onsets_cache_path(widget, source='mix'):
+        """Cache file for the main-audio onset times. `source` is 'mix'
+        (full audio) or 'vocals' — kept as separate files so vocals
+        detection (the preferred path once separation has run) can be
+        stored alongside an existing mix cache without overwriting.
+        Shares the same cache key as the waveform pipeline so the
+        cache invalidates whenever the waveform one does."""
+        cache_dir = widget.waveform_manager.cache_dir
+        if not cache_dir or not widget.waveform_manager.filepath:
+            return None
+        cache_key = utils.get_cache_key(widget.waveform_manager.filepath)
+        if not cache_key:
+            return None
+        suffix = '_onsets_vocals' if source == 'vocals' else '_onsets'
+        return os.path.join(cache_dir, f"{cache_key}{suffix}.npy")
+
+    def _vocals_source_path(widget):
+        """Return the cached vocals FLAC path for the current video, or
+        None if separation hasn't produced one yet. Plosives stand out
+        far more on the vocals-only track than on the full mix, so the
+        background-onset pass switches over the moment it's available."""
+        try:
+            from subtitld.modules import bounce
+            return bounce._vocals_audio_path()
+        except Exception:
+            return None
+
+    def _load_or_compute_background_onsets(widget):
+        # Prefer vocals when available. Both caches live alongside each
+        # other, so we read whichever matches the source we're about to
+        # use. If a vocals cache exists, that overrides the mix cache
+        # even if the latter was populated earlier.
+        vocals_path = widget._vocals_source_path()
+        if vocals_path:
+            cache_file = widget._background_onsets_cache_path(source='vocals')
+            if cache_file and os.path.exists(cache_file):
+                try:
+                    widget.background_onsets = np.load(cache_file).astype(np.float32)
+                    return
+                except Exception:
+                    pass
+            prev = widget.background_onset_thread
+            if prev is not None and prev.isRunning():
+                if hasattr(prev, 'cancel'):
+                    prev.cancel()
+            thread = BackgroundOnsetsFromFileWorker(vocals_path, parent=widget)
+            thread.finished.connect(lambda o: widget._on_background_onsets_ready(o, source='vocals'))
+            widget.background_onset_thread = thread
+            thread.start()
+            return
+
+        # No vocals yet — use the full-mix samples already in memory.
+        cache_file = widget._background_onsets_cache_path(source='mix')
+        if cache_file and os.path.exists(cache_file):
+            try:
+                widget.background_onsets = np.load(cache_file).astype(np.float32)
+                return
+            except Exception:
+                pass
+        samples = widget.waveform_manager.samples
+        sr = session.VIDEO.get('samplerate', 48000)
+        if samples is None or getattr(samples, 'size', 0) == 0:
+            return
+        if getattr(samples, 'dtype', None) == np.int16:
+            samples_f = samples.astype(np.float32) / 32768.0
+        else:
+            samples_f = samples
+        prev = widget.background_onset_thread
+        if prev is not None and prev.isRunning():
+            if hasattr(prev, 'cancel'):
+                prev.cancel()
+        thread = OnsetDetectionThread(samples_f, sr, parent=widget)
+        thread.finished.connect(lambda o: widget._on_background_onsets_ready(o, source='mix'))
+        widget.background_onset_thread = thread
+        thread.start()
+
+    def _on_background_onsets_ready(widget, onsets, source='mix'):
+        widget.background_onsets = onsets
+        cache_file = widget._background_onsets_cache_path(source=source)
+        if cache_file is not None:
+            try:
+                np.save(cache_file, onsets)
+            except Exception:
+                pass
+        widget.update()
+
+    def on_vocals_separation_ready(widget):
+        """Called by playercontrols when the vocals-separated track
+        becomes available (either via the fast-path cache hit on reopen
+        or after live separation finishes). Re-runs the background-onset
+        pass against vocals so plosives stop competing with music
+        transients in the spectral-flux output."""
+        widget._load_or_compute_background_onsets()
 
     def _dub_hit_at_position(widget, pos, handle_only=False, edge=None):
         """Return (subtitle, dub) if pos is over a dub clip.
@@ -2368,16 +2870,43 @@ class Timeline(QWidget):
             if not subtitle.get('dubbing'):
                 continue
             dub = subtitle['dubbing'][0]
-            dub_path = dub.get('path')
-            if not dub_path:
-                continue
-            peaks = widget.dub_peaks.get(dub_path)
-            if peaks is None:
-                continue
-            _, _, duration = peaks
 
-            dub_x = dub.get('start', subtitle['start']) * widget.width_proportion
-            dub_w = duration * widget.width_proportion
+            # On-screen rect must come from the dub's TIMELINE extent, not
+            # the raw file duration. A stretched or left-cropped subclip
+            # plays [start, end] of its file placed at `offset`, so its
+            # visible width is `end - start` and its left edge sits at
+            # `dub['start'] + offset` — NOT `dub['start']` + raw-file
+            # length. Using the raw duration (from dub_peaks) + bare
+            # `dub['start']` produced a hit rect that didn't match what
+            # the user sees, so clicks fell through to whichever other
+            # dub's (equally wrong) rect happened to cover that x — the
+            # "wrong / last clip gets moved" bug.
+            base = float(dub.get('start', subtitle.get('start', 0.0)))
+            segments = dub.get('segments')
+            lo = hi = None
+            if segments:
+                for seg in segments:
+                    if seg.get('type', 'audio') != 'audio':
+                        continue
+                    seg_end = seg.get('end')
+                    if seg_end is None:
+                        continue
+                    seg_t0 = base + float(seg.get('offset', 0.0))
+                    seg_t1 = seg_t0 + (float(seg_end) - float(seg.get('start', 0.0)))
+                    lo = seg_t0 if lo is None or seg_t0 < lo else lo
+                    hi = seg_t1 if hi is None or seg_t1 > hi else hi
+            if lo is None:
+                # Legacy dub (no segments yet) — fall back to the cached
+                # raw-file duration from dub_peaks. Correct here because an
+                # un-edited dub has offset 0 and plays its whole file.
+                dub_path = dub.get('path')
+                peaks = widget.dub_peaks.get(dub_path) if dub_path else None
+                if peaks is None:
+                    continue
+                lo, hi = base, base + peaks[2]
+
+            dub_x = lo * widget.width_proportion
+            dub_w = (hi - lo) * widget.width_proportion
 
             if edge == 'start':
                 hit_left = dub_x
@@ -2533,6 +3062,88 @@ class Timeline(QWidget):
                 }
         return None
 
+    def _onset_timeline_pos(widget, seg_t0, seg_source_start, source_time):
+        """Timeline seconds of a dub onset. A subclip maps its source
+        region [start, end] 1:1 onto its timeline span (the playback rate
+        is baked into the file), so an onset at `source_time` in the file
+        lands at ``seg_t0 + (source_time - seg_source_start)``."""
+        return seg_t0 + (source_time - seg_source_start)
+
+    def _dub_onset_at_position(widget, pos, threshold_px=5):
+        """Hit-test the per-dub-clip onset marks. Returns
+            {subtitle, dub, segment_index, seg_path, source_time, timeline_pos}
+        for the nearest mark within `threshold_px` of the cursor x (and
+        inside the clip's dub band), or None. Only meaningful while the
+        onset overlay is visible."""
+        from subtitld.modules import dub_clip
+        wpp = widget.width_proportion
+        if wpp <= 0:
+            return None
+        best = None
+        best_dx = threshold_px + 1
+        for subtitle in session.SUBTITLE.get('segments', []) or []:
+            if not subtitle.get('dubbing'):
+                continue
+            if session.SPEAKERS.get(subtitle.get('speaker', 'A'), {}).get('hidden'):
+                continue
+            band_top, band_bottom = widget._subclip_track_geometry(subtitle)
+            if not (band_top - 2 <= pos.y() <= band_bottom + 2):
+                continue
+            dub = subtitle['dubbing'][0]
+            for idx, (t0, t1, seg) in enumerate(dub_clip.iter_segment_ranges(dub)):
+                seg_path = seg.get('path')
+                onsets = widget.dub_onsets.get(seg_path) if seg_path else None
+                if onsets is None or len(onsets) == 0:
+                    continue
+                src_start = float(seg.get('start', 0.0))
+                src_end = float(seg.get('end', 0.0))
+                lo = int(np.searchsorted(onsets, src_start, side='left'))
+                hi = int(np.searchsorted(onsets, src_end, side='right'))
+                for j in range(lo, hi):
+                    src_time = float(onsets[j])
+                    onset_x = widget._onset_timeline_pos(t0, src_start, src_time) * wpp
+                    dx = abs(pos.x() - onset_x)
+                    if dx <= threshold_px and dx < best_dx:
+                        best_dx = dx
+                        best = {
+                            'subtitle': subtitle, 'dub': dub,
+                            'segment_index': idx, 'seg_path': seg_path,
+                            'source_time': src_time,
+                            'timeline_pos': widget._onset_timeline_pos(t0, src_start, src_time),
+                        }
+        return best
+
+    def _selected_onset_pivot(widget, dub, segment_index):
+        """If the currently-selected onset belongs to `dub`'s subclip at
+        `segment_index`, return its CURRENT timeline position (seconds) —
+        the pivot the stretch should scale around. Else None."""
+        sel = widget.selected_onset
+        if not sel:
+            return None
+        from subtitld.modules import dub_clip
+        ranges = list(dub_clip.iter_segment_ranges(dub))
+        if not (0 <= segment_index < len(ranges)):
+            return None
+        t0, _t1, seg = ranges[segment_index]
+        if seg.get('path') != sel.get('seg_path'):
+            return None
+        if sel.get('subtitle') is not None and sel['subtitle'] is not widget._subtitle_for_dub(dub):
+            return None
+        src_start = float(seg.get('start', 0.0))
+        src_end = float(seg.get('end', 0.0))
+        st = float(sel.get('source_time', 0.0))
+        # Only a pivot if the mark still falls within the played region.
+        if not (src_start - 1e-6 <= st <= src_end + 1e-6):
+            return None
+        return widget._onset_timeline_pos(t0, src_start, st)
+
+    def _subtitle_for_dub(widget, dub):
+        for subtitle in session.SUBTITLE.get('segments', []) or []:
+            dubs = subtitle.get('dubbing') or []
+            if dubs and dubs[0] is dub:
+                return subtitle
+        return None
+
     def _refresh_dub_after_edit(widget):
         """After a dub-subclip edit, push the new state to the audio
         engine and repaint the timeline."""
@@ -2584,11 +3195,49 @@ class Timeline(QWidget):
                     }
         return None
 
-    def _apply_subclip_stretch(widget, dub, segment_index, ratio):
+    def _stretch_ratio_and_pivot(widget, dub, seg_idx, original_w, current_w,
+                                 pivot_timeline):
+        """Resolve the (new_dur / old_dur) ratio for a stretch release,
+        plus the pivot to pass to `_apply_subclip_stretch`.
+
+        Without a pivot: the plain left-anchored ratio `current_w /
+        original_w`. With a pivot at timeline second P: the clip scales
+        about P, so the ratio is measured from the pivot to the dragged
+        right edge — `(new_right - P) / (old_right - P)`. Returns
+        (ratio, pivot) or (None, None) if the geometry is degenerate."""
+        from subtitld.modules import dub_clip
+        wpp = widget.width_proportion
+        fallback = (current_w / original_w, None) if original_w > 0 else (None, None)
+        if pivot_timeline is None or wpp <= 0:
+            return fallback
+        ranges = list(dub_clip.iter_segment_ranges(dub))
+        if not (0 <= seg_idx < len(ranges)):
+            return fallback
+        t0, t1, _seg = ranges[seg_idx]
+        new_right_time = t0 + current_w / wpp
+        denom = t1 - pivot_timeline
+        if abs(denom) < 1e-6:
+            # Pivot sits at (or past) the right edge — scaling about it is
+            # undefined; fall back to a left-anchored stretch.
+            return fallback
+        ratio = (new_right_time - pivot_timeline) / denom
+        if ratio <= 0:
+            return (None, None)
+        return (ratio, pivot_timeline)
+
+    def _apply_subclip_stretch(widget, dub, segment_index, ratio, pivot_timeline=None):
         """Re-render a subclip at a new rate so it occupies `ratio` times
         its current timeline duration. `ratio > 1` slows the clip down
         (the file becomes longer, the user dragged the right edge out);
         `ratio < 1` speeds it up.
+
+        `pivot_timeline` (seconds) is the fixed point the stretch scales
+        around. When None (the default), the left edge stays put — the
+        clip grows/shrinks rightward. When set (a selected plosive mark),
+        the whole clip scales uniformly about that timeline position: both
+        edges move proportionally away from it, and the mark stays put.
+        We keep the mark fixed by moving the subclip's `offset` so its new
+        left edge lands at ``pivot + (old_left - pivot) * ratio``.
 
         Uses `audio_stretch.stretch_by_rate` (host-side ffmpeg atempo).
         Never re-synthesizes via the TTS provider, even on dubs that
@@ -2619,6 +3268,7 @@ class Timeline(QWidget):
             return
         old_start = float(seg.get('start', 0.0))
         old_end = float(end)
+        old_offset = float(seg.get('offset', 0.0))
         if old_end <= old_start:
             return
 
@@ -2658,6 +3308,17 @@ class Timeline(QWidget):
         seg['rate'] = new_rate
         seg['start'] = old_start * ratio
         seg['end'] = old_end * ratio
+        # Pivot: keep the selected mark's timeline position fixed by
+        # moving the subclip's left edge to `pivot + (old_left - pivot) *
+        # ratio`. Without a pivot, `offset` is untouched (left-edge
+        # anchor). `offset` is a TIMELINE coordinate, so it is NOT scaled
+        # the way `start`/`end` (source coords) are — see the addon
+        # provider stretch for the same distinction.
+        if pivot_timeline is not None:
+            base = float(dub.get('start', 0.0))
+            old_left = base + old_offset
+            new_left = pivot_timeline + (old_left - pivot_timeline) * ratio
+            seg['offset'] = new_left - base
         # Kick off the peaks worker for the new file immediately so the
         # waveform shows up as soon as ffmpeg's read-and-bucket pass
         # finishes — without this the next paint requests peaks on
@@ -2713,11 +3374,32 @@ class Timeline(QWidget):
         menu.exec(event.globalPos())
         event.accept()
 
+    def _dub_cache_signature(widget, path):
+        """Content-aware key for a dub file's peaks/onset caches.
+
+        Keying by the bare filename stem (the old behaviour) served stale
+        data whenever two dub files shared a basename but differed in
+        content — e.g. a "Save As" / copied project keeps the original
+        dub uids, so its files live under a different project-hash extract
+        dir but reuse the same ``<uid>.wav`` names. The global
+        ``dub_<uid>_peaks.npy`` cache then drew the OTHER project's
+        waveform while the engine played this project's actual audio.
+
+        The signature mixes the absolute path (unique per project +
+        subclip) with size + mtime (invalidates on any re-render), all
+        from a single ``stat`` — no file read, so it's cheap enough for
+        the paint-driven `_request_dub_peaks` call site."""
+        try:
+            st = os.stat(path)
+            raw = f'{os.path.abspath(path)}|{st.st_size}|{st.st_mtime_ns}'
+        except OSError:
+            raw = os.path.abspath(path)
+        return hashlib.md5(raw.encode('utf-8')).hexdigest()[:16]
+
     def _dub_cache_path(widget, path):
         cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
         os.makedirs(cache_dir, exist_ok=True)
-        stem = os.path.splitext(os.path.basename(path))[0]
-        return os.path.join(cache_dir, f'dub_{stem}_peaks.npy')
+        return os.path.join(cache_dir, f'dub_{widget._dub_cache_signature(path)}_peaks.npy')
 
     def _request_dub_peaks(widget, path):
         if path in widget.dub_peaks or path in widget.dub_workers:
@@ -2745,6 +3427,92 @@ class Timeline(QWidget):
         if cache_file:
             try:
                 np.save(cache_file, {'mins': mins, 'maxs': maxs, 'duration': duration}, allow_pickle=True)
+            except Exception:
+                pass
+        widget.update()
+
+    def _onset_marker_pixmap(widget):
+        """Pre-rendered onset glyph: a thin vertical line at x=0 plus an
+        ellipse-shaped radial gradient centered at the left edge / mid
+        height of the pixmap, fading outward. Cached per widget height —
+        building a fresh gradient per onset was the per-paint hot path
+        on dense speech audio.
+
+        Ellipse trick: QRadialGradient is intrinsically circular, so we
+        build a unit-radius circle on a non-uniformly scaled painter
+        (x scaled by `width`, y scaled by `h/2`). The asymmetric scale
+        stretches the circle into the desired ellipse without needing
+        a custom QImage / per-pixel fill."""
+        h = max(1, widget.height())
+        cache = getattr(widget, '_onset_marker_pm_cache', None)
+        if cache is not None and cache[1] == h:
+            return cache[0]
+        base_str = session.CONFIG.get('timeline', {}).get('onset_marker_color', '#ffd9a0')
+        base = QColor(base_str)
+        line_color = QColor(base); line_color.setAlpha(85)
+        # Both the line and the halo are kept subtle so they read as a
+        # background guide rather than competing with the waveform /
+        # subtitle text on top.
+        grad_center = QColor(base); grad_center.setAlpha(28)
+        grad_edge = QColor(base); grad_edge.setAlpha(0)
+        width = 32
+        pm = QPixmap(width, h)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        cy = h / 2.0
+        p.save()
+        p.translate(0.0, cy)
+        # Asymmetric scale: 1 unit in x = `width` px, 1 unit in y = `cy`
+        # px. After this transform the unit-radius circle below is drawn
+        # as an ellipse with horizontal radius `width` and vertical
+        # radius `cy`, centered at the (transformed) origin = pixmap
+        # (0, h/2).
+        p.scale(float(width), cy if cy > 0 else 1.0)
+        grad = QRadialGradient(0.0, 0.0, 1.0)
+        grad.setColorAt(0.0, grad_center)
+        grad.setColorAt(1.0, grad_edge)
+        # Fill the unit-half-square that covers the whole pixmap in
+        # scaled coords: x in [0, 1], y in [-1, 1].
+        p.fillRect(QRectF(0.0, -1.0, 1.0, 2.0), QBrush(grad))
+        p.restore()
+
+        # Vertical line on top of the gradient so the line stays sharp.
+        p.fillRect(QRectF(0.0, 0.0, 1.0, float(h)), line_color)
+        p.end()
+        widget._onset_marker_pm_cache = (pm, h)
+        return pm
+
+    def _dub_onsets_cache_path(widget, path):
+        cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+        os.makedirs(cache_dir, exist_ok=True)
+        return os.path.join(cache_dir, f'dub_{widget._dub_cache_signature(path)}_onsets.npy')
+
+    def _request_dub_onsets(widget, path):
+        if path in widget.dub_onsets or path in widget.dub_onset_workers:
+            return
+        cache_file = widget._dub_onsets_cache_path(path)
+        if cache_file and os.path.exists(cache_file):
+            try:
+                widget.dub_onsets[path] = np.load(cache_file).astype(np.float32)
+                return
+            except Exception:
+                pass
+        if not os.path.exists(path):
+            return
+        worker = DubOnsetsWorker(path)
+        worker.finished.connect(widget._on_dub_onsets_ready)
+        widget.dub_onset_workers[path] = worker
+        worker.start()
+
+    def _on_dub_onsets_ready(widget, path, onsets):
+        widget.dub_onsets[path] = onsets
+        widget.dub_onset_workers.pop(path, None)
+        cache_file = widget._dub_onsets_cache_path(path)
+        if cache_file:
+            try:
+                np.save(cache_file, onsets)
             except Exception:
                 pass
         widget.update()

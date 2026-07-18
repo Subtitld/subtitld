@@ -22,6 +22,7 @@ from PySide6.QtCore import QObject, Signal
 # ---------------------------------------------------------------------------
 TASK_TTS_SYNTHESIZE = 'tts.synthesize'
 TASK_ASR_TRANSCRIBE = 'asr.transcribe'
+TASK_ASR_STREAM = 'asr.stream'
 TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
 
@@ -89,6 +90,15 @@ class Provider(QObject):
         """Tear down resources. Called on app quit."""
 
     # ---- introspection --------------------------------------------------
+    def is_available(self) -> bool:
+        """Whether this provider is ready to serve requests right now.
+
+        Default `True`. Providers that need configuration before they can run
+        (an API key, a reachable service) override this to reflect that state,
+        so UI can offer only the engines that would actually work. It is a
+        cheap, synchronous readiness check — no network calls."""
+        return True
+
     def health(self) -> dict:
         """Return a status dict for diagnostics: `{state, last_error?, pid?}`.
         Default is `{'state': 'idle'}`."""
@@ -186,6 +196,13 @@ class ASRProvider(Provider):
     error = Signal(str)
     progress = Signal(float, str)
 
+    # ---- live streaming (asr.stream) -----------------------------------
+    # A continuous session the host feeds raw audio to, receiving segments as
+    # they are recognised. Distinct from the batch `transcribe` path above.
+    stream_segment = Signal(dict, bool)   # (segment, is_final)
+    stream_finished = Signal(list)        # committed segments, on stop
+    stream_error = Signal(str)
+
     @property
     def tasks(self) -> list[str]:
         return [TASK_ASR_TRANSCRIBE]
@@ -199,6 +216,24 @@ class ASRProvider(Provider):
     def cancel(self) -> None:
         """Best-effort cancellation. Implementations should emit `error` with
         a `cancelled` message if a job was actually aborted."""
+
+    # ---- streaming API (default: unsupported) --------------------------
+    def supports_streaming(self) -> bool:
+        """True if this provider can serve a live `asr.stream` session. Batch
+        engines (whisper.cpp, cloud) return False and the host falls back to
+        cutting per-phrase clips through `transcribe`."""
+        return False
+
+    def stream_start(self, language: str, options: dict | None = None) -> None:
+        """Open a live session. Segments arrive via `stream_segment`; the final
+        committed list via `stream_finished`; failures via `stream_error`."""
+        raise NotImplementedError
+
+    def stream_feed(self, pcm_bytes: bytes) -> None:
+        """Feed a chunk of 16 kHz mono int16 PCM into the open session."""
+
+    def stream_stop(self) -> None:
+        """End the session; flush and emit `stream_finished`."""
 
 
 class AudioSeparatorProvider(Provider):

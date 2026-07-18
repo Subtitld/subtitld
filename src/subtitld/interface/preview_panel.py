@@ -218,10 +218,41 @@ class PlayerWidget(QWidget):
                         playercontrols.update_playercontrols_playpause_button(window)
 
     def _on_media_status_changed(widget, status):
-        """Last-resort safety net if the proactive pause in `position_changed`
-        missed (e.g. the player jumped past the end without firing position
-        updates). Pause both engines and step back so the player isn't stuck
-        at EndOfMedia state."""
+        """Two responsibilities:
+
+        1) Apply any `seek()` that landed before the backing media was
+           actually loaded. `QMediaPlayer.setSource()` is async, so a
+           seek() that runs in the same tick as `loadfile()` silently
+           setPosition's into an empty pipeline. We stash that seek
+           and replay it the moment the player reaches LoadedMedia
+           (or any of the ready states that follow).
+        2) Last-resort safety net if the proactive pause in
+           `position_changed` missed (e.g. the player jumped past the
+           end without firing position updates). Pause both engines
+           and step back so the player isn't stuck at EndOfMedia.
+        """
+        if status in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia):
+            pending = getattr(widget, '_pending_seek_seconds', None)
+            if pending is not None:
+                widget._pending_seek_seconds = None
+                widget._media_player.setPosition(int(pending * 1000))
+                widget._audio_device.seek(pending)
+                # The player will fire `positionChanged` asynchronously
+                # but the timeline doesn't repaint when paused (the
+                # 4Hz follow-timer only runs during playback), so the
+                # cursor would sit at 0 until the user interacts. Nudge
+                # the timeline + scroll once now so the restored cursor
+                # appears in view immediately on project open.
+                window = widget.window()
+                tl = getattr(window, 'timeline_widget', None)
+                if tl is not None:
+                    tl.update()
+                    try:
+                        from subtitld.interface import timeline as _timeline
+                        _timeline.update_scrollbar(window, position='middle')
+                    except Exception:
+                        pass
+            return
         if status != QMediaPlayer.EndOfMedia:
             return
         widget._media_player.pause()
@@ -281,9 +312,28 @@ class PlayerWidget(QWidget):
         widget._media_player.setPosition(widget._media_player.position() - int(1000/fps))
 
     def seek(widget, pos=0.0, method='absolute+exact'):
-        """Function to seek at some position"""
-        widget._media_player.setPosition(int(pos*1000))
-        widget._audio_device.seek(pos)
+        """Function to seek at some position. If the backing media
+        isn't ready yet (setSource is async), the seek is queued and
+        replayed by `_on_media_status_changed` once the player reaches
+        LoadedMedia. Without this, a seek issued right after
+        `loadfile()` — most importantly the last-position restore at
+        project open — silently no-ops because setPosition runs into
+        an empty pipeline.
+
+        We also update `session.SUBTITLE['position']` here regardless
+        of media readiness. The timeline cursor draws from that field;
+        without an immediate write, the queued-seek case would leave
+        the cursor at 0 until the player's positionChanged signal
+        finally lands, well after the user can see the screen."""
+        pos_f = float(pos)
+        session.SUBTITLE['position'] = pos_f
+        status = widget._media_player.mediaStatus()
+        if status not in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia,
+                          QMediaPlayer.BufferingMedia, QMediaPlayer.EndOfMedia):
+            widget._pending_seek_seconds = pos_f
+            return
+        widget._media_player.setPosition(int(pos_f*1000))
+        widget._audio_device.seek(pos_f)
         
     def stop(widget):
         """Function to stop playback (fake stop, it is pause + position 0)"""

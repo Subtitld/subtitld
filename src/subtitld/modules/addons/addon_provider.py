@@ -30,6 +30,7 @@ from subtitld.modules.addons.provider import (
     ASRProvider,
     AudioSeparatorProvider,
     TASK_ASR_TRANSCRIBE,
+    TASK_ASR_STREAM,
     TASK_AUDIO_SEPARATE,
     TASK_TTS_SYNTHESIZE,
     TASK_TRANSLATE,
@@ -360,6 +361,11 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
                     'pitch': 0,
                 })
                 subtitle['locked'] = False
+                # Auto-fit to the subtitle duration if the speaker opted in;
+                # keeps the un-stretched original in the dub list. Skipped when
+                # the request opted out (a manual-stretch re-render).
+                from subtitld.modules import dub_fit
+                dub_fit.maybe_fit_dub(subtitle, original_subtitle.get('fit', True))
                 break
         for window in QApplication.topLevelWidgets():
             preview = getattr(window, 'preview_panel_player', None)
@@ -396,68 +402,20 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
     def stretch(self, subtitle: dict, ratio: float) -> bool:
         """Re-stretch the existing dub for `subtitle` by `ratio`.
 
-        Unlike `EdgeTTSEngine.stretch` (which re-synthesizes via the cloud),
-        local engines don't expose a per-call rate knob. We avoid re-running
-        the engine entirely and instead re-stretch the cached raw WAV with
-        ffmpeg. The raw is kept on disk forever (next to the rendered cache
+        Re-stretches the cached raw WAV with ffmpeg rather than re-running the
+        engine. The raw is kept on disk forever (next to the rendered cache
         files), so the user can drag the rate slider back and forth without
-        any quality loss or re-synthesis cost.
+        any quality loss or re-synthesis cost. The edge-tts provider now shares
+        the same host-side path (see `dub_clip.restretch_active_dub`).
 
         Returns True if the dub was updated, False if nothing changed (no
         dub yet, ratio out of bounds, or new rate equal to current).
         """
-        if ratio <= 0 or not subtitle:
-            return False
-        dubs = subtitle.get('dubbing') or []
-        if not dubs:
-            return False
-        current_dub = dubs[0]
-        # Old projects (or dubs from other engines) may not carry `raw_path`.
-        # In that case we treat `path` as the raw — first re-stretch lands a
-        # sibling cache file, and subsequent stretches reuse the same raw.
-        raw_path = current_dub.get('raw_path') or current_dub.get('path')
-        if not raw_path or not Path(raw_path).is_file():
-            return False
-
-        speaker_name = subtitle.get('speaker', 'A')
-        speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
-        overrides = subtitle.setdefault('dubbing_options', {})
-        current_rate = int(current_dub.get('rate', overrides.get('rate', speaker_dubbing.get('rate', 0))) or 0)
-        current_speed_pct = 100 + current_rate
-        new_rate = int(round(current_speed_pct * ratio - 100))
-        new_rate = max(-100, min(100, new_rate))
-        if new_rate == current_rate:
-            return False
-
-        rendered_path = str(audio_stretch.stretch_by_rate(Path(raw_path), new_rate))
-        current_dub['path'] = rendered_path
-        current_dub['raw_path'] = str(raw_path)
-        current_dub['rate'] = new_rate
-        current_dub['pitch'] = 0
-        overrides['rate'] = new_rate
-
-        # Keep the legacy single-subclip cache in `dub['segments']` in sync
-        # with the new rendered file. The timeline computes the dub's
-        # visible width from `dub_clip.clip_extent`, which reads
-        # `seg['end']` once the segments list is materialised. Without
-        # this rewrite the cached subclip still points at the OLD file's
-        # duration — the rate label updates but the rectangle width
-        # doesn't change (the visible-but-unstretched bug). We only touch
-        # the segments list when it currently holds the auto-synthesised
-        # single subclip; user-split multi-subclip dubs go through
-        # `_apply_subclip_stretch` and never reach this code path.
+        # Deterministic host-side atempo stretch (shared with edge-tts). It
+        # mutates the active dub in place and syncs the single-subclip cache.
         from subtitld.modules import dub_clip
-        segments = current_dub.get('segments')
-        if segments and len(segments) == 1 and segments[0].get('type', 'audio') == 'audio':
-            new_dur = dub_clip._file_duration_seconds(rendered_path)
-            if new_dur > 0:
-                seg = segments[0]
-                seg['path'] = rendered_path
-                seg.setdefault('raw_path', str(raw_path))
-                seg['rate'] = new_rate
-                seg['start'] = 0.0
-                seg['end'] = new_dur
-                seg['offset'] = 0.0
+        if not dub_clip.restretch_active_dub(subtitle, ratio):
+            return False
 
         # Mirror the post-process refresh from `_on_speech_ready` so the
         # preview audio device picks up the new file and the timeline redraws.
@@ -486,6 +444,8 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         _AddonProviderMixin.__init__(self, addon_id, manifest, exe_path)
         self._active_request = None
         self._partials_buffer: list[dict] = []
+        self._stream_request = None
+        self._stream_process = None
 
     def transcribe(self, audio_path: str, language: str, options: dict | None = None) -> None:
         try:
@@ -535,6 +495,63 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         if self._active_request is None or self._process is None:
             return
         self._process.cancel(self._active_request.id)
+
+    # ---- live streaming (asr.stream) -----------------------------------
+    def supports_streaming(self) -> bool:
+        return TASK_ASR_STREAM in (self._manifest.get('tasks') or [])
+
+    def stream_start(self, language: str, options: dict | None = None) -> None:
+        """Open an `asr.stream` session. Audio is fed with `stream_feed`;
+        segments come back via `stream_segment(seg, is_final)`; the committed
+        list via `stream_finished`; failures via `stream_error`."""
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.stream_error.emit(str(exc))
+            return
+        self._stream_process = proc
+        req = proc.request(TASK_ASR_STREAM, {
+            'language': language,
+            'options': options or {},
+            'samplerate': 16000,
+        }, timeout=None)
+        self._stream_request = req
+
+        def on_partial(data: dict) -> None:
+            if not isinstance(data, dict):
+                return
+            final = bool(data.get('final', False))
+            seg = {k: v for k, v in data.items() if k != 'final'}
+            self.stream_segment.emit(seg, final)
+
+        def on_result(data: dict) -> None:
+            segments = data.get('segments') if isinstance(data, dict) else None
+            self._stream_request = None
+            self.stream_finished.emit(segments if isinstance(segments, list) else [])
+
+        def on_error(code: str, message: str) -> None:
+            self._stream_request = None
+            self.stream_error.emit(f'[{code}] {message}')
+
+        req.partial.connect(on_partial, Qt.QueuedConnection)
+        req.result.connect(on_result, Qt.QueuedConnection)
+        req.error.connect(on_error, Qt.QueuedConnection)
+
+    def stream_feed(self, pcm_bytes: bytes) -> None:
+        req = self._stream_request
+        proc = self._stream_process
+        if req is None or proc is None or not pcm_bytes:
+            return
+        import base64
+        b64 = base64.b64encode(pcm_bytes).decode('ascii')
+        proc.stream_send(req.id, protocol.make_stream_audio(req.id, b64))
+
+    def stream_stop(self) -> None:
+        req = self._stream_request
+        proc = self._stream_process
+        if req is None or proc is None:
+            return
+        proc.stream_send(req.id, protocol.make_stream_stop(req.id))
 
 
 class AddonAudioSeparatorProvider(_AddonProviderMixin, AudioSeparatorProvider):

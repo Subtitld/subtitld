@@ -2,6 +2,7 @@ import os
 import copy
 import hashlib
 import shutil
+import threading
 import zipfile
 from docx import Document
 import json
@@ -21,6 +22,12 @@ from subtitld.modules import session
 from subtitld.modules import waveform
 from subtitld.modules import usf
 from subtitld.modules import utils
+
+
+class CorruptedProjectFileError(Exception):
+    """Raised by `process_subtitles_file` when the USFX zip on disk is
+    structurally damaged (Bad CRC, truncated, missing required members).
+    The UI catches this to show a friendly dialog instead of crashing."""
 # `signals.SIGNALS` MUST be imported at module-load time, NOT lazily
 # from inside the background extractor's `run()`. SIGNALS is a QObject
 # singleton; its thread affinity is whichever thread imports the module
@@ -183,7 +190,17 @@ class _USFXBackgroundExtractor(QThread):
             pass
 
     def _stream(self, zf, arcname, target_path, file_size):
-        if os.path.exists(target_path):
+        # Reuse the cache only when the on-disk file is byte-for-byte the
+        # same size as the archived member. A pure existence check served
+        # STALE assets after a crash: autosave overwrites the original
+        # .usfx in place, but its extract dir (keyed by the unchanged
+        # path) still held the pre-edit dub — so we'd play the old audio
+        # while the waveform/peaks were recomputed from the new file. The
+        # extracted file is a raw copy, so its size equals the member's
+        # uncompressed size exactly; any difference means a different
+        # version and forces a re-extract (which also bumps mtime, so the
+        # content-aware peaks/onset caches refresh in lockstep).
+        if os.path.exists(target_path) and os.path.getsize(target_path) == file_size:
             # Skip but still account the bytes — otherwise the percent
             # never reaches 100 when a cache already exists.
             self._extracted_bytes += file_size
@@ -584,10 +601,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # stems, waveform.npy) stream in afterwards via
             # _USFXBackgroundExtractor; bundled video is handled upstream
             # by peek_usfx_video().
-            with zipfile.ZipFile(subtitle_file, 'r') as zf:
-                for member in zf.namelist():
-                    if _is_phase1_usfx_member(member):
-                        zf.extract(member, extract_dir)
+            #
+            # A corrupted USFX (Bad CRC, truncated, not a zip) raises
+            # `zipfile.BadZipFile`. Re-raise as `CorruptedProjectFileError`
+            # so the UI layer (startscreen) can catch a single typed
+            # exception and show a friendly dialog instead of crashing
+            # the open flow.
+            try:
+                with zipfile.ZipFile(subtitle_file, 'r') as zf:
+                    for member in zf.namelist():
+                        if _is_phase1_usfx_member(member):
+                            zf.extract(member, extract_dir)
+            except zipfile.BadZipFile as exc:
+                raise CorruptedProjectFileError(str(exc)) from exc
 
             inner_usf = os.path.join(extract_dir, 'subtitles.usf')
             if not os.path.exists(inner_usf):
@@ -1023,26 +1049,117 @@ def export_file(filename=False, export_format='TXT', options=False):
                 txt_file.write(final_xml)
 
 
+def _ensure_dub_files_present(segments, existing_usfx_path):
+    """Re-materialise any dub files referenced by `segments` whose
+    absolute paths don't currently exist on disk, by copying their
+    bytes out of `existing_usfx_path` (the USFX we're about to
+    overwrite). No-op when `existing_usfx_path` doesn't exist or
+    isn't a valid zip — first-ever save still works the old way.
+
+    Without this rescue, a save run while the background extractor
+    is still streaming dubs (or after the user cleared the cache)
+    would silently produce a USFX missing those files. See the
+    long comment in `save_file` for the full motivation."""
+    if not existing_usfx_path or not os.path.isfile(existing_usfx_path):
+        return
+
+    missing = []  # list of (absolute_path, expected_arcname)
+
+    def _consider(p):
+        if not p or not isinstance(p, str):
+            return
+        if os.path.isfile(p):
+            return
+        # Derive the arcname by finding the `assets/dubs/...` substring
+        # of the absolute path. `process_subtitles_file` builds the
+        # session's dub paths as `<extract_dir>/assets/dubs/<file>`,
+        # so the suffix is stable across machines.
+        marker = '/assets/dubs/'
+        idx = p.find(marker)
+        if idx < 0:
+            return
+        arcname = p[idx + 1:].replace(os.sep, '/')
+        missing.append((p, arcname))
+
+    for segment in segments:
+        for dub in segment.get('dubbing', []) or []:
+            _consider(dub.get('path'))
+            for seg in dub.get('segments', []) or []:
+                _consider(seg.get('path'))
+                _consider(seg.get('raw_path'))
+
+    if not missing:
+        return
+
+    try:
+        with zipfile.ZipFile(existing_usfx_path, 'r') as old_zf:
+            namelist = set(old_zf.namelist())
+            for abs_path, arcname in missing:
+                if arcname not in namelist:
+                    continue
+                try:
+                    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                    with old_zf.open(arcname) as src, open(abs_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+                except Exception:
+                    # One bad member shouldn't block the others — the
+                    # bundling loop below will still silently skip
+                    # whatever we couldn't rescue, same as before.
+                    pass
+    except zipfile.BadZipFile:
+        # Existing USFX is corrupted; nothing to rescue from. The
+        # bundling loop will skip missing files as before.
+        return
+
+
 def save_file(final_file, subtitle_format='USFX', language='en'):
     """Function to save the subtitle project. A subtitles dict and the format is given.
 
     The `language` argument is treated as a fallback — the document's own
     `session.SUBTITLE['language']` (set on import / transcription / by the
     user) wins when present so reloading a USFX restores the language the
-    user actually picked, not the UI-default."""
-    document_language = (session.SUBTITLE.get('language') or '').strip()
+    user actually picked, not the UI-default.
+
+    Reads document state through local bindings (`SUBTITLE` / `SPEAKERS`
+    / `VIDEO` / `FORMAT`) that come from `_active_save_snapshot` when
+    one is set (background save threads), falling back to live session
+    when called synchronously on the main thread. The snapshot path
+    avoids racing the UI thread's edits during the write."""
+    snap = _active_save_snapshot
+    if snap is not None:
+        SUBTITLE = snap['SUBTITLE']
+        SPEAKERS = snap['SPEAKERS']
+        VIDEO = snap['VIDEO']
+        FORMAT = snap['FORMAT']
+    else:
+        SUBTITLE = session.SUBTITLE
+        SPEAKERS = session.SPEAKERS
+        VIDEO = session.VIDEO
+        FORMAT = session.FORMAT
+    document_language = (SUBTITLE.get('language') or '').strip()
     if document_language:
         language = document_language
-    if session.SUBTITLE['segments']:
+    # `segments` may legitimately be empty — e.g. the user loaded a
+    # video and clicked Save before transcribing or adding any
+    # subtitles. We still want to persist the project file (video
+    # reference, speakers, manifest). The old truthiness check made the
+    # whole body a no-op, and the caller saw `success=True` because
+    # nothing raised — UI showed "saved" while no file landed.
+    if SUBTITLE.get('segments') is not None:
         # if not final_file.lower().endswith('.' + format.lower()):
         #     final_file += '.' + format.lower()
 
-        if not 'format' in session.FORMAT:
-            session.FORMAT['format'] = subtitle_format
+        if 'format' not in FORMAT:
+            # Write back to the live session as well so the next save
+            # from the main thread sees the chosen format. Harmless when
+            # FORMAT *is* the live session dict.
+            FORMAT['format'] = subtitle_format
+            if FORMAT is not session.FORMAT:
+                session.FORMAT['format'] = subtitle_format
 
         if subtitle_format in ['SRT', 'DFXP', 'TTML', 'SAMI', 'SCC', 'VTT']:
             captions = pycaption.CaptionList()
-            for sub in session.SUBTITLE['segments']:
+            for sub in SUBTITLE['segments']:
                 # skip extra blank lines
                 nodes = [pycaption.CaptionNode.create_text(sub['text'])]
                 caption = pycaption.Caption(start=sub['start'] * 1000000, end=(sub['end']) * 1000000, nodes=nodes)
@@ -1064,7 +1181,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             if subtitle_format in ['ASS', 'SUB']:
                 assfile = pysubs2.SSAFile()
                 index = 0
-                for sub in reversed(sorted(session.SUBTITLE['segments'])):
+                for sub in reversed(sorted(SUBTITLE['segments'])):
                     assfile.insert(
                         index,
                         pysubs2.SSAEvent(
@@ -1094,26 +1211,26 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             #     writer.write()
 
         elif subtitle_format in ['JSON']:
-            if session.FORMAT.get('options', {}).get('standard', 'Whisper') == 'Whisper':
-                open(final_file, mode='w', encoding='utf-8').write(json.dumps(session.SUBTITLE, indent=4))
-            elif session.FORMAT['options'].get('standard', 'Whisper') == 'AD':
+            if FORMAT.get('options', {}).get('standard', 'Whisper') == 'Whisper':
+                open(final_file, mode='w', encoding='utf-8').write(json.dumps(SUBTITLE, indent=4))
+            elif FORMAT['options'].get('standard', 'Whisper') == 'AD':
                 new_json_dict = {
                     'metadata': {
-                        'framerate': session.VIDEO.get('framerate', 25),
-                        'video_name': os.path.basename(session.VIDEO.get('filepath', ''))
+                        'framerate': VIDEO.get('framerate', 25),
+                        'video_name': os.path.basename(VIDEO.get('filepath', ''))
                     },
                     'description_cues': [],
                 }
-                for i, segment in enumerate(session.SUBTITLE['segments']):
+                for i, segment in enumerate(SUBTITLE['segments']):
                     new_json_dict['description_cues'].append({
                         'cue_number': i,
                         'text': segment['text'],
-                        'start_frame': int(segment['start'] * session.VIDEO.get('framerate', 25)),
-                        'end_frame': int(segment['end'] * session.VIDEO.get('framerate', 25)),
-                        'start_time_smpte': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=False)),
-                        'end_time_smpte': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=False)),
-                        'start_time': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=True)),
-                        'end_time': str(timecode.Timecode(session.VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=True)),
+                        'start_frame': int(segment['start'] * VIDEO.get('framerate', 25)),
+                        'end_frame': int(segment['end'] * VIDEO.get('framerate', 25)),
+                        'start_time_smpte': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=False)),
+                        'end_time_smpte': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=False)),
+                        'start_time': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=True)),
+                        'end_time': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=True)),
                         'speaker': segment.get('speaker', 'A')
                     })
 
@@ -1121,12 +1238,12 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
 
 
         elif subtitle_format in ['USF']:
-            options = session.FORMAT.get('options', {}) if isinstance(session.FORMAT, dict) else {}
+            options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
             embed_speaker_images = bool(options.get('embed_speaker_images', False))
             embed_audio_clips = bool(options.get('embed_audio_clips', False))
 
             writer_speakers = {}
-            for name, data in session.SPEAKERS.items():
+            for name, data in SPEAKERS.items():
                 if not isinstance(data, dict):
                     continue
                 entry = {}
@@ -1145,7 +1262,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     writer_speakers[name] = entry
 
             open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(
-                session.SUBTITLE['segments'],
+                SUBTITLE['segments'],
                 speakers=writer_speakers,
                 language=language,
                 embed_audio_clips=embed_audio_clips,
@@ -1156,7 +1273,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
 
             writer_speakers = {}
             speaker_image_bytes = {}
-            for name, data in session.SPEAKERS.items():
+            for name, data in SPEAKERS.items():
                 if not isinstance(data, dict):
                     continue
                 entry = {}
@@ -1174,7 +1291,28 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 if entry:
                     writer_speakers[name] = entry
 
-            segments_copy = copy.deepcopy(session.SUBTITLE['segments'])
+            # When `_active_save_snapshot` populated SUBTITLE, this
+            # deepcopy is on a stable snapshot taken under the main
+            # thread — safe from the iteration race that took the
+            # whole app down before the snapshot path landed.
+            segments_copy = copy.deepcopy(SUBTITLE['segments'])
+
+            # Before bundling: rescue any dub files we're about to lose.
+            #
+            # The session's dub paths are absolute paths into the USFX
+            # extract dir (set by `process_subtitles_file` on open). If
+            # the user cleared the cache, or the background extractor
+            # hasn't gotten to a particular `assets/dubs/...` member
+            # yet, the file won't exist on disk RIGHT NOW — and the
+            # bundling loop below would silently skip it (line 1227's
+            # `os.path.isfile` check). On the *next* open the dub would
+            # have no audio, even though the previous USFX had it.
+            #
+            # We re-extract any missing dub members from the existing
+            # USFX (the one we're about to overwrite) so they're back
+            # on disk before the bundling loop runs. This is also why
+            # save is non-destructive even when the cache is empty.
+            _ensure_dub_files_present(segments_copy, final_file)
             dub_files_to_include = {}
             for segment in segments_copy:
                 for dub in segment.get('dubbing', []) or []:
@@ -1214,7 +1352,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                                 seg[key] = new_arc
 
             # Collect optional bundled assets (video + separation caches + waveform cache).
-            video_path = session.VIDEO.get('filepath', '') if isinstance(session.VIDEO, dict) else ''
+            video_path = VIDEO.get('filepath', '') if isinstance(VIDEO, dict) else ''
             video_cache_key = utils.get_cache_key(video_path) if video_path else None
             extra_files_to_include = {}  # source path -> arcname
 
@@ -1275,7 +1413,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 escaped_path = video_path.replace('&', '&amp;').replace('"', '&quot;')
                 escaped_basename = os.path.basename(video_path).replace('&', '&amp;').replace('"', '&quot;')
                 manifest_lines.append(f'  <source path="{escaped_path}" basename="{escaped_basename}"/>')
-            mvs = session.VIDEO.get('music_voice_separation') if isinstance(session.VIDEO, dict) else None
+            mvs = VIDEO.get('music_voice_separation') if isinstance(VIDEO, dict) else None
             if isinstance(mvs, dict) and 'volume' in mvs:
                 try:
                     manifest_lines.append(f'  <voicemix volume="{float(mvs["volume"]):.4f}"/>')
@@ -1297,6 +1435,18 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         zf.writestr(f'assets/speakers/{_safe_asset_name(name)}.png', img_bytes)
                     for source, arc in extra_files_to_include.items():
                         zf.write(source, arc)
+                # Verify the tmp file is a structurally valid zip with
+                # intact CRCs for every member BEFORE atomic rename —
+                # otherwise a partial / I/O-corrupted write would
+                # overwrite the (still valid) destination, and the next
+                # open would crash on `Bad CRC-32`. testzip() returns
+                # the name of the first bad member, or None on success.
+                with zipfile.ZipFile(tmp_path, 'r') as zf_check:
+                    bad = zf_check.testzip()
+                    if bad is not None:
+                        raise zipfile.BadZipFile(
+                            f'CRC mismatch on member {bad!r} — refusing to overwrite destination',
+                        )
                 os.replace(tmp_path, final_file)
             except Exception:
                 if os.path.exists(tmp_path):
@@ -1380,23 +1530,74 @@ def _prune_backups(stem):
             pass
 
 
+# Module-level save coordination. Two crashes were tracked to this area:
+#   1. The autosave backup timer + the autosave original timer can fire
+#      within milliseconds and spawn two `SaveFileThread`s that run their
+#      USFX writes concurrently. `_save_lock` serialises them so at most
+#      one save runs at a time — the second blocks until the first
+#      releases.
+#   2. The save thread used to deepcopy `session.SUBTITLE['segments']`
+#      directly while the UI thread could still be editing the list
+#      (add/remove subtitle). That can raise `RuntimeError: list changed
+#      size during iteration` deep inside CPython's deepcopy, taking the
+#      whole app down. `_snapshot_for_save()` runs on the main thread
+#      BEFORE the worker starts, producing a stable copy that the worker
+#      reads through `_active_save_snapshot`. The lock keeps the
+#      snapshot single-writer.
+_save_lock = threading.Lock()
+_active_save_snapshot = None
+_save_in_progress = False
+
+
+def _snapshot_for_save():
+    """Main thread only. Deep-copy the mutable session collections so
+    the save thread sees a stable view regardless of user edits during
+    the write. Returns None if the live state itself is mid-mutation —
+    callers (especially autosave) can use that to retry later."""
+    try:
+        return {
+            'SUBTITLE': copy.deepcopy(session.SUBTITLE),
+            'SPEAKERS': copy.deepcopy(session.SPEAKERS),
+            'VIDEO': copy.deepcopy(session.VIDEO),
+            'FORMAT': copy.deepcopy(session.FORMAT) if isinstance(session.FORMAT, dict) else session.FORMAT,
+        }
+    except Exception:
+        return None
+
+
 class SaveFileThread(QThread):
     """Run `save_file()` on a background thread so the UI stays responsive
     while USFX bundles are zipped and assets are written to disk."""
     save_finished = Signal(str, bool, str)  # (filepath, success, error)
 
-    def __init__(self, final_file, subtitle_format, language, parent=None):
+    def __init__(self, final_file, subtitle_format, language, snapshot=None, parent=None):
         super().__init__(parent)
         self._final_file = final_file
         self._subtitle_format = subtitle_format
         self._language = language
+        self._snapshot = snapshot
 
     def run(self):
+        global _active_save_snapshot
+        success = False
+        error = ''
         try:
-            save_file(self._final_file, self._subtitle_format, self._language)
-            self.save_finished.emit(self._final_file, True, '')
+            # Serialise: a previous save thread (autosave-backup,
+            # autosave-original, manual save) holding `_save_lock`
+            # forces this one to wait rather than writing to the same
+            # paths concurrently.
+            with _save_lock:
+                _active_save_snapshot = self._snapshot
+                try:
+                    save_file(self._final_file, self._subtitle_format, self._language)
+                    success = True
+                except Exception as exc:
+                    error = str(exc)
+                finally:
+                    _active_save_snapshot = None
         except Exception as exc:
-            self.save_finished.emit(self._final_file, False, str(exc))
+            error = str(exc)
+        self.save_finished.emit(self._final_file, success, error)
 
 
 _active_save_threads = []
@@ -1415,10 +1616,18 @@ def wait_for_save_threads():
 
 def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=None, parent=None):
     """Spawn a `SaveFileThread`, optionally wire `on_done(path, ok, err)`,
-    keep a reference so the QThread isn't garbage-collected mid-save."""
-    thread = SaveFileThread(final_file, subtitle_format, language, parent=parent)
+    keep a reference so the QThread isn't garbage-collected mid-save.
+
+    Takes a deep-copy snapshot of the mutable session state on the MAIN
+    thread before starting the worker — without this, the worker's own
+    deepcopy could race a UI-thread edit and crash."""
+    global _save_in_progress
+    snapshot = _snapshot_for_save()
+    thread = SaveFileThread(final_file, subtitle_format, language, snapshot=snapshot, parent=parent)
 
     def _cleanup(path, success, error):
+        global _save_in_progress
+        _save_in_progress = False
         if on_done is not None:
             on_done(path, success, error)
         if thread in _active_save_threads:
@@ -1427,6 +1636,7 @@ def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=N
 
     thread.save_finished.connect(_cleanup, Qt.QueuedConnection)
     _active_save_threads.append(thread)
+    _save_in_progress = True
     thread.start()
     return thread
 
@@ -1435,6 +1645,14 @@ def autosave_backup_timer_timeout(force=False):
     if not session.SUBTITLE:
         return
     if not force and not session.AUTOSAVE_BACKUP_DIRTY:
+        return
+    # If another save is already in flight (the autosave-original
+    # timer, a manual save, or this same timer's previous run still
+    # finishing) skip this tick. It fires every few minutes; the next
+    # one will catch up. Without this, two save threads can spawn in
+    # the same event-loop pass and crash on a shared deepcopy of
+    # `session.SUBTITLE['segments']`.
+    if _save_in_progress:
         return
     stem = _autosave_filename_stem()
     if not stem:
@@ -1464,6 +1682,10 @@ def autosave_original_timer_timeout():
     if not session.UNSAVED:
         return
     if not session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'):
+        return
+    # See `autosave_backup_timer_timeout` for why we skip when a save
+    # is already in flight.
+    if _save_in_progress:
         return
 
     def _on_done(_path, success, _error):

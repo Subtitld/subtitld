@@ -100,6 +100,21 @@ def make_cancel(target_id: str) -> dict:
     return {'id': new_request_id(), 'type': 'cancel', 'target': target_id}
 
 
+def make_stream_audio(req_id: str, pcm_b64: str) -> dict:
+    """Build a host->add-on audio frame for an in-flight `asr.stream` request.
+
+    `pcm_b64` is base64-encoded 16 kHz mono int16 PCM. Repeatable — the add-on
+    feeds each chunk to its recognizer and streams back `partial` frames.
+    """
+    return {'id': req_id, 'type': 'asr.audio', 'data': {'pcm': pcm_b64}}
+
+
+def make_stream_stop(req_id: str) -> dict:
+    """Build a host->add-on frame ending an `asr.stream` request. The add-on
+    flushes and emits a terminal `result` with the committed segments."""
+    return {'id': req_id, 'type': 'asr.stop'}
+
+
 def make_shutdown() -> dict:
     """Build a host->add-on graceful-shutdown frame.
 

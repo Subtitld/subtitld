@@ -84,6 +84,13 @@ PATH_SUBTITLD_DATA_AUDIOSEPARATION = PATH_SUBTITLD_USER_CACHE / 'audioseparation
 if not PATH_SUBTITLD_DATA_AUDIOSEPARATION.exists():
     PATH_SUBTITLD_DATA_AUDIOSEPARATION.mkdir(parents=True)
 
+# Downscaled, video-only proxy files for large (4K/8K) sources. Regenerable
+# derived artifacts keyed to the source video (path/size/mtime) → USER_CACHE.
+PATH_SUBTITLD_DATA_PROXY = PATH_SUBTITLD_USER_CACHE / 'proxy'
+
+if not PATH_SUBTITLD_DATA_PROXY.exists():
+    PATH_SUBTITLD_DATA_PROXY.mkdir(parents=True)
+
 PATH_SUBTITLD_USER_CONFIG_FILE = PATH_SUBTITLD_USER_CONFIG / 'subtitld.config'
 
 # Reference handle for the background extractor that streams heavy USFX
@@ -306,6 +313,28 @@ def add_to_recent_files(subtitle_filepath, video_filepath=None):
     elif 'video_filepath' not in entry:
         entry['video_filepath'] = ''
     entry['last_opened'] = str(datetime.datetime.now().timestamp())
+
+
+def persist_current_playback_position():
+    """Write the current playback position into the open subtitle's
+    recent-files entry so it can be restored on the next open. No-op if
+    no project is loaded or its recent-files entry is missing — callers
+    don't need to gate on those."""
+    if not isinstance(CONFIG, dict):
+        return
+    filepath = SUBTITLE.get('filepath')
+    if not filepath:
+        return
+    recent = CONFIG.get('recent_files')
+    if not isinstance(recent, dict):
+        return
+    entry = recent.get(str(filepath))
+    if not isinstance(entry, dict):
+        return
+    try:
+        entry['last_position'] = float(SUBTITLE.get('position', 0) or 0)
+    except (TypeError, ValueError):
+        entry['last_position'] = 0
 
 
 UNSAVED = False

@@ -109,7 +109,38 @@ def _concatenate_first_dubs(first_subtitle, second_subtitle):
     result['path'] = new_path
     duration = combined.shape[0] / float(a_sr)
     result['end'] = a.get('start', first_subtitle['start']) + duration
+    # The concatenated WAV is a fresh master, not derived from the first
+    # dub's raw or its prior stretch. Inheriting `raw_path` / `segments`
+    # / `rate` from `a` would make a later retime re-render only the
+    # first raw (silently dropping the second dub's audio) and would
+    # leave segment source coords pointing at the old file's duration.
+    result.pop('segments', None)
+    result.pop('raw_path', None)
+    result['rate'] = 0
+    result['pitch'] = 0
     return result
+
+
+def _merge_translations(first_subtitle, second_subtitle):
+    """Merge the per-language translations of two subtitles being joined, in
+    reading order (`first` then `second`).
+
+    Returns a dict keyed by the UNION of both languages: where both have text
+    it's joined with a space; where only one does, that one is kept. Tolerates
+    the two subtitles having *different* sets of translation languages — the
+    old merge code assumed identical keys and raised ``KeyError`` (e.g.
+    'pt-br') when they differed, aborting the merge half-done (text/end already
+    mutated, the next subtitle not yet removed → the overlapping mess).
+    """
+    first_tr = first_subtitle.get('translations') or {}
+    second_tr = second_subtitle.get('translations') or {}
+    languages = list(first_tr) + [lang for lang in second_tr if lang not in first_tr]
+    merged = {}
+    for language in languages:
+        parts = [str(first_tr.get(language, '')).strip(),
+                 str(second_tr.get(language, '')).strip()]
+        merged[language] = ' '.join(part for part in parts if part)
+    return merged
 
 
 def merge_back_subtitle(selected_subtitle=False):
@@ -123,12 +154,9 @@ def merge_back_subtitle(selected_subtitle=False):
         nearest_subttile['end'] = selected_subtitle['end']
         nearest_subttile['text'] += ' ' + selected_subtitle['text']
 
-        if 'translations' in nearest_subttile and 'translations' in selected_subtitle:
-            for language in nearest_subttile['translations']:
-                if language in nearest_subttile['translations'] and language in selected_subtitle['translations']:
-                    nearest_subttile['translations'][language] += ' ' + selected_subtitle['translations'][language]
-                else:
-                    nearest_subttile['translations'][language] = selected_subtitle['translations'][language]
+        # Reading order: nearest (earlier) then selected (later).
+        if 'translations' in nearest_subttile or 'translations' in selected_subtitle:
+            nearest_subttile['translations'] = _merge_translations(nearest_subttile, selected_subtitle)
 
         new_dub = _concatenate_first_dubs(nearest_subttile, selected_subtitle)
         if new_dub is not None:
@@ -150,12 +178,9 @@ def merge_next_subtitle(selected_subtitle=False):
         selected_subtitle['end'] = nearest_subttile['end']
         selected_subtitle['text'] += ' ' + nearest_subttile['text']
 
-        if 'translations' in selected_subtitle and 'translations' in nearest_subttile:
-            for language in selected_subtitle['translations']:
-                if language in selected_subtitle['translations']:
-                    selected_subtitle['translations'][language] += ' ' + nearest_subttile['translations'][language]
-                else:
-                    selected_subtitle['translations'][language] = nearest_subttile['translations'][language]
+        # Reading order: selected (earlier) then nearest (later).
+        if 'translations' in selected_subtitle or 'translations' in nearest_subttile:
+            selected_subtitle['translations'] = _merge_translations(selected_subtitle, nearest_subttile)
 
         new_dub = _concatenate_first_dubs(selected_subtitle, nearest_subttile)
         if new_dub is not None:

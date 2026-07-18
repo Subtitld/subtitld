@@ -37,10 +37,11 @@ dependencies = [
     "autohex",
     "platformdirs",
     "psutil",
-    "assemblyai",
+    "pywhispercpp",
     "deep_translator",
     "soundfile",
-    "edge-tts"
+    "edge-tts",
+    "gTTS"
 ]
 
 # Optional feature groups. For now these mirror deps already in `dependencies`
@@ -49,17 +50,18 @@ dependencies = [
 # `pip install subtitld` installs only the core runtime and users opt into
 # features via e.g. `pip install subtitld[transcribe]`.
 [project.optional-dependencies]
-transcribe = ["assemblyai"]
+transcribe = ["pywhispercpp"]
 translate = ["translate", "deep_translator"]
 vision = ["mediapipe==0.10.21", "opencv-python"]
-dub = ["edge-tts"]
+dub = ["edge-tts", "gTTS"]
 all = [
-    "assemblyai",
+    "pywhispercpp",
     "translate",
     "deep_translator",
     "mediapipe==0.10.21",
     "opencv-python",
     "edge-tts",
+    "gTTS",
 ]
 
 [project.urls]

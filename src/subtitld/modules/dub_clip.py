@@ -358,3 +358,77 @@ def remove_segment(dub: dict, segment_index: int) -> bool:
         return False
     segments.pop(segment_index)
     return True
+
+
+def restretch_active_dub(subtitle: dict, ratio: float) -> bool:
+    """Host-side time-stretch the active dub (``dubbing[0]``) by ``ratio`` via
+    ffmpeg ``atempo`` — a *deterministic* stretch, so the clip lands on exactly
+    the width the user dragged to. Mutates the dub in place (path / raw_path /
+    rate and the single-subclip ``segments`` cache) and returns True if it
+    changed, False on a no-op (no dub, bad ratio, missing raw, or the new rate
+    equals the current one).
+
+    Shared by the add-on and edge-tts providers' ``stretch()``. UI refresh is
+    the caller's responsibility. The atempo path is why this is reliable where
+    a cloud re-synth (edge's old behaviour) was not: edge's SSML ``rate`` maps
+    non-linearly to output duration, so the result rarely matched the drag.
+    """
+    from pathlib import Path
+    from subtitld.modules import session, audio_stretch
+
+    if ratio <= 0 or not subtitle:
+        return False
+    dubs = subtitle.get('dubbing') or []
+    if not dubs:
+        return False
+    current_dub = dubs[0]
+    # Dubs from other engines / old projects may lack `raw_path`; treat `path`
+    # as the raw so the first stretch lands a sibling cache and later stretches
+    # always re-render from that same untouched source (no quality compounding).
+    raw_path = current_dub.get('raw_path') or current_dub.get('path')
+    if not raw_path or not Path(raw_path).is_file():
+        return False
+
+    speaker_name = subtitle.get('speaker', 'A')
+    speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
+    overrides = subtitle.setdefault('dubbing_options', {})
+    current_rate = int(current_dub.get('rate', overrides.get('rate', speaker_dubbing.get('rate', 0))) or 0)
+    current_speed_pct = 100 + current_rate
+    new_rate = int(round(current_speed_pct * ratio - 100))
+    new_rate = max(-100, min(100, new_rate))
+    if new_rate == current_rate:
+        return False
+
+    rendered_path = str(audio_stretch.stretch_by_rate(Path(raw_path), new_rate))
+    current_dub['path'] = rendered_path
+    current_dub['raw_path'] = str(raw_path)
+    current_dub['rate'] = new_rate
+    overrides['rate'] = new_rate
+
+    # Keep a materialised single-subclip cache in sync with the new file so the
+    # timeline's width (read from `seg['end']`) tracks the stretch. Only touch a
+    # single-subclip dub; user-split multi-subclip dubs stretch via the
+    # timeline's `_apply_subclip_stretch` and never reach here.
+    segments = current_dub.get('segments')
+    if segments and len(segments) == 1 and segments[0].get('type', 'audio') == 'audio':
+        seg = segments[0]
+        seg['path'] = rendered_path
+        seg.setdefault('raw_path', str(raw_path))
+        seg['rate'] = new_rate
+        old_end = seg.get('end')
+        if old_end is None:
+            new_dur = _file_duration_seconds(rendered_path)
+            if new_dur > 0:
+                seg['start'] = 0.0
+                seg['end'] = new_dur
+                seg['offset'] = 0.0
+        else:
+            # Scale source-region coords by the rate-change factor so a prior
+            # trim survives. `offset` is a TIMELINE position, NOT a source
+            # coord — never scale it (see addon_provider.stretch history).
+            current_factor = 1.0 + current_rate / 100.0
+            new_factor = 1.0 + new_rate / 100.0
+            scale = current_factor / max(new_factor, 1e-6)
+            seg['start'] = float(seg.get('start', 0.0)) * scale
+            seg['end'] = float(old_end) * scale
+    return True

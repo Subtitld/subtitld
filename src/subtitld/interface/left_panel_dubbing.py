@@ -163,6 +163,41 @@ def _voices_clone_first(voices):
     return clones + fixed
 
 
+# --- Shared "fit dub to subtitle duration" toggle --------------------------
+# Available on every TTS speaker panel. When on, a freshly generated clip is
+# time-stretched to the subtitle's duration right after synthesis (see
+# `dub_fit.maybe_fit_dub`), with the un-stretched original kept in the dub
+# list. Stored per speaker in `session.SPEAKERS[name]['dubbing']['fit_to_subtitle']`.
+def _install_fit_checkbox(widget):
+    """Create + wire the per-speaker auto-fit checkbox and add it to the
+    panel's layout. The label is set in each panel's `translate()`."""
+    checkbox = QCheckBox()
+
+    def _changed(checked):
+        name = widget.property('speaker')
+        if name and name in session.SPEAKERS:
+            session.SPEAKERS[name].setdefault('dubbing', {})['fit_to_subtitle'] = bool(checked)
+            session.set_unsaved(True)
+
+    checkbox.toggled.connect(_changed)
+    widget.fit_to_subtitle_checkbox = checkbox
+    widget.layout().addWidget(checkbox)
+
+
+def _sync_fit_checkbox(widget):
+    """Reflect the current speaker's stored auto-fit choice into the box.
+    Called from each panel's `update()` (which runs right after the panel's
+    speaker property is set)."""
+    checkbox = getattr(widget, 'fit_to_subtitle_checkbox', None)
+    if checkbox is None:
+        return
+    name = widget.property('speaker')
+    current = bool((session.SPEAKERS.get(name, {}) or {}).get('dubbing', {}).get('fit_to_subtitle', False))
+    checkbox.blockSignals(True)
+    checkbox.setChecked(current)
+    checkbox.blockSignals(False)
+
+
 class _EdgeTTSSpeakerPanel(QWidget):
     def __init__(widget, parent=None):
         # Hide briefly while parentless so we don't briefly appear as a
@@ -242,14 +277,28 @@ class _EdgeTTSSpeakerPanel(QWidget):
         widget.scope_range_from = QLineEdit()
         widget.scope_range_from.setPlaceholderText('00:00:00.000')
         widget.scope_range_box.layout().addWidget(widget.scope_range_from, 1)
+        widget.scope_range_from_capture = QPushButton('⤓')
+        widget.scope_range_from_capture.setObjectName('scope_range_capture_button')
+        widget.scope_range_from_capture.clicked.connect(
+            lambda: widget._capture_playback_position(widget.scope_range_from)
+        )
+        widget.scope_range_box.layout().addWidget(widget.scope_range_from_capture)
 
         widget.scope_range_to_label = QLabel()
         widget.scope_range_box.layout().addWidget(widget.scope_range_to_label)
         widget.scope_range_to = QLineEdit()
         widget.scope_range_to.setPlaceholderText('00:00:00.000')
         widget.scope_range_box.layout().addWidget(widget.scope_range_to, 1)
+        widget.scope_range_to_capture = QPushButton('⤓')
+        widget.scope_range_to_capture.setObjectName('scope_range_capture_button')
+        widget.scope_range_to_capture.clicked.connect(
+            lambda: widget._capture_playback_position(widget.scope_range_to)
+        )
+        widget.scope_range_box.layout().addWidget(widget.scope_range_to_capture)
 
         widget.scope_range.toggled.connect(lambda checked: widget.scope_range_box.setVisible(checked))
+
+        _install_fit_checkbox(widget)
 
         widget.generate_all_speeches_button = QPushButton()
         widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
@@ -291,6 +340,15 @@ class _EdgeTTSSpeakerPanel(QWidget):
             session.SPEAKERS[speaker_name]['dubbing']['pitch'] = value
             session.set_unsaved(True)
 
+    def _capture_playback_position(widget, line_edit):
+        """Stamp the current playback position into `line_edit`. Uses
+        the same ``timecode.Timecode('1000', ..., fractional=True)``
+        spelling the playercontrols header shows, so the captured text
+        round-trips through `_parse_timecode_input` exactly."""
+        from subtitld.modules import timecode
+        pos = float(session.SUBTITLE.get('position', 0) or 0)
+        line_edit.setText(str(timecode.Timecode('1000', start_seconds=pos, fractional=True)))
+
     def _scoped_segments_for_speaker(widget, speaker_name):
         segments = session.SUBTITLE.get('segments', []) or []
         speaker_segments = [s for s in segments if s.get('speaker', 'A') == speaker_name]
@@ -308,21 +366,38 @@ class _EdgeTTSSpeakerPanel(QWidget):
         speaker_name = widget.property('speaker')
         speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
         scoped = widget._scoped_segments_for_speaker(speaker_name)
+        speaker_voice = speaker_dubbing.get('voice', '')
+        speaker_rate = speaker_dubbing.get('rate', 0)
+        speaker_pitch = speaker_dubbing.get('pitch', 0)
         speeches_to_generate = []
         for subtitle in scoped:
-            overrides = subtitle.get('dubbing_options', {})
+            overrides = subtitle.setdefault('dubbing_options', {})
             subtitle['locked'] = True
+            voice_id = overrides.get('voice') or speaker_voice
+            # Pin engine+voice (and rate/pitch fallbacks) on each targeted
+            # subtitle BEFORE dispatching — so a mid-batch crash or per-item
+            # failure doesn't lose the user's choice. See the matching
+            # comment in _GenericTTSSpeakerPanel.generate_all_speeches_button_clicked.
+            overrides['engine'] = 'edge-tts'
+            overrides['voice'] = voice_id
+            # The speaker batch applies the panel's CURRENT rate/pitch to every
+            # targeted subtitle. Overwrite (not setdefault) so that changing the
+            # rate and re-running actually re-applies it — a stale per-subtitle
+            # override from an earlier run must not shadow the new value.
+            overrides['rate'] = speaker_rate
+            overrides['pitch'] = speaker_pitch
             speeches_to_generate.append({
                 'uid': secrets.token_hex(4),
                 'text': subtitle['text'],
                 'speaker': speaker_name,
                 'start': subtitle['start'],
                 'end': subtitle['end'],
-                'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
-                'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
-                'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+                'voice': voice_id,
+                'rate': speaker_rate,
+                'pitch': speaker_pitch,
             })
         if speeches_to_generate:
+            session.set_unsaved(True)
             EdgeTTSEngine.generate_speeches(speeches_to_generate)
 
     def update(widget):
@@ -343,10 +418,13 @@ class _EdgeTTSSpeakerPanel(QWidget):
         widget.voice_pitch.setValue(int(dubbing.get('pitch', 0) or 0))
         widget.voice_pitch.blockSignals(False)
 
+        _sync_fit_checkbox(widget)
+
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
         widget.voice_rate_label.setText(_('subtitles_panel_widget_dubbing.rate'))
         widget.voice_pitch_label.setText(_('subtitles_panel_widget_dubbing.pitch'))
+        widget.fit_to_subtitle_checkbox.setText(_('subtitles_panel_widget_dubbing.fit_to_subtitle'))
         widget.generate_all_speeches_button.setText(_('subtitles_panel_widget_dubbing.generate_all_speeches'))
         widget.scope_label.setText(_('panel_scope.label'))
         widget.scope_all.setText(_('panel_scope.all'))
@@ -354,6 +432,8 @@ class _EdgeTTSSpeakerPanel(QWidget):
         widget.scope_range.setText(_('panel_scope.range'))
         widget.scope_range_from_label.setText(_('panel_scope.from'))
         widget.scope_range_to_label.setText(_('panel_scope.to'))
+        for btn in (widget.scope_range_from_capture, widget.scope_range_to_capture):
+            btn.setToolTip(_('panel_scope.capture_tooltip'))
 
 class _EdgeTTSDubbingPanel(QWidget):
     def __init__(widget, parent=None):
@@ -736,6 +816,23 @@ class _GenericTTSSpeakerPanel(QWidget):
         # separate checkbox was confusing in practice (lines would fail
         # with `bad_params` if the toggle was off).
 
+        # Optional "slow speech" toggle. Providers that have only a
+        # binary slow/normal speed (gTTS) set
+        # ``provider.supports_slow_speech = True``; this surfaces a
+        # checkbox here and stores the choice as
+        # ``speaker['dubbing']['rate'] = -1`` (slow) or ``0`` (normal).
+        # Providers with continuous rate control (edge-tts) use their
+        # own bespoke panel with a spinner instead and never touch this.
+        widget.slow_speech_checkbox = None
+        if getattr(provider, 'supports_slow_speech', False):
+            widget.slow_speech_checkbox = QCheckBox()
+            widget.slow_speech_checkbox.toggled.connect(
+                lambda checked: widget._slow_speech_changed(checked)
+            )
+            widget.layout().addWidget(widget.slow_speech_checkbox)
+
+        _install_fit_checkbox(widget)
+
         widget.generate_all_speeches_button = QPushButton()
         widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
         widget.layout().addWidget(widget.generate_all_speeches_button, 0, Qt.AlignRight)
@@ -763,6 +860,37 @@ class _GenericTTSSpeakerPanel(QWidget):
         if speaker_name and speaker_name in session.SPEAKERS and voice_id is not None:
             session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = voice_id
             session.set_unsaved(True)
+
+    def _slow_speech_changed(widget, checked):
+        """Persist the slow-speech toggle onto the speaker's dubbing
+        config. We reuse the existing ``rate`` field (slow → ``-1``,
+        normal → ``0``) so providers don't need a separate plumbing
+        path; gTTS interprets ``rate < 0`` as ``slow=True`` in its
+        synthesis call."""
+        speaker_name = widget.property('speaker')
+        if not (speaker_name and speaker_name in session.SPEAKERS):
+            return
+        session.SPEAKERS[speaker_name].setdefault('dubbing', {})['rate'] = (
+            -1 if checked else 0
+        )
+        session.set_unsaved(True)
+
+    def setProperty(widget, name, value):
+        """Override so the checkbox can pick up the speaker's current
+        slow setting when the panel is shown for a different speaker
+        (e.g. via the speaker list). Qt's QStackedWidget reparents the
+        same panel instance across speakers, so we sync on each
+        ``setProperty('speaker', ...)``."""
+        super().setProperty(name, value)
+        if name == 'speaker':
+            if widget.slow_speech_checkbox is not None:
+                cur = bool(
+                    session.SPEAKERS.get(value, {}).get('dubbing', {}).get('rate', 0) < 0
+                )
+                widget.slow_speech_checkbox.blockSignals(True)
+                widget.slow_speech_checkbox.setChecked(cur)
+                widget.slow_speech_checkbox.blockSignals(False)
+            _sync_fit_checkbox(widget)
 
     def generate_all_speeches_button_clicked(widget):
         speaker_name = widget.property('speaker')
@@ -800,10 +928,15 @@ class _GenericTTSSpeakerPanel(QWidget):
             return cached_clone_ref[0]
 
         speeches_to_generate = []
+        # Resolve rate/pitch once so we can write them onto each subtitle's
+        # dubbing_options alongside engine+voice. Mirroring per-subtitle
+        # generation: subtitle overrides win, then speaker default, then 0.
+        speaker_rate = speaker_dubbing.get('rate', 0)
+        speaker_pitch = speaker_dubbing.get('pitch', 0)
         for subtitle in session.SUBTITLE.get('segments', []) or []:
             if subtitle.get('speaker', 'A') != speaker_name:
                 continue
-            overrides = subtitle.get('dubbing_options', {})
+            overrides = subtitle.setdefault('dubbing_options', {})
             subtitle['locked'] = True
             voice_id = overrides.get('voice') or speaker_voice
             # Per-subtitle override can be stale across an engine switch
@@ -818,6 +951,26 @@ class _GenericTTSSpeakerPanel(QWidget):
                 if 'voice' in overrides:
                     overrides['voice'] = voice_id
                     session.set_unsaved(True)
+            # Persist engine+voice on every targeted subtitle BEFORE
+            # firing the batch. Two reasons: (1) if generation crashes
+            # partway, the unprocessed subtitles still carry the choice
+            # the user made — `regenerate_dub_for_selected` and the
+            # subtitle-change auto-switch in `left_panel_dubbing.update`
+            # both read this override, so the user can recover without
+            # re-picking engine/voice in the panel; (2) it keeps the
+            # subtitle's dubbing_options consistent with what the
+            # speech_ready callback will write into `dubbing[0].engine`
+            # once each item succeeds.
+            overrides['engine'] = widget.provider.id
+            overrides['voice'] = voice_id
+            # The speaker batch applies the panel's CURRENT rate/pitch to every
+            # targeted subtitle. Overwrite (not setdefault) so re-running after
+            # changing the rate — or toggling gTTS "slow speech" back off (rate
+            # 0) — actually re-applies it; a stale per-subtitle override from an
+            # earlier run must not shadow the new value.
+            overrides['rate'] = speaker_rate
+            overrides['pitch'] = speaker_pitch
+            session.set_unsaved(True)
             entry = {
                 'uid': secrets.token_hex(4),
                 'text': subtitle['text'],
@@ -830,8 +983,8 @@ class _GenericTTSSpeakerPanel(QWidget):
                 # would shave a dict lookup but the readability of computing
                 # it inline (next to the rest of the request shape) wins.
                 'language': _project_tts_language(),
-                'rate': overrides.get('rate', speaker_dubbing.get('rate', 0)),
-                'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
+                'rate': speaker_rate,
+                'pitch': speaker_pitch,
                 # Stable per-speaker seed — see the single-shot path's
                 # comment and `_stable_seed_for_speaker` for why. We
                 # compute it inside the loop instead of hoisting because
@@ -875,9 +1028,16 @@ class _GenericTTSSpeakerPanel(QWidget):
             widget.voice_combobox.combobox.setCurrentIndex(0)
         widget.voice_combobox.combobox.blockSignals(False)
 
+        _sync_fit_checkbox(widget)
+
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
         widget.generate_all_speeches_button.setText(_('subtitles_panel_widget_dubbing.generate_all_speeches'))
+        widget.fit_to_subtitle_checkbox.setText(_('subtitles_panel_widget_dubbing.fit_to_subtitle'))
+        if widget.slow_speech_checkbox is not None:
+            widget.slow_speech_checkbox.setText(
+                _('subtitles_panel_widget_dubbing.slow_speech')
+            )
 
 
 class _ProviderEngineFacade:
@@ -1040,6 +1200,23 @@ def update(self):
     has_selection = session.SUBTITLE.get('selected') is not None
     self.left_panel_dubbing_no_subtitle_label.setVisible(not has_selection)
     self.left_panel_dubbing_subtitle_settings.setVisible(has_selection)
+
+    # Auto-switch the engine combobox to the engine pinned on the selected
+    # subtitle's `dubbing_options` (or recorded on its first dub). Without
+    # this, after "Generate all speeches" partially failed, the user would
+    # have to manually re-pick the same engine for every leftover subtitle
+    # before "Generate speech" would target the right provider. The pinned
+    # value is only honored if its engine is currently available — falls
+    # through to the global default if the addon has been uninstalled.
+    selected = session.SUBTITLE.get('selected') if has_selection else None
+    if selected is not None:
+        pinned_engine = (selected.get('dubbing_options') or {}).get('engine')
+        if not pinned_engine:
+            first_dub = (selected.get('dubbing') or [{}])[0] if selected.get('dubbing') else {}
+            pinned_engine = first_dub.get('engine')
+        if pinned_engine and self.left_panel_dubbing_engine_combobox.combobox.findData(pinned_engine) >= 0:
+            _engine_combobox_set_id(self.left_panel_dubbing_engine_combobox, pinned_engine)
+            session.CONFIG['dubbing']['selected_engine'] = pinned_engine
 
     selected_engine = _engine_combobox_current_id(self.left_panel_dubbing_engine_combobox)
     for widget in self.global_panel_dubbing_tabwidget.findChildren(QWidget):

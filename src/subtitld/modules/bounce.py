@@ -146,89 +146,113 @@ def bounce(output_path, audio_format, mode, audio_engine=None,
     if audio_engine is None:
         raise ValueError('audio_engine is required for non-clip bounce modes')
 
-    duration = float(session.VIDEO.get('duration', 0.0))
-    if duration <= 0.0:
-        # Fall back to the latest dub endpoint
-        for segment in session.SUBTITLE.get('segments', []):
-            for dub in segment.get('dubbing') or []:
-                try:
-                    duration = max(duration, float(dub.get('start', 0.0)) + float(dub.get('end', 0.0)) - float(dub.get('start', 0.0)))
-                except Exception:
-                    pass
+    # Export must ignore the live playback slider's
+    # `dub_separation_gain` (driven by the music/voice-separation
+    # slider in playercontrols). That slider is a LISTENING preference
+    # — fading dubs out so the user can hear the isolated original
+    # vocals — and shouldn't bleed into rendered files. Pin the dub
+    # gain to 1.0 for the duration of the export, restore on the way
+    # out (return or exception).
+    _restore_gain = getattr(audio_engine, 'dub_separation_gain', None)
+    _set_gain = getattr(audio_engine, 'set_dub_separation_gain', None)
+    _did_override = False
+    if callable(_set_gain) and _restore_gain is not None:
+        try:
+            _set_gain(1.0)
+            _did_override = True
+        except Exception:
+            pass
 
-    bg_buffer = None
-    if include_background:
-        bg_path = _background_audio_path()
-        if bg_path:
-            bg_buffer = _load_audio(bg_path, samplerate)
-            print(f'[bounce] background source: {bg_path} (frames={len(bg_buffer)}, peak={float(np.max(np.abs(bg_buffer))):.3f})')
+    try:
+        duration = float(session.VIDEO.get('duration', 0.0))
+        if duration <= 0.0:
+            # Fall back to the latest dub endpoint
+            for segment in session.SUBTITLE.get('segments', []):
+                for dub in segment.get('dubbing') or []:
+                    try:
+                        duration = max(duration, float(dub.get('start', 0.0)) + float(dub.get('end', 0.0)) - float(dub.get('start', 0.0)))
+                    except Exception:
+                        pass
+
+        bg_buffer = None
+        if include_background:
+            bg_path = _background_audio_path()
+            if bg_path:
+                bg_buffer = _load_audio(bg_path, samplerate)
+                print(f'[bounce] background source: {bg_path} (frames={len(bg_buffer)}, peak={float(np.max(np.abs(bg_buffer))):.3f})')
+            else:
+                print('[bounce] include_background requested but no _background.flac found in cache')
         else:
-            print('[bounce] include_background requested but no _background.flac found in cache')
-    else:
-        print('[bounce] background NOT included (checkbox unchecked)')
+            print('[bounce] background NOT included (checkbox unchecked)')
 
-    def _apply_background(buffer):
-        if bg_buffer is None:
-            return buffer
-        length = max(len(buffer), len(bg_buffer))
-        padded = np.zeros((length, 2), dtype=np.float32)
-        padded[:len(buffer)] += buffer
-        padded[:len(bg_buffer)] += bg_buffer
-        np.clip(padded, -1.0, 1.0, out=padded)
-        return padded
+        def _apply_background(buffer):
+            if bg_buffer is None:
+                return buffer
+            length = max(len(buffer), len(bg_buffer))
+            padded = np.zeros((length, 2), dtype=np.float32)
+            padded[:len(buffer)] += buffer
+            padded[:len(bg_buffer)] += bg_buffer
+            np.clip(padded, -1.0, 1.0, out=padded)
+            return padded
 
-    dub_tracks = list((getattr(audio_engine, 'speaker_tracks', {}) or {}).values())
+        dub_tracks = list((getattr(audio_engine, 'speaker_tracks', {}) or {}).values())
 
-    if mode in ('background_only', 'vocals_only'):
-        src = _background_audio_path() if mode == 'background_only' else _vocals_audio_path()
-        if not src:
-            raise ValueError(f'No cached audio available for mode {mode}')
-        buffer = _load_audio(src, samplerate)
-        if audio_format == 'MP4':
-            video = session.VIDEO.get('filepath')
-            if not video:
-                raise ValueError('No video loaded for MP4 mux')
-            _mux_mp4(video, buffer, samplerate, output_path)
-        else:
-            _write_audio(output_path, buffer, samplerate, audio_format)
-        return
-
-    if mode == 'mixdown':
-        buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=dub_tracks)
-        buffer = _apply_background(buffer)
-        if audio_format == 'MP4':
-            video = session.VIDEO.get('filepath')
-            if not video:
-                raise ValueError('No video loaded for MP4 mux')
-            _mux_mp4(video, buffer, samplerate, output_path)
-        else:
-            _write_audio(output_path, buffer, samplerate, audio_format)
-        return
-
-    if mode == 'stems':
-        stem, ext = os.path.splitext(output_path)
-        stem_tracks = getattr(audio_engine, 'speaker_tracks', {}) or {}
-        if not stem_tracks:
-            # No per-speaker tracks — just write a single mixdown under the stem name.
-            buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=dub_tracks)
-            buffer = _apply_background(buffer)
-            _write_audio(output_path, buffer, samplerate, audio_format)
-            return
-        for speaker_name, track in stem_tracks.items():
-            buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=[track])
-            if include_background:
-                buffer = _apply_background(buffer)
-            speaker_path = f'{stem}-{_safe_piece(speaker_name)}{ext}'
+        if mode in ('background_only', 'vocals_only'):
+            src = _background_audio_path() if mode == 'background_only' else _vocals_audio_path()
+            if not src:
+                raise ValueError(f'No cached audio available for mode {mode}')
+            buffer = _load_audio(src, samplerate)
             if audio_format == 'MP4':
                 video = session.VIDEO.get('filepath')
                 if not video:
                     raise ValueError('No video loaded for MP4 mux')
-                _mux_mp4(video, buffer, samplerate, speaker_path)
+                _mux_mp4(video, buffer, samplerate, output_path)
             else:
-                _write_audio(speaker_path, buffer, samplerate, audio_format)
-        return
+                _write_audio(output_path, buffer, samplerate, audio_format)
+            return
 
-    raise ValueError(f'Unknown bounce mode: {mode}')
+        if mode == 'mixdown':
+            buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=dub_tracks)
+            buffer = _apply_background(buffer)
+            if audio_format == 'MP4':
+                video = session.VIDEO.get('filepath')
+                if not video:
+                    raise ValueError('No video loaded for MP4 mux')
+                _mux_mp4(video, buffer, samplerate, output_path)
+            else:
+                _write_audio(output_path, buffer, samplerate, audio_format)
+            return
+
+        if mode == 'stems':
+            stem, ext = os.path.splitext(output_path)
+            stem_tracks = getattr(audio_engine, 'speaker_tracks', {}) or {}
+            if not stem_tracks:
+                # No per-speaker tracks — just write a single mixdown under the stem name.
+                buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=dub_tracks)
+                buffer = _apply_background(buffer)
+                _write_audio(output_path, buffer, samplerate, audio_format)
+                return
+            for speaker_name, track in stem_tracks.items():
+                buffer = audio_engine.render_buffer(start=0.0, end=duration, samplerate=samplerate, tracks=[track])
+                if include_background:
+                    buffer = _apply_background(buffer)
+                speaker_path = f'{stem}-{_safe_piece(speaker_name)}{ext}'
+                if audio_format == 'MP4':
+                    video = session.VIDEO.get('filepath')
+                    if not video:
+                        raise ValueError('No video loaded for MP4 mux')
+                    _mux_mp4(video, buffer, samplerate, speaker_path)
+                else:
+                    _write_audio(speaker_path, buffer, samplerate, audio_format)
+            return
+
+        raise ValueError(f'Unknown bounce mode: {mode}')
+    finally:
+        if _did_override and callable(_set_gain):
+            try:
+                _set_gain(_restore_gain)
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------

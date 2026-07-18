@@ -6,6 +6,8 @@ from subtitld.modules import session
 
 from subtitld.interface import left_panel_subtitleslist
 from subtitld.interface import left_panel_metadata
+from subtitld.interface import left_panel_videoproperties
+from subtitld.interface import left_panel_audio
 from subtitld.interface import left_panel_speakers
 from subtitld.interface import left_panel_dubbing
 from subtitld.interface import left_panel_qualitycheck
@@ -102,8 +104,10 @@ def load(self):
     self.left_panel_stackedwidgets.setObjectName('left_panel_stackedwidgets')
     self.left_panel.layout().addWidget(self.left_panel_stackedwidgets)
 
-    left_panel_subtitleslist.load(self)    
+    left_panel_subtitleslist.load(self)
     left_panel_metadata.load(self)
+    left_panel_videoproperties.load(self)
+    left_panel_audio.load(self)
     left_panel_speakers.load(self)
     left_panel_dubbing.load(self)
     left_panel_qualitycheck.load(self)

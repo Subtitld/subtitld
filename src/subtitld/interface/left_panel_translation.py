@@ -277,6 +277,10 @@ def global_panel_translation_target_language_combobox_activated(self):
         session.CONFIG['translation']['engine_options'] = {}
     session.CONFIG['translation']['engine_options']['target_language'] = session.LANGUAGE_DICT_LIST[self.global_panel_translation_target_language_combobox.currentText()]
     self.timeline_widget.update()
+    # Re-evaluate the "Invert translation" button for the newly selected
+    # language — it's shown only when at least one subtitle already has a
+    # translation into that language.
+    update(self)
     
 
 def global_panel_translation_engine_combobox_activated(self):

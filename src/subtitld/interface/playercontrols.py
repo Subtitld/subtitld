@@ -700,6 +700,7 @@ def load(self):
     self.playercontrols_record_button.setCheckable(True)
     self.playercontrols_record_button.setProperty('position', 'last')
     self.playercontrols_record_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
     self.playercontrols_record_button.clicked.connect(lambda: playercontrols_record_button_clicked(self))
     self.playercontrols_record_button.setLayout(QHBoxLayout())
     self.playercontrols_record_button.layout().setContentsMargins(40, 0, 0, 5)
@@ -710,6 +711,8 @@ def load(self):
     self.playercontrols_record_transcript_button.setObjectName('playercontrols_record_transcript_button')
     self.playercontrols_record_transcript_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.playercontrols_record_transcript_button.setFixedWidth(36)
+    self.playercontrols_record_transcript_button.setCheckable(True)
+    self.playercontrols_record_transcript_button.setToolTip(_('record_button.transcript_tooltip'))
     self.playercontrols_record_transcript_button.clicked.connect(lambda: playercontrols_record_transcript_button_clicked(self))
     self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_transcript_button, 0, Qt.AlignRight)
 
@@ -720,10 +723,19 @@ def load(self):
     self.playercontrols_record_audio_button.setObjectName('playercontrols_record_audio_button')
     self.playercontrols_record_audio_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.playercontrols_record_audio_button.setFixedWidth(36)
+    self.playercontrols_record_audio_button.setCheckable(True)
+    self.playercontrols_record_audio_button.setToolTip(_('record_button.wave_tooltip'))
     self.playercontrols_record_audio_button.clicked.connect(lambda: playercontrols_record_audio_button_clicked(self))
     self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_audio_button, 0, Qt.AlignLeft)
 
     self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_record_button)
+
+    # Record-mode controller (recording is tied to playback; see
+    # record_controls.RecordController). Reflect persisted arm/mode state.
+    from subtitld.interface.record_controls import RecordController
+    self.record_controller = RecordController(self)
+    self.playercontrols_record_button.setChecked(self.record_controller.armed)
+    _update_record_mode_buttons(self)
     
     self.playercontrols_widget_top_line.layout().addSpacing(-30)
 
@@ -859,7 +871,17 @@ def load(self):
         self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
 
         music_voice_separation_box_update(self)
-        
+
+        # Re-run the timeline's onset detector now that the vocals
+        # track exists — it picks up far more plosives on vocals-only
+        # audio than on the full mix. Idempotent: if a vocals-onset
+        # cache from a prior session is already loaded, this just
+        # re-reads it.
+        try:
+            self.timeline_widget.on_vocals_separation_ready()
+        except Exception:
+            pass
+
     def music_voice_separation_thread_original_extracted(response):
         audio_source = self.preview_panel_player._audio_device.load_audio(response)
         clip = self.preview_panel_player._audio_device.load_clip(audio_source)
@@ -1237,13 +1259,17 @@ def load(self):
     # playhead glides instead of stepping.
     import time as _time
     self._timeline_repaint_timer = QTimer(self)
-    # 60 Hz: matches the typical monitor refresh rate. At 30 Hz the
-    # cursor visibly "steps" because every timer frame is duplicated
-    # for 2 monitor refreshes. At 60 Hz the cursor advances on every
-    # display frame, which is the bar for "smooth" on a 60 Hz panel.
-    # The strip-clipped paintEvent fits comfortably in the 16.7 ms
-    # budget (~5 ms on a 100-sub project; see test_timeline_paint_perf).
-    self._timeline_repaint_timer.setInterval(16)  # ~60 Hz
+    # 30 Hz: a deliberate trade against the previous 60 Hz. Each tick
+    # schedules a paintEvent that runs the full timeline draw pipeline
+    # (Qt only clips the output, the Python iteration still runs).
+    # On a project with many dubs + onset markers enabled, that paint
+    # can take 20-40 ms — at 60 Hz back-to-back paints leave no GIL
+    # time for the sounddevice audio callback, so audio cuts when the
+    # user also scrolls or drags. 30 Hz halves the paint pressure
+    # while still feeling smooth (one frame per 2 display refreshes at
+    # 60 Hz; the cursor moves ~2 px per tick at typical zoom, well
+    # below the perceptual stepping threshold).
+    self._timeline_repaint_timer.setInterval(33)  # ~30 Hz
     self._last_playhead_x = -1.0
     # Anchor state for position extrapolation. Set on every
     # QMediaPlayer positionChanged emit.
@@ -1266,24 +1292,55 @@ def load(self):
             return False
         return mp.playbackState() == QMediaPlayer.PlayingState
 
-    def _smoothed_position_sec():
-        """Return the playhead position to draw *now*, extrapolated from
-        the last QMediaPlayer-reported anchor using wall-clock × speed.
-        Falls back to session.SUBTITLE['position'] if we haven't seen an
-        anchor yet (first paint after load, before any emit).
+    def _audio_engine():
+        """Return the dub audio engine, or None if it's not wired yet
+        (very early init / unit-test contexts). The engine's
+        ``playhead`` getter is the master clock for the whole app:
+        timeline cursor, subtitle highlight, video sync all read from
+        here. Audio is first-class — every other clock chases this one."""
+        try:
+            return self.preview_panel_player._audio_device
+        except AttributeError:
+            return None
 
-        When the player is NOT playing — e.g. user just clicked the
-        timeline to seek while paused — extrapolation must NOT run:
-        the anchor is correct, but wall-clock keeps advancing, so any
-        non-zero elapsed × speed slides the cursor away from where the
-        user clicked. Returning the raw anchor pins the cursor exactly
-        at the seek position until either play resumes or another seek
-        re-anchors."""
-        if self._pos_anchor_walltime <= 0:
+    def _smoothed_position_sec():
+        """Return the playhead position to draw *now*, anchored on the
+        audio engine's consumer playhead and extrapolated by wall-clock
+        between callback ticks.
+
+        The audio engine advances its playhead once per audio callback
+        (~85 ms at blocksize=4096). The cursor refresh runs at 30 Hz
+        (~33 ms). So between two audio callbacks the cursor would
+        otherwise show the same x three times then jump — visibly
+        chunky. We anchor on the audio engine's reading and extrapolate
+        with wall-clock × speed so the cursor glides instead.
+
+        When the player is NOT playing the anchor is correct and
+        wall-clock extrapolation must NOT run, otherwise the cursor
+        would drift away from the seek position. Return the raw audio
+        engine playhead in that case.
+
+        ``_pos_anchor_*`` are still used as the extrapolation memo so
+        we don't have to acquire the audio-engine lock 30 times per
+        second — we only re-anchor when the engine actually advanced.
+        """
+        engine = _audio_engine()
+        if engine is None:
             return float(session.SUBTITLE.get('position', 0) or 0)
+        ae_pos = engine.playhead
         if not _is_playing():
-            return self._pos_anchor_sec
-        elapsed = _time.perf_counter() - self._pos_anchor_walltime
+            # Paused — engine playhead is canonical, don't extrapolate.
+            self._pos_anchor_sec = ae_pos
+            self._pos_anchor_walltime = 0.0
+            return ae_pos
+        now = _time.perf_counter()
+        # If the engine advanced (callback fired), re-anchor.
+        if (self._pos_anchor_walltime <= 0
+                or ae_pos != self._pos_anchor_sec):
+            self._pos_anchor_sec = ae_pos
+            self._pos_anchor_walltime = now
+            return ae_pos
+        elapsed = now - self._pos_anchor_walltime
         if elapsed < 0:
             elapsed = 0.0
         if elapsed > self._pos_extrapolation_cap_sec:
@@ -1327,21 +1384,11 @@ def load(self):
     self._timeline_repaint_timer.timeout.connect(_repaint_playhead_strip)
 
     def _on_position_changed():
-        """Re-anchor the extrapolation each time QMediaPlayer reports a
-        real position. Starts the repaint timer the first time — but
-        ONLY while playing. A seek-while-paused (click on the timeline)
-        also fires positionChanged; if we started the timer there we'd
-        leak 60 Hz repaints forever (no playbackStateChanged would ever
-        stop it, since the state didn't change), and the cursor would
-        slide because _smoothed_position_sec extrapolates from the
-        anchor. Update the anchor regardless so that when playback
-        resumes, the first tick already has fresh state."""
-        # Note: by the time this fires, preview_panel.position_changed
-        # has already written the canonical (non-extrapolated) seconds
-        # value into session.SUBTITLE['position']. We pick it up here as
-        # the new anchor.
-        self._pos_anchor_sec = float(session.SUBTITLE.get('position', 0) or 0)
-        self._pos_anchor_walltime = _time.perf_counter()
+        """Used to drive the cursor anchor. Now the audio engine is the
+        master clock (see ``_smoothed_position_sec``), so the only thing
+        we do on QMediaPlayer's positionChanged is start the cursor
+        refresh timer the first time we see "playing" — the audio
+        engine itself provides the position values."""
         if _is_playing() and not self._timeline_repaint_timer.isActive():
             self._last_playhead_x = -1.0
             self._timeline_repaint_timer.start()
@@ -1353,12 +1400,71 @@ def load(self):
         # One last full update so the playhead lands on the final frame
         # and any partial-strip artifacts disappear.
         timeline.update(self)
+        # Stop the video-sync watchdog too — it has nothing to chase
+        # while paused.
+        if hasattr(self, '_av_sync_timer') and self._av_sync_timer is not None:
+            self._av_sync_timer.stop()
 
     self.preview_panel_player.position_changed_signal.connect(_on_position_changed)
     # Stop the timer when playback pauses so the timeline isn't repainting
     # forever after.
     self.preview_panel_player._media_player.playbackStateChanged.connect(
         lambda state: _stop_timeline_repaint_timer() if state != QMediaPlayer.PlayingState else None
+    )
+
+    # ---- Audio/video sync watchdog -----------------------------------
+    # The audio engine (SoundDeviceAudioEngine) is the master clock for
+    # this app. QMediaPlayer runs the video on its own internal clock,
+    # which drifts from the audio engine over time (different timebases,
+    # different scheduling jitter). This 4 Hz watchdog measures the
+    # drift between QMediaPlayer.position() and audio_engine.playhead,
+    # and when drift exceeds ``_AV_SYNC_THRESHOLD_MS`` it hard-snaps the
+    # video to the audio position. Audio is never touched.
+    #
+    # Why 4 Hz: the watchdog correction itself is a setPosition() call
+    # which forces QMediaPlayer to decode a new keyframe — that's a
+    # ~30-100 ms hiccup in the video stream. Doing it more than ~4
+    # times a second would make the video visibly stutter. 4 Hz keeps
+    # average drift bounded to ~250 ms before the next check, and the
+    # threshold (100 ms below) means we only actually correct on real
+    # drift, not on every check.
+    #
+    # The threshold is asymmetric in cost: 100 ms of A/V offset is
+    # audible (lipsync). Lower threshold → more frequent video hiccups.
+    # 100 ms is the standard pro broadcast tolerance.
+    _AV_SYNC_THRESHOLD_MS = 100
+
+    def _av_sync_tick():
+        engine = _audio_engine()
+        if engine is None:
+            return
+        mp = self.preview_panel_player._media_player
+        if mp.playbackState() != QMediaPlayer.PlayingState:
+            return
+        audio_pos = engine.playhead          # seconds
+        video_pos_ms = mp.position()         # ms
+        drift_ms = video_pos_ms - audio_pos * 1000.0
+        if abs(drift_ms) > _AV_SYNC_THRESHOLD_MS:
+            # Snap the video to audio. Audio is never touched.
+            mp.setPosition(int(audio_pos * 1000.0))
+
+    self._av_sync_timer = QTimer(self)
+    self._av_sync_timer.setInterval(250)  # 4 Hz
+    self._av_sync_timer.timeout.connect(_av_sync_tick)
+
+    def _on_playback_started():
+        # When QMediaPlayer transitions to PlayingState, kick BOTH:
+        # the 30 Hz cursor refresh (so the cursor starts moving even
+        # if QMediaPlayer hasn't emitted positionChanged yet) and the
+        # 4 Hz video-sync watchdog.
+        if not self._timeline_repaint_timer.isActive():
+            self._last_playhead_x = -1.0
+            self._timeline_repaint_timer.start()
+        self._av_sync_timer.start()
+
+    self.preview_panel_player._media_player.playbackStateChanged.connect(
+        lambda state: _on_playback_started()
+        if state == QMediaPlayer.PlayingState else None
     )
 
     self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_center_bottom_line)
@@ -1452,6 +1558,25 @@ def load(self):
     self.grid_controls_container.layout().addWidget(self.grid_scenes_button)
 
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.grid_controls_container)
+
+    # Onset markers (consonant-onset visual aid on the timeline — see
+    # `subtitld.modules.onset_detection`). Single checkable toggle; the
+    # actual detection runs once per audio file as a background pass and
+    # caches to disk.
+    self.onset_controls_container = QWidget()
+    self.onset_controls_container.setObjectName('onset_controls_container')
+    self.onset_controls_container.setLayout(QHBoxLayout())
+    self.onset_controls_container.layout().setContentsMargins(0, 0, 0, 0)
+    self.onset_controls_container.layout().setSpacing(0)
+
+    self.onset_button = QPushButton()
+    self.onset_button.setObjectName('onset_button')
+    self.onset_button.setCheckable(True)
+    self.onset_button.clicked.connect(lambda: onset_button_clicked(self))
+    self.onset_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.onset_controls_container.layout().addWidget(self.onset_button)
+
+    self.playercontrols_widget_right_bottom_line.layout().addWidget(self.onset_controls_container)
 
     self.step_button_container = QWidget()
     self.step_button_container.setObjectName('step_button_container')
@@ -1806,24 +1931,59 @@ def playercontrols_playpause_button_pressed(self):
 
 def playercontrols_playpause_button_clicked(self):
     """Function to call when play/pause button is clicked"""
+    controller = getattr(self, 'record_controller', None)
     if self.preview_panel_player.is_paused():
         self.preview_panel_player.play()
         if session.CONFIG['repeat_activated']:
             session.REPEAT_DURATION_BUFFER = []
+        # Armed record button → recording follows playback.
+        if controller is not None and controller.armed:
+            controller.on_play()
     else:
-        self.preview_panel_player.pause()    
+        self.preview_panel_player.pause()
+        if controller is not None and controller.is_recording:
+            controller.on_pause()
 
 
 def playercontrols_record_button_clicked(self):
-    pass
+    """Arm / disarm recording. Armed → the next Play records; disarming while a
+    take is running stops it. Recording itself is triggered from play/pause."""
+    controller = getattr(self, 'record_controller', None)
+    if controller is None:
+        return
+    armed = self.playercontrols_record_button.isChecked()
+    controller.armed = armed
+    if armed:
+        if not self.preview_panel_player.is_paused():
+            controller.on_play()   # already playing → start now
+    elif controller.is_recording:
+        controller.on_pause()      # disarmed mid-take → finalize
+    _update_record_mode_buttons(self)
 
 
 def playercontrols_record_transcript_button_clicked(self):
-    pass
+    from subtitld.interface.record_controls import MODE_TRANSCRIPT
+    if getattr(self, 'record_controller', None) is not None:
+        self.record_controller.mode = MODE_TRANSCRIPT
+    _update_record_mode_buttons(self)
 
 
 def playercontrols_record_audio_button_clicked(self):
-    pass
+    from subtitld.interface.record_controls import MODE_WAVE
+    if getattr(self, 'record_controller', None) is not None:
+        self.record_controller.mode = MODE_WAVE
+    _update_record_mode_buttons(self)
+
+
+def _update_record_mode_buttons(self):
+    """Show which mode switch is active (exactly one checked)."""
+    controller = getattr(self, 'record_controller', None)
+    if controller is None:
+        return
+    from subtitld.interface.record_controls import MODE_TRANSCRIPT, MODE_WAVE
+    mode = controller.mode
+    self.playercontrols_record_transcript_button.setChecked(mode == MODE_TRANSCRIPT)
+    self.playercontrols_record_audio_button.setChecked(mode == MODE_WAVE)
 
 
 def update_playercontrols_playpause_button(self):
@@ -1854,6 +2014,7 @@ def update(self):
     timelinescrolling_type_update(self)
     update_snap_buttons(self)
     update_grid_buttons(self)
+    update_onset_button(self)
     update_step_buttons(self)
     music_voice_separation_box_update(self)
 
@@ -1873,6 +2034,19 @@ def _refresh_after_history(self):
     from subtitld.interface import left_panel_subtitleslist
     left_panel_subtitleslist.update(self)
     self.timeline_widget.update()
+    # The history restore deep-copies every subtitle dict, so each
+    # `id(sub)` changes. The audio engine keys its `subtitle_clips`
+    # map on those ids — without resyncing here, the engine still
+    # holds clips bound to the pre-undo (orphaned) dicts and the
+    # newly-restored dicts have no clip at all. Result: silent dub
+    # playback after every undo/redo. Re-sync from the live segments
+    # so each restored subtitle gets a fresh clip pointing at its
+    # current dub data.
+    preview = getattr(self, 'preview_panel_player', None)
+    if preview is not None:
+        device = getattr(preview, '_audio_device', None)
+        if device is not None and hasattr(device, 'sync_subtitle_dubs'):
+            device.sync_subtitle_dubs(session.SUBTITLE.get('segments', []) or [])
 
 
 @shortcut('history_undo', 'Undo last action', ['Ctrl+Z'])
@@ -1938,6 +2112,10 @@ def split_dub_at_cursor(self):
 @shortcut('zoom_in', 'Zoom in', ['+'])
 def zoomin_button_clicked(self):
     """Function to call when zoonin button is clicked"""
+    # Button/keyboard zoom has no meaningful pointer position over the
+    # timeline — pivot on the playhead (clear any mouse pivot left by a
+    # prior wheel-zoom).
+    self._zoom_mouse_pivot_x = None
     session.CONFIG['timeline_zoom'] += 10.0
     zoom_buttons_update(self)
 
@@ -1945,6 +2123,7 @@ def zoomin_button_clicked(self):
 @shortcut('zoom_out', 'Zoom out', ['-'])
 def zoomout_button_clicked(self):
     """Function to call when zoonout button is clicked"""
+    self._zoom_mouse_pivot_x = None
     session.CONFIG['timeline_zoom'] -= 10.0
     zoom_buttons_update(self)
 
@@ -1977,8 +2156,26 @@ def zoom_buttons_update(self):
 
 def _apply_zoom_geometry(self):
     self._zoom_last_apply_ms = int(time.monotonic() * 1000)
-    proportion = ((session.SUBTITLE.get('position', 0) * self.timeline_widget.width_proportion) - self.timeline_scroll.horizontalScrollBar().value()) / self.timeline_scroll.width()
-    self.timeline_widget.setGeometry(0, 0, int(round(session.VIDEO.get('duration', 0.01) * session.CONFIG['timeline_zoom'])), self.timeline_scroll.height() - 20)
+    scroll = self.timeline_scroll
+    width_new = int(round(session.VIDEO.get('duration', 0.01) * session.CONFIG['timeline_zoom']))
+    mouse_pivot_x = getattr(self, '_zoom_mouse_pivot_x', None)
+
+    if mouse_pivot_x is not None:
+        # Mouse-pivoted zoom: keep the timeline point under the cursor fixed
+        # on screen. Work in whole-timeline fractions (zoom-invariant), so
+        # this stays correct even when several wheel notches collapse into a
+        # single throttled apply.
+        width_old = max(1, self.timeline_widget.width())
+        scroll_old = scroll.horizontalScrollBar().value()
+        frac = (scroll_old + mouse_pivot_x) / width_old
+        self.timeline_widget.setGeometry(0, 0, width_new, scroll.height() - 20)
+        scroll.horizontalScrollBar().setValue(int(round(frac * width_new - mouse_pivot_x)))
+        self.timeline_widget.update()
+        return
+
+    # Buttons/keyboard: pivot on the playhead (its viewport fraction is held).
+    proportion = ((session.SUBTITLE.get('position', 0) * self.timeline_widget.width_proportion) - scroll.horizontalScrollBar().value()) / scroll.width()
+    self.timeline_widget.setGeometry(0, 0, width_new, scroll.height() - 20)
     timeline.update_scrollbar(self, position=proportion)
 
 
@@ -2152,6 +2349,23 @@ def update_grid_buttons(self):
     self.grid_seconds_button.setChecked(True if session.CONFIG['timeline'].get('grid_type', False) == 'seconds' else False)
     self.grid_scenes_button.setEnabled(session.CONFIG['timeline'].get('show_grid', False))
     self.grid_scenes_button.setChecked(True if session.CONFIG['timeline'].get('grid_type', False) == 'scenes' else False)
+
+
+def onset_button_clicked(self):
+    """Function to call when the onset-markers (plosive view) button is clicked"""
+    enabled = self.onset_button.isChecked()
+    session.CONFIG['timeline']['show_onset_markers'] = enabled
+    if not enabled:
+        # Drop any selected plosive mark so a stale pivot doesn't linger
+        # when the overlay is turned back on.
+        self.timeline_widget.selected_onset = None
+    self.timeline_widget.update()
+
+
+def update_onset_button(self):
+    """Sync the onset-markers toggle to CONFIG. Called from the same
+    startup pass that syncs grid/snap buttons."""
+    self.onset_button.setChecked(bool(session.CONFIG['timeline'].get('show_onset_markers', False)))
     self.timeline_widget.update()
 
 
@@ -2827,6 +3041,11 @@ def music_voice_separation_slider_changed(self):
         self.music_voice_separation_slider.setProperty('class', 'middle')
         self.music_voice_separation_slider.style().unpolish(self.music_voice_separation_slider)
         self.music_voice_separation_slider.style().polish(self.music_voice_separation_slider)
+
+        # At neutral we're playing the original mix as-is. Dubs sit on
+        # top at full volume — matches behavior before the separation
+        # slider was introduced.
+        background_volume = 1.0
     else:
         original_track.enabled = False
         background_sound.enabled = True
@@ -2840,6 +3059,12 @@ def music_voice_separation_slider_changed(self):
 
         background_sound.gain = background_volume
         vocals_sound.gain = voice_volume
+
+    # Dubs ride the background gain: at neutral / "music only" they
+    # play full, at "voice only" they fade out so the user can hear the
+    # isolated original vocals without the dubbed version on top.
+    if hasattr(audio_device, 'set_dub_separation_gain'):
+        audio_device.set_dub_separation_gain(background_volume)
 
 
 def timeline_show_speaker_color_button_clicked(self):
@@ -2868,6 +3093,7 @@ def translate(self):
     self.step_button.setText(_('playercontrols.step'))
     self.remove_selected_subtitle_button.setText(' ' + _('playercontrols.remove'))
     self.grid_button.setText(_('playercontrols.grid'))
+    self.onset_button.setText(_('playercontrols.onset'))
 
     self.send_text_to_last_subtitle_button.setToolTip(_('playercontrols.send_text_to_last_subtitle'))
     self.send_text_to_last_subtitle_and_slice_button.setToolTip(_('playercontrols.send_text_to_last_subtitle_and_slice'))
@@ -2913,6 +3139,7 @@ def translate(self):
     self.move_end_back_subtitle.setToolTip(_('playercontrols.move_end_back_subtitle'))
     self.move_end_forward_subtitle.setToolTip(_('playercontrols.move_end_forward_subtitle'))
     self.grid_button.setToolTip(_('playercontrols.grid'))
+    self.onset_button.setToolTip(_('playercontrols.onset_tooltip'))
     self.grid_frames_button.setToolTip(_('playercontrols.grid_frames'))
     self.grid_seconds_button.setToolTip(_('playercontrols.grid_seconds'))
     self.grid_scenes_button.setToolTip(_('playercontrols.grid_scenes'))

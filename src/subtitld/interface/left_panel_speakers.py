@@ -507,7 +507,16 @@ class speakers_list_item(QWidget):
         )
         speaker_time = round(sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments'] if segment.get('speaker', 'A') == widget.speaker_name]), 3)
         total_speaking_time = sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments']])
-        percentage = int(round((speaker_time / total_speaking_time) * 100, 0))
+        # `total_speaking_time` is 0 when the cue list is empty or every
+        # cue is zero-duration (e.g. the AssemblyAI cloud provider's
+        # placeholder finish callback emits a single ``start=end=0.0``
+        # segment until the cloud surfaces real per-utterance timing).
+        # Render 0% rather than crash the speakers panel — the user
+        # sees a 0% pill until real timings land.
+        percentage = (
+            int(round((speaker_time / total_speaking_time) * 100, 0))
+            if total_speaking_time > 0 else 0
+        )
         widget.name_label.setText('<b>' + widget.speaker_name + '</b><br><small>' + f'{speaker_time} sec. ({percentage}%)' + '</small>')
 
         widget.dubbing_line.setVisible(session.CONFIG['dubbing'].get('enabled', False))

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -38,7 +39,7 @@ from PySide6.QtWidgets import (
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
-from subtitld.modules import addons
+from subtitld.modules import addons, session
 from subtitld.modules.addons import installer, languages as _languages, registry
 from subtitld.modules.addons.provider import (
     TASK_ASR_TRANSCRIBE,
@@ -583,6 +584,128 @@ class _AddonCard(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Schema 'storage' redirect
+# ---------------------------------------------------------------------------
+# A field may declare ``'storage': 'session.CONFIG.foo.bar.baz'`` to opt
+# OUT of the default per-addon-id bag (``registry.options_for(addon_id)``)
+# and persist into an explicit slot under ``session.CONFIG`` instead.
+#
+# Real-world motivation: every Subtitld Cloud-backed builtin provider
+# (AssemblyAI, ElevenLabs, …) shares ONE auth credential. The cloud bills
+# the same account no matter which upstream brand the user picks, so
+# storing the key under each provider's per-addon bag would force the
+# user to paste the same string under every provider — and would drift
+# instantly the first time they updated it in one place. The schema
+# redirect points all of them at one shared slot
+# (``session.CONFIG.transcription.engine_options.SubtitldCloud.api_key``)
+# so the key entered under AssemblyAI is read back when the user picks
+# ElevenLabs, with no special-case code in any provider.
+#
+# Without the redirect being honored here, ``provider.config_schema``
+# declares ``storage`` paths the renderers silently ignore — the user
+# pastes a key, it lands in the wrong bucket, the provider's catalog
+# refresh sees no auth, and the picker shows "no models available".
+# That was the symptom that drove this code into existence.
+
+
+def _resolve_storage_path(path: str) -> tuple[dict, str] | None:
+    """Parse a ``'session.CONFIG.<a>.<b>.…<leaf>'`` string into
+    ``(parent_dict, 'leaf_key')`` so the caller can read or write the
+    leaf without further ceremony.
+
+    Returns ``None`` for malformed paths (anything that doesn't start
+    with ``session.CONFIG.`` or has nothing after the prefix) or if the
+    walk hits a non-dict node along the way — callers fall back to the
+    per-addon options bag in either case, which keeps a typo'd schema
+    from silently dropping the user's input.
+
+    Intermediate dicts are auto-created via ``setdefault`` so the very
+    first save under a fresh CONFIG doesn't need to seed the chain.
+    """
+    if not isinstance(path, str) or not path.startswith('session.CONFIG.'):
+        return None
+    parts = path.split('.')[2:]  # drop the 'session', 'CONFIG' prefix
+    # Filter empty segments — catches trailing dots
+    # (``'session.CONFIG.'``) and accidental doubled separators
+    # (``'session.CONFIG..api_key'``) that would otherwise land writes
+    # under ``session.CONFIG['']`` and corrupt the config.
+    if not parts or any(not p for p in parts):
+        return None
+    node = session.CONFIG
+    if not isinstance(node, dict):
+        return None
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+        if not isinstance(node, dict):
+            return None
+    return (node, parts[-1])
+
+
+def _read_field_value(field: dict, addon_options: dict):
+    """Pick the current value for a field, honoring its ``storage`` hint.
+
+    Read order:
+
+    1. If ``storage`` is set and resolves to an existing leaf → that.
+    2. Else the per-addon-id options bag — and when this fallback fires
+       AND a ``storage`` path is declared, the value is copied forward
+       into the storage slot in the same call (legacy migration; see
+       below).
+    3. Else ``field['default']`` (may be ``None``).
+
+    Why migrate on read, not just on next save: any user who pasted a
+    key into the (broken) pre-fix flow has it sitting in the per-addon
+    bag. Without the migration here, opening the picker and clicking
+    Transcribe without first re-editing the key would leave the value
+    where it is — visible in the UI (via the fallback) but invisible
+    to ``cloud.read_api_key()`` (which reads only the storage slot).
+    The provider's catalog refresh would then return "no models
+    available" with a perfectly-good-looking key on screen.
+
+    Migrating on the very first read flips that case correct without
+    asking the user to re-type. We don't pop the value from the addon
+    bag — preserving it costs nothing and means a downgrade to the
+    pre-fix code still finds the key where it expects.
+    """
+    key = field['key']
+    storage = field.get('storage')
+    if storage:
+        target = _resolve_storage_path(storage)
+        if target is not None:
+            parent, leaf = target
+            if leaf in parent:
+                return parent[leaf]
+            # Storage slot is empty. If the user has a legacy value in
+            # the per-addon bag (pre-fix write), migrate it forward
+            # *now* so the provider's read path (which only knows about
+            # the storage slot) picks it up — see docstring.
+            legacy = addon_options.get(key)
+            if legacy is not None:
+                parent[leaf] = legacy
+                return legacy
+    return addon_options.get(key, field.get('default'))
+
+
+def _write_field_value(field: dict, addon_options: dict, value) -> None:
+    """Persist a field value, honoring its ``storage`` hint.
+
+    Writes go to the storage path *exclusively* when one is declared
+    (no shadow copy in the per-addon bag) — duplicate writes would
+    drift the moment the user changed one and not the other, defeating
+    the "one source of truth" intent of the redirect.
+    """
+    key = field['key']
+    storage = field.get('storage')
+    if storage:
+        target = _resolve_storage_path(storage)
+        if target is not None:
+            parent, leaf = target
+            parent[leaf] = value
+            return
+    addon_options[key] = value
+
+
+# ---------------------------------------------------------------------------
 # Config-schema renderer
 # ---------------------------------------------------------------------------
 class _AddonConfigDialog(utils.SimpleDialog):
@@ -615,11 +738,13 @@ class _AddonConfigDialog(utils.SimpleDialog):
             title=_('addons_dialog.configure.title').format(addon=display_name),
         )
         self._addon_id = addon_id
-        # Each entry is `(key, getter)` where `getter()` returns the value
-        # currently shown in the widget. Stored as a list (not a dict) so
-        # multi-instance keys would be possible later without breaking
+        # Each entry is `(key, getter, field)` where `getter()` returns
+        # the value currently shown in the widget and `field` is the
+        # original schema dict (needed at write time to re-check the
+        # `storage` redirect). Stored as a list (not a dict) so multi-
+        # instance keys would be possible later without breaking the
         # ordering of field rendering.
-        self._readers: list[tuple[str, callable]] = []
+        self._readers: list[tuple[str, callable, dict]] = []
 
         fields = (manifest or {}).get('config_schema', {}).get('fields') or []
         if not fields:
@@ -636,7 +761,16 @@ class _AddonConfigDialog(utils.SimpleDialog):
             key = field.get('key')
             if not key:
                 continue
-            self._render_field(field, current.get(key, field.get('default')))
+            # `_read_field_value` honors the field's `storage` redirect
+            # when set — without it, fields like the SubtitldCloud
+            # api_key would always render empty on open even though the
+            # value is sitting in its shared slot under session.CONFIG.
+            self._render_field(field, _read_field_value(field, current))
+            # `_render_field` appended a `(key, getter)` tuple; swap it
+            # for a `(key, getter, field)` so `_on_accept` can re-check
+            # the field's `storage` redirect at write time.
+            last_key, last_getter = self._readers[-1]
+            self._readers[-1] = (last_key, last_getter, field)
 
         # Replace SimpleDialog's accept handler so we persist before
         # closing. `clicked` is the only connection set in SimpleDialog;
@@ -726,14 +860,209 @@ class _AddonConfigDialog(utils.SimpleDialog):
 
     def _on_accept(self):
         # `options_for` returns the live dict — mutate in place so any
-        # other references already handed out stay current.
+        # other references already handed out stay current. Fields with
+        # a `storage` redirect bypass this dict entirely (see
+        # `_write_field_value`); the redirect targets a shared slot
+        # under `session.CONFIG` directly.
         options = registry.options_for(self._addon_id)
-        for key, getter in self._readers:
+        for key, getter, field in self._readers:
             try:
-                options[key] = getter()
+                _write_field_value(field, options, getter())
             except Exception:
                 log.exception('addons_dialog: failed to read config field %s', key)
         self.accept()
+
+
+class AddonConfigInlineWidget(QWidget):
+    """Schema-driven options renderer for embedding INSIDE other panels.
+
+    Same field-type vocabulary as :class:`_AddonConfigDialog`
+    (``bool`` / ``select`` / ``int`` / ``file`` / ``string``), but with two
+    behavioral differences that make it suitable for an always-visible
+    options strip rather than a modal config dialog:
+
+    1. **Auto-save on every change.** Each widget's change signal writes
+       straight into ``registry.options_for(addon_id)`` — no Accept/Cancel.
+       This is what callers like the transcription panel want: the user
+       changes the model picker, the next ``transcribe()`` call already
+       sees it. No surprise stale values.
+    2. **No window chrome.** Pure ``QWidget`` so the caller decides where
+       it lives in its own layout.
+
+    Unknown keys present in the registry options dict are left untouched,
+    matching the dialog's behavior — useful for callers that bolt non-
+    schema runtime state onto the same dict (e.g. internal caches).
+
+    The widget reacts to ``provider``'s definition shape too: it accepts
+    either an already-extracted ``fields`` list or a full
+    ``config_schema`` dict via :meth:`for_provider`, so it's resilient to
+    whichever shape the calling site has on hand.
+    """
+
+    def __init__(self, addon_id: str, fields: list, parent=None):
+        super().__init__(parent)
+        self._addon_id = addon_id
+        # Snapshot the live registry dict — we mutate this in place, so any
+        # other reference (e.g. the provider's own getters) sees changes
+        # instantly without a save round-trip.
+        self._options = registry.options_for(addon_id)
+        # Index by key so `_store` can look the field's schema dict up
+        # at write time (it needs the `storage` redirect, if any). The
+        # change-signal lambdas only carry the key around — threading
+        # the full dict through every lambda capture would be noisier
+        # than this one-line index.
+        self._fields_by_key: dict[str, dict] = {}
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self.setLayout(layout)
+
+        rendered = 0
+        for field in fields or []:
+            if not isinstance(field, dict) or not field.get('key'):
+                continue
+            self._fields_by_key[field['key']] = field
+            self._render_field(field)
+            rendered += 1
+        # If nothing rendered (provider has no schema, or every field was
+        # malformed) collapse to zero height so the caller's layout stays
+        # clean. We don't add a placeholder — the calling panel usually
+        # already says "no options".
+        if rendered == 0:
+            self.setVisible(False)
+
+    @classmethod
+    def for_provider(cls, provider, parent=None):
+        """Convenience: build from a provider that exposes ``config_schema``
+        and ``id``. Returns ``None`` if the provider has no schema or no
+        usable fields — caller decides whether to add anything to the
+        layout. Saves every call site from doing the same None-checks."""
+        schema = getattr(provider, 'config_schema', None) or {}
+        if isinstance(schema, dict):
+            fields = schema.get('fields') or []
+        else:
+            fields = []
+        if not fields:
+            return None
+        return cls(getattr(provider, 'id', ''), fields, parent=parent)
+
+    # ------------------------------------------------------------------
+    # Field rendering. Mirrors `_AddonConfigDialog._render_field` but
+    # wires `.connect` to a setter instead of stashing a getter for
+    # later. The two could be unified later if the divergence ever feels
+    # like a maintenance burden; for now duplication keeps each call
+    # site easy to reason about in isolation.
+    # ------------------------------------------------------------------
+    def _render_field(self, field: dict) -> None:
+        key = field['key']
+        ftype = (field.get('type') or 'string').lower()
+        label_text = field.get('label') or key
+        help_text = field.get('help') or ''
+        # Honor `storage` redirects so a field pointed at a shared slot
+        # (e.g. SubtitldCloud's api_key) shows the value entered under
+        # ANY other provider sharing that slot. Without this, picking
+        # AssemblyAI after entering the key under ElevenLabs would
+        # render the field empty even though auth is configured.
+        current_value = _read_field_value(field, self._options)
+
+        row = QWidget()
+        row.setLayout(QVBoxLayout())
+        row.layout().setContentsMargins(0, 0, 0, 0)
+        row.layout().setSpacing(2)
+
+        if ftype == 'bool':
+            cb = QCheckBox(label_text)
+            cb.setChecked(bool(current_value))
+            cb.toggled.connect(lambda checked, k=key: self._store(k, bool(checked)))
+            row.layout().addWidget(cb)
+        elif ftype == 'select':
+            row.layout().addWidget(QLabel(label_text))
+            combo = QComboBox()
+            options = field.get('options') or []
+            default_val = field.get('default')
+            target = current_value if current_value is not None else default_val
+            selected_idx = 0
+            for i, opt in enumerate(options):
+                if isinstance(opt, dict):
+                    val = opt.get('value')
+                    lbl = opt.get('label', val)
+                else:
+                    val = opt
+                    lbl = str(opt)
+                combo.addItem(str(lbl), val)
+                if target is not None and val == target:
+                    selected_idx = i
+            if combo.count():
+                combo.setCurrentIndex(selected_idx)
+            combo.currentIndexChanged.connect(
+                lambda _i, c=combo, k=key: self._store(k, c.currentData())
+            )
+            row.layout().addWidget(combo)
+        elif ftype == 'int':
+            row.layout().addWidget(QLabel(label_text))
+            spin = QSpinBox()
+            # Manifests may set min/max; keep generous defaults so a
+            # missing bound doesn't cap a legitimate value. -1..999999
+            # covers every numeric setting we currently surface.
+            spin.setRange(int(field.get('min', -1)), int(field.get('max', 999999)))
+            try:
+                spin.setValue(int(current_value) if current_value is not None else 0)
+            except (TypeError, ValueError):
+                spin.setValue(0)
+            spin.valueChanged.connect(lambda v, k=key: self._store(k, int(v)))
+            row.layout().addWidget(spin)
+        elif ftype == 'file':
+            row.layout().addWidget(QLabel(label_text))
+            picker = QHBoxLayout()
+            picker.setSpacing(4)
+            line = QLineEdit(str(current_value) if current_value else '')
+            browse = QPushButton(_('addons_dialog.configure.browse'))
+
+            def _on_browse(_checked=False, line=line, k=key):
+                # Note: the outer ``_`` translation function must not be
+                # shadowed by the slot's `_checked` placeholder above.
+                path, _filt = QFileDialog.getOpenFileName(
+                    self,
+                    _('addons_dialog.configure.file_caption'),
+                    line.text() or os.path.expanduser('~'),
+                )
+                if path:
+                    line.setText(path)
+                    self._store(k, path)
+
+            browse.clicked.connect(_on_browse)
+            line.editingFinished.connect(lambda l=line, k=key: self._store(k, l.text().strip()))
+            picker.addWidget(line, 1)
+            picker.addWidget(browse)
+            row.layout().addLayout(picker)
+        else:  # 'string' or unknown → free-form text
+            row.layout().addWidget(QLabel(label_text))
+            line = QLineEdit('' if current_value is None else str(current_value))
+            # editingFinished avoids per-keystroke disk churn; the value
+            # commits when focus leaves the field (or on Enter).
+            line.editingFinished.connect(lambda l=line, k=key: self._store(k, l.text()))
+            row.layout().addWidget(line)
+
+        if help_text:
+            help_lbl = QLabel(help_text)
+            help_lbl.setWordWrap(True)
+            help_lbl.setProperty('class', 'addon_card_meta')
+            row.layout().addWidget(help_lbl)
+
+        self.layout().addWidget(row)
+
+    def _store(self, key: str, value) -> None:
+        """Write a single field value, honoring the schema's `storage`
+        redirect when set (see `_write_field_value` above)."""
+        field = self._fields_by_key.get(key) or {'key': key}
+        try:
+            _write_field_value(field, self._options, value)
+        except Exception:
+            log.exception(
+                'addons_dialog: failed to persist inline config field %s for %s',
+                key, self._addon_id,
+            )
 
 
 # ---------------------------------------------------------------------------

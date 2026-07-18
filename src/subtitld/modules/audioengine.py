@@ -664,6 +664,223 @@ class SubtitleDubClip:
         self._loaded.clear()
 
 
+class _PreMixedRing:
+    """Circular numpy buffer of pre-mixed float32 stereo frames.
+
+    Producer (``_MixerThread``) writes mixed blocks via ``push``;
+    consumer (the sounddevice audio callback) reads them via
+    ``pop_into``. The buffer's job is to decouple the callback from
+    the actual mixing work — the callback only does a memcpy out of
+    this buffer, so its GIL hold drops from "however long mixing took"
+    (1–30 ms, occasionally spiking under heavy projects) to "however
+    long it takes to copy ~4096 frames" (~50 µs).
+
+    That decoupling is what makes playback survive main-thread events
+    like timeline zoom, subtitle selection, paint storms — the
+    producer thread CAN stall under those events, but the consumer
+    keeps draining smoothly until the ring drains entirely. The ring
+    is sized for ~500 ms of headroom; the producer targets ~200 ms of
+    pre-fill so it has 300 ms of "I can stall this long" margin.
+
+    Underrun semantics: ``pop_into`` zeroes the unread tail when the
+    ring is short, so a stalled producer manifests as silence (audible
+    as a short gap) rather than a freeze or crash. This is the exact
+    same audible result as the old callback missing its deadline, but
+    it takes a ~300 ms producer stall to reproduce vs. a ~85 ms
+    callback stall before.
+    """
+
+    def __init__(self, capacity_frames, channels=2):
+        self._buf = np.zeros((capacity_frames, channels), dtype=np.float32)
+        self._capacity = int(capacity_frames)
+        self._read_pos = 0
+        self._write_pos = 0
+        self._fill = 0  # frames available to read
+        self._lock = threading.Lock()
+
+    def fill_level(self):
+        with self._lock:
+            return self._fill
+
+    def free_space(self):
+        with self._lock:
+            return self._capacity - self._fill
+
+    def capacity(self):
+        return self._capacity
+
+    def push(self, block):
+        """Copy as much of ``block`` (shape (n, 2)) into the ring as
+        fits. Returns the number of frames actually written; the
+        producer can sleep and retry the rest on the next iteration."""
+        n_in = len(block)
+        with self._lock:
+            free = self._capacity - self._fill
+            if free <= 0:
+                return 0
+            n = n_in if n_in < free else free
+            wp = self._write_pos
+            cap = self._capacity
+            end = wp + n
+            if end <= cap:
+                self._buf[wp:end] = block[:n]
+            else:
+                first = cap - wp
+                self._buf[wp:cap] = block[:first]
+                self._buf[0:end - cap] = block[first:n]
+            self._write_pos = end % cap
+            self._fill += n
+            return n
+
+    def pop_into(self, out, frames):
+        """Copy ``frames`` frames into ``out`` (shape (frames, 2)).
+        Zeroes the tail if the ring has fewer than ``frames`` available.
+        Returns the number of frames that actually came from the ring
+        (the rest is silence)."""
+        with self._lock:
+            n = self._fill if self._fill < frames else frames
+            if n == 0:
+                out.fill(0.0)
+                return 0
+            rp = self._read_pos
+            cap = self._capacity
+            end = rp + n
+            if end <= cap:
+                out[:n] = self._buf[rp:end]
+            else:
+                first = cap - rp
+                out[:first] = self._buf[rp:cap]
+                out[first:n] = self._buf[0:end - cap]
+            if n < frames:
+                out[n:].fill(0.0)
+            self._read_pos = end % cap
+            self._fill -= n
+            return n
+
+    def clear(self):
+        """Drop all buffered audio. Called on seek so the listener
+        hears the new position immediately instead of ~200 ms of
+        stale pre-roll mixed from before the seek."""
+        with self._lock:
+            self._read_pos = 0
+            self._write_pos = 0
+            self._fill = 0
+
+
+class _MixerThread(threading.Thread):
+    """Background mixer that fills the engine's pre-mix ring buffer.
+
+    Lifecycle:
+      * Created and started once in ``SoundDeviceAudioEngine.__init__``
+        (lives for the whole engine lifetime).
+      * Starts paused; ``resume(position)`` is called from
+        ``engine.play()`` and ``pause()`` from ``engine.pause()``.
+      * ``reseek(position)`` re-anchors mid-playback without changing
+        paused state.
+
+    The producer holds its own playhead (``_producer_playhead``) that
+    runs ahead of the engine's consumer playhead by the ring buffer's
+    current fill level. External callers (UI, seek) interact with the
+    consumer playhead (``engine._playhead``); the producer playhead is
+    an internal detail.
+
+    Why a plain ``threading.Thread`` instead of ``QThread``: this
+    thread does pure Python + numpy work and doesn't need Qt's event
+    loop. Daemon=True so it doesn't block process exit.
+    """
+
+    def __init__(self, engine, target_fill_frames):
+        super().__init__(name='subtitld-audio-mixer', daemon=True)
+        self._engine = engine
+        self._target_fill = int(target_fill_frames)
+        self._running = True
+        self._paused = True
+        self._cond = threading.Condition()
+        self._producer_playhead = 0.0
+        # Bumped every time resume()/reseek() re-anchors the producer.
+        # The run loop reads the generation alongside the playhead; if
+        # it doesn't match when we go to push the mixed block, the mix
+        # is stale (mixed at the OLD playhead) and we discard it. Without
+        # this, a seek mid-mix would push ~85 ms of wrong-position audio
+        # into the freshly-cleared ring.
+        self._gen = 0
+
+    def stop(self):
+        with self._cond:
+            self._running = False
+            self._cond.notify_all()
+
+    def pause(self):
+        with self._cond:
+            self._paused = True
+            self._cond.notify_all()
+
+    def resume(self, position):
+        """Resume mixing from ``position`` (seconds). Clears the ring
+        so the next audio the listener hears is mixed from
+        ``position``, not stale pre-roll from before pause."""
+        with self._cond:
+            self._engine._ring.clear()
+            self._producer_playhead = float(position)
+            self._paused = False
+            self._gen += 1
+            self._cond.notify_all()
+
+    def reseek(self, position):
+        """Mid-playback seek: drop the ring's pre-roll and re-anchor
+        the producer. Paused state unchanged."""
+        with self._cond:
+            self._engine._ring.clear()
+            self._producer_playhead = float(position)
+            self._gen += 1
+            self._cond.notify_all()
+
+    def run(self):
+        engine = self._engine
+        block_size = engine.blocksize
+        sr = engine.samplerate
+        # Scratch buffer reused across iterations — the audio callback
+        # no longer touches the buffer pool, so we own this exclusively.
+        scratch = np.zeros((block_size, 2), dtype=np.float32)
+
+        while True:
+            # Wait until we should mix: not paused, ring has room, and
+            # we're still running. Bounded timeout is defensive.
+            with self._cond:
+                while True:
+                    if not self._running:
+                        return
+                    if self._paused:
+                        self._cond.wait(timeout=0.05)
+                        continue
+                    if engine._ring.fill_level() >= self._target_fill:
+                        self._cond.wait(timeout=0.005)
+                        continue
+                    ph = self._producer_playhead
+                    gen = self._gen
+                    break
+
+            # Mix one block at `ph`. Snapshot `tracks` so a concurrent
+            # `sync_subtitle_dubs` append on the main thread can't tear
+            # the iteration — same pattern the old callback used.
+            scratch.fill(0.0)
+            for track in tuple(engine.tracks):
+                td = track.read(ph, block_size, sr, engine.buffer_pool)
+                scratch += td
+                engine.buffer_pool.release(td)
+            np.clip(scratch, -1.0, 1.0, out=scratch)
+
+            # Re-acquire the lock for the push + playhead advance. If
+            # the generation changed during the mix, a seek happened
+            # and our mix is for a stale playhead — discard it.
+            with self._cond:
+                if gen != self._gen:
+                    continue
+                pushed = engine._ring.push(scratch)
+                if pushed > 0:
+                    self._producer_playhead = ph + (pushed / sr) * engine.speed
+
+
 class Track:
     def __init__(self):
         self.clips = []
@@ -706,7 +923,31 @@ class Track:
 
 
 class SoundDeviceAudioEngine:
-    def __init__(self, samplerate=48000, blocksize=2048):
+    def __init__(self, samplerate=48000, blocksize=4096):
+        # ARCHITECTURE
+        # ============
+        # Producer/consumer split. The sounddevice audio callback no
+        # longer mixes — a separate ``_MixerThread`` (started below) does
+        # all per-block mixing into ``self._ring`` (a circular numpy
+        # buffer). The callback collapses to a ``memcpy`` from the ring,
+        # cutting its GIL hold from ~5-30 ms to ~50 µs.
+        #
+        # Why this matters: the audio callback runs Python under the
+        # GIL. Any main-thread work that holds the GIL longer than the
+        # callback budget starves it and audio cuts. With mixing on the
+        # callback path that budget was ~85 ms (blocksize=4096 at 48 kHz),
+        # which the main thread routinely blew past during zoom,
+        # subtitle selection, etc. With the producer split, the only
+        # thing the callback HAS to do under the GIL is a numpy slice
+        # copy; the ring buffer provides ~300 ms of slack against
+        # producer-side stalls (mixer thread can also be GIL-stalled,
+        # but its work being deferred is harmless as long as the ring
+        # isn't empty).
+        #
+        # blocksize=4096 at 48 kHz → ~85 ms per audio block. Larger
+        # blocks reduce per-callback overhead and let the mixer batch
+        # work, at the cost of ~85 ms extra latency on seek/play.
+        # Imperceptible in practice; play/pause feel instant.
         self.samplerate = samplerate
         self.blocksize = blocksize
         self.tracks = []
@@ -721,10 +962,45 @@ class SoundDeviceAudioEngine:
 
         self.buffer_pool = BufferPool(max_size=30)
 
+        # Pre-mix ring buffer + mixer thread. See architecture comment
+        # at the top of __init__ for the rationale.
+        #
+        # Capacity = ~500 ms (at 48 kHz, ~24000 frames). That's the
+        # absolute headroom; in steady state the producer maintains
+        # ~200 ms of pre-fill (``_target_fill``), so the producer can
+        # stall up to ~200 ms before the consumer starts hearing
+        # silence. Going larger costs negligible memory (500 ms * 48 kHz
+        # * 2 ch * 4 B = 192 KB) but increases seek latency proportionally
+        # (the ring has to be drained or cleared before new audio plays).
+        # 500 ms is the right balance: long enough to absorb any single
+        # main-thread paint storm, short enough that a seek + immediate
+        # resume feels instant.
+        self._ring = _PreMixedRing(
+            capacity_frames=int(self.samplerate * 0.5),
+            channels=2,
+        )
+        self._mixer = _MixerThread(
+            engine=self,
+            target_fill_frames=int(self.samplerate * 0.2),
+        )
+        self._mixer.start()
+
         # Per-speaker dub tracks. speaker_tracks[name] is the Track object.
         # subtitle_clips[id(subtitle)] is the SubtitleDubClip wrapping it.
         self.speaker_tracks = {}
         self.subtitle_clips = {}
+
+        # Multiplier applied to every dub track's gain, driven by the
+        # music/voice-separation slider in `playercontrols`. The rule:
+        # dub gain follows the *background* gain. When the user pulls the
+        # slider toward "voice only" they're trying to hear the original
+        # vocals isolated — the dubs should fade out with the music. When
+        # the slider sits at neutral or leans toward "music only" (the
+        # normal dubbing scenario) the dubs play at full alongside the
+        # preserved music. New speaker tracks pick this up on creation in
+        # `_ensure_speaker_track` so a slider position set before any
+        # dubs were generated still wins when dubs come in later.
+        self.dub_separation_gain = 1.0
 
         # ---- DEBUG INSTRUMENTATION ----------------------------------
         # Aggregates filled by _callback (audio thread) and dumped by the
@@ -799,12 +1075,29 @@ class SoundDeviceAudioEngine:
             )
             self._dbg_watchdog_thread.start()
 
+        # ``latency='high'`` asks PortAudio for the largest device-side
+        # buffer it deems "high latency" (typically 50-200 ms on Linux
+        # ALSA / PipeWire). That buffer is what protects us from
+        # underruns when the audio thread is starved by GIL contention
+        # or a slow paint event on the main thread — a single 60 Hz
+        # repaint that overshoots by 30 ms can't kill playback if the
+        # device has 100+ ms of slack queued ahead of it. Without this,
+        # PortAudio picks the device default — which on PipeWire can
+        # land as low as 10 ms, leaving zero headroom.
+        #
+        # ``prime_output_buffers_using_stream_callback=True`` runs the
+        # callback to FILL the buffer before ``stream.start()`` returns,
+        # so the very first audio block already exists when the device
+        # asks for it (instead of being filled during the first
+        # callback, which is the most jitter-prone one).
         self.stream = sd.OutputStream(
             samplerate=self.samplerate,
             blocksize=self.blocksize,
             channels=2,
             dtype='float32',
-            callback=self._callback
+            latency='high',
+            prime_output_buffers_using_stream_callback=True,
+            callback=self._callback,
         )
 
     @property
@@ -835,35 +1128,26 @@ class SoundDeviceAudioEngine:
         return Track()
 
     def _callback(self, outdata, frames, _time_info, status):
+        # Producer/consumer model: the heavy mixing happens in
+        # ``_MixerThread`` and lands in ``self._ring``. All this
+        # callback does is copy ``frames`` frames out of the ring into
+        # ``outdata`` and advance the consumer playhead.
+        #
+        # That makes the GIL hold per callback ~50 µs (a numpy slice
+        # copy), down from 1-30 ms (mixing). Even a main-thread paint
+        # storm that holds the GIL for 200+ ms can't underrun the
+        # device anymore: the callback wakes, copies, releases, and the
+        # consumer keeps draining whatever the mixer thread had time to
+        # produce before the storm started.
         cb_t0 = time.perf_counter() if DEBUG_AUDIO else 0.0
-
-        # Inter-callback gap = time the audio thread was *not* running. If
-        # this exceeds the expected interval, the audio thread was starved
-        # (GIL contention, GC, OS scheduler) — a fast callback alone can't
-        # save us if it gets called late.
         gap_ms = 0.0
         if DEBUG_AUDIO and self._dbg_prev_callback_end > 0.0:
             gap_ms = (cb_t0 - self._dbg_prev_callback_end) * 1000.0
 
-        outdata.fill(0.0)
-
-        # Read playhead once per callback to stay consistent within the block
-        with self._playhead_lock:
-            current_playhead = self._playhead
-
-        # Snapshot self.tracks: sync_subtitle_dubs (main thread) appends/
-        # removes tracks during bulk dub generation, which would otherwise
-        # mutate this list mid-iteration on the audio thread and crash.
-        in_window_total = 0
-        clips_total = 0
-        for track in tuple(self.tracks):
-            track_data = track.read(current_playhead, frames, self.samplerate, self.buffer_pool)
-            outdata += track_data
-            self.buffer_pool.release(track_data)
-            in_window_total += getattr(track, 'last_in_window_clips', 0)
-            clips_total += getattr(track, 'last_total_clips', 0)
-
-        np.clip(outdata, -1.0, 1.0, out=outdata)
+        # Pop pre-mixed audio. ``pop_into`` zeroes the tail if the ring
+        # is short, so a producer stall manifests as silence (not a
+        # crash) and the consumer keeps draining smoothly afterwards.
+        frames_from_ring = self._ring.pop_into(outdata, frames)
 
         with self._playhead_lock:
             self._playhead += (frames / self.samplerate) * self.speed
@@ -872,28 +1156,26 @@ class SoundDeviceAudioEngine:
             cb_end = time.perf_counter()
             cb_ms = (cb_end - cb_t0) * 1000.0
             flags = _decode_callback_status(status) if status else []
-            # An inter-callback gap >1.5× the expected interval means the
-            # audio thread was held off CPU (GIL/GC/scheduler) — that's the
-            # actual cause of underruns when per-callback work is fast.
+            # A short read from the ring means the producer fell behind
+            # — surface that explicitly so the diagnostic distinguishes
+            # "callback was slow" (now impossible in steady state) from
+            # "mixer thread couldn't keep up."
+            underrun = frames_from_ring < frames
             starved = (
                 self._dbg_prev_callback_end > 0.0
                 and gap_ms > self._dbg_expected_interval_ms * 1.5
             )
-            # Hand events off to the printer thread instead of writing to
-            # stderr here. Inline stderr.write/flush from the audio thread
-            # can block on the pipe and itself causes the underrun the
-            # message is reporting — feedback loop.
-            if flags or cb_ms > self._dbg_budget_ms * 0.8 or starved:
-                event = (
-                    'XRUN' if flags
-                    else ('SLOW' if cb_ms > self._dbg_budget_ms * 0.8 else 'STARVED'),
-                    cb_ms, gap_ms, in_window_total, clips_total,
-                    current_playhead, tuple(flags),
-                )
+            if flags or underrun or starved:
+                tag = ('XRUN' if flags
+                       else ('UNDERFILL' if underrun else 'STARVED'))
+                event = (tag, cb_ms, gap_ms,
+                         frames_from_ring, frames,
+                         self._ring.fill_level(),
+                         tuple(flags))
                 try:
                     self._dbg_event_queue.put_nowait(event)
                 except Exception:
-                    pass  # queue full → drop, don't block the audio thread
+                    pass
             with self._dbg_lock:
                 self._dbg_callbacks += 1
                 if flags:
@@ -904,9 +1186,6 @@ class SoundDeviceAudioEngine:
                 if cb_ms > self._dbg_max_callback_ms:
                     self._dbg_max_callback_ms = cb_ms
                 self._dbg_sum_callback_ms += cb_ms
-                if in_window_total > self._dbg_max_in_window:
-                    self._dbg_max_in_window = in_window_total
-                self._dbg_last_total_clips = clips_total
                 if gap_ms > self._dbg_max_gap_ms:
                     self._dbg_max_gap_ms = gap_ms
                 if starved:
@@ -1002,7 +1281,7 @@ class SoundDeviceAudioEngine:
             drained = 0
             while drained < 32:
                 try:
-                    kind, cb_ms, gap_ms, in_win, total_clips, ph, flags = \
+                    kind, cb_ms, gap_ms, ring_n, want_n, ring_fill, flags = \
                         self._dbg_event_queue.get_nowait()
                 except Empty:
                     break
@@ -1011,24 +1290,22 @@ class SoundDeviceAudioEngine:
                     sys.stderr.write(
                         f'[audioengine] XRUN flags={",".join(flags)} '
                         f'cb_ms={cb_ms:.1f} gap_ms={gap_ms:.1f} '
-                        f'budget={self._dbg_budget_ms:.1f} '
-                        f'in_window={in_win}/{total_clips} '
-                        f'playhead={ph:.2f}s\n'
+                        f'ring={ring_n}/{want_n} fill={ring_fill}\n'
                     )
-                elif kind == 'SLOW':
+                elif kind == 'UNDERFILL':
+                    # Producer (mixer thread) couldn't keep up — ring
+                    # had ``ring_n`` frames ready when the callback
+                    # wanted ``want_n``. Distinct from STARVED (which
+                    # is about the audio thread being descheduled).
                     sys.stderr.write(
-                        f'[audioengine] SLOW cb_ms={cb_ms:.1f} gap_ms={gap_ms:.1f} '
-                        f'budget={self._dbg_budget_ms:.1f} '
-                        f'in_window={in_win}/{total_clips} '
-                        f'playhead={ph:.2f}s\n'
+                        f'[audioengine] UNDERFILL ring={ring_n}/{want_n} '
+                        f'cb_ms={cb_ms:.1f} gap_ms={gap_ms:.1f}\n'
                     )
                 else:  # STARVED
                     sys.stderr.write(
                         f'[audioengine] STARVED gap_ms={gap_ms:.1f} '
                         f'expected={self._dbg_expected_interval_ms:.1f} '
-                        f'cb_ms={cb_ms:.1f} '
-                        f'in_window={in_win}/{total_clips} '
-                        f'playhead={ph:.2f}s\n'
+                        f'cb_ms={cb_ms:.1f} ring_fill={ring_fill}\n'
                     )
             if cb == 0 and not self.playing:
                 if drained:
@@ -1059,13 +1336,29 @@ class SoundDeviceAudioEngine:
         if not self.playing:
             # Cyclic GC is the dominant cause of audio underruns in projects
             # with hundreds of dubs: each scan of the object graph blocks for
-            # 30-100ms (longer than one audio block at 48kHz/2048), which the
-            # OS sees as the callback never showing up. Refcounting still
+            # 30-100ms, longer than one audio block. Refcounting still
             # frees everything immediately; we just defer cycle detection
             # until pause/stop, when a chunk on the audio thread is harmless.
+            # (Less critical now that the audio callback is just a memcpy,
+            # but the mixer thread is still subject to GC pauses — so keep.)
             self._gc_was_enabled = gc.isenabled()
             gc.disable()
-            self.seek(position)
+            self.playhead = position
+            for track in self.tracks:
+                for clip in track.clips:
+                    clip.clear_cache()
+            # Resume the mixer thread; it clears the ring and starts
+            # producing from `position`. Then pre-fill briefly so the
+            # first audio callback already has data — without this,
+            # play() returns immediately and the device buffer takes
+            # one full block to fill, manifesting as a "muted first
+            # block" click on play.
+            self._mixer.resume(position)
+            deadline = time.monotonic() + 0.1
+            target = self.blocksize * 2
+            while (time.monotonic() < deadline
+                    and self._ring.fill_level() < target):
+                time.sleep(0.002)
             self.stream.start()
             self.playing = True
 
@@ -1073,6 +1366,10 @@ class SoundDeviceAudioEngine:
         if self.playing:
             self.stream.stop()
             self.playing = False
+            # Stop the mixer so it doesn't keep mixing audio nobody
+            # will hear. The ring still holds whatever was pre-mixed;
+            # next play() clears it on resume.
+            self._mixer.pause()
             if getattr(self, '_gc_was_enabled', True):
                 gc.enable()
             # Catch up on any cycles that accumulated while playback was
@@ -1085,6 +1382,12 @@ class SoundDeviceAudioEngine:
 
     def seek(self, seconds):
         self.playhead = seconds
+        # Re-anchor the mixer to the new position. If we're playing,
+        # this also clears the ring so the listener doesn't hear ~200 ms
+        # of stale pre-roll from the old position before the new audio
+        # arrives. If we're paused, the next play() will re-resume from
+        # the new playhead anyway.
+        self._mixer.reseek(seconds)
         for track in self.tracks:
             for clip in track.clips:
                 clip.clear_cache()
@@ -1099,16 +1402,54 @@ class SoundDeviceAudioEngine:
         track = self.speaker_tracks.get(speaker)
         if track is None:
             track = Track()
+            # Honor whatever the separation slider asked for at the
+            # time this dub was generated — see dub_separation_gain.
+            track.gain = self.dub_separation_gain
             self.speaker_tracks[speaker] = track
             self.tracks.append(track)
         return track
+
+    def set_dub_separation_gain(self, gain):
+        """Apply `gain` to every existing dub track and remember it for
+        any tracks created later. Called by the music/voice-separation
+        slider so dubs fade out alongside the background music when the
+        user wants to hear the isolated original vocals."""
+        gain = max(0.0, min(1.0, float(gain)))
+        self.dub_separation_gain = gain
+        for track in self.speaker_tracks.values():
+            track.gain = gain
 
     def sync_subtitle_dubs(self, segments, default_speaker='A'):
         """Reconcile per-speaker dub tracks with the current subtitle list.
 
         Idempotent: call after loading a project, generating a dub, swapping
         the playlist, or reassigning a subtitle's speaker. Subtitles without
-        a `dubbing` list are dropped from the engine."""
+        a `dubbing` list are dropped from the engine.
+
+        Identity matching: the per-clip cache is keyed by ``id(subtitle)``
+        for O(1) lookup, but ``id(sub)`` changes whenever ``history.py``
+        deep-copies the segments list (Ctrl+Z / Ctrl+Shift+Z). Without
+        a fallback, every undo destroys every SubtitleDubClip and the
+        new clips have empty ``_loaded`` caches — manifesting as silent
+        playback until the background loader catches up (visible as
+        "clips are on the timeline but inaudible after undo"). So we
+        ALSO build a dub-identity lookup (the dub's ``uid``, or its
+        ``path`` for legacy dubs) and rebind the existing clip onto the
+        freshly-restored subtitle dict when the id() lookup misses but
+        the dub identity matches. The clip's pre-loaded audio data
+        survives unchanged."""
+        # Pre-pass: build dub-identity → (old_sub_id, clip) lookup, so
+        # we can transplant clips whose subtitle dict identity changed
+        # (typical after undo/redo) without losing their audio cache.
+        existing_by_dub_key = {}
+        for old_sub_id, clip in self.subtitle_clips.items():
+            old_dub = clip._current_dub()
+            if old_dub is None:
+                continue
+            key = old_dub.get('uid') or old_dub.get('path')
+            if key:
+                existing_by_dub_key[key] = (old_sub_id, clip)
+
         seen = set()
 
         for sub in segments:
@@ -1118,21 +1459,43 @@ class SoundDeviceAudioEngine:
             track = self._ensure_speaker_track(speaker)
             sub_id = id(sub)
             seen.add(sub_id)
+            dub = sub['dubbing'][0]
 
-            clip = self.subtitle_clips.get(sub_id)
+            # Resolution order: dub-identity match (rewires across
+            # undo/redo) → id-match (steady state) → new clip.
+            clip = None
+            dub_key = dub.get('uid') or dub.get('path')
+            if dub_key and dub_key in existing_by_dub_key:
+                old_sub_id, candidate = existing_by_dub_key.pop(dub_key)
+                if old_sub_id != sub_id:
+                    # Re-key the clip in the subtitle_clips map and
+                    # rebind its subtitle reference so `_current_dub()`
+                    # reads from the live (new) dict. Direct attribute
+                    # assignment is GIL-atomic; the mixer thread sees
+                    # either the old or the new ref, never a torn state.
+                    self.subtitle_clips.pop(old_sub_id, None)
+                    self.subtitle_clips[sub_id] = candidate
+                    candidate.subtitle = sub
+                clip = candidate
+
+            if clip is None:
+                clip = self.subtitle_clips.get(sub_id)
+
             if clip is None:
                 clip = SubtitleDubClip(sub, self.samplerate)
                 self.subtitle_clips[sub_id] = clip
                 track.add_clip(clip)
             else:
-                # Speaker may have changed — move the clip to the right track.
-                for other in self.speaker_tracks.values():
-                    if clip in other.clips and other is not track:
-                        other.clips.remove(clip)
-                        track.add_clip(clip)
-                        break
-
-            dub = sub['dubbing'][0]
+                # Ensure the clip lives on the correct speaker track.
+                # Speaker may have changed (undo across a speaker
+                # reassign) OR we just rewired from another clip; in
+                # both cases the right answer is "move to the speaker
+                # this subtitle is currently tagged with."
+                if clip not in track.clips:
+                    for other in self.speaker_tracks.values():
+                        if other is not track and clip in other.clips:
+                            other.clips.remove(clip)
+                    track.add_clip(clip)
             # Warm every audio path the dub references through the
             # background loader queue. Segments may reference multiple
             # files after a clone-ref split or ASR-driven trim; the helper
@@ -1204,6 +1567,11 @@ class SoundDeviceAudioEngine:
         """Cleanly shut down the engine and all clip prefetch threads."""
         self.stop()
         self.stream.close()
+        # Stop the mixer thread before clips' shutdown — clips clear
+        # cached source data, so a still-running mixer would race the
+        # teardown.
+        self._mixer.stop()
+        self._mixer.join(timeout=1.0)
         for track in self.tracks:
             for clip in track.clips:
                 clip.shutdown()

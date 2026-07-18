@@ -15,6 +15,10 @@ from subtitld.interface import productionscreen
 from subtitld.interface import actionmanager
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+# Imported for the side-effect of registering its ``@shortcut`` handler
+# at module load time — `shortcuts.load(self, ...)` below picks it up
+# from the global registry and wires the Ctrl+H / Ctrl+F binding.
+from subtitld.interface import find_replace_dialog as _find_replace_dialog  # noqa: F401
 
 from subtitld.modules import session
 from subtitld.modules import config
@@ -22,8 +26,16 @@ from subtitld.modules import file_io
 from subtitld.modules import shortcuts
 from subtitld.modules import addons
 from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provider
-from subtitld.modules.addons.builtin import assemblyai_provider as _assemblyai_provider
 from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
+from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
+from subtitld.modules.addons.builtin import import_provider as _import_provider
+from subtitld.modules.addons.builtin import whispercpp_provider as _whispercpp_provider
+# Cloud-routed providers — one entry per upstream brand (AssemblyAI today,
+# ElevenLabs / Replicate / ... later). They ship inside the binary so the
+# add-ons panel can offer them without a network round-trip to the catalog;
+# the user still has to paste a Subtitld Cloud API key under each provider's
+# settings before transcription requests will actually go through.
+from subtitld.modules.addons.builtin import subtitld_cloud_assemblyai_provider as _subtitld_cloud_assemblyai_provider
 
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
@@ -182,8 +194,7 @@ class Window(FramelessMainWindow):
         # self.thread_extract_waveform.quit()
         # if session.SUBTITLE.get('subtitle_filepath', False) and 'hash' in session.VIDEO:
         #     self.player_widget.grab().save(os.path.join(session.PATH_SUBTITLD_DATA_THUMBNAILS, session.VIDEO['hash'] + '.png'))
-        #     session.CONFIG['recent_files'][session.SUBTITLE['filepath']]['last_position'] = session.SUBTITLE.get('position', 0)
-        
+
         # session.CONFIG['window_position'] = {'x': self.x(), 'y': self.y(), 'width': self.width(), 'height': self.height()}
 
         # config.save(session.CONFIG, session.PATH_SUBTITLD_USER_CONFIG_FILE)
@@ -197,6 +208,14 @@ class Window(FramelessMainWindow):
 
         file_io.wait_for_save_threads()
 
+        from subtitld.modules import proxy
+        proxy.cancel_all_proxy_encodes()
+        proxy.wait_for_proxy_threads()
+
+        if hasattr(self, 'record_controller'):
+            self.record_controller.shutdown()
+
+        session.persist_current_playback_position()
         session.CONFIG.save()
 
         event.accept()
@@ -233,19 +252,31 @@ def main():
     app = QApplication(sys.argv)
 
     # ---- Add-on registry bootstrap ------------------------------------
-    # Built-in providers (Edge TTS for TTS, AssemblyAI for ASR) are
-    # registered first so they always show up in the engine comboboxes
-    # even when nothing else is installed. Vosk used to be a built-in too
-    # but was extracted to a separate add-on so the Subtitld binary stays
-    # lean — users who want offline transcription install it via the
-    # add-ons panel. Subprocess add-ons under
-    # ~/.local/share/subtitld/addons/ are discovered next; they may depend
-    # on a QApplication being live (provider QObjects are auto-parented to
-    # it), so this happens after `QApplication(sys.argv)`.
+    # Built-in providers are registered first so they're always available
+    # right after install, even before the user discovers the add-ons
+    # panel. Today's set:
+    #   - Edge TTS — speech synthesis, no credentials required
+    #   - FFmpeg separator — audio source separation, no model required
+    #   - whisper.cpp — offline ASR. Models aren't bundled; the chosen
+    #     model is downloaded once on first use to PATH_SUBTITLD_DATA_MODELS.
+    #   - Subtitld Cloud → AssemblyAI — cloud-routed ASR. Registered here
+    #     so it shows up in the add-ons panel as a card the user can
+    #     enable/configure; transcription requests fail with a clear
+    #     "set your API key" message until the user pastes a Subtitld
+    #     Cloud key in the provider's settings. Future cloud-routed
+    #     siblings (ElevenLabs, Replicate, ...) get registered here the
+    #     same way — one line per upstream brand.
+    # Subprocess add-ons under ~/.local/share/subtitld/addons/ are
+    # discovered next; they may depend on a QApplication being live
+    # (provider QObjects are auto-parented to it), so this happens
+    # after `QApplication(sys.argv)`.
     addon_manager = addons.get_manager()
     addon_manager.register_builtin(_edge_tts_provider.get_provider())
-    addon_manager.register_builtin(_assemblyai_provider.get_provider())
     addon_manager.register_builtin(_ffmpeg_separator_provider.get_provider())
+    addon_manager.register_builtin(_gtts_provider.get_provider())
+    addon_manager.register_builtin(_import_provider.get_provider())
+    addon_manager.register_builtin(_whispercpp_provider.get_provider())
+    addon_manager.register_builtin(_subtitld_cloud_assemblyai_provider.get_provider())
     try:
         discovered = addon_manager.discover()
         if discovered:

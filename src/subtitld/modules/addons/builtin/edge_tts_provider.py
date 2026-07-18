@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import secrets
 import socket
 import subprocess
 
@@ -246,29 +245,34 @@ class EdgeTTSProvider(TTSProvider):
         thread.start()
 
     def stretch(self, subtitle: dict, ratio: float) -> bool:
-        if ratio <= 0 or not subtitle:
+        """Resize the active dub to the dragged width.
+
+        Deterministic host-side ``atempo`` stretch (shared with the add-on
+        provider) rather than a cloud re-synthesis. Edge's SSML ``rate`` maps
+        non-linearly to output duration, so re-speaking at a computed rate
+        rarely landed on the width the user dragged to — a plain time-stretch
+        of the existing audio hits it exactly. The original synthesis is kept
+        as the raw so repeated stretches never compound quality loss.
+        """
+        from subtitld.modules import dub_clip
+        if not dub_clip.restretch_active_dub(subtitle, ratio):
             return False
-        speaker_name = subtitle.get('speaker', 'A')
-        speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
-        overrides = subtitle.setdefault('dubbing_options', {})
-        current_rate = int(overrides.get('rate', speaker_dubbing.get('rate', 0)) or 0)
-        current_speed_pct = 100 + current_rate
-        new_rate = int(round(current_speed_pct * ratio - 100))
-        new_rate = max(-100, min(100, new_rate))
-        if new_rate == current_rate:
-            return False
-        overrides['rate'] = new_rate
-        subtitle['locked'] = True
-        self.generate_speeches([{
-            'uid': secrets.token_hex(4),
-            'text': subtitle['text'],
-            'speaker': speaker_name,
-            'start': subtitle['start'],
-            'end': subtitle['end'],
-            'voice': overrides.get('voice') or speaker_dubbing.get('voice', ''),
-            'rate': new_rate,
-            'pitch': overrides.get('pitch', speaker_dubbing.get('pitch', 0)),
-        }])
+
+        # Same post-process refresh the add-on provider uses: preview audio
+        # device picks up the new file and the timeline redraws.
+        from PySide6.QtWidgets import QApplication
+        for window in QApplication.topLevelWidgets():
+            preview = getattr(window, 'preview_panel_player', None)
+            timeline_widget = getattr(window, 'timeline_widget', None)
+            if preview is None and timeline_widget is None:
+                continue
+            if preview is not None:
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+            if timeline_widget is not None:
+                timeline_widget.dub_stretching = None
+                timeline_widget.update()
+            session.set_unsaved()
+            break
         return True
 
     # ---- Host-side post-process callbacks --------------------------------
@@ -298,6 +302,11 @@ class EdgeTTSProvider(TTSProvider):
                     'pitch': original_subtitle.get('pitch', 0),
                 })
                 subtitle['locked'] = False
+                # Auto-fit to the subtitle duration if the speaker opted in;
+                # keeps the un-stretched original in the dub list. Skipped when
+                # the request opted out (a manual-stretch re-render).
+                from subtitld.modules import dub_fit
+                dub_fit.maybe_fit_dub(subtitle, original_subtitle.get('fit', True))
                 break
         for window in QApplication.topLevelWidgets():
             preview = getattr(window, 'preview_panel_player', None)

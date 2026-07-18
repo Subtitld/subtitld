@@ -32,6 +32,32 @@ for exttype in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS:
         list_of_supported_video_extensions.append(ext)
 
 
+def _show_corrupted_project_dialog(window, filepath, detail):
+    """Friendly error dialog for a corrupted USFX. Used by the open
+    flow when `file_io.process_subtitles_file` raises
+    `CorruptedProjectFileError` — covers the Bad CRC / truncated /
+    not-a-zip cases. Also drops the file from the recent-files list
+    so the user doesn't keep clicking it and re-hitting the error."""
+    try:
+        recent = session.CONFIG.get('recent_files') if isinstance(session.CONFIG, dict) else None
+        if isinstance(recent, dict) and str(filepath) in recent:
+            del recent[str(filepath)]
+    except Exception:
+        pass
+    dialog = utils.SimpleDialog(window, title=_('startscreen.corrupted_project_title'))
+    msg = QLabel(_('startscreen.corrupted_project_message').format(filepath=filepath))
+    msg.setWordWrap(True)
+    dialog.content.layout().addWidget(msg)
+    if detail:
+        detail_label = QLabel(detail)
+        detail_label.setWordWrap(True)
+        detail_label.setProperty('class', 'dialog_detail')
+        dialog.content.layout().addWidget(detail_label)
+    if hasattr(dialog, 'reject_button'):
+        dialog.reject_button.hide()
+    dialog.exec()
+
+
 def load(self):
     self.start_screen = QWidget()
     self.start_screen.setLayout(QVBoxLayout())
@@ -201,7 +227,18 @@ def load_productionscreen(self):
     session.VIDEO = file_io.process_video_file(session.VIDEO['filepath'])
 
     if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
-        session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
+        try:
+            session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
+        except file_io.CorruptedProjectFileError as exc:
+            # Bail out of the open before any production-screen widgets
+            # try to render against half-loaded data. Clear the project
+            # paths so the start screen is what the user sees next, and
+            # show a dialog explaining why we couldn't open the file.
+            _show_corrupted_project_dialog(self, session.SUBTITLE['filepath'], str(exc))
+            session.SUBTITLE['filepath'] = ''
+            session.SUBTITLE['segments'] = []
+            session.VIDEO = {}
+            return
         for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
             session.SPEAKERS.setdefault(name, {})
 
@@ -239,7 +276,26 @@ def load_productionscreen(self):
             self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
 
             if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
-                self.preview_panel_player.seek(session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])].get('last_position', 0))
+                last_position = session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])].get('last_position', 0)
+                self.preview_panel_player.seek(last_position)
+
+                # One-time exception to the "no timeline scrolling" option:
+                # on project open, scroll the timeline so the restored
+                # cursor is visible. That option governs playback-follow
+                # behavior, not project open — a user reopening a file
+                # expects to see where they left off, not to hand-scroll
+                # to a cursor sitting off-screen. Deferred one more tick so
+                # the production splitter has laid out the timeline scroll
+                # viewport (needed for the centering math); update_size()
+                # forces the timeline's true width (duration * zoom) first.
+                if last_position and last_position > 0:
+                    from subtitld.interface import timeline as _timeline
+
+                    def _center_on_restored_position():
+                        self.timeline_widget.update_size()
+                        _timeline.update_scrollbar(self, position='middle')
+
+                    QTimer.singleShot(0, _center_on_restored_position)
 
             session.add_to_recent_files(session.SUBTITLE['filepath'], session.VIDEO.get('filepath', ''))
 

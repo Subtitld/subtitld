@@ -18,6 +18,192 @@ QPushButton:pressed {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2e3e4c, stop:1 #3a4d5d);
 }
 
+QPushButton#scope_range_capture_button {
+    padding: 4px 8px;
+    font-size: 13px;
+    min-width: 0px;
+}
+
+/* ====================================================================
+   Subtitld Cloud dashboard (Global → Subtitld Cloud tab)
+   See interface/cloud_dashboard.py. Card with identity header, balance
+   ring band, and usage-history band; plus a not-connected empty card.
+   ==================================================================== */
+
+QWidget#cloud_card {
+    background: rgba(62, 83, 99, 0.9);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+}
+
+QWidget#cloud_header_band {
+    background: rgba(0, 0, 0, 0.16);
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+QWidget#cloud_balance_band {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+QLabel#cloud_avatar {
+    border-radius: 2px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #34454f);
+    color: #b8cee0;
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+}
+
+QLabel#cloud_email {
+    color: #ffffff;
+    font-family: 'Montserrat';
+    font-weight: 600;
+    font-size: 12px;
+}
+
+QLabel#cloud_key_badge {
+    color: rgba(184, 206, 224, 0.75);
+    background: rgba(184, 206, 224, 0.1);
+    border: 1px solid rgba(184, 206, 224, 0.18);
+    border-radius: 2px;
+    padding: 1px 6px;
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+QLabel#cloud_status_dot {
+    background: #55d43f;
+    border-radius: 3px;
+}
+QLabel#cloud_status_dot[state="low"] {
+    background: #c55252;
+}
+
+QLabel#cloud_status_label {
+    color: rgba(184, 206, 224, 0.65);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+QLabel#cloud_status_label[state="low"] {
+    color: #c55252;
+}
+
+QPushButton#cloud_icon_button {
+    background: transparent;
+    border: 0;
+    border-radius: 2px;
+    padding: 0px;
+}
+QPushButton#cloud_icon_button:hover {
+    background: rgba(184, 206, 224, 0.14);
+}
+QPushButton#cloud_icon_button:pressed {
+    background: rgba(184, 206, 224, 0.08);
+}
+
+QWidget#cloud_usage_header_band {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+QLabel#cloud_wlabel {
+    color: rgba(184, 206, 224, 0.55);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+QLabel#cloud_subtle_label {
+    color: rgba(184, 206, 224, 0.4);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+QWidget#cloud_usage_row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+QWidget#cloud_usage_row[last="yes"] {
+    border-bottom: 0px;
+}
+
+QLabel#cloud_usage_file {
+    color: rgba(255, 255, 255, 0.9);
+    font-family: 'Montserrat';
+    font-size: 12px;
+}
+
+QLabel#cloud_usage_duration {
+    color: rgba(184, 206, 224, 0.6);
+    font-family: 'Montserrat';
+    font-size: 11px;
+}
+
+QLabel#cloud_usage_cost {
+    color: rgba(255, 255, 255, 0.85);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 12px;
+}
+
+/* --- not-connected empty card --- */
+QLabel#cloud_icon_tile {
+    background: rgba(184, 206, 224, 0.08);
+    border: 1px solid rgba(184, 206, 224, 0.18);
+    border-radius: 3px;
+}
+
+QLabel#cloud_empty_title {
+    color: #ffffff;
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 14px;
+}
+
+QLabel#cloud_empty_body {
+    color: rgba(184, 206, 224, 0.7);
+    font-family: 'Montserrat';
+    font-size: 11px;
+}
+
+QLabel#cloud_empty_error {
+    color: #c55252;
+    font-family: 'Montserrat';
+    font-size: 11px;
+}
+
+QLineEdit#cloud_key_field {
+    background: #3e5363;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 2px;
+    padding: 0px 10px;
+    min-height: 28px;
+    color: rgba(255, 255, 255, 0.92);
+    font-family: 'Montserrat';
+    font-size: 12px;
+}
+
+QPushButton#cloud_link_button {
+    background: transparent;
+    border: 0;
+    color: rgba(184, 206, 224, 0.55);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+QPushButton#cloud_link_button:hover {
+    color: #b8cee0;
+}
+
 QLabel {
     color: #ffffff;
 }
@@ -41,6 +227,132 @@ QLabel[class='units_label'] {
     font-size: 9px;
     color: #80b8cee0;
     padding: 0 4px;
+}
+
+/* ---- Transcription options area + bottom footer ---- */
+/* Content area (per-engine ASR settings) — subtle top-down gradient. */
+QStackedWidget#transcription_options_area {
+    background: transparent;
+    border-radius: 2px;
+}
+
+QWidget#transcription_footer {
+    background: transparent;
+}
+
+/* ---- Scope selector ---- */
+/* The ALL row (chip + bar) carries a subtle top-down gradient — fully
+   transparent at the top, easing to a faint dark at the bottom — so it
+   grounds the row against the divider/Start button below without reading
+   as a hard-edged fill. */
+QWidget#transcription_scope_area {
+    background: transparent;
+}
+
+QWidget#transcription_footer_bottom_line {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(0, 0, 0, 0.1), stop:1 rgba(0, 0, 0, 0));
+}
+
+/* Full-width delimiter that sits BELOW the scope row and ABOVE the Start
+   button. It's its own edge-to-edge 1px strip, so it touches both panel
+   edges while the chip and button keep their side padding. Same slate as
+   the chip/bar so an expanded (full-width) bar flows straight into it. */
+QWidget#transcription_footer_divider {
+    background: #1e2832;
+}
+
+/* Chip is a TAB: TOP corners rounded, BOTTOM square, SAME colour as the
+   bar so an open (checked) chip + bar read as one connected shape. */
+QPushButton#transcription_scope_chip {
+    background: #1e2832;
+    color: rgba(184, 206, 224, 0.6);
+    border: 0;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 4px 9px;
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+QPushButton#transcription_scope_chip:hover {
+    color: #b8cee0;
+}
+
+/* Bar shares the chip colour (square band that the chip tabs onto). */
+QWidget#transcription_scope_bar {
+    background: #1e2832;
+}
+
+/* SCOPE dropdown + FROM/TO inputs share the slate-input look: dark box,
+   white value text, tabular numerals. */
+QComboBox#transcription_scope_combobox,
+QLineEdit#transcription_scope_input {
+    background: #3e5363;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 2px;
+    padding: 4px 10px;
+    min-height: 20px;
+    color: rgba(255, 255, 255, 0.92);
+    font-family: 'Montserrat';
+    font-size: 13px;
+}
+QComboBox#transcription_scope_combobox {
+    font-weight: 600;
+}
+QComboBox#transcription_scope_combobox::drop-down {
+    background: transparent;
+    border: 0;
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    image: url(graphics:combobox_down_arrow.svg);
+    padding: 0 8px 0 0;
+    width: 10px;
+}
+QComboBox#transcription_scope_combobox QAbstractItemView {
+    background: #3e5363;
+    color: #b8cee0;
+    selection-background-color: #4a5f70;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    outline: 0;
+}
+
+/* DURATION is read-only/computed — same box shape, muted text. */
+QLabel#transcription_scope_duration_value {
+    background: #304251;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 2px;
+    padding: 5px 10px;
+    color: rgba(184, 206, 224, 0.5);
+    font-family: 'Montserrat';
+    font-size: 13px;
+}
+
+/* Start button: BOTTOM radius only — square top, rounded bottom — so it
+   rises out of the footer band and sits flush at the panel's bottom. */
+QPushButton#transcription_start_button {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
+    color: #3e5363;
+    border: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+    padding: 7px 16px;
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+QPushButton#transcription_start_button:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
+}
+QPushButton#transcription_start_button:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #b8cee0, stop:1 #a9c1d4);
 }
 
 QLabel[class='metadata_field_label'] {
@@ -531,6 +843,13 @@ QProgressBar {
 QProgressBar::chunk {
     background-color: #b8cee0;
     border-radius: 2px;
+}
+
+/* Transcription progress bar fills the whole bottom row during a run, so it
+   sits flush in the corners — square edges, no rounding. */
+QProgressBar#transcription_progress_bar,
+QProgressBar#transcription_progress_bar::chunk {
+    border-radius: 0;
 }
 
 QProgressBar#addon_card_progress_bar {
@@ -1356,12 +1675,50 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 }
 
 #playercontrols_widget_center_top_line #playercontrols_record_button {
-    padding: 0 90 0 10;
+    padding: 0 80 0 10;
     icon: url(graphics:record_icon.svg);
 }
 
 #playercontrols_widget_center_top_line #playercontrols_record_button:checked {
     icon: url(graphics:record_icon_pressed.svg);
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button,
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button {
+    border-bottom: 1px solid #143e5363;
+    padding-top: 3;
+    padding-bottom: 2;
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button {
+    icon: url(graphics:record_transcript_icon.svg);
+    border-bottom-left-radius: 4px;
+    padding-left: 10;
+    padding-right: 0;
+    border-right: none;
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button {
+    icon: url(graphics:record_wave_icon.svg);
+    border-bottom-right-radius: 4px;
+    padding-right: 10;
+    padding-left: 0;
+    border-left: none;
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:checked,
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button:checked {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:hover,
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button:hover {
+    background: rgba(255, 255, 255, 0.10);
+}
+
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:checked:hover,
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button:checked:hover {
+    background: rgba(255, 255, 255, 0.24);
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed {
@@ -1688,10 +2045,16 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 #snap_controls_container #snap_button QLabel,
 #grid_controls_container #grid_button,
+#onset_controls_container #onset_button,
 #step_button_container #step_button {
     text-transform: uppercase;
     font-weight: 700;
     font-size: 9px;
+}
+
+#onset_controls_container #onset_button {
+    border-radius: 2px;
+    padding: 0 4 0 4;
 }
 
 #playercontrols_widget_bottom_line QDoubleSpinBox {
@@ -2212,6 +2575,120 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 #dialog_title #dialog_close_button::hover {
     icon: url(graphics:dialog_close_icon_hover.svg);
+}
+
+/* =====================================================================
+   Find & Replace dialog (FindReplaceDialog — 2026 enhanced-components)
+   Tokens mirror the design handoff: 30px input shell, 22×22 inline
+   toggles, slate footer with status text + 3-button right cluster.
+   ===================================================================== */
+
+#find_replace_dialog QLabel[class="find_replace_section_label"] {
+    color: rgba(184, 206, 224, 140);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#find_replace_field {
+    background-color: #27333d;
+    border-radius: 2px;
+    border: 1px solid rgba(0, 0, 0, 90);
+    min-height: 30px;
+    max-height: 30px;
+}
+
+#find_replace_field QLineEdit {
+    background: transparent;
+    color: rgba(255, 255, 255, 242);
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    selection-background-color: #b8cee0;
+    selection-color: #1a232b;
+}
+
+#find_replace_field QPushButton[class="find_toggle"] {
+    background-color: transparent;
+    color: rgba(184, 206, 224, 178);
+    border: none;
+    border-radius: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+#find_replace_field QPushButton[class="find_toggle"]:hover {
+    background-color: rgba(184, 206, 224, 36);
+    color: rgba(184, 206, 224, 220);
+}
+
+#find_replace_field QPushButton[class="find_toggle"]:checked {
+    background-color: #b8cee0;
+    color: #1a232b;
+}
+
+#find_replace_field QPushButton[class="find_toggle"]:checked:hover {
+    background-color: #c8dbe9;
+}
+
+#find_replace_dialog #dialog_bottom {
+    /* The custom footer needs vertical padding the default rule strips
+       off so the status label + buttons line up at a comfortable height
+       without inheriting the 0-margin treatment from #dialog_bottom. */
+    min-height: 44px;
+}
+
+#find_replace_dialog #dialog_bottom QLabel[class="find_replace_status"] {
+    color: rgba(184, 206, 224, 153);
+    font-size: 10px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    padding: 0;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"],
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"] {
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    border-radius: 2px;
+    border: none;
+    /* Override the default #dialog_bottom radius-0 rule so these buttons
+       have their own 2px corner like the rest of the design system. */
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"] {
+    background-color: #4a5f70;
+    color: #b8cee0;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:hover {
+    background-color: #566f84;
+    color: #ffffff;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"] {
+    background-color: #c8dbe9;
+    color: #3e5363;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"]:hover {
+    background-color: #d6e4ef;
+    color: #1a232b;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:disabled,
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"]:disabled {
+    color: rgba(184, 206, 224, 80);
+    background-color: rgba(74, 95, 112, 100);
 }
 
 #music_voice_separation_box #music_voice_separation_music_icon {

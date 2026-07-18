@@ -56,16 +56,15 @@ def _rendered_path_for(raw_path: Path, rate_pct: int) -> Path:
     return raw_path.with_name(f'{raw_path.stem}__r{sign}{abs(int(rate_pct))}{raw_path.suffix}')
 
 
-def _build_filter_chain(rate_pct: int) -> str:
-    """Build a chained `atempo` filter for the given rate.
+def _build_filter_chain_for_factor(factor: float) -> str:
+    """Chain `atempo` stages for an arbitrary tempo `factor` (>1 = faster /
+    shorter, <1 = slower / longer).
 
     atempo only accepts 0.5..2.0 in a single instance. We chain 2.0 / 0.5
     pre-stages for any factor outside that band, then append the residual.
     """
-    factor = 1.0 + rate_pct / 100.0
-
     parts: list[str] = []
-    remaining = factor
+    remaining = float(factor)
     while remaining > 2.0:
         parts.append('atempo=2.0')
         remaining /= 2.0
@@ -74,6 +73,12 @@ def _build_filter_chain(rate_pct: int) -> str:
         remaining /= 0.5
     parts.append(f'atempo={remaining:.4f}')
     return ','.join(parts)
+
+
+def _build_filter_chain(rate_pct: int) -> str:
+    """Build a chained `atempo` filter for a subtitld rate (-100..100 →
+    factor 0..2)."""
+    return _build_filter_chain_for_factor(1.0 + rate_pct / 100.0)
 
 
 def stretch_by_rate(raw_path: Path | str, rate_pct: int) -> Path:

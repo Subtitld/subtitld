@@ -9,6 +9,7 @@ import copy
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.addons_dialog import AddonsPanel
+from subtitld.interface.cloud_dashboard import CloudDashboardPanel
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.config import Config
@@ -300,6 +301,26 @@ def load(self):
     self.left_panel_global_addons_panel = AddonsPanel()
     self.left_panel_global_tab_addons.layout().addWidget(self.left_panel_global_addons_panel)
 
+    # --- Subtitld Cloud tab ---
+    # Account dashboard (CloudDashboardPanel) — identity, balance ring,
+    # top-up / portal, recent-usage history, and a not-connected empty
+    # state with API-key entry. The api_key it stores lands in the SAME
+    # config slot every cloud-backed provider reads through
+    # `cloud.read_api_key()`, so configuring it once lights up all cloud
+    # engines. The server URL is NOT exposed — production always points
+    # at cloud.subtitld.org; developers override via the
+    # SUBTITLD_CLOUD_BASE_URL env var (see subtitld_cloud_shared).
+    self.left_panel_global_tab_cloud = QWidget()
+    self.left_panel_global_tab_cloud.setProperty('class', 'transparent_panel')
+    self.left_panel_global_tab_cloud.setLayout(QVBoxLayout())
+    self.left_panel_global_tab_cloud.layout().setContentsMargins(10, 10, 10, 10)
+    self.left_panel_global_tab_cloud.layout().setSpacing(8)
+    self.left_panel_global_tabs.addTab(self.left_panel_global_tab_cloud, '')
+
+    self.global_panel_cloud_dashboard = CloudDashboardPanel()
+    self.left_panel_global_tab_cloud.layout().addWidget(self.global_panel_cloud_dashboard)
+    self.left_panel_global_tab_cloud.layout().addStretch()
+
     # Export settings: icon-only button docked at the right end of the tab
     # bar via QTabWidget's corner-widget slot.
     self.left_panel_global_panel_export_settings_button = QPushButton()
@@ -419,6 +440,9 @@ def update(self):
         checkbox.setChecked(bool(options.get(key, False)))
         checkbox.blockSignals(False)
 
+    # Subtitld Cloud dashboard re-fetches on its own showEvent; nothing
+    # to push here.
+
 
 def left_panel_global_subtitle_alignment_activated(self):
     session.CONFIG['default_values']['subtitle_alignment'] = self.left_panel_global_subtitle_alignment.currentText().lower()
@@ -456,6 +480,7 @@ def translate(self):
     self.left_panel_global_tabs.setTabText(1, _('global_panel.tab_general'))
     self.left_panel_global_tabs.setTabText(2, _('global_panel.tab_usfx'))
     self.left_panel_global_tabs.setTabText(3, _('global_panel.tab_addons'))
+    self.left_panel_global_tabs.setTabText(4, _('global_panel.tab_cloud'))
     if hasattr(self, 'left_panel_global_addons_panel'):
         self.left_panel_global_addons_panel.retranslate()
     self.left_panel_global_tab_usfx_intro.setText(_('global_panel.usfx_intro'))
@@ -472,6 +497,8 @@ def translate(self):
     self.left_panel_global_subtitle_alignment.setLabel(_('global_panel.subtitle_alignment'))
     if hasattr(self, 'global_panel_audio_separator_combobox'):
         self.global_panel_audio_separator_combobox.setLabel(_('global_panel.audio_separator'))
+    if hasattr(self, 'global_panel_cloud_dashboard'):
+        self.global_panel_cloud_dashboard.retranslate()
 
 
 

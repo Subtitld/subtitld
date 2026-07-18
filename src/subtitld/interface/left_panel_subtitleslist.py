@@ -663,8 +663,15 @@ def regenerate_dub_for_selected(self):
     available_by_id = {p.id: p for p in available}
 
     last_engine = last_dub.get('engine', '')
+    # `dubbing_options.engine` is pinned by the speaker-panel batch
+    # generators (see _GenericTTSSpeakerPanel / _EdgeTTSSpeakerPanel
+    # `generate_all_speeches_button_clicked`) so a partial-failure recovery
+    # picks the right provider even on subtitles whose first generation
+    # attempt never produced a dub.
+    override_engine = overrides.get('engine', '')
     panel_engine = session.CONFIG.get('dubbing', {}).get('selected_engine', 'edge-tts')
     provider = (available_by_id.get(last_engine)
+                or available_by_id.get(override_engine)
                 or available_by_id.get(panel_engine)
                 or available_by_id.get('edge-tts'))
     if provider is None:
