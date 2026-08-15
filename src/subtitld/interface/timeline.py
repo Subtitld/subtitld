@@ -2486,6 +2486,21 @@ class Timeline(QWidget):
             return
 
         if not session.SUBTITLE.get('segments'):
+            if widget.is_cursor_pressing:
+                # No subtitles to drag → a press-drag scrubs the playhead, just
+                # like the non-empty path below (which this early return would
+                # otherwise skip). Throttle to ~30 Hz while playing for the same
+                # audio-callback reason as that path.
+                is_paused = widget.window().preview_panel_player.is_paused()
+                now_t = time.perf_counter()
+                if is_paused or now_t - widget._drag_throttle_last_t >= 0.033:
+                    widget._drag_throttle_last_t = now_t
+                    session.SUBTITLE['position'] = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
+                    if session.CONFIG['repeat_activated']:
+                        session.REPEAT_DURATION_BUFFER = []
+                    widget.seek.emit(session.SUBTITLE.get('position', 0))
+                    widget.update()
+                return
             waveform_center_y = widget.waveform_y + (widget.waveform_height * 0.5)
             in_band = abs(event.pos().y() - waveform_center_y) <= 10
             new_x = event.pos().x() if in_band else None
