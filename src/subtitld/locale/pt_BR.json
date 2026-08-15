@@ -228,6 +228,7 @@
     "transcription_panel.no_api_key_error": "Nenhuma chave de API fornecida. Forneça uma chave de API nas configurações.",
     "transcription_panel.error": "Erro",
     "translation_panel.translate": "Traduzir",
+    "translation_panel.error": "Erro de tradução",
     "translation_panel.vosk_translator_no_model_available": "Nenhum modelo disponível para este idioma.",
     "translation_panel.language": "Idioma",
     "translation_panel.use_context": "Usar contexto",

@@ -1,8 +1,9 @@
 import os
+import time
 from deep_translator import GoogleTranslator
 import subprocess
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QProgressBar, QPushButton, QRadioButton, QButtonGroup, QLineEdit
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QProgressBar, QPushButton, QRadioButton, QButtonGroup, QLineEdit, QApplication
 from PySide6.QtCore import Qt, QThread, Signal
 
 from subtitld.interface import left_panel
@@ -14,6 +15,55 @@ from subtitld.modules import utils as modules_utils
 
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
 INVERTED_LANGUAGES = {v: k for k, v in session.LANGUAGE_DICT_LIST.items()}
+
+# Google rate-limits / 500s its free (scraped) endpoint. deep-translator then
+# parses the HTML error page and returns its visible text as a bogus
+# "translation" ("Error 500 (Server Error)… That's all we know."). Detect that
+# so we never store it over a real subtitle.
+_GOOGLE_ERROR_MARKERS = (
+    "that's all we know",
+    "that’s all we know",
+    "error 500 (server error)",
+    "error 502 (server error)",
+    "error 503 (server error)",
+)
+
+
+def _looks_like_google_error(text):
+    if not isinstance(text, str) or not text.strip():
+        return False
+    low = text.lower()
+    if any(m in low for m in _GOOGLE_ERROR_MARKERS):
+        return True
+    return "server error" in low and "try again later" in low
+
+
+def _translate_with_retry(translator, text, should_stop=None):
+    """Translate one string, retrying transient Google failures (500 / 429 /
+    rate-limit) with capped exponential backoff until a real response comes
+    back. Keeps trying indefinitely — Google throttling the free endpoint is
+    temporary — so it never stores an error page or gives up on a line. Only
+    returns None if ``should_stop()`` asks us to bail (the user cancelled or
+    the app is quitting)."""
+    delay = 1.0
+    while True:
+        if should_stop is not None and should_stop():
+            return None
+        try:
+            result = translator.translate(text)
+        except Exception:
+            result = None
+        if isinstance(result, str) and result.strip() and not _looks_like_google_error(result):
+            return result
+        # Transient failure — back off (capped at 30s), then try again, staying
+        # responsive to a stop request in small slices meanwhile.
+        waited = 0.0
+        while waited < delay:
+            if should_stop is not None and should_stop():
+                return None
+            time.sleep(0.25)
+            waited += 0.25
+        delay = min(delay * 1.7, 30.0)
 
 
 class GoogleTranslatorPanel(QWidget):
@@ -47,10 +97,15 @@ class GoogleTranslatorPanel(QWidget):
                     target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
                     use_context = session.CONFIG['translation'].get('engine_options', {}). get('GoogleTranslator', {}).get('use_context', False)
                     try:
+                        translator = GoogleTranslator(source='auto', target=target_language[:2])
                         context_full = []
 
                         for index, segment in enumerate(self.sentences_list):
+                            if self.isInterruptionRequested():
+                                break
                             self.progress.emit(int((index / len(self.sentences_list)) * 100))
+                            if not segment['text'].strip():
+                                continue
                             context = ''
                             
                             if use_context:
@@ -62,7 +117,13 @@ class GoogleTranslatorPanel(QWidget):
 
                                 context_full.append(segment['text'])
 
-                            translated_text = GoogleTranslator(source='auto', target=target_language[:2]).translate((f'{context}␟' if context else '') + segment['text'])
+                            translated_text = _translate_with_retry(
+                                translator, (f'{context}␟' if context else '') + segment['text'],
+                                should_stop=self.isInterruptionRequested)
+                            if translated_text is None:
+                                # Interrupted (user cancelled / app quitting) —
+                                # stop; the lines done so far are already saved.
+                                break
 
                             translated_text = translated_text.rsplit('␟')[-1].strip().replace('\u200b', '')
 
@@ -97,7 +158,12 @@ class GoogleTranslatorPanel(QWidget):
         widget.translate_thread.progress.connect(lambda value: widget.translation_progress.emit(value))
         widget.translate_thread.finished.connect(lambda: widget.translation_finished.emit())
         widget.translate_thread.response.connect(translate_thread_response)
-        widget.translate_thread.response_error.connect(lambda: translate_thread_error)
+        widget.translate_thread.response_error.connect(translate_thread_error)
+        # The translate loop retries rate-limited lines indefinitely; make sure
+        # a quit doesn't block on it — ask it to stop when the app is closing.
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(widget.translate_thread.requestInterruption)
 
         widget.update_callback = widget.update
         widget.translate_process_callback = widget.translate_process

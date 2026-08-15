@@ -291,6 +291,7 @@
     "transcription_panel.no_api_key_error": "No API key is provided. Please provide an API key in the settings.",
     "transcription_panel.error": "Error",
     "translation_panel.translate": "Translate",
+    "translation_panel.error": "Translation error",
     "translation_panel.vosk_translator_no_model_available": "No model is available for this language.",
     "translation_panel.language": "Language",
     "translation_panel.use_context": "Use context",
