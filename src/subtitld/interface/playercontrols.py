@@ -3,7 +3,7 @@ import time
 from bisect import bisect
 import subprocess
 
-from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial
+from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
 
@@ -735,6 +735,21 @@ def load(self):
     from subtitld.interface.record_controls import RecordController
     self.record_controller = RecordController(self)
     self.playercontrols_record_button.setChecked(self.record_controller.armed)
+
+    # Smooth opacity pulse while the record button is armed ("hot"), so it's
+    # clearly live. Driven by _update_record_pulse from _update_record_mode_buttons.
+    self._record_pulse_effect = QGraphicsOpacityEffect(self.playercontrols_record_button)
+    self._record_pulse_effect.setOpacity(1.0)
+    self.playercontrols_record_button.setGraphicsEffect(self._record_pulse_effect)
+    self._record_pulse_anim = QPropertyAnimation(self._record_pulse_effect, b'opacity', self)
+    self._record_pulse_anim.setDuration(1100)
+    self._record_pulse_anim.setStartValue(1.0)
+    self._record_pulse_anim.setKeyValueAt(0.5, 0.4)
+    self._record_pulse_anim.setEndValue(1.0)
+    self._record_pulse_anim.setEasingCurve(QEasingCurve.InOutSine)
+    self._record_pulse_anim.setLoopCount(-1)
+    self._record_pulse_running = False
+
     _update_record_mode_buttons(self)
     
     self.playercontrols_widget_top_line.layout().addSpacing(-30)
@@ -1984,6 +1999,27 @@ def _update_record_mode_buttons(self):
     mode = controller.mode
     self.playercontrols_record_transcript_button.setChecked(mode == MODE_TRANSCRIPT)
     self.playercontrols_record_audio_button.setChecked(mode == MODE_WAVE)
+    _update_record_pulse(self)
+
+
+def _update_record_pulse(self):
+    """Run the opacity pulse while the record button is armed; stop + reset
+    to full opacity otherwise. Guarded so repeated calls don't restart (and
+    visibly jump) an already-running pulse."""
+    anim = getattr(self, '_record_pulse_anim', None)
+    effect = getattr(self, '_record_pulse_effect', None)
+    controller = getattr(self, 'record_controller', None)
+    if anim is None or effect is None or controller is None:
+        return
+    if controller.armed:
+        if not self._record_pulse_running:
+            anim.start()
+            self._record_pulse_running = True
+    else:
+        if self._record_pulse_running:
+            anim.stop()
+            self._record_pulse_running = False
+        effect.setOpacity(1.0)
 
 
 def update_playercontrols_playpause_button(self):
