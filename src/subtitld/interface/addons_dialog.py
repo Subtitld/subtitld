@@ -922,6 +922,12 @@ class AddonConfigInlineWidget(QWidget):
         for field in fields or []:
             if not isinstance(field, dict) or not field.get('key'):
                 continue
+            # Secrets (API keys, tokens) are NOT exposed in the always-visible
+            # inline strip (e.g. the transcription engine config) — they're set
+            # in the add-ons Configure dialog. Keeps the Subtitld Cloud key off
+            # the panel.
+            if str(field.get('type', '')).lower() in ('password', 'secret'):
+                continue
             self._fields_by_key[field['key']] = field
             self._render_field(field)
             rendered += 1
