@@ -15,6 +15,12 @@ from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
+# Transcription footer bottom-row padding. Shared by the layout and the
+# start/finish progress toggles so the "running" bar keeps the row's height
+# identical to the idle (Start-button) state.
+_FOOTER_SIDE_MARGIN = 10
+_FOOTER_BOTTOM_MARGIN = 10
+
 _list_of_supported_import_extensions = []
 for _exttype in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS:
     for _ext in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS[_exttype]['extensions']:
@@ -623,7 +629,12 @@ def global_panel_import_start_transcription_progress_start(self):
     # transcript_started signal.
     progress = self.global_panel_import_start_transcription_progress
     button = self.global_panel_import_start_transcription_button
-    progress.setMinimumHeight(max(button.height(), button.sizeHint().height(), 24))
+    # The idle row is `button_height + 10px bottom margin` tall. Make the bar
+    # exactly that tall and zero ALL margins, so it fills the row edge-to-edge
+    # (including where the bottom margin was) while the row's total height stays
+    # identical — the button hides without the row resizing.
+    button_h = max(button.sizeHint().height(), button.height(), 24)
+    progress.setFixedHeight(button_h + _FOOTER_BOTTOM_MARGIN)
     progress.setVisible(True)
     progress.setValue(0)
     progress.setMaximum(100)
@@ -642,13 +653,16 @@ def global_panel_import_start_transcription_progress_finish(self):
     # Restore the idle footer: hide the bar, drop the running-mode height,
     # bring back the Start button and the ALL scope row, and restore the
     # row's side/bottom padding.
-    self.global_panel_import_start_transcription_progress.setVisible(False)
-    self.global_panel_import_start_transcription_progress.setMinimumHeight(0)
+    progress = self.global_panel_import_start_transcription_progress
+    progress.setVisible(False)
+    progress.setMinimumHeight(0)
+    progress.setMaximumHeight(16777215)   # undo the running-mode setFixedHeight
     self.global_panel_import_start_transcription_button.setVisible(True)
     if hasattr(self, 'transcription_scope_area'):
         self.transcription_scope_area.setVisible(True)
     if hasattr(self, 'transcription_footer_bottom_line'):
-        self.transcription_footer_bottom_line.layout().setContentsMargins(10, 0, 10, 10)
+        self.transcription_footer_bottom_line.layout().setContentsMargins(
+            _FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
 
 
 def _populate_asr_addons(self):
@@ -789,7 +803,7 @@ def load(self):
     bottom_line = QHBoxLayout(bottom_line_w)
     # Button keeps its side + bottom padding; NO top padding — it hugs the
     # divider directly above it (no gap between the line and the button).
-    bottom_line.setContentsMargins(10, 0, 10, 10)
+    bottom_line.setContentsMargins(_FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
     bottom_line.setSpacing(0)
     footer_v.addWidget(bottom_line_w)
 
