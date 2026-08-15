@@ -474,7 +474,11 @@ def toppanel_export_button_clicked(self):
     base = os.path.basename(session.SUBTITLE.get('filepath', '') or session.VIDEO.get('filepath', '')) or 'subtitle'
     suggested = os.path.join(suggested_dir, os.path.splitext(base)[0] + '.' + extensions[0])
 
-    filedialog = QFileDialog.getSaveFileName(parent=self, caption=f'Export {fmt}', dir=suggested, filter=file_filter)
+    # Force Qt's own dialog (not the native GTK/portal one): this save picker
+    # opens right after the frameless modal ExportDialog is dismissed, and on
+    # X11 the native dialog frequently fails to map while that modal grab is
+    # still releasing — the symptom being "the export save dialog never shows".
+    filedialog = QFileDialog.getSaveFileName(parent=self, caption=f'Export {fmt}', dir=suggested, filter=file_filter, options=QFileDialog.Option.DontUseNativeDialog)
     if not filedialog[0]:
         return
 
