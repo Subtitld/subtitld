@@ -274,6 +274,11 @@ def load_productionscreen(self):
 
         if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
             self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+            # Load this project's saved audio effects into the engine (applies to
+            # existing speaker tracks now; the separation-finished handler
+            # re-applies once the background/vocals tracks appear).
+            from subtitld.modules import audio_effects as _fx
+            _fx.apply_to_engine(self.preview_panel_player._audio_device, _fx.load_effects())
 
             if session.CONFIG.get('recent_files', False) and session.SUBTITLE['filepath'] in session.CONFIG['recent_files']:
                 last_position = session.CONFIG['recent_files'][str(session.SUBTITLE['filepath'])].get('last_position', 0)

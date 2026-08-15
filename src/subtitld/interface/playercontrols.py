@@ -885,6 +885,13 @@ def load(self):
         self.preview_panel_player._audio_device.vocals_sound.add_clip(vocals_clip)
         self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
 
+        # Background/vocals tracks now exist — (re)apply any background/voice
+        # audio effects to them.
+        try:
+            self.preview_panel_player._audio_device.apply_effects()
+        except Exception:
+            pass
+
         music_voice_separation_box_update(self)
 
         # Re-run the timeline's onset detector now that the vocals

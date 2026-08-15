@@ -886,6 +886,11 @@ class Track:
         self.clips = []
         self.gain = 1.0
         self.enabled = True
+        # Optional audio_effects.EffectChain applied to this track's mixed
+        # block before the gain (channel-strip order: EQ/dynamics → fader).
+        # Swapped atomically from the main thread; the audio thread snapshots
+        # the reference, so a mid-block rebuild can't tear it apart.
+        self.effect_chain = None
         # Updated each Track.read() — read by the engine's debug printer.
         self.last_in_window_clips = 0
         self.last_total_clips = 0
@@ -917,6 +922,15 @@ class Track:
             self.last_in_window_clips += 1
             out += clip_data
             buffer_pool.release(clip_data)
+
+        chain = self.effect_chain   # atomic snapshot (main thread may swap it)
+        if chain is not None:
+            try:
+                chain.process(out, playhead, samplerate)
+            except Exception:
+                # A DSP glitch must never take down the audio thread — drop
+                # the effect for this block rather than propagate.
+                pass
 
         out *= self.gain
         return out
@@ -1001,6 +1015,11 @@ class SoundDeviceAudioEngine:
         # `_ensure_speaker_track` so a slider position set before any
         # dubs were generated still wins when dubs come in later.
         self.dub_separation_gain = 1.0
+
+        # Audio-effects model (list of effect specs, see modules/audio_effects).
+        # Chains are (re)assigned to the background / vocals / per-speaker tracks
+        # by `apply_effects`, and re-applied when a new speaker track appears.
+        self.audio_effects = []
 
         # ---- DEBUG INSTRUMENTATION ----------------------------------
         # Aggregates filled by _callback (audio thread) and dumped by the
@@ -1407,7 +1426,38 @@ class SoundDeviceAudioEngine:
             track.gain = self.dub_separation_gain
             self.speaker_tracks[speaker] = track
             self.tracks.append(track)
+            # New speaker → apply any effects targeting it.
+            self._apply_effects_to_track(track, 'speaker', speaker)
         return track
+
+    # ---- audio effects --------------------------------------------------
+    def set_audio_effects(self, specs):
+        """Replace the effects model and (re)assign chains to all tracks."""
+        self.audio_effects = list(specs or [])
+        self.apply_effects()
+
+    def apply_effects(self):
+        """(Re)assign effect chains to the background / vocals / speaker tracks
+        from the current model. Safe to call whenever the model or the set of
+        tracks changes."""
+        self._apply_effects_to_track(getattr(self, 'background_sound', None), 'background')
+        self._apply_effects_to_track(getattr(self, 'vocals_sound', None), 'voice')
+        for name, track in self.speaker_tracks.items():
+            self._apply_effects_to_track(track, 'speaker', name)
+
+    def _apply_effects_to_track(self, track, kind, speaker=None):
+        if track is None:
+            return
+        from subtitld.modules import audio_effects
+        specs = audio_effects.specs_for_target(self.audio_effects, kind, speaker)
+        if not specs:
+            track.effect_chain = None
+            return
+        chain = track.effect_chain
+        if chain is None:
+            track.effect_chain = audio_effects.EffectChain(specs, self.samplerate)
+        else:
+            chain.rebuild(specs)   # keeps filter/envelope state when unchanged
 
     def set_dub_separation_gain(self, gain):
         """Apply `gain` to every existing dub track and remember it for

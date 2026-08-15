@@ -41,7 +41,8 @@ dependencies = [
     "deep_translator",
     "soundfile",
     "edge-tts",
-    "gTTS"
+    "gTTS",
+    "scipy"
 ]
 
 # Optional feature groups. For now these mirror deps already in `dependencies`

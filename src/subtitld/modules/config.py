@@ -49,6 +49,8 @@ class Config(dict):
         self.setdefault('transcription', {})
         self.setdefault('translation', {})
         self.setdefault('dubbing', {})
+        self.setdefault('record', {})
+        self.setdefault('audio_effects', {})
 
     @staticmethod
     def get_valid_keys():
@@ -73,6 +75,8 @@ class Config(dict):
             'transcription',
             'translation',
             'dubbing',
+            'record',
+            'audio_effects',
         }
 
     @staticmethod
