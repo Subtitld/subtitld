@@ -156,7 +156,9 @@ class EQProcessor:
         if self.sos is None or _sig is None or block.shape[0] == 0:
             return
         y, self.zi = _sig.sosfilt(self.sos, block, axis=0, zi=self.zi)
-        block[:] = y.astype(block.dtype, copy=False)
+        # Cast float64 → block's float32 directly into the destination buffer
+        # (no full-size temporary — this runs on the real-time mixer thread).
+        block[:] = y
 
 
 # --------------------------------------------------------------------------- #
