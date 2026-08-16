@@ -999,6 +999,10 @@ class Timeline(QWidget):
             smart_splice_divider_color = QColor("#1a000000")
             subtitle_font = QFont('Montserrat', 10)
 
+            # Rects of the "≡" alternate-takes badges, rebuilt each paint and
+            # hit-tested in mousePressEvent.
+            widget._dub_badge_rects = {}
+
             for subtitle in ordered_segments:
                 if subtitle['start'] > visible_end_sec:
                     continue
@@ -1037,6 +1041,24 @@ class Timeline(QWidget):
                     painter.setOpacity(0.18)
 
                 painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
+
+                # "≡" badge: this subtitle has more than one dub take (a
+                # "playlist"). Click it to audition / promote alternates.
+                _dubs_list = subtitle.get('dubbing') or []
+                if dubbing_enabled and len(_dubs_list) > 1 and subtitle_rect.width() > 22:
+                    _bw = 15.0
+                    _bh = min(11.0, max(6.0, subtitle_rect.height() - 2.0))
+                    _badge = QRectF(subtitle_rect.right() - _bw - 2.0,
+                                    subtitle_rect.top() + 2.0, _bw, _bh)
+                    widget._dub_badge_rects[id(subtitle)] = (_badge, subtitle)
+                    painter.save()
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(20, 28, 36, 235))
+                    painter.drawRoundedRect(_badge, 2.0, 2.0, Qt.AbsoluteSize)
+                    painter.setPen(QColor(184, 206, 224, 220))
+                    painter.setFont(QFont('Montserrat', 8, QFont.Bold))
+                    painter.drawText(_badge, Qt.AlignCenter, '≡')
+                    painter.restore()
 
                 if subtitle.get('dubbing') and dubbing_enabled:
                     dub = subtitle['dubbing'][0]
@@ -1896,6 +1918,14 @@ class Timeline(QWidget):
         if event.button() != Qt.LeftButton:
             event.ignore()
             return
+
+        # "≡" alternate-takes badge → open the dub playlist menu. Checked first
+        # so it wins over the dub-body hit-tests below.
+        for _brect, _bsub in getattr(widget, '_dub_badge_rects', {}).values():
+            if _brect.contains(QPointF(event.pos())):
+                _show_dub_playlist_menu(widget, _bsub, event.globalPosition().toPoint())
+                event.accept()
+                return
 
         # Per-subclip stretch handle (the bars+ratio icon near each
         # subclip's top-right corner) — must win over the subclip
@@ -3536,6 +3566,49 @@ class Timeline(QWidget):
 def update_subtitles_panel_subtitle_selected(self):
     self.subtitles_panel_qlistwidget.update_content()
     left_panel.update(self)
+
+
+def _show_dub_playlist_menu(widget, subtitle, global_pos):
+    """Menu over a subtitle's alternate dub takes: audition one (solo) or
+    promote it to the default (moves it to dubbing[0])."""
+    from PySide6.QtWidgets import QMenu
+    from subtitld.modules import dub_clip
+    dubs = subtitle.get('dubbing') or []
+    if len(dubs) < 2:
+        return
+    active = next((d for i, d in enumerate(dubs)
+                   if not dub_clip.effective_muted(d, i)), dubs[0])
+    menu = QMenu(widget)
+    for i, dub in enumerate(dubs):
+        mark = '●' if dub is active else '○'
+        default = '  ·  ' + _('timeline.dub_take_default') if i == 0 else ''
+        take = menu.addMenu('{}  {}{}'.format(mark, _('timeline.dub_take').format(n=i + 1), default))
+        take.addAction(_('timeline.dub_take_listen')).triggered.connect(
+            lambda _c=False, d=dub: _dub_playlist_apply(widget, subtitle, d, promote=False))
+        take.addAction(_('timeline.dub_take_make_default')).triggered.connect(
+            lambda _c=False, d=dub: _dub_playlist_apply(widget, subtitle, d, promote=True))
+    menu.exec(global_pos)
+
+
+def _dub_playlist_apply(widget, subtitle, dub, promote):
+    from subtitld.modules import dub_clip
+    if promote:
+        dub_clip.promote_dub(subtitle, dub)
+    else:
+        dub_clip.solo_dub(subtitle, dub)
+    # Re-sync so the newly-audible take is loaded, then refresh the views.
+    try:
+        widget.window().preview_panel_player._audio_device.sync_subtitle_dubs(
+            session.SUBTITLE.get('segments', []))
+    except Exception:
+        pass
+    session.set_unsaved()
+    widget.update()
+    try:
+        left_panel.update(widget.window())
+    except Exception:
+        pass
+
 
 def load(self):
     self.timeline_scroll = TimelineScroll()
