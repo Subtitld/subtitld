@@ -288,8 +288,23 @@ class Clip:
         self._prefetch_thread.join(timeout=2.0)
 
 
+def _first_unmuted_dub(dubs):
+    """The dub clip that should be heard: the first un-muted entry. A clip's
+    default mute state is `index != 0`, so with no explicit flags `[0]` plays
+    and the alternates are silent — the "clip playlist" model. Soloing an
+    alternate (mute the rest, un-mute it) makes it play; promoting one to `[0]`
+    makes it the new default."""
+    if not dubs:
+        return None
+    for i, d in enumerate(dubs):
+        if not d.get('muted', i != 0):
+            return d
+    return dubs[0]
+
+
 class SubtitleDubClip:
-    """Wrapper clip that always plays subtitle['dubbing'][0] for a given subtitle dict.
+    """Wrapper clip that plays a subtitle's active dub (the first un-muted entry
+    of `subtitle['dubbing']`; `[0]` by default) for a given subtitle dict.
 
     Reads `path` and `start` live each callback so timeline drags / playlist swaps
     take effect immediately without engine re-sync. Loaded WAV samples are kept
@@ -330,8 +345,7 @@ class SubtitleDubClip:
         self._load_pending: set[str] = set()
 
     def _current_dub(self):
-        dubs = self.subtitle.get('dubbing')
-        return dubs[0] if dubs else None
+        return _first_unmuted_dub(self.subtitle.get('dubbing'))
 
     def preload(self, path):
         """Synchronous load — only safe to call from the MAIN thread (e.g.
@@ -1509,7 +1523,7 @@ class SoundDeviceAudioEngine:
             track = self._ensure_speaker_track(speaker)
             sub_id = id(sub)
             seen.add(sub_id)
-            dub = sub['dubbing'][0]
+            dub = _first_unmuted_dub(sub['dubbing'])
 
             # Resolution order: dub-identity match (rewires across
             # undo/redo) → id-match (steady state) → new clip.

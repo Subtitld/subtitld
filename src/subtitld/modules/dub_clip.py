@@ -39,6 +39,32 @@ from typing import Iterable
 import soundfile as sf
 
 
+def effective_muted(dub: dict, index: int) -> bool:
+    """Whether a dub clip is silent. A clip's default mute state is `index != 0`
+    (so `[0]` — the default take — plays and alternates are silent), overridable
+    with an explicit `'muted'` flag. See `audioengine._first_unmuted_dub`."""
+    return bool(dub.get('muted', index != 0))
+
+
+def solo_dub(subtitle: dict, dub: dict) -> None:
+    """Make `dub` the only audible clip for this subtitle (mute every other
+    take). Used when the user picks an alternate to listen to."""
+    for d in subtitle.get('dubbing') or []:
+        d['muted'] = (d is not dub)
+
+
+def promote_dub(subtitle: dict, dub: dict) -> None:
+    """Make `dub` the default: move it to index 0 and mark it the audible one
+    (the others become muted alternates)."""
+    dubs = subtitle.get('dubbing')
+    if not dubs or dub not in dubs:
+        return
+    dubs.remove(dub)
+    dubs.insert(0, dub)
+    for i, d in enumerate(dubs):
+        d['muted'] = (i != 0)
+
+
 def _audio_subclip(path: str, source_start: float = 0.0,
                    source_end: float | None = None, offset: float = 0.0) -> dict:
     return {'type': 'audio', 'path': path,
