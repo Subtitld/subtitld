@@ -4,6 +4,19 @@ import argparse
 import pathlib
 import inspect
 
+# MediaPipe (used by the Speakers face detection and the lip-sync mouth
+# tracker) must be imported before PySide6/Qt. With this venv's protobuf
+# runtime, importing MediaPipe *after* Qt has loaded fails to build its
+# bundled proto descriptors ("Invalid default '0.5' ... into descriptor
+# pool"); importing it first registers them cleanly, and the later
+# `import mediapipe` in those modules reuses this cached, working module.
+# Guarded so a missing/broken install degrades gracefully instead of
+# blocking app start.
+try:
+    import mediapipe as _mediapipe_boot  # noqa: F401
+except Exception:
+    pass
+
 from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog
 from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence
 from PySide6.QtCore import QDir, QTimer
@@ -36,6 +49,9 @@ from subtitld.modules.addons.builtin import whispercpp_provider as _whispercpp_p
 # the user still has to paste a Subtitld Cloud API key under each provider's
 # settings before transcription requests will actually go through.
 from subtitld.modules.addons.builtin import subtitld_cloud_assemblyai_provider as _subtitld_cloud_assemblyai_provider
+# Video-manipulation plugin family (real-time per-frame). The mouth crop
+# helps the user focus on lip-sync while dubbing.
+from subtitld.modules.addons.builtin import mouth_crop_provider as _mouth_crop_provider
 
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
@@ -251,6 +267,51 @@ def main():
         
     app = QApplication(sys.argv)
 
+    # ---- Paint-conflict guard -----------------------------------------
+    # If any widget's paintEvent ever leaves a QPainter open on its device
+    # (e.g. a paint body that raised before end()), Qt's backing-store
+    # compositor then fails to paint that widget every frame and floods the
+    # console with "A paint device can only be painted by one painter at a
+    # time" / "Painter not active". That spam is useless once seen. This
+    # handler swallows exactly those two messages (passing everything else
+    # through unchanged) and, on the FIRST occurrence, logs which widget is
+    # holding the stuck painter so the real leak can be fixed.
+    from PySide6.QtCore import qInstallMessageHandler as _install_msg_handler
+
+    _paint_conflict_state = {'diagnosed': False}
+
+    def _subtitld_message_handler(mode, context, message):
+        if ('one painter at a time' in message) or ('Painter not active' in message):
+            if not _paint_conflict_state['diagnosed']:
+                _paint_conflict_state['diagnosed'] = True
+                try:
+                    culprits = []
+                    for _wdg in QApplication.allWidgets():
+                        try:
+                            if _wdg.paintingActive():
+                                _chain, _x = [], _wdg
+                                for _ in range(5):
+                                    if _x is None:
+                                        break
+                                    _chain.append('{}({})'.format(type(_x).__name__, _x.objectName() or '-'))
+                                    _x = _x.parentWidget()
+                                culprits.append(' < '.join(_chain))
+                        except Exception:
+                            pass
+                    sys.stderr.write(
+                        '[subtitld] paint-conflict suppressed. Widget holding a '
+                        'stuck painter: {}\n'.format(culprits or ['<none found>']))
+                    sys.stderr.flush()
+                except Exception:
+                    pass
+            return  # swallow the repeated flood
+        try:
+            sys.stderr.write(message + '\n')
+        except Exception:
+            pass
+
+    _install_msg_handler(_subtitld_message_handler)
+
     # ---- Add-on registry bootstrap ------------------------------------
     # Built-in providers are registered first so they're always available
     # right after install, even before the user discovers the add-ons
@@ -277,6 +338,7 @@ def main():
     addon_manager.register_builtin(_import_provider.get_provider())
     addon_manager.register_builtin(_whispercpp_provider.get_provider())
     addon_manager.register_builtin(_subtitld_cloud_assemblyai_provider.get_provider())
+    addon_manager.register_builtin(_mouth_crop_provider.get_provider())
     try:
         discovered = addon_manager.discover()
         if discovered:

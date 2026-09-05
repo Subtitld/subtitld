@@ -34,8 +34,10 @@ from subtitld.modules.addons.provider import (
     TASK_AUDIO_SEPARATE,
     TASK_TTS_SYNTHESIZE,
     TASK_TRANSLATE,
+    TASK_VIDEO_LIPSYNC,
     TTSProvider,
     TranslationProvider,
+    VideoLipsyncProvider,
 )
 from subtitld.modules import audio_stretch
 from subtitld.modules.utils import get_cache_key
@@ -724,3 +726,61 @@ class AddonTranslationProvider(_AddonProviderMixin, TranslationProvider):
 
         req.result.connect(on_result, Qt.QueuedConnection)
         req.error.connect(on_error, Qt.QueuedConnection)
+
+
+class AddonVideoLipsyncProvider(_AddonProviderMixin, VideoLipsyncProvider):
+    """Generative lip-sync backed by a subprocess add-on (Wav2Lip, MuseTalk).
+
+    Protocol for ``video.lipsync``::
+
+        request:  {video_path, audio_path, output_path, options}
+        progress: {value, message}                 # 0..1
+        result:   {output_path: <path>}            # exists + non-empty
+    """
+
+    def __init__(self, addon_id: str, manifest: dict, exe_path: str | Path,
+                 parent: QObject | None = None):
+        VideoLipsyncProvider.__init__(self, parent)
+        _AddonProviderMixin.__init__(self, addon_id, manifest, exe_path)
+        self._active_request = None
+
+    def lipsync(self, request_id: str, video_path: str, audio_path: str,
+                output_path: str, options: dict | None = None) -> None:
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.error.emit(request_id, str(exc))
+            return
+
+        params = {
+            'video_path': str(video_path),
+            'audio_path': str(audio_path),
+            'output_path': str(output_path),
+            'options': options or {},
+        }
+        req = proc.request(TASK_VIDEO_LIPSYNC, params)
+        self._active_request = req
+
+        def on_progress(value: float, message: str) -> None:
+            self.progress.emit(request_id, float(value), str(message))
+
+        def on_result(data: dict) -> None:
+            self._active_request = None
+            out = str(data.get('output_path', '') or '') if isinstance(data, dict) else ''
+            if not out:
+                self.error.emit(request_id, f'{self._addon_id} returned no output_path')
+                return
+            self.lipsync_ready.emit(request_id, out)
+
+        def on_error(code: str, message: str) -> None:
+            self._active_request = None
+            self.error.emit(request_id, f'[{code}] {message}')
+
+        req.progress.connect(on_progress, Qt.QueuedConnection)
+        req.result.connect(on_result, Qt.QueuedConnection)
+        req.error.connect(on_error, Qt.QueuedConnection)
+
+    def cancel(self, request_id: str | None = None) -> None:
+        if self._active_request is None or self._process is None:
+            return
+        self._process.cancel(self._active_request.id)

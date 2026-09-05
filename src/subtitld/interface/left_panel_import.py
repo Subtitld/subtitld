@@ -621,48 +621,68 @@ def _extract_audio_slice(src, start, end):
         return None
 
 
-def global_panel_import_start_transcription_progress_start(self):
-    # Running mode: the progress bar takes over the whole bottom row — full
-    # width AND the same height the Start button filled, with zero padding on
-    # every side. The Start button and the ALL scope row are hidden.
-    # Idempotent — safe to call from both the button click and the
-    # transcript_started signal.
+# The minimum progress shown the instant a run starts. Starting the bar at a
+# few percent (rather than a flat 0) reads as "it's working" immediately —
+# some engines take a while before they emit their first real progress tick.
+_TRANSCRIPTION_START_PERCENT = 5
+
+
+def _reconcile_transcription_footer(self):
+    """Single source of truth for the footer's Start-button-vs-progress-bar
+    state, derived from ``self._transcription_running``. The button and the
+    bar are strictly mutually exclusive — exactly one is visible — so no
+    stale state (an aborted run, a re-show mid-run, an engine switch) can
+    ever leave both on screen at once. Safe to call any time the footer is
+    (re)shown or updated."""
+    if not hasattr(self, 'global_panel_import_start_transcription_progress'):
+        return  # footer not built yet
+    running = bool(getattr(self, '_transcription_running', False))
     progress = self.global_panel_import_start_transcription_progress
     button = self.global_panel_import_start_transcription_button
-    # The idle row is `button_height + 10px bottom margin` tall. Make the bar
-    # exactly that tall and zero ALL margins, so it fills the row edge-to-edge
-    # (including where the bottom margin was) while the row's total height stays
-    # identical — the button hides without the row resizing.
-    button_h = max(button.sizeHint().height(), button.height(), 24)
-    progress.setFixedHeight(button_h + _FOOTER_BOTTOM_MARGIN)
-    progress.setVisible(True)
-    progress.setValue(0)
-    progress.setMaximum(100)
-    button.setVisible(False)
+    if running:
+        # The idle row is `button_height + 10px bottom margin` tall. Make the
+        # bar exactly that tall and zero ALL margins so it fills the row
+        # edge-to-edge while the row's total height stays identical — the
+        # button hides without the row resizing.
+        button_h = max(button.sizeHint().height(), button.height(), 24)
+        progress.setFixedHeight(button_h + _FOOTER_BOTTOM_MARGIN)
+        progress.setMaximum(100)
+        progress.setVisible(True)
+        button.setVisible(False)
+    else:
+        progress.setVisible(False)
+        progress.setMinimumHeight(0)
+        progress.setMaximumHeight(16777215)   # undo the running-mode setFixedHeight
+        button.setVisible(True)
     if hasattr(self, 'transcription_scope_area'):
-        self.transcription_scope_area.setVisible(False)
+        self.transcription_scope_area.setVisible(not running)
     if hasattr(self, 'transcription_footer_bottom_line'):
-        self.transcription_footer_bottom_line.layout().setContentsMargins(0, 0, 0, 0)
+        margins = (0, 0, 0, 0) if running else (
+            _FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
+        self.transcription_footer_bottom_line.layout().setContentsMargins(*margins)
+
+
+def global_panel_import_start_transcription_progress_start(self):
+    # Enter running mode: the progress bar takes over the whole bottom row and
+    # the Start button + scope row hide. Idempotent — safe to call from both
+    # the button click and a (possibly delayed) transcript_started signal.
+    self._transcription_running = True
+    _reconcile_transcription_footer(self)
+    self.global_panel_import_start_transcription_progress.setValue(_TRANSCRIPTION_START_PERCENT)
 
 
 def global_panel_import_start_transcription_progress_update(self, value):
-    self.global_panel_import_start_transcription_progress.setValue(value)
+    # Never let a run's bar fall back below the initial "it's working" floor,
+    # so an engine that reports 0% for its first few ticks doesn't visually
+    # reset to empty after we already showed 5%.
+    self.global_panel_import_start_transcription_progress.setValue(
+        max(_TRANSCRIPTION_START_PERCENT, int(value)))
 
 
 def global_panel_import_start_transcription_progress_finish(self):
-    # Restore the idle footer: hide the bar, drop the running-mode height,
-    # bring back the Start button and the ALL scope row, and restore the
-    # row's side/bottom padding.
-    progress = self.global_panel_import_start_transcription_progress
-    progress.setVisible(False)
-    progress.setMinimumHeight(0)
-    progress.setMaximumHeight(16777215)   # undo the running-mode setFixedHeight
-    self.global_panel_import_start_transcription_button.setVisible(True)
-    if hasattr(self, 'transcription_scope_area'):
-        self.transcription_scope_area.setVisible(True)
-    if hasattr(self, 'transcription_footer_bottom_line'):
-        self.transcription_footer_bottom_line.layout().setContentsMargins(
-            _FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
+    # Leave running mode: hide the bar, bring the Start button + scope row back.
+    self._transcription_running = False
+    _reconcile_transcription_footer(self)
 
 
 def _populate_asr_addons(self):
@@ -815,6 +835,7 @@ def load(self):
     # started emitting progress, `connect(... lambda: <nested name>)`
     # crashed with NameError. They now live at module scope.
 
+    self._transcription_running = False
     self.global_panel_import_start_transcription_progress = QProgressBar()
     self.global_panel_import_start_transcription_progress.setObjectName('transcription_progress_bar')
     self.global_panel_import_start_transcription_progress.setVisible(False)
@@ -931,6 +952,9 @@ def global_panel_import_tabwidget_update(self):
     # the whole bottom footer (scope selector + Start button) is hidden.
     if hasattr(self, 'transcription_footer'):
         self.transcription_footer.setVisible(not is_import)
+    # Whenever the footer (re)appears, reconcile the Start-button / progress-bar
+    # state from the single running flag so the two can never both show.
+    _reconcile_transcription_footer(self)
     for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
         if widget.property('transcription_engine') == current_engine:
             self.global_panel_import_tabwidget.setCurrentWidget(widget)

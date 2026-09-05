@@ -12,6 +12,8 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
+from subtitld.modules import addons
+from subtitld.modules.addons.provider import TASK_TRANSLATE
 
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
 INVERTED_LANGUAGES = {v: k for k, v in session.LANGUAGE_DICT_LIST.items()}
@@ -147,7 +149,7 @@ class GoogleTranslatorPanel(QWidget):
                 session.set_unsaved()
 
         def translate_thread_error(response):
-            error_dialog = utils.SimpleDialog(widget, title=_('translation_panel.error'), text=response)
+            error_dialog = utils.SimpleDialog(widget, title=_('translation_panel.error'))
             label = QLabel(response)
             error_dialog.content.layout().addWidget(label)
             error_dialog.reject_button.setVisible(False)
@@ -189,6 +191,140 @@ class GoogleTranslatorPanel(QWidget):
         widget.use_context.setText(_('translation_panel.use_context'))
 
 
+class AddonTranslatorPanel(QWidget):
+    """Generic panel for any add-on that serves the ``translate.text`` task.
+
+    Add-on translators are subprocesses: ``provider.translate(request_id,
+    text, source, target)`` fires one request and the result comes back
+    asynchronously via ``translation_ready`` / ``error``. We translate the
+    batch one line at a time (advancing when each result lands) so the local
+    engine isn't flooded and progress stays accurate. The source language is
+    the subtitle language set in the Import panel (default en-US)."""
+
+    translation_started = Signal()
+    translation_progress = Signal(int)
+    translation_finished = Signal()
+
+    def __init__(widget, provider, parent=None):
+        super().__init__(None)
+        widget.provider = provider
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(10)
+        widget.setProperty('translation_engine', provider.id)
+        widget.setProperty('class', 'transparent_panel')
+
+        widget.info_label = QLabel(provider.display_name)
+        widget.info_label.setWordWrap(True)
+        widget.layout().addWidget(widget.info_label)
+
+        # Render the provider's config schema inline (model options, etc.).
+        try:
+            from subtitld.interface.addons_dialog import AddonConfigInlineWidget
+            widget.options_widget = AddonConfigInlineWidget.for_provider(provider, parent=widget)
+            if widget.options_widget is not None:
+                widget.layout().addWidget(widget.options_widget)
+        except Exception:
+            widget.options_widget = None
+
+        widget.layout().addStretch()
+
+        widget._queue = []
+        widget._index = 0
+        widget._reqmap = {}
+        widget._run_id = 0
+        widget._stopped = False
+        widget._target_language = 'en-us'
+
+        provider.translation_ready.connect(widget._on_ready)
+        provider.error.connect(widget._on_error)
+
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(lambda: setattr(widget, '_stopped', True))
+
+        widget.update_callback = widget.update
+        widget.translate_process_callback = widget.translate_process
+        widget.translate_callback = widget.translate
+
+    def update(widget):
+        pass
+
+    def translate(widget):
+        widget.info_label.setText(widget.provider.display_name)
+
+    def translate_process(widget, segments_list=None):
+        segments = segments_list if segments_list is not None else session.SUBTITLE['segments']
+        widget._queue = [s for s in segments if isinstance(s, dict) and s.get('text', '').strip()]
+        widget._index = 0
+        widget._reqmap = {}
+        widget._run_id += 1
+        widget._stopped = False
+        widget._target_language = session.CONFIG['translation'].get(
+            'engine_options', {}).get('target_language', 'en-us')
+        widget.translation_started.emit()
+        try:
+            widget.provider.start()
+        except Exception:
+            pass
+        widget._translate_next()
+
+    def _translate_next(widget):
+        if widget._stopped:
+            return
+        total = len(widget._queue)
+        if widget._index >= total:
+            widget.translation_finished.emit()
+            return
+        widget.translation_progress.emit(int((widget._index / total) * 100) if total else 100)
+        seg = widget._queue[widget._index]
+        request_id = 'run{}_{}'.format(widget._run_id, widget._index)
+        widget._reqmap[request_id] = seg
+        source = session.SUBTITLE.get('language', 'en-us')
+        try:
+            widget.provider.translate(request_id, seg['text'], source, widget._target_language)
+        except Exception as exc:
+            widget._reqmap.pop(request_id, None)
+            widget._stopped = True
+            widget._show_error(str(exc))
+            widget.translation_finished.emit()
+
+    def _on_ready(widget, request_id, text):
+        seg = widget._reqmap.pop(request_id, None)
+        if seg is None:
+            return  # stale result / from a different run
+        original = seg.get('text', '')
+        if isinstance(text, str) and text.strip():
+            for s in session.SUBTITLE.get('segments', []):
+                if s.get('text') == original:
+                    s.setdefault('translations', {})[widget._target_language] = text.strip()
+            try:
+                widget.window().timeline_widget.update()
+            except Exception:
+                pass
+            session.set_unsaved()
+        widget._index += 1
+        widget._translate_next()
+
+    def _on_error(widget, request_id, message):
+        if request_id not in widget._reqmap:
+            return
+        widget._reqmap.pop(request_id, None)
+        widget._stopped = True
+        widget._show_error(message)
+        widget.translation_finished.emit()
+
+    def _show_error(widget, message):
+        try:
+            error_dialog = utils.SimpleDialog(widget, title=_('translation_panel.error'))
+            label = QLabel(str(message))
+            error_dialog.content.layout().addWidget(label)
+            error_dialog.reject_button.setVisible(False)
+            error_dialog.exec()
+        except Exception:
+            pass
+
+
 def load(self):
     tab_name = 'translation'
     
@@ -222,6 +358,29 @@ def load(self):
     self.global_panel_translation_googletranslator_widget.translation_progress.connect(lambda value: global_panel_translation_start_translation_progress_update(self, value))
     self.global_panel_translation_googletranslator_widget.translation_finished.connect(lambda: global_panel_translation_start_translation_progress_finish(self))
     self.global_panel_translation_tabwidget.addWidget(self.global_panel_translation_googletranslator_widget)
+
+
+    # Add-on translation engines (any provider serving `translate.text`),
+    # discovered from the registry and appended after the built-in engines —
+    # mirrors how the Import panel surfaces ASR add-ons.
+    try:
+        _translate_providers = addons.get_manager().providers_for_task(TASK_TRANSLATE)
+    except Exception:
+        _translate_providers = []
+    self.global_panel_translation_addon_widgets = {}
+    for _provider in _translate_providers:
+        _panel = AddonTranslatorPanel(_provider)
+        _panel.translation_started.connect(lambda: global_panel_translation_start_translation_progress_start(self))
+        _panel.translation_progress.connect(lambda value: global_panel_translation_start_translation_progress_update(self, value))
+        _panel.translation_finished.connect(lambda: global_panel_translation_start_translation_progress_finish(self))
+        self.global_panel_translation_tabwidget.addWidget(_panel)
+        self.global_panel_translation_engine_combobox.combobox.addItem(_provider.id)
+        self.global_panel_translation_addon_widgets[_provider.id] = _panel
+
+    # Restore the previously selected engine.
+    _saved_engine = session.CONFIG['translation'].get('engine', 'GoogleTranslator')
+    if self.global_panel_translation_engine_combobox.combobox.findText(_saved_engine) >= 0:
+        self.global_panel_translation_engine_combobox.setCurrentText(_saved_engine)
 
     left_panel_translation_panel.layout().addWidget(self.global_panel_translation_tabwidget, 1)
 

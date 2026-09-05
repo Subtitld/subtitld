@@ -1060,6 +1060,17 @@ def load(self):
 
     self.playercontrols_widget_left_bottom_line.layout().addStretch()
 
+    # Lip-sync mouth view toggle (video-manipulation plugin): crops the
+    # active speaker's mouth into a floating panel over the preview.
+    self.timeline_show_mouth_button = QPushButton()
+    self.timeline_show_mouth_button.setObjectName('timeline_show_mouth_button')
+    self.timeline_show_mouth_button.setCheckable(True)
+    self.timeline_show_mouth_button.setIconSize(QSize(16, 16))
+    self.timeline_show_mouth_button.setFixedWidth(24)
+    self.timeline_show_mouth_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.timeline_show_mouth_button.clicked.connect(lambda: timeline_show_mouth_button_clicked(self))
+    self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_show_mouth_button)
+
     self.timeline_speaker_container = QWidget()
     self.timeline_speaker_container.setObjectName('timeline_speaker_container')
     self.timeline_speaker_container.setLayout(QHBoxLayout())
@@ -1083,6 +1094,15 @@ def load(self):
     self.timeline_show_speaker_tracks_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timeline_show_speaker_tracks_button.clicked.connect(lambda: timeline_show_speaker_tracks_button_clicked(self))
     self.timeline_speaker_container.layout().addWidget(self.timeline_show_speaker_tracks_button)
+
+    self.timeline_show_dub_takes_button = QPushButton()
+    self.timeline_show_dub_takes_button.setObjectName('timeline_show_dub_takes_button')
+    self.timeline_show_dub_takes_button.setCheckable(True)
+    self.timeline_show_dub_takes_button.setIconSize(QSize(16, 16))
+    self.timeline_show_dub_takes_button.setFixedWidth(24)
+    self.timeline_show_dub_takes_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.timeline_show_dub_takes_button.clicked.connect(lambda: timeline_show_dub_takes_button_clicked(self))
+    self.timeline_speaker_container.layout().addWidget(self.timeline_show_dub_takes_button)
 
     self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_speaker_container)
 
@@ -2054,6 +2074,12 @@ def update(self):
     self.add_subtitle_to_next_start.setChecked(session.CONFIG.get('new_subtitle_to_next_start', False))
     self.timeline_show_speaker_tracks_button.setChecked(session.CONFIG['timeline'].get('show_speaker_tracks', False))
     self.timeline_show_speaker_color_button.setChecked(session.CONFIG['timeline'].get('show_speaker_color', False))
+    self.timeline_show_dub_takes_button.setChecked(session.CONFIG['timeline'].get('show_dub_takes', False))
+    if hasattr(self, 'timeline_show_mouth_button'):
+        _mouth_on = bool(session.CONFIG.get('video_manipulation', {}).get('enabled', False))
+        self.timeline_show_mouth_button.setChecked(_mouth_on)
+        if _mouth_on:
+            self.preview_panel_player.set_mouth_view_enabled(True)
     timelinescrolling_type_update(self)
     update_snap_buttons(self)
     update_grid_buttons(self)
@@ -3122,6 +3148,19 @@ def timeline_show_speaker_tracks_button_clicked(self):
     self.timeline_widget.update()
 
 
+def timeline_show_dub_takes_button_clicked(self):
+    # When on, the timeline draws every subtitle's alternate dub takes as
+    # waveform clips stacked below its main dub clip (see timeline.py).
+    self.timeline_widget.show_dub_takes = self.timeline_show_dub_takes_button.isChecked()
+    session.CONFIG['timeline']['show_dub_takes'] = self.timeline_show_dub_takes_button.isChecked()
+    self.timeline_widget.update()
+
+
+def timeline_show_mouth_button_clicked(self):
+    # Toggle the lip-sync mouth-crop panel over the video preview.
+    self.preview_panel_player.set_mouth_view_enabled(self.timeline_show_mouth_button.isChecked())
+
+
 @shortcut('timeline_escape_action', 'Escape timeline actions', ['Escape'])
 def escape_actions(self):
     if self.timeline_widget.is_smart_splicing:
@@ -3191,5 +3230,8 @@ def translate(self):
     self.zoomout_button.setToolTip(_('playercontrols.zoom_out'))
     self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))
     self.timeline_show_speaker_tracks_button.setToolTip(_('playercontrols.timeline_show_speaker_tracks'))
+    self.timeline_show_dub_takes_button.setToolTip(_('playercontrols.timeline_show_dub_takes'))
+    if hasattr(self, 'timeline_show_mouth_button'):
+        self.timeline_show_mouth_button.setToolTip(_('playercontrols.mouth_view'))
 
 

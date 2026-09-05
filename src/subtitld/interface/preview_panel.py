@@ -187,8 +187,13 @@ class PlayerWidget(QWidget):
 
         widget._last_video_frame = None
         widget._graphics_video_item.videoSink().videoFrameChanged.connect(widget._on_video_frame)
-        
+
         widget.layout().addWidget(widget._graphics_view, 1)
+
+        # Video-manipulation plugins (lip-sync mouth crop, ...): a controller
+        # taps the frame stream and shows plugin output in a floating panel.
+        from subtitld.interface.video_manipulation import VideoManipulationController
+        widget.video_manipulation = VideoManipulationController(widget)
 
         QTimer.singleShot(0, widget._force_resize_update)
     
@@ -278,6 +283,9 @@ class PlayerWidget(QWidget):
         widget._graphics_view.setSceneRect(QRect(0, 0, event.size().width(), event.size().height()))
         widget._graphics_video_item.setSize(event.size())
         widget._graphics_view.fitInView(widget._graphics_view.sceneRect(), Qt.KeepAspectRatio)
+        vm = getattr(widget, 'video_manipulation', None)
+        if vm is not None:
+            vm.reposition()
         event.accept()
 
     def showEvent(widget, event):
@@ -418,6 +426,15 @@ class PlayerWidget(QWidget):
     def _on_video_frame(widget, frame):
         if frame.isValid():
             widget._last_video_frame = frame
+            vm = getattr(widget, 'video_manipulation', None)
+            if vm is not None and vm.is_enabled():
+                vm.on_frame(frame)
+
+    def set_mouth_view_enabled(widget, enabled):
+        """Toggle the lip-sync mouth-crop panel (used by the toolbar button)."""
+        vm = getattr(widget, 'video_manipulation', None)
+        if vm is not None:
+            vm.set_enabled(enabled)
 
     def _video_rect_in_viewport(widget):
         frame = widget._last_video_frame

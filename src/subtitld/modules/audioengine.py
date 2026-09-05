@@ -976,6 +976,23 @@ class SoundDeviceAudioEngine:
         # blocks reduce per-callback overhead and let the mixer batch
         # work, at the cost of ~85 ms extra latency on seek/play.
         # Imperceptible in practice; play/pause feel instant.
+        # Give the background mixer thread a fair shot at the GIL. The
+        # producer/consumer split above keeps the audio *callback* cheap,
+        # but the mixer thread still runs Python under the GIL, and if the
+        # GUI thread holds the GIL in an unbroken burst longer than the
+        # ring's ~200 ms of pre-fill, the ring drains and playback cuts
+        # out. CPython's default 5 ms switch interval means the mixer may
+        # wait up to 5 ms between GIL handoffs during such a burst;
+        # dropping it to 1 ms lets the mixer preempt GUI work ~5x more
+        # often, so it keeps the ring full even while the main thread is
+        # busy (timeline hover/scrub, zoom, subtitle edits). Only ever
+        # lower it — never stomp a smaller value another component set.
+        try:
+            if sys.getswitchinterval() > 0.001:
+                sys.setswitchinterval(0.001)
+        except Exception:
+            pass
+
         self.samplerate = samplerate
         self.blocksize = blocksize
         self.tracks = []

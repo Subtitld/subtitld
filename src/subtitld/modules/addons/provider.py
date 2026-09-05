@@ -25,6 +25,8 @@ TASK_ASR_TRANSCRIBE = 'asr.transcribe'
 TASK_ASR_STREAM = 'asr.stream'
 TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
+TASK_VIDEO_MANIPULATE = 'video.manipulate'
+TASK_VIDEO_LIPSYNC = 'video.lipsync'
 
 
 class Provider(QObject):
@@ -299,3 +301,92 @@ class TranslationProvider(Provider):
     def translate(self, request_id: str, text: str, source: str, target: str,
                   options: dict | None = None) -> None:
         raise NotImplementedError
+
+
+class VideoProvider(Provider):
+    """Real-time video-frame manipulation provider — the first member of the
+    *video manipulation* plugin family (e.g. the lip-sync mouth crop).
+
+    Unlike the audio/text providers, these run **per frame** while the video
+    plays, so the contract is a single synchronous ``process_frame`` the host
+    calls on a dedicated worker thread. There is deliberately no subprocess
+    IPC path here (per-frame round-trips would be far too slow) — video
+    plugins are in-process. The host feeds frames and displays whatever image
+    the plugin returns in its output panel, so a plugin is free to crop, zoom,
+    annotate, or otherwise transform the frame.
+
+    Implementations must be safe to construct on the main thread (registration)
+    but may lazily build heavy/thread-affine resources (ML models) on first
+    ``process_frame`` call, which always happens on the host's worker thread.
+    """
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_VIDEO_MANIPULATE]
+
+    def process_frame(self, frame, context: dict) -> dict | None:
+        """Transform one video frame.
+
+        Parameters
+        ----------
+        frame : numpy.ndarray
+            The current video frame as an ``(H, W, 3)`` uint8 RGB array.
+        context : dict
+            Playback context the host assembles on the main thread::
+
+                {
+                  'playhead': float,            # seconds
+                  'active_speaker': str | None, # speaker at the playhead
+                  'reference_rgb': ndarray|None,# that speaker's stored face
+                  'config': dict,               # this provider's settings
+                }
+
+        Returns
+        -------
+        dict | None
+            ``{'image': (h, w, 3) uint8 RGB ndarray, 'label': str,
+            'found': bool}`` — the panel shows ``image`` and, optionally,
+            ``label``. Return ``None`` (or ``found=False`` with no image) to
+            leave the panel showing its previous output.
+        """
+        raise NotImplementedError
+
+
+class VideoLipsyncProvider(Provider):
+    """Generative lip-sync: given a video and a (dubbed) audio track, produce a
+    new video whose mouth movements match the audio ("visual dubbing").
+
+    A batch/offline task — unlike the real-time ``VideoProvider``, the add-on
+    reads the whole clip, runs its model, and writes the result to
+    ``output_path`` (mirrors ``audio.separate``, which also produces a file).
+
+    Signals
+    -------
+    lipsync_ready(request_id: str, output_path: str)
+        Emitted when the synced video is written. ``output_path`` exists and is
+        non-empty by the time this fires.
+    error(request_id: str, message: str)
+        Terminal failure for that request.
+    progress(request_id: str, value: float, message: str)
+        0..1 progress with a free-form message (model download, per-frame, …).
+    """
+
+    lipsync_ready = Signal(str, str)
+    error = Signal(str, str)
+    progress = Signal(str, float, str)
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_VIDEO_LIPSYNC]
+
+    def lipsync(self, request_id: str, video_path: str, audio_path: str,
+                output_path: str, options: dict | None = None) -> None:
+        """Kick off lip-sync of ``video_path`` against ``audio_path``, writing
+        the synced video to ``output_path``. ``options`` is provider-specific
+        (from the manifest ``config_schema``) and may carry a ``face_box`` the
+        host detected, quality/model knobs, etc. Report progress and finish
+        with ``lipsync_ready`` or ``error``."""
+        raise NotImplementedError
+
+    def cancel(self, request_id: str | None = None) -> None:
+        """Best-effort cancellation. Default is a no-op."""

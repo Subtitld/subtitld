@@ -598,6 +598,19 @@ class Timeline(QWidget):
         # provides the smooth cursor animation, so the user doesn't
         # perceive the drag itself as laggy.
         widget._drag_throttle_last_t = 0.0
+        # Same rationale as the drag throttle, but for bare hover: the
+        # per-move hover pipeline (subtitle-under-cursor scan, adjacent
+        # lookup, several per-subclip/handle hit-tests) is O(number of
+        # subtitles) and runs on EVERY raw mouse-move. Capped to ~60 Hz
+        # while playing so it can't pin the GIL and starve the mixer.
+        widget._hover_throttle_last_t = 0.0
+        # Global toggle (playercontrols button, next to "show speaker tracks"):
+        # when on, every subtitle's alternate dub takes are drawn as waveform
+        # clips stacked below its main dub clip (see _paint_dub_take_rows).
+        # Rects for those rows are collected each paint for click hit-testing:
+        # click a take to audition it (solo), or its ▲ to make it the default.
+        widget.show_dub_takes = session.CONFIG['timeline'].get('show_dub_takes', False)
+        widget._dub_take_rects = []
         widget.is_smart_splicing = False
         widget.subtitle_under_the_cursor = False
         widget.show_speaker_color = session.CONFIG['timeline'].get('show_speaker_color', False)
@@ -703,10 +716,30 @@ class Timeline(QWidget):
             widget.update()
 
     def paintEvent(widget, event):
+        # Guarantee painter.end() even if the (large) paint body raises. A
+        # QPainter left un-ended stays bound to the widget — the traceback that
+        # carries the failed frame keeps the painter alive — so the NEXT
+        # paintEvent's QPainter(widget) fails with "A paint device can only be
+        # painted by one painter at a time" and the console floods with
+        # "Painter not active". try/finally makes a single bad frame
+        # recoverable instead of permanently breaking the timeline, and the
+        # except surfaces the real cause (de-duplicated so it can't flood).
         if not widget.isVisible() or widget.width() <= 0 or widget.height() <= 0:
             return
-        
         painter = QPainter(widget)
+        try:
+            widget._paint_body(painter, event)
+        except Exception as _paint_exc:
+            msg = repr(_paint_exc)
+            if getattr(widget, '_last_paint_error', None) != msg:
+                widget._last_paint_error = msg
+                import traceback, sys
+                traceback.print_exc(file=sys.stderr)
+        finally:
+            painter.end()
+        event.accept()
+
+    def _paint_body(widget, painter, event):
         scroll_position = widget.parent().parent().horizontalScrollBar().value()
         scroll_width = widget.parent().parent().width()
 
@@ -1001,7 +1034,10 @@ class Timeline(QWidget):
 
             # Rects of the "≡" alternate-takes badges, rebuilt each paint and
             # hit-tested in mousePressEvent.
-            widget._dub_badge_rects = {}
+            widget._dub_take_rects = []
+            # Collected during the loop, painted in a second pass AFTER it so
+            # the take rows sit on top of every subtitle's content.
+            _dub_takes_to_paint = []
 
             for subtitle in ordered_segments:
                 if subtitle['start'] > visible_end_sec:
@@ -1042,23 +1078,14 @@ class Timeline(QWidget):
 
                 painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
 
-                # "≡" badge: this subtitle has more than one dub take (a
-                # "playlist"). Click it to audition / promote alternates.
+                # Playlist takes: when the global toggle is on and this subtitle
+                # has more than one dub take, queue its takes to be drawn as
+                # waveform clips stacked below the main dub (second pass, so they
+                # sit on top of neighbouring clips' waveforms).
                 _dubs_list = subtitle.get('dubbing') or []
-                if dubbing_enabled and len(_dubs_list) > 1 and subtitle_rect.width() > 22:
-                    _bw = 15.0
-                    _bh = min(11.0, max(6.0, subtitle_rect.height() - 2.0))
-                    _badge = QRectF(subtitle_rect.right() - _bw - 2.0,
-                                    subtitle_rect.top() + 2.0, _bw, _bh)
-                    widget._dub_badge_rects[id(subtitle)] = (_badge, subtitle)
-                    painter.save()
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(20, 28, 36, 235))
-                    painter.drawRoundedRect(_badge, 2.0, 2.0, Qt.AbsoluteSize)
-                    painter.setPen(QColor(184, 206, 224, 220))
-                    painter.setFont(QFont('Montserrat', 8, QFont.Bold))
-                    painter.drawText(_badge, Qt.AlignCenter, '≡')
-                    painter.restore()
+                if widget.show_dub_takes and dubbing_enabled and len(_dubs_list) > 1:
+                    _dub_takes_to_paint.append(
+                        (QRectF(subtitle_rect), subtitle, list(_dubs_list), speaker_color_str))
 
                 if subtitle.get('dubbing') and dubbing_enabled:
                     dub = subtitle['dubbing'][0]
@@ -1803,6 +1830,16 @@ class Timeline(QWidget):
 
             painter.setOpacity(1)
 
+            # Second pass: draw each playlist's take clips on top of every
+            # subtitle so their rows never get overpainted by a neighbouring
+            # clip's waveform/text.
+            for _tk_rect, _tk_sub, _tk_dubs, _tk_color in _dub_takes_to_paint:
+                try:
+                    _paint_dub_take_rows(widget, painter, _tk_sub, _tk_rect, _tk_dubs, _tk_color)
+                except Exception:
+                    import traceback, sys
+                    traceback.print_exc(file=sys.stderr)
+
         if bool(widget.show_tug_of_war):
             tug_of_war_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(tug_of_war_pen)
@@ -1906,9 +1943,6 @@ class Timeline(QWidget):
             painter.setFont(QFont('Montserrat', 10))
             painter.drawText(phantom_rect - QMarginsF(8, 4, 8, 4), Qt.AlignCenter | Qt.TextWordWrap, _('timeline.empty_state_label'))
 
-        painter.end()
-        event.accept()
-
     def mousePressEvent(widget, event):
         # Right- (and middle-) clicks must NOT initiate any drag — they're
         # for the context menu. The release event for right-click is
@@ -1919,11 +1953,19 @@ class Timeline(QWidget):
             event.ignore()
             return
 
-        # "≡" alternate-takes badge → open the dub playlist menu. Checked first
-        # so it wins over the dub-body hit-tests below.
-        for _brect, _bsub in getattr(widget, '_dub_badge_rects', {}).values():
-            if _brect.contains(QPointF(event.pos())):
-                _show_dub_playlist_menu(widget, _bsub, event.globalPosition().toPoint())
+        # Dub-playlist take rows (drawn when "show dub takes" is on). Checked
+        # before everything else so a click on a take (or its "make default"
+        # button) wins over the dub-body hit-tests below. Two passes: the small
+        # promote button beats the row body it sits inside.
+        _press_pos = QPointF(event.pos())
+        for _trect, _tsub, _tdub, _taction in getattr(widget, '_dub_take_rects', []):
+            if _taction == 'promote' and _trect.contains(_press_pos):
+                _dub_playlist_apply(widget, _tsub, _tdub, promote=True)
+                event.accept()
+                return
+        for _trect, _tsub, _tdub, _taction in getattr(widget, '_dub_take_rects', []):
+            if _taction == 'solo' and _trect.contains(_press_pos):
+                _dub_playlist_apply(widget, _tsub, _tdub, promote=False)
                 event.accept()
                 return
 
@@ -2414,6 +2456,32 @@ class Timeline(QWidget):
             widget.update()
             event.accept()
             return
+
+        # Hover-work throttle. A bare hover (no button pressed, no drag in
+        # progress) still runs the full O(n_subtitles) hover pipeline
+        # below — subtitle-under-cursor scan, adjacent lookup, and several
+        # per-subclip / per-handle hit-tests — on EVERY raw mouse-move.
+        # X11 delivers move events faster than the display refresh, so on
+        # a large project this pins the GUI thread's GIL and the background
+        # mixer thread can't refill the audio ring within its ~200 ms of
+        # pre-fill → the user hears playback cut out just from moving the
+        # mouse over the timeline. Cap the hover pipeline to ~60 Hz while
+        # playing (imperceptible for cursor/hover feedback) so the mixer
+        # always gets GIL time. Paused → no throttle (full responsiveness,
+        # and there's no audio to protect).
+        if (not widget.is_cursor_pressing
+                and not widget.dub_stretch_active
+                and not widget.dub_start_is_clicked):
+            try:
+                _hover_playing = not widget.window().preview_panel_player.is_paused()
+            except Exception:
+                _hover_playing = False
+            if _hover_playing:
+                _hover_now_t = time.perf_counter()
+                if _hover_now_t - widget._hover_throttle_last_t < 0.016:  # ~60 Hz
+                    event.accept()
+                    return
+                widget._hover_throttle_last_t = _hover_now_t
 
         # Hover detection for subclips — set hovered state + cursor when
         # over a subclip body, edge, or stretch handle. Only when no
@@ -3568,26 +3636,146 @@ def update_subtitles_panel_subtitle_selected(self):
     left_panel.update(self)
 
 
-def _show_dub_playlist_menu(widget, subtitle, global_pos):
-    """Menu over a subtitle's alternate dub takes: audition one (solo) or
-    promote it to the default (moves it to dubbing[0])."""
-    from PySide6.QtWidgets import QMenu
-    from subtitld.modules import dub_clip
-    dubs = subtitle.get('dubbing') or []
-    if len(dubs) < 2:
+def _paint_dub_take_rows(widget, painter, subtitle, subtitle_rect, dubs, speaker_color_str):
+    """Draw a subtitle's dub playlist as waveform clips stacked in the lower
+    part of its subtitle rect (default take on top, alternates below). Each
+    row is a real waveform of that take; the audible take is accented with an
+    amber outline. Clicking a row auditions that take (solo); its right-edge
+    ▲ button makes it the default. Rows register their hit rects into
+    ``widget._dub_take_rects`` for mousePressEvent."""
+    from subtitld.modules import dub_clip as _dc
+    n = len(dubs)
+    if n < 2 or subtitle_rect.width() < 24 or subtitle_rect.height() < 22:
         return
     active = next((d for i, d in enumerate(dubs)
-                   if not dub_clip.effective_muted(d, i)), dubs[0])
-    menu = QMenu(widget)
-    for i, dub in enumerate(dubs):
-        mark = '●' if dub is active else '○'
-        default = '  ·  ' + _('timeline.dub_take_default') if i == 0 else ''
-        take = menu.addMenu('{}  {}{}'.format(mark, _('timeline.dub_take').format(n=i + 1), default))
-        take.addAction(_('timeline.dub_take_listen')).triggered.connect(
-            lambda _c=False, d=dub: _dub_playlist_apply(widget, subtitle, d, promote=False))
-        take.addAction(_('timeline.dub_take_make_default')).triggered.connect(
-            lambda _c=False, d=dub: _dub_playlist_apply(widget, subtitle, d, promote=True))
-    menu.exec(global_pos)
+                   if not _dc.effective_muted(d, i)), dubs[0])
+
+    pad = 2.0
+    gap = 2.0
+    # Reserve the top of the (tall) subtitle rect for its text; stack the take
+    # rows in the space below, anchored to the clip's bottom.
+    text_reserve = min(subtitle_rect.height() * 0.42, 40.0)
+    region_top = subtitle_rect.top() + text_reserve
+    region_bottom = subtitle_rect.bottom() - pad
+    region_h = region_bottom - region_top
+    if region_h < 12:
+        # Thin lane (speaker-tracks mode) — use nearly the whole rect instead.
+        region_top = subtitle_rect.top() + pad
+        region_bottom = subtitle_rect.bottom() - pad
+        region_h = region_bottom - region_top
+        if region_h < 8:
+            return
+    row_h = max(10.0, min(40.0, (region_h - (n - 1) * gap) / n))
+    max_rows = max(1, int((region_h + gap) // (row_h + gap)))
+    visible_n = min(n, max_rows)
+    y0 = region_bottom - (visible_n * row_h + (visible_n - 1) * gap)
+
+    dub_waveform_color = QColor(session.CONFIG.get('timeline', {}).get('dub_waveform_color', '#ffffffff'))
+    cache_max = getattr(widget, '_DUB_PATH_CACHE_MAX', 4096)
+
+    painter.save()
+    for i in range(visible_n):
+        dub = dubs[i]
+        is_active = dub is active
+        is_default = (i == 0)
+        ry = y0 + i * (row_h + gap)
+
+        # Horizontal position from the take's clip extent, falling back to the
+        # subtitle's own range for takes with no explicit placement.
+        try:
+            ext_lo, ext_hi = _dc.clip_extent(dub)
+        except Exception:
+            ext_lo, ext_hi = None, None
+        if not ext_hi or (ext_lo is not None and ext_hi <= ext_lo):
+            ext_lo = float(subtitle.get('start', 0.0))
+            ext_hi = float(subtitle.get('end', ext_lo))
+        rx = float(ext_lo) * widget.width_proportion
+        rw = max(0.0, (float(ext_hi) - float(ext_lo)) * widget.width_proportion)
+        if rw < 2:
+            continue
+        row = QRectF(rx, ry, rw, row_h)
+
+        # Clip body — speaker colour like the main dub band, brighter for the
+        # audible take. Kept near-opaque so the main dub's onset markers /
+        # waveform (still drawn underneath) don't bleed through the stack.
+        base = QColor(speaker_color_str or '#1a73a8')
+        if is_active:
+            base = base.lighter(130)
+        else:
+            base = base.darker(112)
+        base.setAlpha(255)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(base)
+        painter.drawRoundedRect(row, 3.0, 3.0, Qt.AbsoluteSize)
+
+        # Waveform of this take.
+        path = dub.get('path')
+        peaks = widget.dub_peaks.get(path) if path else None
+        if peaks is None and path:
+            widget._request_dub_peaks(path)
+        if peaks is not None and row_h >= 6:
+            mins, maxs, duration = peaks
+            count = len(mins)
+            if count > 0:
+                cache_h = int(round(row_h))
+                cache_w = max(1, int(round(rw)))
+                cache_key = (path, 0, count, cache_w, cache_h, 'takerow')
+                wf = widget._dub_waveform_path_cache.get(cache_key)
+                if wf is None:
+                    scale = cache_h * 0.42
+                    ppb = cache_w / count
+                    wf = QPainterPath()
+                    wf.moveTo(0.0, -float(maxs[0]) * scale)
+                    x = ppb
+                    for j in range(1, count):
+                        wf.lineTo(x, -float(maxs[j]) * scale)
+                        x += ppb
+                    x -= ppb
+                    for j in range(count - 1, -1, -1):
+                        wf.lineTo(x, -float(mins[j]) * scale)
+                        x -= ppb
+                    wf.closeSubpath()
+                    if len(widget._dub_waveform_path_cache) > cache_max:
+                        for k in list(widget._dub_waveform_path_cache)[:128]:
+                            del widget._dub_waveform_path_cache[k]
+                    widget._dub_waveform_path_cache[cache_key] = wf
+                painter.save()
+                try:
+                    painter.setClipRect(row)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(dub_waveform_color)
+                    cy = row.center().y()
+                    painter.translate(rx, cy)
+                    painter.drawPath(wf)
+                finally:
+                    # restore() alone undoes the clip + transform even if
+                    # drawPath raised — never leave the painter wedged with a
+                    # stuck clip/translate (that cascades into paint failures).
+                    painter.restore()
+
+        # Amber outline on the audible take (drawn over the waveform).
+        if is_active:
+            painter.setPen(QPen(QColor(255, 214, 74, 235), 1.5))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(row, 3.0, 3.0, Qt.AbsoluteSize)
+
+        # "Make default" ▲ button (skip the default row).
+        promote_rect = None
+        if not is_default and row_h >= 12 and rw > 30:
+            btn_side = min(row_h - 2.0, 16.0)
+            promote_rect = QRectF(row.right() - btn_side - 3.0,
+                                  ry + (row_h - btn_side) * 0.5, btn_side, btn_side)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(12, 18, 26, 175))
+            painter.drawRoundedRect(promote_rect, 2.0, 2.0, Qt.AbsoluteSize)
+            painter.setPen(QColor(224, 236, 246, 235))
+            painter.setFont(QFont('Montserrat', max(7, int(btn_side * 0.5)), QFont.Bold))
+            painter.drawText(promote_rect, Qt.AlignCenter, '▲')
+
+        if promote_rect is not None:
+            widget._dub_take_rects.append((promote_rect, subtitle, dub, 'promote'))
+        widget._dub_take_rects.append((QRectF(row), subtitle, dub, 'solo'))
+    painter.restore()
 
 
 def _dub_playlist_apply(widget, subtitle, dub, promote):

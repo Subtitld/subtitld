@@ -51,6 +51,7 @@ class Config(dict):
         self.setdefault('dubbing', {})
         self.setdefault('record', {})
         self.setdefault('audio_effects', {})
+        self.setdefault('video_manipulation', {})
 
     @staticmethod
     def get_valid_keys():
@@ -77,6 +78,7 @@ class Config(dict):
             'dubbing',
             'record',
             'audio_effects',
+            'video_manipulation',
         }
 
     @staticmethod

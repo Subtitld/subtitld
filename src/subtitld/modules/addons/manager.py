@@ -32,6 +32,7 @@ from subtitld.modules.addons.addon_provider import (
     AddonAudioSeparatorProvider,
     AddonTranslationProvider,
     AddonTTSProvider,
+    AddonVideoLipsyncProvider,
 )
 from subtitld.modules.addons.provider import (
     ASRProvider,
@@ -41,6 +42,7 @@ from subtitld.modules.addons.provider import (
     TASK_AUDIO_SEPARATE,
     TASK_TRANSLATE,
     TASK_TTS_SYNTHESIZE,
+    TASK_VIDEO_LIPSYNC,
     TTSProvider,
     TranslationProvider,
 )
@@ -212,6 +214,8 @@ class AddonManager(QObject):
                 provider = AddonTranslationProvider(addon_id, manifest, exe_path)
             elif primary == TASK_AUDIO_SEPARATE:
                 provider = AddonAudioSeparatorProvider(addon_id, manifest, exe_path)
+            elif primary == TASK_VIDEO_LIPSYNC:
+                provider = AddonVideoLipsyncProvider(addon_id, manifest, exe_path)
             else:
                 log.warning('AddonManager: %s primary task %r not supported',
                             addon_id, primary)

@@ -1763,13 +1763,32 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 }
 
 #timeline_speaker_container #timeline_show_speaker_tracks_button {
-    border-top-right-radius: 2px;
     icon: url(graphics:timeline_show_speaker_in_tracks.svg);
 }
 
 #timeline_speaker_container #timeline_show_speaker_tracks_button:checked {
-    border-top-right-radius: 2px;
     icon: url(graphics:timeline_show_speaker_in_tracks_checked.svg);
+}
+
+#timeline_speaker_container #timeline_show_dub_takes_button {
+    border-top-right-radius: 2px;
+    icon: url(graphics:timeline_show_dub_takes.svg);
+}
+
+#timeline_speaker_container #timeline_show_dub_takes_button:checked {
+    border-top-right-radius: 2px;
+    icon: url(graphics:timeline_show_dub_takes_checked.svg);
+}
+
+#timeline_show_mouth_button {
+    border-radius: 2px;
+    margin-right: 4px;
+    icon: url(graphics:timeline_show_mouth.svg);
+}
+
+#timeline_show_mouth_button:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a86c8, stop:1 #2b689c);
+    icon: url(graphics:timeline_show_mouth_checked.svg);
 }
 
 #change_playback_speed QPushButton {
