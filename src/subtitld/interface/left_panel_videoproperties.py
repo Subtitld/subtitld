@@ -10,7 +10,7 @@ import os
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
-    QRadioButton, QButtonGroup,
+    QRadioButton, QButtonGroup, QTabWidget, QScrollArea,
 )
 from PySide6.QtCore import Qt
 
@@ -34,17 +34,37 @@ def _selected_scale(self):
         return 50
 
 
-def load(self):
-    tab_name = 'videoproperties'
-    panel = left_panel.left_panel(
-        parent=self, tab_name=tab_name,
-        update_callback=update, translate_callback=translate,
-    )
+def _build_proxy_tab(self):
+    """Build the "Proxy" tab: source-video facts plus the proxy controls.
+
+    Scrollable like the metadata panel's tabs, so a narrow panel scrolls
+    instead of squashing the action row.
+    """
+    tab = QWidget()
+    tab.setProperty('class', 'transparent_panel')
+    tab.setLayout(QVBoxLayout())
+    tab.layout().setContentsMargins(0, 0, 0, 0)
+    tab.layout().setSpacing(0)
+
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QScrollArea.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    tab.layout().addWidget(scroll)
+
+    inner = QWidget()
+    inner.setProperty('class', 'transparent_panel')
+    body = QVBoxLayout(inner)
+    body.setContentsMargins(14, 14, 14, 14)
+    scroll.setWidget(inner)
 
     # --- Source info ---------------------------------------------------------
+    # Kept inside the tab: the source resolution is what makes the proxy
+    # target below ("→ 160 × 120") mean anything.
     self.videoproperties_info_title = QLabel()
     self.videoproperties_info_title.setProperty('class', 'widget_label')
-    panel.layout().addWidget(self.videoproperties_info_title)
+    body.addWidget(self.videoproperties_info_title)
 
     self.videoproperties_resolution_label = QLabel()
     self.videoproperties_framerate_label = QLabel()
@@ -52,17 +72,14 @@ def load(self):
     for lbl in (self.videoproperties_resolution_label,
                 self.videoproperties_framerate_label,
                 self.videoproperties_duration_label):
-        panel.layout().addWidget(lbl)
+        body.addWidget(lbl)
 
     # --- Proxy ---------------------------------------------------------------
-    self.videoproperties_proxy_title = QLabel()
-    self.videoproperties_proxy_title.setProperty('class', 'widget_label')
-    panel.layout().addWidget(self.videoproperties_proxy_title)
-
+    # No "Proxy" heading here any more — the tab itself carries that label.
     self.videoproperties_proxy_help = QLabel()
     self.videoproperties_proxy_help.setWordWrap(True)
     self.videoproperties_proxy_help.setProperty('class', 'description')
-    panel.layout().addWidget(self.videoproperties_proxy_help)
+    body.addWidget(self.videoproperties_proxy_help)
 
     scale_row = QHBoxLayout()
     self.videoproperties_scale_group = QButtonGroup(self)
@@ -74,14 +91,14 @@ def load(self):
         self.videoproperties_scale_buttons[sc] = radio
         scale_row.addWidget(radio)
     scale_row.addStretch()
-    panel.layout().addLayout(scale_row)
+    body.addLayout(scale_row)
 
     self.videoproperties_target_label = QLabel()
-    panel.layout().addWidget(self.videoproperties_target_label)
+    body.addWidget(self.videoproperties_target_label)
 
     self.videoproperties_encoder_label = QLabel()
     self.videoproperties_encoder_label.setProperty('class', 'description')
-    panel.layout().addWidget(self.videoproperties_encoder_label)
+    body.addWidget(self.videoproperties_encoder_label)
 
     action_row = QHBoxLayout()
     self.videoproperties_progress = QProgressBar()
@@ -96,14 +113,36 @@ def load(self):
     self.videoproperties_primary_button = QPushButton()
     self.videoproperties_primary_button.clicked.connect(lambda: _primary_clicked(self))
     action_row.addWidget(self.videoproperties_primary_button, 0, Qt.AlignRight)
-    panel.layout().addLayout(action_row)
+    body.addLayout(action_row)
 
     self.videoproperties_status_label = QLabel()
     self.videoproperties_status_label.setProperty('class', 'description')
     self.videoproperties_status_label.setWordWrap(True)
-    panel.layout().addWidget(self.videoproperties_status_label)
+    body.addWidget(self.videoproperties_status_label)
 
-    panel.layout().addStretch()
+    body.addStretch()
+    return tab
+
+
+def load(self):
+    tab_name = 'videoproperties'
+    panel = left_panel.left_panel(
+        parent=self, tab_name=tab_name,
+        update_callback=update, translate_callback=translate,
+    )
+    # Tabs own the panel's whole area, flush to its edges — same structure as
+    # the metadata panel.
+    panel.layout().setContentsMargins(0, 0, 0, 0)
+
+    self.left_panel_videoproperties_tabwidget = QTabWidget()
+    self.left_panel_videoproperties_tabwidget.setObjectName(
+        'left_panel_videoproperties_tabwidget')
+    panel.layout().addWidget(self.left_panel_videoproperties_tabwidget)
+
+    # One tab for now ("Proxy"). The tab bar exists so further video tools can
+    # join it later without restructuring the panel again. Text is set in
+    # translate(), matching how the metadata panel labels its tabs.
+    self.left_panel_videoproperties_tabwidget.addTab(_build_proxy_tab(self), '')
 
     self._videoproperties_encode_thread = None
     _sync_scale_radio(self)
@@ -270,8 +309,9 @@ def hide(self):
 
 
 def translate(self):
+    self.left_panel_videoproperties_tabwidget.setTabText(
+        0, _('videoproperties_panel.proxy_title'))
     self.videoproperties_info_title.setText(_('videoproperties_panel.info_title'))
-    self.videoproperties_proxy_title.setText(_('videoproperties_panel.proxy_title'))
     self.videoproperties_proxy_help.setText(_('videoproperties_panel.proxy_help'))
     self.videoproperties_cancel_button.setText(_('videoproperties_panel.cancel'))
     update(self)

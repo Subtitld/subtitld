@@ -1004,60 +1004,60 @@ QGroupBox::title {
 }
 
 #titleBar_left_container {
-    border-image: url(graphics:titleBar_left_container_border.svg) 0 0 2 0 stretch stretch;
-    border-width: 0 0 2 0;
+    border-image: url(graphics:titleBar_left_container_border.svg) 0 0 0 0 stretch stretch;
+    border-width: 0 0 0 0;
 }
 
 #titleBar_left_save_button {
     border-radius: 0;
     padding: 10px 12px 10px 22px;
-    border-width: 1px;
-    border-image: url(graphics:titleBar_left_save_button_normal.svg) 1 1 1 1 stretch stretch;
+    border-width: 0 1 2 0;
+    border-image: url(graphics:titleBar_left_save_button_normal.svg) 1 1 2 1 stretch stretch;
 }
 
 #titleBar_left_save_button[class=saved] {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3a4d5d);
     color: #bfd4e4;
     icon: url(graphics:save_light.svg);
-    border-image: url(graphics:titleBar_left_save_button_normal.svg) 1 1 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_save_button_normal.svg) 1 1 2 1 stretch stretch;
 }
 
 #titleBar_left_save_button[class=saved]:hover {
-    border-image: url(graphics:titleBar_left_save_button_hover.svg) 1 1 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_save_button_hover.svg) 1 1 2 1 stretch stretch;
 }
 
 #titleBar_left_save_button[class=saved]:pressed {
-    border-image: url(graphics:titleBar_left_save_button_pressed.svg) 1 1 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_save_button_pressed.svg) 1 1 2 1 stretch stretch;
 }
 
 #titleBar_left_save_button[class=unsaved] {
-    border-image: url(graphics:titleBar_left_save_button_unsaved_normal.svg) 1 1 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_save_button_unsaved_normal.svg) 1 1 2 1 stretch stretch;
     color: #304251;
     icon: url(graphics:save.svg);
 }
 
 #titleBar_left_save_button[class=unsaved]:hover {
-    border-image: url(graphics:titleBar_left_save_button_unsaved_hover.svg) 1 1 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_save_button_unsaved_hover.svg) 1 1 2 1 stretch stretch;
 }
 
 #titleBar_left_save_button[class=unsaved]:pressed {
-    border-image: url(graphics:titleBar_left_save_button_unsaved_pressed.svg) 1 1 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_save_button_unsaved_pressed.svg) 1 1 2 1 stretch stretch;
 }
 
 #titleBar_left_export_button {
     border-radius: 0;
-    border-width: 1 15 1 1;
+    border-width: 0 34 1 0;
     padding: 0;
-    border-image: url(graphics:titleBar_left_export_button_normal.svg) 1 15 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_button_normal.svg) 0 34 1 0 stretch stretch;
     background: transparent;
 }
 
 #titleBar_left_export_button:hover {
-    border-image: url(graphics:titleBar_left_export_button_hover.svg) 1 15 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_button_hover.svg) 0 34 1 0 stretch stretch;
 }
 
 #titleBar_left_export_button:pressed {
-    border-image: url(graphics:titleBar_left_export_button_pressed.svg) 1 15 1 1 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_button_pressed.svg) 0 34 1 0 stretch stretch;
 }
 
 #titleBar_left_export_button #titleBar_left_export_button_icon {
@@ -1070,8 +1070,8 @@ QGroupBox::title {
     border-radius: 0;
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
-    border-width: 0 10 0 2;
-    border-image: url(graphics:titleBar_left_export_quick_button_normal.svg) 0 10 0 2 stretch stretch;
+    border-width: 0 24 0 2;
+    border-image: url(graphics:titleBar_left_export_quick_button_normal.svg) 0 24 0 2 stretch stretch;
     background-color: transparent;
     color: #ffffff;
     font-family: 'Montserrat';
@@ -1082,12 +1082,16 @@ QGroupBox::title {
 }
 
 #titleBar_left_export_button #titleBar_left_export_quick_button:hover {
-    border-image: url(graphics:titleBar_left_export_quick_button_hover.svg) 0 10 0 2 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_quick_button_hover.svg) 0 24 0 2 stretch stretch;
 }
 
 #titleBar_left_export_button #titleBar_left_export_quick_button:pressed {
-    border-image: url(graphics:titleBar_left_export_quick_button_pressed.svg) 0 10 0 2 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_quick_button_pressed.svg) 0 24 0 2 stretch stretch;
 }
+/* 
+#titleBar_left_information_container {
+    border-image: url(graphics:titleBar_left_export_button_normal.svg) 0 0 0 28 stretch stretch;
+} */
 
 #titleBar_left_information_container QLabel {
     color: #d9ffffff;
@@ -1095,8 +1099,8 @@ QGroupBox::title {
 }
 
 #tilteBar_subtitld_label {
-    border-width: 1 1 1 15;
-    border-image: url(graphics:titleBar_right_version_background.svg) 1 1 1 15 stretch stretch;
+    border-width: 0 1 1 36;
+    border-image: url(graphics:titleBar_right_version_background.svg) 0 1 1 36 stretch stretch;
     color: white;
     padding: 0 10px;
     color: #26ffffff;
@@ -1683,6 +1687,12 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     icon: url(graphics:record_icon_pressed.svg);
 }
 
+/* Armed pulse: the glyph alternates on a timer. Replaces an opacity effect,
+   which rendered this container's styled children unreliably. */
+#playercontrols_widget_center_top_line #playercontrols_record_button[pulse="true"]:checked {
+    icon: url(graphics:record_icon.svg);
+}
+
 #playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button,
 #playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button {
     border-bottom: 1px solid #143e5363;
@@ -1693,16 +1703,19 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 #playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button {
     icon: url(graphics:record_transcript_icon.svg);
     border-bottom-left-radius: 4px;
-    padding-left: 10;
-    padding-right: 0;
+    /* Even left/right so the icon sits centred in its 36px button. These
+       used to be 10/0 and 0/10, which pushed both icons toward each other
+       and left dead space at the pair's outer edges. */
+    padding-left: 5;
+    padding-right: 5;
     border-right: none;
 }
 
 #playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button {
     icon: url(graphics:record_wave_icon.svg);
     border-bottom-right-radius: 4px;
-    padding-right: 10;
-    padding-left: 0;
+    padding-left: 5;
+    padding-right: 5;
     border-left: none;
 }
 
@@ -2389,26 +2402,109 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     color: white;
 }
 
-#left_panel_speakers_panel_content_item {
+/* The fill lives on #speaker_card_body, which is inset from the card's left
+   edge; the avatar overhangs that inset so a strip of list background shows
+   behind it. The card itself stays transparent and only carries the
+   selected / selected_speaker properties that drive the rules below. */
+#left_panel_speakers_panel_content_item #speaker_card_body {
     background-color: #e53e5363;
-    border-radius: 2px;
+    border-radius: 0;
 }
 
-#left_panel_speakers_panel_content_item::hover {
+#left_panel_speakers_panel_content_item:hover #speaker_card_body {
     background-color: #3e5363;
 }
 
-#left_panel_speakers_panel_content_item[selected=true] {
-    background-color: #6a7483;
+/* The spec asks for "#b8cee080". Qt reads 8-digit hex as #AARRGGBB, not
+   CSS's #RRGGBBAA, so the literal spelling would give alpha b8 over rgb
+   ce/e0/80 — a pale green. 50% alpha goes first. */
+#left_panel_speakers_panel_content_item[selected=true] #speaker_card_body,
+#left_panel_speakers_panel_content_item[selected=true]:hover #speaker_card_body {
+    background-color: #80b8cee0;
 }
 
-#left_panel_speakers_panel_content_item[selected_speaker=true] {
-    background-color: #4a5d6f;
-    border-left: 2px solid #b8cee0;
+/* That tint is light, so the card's own two labels need a dark ink to stay
+   readable. Targeted by id: a bare `QLabel` descendant rule would also
+   repaint every label inside an expanded engine panel. */
+#left_panel_speakers_panel_content_item[selected=true] #speaker_card_name,
+#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_card_name {
+    color: #1e2b36;
 }
 
-#left_panel_speakers_panel_content_item[selected_speaker=true]::hover {
-    background-color: #56697b;
+#left_panel_speakers_panel_content_item[selected=true] #speaker_card_stats,
+#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_card_stats {
+    color: #d91e2b36;
+}
+
+/* Echo of the selected subtitle's speaker. No border-left here: a border
+   shrinks the content rect and would shove the flush avatar inwards every
+   time the selection moved. */
+#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_card_body {
+    background-color: #40b8cee0;
+}
+
+#left_panel_speakers_panel_content_item[selected_speaker=true]:hover #speaker_card_body {
+    background-color: #59b8cee0;
+}
+
+#speaker_card_name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    background-color: transparent;
+}
+
+#speaker_card_stats {
+    font-size: 10px;
+    color: #ccb8cee0;
+    background-color: transparent;
+}
+
+#speaker_card_actions {
+    background-color: transparent;
+}
+
+/* On a selected (light) card the standard dark header band would land on a
+   mid-tone that neither white nor dark ink can read against, so barely tint
+   it there and let the dark ink work against the light card itself. */
+#left_panel_speakers_panel_content_item[selected=true] #speaker_option_section_header,
+#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_option_section_header {
+    background-color: #20304251;
+}
+
+#left_panel_speakers_panel_content_item[selected=true] #speaker_option_section_title,
+#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_option_section_title {
+    color: #1e2b36;
+}
+
+/* Darkened rather than tinted: a light tint over an already-light selected
+   card left the title at ~1:1 contrast, and only ~3:1 on a normal card. */
+#speaker_option_section_header {
+    background-color: #59304251;
+}
+
+#speaker_option_section_header:hover {
+    background-color: #80304251;
+}
+
+#speaker_option_section_title {
+    font-size: 9px;
+    font-weight: 700;
+    color: #b8cee0;
+    background-color: transparent;
+}
+
+#speaker_option_section_toggle {
+    background-color: transparent;
+    icon: url(graphics:dubbing_container_collapse_icon.svg);
+}
+
+#speaker_option_section_toggle:checked {
+    icon: url(graphics:dubbing_container_expand_icon.svg);
+}
+
+#speaker_option_section_body {
+    background-color: #1a304251;
 }
 
 #left_panel_speakers_panel_content_item QPushButton {
@@ -2486,61 +2582,134 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     icon: url(graphics:left_panel_speakers_panel_content_item_hidden_icon.svg);
 }
 
-#left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_bottom_line {
-    background-color: #bf304251;
-    border-bottom-left-radius: 2px;
-    border-bottom-right-radius: 2px;
+/* The whole dialog is one gradient, top to bottom, with 4px corners. It
+   lives on #dialog_frame rather than the QDialog because a QDialog does not
+   paint a stylesheet background, and rather than on the three sections
+   because that would restart the gradient once per section. */
+#dialog_frame {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #1e2833,
+                                stop:1 #f23a4d5d);
+    border: 1px solid #1a232b;
+    border-radius: 4px;
 }
 
+/* Sections are transparent so the gradient runs through them; they keep only
+   their hairline separators. The title bar draws no chrome of its own — its
+   two children each paint a slice of dialog_title.svg instead. */
 #dialog_title {
-    background-color: #3e5363;
-    border-bottom: 1px solid #e530404c;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
+    background-color: transparent;
+}
+
+/* The tab itself, on dialog_title.svg cropped 14px from the right (that strip
+   is transparent tail). Qt's border-image STRETCHES the middle, so the crop
+   matters: on the full 45px source the middle would span x=5..31 and contain
+   the whole diagonal, smearing the slant across the label. Cropped, the
+   middle is x=5..7 — uniformly solid, safe to stretch — and the 24px right
+   border carries the entire diagonal at 1:1. */
+#dialog_title_label {
+    border-image: url(graphics:dialog_title_label.svg) 5 24 5 5 stretch stretch;
+    border-width: 5px 24px 5px 5px;
+    background-color: transparent;
+    padding-left: 5px;
+}
+
+/* The remaining width: the tab's top hairline continued across, capped at the
+   right. The image's left slice is 32 while the widget's left border is 0 —
+   the slice only parks the stretched middle on the source's transparent tail
+   and is never drawn. Slicing at 0 would stretch the solid tab body across
+   the whole bar. */
+#dialog_title_right {
+    border-image: url(graphics:dialog_title.svg) 1 5 0 32 stretch stretch;
+    border-width: 1px 5px 0 0;
+    background-color: transparent;
 }
 
 #dialog_title QLabel {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
 }
 
 #dialog_title QPushButton {
+    /* Transparent so the gradient runs behind it. It used to inherit the
+       default button fill, which was invisible against the old solid title
+       band but reads as a pale block against the gradient's dark top. */
+    background-color: transparent;
     border-top-right-radius: 4px;
     border-top-left-radius: 0;
     border-bottom-right-radius: 0;
     border-bottom-left-radius: 0;
 }
 
-#dialog_content {
-    background-color: #e53e5363;
-}
-
-#dialog_bottom {
-    background-color: #3e5363;
-    border-top: 1px solid #e530404c;
+#dialog_title QPushButton:hover {
+    background-color: #40b8cee0;
     border-bottom-left-radius: 4px;
-    border-bottom-right-radius: 4px;
 }
 
+#dialog_content {
+    background-color: transparent;
+}
+
+/* Mirror of the title bar. dialog_bottom.svg is dialog_title.svg rotated
+   180 degrees, so the slices are the title's, flipped. */
+#dialog_bottom {
+    background-color: transparent;
+}
+
+/* Mirror of #dialog_title_right: the tab's bottom hairline continued across,
+   capped at the left. Image left slice 32 / widget left border 0 becomes
+   image RIGHT slice 32 / widget right border 0 — the slice only parks the
+   stretched middle on the source's transparent tail and is never drawn. */
+#dialog_bottom_left {
+    border-image: url(graphics:dialog_bottom.svg) 0 32 1 5 stretch stretch;
+    border-width: 0 0 1px 5px;
+    background-color: transparent;
+}
+
+/* Mirror of #dialog_title_label, on dialog_bottom.svg cropped 14px from the
+   LEFT. The 24px left border carries the whole diagonal at 1:1 and only the
+   2px of solid body between the slices stretches. */
+#dialog_bottom_right {
+    border-image: url(graphics:dialog_bottom_right.svg) 5 5 5 24 stretch stretch;
+    border-width: 5px 5px 5px 24px;
+    background-color: transparent;
+}
+
+/* The footer artwork is the background now, so the buttons carry no fill of
+   their own: Cancel reads as plain text on the bar, the default button as a
+   label on the tab. */
 #dialog_bottom QPushButton {
-    padding: 10px 12px;
+    padding: 8px 12px;
     font-size: 11px;
     text-transform: uppercase;
     border-radius: 0;
+    background-color: transparent;
 }
 
-#dialog_bottom QPushButton::hover {
-    background-color: #384b59;
+#dialog_bottom QPushButton:hover {
+    background-color: #26b8cee0;
+}
+
+/* Cancel sits in the footer's bottom-left corner, so the corner facing INTO
+   the dialog is its top-right — the mirror of the close button's bottom-left.
+   Its hover fill is the only state with a background, so the radius shows
+   there. */
+#dialog_bottom QPushButton[class="reject_button"] {
+    border-top-right-radius: 4px;
 }
 
 #dialog_bottom QPushButton[class="accept_button"] {
-    border-bottom-right-radius: 4px;
-    background-color: #406a7483;
+    background-color: transparent;
+    color: #1e2b36;
+    font-weight: 700;
 }
 
-#dialog_bottom QPushButton[class="accept_button"]::hover {
-    background-color: #384b59;
+/* The default button sits ON the tab artwork, so hovering must not paint a
+   fill over it — the feedback is the label darkening instead. */
+#dialog_bottom QPushButton[class="accept_button"]:hover {
+    background-color: transparent;
+    color: #0d1319;
 }
 
 #dialog_title #dialog_close_button {

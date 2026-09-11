@@ -22,8 +22,9 @@ import time
 import logging
 import secrets
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, Qt, QTimer
 
+from subtitld.modules import live_peaks
 from subtitld.modules import session
 from subtitld.modules import recorder as recorder_mod
 from subtitld.modules import live_transcribe
@@ -46,6 +47,11 @@ class RecordController(QObject):
         self._host = host_window
         self._recorder = None
         self._live = None
+        # In-progress take preview (see modules/live_peaks + timeline).
+        self.live_take = None
+        self._live_buf = None
+        self._live_timer = None
+        self._live_seq = 0        # identity for backstop timers
         self._asr_provider = None
         self._draining_lives = []   # strong refs while queued subtitles drain
         self._base_position = 0.0
@@ -149,17 +155,43 @@ class RecordController(QObject):
                     pass
                 chunk_cb = self._live.push
 
+        # Preview buffer is fanned in ahead of whatever ASR sink was chosen.
+        # AudioRecorder wraps the whole callback in one try/except, so each
+        # sink gets its own guard — otherwise a preview bug would silently
+        # kill live transcription for the rest of the take.
+        _preview_vad = None
+        if self.mode == MODE_TRANSCRIPT:
+            # Same class, same defaults, same audio as the real segmenter, so
+            # the preview's cue boundaries are the ones that will be emitted.
+            # The streaming path has no segmenter of its own, so this is also
+            # what gives it previews at all.
+            _preview_vad = live_transcribe.VadSegmenter(
+                samplerate=recorder_mod.SAMPLE_RATE)
+        self._live_buf = live_peaks.LiveTakeBuffer(
+            samplerate=recorder_mod.SAMPLE_RATE, vad=_preview_vad)
+        _asr_sink = chunk_cb
+
+        def _fanout(mono, _sink=_asr_sink, _buf=self._live_buf):
+            try:
+                _buf.append(mono)
+            except Exception:
+                log.exception('Record: live preview buffer failed')
+            if _sink is not None:
+                _sink(mono)
+
         try:
             self._recorder = recorder_mod.AudioRecorder(
-                self._output_path(), device=self.device, chunk_callback=chunk_cb)
+                self._output_path(), device=self.device, chunk_callback=_fanout)
             self._recorder.start()
             self._recording = True
+            self._begin_live_take(base)
             transcribing = self.mode == MODE_TRANSCRIPT and (self._live or self._stream_provider)
             self._status = 'transcribing' if transcribing else 'recording'
         except Exception as exc:
             self._status = 'error'
             log.exception('Record: failed to start recorder: %s', exc)
             self._recorder = None
+            self._clear_live_take()
             if self._live is not None:
                 self._detach_provider_error()
                 self._live.cleanup()
@@ -179,6 +211,9 @@ class RecordController(QObject):
                 wav = rec.stop()   # stop capture first, then flush the engine
             except Exception:
                 wav = None
+        # AFTER rec.stop(): that joins the writer thread, so nothing can be
+        # appending to the preview buffer by the time it is dropped.
+        self._clear_live_take()
 
         if self._stream_provider is not None:
             prov = self._stream_provider
@@ -307,6 +342,9 @@ class RecordController(QObject):
         start = float(seg.get('start', 0.0))
         end = float(seg.get('end', start))
         mid = (start + end) / 2.0
+        # The real subtitle now owns these pixels — drop the provisional cue
+        # so the two are never drawn on top of each other.
+        self._retire_live_cue(seg)
 
         target = self._subtitle_at(mid)
         if target is not None:
@@ -332,6 +370,145 @@ class RecordController(QObject):
 
         self._refresh_ui()
         session.set_unsaved()
+
+
+    # ------------------------------------------------------------------
+    # Live take preview
+    #
+    # The in-progress take is deliberately kept OUT of session.SUBTITLE:
+    #   * history snapshots deep-copy the whole segment list and are capped at
+    #     100 entries, so growing a cue in-document would either evict the
+    #     user's real undo history or leave the stack describing a half-take;
+    #   * autosave can fire mid-take and would bundle a WAV that AudioRecorder
+    #     still holds open, whose RIFF sizes are only fixed on stop();
+    #   * audioengine.sync_subtitle_dubs would hand the mixer thread a file
+    #     that is still growing, and the user would hear their own take.
+    # The timeline paints `live_take` as an overlay instead.
+    # ------------------------------------------------------------------
+    def _begin_live_take(self, base):
+        host = self._host
+        target = self._target_subtitle(base) if self.mode == MODE_WAVE else None
+        self._live_seq += 1
+        self.live_take = {
+            'seq': self._live_seq,
+            'mode': self.mode,
+            'base': float(base),
+            'end': float(base),
+            'subtitle': target,
+            'buffer': self._live_buf,
+            'buckets_drawn': 0,
+            'pixmap': None,
+            'pm_wpp': None,
+            'peak': 0.0,
+            'last_edge_x': None,
+            # Transcript mode: the cue currently being spoken, plus cues that
+            # have been sealed by silence and are waiting for their ASR text.
+            'cue_start': None,
+            'cue_end': None,
+            'cue_cap': None,
+            'pending': [],
+        }
+        widget = getattr(host, 'timeline_widget', None)
+        if widget is not None:
+            widget.live_take = self.live_take
+        if self._live_timer is None:
+            self._live_timer = QTimer(self)
+            # ~15Hz, half the playhead repaint rate. Coarse because none of
+            # this needs millisecond accuracy and coarse timers coalesce.
+            self._live_timer.setInterval(66)
+            self._live_timer.setTimerType(Qt.CoarseTimer)
+            self._live_timer.timeout.connect(self._live_tick)
+        self._live_timer.start()
+
+    def _live_tick(self):
+        live = self.live_take
+        rec = self._recorder
+        if live is None or rec is None or not self._recording:
+            return
+        try:
+            live['end'] = live['base'] + float(rec.elapsed)
+            buf = live['buffer']
+            live['peak'] = buf.peak
+            self._live_track_cue(live, buf)
+            widget = getattr(self._host, 'timeline_widget', None)
+            if widget is not None:
+                from subtitld.interface import timeline as _tl
+                _tl.live_take_tick(widget, live)
+        except Exception:
+            log.exception('Record: live take tick failed')
+
+
+    def _live_track_cue(self, live, buf):
+        """Open, grow and seal the provisional cue from the VAD's own state."""
+        state = buf.vad_state()
+        if state is None:
+            return
+        in_speech, speech_start, last_speech, pad = state
+        base = live['base']
+
+        if in_speech and live.get('cue_start') is None:
+            start = base + max(0.0, speech_start - pad)
+            live['cue_start'] = start
+            # Computed ONCE per cue: an O(len(segments)) scan at 15Hz is
+            # exactly the sort of work that starved the mixer before.
+            live['cue_cap'] = self._next_subtitle_start(start)
+
+        if live.get('cue_start') is None:
+            return
+
+        end = base + last_speech + pad
+        cap = live.get('cue_cap')
+        if cap:
+            end = min(end, float(cap))
+        live['cue_end'] = max(end, live['cue_start'] + 0.15)
+
+        if not in_speech:
+            # Silence closed the utterance. The cue stops growing and waits
+            # for _on_subtitle_ready to replace it with the real subtitle.
+            live['pending'].append({'start': live['cue_start'],
+                                    'end': live['cue_end']})
+            live['cue_start'] = None
+            live['cue_end'] = None
+            live['cue_cap'] = None
+
+    def _retire_live_cue(self, seg):
+        """Drop the provisional cue that `seg` has just replaced.
+
+        Matched by midpoint containment rather than exact bounds: the ASR
+        result is padded/clamped on its own path, so the numbers rarely match
+        to the millisecond.
+        """
+        live = self.live_take
+        if not live or not live.get('pending'):
+            return
+        try:
+            mid = (float(seg.get('start', 0.0)) + float(seg.get('end', 0.0))) / 2.0
+        except (TypeError, ValueError):
+            return
+        live['pending'] = [c for c in live['pending']
+                           if not (c['start'] <= mid <= c['end'])]
+
+    def _clear_live_take(self, seq=None):
+        """Tear down the preview.
+
+        `seq` guards backstop timers: a stale timer from a previous take must
+        not clear the take the user just started. Every other deferred cleanup
+        in this class is identity-guarded the same way.
+        """
+        if seq is not None and (self.live_take is None
+                                or self.live_take.get('seq') != seq):
+            return
+        if self._live_timer is not None:
+            self._live_timer.stop()
+        self.live_take = None
+        self._live_buf = None
+        widget = getattr(self._host, 'timeline_widget', None)
+        if widget is not None:
+            widget.live_take = None
+            try:
+                widget.update()
+            except Exception:
+                pass
 
     # -- wave output: dub on the subtitle under the cursor -----------------
     def _attach_dub(self, wav, base):
@@ -548,6 +725,8 @@ class RecordController(QObject):
             except Exception:
                 pass
             self._recorder = None
+        # After the recorder, never before — see on_pause.
+        self._clear_live_take()
         if self._stream_provider is not None:
             prov = self._stream_provider
             self._stream_provider = None

@@ -7,7 +7,7 @@ Public surface (intentionally tiny — most code goes through the manager):
     mgr.discover()
     providers = mgr.providers_for_task('tts.synthesize')
 
-Built-in providers (Edge TTS for TTS, AssemblyAI for ASR) live under
+Built-in providers (Edge TTS for TTS, whisper.cpp for ASR) live under
 `subtitld.modules.addons.builtin` and are registered explicitly during app
 startup. External add-ons — including Vosk, which used to be a built-in —
 are discovered from `session.PATH_SUBTITLD_ADDONS/<id>/manifest.json`.

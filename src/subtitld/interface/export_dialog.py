@@ -633,7 +633,10 @@ class ExportDialog(utils.SimpleDialog):
         # hide them in one shot, and re-show them if the caller ever
         # wants to revert (currently unused but cheap to support).
         self._form_body = body
-        self._form_buttons_parent = self.accept_button.parent()
+        # `self.bottom_line`, not `accept_button.parent()` — the default
+        # button now lives inside the footer's right-hand tab, so the parent
+        # is the tab rather than the footer we mean to hide.
+        self._form_buttons_parent = self.bottom_line
         self._processing_widget = None
         self._processing_label = None
 

@@ -9,7 +9,7 @@ Code lives at `/home/jonata/Projetos/subtitld`. Key dirs:
 - `src/subtitld/interface/` — Qt widgets (top bar, panels, dialogs)
 - `src/subtitld/modules/` — non-UI logic (`session`, `file_io`, `bounce`, `audioengine`)
 - `src/subtitld/modules/addons/` — add-on host runtime
-- `src/subtitld/modules/addons/builtin/` — Edge TTS, Vosk, AssemblyAI as built-in providers using the same ABC as out-of-process add-ons
+- `src/subtitld/modules/addons/builtin/` — Edge TTS, whisper.cpp, etc. as built-in providers using the same ABC as out-of-process add-ons (no third-party cloud service ships as a built-in)
 
 ## The add-on architecture (already shipping)
 

@@ -4,8 +4,8 @@ import numpy as np
 from autohex import AutoHex
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor
-from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QPoint
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush
+from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QPoint
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -289,6 +289,372 @@ class dubbing_container(QWidget):
                 widget.content.setVisible(False)
 
 
+# --- Speaker card geometry -------------------------------------------------
+# The avatar sits flush at the card's left edge and paints OVER the timeline
+# strip, which is itself inset from the left. `_INFO_LEFT` (avatar + gap) is
+# load-bearing, not cosmetic: child widgets always paint after their parent,
+# so anything that reached left of it would render on top of the avatar.
+_AVATAR_SIZE = 48
+_TIMELINE_HEIGHT = 6
+_CORNER_RADIUS = 4
+# The item's BODY (background, timeline strip, text, option rows) is inset
+# this far from the list's left edge, so a strip of list background shows
+# behind the avatar. The avatar itself is NOT inset — it sits flush against
+# the list edge and overhangs the body, which is why it is a free-standing
+# child positioned by hand rather than a laid-out widget.
+_BODY_LEFT_MARGIN = 10
+# The avatar hangs 3px lower than the rest of the header band.
+_AVATAR_TOP_OFFSET = 3
+# Gap between the avatar and the text column.
+_INFO_GAP = 10
+_INFO_LEFT = _AVATAR_SIZE + _INFO_GAP
+
+
+def _format_speaker_time(seconds):
+    """Human duration in the panel's "1h 28min" style.
+
+    Shows the two most significant non-zero units, so an hour-long speaker
+    reads "1h 28min" while a twenty-second one still reads "20s" rather than
+    a useless "0h 0min".
+    """
+    total = int(round(float(seconds or 0)))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f'{hours}h {minutes}min' if minutes else f'{hours}h'
+    if minutes:
+        return f'{minutes}min {secs}s' if secs else f'{minutes}min'
+    return f'{secs}s'
+
+
+def _rounded_path(rect, top_left=0, top_right=0, bottom_right=0, bottom_left=0):
+    """A rect path with independently rounded corners.
+
+    Qt gives no per-corner path primitive, so the spec's "top-left radius and
+    no right radius" (timeline) and "right corners only" (avatar) are both
+    built here rather than open-coded twice.
+    """
+    path = QPainterPath()
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    path.moveTo(x + top_left, y)
+    path.lineTo(x + w - top_right, y)
+    if top_right:
+        path.arcTo(QRectF(x + w - 2 * top_right, y, 2 * top_right, 2 * top_right), 90, -90)
+    path.lineTo(x + w, y + h - bottom_right)
+    if bottom_right:
+        path.arcTo(QRectF(x + w - 2 * bottom_right, y + h - 2 * bottom_right,
+                          2 * bottom_right, 2 * bottom_right), 0, -90)
+    path.lineTo(x + bottom_left, y + h)
+    if bottom_left:
+        path.arcTo(QRectF(x, y + h - 2 * bottom_left, 2 * bottom_left, 2 * bottom_left), 270, -90)
+    path.lineTo(x, y + top_left)
+    if top_left:
+        path.arcTo(QRectF(x, y, 2 * top_left, 2 * top_left), 180, -90)
+    path.closeSubpath()
+    return path
+
+
+class ShareBar(QWidget):
+    """1px rule showing this speaker's share of the programme.
+
+    A QProgressBar would mean fighting its groove/chunk sub-controls and
+    min-height at 1px, so this is two fillRects. Integer rects and no
+    antialiasing keep the hairline on a device pixel.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._ratio = 0.0
+        self._color = QColor('#b8cee0')
+        self.setFixedHeight(1)
+        self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+    def set_share(self, ratio, color):
+        ratio = max(0.0, min(1.0, float(ratio or 0.0)))
+        color = QColor(color)
+        if ratio == self._ratio and color == self._color:
+            return
+        self._ratio, self._color = ratio, color
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.fillRect(self.rect(), QColor(255, 255, 255, 38))
+            filled = int(round(self.width() * self._ratio))
+            if filled > 0:
+                painter.fillRect(QRect(0, 0, filled, self.height()), self._color)
+        finally:
+            painter.end()
+
+
+class _ElidingLabel(QLabel):
+    """QLabel that elides its own text to its own width.
+
+    Eliding from the parent's resizeEvent reads a stale width (children are
+    laid out after the parent is resized) and misses relayouts the parent
+    never sees at all — notably the hover reveal, which shrinks this label by
+    ~96px of action buttons without changing the header's size.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._full_text = ''
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+
+    def setFullText(self, text):
+        text = text or ''
+        if text != self._full_text:
+            self._full_text = text
+            self._apply()
+
+    def _apply(self):
+        self.setText(self.fontMetrics().elidedText(
+            self._full_text, Qt.ElideRight, max(0, self.width())))
+
+    def resizeEvent(self, event):
+        self._apply()
+        return super().resizeEvent(event)
+
+
+class SpeakerHeader(QWidget):
+    """The card's top band: timeline strip, then the avatar painted over it.
+
+    The strip spans the full width of this header, which is the body's width —
+    the body already sits 10px in from the list, so the strip needs no inset of
+    its own. The avatar is a sibling pinned outside the body and raised, so it
+    overlaps the strip's left end without any painting order to coordinate.
+
+    The inverse of that rule is the constraint to remember: child widgets
+    paint AFTER their parent, so any child straying left of `_INFO_LEFT`
+    would land on top of the avatar. The layout's left margin is what keeps
+    the text stack and the action buttons clear of it.
+
+    Deliberately has no styled background, so the card's QSS colour — including
+    the selected state — shows through beneath the 50%-alpha strip.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._color = QColor('#b8cee0')
+        self._timeline = []
+        self._duration = 60.0
+        self._avatar = None          # cached, already rounded
+        self._avatar_key = None      # cache key: what the pixmap was built from
+        # Set by the card: a free-standing QLabel that lives OUTSIDE this
+        # header's layout so it can sit flush at the list edge while the
+        # body is inset.
+        self.avatar_label = None
+
+        self.setMinimumHeight(_AVATAR_SIZE)
+        # Hug the content: the card should be no taller than it needs to be
+        # when every option section is collapsed.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        layout = QHBoxLayout(self)
+        # Top margin clears the strip so the name's glyphs never sit under it.
+        layout.setContentsMargins(_INFO_LEFT - _BODY_LEFT_MARGIN, _TIMELINE_HEIGHT + 2, 4, 2)
+        layout.setSpacing(0)
+
+    # -- data ---------------------------------------------------------------
+    def set_color(self, color):
+        color = QColor(color)
+        if color != self._color:
+            self._color = color
+            self.update()   # timeline only — the avatar chip is colour-agnostic
+
+    def set_timeline(self, timeline, duration):
+        self._timeline = timeline or []
+        self._duration = float(duration or 60.0) or 60.0
+        self.update()
+
+    def set_avatar(self, image, color):
+        """Build the rounded avatar pixmap, but only when its inputs change.
+
+        `speakers_list_item.update()` runs on every speakers_changed, every
+        face-recognition result and every playback refresh; scaling and
+        re-masking a pixmap on each of those was measurable with many
+        speakers, so the result is cached against its inputs.
+        """
+        key = (id(image) if image is not None else None,)   # colour no longer affects it
+        if key == self._avatar_key:
+            return
+        self._avatar_key = key
+
+        size = _AVATAR_SIZE
+        canvas = QPixmap(size, size)
+        canvas.fill(Qt.transparent)
+        painter = QPainter(canvas)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            path = _rounded_path(QRectF(0, 0, size, size),
+                                 top_right=_CORNER_RADIUS, bottom_right=_CORNER_RADIUS)
+            if image is not None:
+                source = QPixmap.fromImage(image).scaled(
+                    size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                # Fill the path with the photo as a texture brush rather than
+                # clipping to it: a clip region is not antialiased in Qt's
+                # raster engine, which would stair-step the rounded corners.
+                brush = QBrush(source)
+                offset_x = (size - source.width()) / 2.0
+                offset_y = (size - source.height()) / 2.0
+                transform = brush.transform()
+                transform.translate(offset_x, offset_y)
+                brush.setTransform(transform)
+                painter.setBrush(brush)
+            else:
+                # Neutral chip, NOT the speaker colour — that colour identifies
+                # the mini timeline and nothing else.
+                painter.setBrush(QColor('#3e5363'))
+            painter.setPen(Qt.NoPen)
+            painter.drawPath(path)
+
+            if image is None:
+                # No face yet: keep the speaker glyph over the colour chip so
+                # the slot still reads as a person, as it did before.
+                glyph = QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg'))
+                if not glyph.isNull():
+                    glyph = glyph.scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    painter.setOpacity(0.55)
+                    painter.drawPixmap(int((size - glyph.width()) / 2),
+                                       int((size - glyph.height()) / 2), glyph)
+        finally:
+            painter.end()
+        self._avatar = canvas
+        if self.avatar_label is not None:
+            self.avatar_label.setPixmap(canvas)
+        self.update()
+
+    # -- painting -----------------------------------------------------------
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            # Only the strip is painted here now — the avatar is a separate
+            # widget so it can overhang the body's left margin.
+            self._paint_timeline(painter)
+        finally:
+            painter.end()
+
+    def _paint_timeline(self, painter):
+        band = QRectF(0.0, 0.0, float(self.width()), float(_TIMELINE_HEIGHT))
+        if band.width() <= 0:
+            return
+        # Top-left radius only — square on the right, per the spec.
+        path = _rounded_path(band, top_left=_CORNER_RADIUS)
+
+        base = QColor(self._color)
+        base.setAlphaF(0.5)
+        painter.fillPath(path, base)
+
+        if not self._timeline or self._duration <= 0:
+            return
+        painter.save()
+        try:
+            # Clip so a cue at t=0 respects the rounded corner and the inset.
+            painter.setClipPath(path)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(self._color)   # full opacity: "no opacity"
+            scale = band.width() / self._duration
+            run_start = run_end = None
+            for start, end in self._timeline:
+                x0 = band.left() + start * scale
+                x1 = band.left() + end * scale
+                if x1 - x0 < 1.0:
+                    x1 = x0 + 1.0          # keep very short cues visible
+                if run_end is not None and x0 - run_end <= 1.0:
+                    run_end = max(run_end, x1)   # coalesce touching cues
+                    continue
+                if run_end is not None:
+                    painter.drawRect(QRectF(run_start, band.top(),
+                                            run_end - run_start, band.height()))
+                run_start, run_end = x0, x1
+            if run_end is not None:
+                painter.drawRect(QRectF(run_start, band.top(),
+                                        run_end - run_start, band.height()))
+        finally:
+            painter.restore()
+
+
+class _SectionHeader(QWidget):
+    """Clickable header row of a CollapsibleSection."""
+    clicked = Signal()
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        # Deliberately not accepted, so the press still reaches the card and
+        # clicking a section header selects the speaker too.
+        return super().mousePressEvent(event)
+
+
+class CollapsibleSection(QWidget):
+    """One collapsible row in a card's options container.
+
+    Knows nothing about dubbing — the options container takes any number of
+    these, so future speaker options drop in without touching the card.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+
+        self.header = _SectionHeader()
+        self.header.setObjectName('speaker_option_section_header')
+        self.header.setAttribute(Qt.WA_StyledBackground, True)
+        self.header.setFixedHeight(22)
+        self.header.setCursor(Qt.PointingHandCursor)
+        self.header.setLayout(QHBoxLayout())
+        # 10px left lines the title up with the timeline's own 10px inset.
+        self.header.layout().setContentsMargins(10, 0, 2, 0)
+        self.header.layout().setSpacing(6)
+
+        self.title_label = QLabel()
+        self.title_label.setObjectName('speaker_option_section_title')
+        self.header.layout().addWidget(self.title_label, 1)
+
+        self.toggle_button = QPushButton()
+        self.toggle_button.setObjectName('speaker_option_section_toggle')
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setFixedSize(20, 20)
+        self.toggle_button.setIconSize(QSize(16, 16))
+        self.header.layout().addWidget(self.toggle_button, 0)
+
+        self.layout().addWidget(self.header)
+
+        self.body = QWidget()
+        self.body.setObjectName('speaker_option_section_body')
+        self.body.setLayout(QVBoxLayout())
+        self.body.layout().setContentsMargins(10, 6, 10, 10)
+        self.body.layout().setSpacing(6)
+        self.body.setVisible(False)
+        self.layout().addWidget(self.body)
+
+        self.header.clicked.connect(lambda: self.set_expanded(not self.is_expanded()))
+        self.toggle_button.clicked.connect(lambda: self.set_expanded(self.toggle_button.isChecked()))
+        self.set_expanded(False)
+
+    def set_title(self, text):
+        # Uppercased here rather than trusting QSS text-transform.
+        self.title_label.setText((text or '').upper())
+
+    def set_content(self, content):
+        self.body.layout().addWidget(content)
+
+    def is_expanded(self):
+        return bool(self.property('expanded'))
+
+    def set_expanded(self, expanded):
+        expanded = bool(expanded)
+        self.setProperty('expanded', expanded)
+        self.toggle_button.setChecked(expanded)
+        self.body.setVisible(expanded)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.updateGeometry()
+
+
 class RoundedCornerLabel(QLabel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -337,129 +703,138 @@ class speakers_list_item(QWidget):
         widget.speaker_name = speaker_name
         widget.speaker_data = speaker_data
         
-        widget.setAttribute(Qt.WA_StyledBackground, True)
         widget.setObjectName('left_panel_speakers_panel_content_item')
         widget.setProperty('class', '')
         widget.setProperty('speaker_name', widget.speaker_name)
         widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
+        # Inset the body, not the whole card: the avatar is a child of the card
+        # (not of the body) so it still starts at x=0 and overhangs this margin,
+        # leaving a strip of list background behind it.
+        widget.layout().setContentsMargins(_BODY_LEFT_MARGIN, 0, 0, 0)
         widget.layout().setSpacing(0)
+        # Shrink to fit: with every section collapsed the card is just the
+        # header plus the section headers, not a fixed block.
+        widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
-        up_line = QWidget()
-        up_line.setLayout(QHBoxLayout())
-        up_line.layout().setContentsMargins(0, 0, 10, 0)
+        # Carries the background / hover / selected fill. Separate from the
+        # card so the card itself can stay transparent where the avatar
+        # overhangs.
+        widget.body = QWidget()
+        widget.body.setObjectName('speaker_card_body')
+        widget.body.setAttribute(Qt.WA_StyledBackground, True)
+        widget.body.setLayout(QVBoxLayout())
+        widget.body.layout().setContentsMargins(0, 0, 0, 0)
+        widget.body.layout().setSpacing(0)
+        widget.layout().addWidget(widget.body)
 
-        widget.speaker_icon = RoundedCornerLabel()
-        widget.speaker_icon.setFixedSize(42, 42)
-        widget.speaker_icon.setScaledContents(True)
-        up_line.layout().addWidget(widget.speaker_icon)
+        # --- Header band: strip (painted) and the info stack ---------------
+        widget.header = SpeakerHeader(parent=widget.body)
+        widget.body.layout().addWidget(widget.header)
 
-        widget.name_label = QLabel()
-        up_line.layout().addWidget(widget.name_label)
+        # The avatar is deliberately NOT in any layout. The body is inset by
+        # `_BODY_LEFT_MARGIN` (via the QSS margin on this card), and the avatar
+        # has to sit flush at the list edge, overhanging that inset — which a
+        # laid-out child cannot do, since layouts clamp children to the
+        # contents rect.
+        widget.avatar_label = QLabel(widget)
+        widget.avatar_label.setObjectName('speaker_card_avatar')
+        widget.avatar_label.setFixedSize(_AVATAR_SIZE, _AVATAR_SIZE)
+        widget.avatar_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        widget.header.avatar_label = widget.avatar_label
+        header_row = widget.header.layout()
 
-        widget.rename_button = QPushButton()
-        widget.rename_button.setObjectName('left_panel_speakers_panel_content_item_rename_button')
-        widget.rename_button.setFixedSize(24, 24)
-        widget.rename_button.setIconSize(QSize(16, 16))
-        widget.rename_button.setVisible(False)
-        widget.rename_button.clicked.connect(lambda: rename_button_clicked(widget))
-        up_line.layout().addWidget(widget.rename_button)
+        info_stack = QVBoxLayout()
+        info_stack.setContentsMargins(0, 0, 0, 0)
+        info_stack.setSpacing(2)
+        info_stack.addStretch()
 
-        widget.change_color_button = QPushButton()
-        widget.change_color_button.setObjectName('left_panel_speakers_panel_content_item_change_color_button')
-        widget.change_color_button.setFixedSize(24, 24)
-        widget.change_color_button.setIconSize(QSize(16, 16))
-        widget.change_color_button.setVisible(False)
-        widget.change_color_button.clicked.connect(lambda: change_color_button_clicked(widget))
-        up_line.layout().addWidget(widget.change_color_button)
+        # Name and the action buttons share one line, sitting above the
+        # progress bar rather than floating beside the whole stack.
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(0)
 
-        widget.change_image_button = QPushButton()
-        widget.change_image_button.setObjectName('left_panel_speakers_panel_content_item_change_image_button')
-        widget.change_image_button.setFixedSize(24, 24)
-        widget.change_image_button.setIconSize(QSize(16, 16))
-        widget.change_image_button.setVisible(False)
-        widget.change_image_button.setToolTip(_('left_panel_speakers.change_image_tooltip'))
-        widget.change_image_button.clicked.connect(lambda: change_image_button_clicked(widget))
-        up_line.layout().addWidget(widget.change_image_button)
+        widget.name_label = _ElidingLabel()
+        widget.name_label.setObjectName('speaker_card_name')
+        name_row.addWidget(widget.name_label, 1)
 
-        widget.visibility_button = QPushButton()
-        widget.visibility_button.setObjectName('left_panel_speakers_panel_content_item_visibility_button')
-        widget.visibility_button.setFixedSize(24, 24)
-        widget.visibility_button.setIconSize(QSize(16, 16))
-        widget.visibility_button.setCheckable(True)
-        widget.visibility_button.setToolTip(_('left_panel_speakers.toggle_visibility_tooltip'))
-        widget.visibility_button.clicked.connect(lambda: toggle_visibility_button_clicked(widget))
-        up_line.layout().addWidget(widget.visibility_button)
+        # Action buttons keep their objectNames (and therefore their QSS
+        # icons) and their hover-reveal behaviour.
+        actions = QWidget()
+        actions.setObjectName('speaker_card_actions')
+        actions.setLayout(QHBoxLayout())
+        actions.layout().setContentsMargins(0, 0, 0, 0)
+        actions.layout().setSpacing(0)
+        name_row.addWidget(actions, 0, Qt.AlignVCenter)
+        info_stack.addLayout(name_row)
 
-        widget.export_button = QPushButton()
-        widget.export_button.setObjectName('left_panel_speakers_panel_content_item_export_button')
-        widget.export_button.setFixedSize(24, 24)
-        widget.export_button.setIconSize(QSize(16, 16))
-        widget.export_button.setVisible(False)
-        widget.export_button.clicked.connect(lambda: export_button_clicked(widget))
-        up_line.layout().addWidget(widget.export_button)
+        widget.share_bar = ShareBar()
+        info_stack.addWidget(widget.share_bar)
 
-        widget.remove_button = QPushButton()
-        widget.remove_button.setObjectName('left_panel_speakers_panel_content_item_remove_button')
-        widget.remove_button.setFixedSize(24, 24)
-        widget.remove_button.setIconSize(QSize(16, 16))
-        widget.remove_button.setVisible(False)
-        widget.remove_button.clicked.connect(lambda: remove_button_clicked(widget))
-        up_line.layout().addWidget(widget.remove_button)
+        widget.stats_label = QLabel()
+        widget.stats_label.setObjectName('speaker_card_stats')
+        info_stack.addWidget(widget.stats_label)
+        info_stack.addStretch()
+        header_row.addLayout(info_stack, 1)
 
-        widget.layout().addWidget(up_line)
+        def _action(name, handler, checkable=False, visible=False, tooltip=None):
+            button = QPushButton()
+            button.setObjectName(f'left_panel_speakers_panel_content_item_{name}_button')
+            button.setFixedSize(20, 20)
+            button.setIconSize(QSize(14, 14))
+            if checkable:
+                button.setCheckable(True)
+            button.setVisible(visible)
+            if tooltip:
+                button.setToolTip(tooltip)
+            button.clicked.connect(handler)
+            actions.layout().addWidget(button)
+            return button
 
-        widget.dubbing_line = QWidget()
-        widget.dubbing_line.setLayout(QHBoxLayout())
-        widget.dubbing_line.layout().setContentsMargins(0, 0, 0, 0)
-        widget.dubbing_line.layout().setSpacing(0)
-        widget.layout().addWidget(widget.dubbing_line)
+        widget.rename_button = _action('rename', lambda: rename_button_clicked(widget))
+        widget.change_color_button = _action('change_color', lambda: change_color_button_clicked(widget))
+        widget.change_image_button = _action('change_image', lambda: change_image_button_clicked(widget),
+                                             tooltip=_('left_panel_speakers.change_image_tooltip'))
+        widget.visibility_button = _action('visibility', lambda: toggle_visibility_button_clicked(widget),
+                                           checkable=True, visible=True,
+                                           tooltip=_('left_panel_speakers.toggle_visibility_tooltip'))
+        widget.export_button = _action('export', lambda: export_button_clicked(widget))
+        widget.remove_button = _action('remove', lambda: remove_button_clicked(widget))
+
+        # --- Options container: collapsible sections -----------------------
+        widget.options = QWidget()
+        widget.options.setObjectName('speaker_card_options')
+        widget.options.setLayout(QVBoxLayout())
+        widget.options.layout().setContentsMargins(0, 0, 0, 0)
+        widget.options.layout().setSpacing(1)
+        widget.body.layout().addWidget(widget.options)
+
+        widget.dubbing_line = CollapsibleSection(parent=widget)
+        widget.dubbing_line.setObjectName('speaker_option_section')
+        widget.options.layout().addWidget(widget.dubbing_line)
 
         widget.dubbing_container = dubbing_container(parent=widget)
         widget.dubbing_container.setProperty('speaker', widget.speaker_name)
         widget.dubbing_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.dubbing_line.layout().addWidget(widget.dubbing_container)
-        
-        class small_timeline(QLabel):
-            def __init__(widget, speaker_name=False, timeline=[], duration=30, parent=None):
-                # Pass parent through so this isn't briefly a top-level
-                # window before the addWidget() reparenting — same
-                # rationale as `speakers_list_item.__init__`.
-                super().__init__(parent)
-                widget.timeline = timeline
-                widget.duration = duration
-                widget.speaker_name = speaker_name
-                
-            def paintEvent(widget, event):
-                if widget.speaker_name:
-                    painter = QPainter(widget)
-                    painter.setRenderHint(QPainter.Antialiasing)
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(session.SPEAKERS[widget.speaker_name].get('color', '#b8cee0')))
-                    painter.setOpacity(0.5)
-                    for segment in widget.timeline:
-                        start_x = (segment[0] / widget.duration) * widget.width()
-                        end_x = (segment[1] / widget.duration) * widget.width()
-                        painter.drawRect(start_x, 0, end_x - start_x, widget.height())
+        widget.dubbing_container.layout().setContentsMargins(0, 0, 0, 0)
+        # The section's own chevron is the single collapse control the mockup
+        # shows. dubbing_container's internal hide/expand button would be a
+        # second, nested one, so it is retired and its content pinned open —
+        # everything it holds is revealed by expanding the section instead.
+        widget.dubbing_container.hideexpand_button.setVisible(False)
+        widget.dubbing_container.setProperty('is_expanded', True)
+        widget.dubbing_container.content.setVisible(True)
+        widget.dubbing_line.set_content(widget.dubbing_container)
 
-                return super().paintEvent(event)
-
-            def update(widget, timeline=False, duration=False, color=False):
-                if timeline:
-                    widget.timeline = timeline
-                if duration:
-                    widget.duration = duration
-                if color:
-                    widget.color = color
-
-        widget.bottom_line = small_timeline(speaker_name=widget.speaker_name, parent=widget)
-        widget.bottom_line.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
-        widget.bottom_line.setObjectName('left_panel_speakers_panel_content_item_bottom_line')
-        widget.bottom_line.setFixedHeight(5)
-        widget.layout().addWidget(widget.bottom_line)
-        
         widget.update()
         widget.translate()
+
+    def resizeEvent(widget, event):
+        # Pinned to the card's own left edge (x=0), outside the body's inset,
+        # and raised so the header's strip cannot paint over it.
+        widget.avatar_label.move(0, _AVATAR_TOP_OFFSET)
+        widget.avatar_label.raise_()
+        return super().resizeEvent(event)
 
     def enterEvent(widget, event):
         widget.rename_button.setVisible(True)
@@ -470,6 +845,11 @@ class speakers_list_item(QWidget):
         event.accept()
 
     def leaveEvent(widget, event):
+        # The action buttons are children of the header, and moving onto a
+        # child delivers Leave to the parent — without this guard the button
+        # vanishes from under the pointer just as it is about to be clicked.
+        if widget.rect().contains(widget.mapFromGlobal(QCursor.pos())):
+            return
         widget.rename_button.setVisible(False)
         widget.change_color_button.setVisible(False)
         widget.change_image_button.setVisible(False)
@@ -484,12 +864,12 @@ class speakers_list_item(QWidget):
                     sib_widget.setProperty('selected', 'true')
                 else:
                     sib_widget.setProperty('selected', 'false')
-                sib_widget.style().unpolish(sib_widget)
-                sib_widget.style().polish(sib_widget)
+                _repolish_card(sib_widget)
             
         return super().mousePressEvent(event)
 
     def translate(widget):
+        widget.dubbing_line.set_title(_('left_panel.tab_dubbing'))
         widget.dubbing_container.combobox.setLabel(_('subtitles_panel_widget_dubbing.dubbing_engine'))
         widget.dubbing_container.combobox.combobox.setPlaceholderText(_('subtitles_panel_widget_dubbing.no_engine_selected'))
         for i in range(widget.dubbing_container.content.count()):
@@ -497,27 +877,32 @@ class speakers_list_item(QWidget):
             w.translate()
 
     def update(widget):
-        widget.speaker_icon.setPixmap(
-            QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg')) if not widget.speaker_data.get('image', None)
-            else QPixmap.fromImage(widget.speaker_data['image']).scaled(36, 36)
+        color = session.SPEAKERS.get(widget.speaker_name, {}).get('color', '#b8cee0')
+        widget.header.set_color(color)
+        widget.header.set_avatar(widget.speaker_data.get('image', None), color)
+
+        mine = [s for s in session.SUBTITLE['segments']
+                if s.get('speaker', 'A') == widget.speaker_name]
+        widget.header.set_timeline(
+            [[s['start'], s['end']] for s in mine],
+            session.VIDEO.get('duration', 60),
         )
-        widget.bottom_line.update(
-            timeline=[[segment['start'], segment['end']] for segment in session.SUBTITLE['segments'] if segment.get('speaker', 'A') == widget.speaker_name],
-            duration=session.VIDEO.get('duration', 60)
-        )
-        speaker_time = round(sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments'] if segment.get('speaker', 'A') == widget.speaker_name]), 3)
-        total_speaking_time = sum([segment['end'] - segment['start'] for segment in session.SUBTITLE['segments']])
+
+        speaker_time = round(sum(s['end'] - s['start'] for s in mine), 3)
+        total_speaking_time = sum(s['end'] - s['start'] for s in session.SUBTITLE['segments'])
         # `total_speaking_time` is 0 when the cue list is empty or every
-        # cue is zero-duration (e.g. the AssemblyAI cloud provider's
-        # placeholder finish callback emits a single ``start=end=0.0``
-        # segment until the cloud surfaces real per-utterance timing).
+        # cue is zero-duration (some providers' placeholder finish callback
+        # emits a single ``start=end=0.0`` segment until real per-utterance
+        # timing is available).
         # Render 0% rather than crash the speakers panel — the user
-        # sees a 0% pill until real timings land.
-        percentage = (
-            int(round((speaker_time / total_speaking_time) * 100, 0))
-            if total_speaking_time > 0 else 0
-        )
-        widget.name_label.setText('<b>' + widget.speaker_name + '</b><br><small>' + f'{speaker_time} sec. ({percentage}%)' + '</small>')
+        # sees 0% until real timings land.
+        ratio = (speaker_time / total_speaking_time) if total_speaking_time > 0 else 0.0
+        percentage = int(round(ratio * 100, 0))
+
+        widget.name_label.setFullText(widget.speaker_name)
+        widget.share_bar.set_share(ratio, color)
+        widget.stats_label.setText(
+            f'{_format_speaker_time(speaker_time)} <b>({percentage}%)</b>')
 
         widget.dubbing_line.setVisible(session.CONFIG['dubbing'].get('enabled', False))
 
@@ -663,6 +1048,10 @@ def load(self):
         update_callback=update,
         translate_callback=translate
     )
+    # Full-bleed list: the cards reach both panel edges so the avatar can sit
+    # flush against the left. The add button re-inserts its own inset below,
+    # otherwise it would end up jammed into the corner.
+    left_panel_speakers_panel.layout().setContentsMargins(0, 0, 0, 0)
 
     left_panel_speakers_panel_scroll = QScrollArea()
     left_panel_speakers_panel_scroll.setObjectName('left_panel_speakers_panel_scroll')
@@ -682,11 +1071,18 @@ def load(self):
     self.left_panel_speakers_list.setObjectName('left_panel_speakers_list')
     self.left_panel_speakers_list.setLayout(QVBoxLayout())
     self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
+    self.left_panel_speakers_list.layout().setSpacing(6)
     left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
 
     self.left_panel_speakers_add_button = QPushButton()
     self.left_panel_speakers_add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
-    left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_add_button, 0, Qt.AlignmentFlag.AlignRight)
+    add_button_row = QWidget()
+    add_button_row.setProperty('class', 'transparent_panel')
+    add_button_row.setLayout(QHBoxLayout())
+    add_button_row.layout().setContentsMargins(10, 10, 10, 10)
+    add_button_row.layout().addStretch()
+    add_button_row.layout().addWidget(self.left_panel_speakers_add_button)
+    left_panel_speakers_panel_content.layout().addWidget(add_button_row)
 
     left_panel_speakers_panel_content.layout().addStretch()
 
@@ -720,6 +1116,27 @@ def load(self):
     self.left_panel_speakers_list_of_available_dubbing_engine = {}
 
     update(self)
+
+
+
+def _repolish_card(card):
+    """Re-evaluate a card's stylesheet, children included.
+
+    Qt's unpolish/polish does NOT cascade, so repolishing only the card
+    reapplies its `[selected=true]` background while the name and stats
+    labels keep their cached light ink — unreadable against the light
+    selection tint. The labels' colour depends on an ancestor's property,
+    so they have to be repolished explicitly.
+    """
+    section = getattr(card, 'dubbing_line', None)
+    for target in (card, getattr(card, 'body', None),
+                   getattr(card, 'name_label', None), getattr(card, 'stats_label', None),
+                   getattr(section, 'header', None), getattr(section, 'title_label', None)):
+        if target is None:
+            continue
+        target.style().unpolish(target)
+        target.style().polish(target)
+        target.update()
 
 
 def change_color_button_clicked(widget):
@@ -788,8 +1205,7 @@ def highlight_speaker_for_selection(window):
         is_match = widget.speaker_name == selected_speaker
         if widget.property('selected_speaker') != is_match:
             widget.setProperty('selected_speaker', is_match)
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
+            _repolish_card(widget)
 
 
 def remove_button_clicked(widget):

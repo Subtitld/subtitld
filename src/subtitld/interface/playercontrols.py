@@ -736,18 +736,18 @@ def load(self):
     self.record_controller = RecordController(self)
     self.playercontrols_record_button.setChecked(self.record_controller.armed)
 
-    # Smooth opacity pulse while the record button is armed ("hot"), so it's
-    # clearly live. Driven by _update_record_pulse from _update_record_mode_buttons.
-    self._record_pulse_effect = QGraphicsOpacityEffect(self.playercontrols_record_button)
-    self._record_pulse_effect.setOpacity(1.0)
-    self.playercontrols_record_button.setGraphicsEffect(self._record_pulse_effect)
-    self._record_pulse_anim = QPropertyAnimation(self._record_pulse_effect, b'opacity', self)
-    self._record_pulse_anim.setDuration(1100)
-    self._record_pulse_anim.setStartValue(1.0)
-    self._record_pulse_anim.setKeyValueAt(0.5, 0.4)
-    self._record_pulse_anim.setEndValue(1.0)
-    self._record_pulse_anim.setEasingCurve(QEasingCurve.InOutSine)
-    self._record_pulse_anim.setLoopCount(-1)
+    # Pulse while the record button is armed ("hot"), so it's clearly live.
+    # Driven by _update_record_pulse from _update_record_mode_buttons.
+    #
+    # This deliberately does NOT use QGraphicsOpacityEffect. The record button
+    # is a container with child widgets (the two mode toggles), and a graphics
+    # effect renders that whole subtree through an offscreen pixmap — a path
+    # that renders the styled children inconsistently across platforms and
+    # showed up as the armed button drawing as an empty block. A dynamic
+    # property toggled on a timer repaints the button normally instead.
+    self._record_pulse_timer = QTimer(self)
+    self._record_pulse_timer.setInterval(550)
+    self._record_pulse_timer.timeout.connect(lambda: _toggle_record_pulse(self))
     self._record_pulse_running = False
 
     _update_record_mode_buttons(self)
@@ -1985,6 +1985,7 @@ def playercontrols_playpause_button_clicked(self):
         self.preview_panel_player.pause()
         if controller is not None and controller.is_recording:
             controller.on_pause()
+    _update_record_pulse(self)
 
 
 def playercontrols_record_button_clicked(self):
@@ -2029,28 +2030,47 @@ def _update_record_mode_buttons(self):
     _update_record_pulse(self)
 
 
+def _toggle_record_pulse(self):
+    """Flip the `pulse` property so the QSS alternates the record glyph."""
+    button = self.playercontrols_record_button
+    button.setProperty('pulse', not bool(button.property('pulse')))
+    button.style().unpolish(button)
+    button.style().polish(button)
+
+
 def _update_record_pulse(self):
-    """Run the opacity pulse while the record button is armed; stop + reset
-    to full opacity otherwise. Guarded so repeated calls don't restart (and
-    visibly jump) an already-running pulse."""
-    anim = getattr(self, '_record_pulse_anim', None)
-    effect = getattr(self, '_record_pulse_effect', None)
+    """Run the pulse only while a take is actually running — armed AND the
+    transport playing — so the blink means "recording now" rather than merely
+    "armed". Guarded so repeated calls don't restart an already-running pulse
+    (which would make it visibly jump)."""
+    timer = getattr(self, '_record_pulse_timer', None)
     controller = getattr(self, 'record_controller', None)
-    if anim is None or effect is None or controller is None:
+    if timer is None or controller is None:
         return
-    if controller.armed:
+    button = self.playercontrols_record_button
+    # Read the play/pause button rather than the player: it is the state the
+    # user sees, and update_playercontrols_playpause_button keeps it in sync
+    # with the player from every path (click, spacebar, end of media).
+    rolling = bool(self.playercontrols_playpause_button.isChecked())
+    if controller.armed and rolling:
         if not self._record_pulse_running:
-            anim.start()
+            timer.start()
             self._record_pulse_running = True
     else:
         if self._record_pulse_running:
-            anim.stop()
+            timer.stop()
             self._record_pulse_running = False
-        effect.setOpacity(1.0)
+        if button.property('pulse'):
+            button.setProperty('pulse', False)
+            button.style().unpolish(button)
+            button.style().polish(button)
 
 
 def update_playercontrols_playpause_button(self):
     self.playercontrols_playpause_button.setChecked(not self.preview_panel_player.is_paused())
+    # The record pulse follows the transport, so re-evaluate it here — this is
+    # the one place the checked state is maintained.
+    _update_record_pulse(self)
 
 
 def show(self):

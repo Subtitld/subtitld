@@ -7,7 +7,7 @@ import subprocess
 
 from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
-from PySide6.QtCore import Qt, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
+from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import session
 from subtitld.modules import utils
@@ -626,6 +626,9 @@ class Timeline(QWidget):
         widget.waveform_y = 45
 
         widget.dub_peaks = {}     # path -> (mins, maxs, duration)
+        # In-progress record take, owned by RecordController and painted as an
+        # overlay. None whenever no take is running. See modules/live_peaks.
+        widget.live_take = None
         widget.dub_workers = {}   # path -> DubPeaksWorker
 
         # Onset markers (visual aid for dub sync — see
@@ -740,6 +743,13 @@ class Timeline(QWidget):
         event.accept()
 
     def _paint_body(widget, painter, event):
+        # Live record take (painted after the segment loop). Hoisted OUT of the
+        # `if segments:` block below: a new project has no segments but a
+        # transcript-mode take still has to draw its provisional cue.
+        _live = widget.live_take
+        _live_sub = _live.get('subtitle') if _live else None
+        _live_target_rect = None
+
         scroll_position = widget.parent().parent().horizontalScrollBar().value()
         scroll_width = widget.parent().parent().width()
 
@@ -1705,6 +1715,10 @@ class Timeline(QWidget):
                 if subtitle.get('dubbing'):
                     subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
 
+                if _live_sub is not None and subtitle is _live_sub:
+                    # Reuse the rect the loop already computed (speaker tracks,
+                    # locking, etc.) rather than duplicating that geometry.
+                    _live_target_rect = QRectF(subtitle_rect)
                 subtitle_rect -= QMarginsF(26, 6, 26, 6)
 
                 painter.setFont(subtitle_font)
@@ -1839,6 +1853,18 @@ class Timeline(QWidget):
                 except Exception:
                     import traceback, sys
                     traceback.print_exc(file=sys.stderr)
+
+        if _live is not None:
+            # Outside the `if segments:` block on purpose — a brand-new
+            # project has no subtitles but a take must still be visible.
+            # Guarded like _paint_dub_take_rows so a preview bug degrades one
+            # overlay instead of taking down the whole frame.
+            try:
+                _paint_live_take(widget, painter, _live, _live_target_rect)
+            except Exception:
+                import traceback
+                import sys as _sys
+                traceback.print_exc(file=_sys.stderr)
 
         if bool(widget.show_tug_of_war):
             tug_of_war_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap)
@@ -3674,108 +3700,269 @@ def _paint_dub_take_rows(widget, painter, subtitle, subtitle_rect, dubs, speaker
     cache_max = getattr(widget, '_DUB_PATH_CACHE_MAX', 4096)
 
     painter.save()
-    for i in range(visible_n):
-        dub = dubs[i]
-        is_active = dub is active
-        is_default = (i == 0)
-        ry = y0 + i * (row_h + gap)
+    try:
+        for i in range(visible_n):
+            dub = dubs[i]
+            is_active = dub is active
+            is_default = (i == 0)
+            ry = y0 + i * (row_h + gap)
 
-        # Horizontal position from the take's clip extent, falling back to the
-        # subtitle's own range for takes with no explicit placement.
-        try:
-            ext_lo, ext_hi = _dc.clip_extent(dub)
-        except Exception:
-            ext_lo, ext_hi = None, None
-        if not ext_hi or (ext_lo is not None and ext_hi <= ext_lo):
-            ext_lo = float(subtitle.get('start', 0.0))
-            ext_hi = float(subtitle.get('end', ext_lo))
-        rx = float(ext_lo) * widget.width_proportion
-        rw = max(0.0, (float(ext_hi) - float(ext_lo)) * widget.width_proportion)
-        if rw < 2:
-            continue
-        row = QRectF(rx, ry, rw, row_h)
+            # Horizontal position from the take's clip extent, falling back to the
+            # subtitle's own range for takes with no explicit placement.
+            try:
+                ext_lo, ext_hi = _dc.clip_extent(dub)
+            except Exception:
+                ext_lo, ext_hi = None, None
+            if not ext_hi or (ext_lo is not None and ext_hi <= ext_lo):
+                ext_lo = float(subtitle.get('start', 0.0))
+                ext_hi = float(subtitle.get('end', ext_lo))
+            rx = float(ext_lo) * widget.width_proportion
+            rw = max(0.0, (float(ext_hi) - float(ext_lo)) * widget.width_proportion)
+            if rw < 2:
+                continue
+            row = QRectF(rx, ry, rw, row_h)
 
-        # Clip body — speaker colour like the main dub band, brighter for the
-        # audible take. Kept near-opaque so the main dub's onset markers /
-        # waveform (still drawn underneath) don't bleed through the stack.
-        base = QColor(speaker_color_str or '#1a73a8')
-        if is_active:
-            base = base.lighter(130)
-        else:
-            base = base.darker(112)
-        base.setAlpha(255)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(base)
-        painter.drawRoundedRect(row, 3.0, 3.0, Qt.AbsoluteSize)
-
-        # Waveform of this take.
-        path = dub.get('path')
-        peaks = widget.dub_peaks.get(path) if path else None
-        if peaks is None and path:
-            widget._request_dub_peaks(path)
-        if peaks is not None and row_h >= 6:
-            mins, maxs, duration = peaks
-            count = len(mins)
-            if count > 0:
-                cache_h = int(round(row_h))
-                cache_w = max(1, int(round(rw)))
-                cache_key = (path, 0, count, cache_w, cache_h, 'takerow')
-                wf = widget._dub_waveform_path_cache.get(cache_key)
-                if wf is None:
-                    scale = cache_h * 0.42
-                    ppb = cache_w / count
-                    wf = QPainterPath()
-                    wf.moveTo(0.0, -float(maxs[0]) * scale)
-                    x = ppb
-                    for j in range(1, count):
-                        wf.lineTo(x, -float(maxs[j]) * scale)
-                        x += ppb
-                    x -= ppb
-                    for j in range(count - 1, -1, -1):
-                        wf.lineTo(x, -float(mins[j]) * scale)
-                        x -= ppb
-                    wf.closeSubpath()
-                    if len(widget._dub_waveform_path_cache) > cache_max:
-                        for k in list(widget._dub_waveform_path_cache)[:128]:
-                            del widget._dub_waveform_path_cache[k]
-                    widget._dub_waveform_path_cache[cache_key] = wf
-                painter.save()
-                try:
-                    painter.setClipRect(row)
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(dub_waveform_color)
-                    cy = row.center().y()
-                    painter.translate(rx, cy)
-                    painter.drawPath(wf)
-                finally:
-                    # restore() alone undoes the clip + transform even if
-                    # drawPath raised — never leave the painter wedged with a
-                    # stuck clip/translate (that cascades into paint failures).
-                    painter.restore()
-
-        # Amber outline on the audible take (drawn over the waveform).
-        if is_active:
-            painter.setPen(QPen(QColor(255, 214, 74, 235), 1.5))
-            painter.setBrush(Qt.NoBrush)
+            # Clip body — speaker colour like the main dub band, brighter for the
+            # audible take. Kept near-opaque so the main dub's onset markers /
+            # waveform (still drawn underneath) don't bleed through the stack.
+            base = QColor(speaker_color_str or '#1a73a8')
+            if is_active:
+                base = base.lighter(130)
+            else:
+                base = base.darker(112)
+            base.setAlpha(255)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(base)
             painter.drawRoundedRect(row, 3.0, 3.0, Qt.AbsoluteSize)
 
-        # "Make default" ▲ button (skip the default row).
-        promote_rect = None
-        if not is_default and row_h >= 12 and rw > 30:
-            btn_side = min(row_h - 2.0, 16.0)
-            promote_rect = QRectF(row.right() - btn_side - 3.0,
-                                  ry + (row_h - btn_side) * 0.5, btn_side, btn_side)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(12, 18, 26, 175))
-            painter.drawRoundedRect(promote_rect, 2.0, 2.0, Qt.AbsoluteSize)
-            painter.setPen(QColor(224, 236, 246, 235))
-            painter.setFont(QFont('Montserrat', max(7, int(btn_side * 0.5)), QFont.Bold))
-            painter.drawText(promote_rect, Qt.AlignCenter, '▲')
+            # Waveform of this take.
+            path = dub.get('path')
+            peaks = widget.dub_peaks.get(path) if path else None
+            if peaks is None and path:
+                widget._request_dub_peaks(path)
+            if peaks is not None and row_h >= 6:
+                mins, maxs, duration = peaks
+                count = len(mins)
+                if count > 0:
+                    cache_h = int(round(row_h))
+                    cache_w = max(1, int(round(rw)))
+                    cache_key = (path, 0, count, cache_w, cache_h, 'takerow')
+                    wf = widget._dub_waveform_path_cache.get(cache_key)
+                    if wf is None:
+                        scale = cache_h * 0.42
+                        ppb = cache_w / count
+                        wf = QPainterPath()
+                        wf.moveTo(0.0, -float(maxs[0]) * scale)
+                        x = ppb
+                        for j in range(1, count):
+                            wf.lineTo(x, -float(maxs[j]) * scale)
+                            x += ppb
+                        x -= ppb
+                        for j in range(count - 1, -1, -1):
+                            wf.lineTo(x, -float(mins[j]) * scale)
+                            x -= ppb
+                        wf.closeSubpath()
+                        if len(widget._dub_waveform_path_cache) > cache_max:
+                            for k in list(widget._dub_waveform_path_cache)[:128]:
+                                del widget._dub_waveform_path_cache[k]
+                        widget._dub_waveform_path_cache[cache_key] = wf
+                    painter.save()
+                    try:
+                        painter.setClipRect(row)
+                        painter.setPen(Qt.NoPen)
+                        painter.setBrush(dub_waveform_color)
+                        cy = row.center().y()
+                        painter.translate(rx, cy)
+                        painter.drawPath(wf)
+                    finally:
+                        # restore() alone undoes the clip + transform even if
+                        # drawPath raised — never leave the painter wedged with a
+                        # stuck clip/translate (that cascades into paint failures).
+                        painter.restore()
 
-        if promote_rect is not None:
-            widget._dub_take_rects.append((promote_rect, subtitle, dub, 'promote'))
-        widget._dub_take_rects.append((QRectF(row), subtitle, dub, 'solo'))
-    painter.restore()
+            # Amber outline on the audible take (drawn over the waveform).
+            if is_active:
+                painter.setPen(QPen(QColor(255, 214, 74, 235), 1.5))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(row, 3.0, 3.0, Qt.AbsoluteSize)
+
+            # "Make default" ▲ button (skip the default row).
+            promote_rect = None
+            if not is_default and row_h >= 12 and rw > 30:
+                btn_side = min(row_h - 2.0, 16.0)
+                promote_rect = QRectF(row.right() - btn_side - 3.0,
+                                      ry + (row_h - btn_side) * 0.5, btn_side, btn_side)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(12, 18, 26, 175))
+                painter.drawRoundedRect(promote_rect, 2.0, 2.0, Qt.AbsoluteSize)
+                painter.setPen(QColor(224, 236, 246, 235))
+                painter.setFont(QFont('Montserrat', max(7, int(btn_side * 0.5)), QFont.Bold))
+                painter.drawText(promote_rect, Qt.AlignCenter, '▲')
+
+            if promote_rect is not None:
+                widget._dub_take_rects.append((promote_rect, subtitle, dub, 'promote'))
+            widget._dub_take_rects.append((QRectF(row), subtitle, dub, 'solo'))
+    finally:
+        # The inner save (the waveform clip) is already exception-safe; this
+        # outer one was not. Anything escaping the loop left the painter with
+        # a stuck saved state, which cascades into unbalanced save/restore
+        # warnings on later paints.
+        painter.restore()
+
+
+# ---------------------------------------------------------------------------
+# Live record take
+#
+# Painted as an overlay from state owned by RecordController; nothing here
+# touches session.SUBTITLE. See modules/live_peaks for why the take is kept
+# out of the document while it is being recorded.
+# ---------------------------------------------------------------------------
+_LIVE_BAND_RATIO = 0.25          # same band as a committed dub in _paint_body
+_LIVE_ACCENT = QColor(255, 214, 74, 235)
+
+
+def live_take_tick(widget, live):
+    """Fold newly-recorded buckets into the live strip and invalidate.
+
+    Called ~15Hz from RecordController._live_tick, on the GUI thread.
+    """
+    wpp = float(getattr(widget, 'width_proportion', 0) or 0)
+    if wpp <= 0:
+        return
+    buf = live.get('buffer')
+    if buf is None:
+        return
+
+    # Only the buckets not yet folded in — O(new), never O(take).
+    start, mins, maxs = buf.read_since(live.get('buckets_drawn', 0))
+    if mins is not None and len(mins):
+        live['buckets_drawn'] = start + len(mins)
+
+    edge_x = live['end'] * wpp
+    last_x = live.get('last_edge_x')
+    live['last_edge_x'] = edge_x
+    if last_x is None:
+        widget.update()
+        return
+
+    # While playing, playercontrols already invalidates a full-height strip
+    # around the playhead every 33ms: [min(old,new) - 96, max(old,new) + 8].
+    # If our growth edge falls inside that, we schedule nothing at all.
+    # The window is ASYMMETRIC because that invalidation is: 96px of pad to
+    # the LEFT of the head, only 8px to the right.
+    head_x = float(session.SUBTITLE.get('position', 0) or 0) * wpp
+    strip = getattr(widget.window(), '_timeline_repaint_timer', None)
+    if strip is not None and strip.isActive():
+        delta = edge_x - head_x
+        if -80.0 <= delta <= 4.0:
+            return
+
+    lo = int(min(last_x, edge_x)) - 4
+    hi = int(max(last_x, edge_x)) + 4
+    top = int(getattr(widget, 'subtitle_y', 0) or 0)
+    height = int(getattr(widget, 'subtitle_height', widget.height()) or widget.height())
+    widget.update(QRect(lo, max(0, top - 2), max(8, hi - lo), height + 4))
+
+
+def _paint_live_take(widget, painter, live, target_rect):
+    """Draw the in-progress take: provisional cue, band and live waveform."""
+    wpp = float(getattr(widget, 'width_proportion', 0) or 0)
+    if wpp <= 0:
+        return
+    base = float(live.get('base', 0.0))
+    end = float(live.get('end', base))
+    if end <= base:
+        return
+    x0 = base * wpp
+    x1 = end * wpp
+    if x1 - x0 < 2.0:
+        x1 = x0 + 2.0
+
+    # Cues sealed by silence, still waiting for their transcription.
+    top = float(getattr(widget, 'subtitle_y', 0) or 0)
+    height = float(getattr(widget, 'subtitle_height', 30) or 30)
+    for cue in (live.get('pending') or ()):
+        cx0 = float(cue['start']) * wpp
+        cx1 = float(cue['end']) * wpp
+        if cx1 <= cx0:
+            continue
+        painter.save()
+        try:
+            painter.setPen(QPen(QColor(255, 214, 74, 120), 1.0, Qt.DashLine))
+            painter.setBrush(QColor(255, 214, 74, 26))
+            painter.drawRoundedRect(QRectF(cx0, top, cx1 - cx0, height),
+                                    3.0, 3.0, Qt.AbsoluteSize)
+        finally:
+            painter.restore()
+
+    # The cue currently being spoken takes priority over the take-wide span.
+    cue_start = live.get('cue_start')
+    cue_end = live.get('cue_end')
+    if cue_start is not None and cue_end is not None and cue_end > cue_start:
+        x0 = float(cue_start) * wpp
+        x1 = float(cue_end) * wpp
+
+    if target_rect is not None:
+        cue_rect = QRectF(target_rect)
+    else:
+        # No target subtitle: a provisional cue drawn where a real one would be.
+        cue_rect = QRectF(x0, top, x1 - x0, height)
+        painter.save()
+        try:
+            pen = QPen(_LIVE_ACCENT, 1.5, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(QColor(255, 214, 74, 40))
+            painter.drawRoundedRect(cue_rect, 3.0, 3.0, Qt.AbsoluteSize)
+        finally:
+            painter.restore()
+
+    # The audio band sits in the bottom quarter of the cue, exactly where a
+    # committed dub is drawn, so the handover at commit is invisible.
+    band = QRectF(x0,
+                  cue_rect.top() + cue_rect.height() * (1.0 - _LIVE_BAND_RATIO),
+                  x1 - x0,
+                  cue_rect.height() * _LIVE_BAND_RATIO)
+    buf = live.get('buffer')
+    painter.save()
+    try:
+        painter.setClipRect(band.adjusted(-1, -1, 1, 1))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(26, 115, 168, 190))
+        painter.drawRoundedRect(band, 2.0, 2.0, Qt.AbsoluteSize)
+
+        if buf is not None:
+            n = buf.bucket_count
+            if n:
+                _, mins, maxs = buf.read_since(0)
+                if mins is not None and len(mins):
+                    bucket_s = buf.bucket_seconds
+                    cy = band.center().y()
+                    half = band.height() * 0.5
+                    peak = max(0.05, float(live.get('peak', 0.0)) or 0.05)
+                    scale = half / peak
+                    painter.setBrush(QColor(255, 255, 255, 210))
+                    # One rect per pixel column, not per bucket: at low zoom
+                    # many buckets share a column, at high zoom a column spans
+                    # several pixels. Either way the cost tracks pixels shown.
+                    step = max(1, int(round(1.0 / max(1e-6, bucket_s * wpp))))
+                    for i in range(0, len(mins), step):
+                        lo = float(mins[i:i + step].min())
+                        hi = float(maxs[i:i + step].max())
+                        cx = x0 + (i * bucket_s) * wpp
+                        w = max(1.0, step * bucket_s * wpp)
+                        top_y = cy - hi * scale
+                        h = max(1.0, (hi - lo) * scale)
+                        painter.drawRect(QRectF(cx, top_y, w, h))
+    finally:
+        painter.restore()
+
+    # Leading edge marker, so the user can see it is live.
+    painter.save()
+    try:
+        painter.setPen(QPen(_LIVE_ACCENT, 1.5))
+        painter.drawLine(QLineF(x1, cue_rect.top(), x1, cue_rect.bottom()))
+    finally:
+        painter.restore()
 
 
 def _dub_playlist_apply(widget, subtitle, dub, promote):

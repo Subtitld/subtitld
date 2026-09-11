@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg width="45" height="31" version="1.1" viewBox="0 0 45 31" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+ <defs>
+  <linearGradient id="linearGradient134" x1="6511.7" x2="6511.7" y1="545" y2="574" gradientTransform="rotate(180 3197.5 288)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#b8cee0" offset="0"/>
+   <stop stop-color="#c8dbe9" offset="1"/>
+  </linearGradient>
+ </defs>
+ <g stroke-linejoin="round">
+  <path d="m41 31c2.2028-0.0153 3.9707-1.7935 3.9707-4v-26h-7.9707c-2.216 0-4.798 1.5961-5.7891 3.5781l-11.422 22.844c-0.991 1.9821-3.5731 3.5781-5.7891 3.5781z" fill="url(#linearGradient134)" stop-color="#000000" style="paint-order:fill markers stroke"/>
+  <path d="m14 31c2.216 0 4.7981-1.5961 5.7891-3.5781l11.422-22.844c0.9911-1.982 3.5731-3.5781 5.7891-3.5781h7.9707v-1h-7.9707c-2.6962 0-5.4778 1.7196-6.6836 4.1309l-11.422 22.844c-0.7763 1.5528-3.1587 3.0254-4.8945 3.0254h-12.68c0.6982 0.61706 1.6135 0.99298 2.6211 1h0.029z" fill="#fff" fill-opacity=".1" stop-color="#000000" style="paint-order:fill markers stroke"/>
+  <path d="m17.629 31c1.3021-0.73676 2.4061-1.8336 3.0547-3.1309l11.422-22.844c0.7764-1.5527 3.1587-3.0254 4.8945-3.0254h7.9707v-1h-7.9707c-2.216 0-4.798 1.5962-5.7891 3.5781l-11.422 22.844c-0.991 1.9821-3.5731 3.5781-5.7891 3.5781z" fill="#fff" fill-opacity=".2" stop-color="#000000" style="paint-order:fill markers stroke"/>
+ </g>
+</svg>

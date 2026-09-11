@@ -67,6 +67,20 @@ class VadSegmenter:
         self._last_speech_pos = 0
         self._last_emitted_end = 0
 
+    def state(self):
+        """Current in-progress run, for the live timeline preview.
+
+        Pure read, no side effects. Returned so the preview can draw the cue
+        that *this* segmenter will eventually emit — reimplementing the rule
+        elsewhere would drift (notably: this gates on frame RMS, so a preview
+        thresholding peak amplitude would cut in different places).
+        """
+        sr = float(self.samplerate)
+        return (self._in_speech,
+                self._speech_start / sr,
+                self._last_speech_pos / sr,
+                self._pad / sr)
+
     def push(self, mono) -> list:
         """Feed a block; return a list of finalized ``(start, end)`` utterances
         (usually empty, occasionally one, rarely more on a force-cut)."""

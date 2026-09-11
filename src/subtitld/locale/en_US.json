@@ -514,8 +514,6 @@
     "addons_dialog.task_name.audio.separate": "Audio separation",
     "addons.edge-tts.display_name": "Edge TTS (online)",
     "addons.edge-tts.summary": "Microsoft Edge's online neural voices. No install — works out of the box, requires an internet connection.",
-    "addons.assemblyai.display_name": "AssemblyAI (cloud)",
-    "addons.assemblyai.summary": "Cloud speech-to-text via AssemblyAI. Requires an API key.",
     "addons.piper-tts.display_name": "Piper TTS (offline)",
     "addons.piper-tts.summary": "Lightweight offline neural TTS based on Piper. Models around 50 MB each.",
     "addons.coqui-xtts.display_name": "Coqui XTTS-v2 (offline + voice clone)",

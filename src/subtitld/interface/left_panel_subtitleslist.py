@@ -246,6 +246,10 @@ def load(self):
     self.left_panel_subtitleslist_bottom_panel.layout().setContentsMargins(0, 0, 0, 0)
     self.left_panel_subtitleslist_bottom_panel.layout().setSpacing(0)
     subtitles_panel_simplelist_qsplitter.addWidget(self.left_panel_subtitleslist_bottom_panel)
+    # Nothing is selected on launch — start hidden so the first paint can't
+    # flash an editor for a subtitle that isn't there. reconcile_visibility()
+    # brings it back the moment there is a selection.
+    self.left_panel_subtitleslist_bottom_panel.setVisible(False)
 
     self.left_panel_subtitleslist_textedit = QTextEdit()
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
@@ -327,6 +331,9 @@ def load(self):
     # self.properties_information.layout().addWidget(self.properties_information_reason)
 
     self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.properties_information, 1, Qt.AlignLeft | Qt.AlignBottom)
+    # Same reasoning as the bottom panel above: no selection on launch, and
+    # the stats are opt-in via quality_check.show_statistics anyway.
+    self.properties_information.setVisible(False)
 
     # self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_widget)
 
@@ -478,15 +485,33 @@ def left_panel_subtitleslist_translation_textedit_changed(self):
     self.preview_panel_player.update()
 
 
+def reconcile_visibility(self):
+    """Put the panel's state-dependent widgets into their settled
+    configuration. Cheap — pure visibility, no content work.
+
+    Split out of `update()` so `left_panel.show()` can run it *before*
+    starting the slide-in. `update()` itself is deferred until the animation
+    finishes (its layout invalidation would otherwise override the
+    animation's position — see the comment there), which used to mean the
+    panel slid in wearing its build-time defaults: the "no subtitles yet"
+    empty state on top of a populated list, plus the editor and properties
+    panels for a selection that does not exist. A second later `update()`
+    corrected all four at once and the panel visibly reflowed. Deciding
+    visibility up front means what slides in is already what settles.
+    """
+    has_segments = bool(session.SUBTITLE.get('segments'))
+    has_selection = bool(session.SUBTITLE.get('selected', False))
+    self.subtitles_panel_empty_state.setVisible(not has_segments)
+    self.subtitles_panel_simplelist_qsplitter.setVisible(has_segments)
+    self.left_panel_subtitleslist_bottom_panel.setVisible(has_selection)
+    self.properties_information.setVisible(
+        has_selection and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
+
+
 def update(self):
     self.subtitles_panel_qlistwidget.update_content()
 
-    has_segments = bool(session.SUBTITLE.get('segments'))
-    self.subtitles_panel_empty_state.setVisible(not has_segments)
-    self.subtitles_panel_simplelist_qsplitter.setVisible(has_segments)
-
-    self.left_panel_subtitleslist_bottom_panel.setVisible(bool(session.SUBTITLE.get('selected', False)))
-    self.properties_information.setVisible(bool(session.SUBTITLE.get('selected', False)) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
+    reconcile_visibility(self)
     
     if session.SUBTITLE.get('selected', None) is None:
         self.subtitles_panel_qlistwidget.clearSelection()

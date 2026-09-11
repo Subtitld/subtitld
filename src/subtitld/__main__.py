@@ -43,12 +43,6 @@ from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
 from subtitld.modules.addons.builtin import import_provider as _import_provider
 from subtitld.modules.addons.builtin import whispercpp_provider as _whispercpp_provider
-# Cloud-routed providers — one entry per upstream brand (AssemblyAI today,
-# ElevenLabs / Replicate / ... later). They ship inside the binary so the
-# add-ons panel can offer them without a network round-trip to the catalog;
-# the user still has to paste a Subtitld Cloud API key under each provider's
-# settings before transcription requests will actually go through.
-from subtitld.modules.addons.builtin import subtitld_cloud_assemblyai_provider as _subtitld_cloud_assemblyai_provider
 # Video-manipulation plugin family (real-time per-frame). The mouth crop
 # helps the user focus on lip-sync while dubbing.
 from subtitld.modules.addons.builtin import mouth_crop_provider as _mouth_crop_provider
@@ -320,13 +314,11 @@ def main():
     #   - FFmpeg separator — audio source separation, no model required
     #   - whisper.cpp — offline ASR. Models aren't bundled; the chosen
     #     model is downloaded once on first use to PATH_SUBTITLD_DATA_MODELS.
-    #   - Subtitld Cloud → AssemblyAI — cloud-routed ASR. Registered here
-    #     so it shows up in the add-ons panel as a card the user can
-    #     enable/configure; transcription requests fail with a clear
-    #     "set your API key" message until the user pastes a Subtitld
-    #     Cloud key in the provider's settings. Future cloud-routed
-    #     siblings (ElevenLabs, Replicate, ...) get registered here the
-    #     same way — one line per upstream brand.
+    # No cloud-routed ASR ships as a built-in: those are distributed as
+    # add-ons instead, so a stock Subtitld carries no third-party service
+    # integration the user did not ask for. The cloud plumbing itself
+    # (subtitld_cloud_shared, the account dashboard) stays — it is what an
+    # installed cloud add-on authenticates through.
     # Subprocess add-ons under ~/.local/share/subtitld/addons/ are
     # discovered next; they may depend on a QApplication being live
     # (provider QObjects are auto-parented to it), so this happens
@@ -337,7 +329,6 @@ def main():
     addon_manager.register_builtin(_gtts_provider.get_provider())
     addon_manager.register_builtin(_import_provider.get_provider())
     addon_manager.register_builtin(_whispercpp_provider.get_provider())
-    addon_manager.register_builtin(_subtitld_cloud_assemblyai_provider.get_provider())
     addon_manager.register_builtin(_mouth_crop_provider.get_provider())
     try:
         discovered = addon_manager.discover()

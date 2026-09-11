@@ -1,6 +1,6 @@
 """Abstract provider interfaces — the contract every TTS/ASR/translation
 backend has to satisfy, regardless of whether it lives in-process (built-ins
-like Edge TTS, AssemblyAI) or out-of-process (subprocess add-ons that
+like Edge TTS, whisper.cpp) or out-of-process (subprocess add-ons that
 speak the JSON-line protocol from `protocol.py`).
 
 The shapes here are deliberately aligned with the existing `EdgeTTSEngine`

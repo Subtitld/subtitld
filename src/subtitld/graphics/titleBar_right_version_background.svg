@@ -2,17 +2,23 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 <svg width="100" height="36" version="1.1" viewBox="0 0 100 36" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
  <defs>
-  <linearGradient id="linearGradient12" x1="1.1102e-16" x2="100" y1="20.803" y2="20.803" gradientUnits="userSpaceOnUse">
+  <linearGradient id="linearGradient38" x1="5" x2="30" y1="36" gradientTransform="matrix(-1,0,0,1,36,0)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#07090b" offset="0"/>
+   <stop stop-color="#07090b" stop-opacity="0" offset="1"/>
+  </linearGradient>
+  <linearGradient id="linearGradient16" x1="6.5" x2="100" y1="12.267" y2="12.267" gradientUnits="userSpaceOnUse">
    <stop stop-color="#fff" stop-opacity=".03" offset="0"/>
    <stop stop-color="#fff" stop-opacity="0" offset="1"/>
   </linearGradient>
-  <linearGradient id="linearGradient17" x1="11.045" x2="100" y1="34.878" y2="34.878" gradientUnits="userSpaceOnUse">
-   <stop stop-opacity=".04" offset="0"/>
-   <stop stop-opacity="0" offset="1"/>
+  <linearGradient id="linearGradient19" x1="6.5" x2="100" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#303030" stop-opacity=".5" offset="0"/>
+   <stop stop-color="#303030" stop-opacity="0" offset="1"/>
   </linearGradient>
  </defs>
- <path d="m100 0v36h-86.352c-1.108 0-2.2403-0.892-2.5371-2l-2.5449-9.5-2.2773-8.5-3.752-14c-0.2968-1.108-1.4291-2-2.5371-2h100z" fill="url(#linearGradient12)" stroke-linecap="square" style="paint-order:fill markers stroke"/>
- <path d="m0 0c1.108 0 2.2403 0.892 2.5371 2l3.752 14 2.2773 8.5 2.4785 9.2539c2.39e-4 4.79e-4 -2.41e-4 0.0015 0 2e-3 0.26905 0.53419 1.4018 1.0728 2.3574 1.2109-0.5398-0.13931-1.18-0.68633-1.3242-1.2247l-2.5449-9.5-2.2773-8.502-3.752-13.998c-0.18212-0.6797-0.54825-1.2788-1.0352-1.7422zm13.402 35.986c0.082051 0.009528 0.16396 0.013672 0.24609 0.013672h0.19336c-0.14656 0-0.29304-0.0041-0.43945-0.01367z" fill="#fff" fill-opacity=".1"/>
- <path d="m11.045 33.756 0.066406 0.24414c0.2748 1.0259 1.2662 1.8673 2.291 1.9863 0.14641 0.009528 0.2929 0.013672 0.43945 0.013672h85.158v-1h-85.158-0.19336c-0.078071 0-0.16065-0.011163-0.24609-0.033203-0.95561-0.13817-2.0884-0.67675-2.3574-1.2109z" fill="url(#linearGradient17)" fill-opacity=".04"/>
- <path d="m99 0v36h1v-36z" fill="#fff" fill-opacity=".03" style="paint-order:fill markers stroke"/>
+ <g stroke-linejoin="round">
+  <path d="m100 35h-68c-2.216 0-4.798-1.5961-5.7891-3.5781l-13.922-27.844c-0.99103-1.982-3.5731-3.5781-5.7891-3.5781h93.5z" fill="url(#linearGradient16)" stroke-width="2" style="paint-order:fill markers stroke"/>
+  <path d="m10.078 0c1.3241 0.72403 2.4487 1.8173 3.1055 3.1309l13.922 27.844c0.77634 1.5527 3.1587 3.0254 4.8945 3.0254h68v1h-68c-0.1385 0-0.27904-5e-3 -0.41992-0.0176-2.1132-0.18261-4.4401-1.7024-5.3691-3.5606l-13.922-27.844c-0.61939-1.2388-1.8596-2.3269-3.2441-2.9688-0.27692-0.12836-0.56112-0.23782-0.8457-0.32812-0.56918-0.1806-1.1452-0.28125-1.6992-0.28125z" fill="url(#linearGradient19)" stop-color="#000000" style="paint-order:fill markers stroke"/>
+  <path d="m6.5 0c2.216 0 4.798 1.5961 5.7891 3.5781l13.922 27.844c0.99102 1.982 3.5731 3.5781 5.7891 3.5781h68v1h-68c-2.6962 0-5.4779-1.7194-6.6836-4.1309l-13.922-27.844c-0.77634-1.5527-3.1587-3.0254-4.8945-3.0254h-6.5v-1z" fill="url(#linearGradient38)" stop-color="#000000" style="paint-order:fill markers stroke"/>
+ </g>
+ <rect x="99" width="1" height="35" fill="#fff" fill-opacity=".05" stroke-linejoin="round" stroke-width="2" style="paint-order:fill markers stroke"/>
 </svg>

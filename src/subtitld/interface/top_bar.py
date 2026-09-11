@@ -234,7 +234,7 @@ def load(self):
             widget.setAutoFillBackground(True)
             widget.layout().setContentsMargins(0, 0, 0, 0)
             widget.layout().setSpacing(0)
-            widget.setMinimumWidth(46)
+            widget.setMinimumWidth(64)
             widget.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
             widget_icon = QLabel()
             widget_icon.setObjectName('titleBar_left_export_button_icon')

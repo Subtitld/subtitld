@@ -89,7 +89,12 @@ def _audio_source_for_transcription():
 #
 # AssemblyAI also used to be a built-in here (panel + thread that called
 # the AssemblyAI REST API directly with the user's own key). Removed so
-# fresh installs aren't pre-wired to a single paid cloud vendor.
+# fresh installs aren't pre-wired to a single paid cloud vendor. Its
+# cloud-routed replacement (`subtitld_cloud_assemblyai_provider`) has since
+# been dropped as well, for the same reason — a stock Subtitld ships no
+# third-party service integration. Cloud ASR is an add-on now; the shared
+# cloud plumbing it authenticates through stays in
+# `addons/builtin/subtitld_cloud_shared.py`.
 #
 # The current bundled offline ASR is whisper.cpp via the
 # ``whispercpp_provider`` builtin (registered in ``__main__.py``). The
@@ -108,9 +113,9 @@ class _GenericASRPanel(QWidget):
     Renders just the engine name and pipes the provider's
     `partial` / `transcript_finished` / `error` / `progress` signals
     back to the host UI. Used for every ASR engine in the picker today —
-    the built-in whisper.cpp provider, add-ons discovered at runtime,
-    and the cloud-routed AssemblyAI builtin — because none of them need
-    a bespoke widget here: model/threads/api-key settings all live in
+    the built-in whisper.cpp provider and add-ons discovered at runtime
+    (including cloud-routed ones) — because none of them need a bespoke
+    widget here: model/threads/api-key settings all live in
     the AddonsDialog config UI rendered from ``provider.config_schema``.
     """
 
@@ -627,6 +632,24 @@ def _extract_audio_slice(src, start, end):
 _TRANSCRIPTION_START_PERCENT = 5
 
 
+def _transcription_footer_row_height(self, button):
+    """Height to pin the bottom row to for the duration of a run.
+
+    Called from the running branch while the Start button is still visible,
+    so the height it currently occupies is the truthful answer. The cached
+    idle measurement and then the bare hint are fallbacks for a run that
+    starts before the footer was ever laid out — an unshown widget reports
+    Qt's default 480, and its hint can still be pre-stylesheet, so neither is
+    trustworthy on its own.
+    """
+    if button.isVisible() and button.height() > 1:
+        return max(button.sizeHint().height(), button.height(), 24) + _FOOTER_BOTTOM_MARGIN
+    cached = getattr(self, '_transcription_footer_row_h', 0)
+    if cached:
+        return cached
+    return max(button.sizeHint().height(), 24) + _FOOTER_BOTTOM_MARGIN
+
+
 def _reconcile_transcription_footer(self):
     """Single source of truth for the footer's Start-button-vs-progress-bar
     state, derived from ``self._transcription_running``. The button and the
@@ -639,21 +662,35 @@ def _reconcile_transcription_footer(self):
     running = bool(getattr(self, '_transcription_running', False))
     progress = self.global_panel_import_start_transcription_progress
     button = self.global_panel_import_start_transcription_button
+    row = getattr(self, 'transcription_footer_bottom_line', None)
     if running:
-        # The idle row is `button_height + 10px bottom margin` tall. Make the
-        # bar exactly that tall and zero ALL margins so it fills the row
-        # edge-to-edge while the row's total height stays identical — the
-        # button hides without the row resizing.
-        button_h = max(button.sizeHint().height(), button.height(), 24)
-        progress.setFixedHeight(button_h + _FOOTER_BOTTOM_MARGIN)
+        # Pin the ROW to the height the idle state measured, and let the bar
+        # simply fill it. Pinning the *bar* instead (what this used to do) is
+        # what made the row jump: visibility, the bar's fixed height and the
+        # row's side margins are applied in one pass but laid out in the next,
+        # so the frame where the bar is already `button_h + margin` tall while
+        # the row still carries its idle bottom margin forces the row to
+        # `bar + margin` — visibly taller, with the bar inset — until a later
+        # reconcile (the delayed `transcript_started`) settles it. With the row
+        # pinned and the bar free, no ordering can resize it.
+        if row is not None:
+            row.setFixedHeight(_transcription_footer_row_height(self, button))
         progress.setMaximum(100)
         progress.setVisible(True)
         button.setVisible(False)
     else:
         progress.setVisible(False)
-        progress.setMinimumHeight(0)
-        progress.setMaximumHeight(16777215)   # undo the running-mode setFixedHeight
         button.setVisible(True)
+        if row is not None:
+            # Idle: the button defines the row again — release the pin.
+            row.setMinimumHeight(0)
+            row.setMaximumHeight(16777215)
+        # Keep a fallback measurement for a run that starts before the footer
+        # has ever been laid out. Only trust `height()` once the button is
+        # actually on screen (an unshown widget reports Qt's default 480).
+        if button.isVisible() and button.height() > 1:
+            self._transcription_footer_row_h = (
+                max(button.sizeHint().height(), button.height(), 24) + _FOOTER_BOTTOM_MARGIN)
     if hasattr(self, 'transcription_scope_area'):
         self.transcription_scope_area.setVisible(not running)
     if hasattr(self, 'transcription_footer_bottom_line'):
@@ -840,7 +877,10 @@ def load(self):
     self.global_panel_import_start_transcription_progress.setObjectName('transcription_progress_bar')
     self.global_panel_import_start_transcription_progress.setVisible(False)
     self.global_panel_import_start_transcription_progress.setProperty('class', 'secondary')
-    self.global_panel_import_start_transcription_progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    # Vertically Expanding (not Fixed): the row is pinned to a set height
+    # during a run and the bar fills it edge-to-edge. Fixed would leave it
+    # at its own sizeHint and inset inside the row.
+    self.global_panel_import_start_transcription_progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     # Stretch 1: once the Start button is hidden during a run, the bar expands
     # to fill the whole row (progress_start also zeroes the row's side padding).
     bottom_line.addWidget(self.global_panel_import_start_transcription_progress, 1)

@@ -125,6 +125,12 @@ def show(self):
     # Opacity = 1 immediately — setUpdatesEnabled handles flash-hiding.
     # See preview_panel.show() for the full rationale.
     self.left_panel.opacity.setOpacity(1.0)
+    # Settle the subtitles panel's visibility BEFORE the slide starts, so the
+    # panel animates in already wearing its final configuration. This is only
+    # visibility (no content work), and it happens ahead of the animation, so
+    # the layout invalidation it causes cannot override the animation's
+    # position the way the deferred `update()` below would.
+    left_panel_subtitleslist.reconcile_visibility(self)
     utils.animate_element(self.left_panel.animation, duration=1000, effect='slide_from_left')
     # Defer subtitleslist.show() (which is `update()`) until the slide
     # finishes — its setVisible() toggles on subtitles_panel_empty_state /

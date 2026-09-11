@@ -1,9 +1,11 @@
-"""Shared helpers for every Subtitld Cloud-backed built-in provider.
+"""Shared helpers for Subtitld Cloud-backed providers.
 
-One desktop builtin per upstream brand (AssemblyAI, ElevenLabs, ...) so each
-shows up as its own entry in the engine picker. Auth + base URL are global
-to the Subtitld Cloud account, not per upstream provider, so they live here
-once instead of being duplicated in every provider module.
+No cloud-backed provider ships as a built-in — they are distributed as
+add-ons — but auth + base URL are global to the Subtitld Cloud account
+rather than per upstream brand, so they live here once instead of being
+duplicated. The account dashboard (`interface/cloud_dashboard.py`) and the
+global settings panel read them from here too, which is why this module
+stays even with no cloud provider bundled.
 
 Backward-compatibility contract — DON'T BREAK
 =============================================

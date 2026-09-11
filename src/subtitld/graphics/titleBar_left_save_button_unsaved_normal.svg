@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
-<svg width="30" height="30" version="1.1" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg width="10" height="36" version="1.1" viewBox="0 0 10 36" xmlns="http://www.w3.org/2000/svg">
  <defs>
-  <linearGradient id="linearGradient53" x1="-30" x2="-30" y1="-40" y2="-10" gradientTransform="translate(-2.2632e-6 10)" gradientUnits="userSpaceOnUse">
+  <linearGradient id="linearGradient53" x1="-5" x2="-5" y1="-45" y2="-10" gradientTransform="rotate(180,1.1316e-6,-5)" gradientUnits="userSpaceOnUse">
    <stop stop-color="#55d43f" offset="0"/>
    <stop stop-color="#5de845" offset="1"/>
   </linearGradient>
  </defs>
  <g stroke-linecap="square" stroke-width="2">
-  <path d="m29 1v28h-28l-1 1h30v-30z" fill="#808080" fill-opacity=".13" style="paint-order:fill markers stroke"/>
-  <path transform="scale(-1)" d="m-30-30h30v30h-30z" fill="url(#linearGradient53)" style="paint-order:fill markers stroke"/>
-  <path d="m1 29v-28h28l1-1h-30v30z" fill="#fff" fill-opacity=".13" style="paint-order:fill markers stroke"/>
-  <path d="m29 1v28h-28l-1 1h30v-30z" fill="#07090b" fill-opacity=".1" style="paint-order:fill markers stroke"/>
+  <path d="m10 20h-10v-20h10z" fill="#fff" fill-opacity=".1" style="paint-order:fill markers stroke"/>
+  <path d="m10 35h-10v-35h10z" fill="url(#linearGradient53)" style="paint-order:fill markers stroke"/>
+  <path d="m1 34v-33h8l1-1h-10v35z" fill="#fff" fill-opacity=".2" style="paint-order:fill markers stroke"/>
+  <path d="m9 1v33h-8l-1 1h10v-35z" fill="#07090b" fill-opacity=".15" style="paint-order:fill markers stroke"/>
  </g>
+ <path d="m10 35h-10v1h10z" fill="#1a1a1a" fill-opacity=".8" stop-color="#000000" stroke-linejoin="round" style="paint-order:fill markers stroke"/>
 </svg>

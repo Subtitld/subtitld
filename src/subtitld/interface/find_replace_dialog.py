@@ -255,13 +255,13 @@ class FindReplaceDialog(utils.SimpleDialog):
         # Footer — rebuild the SimpleDialog bottom row into:
         #   [status text]  <stretch>  [find next] [replace] [replace all]
         #
-        # SimpleDialog wires ``accept_button`` and ``reject_button`` into a
-        # local QHBoxLayout we don't otherwise have a handle on. Walk to it
-        # via the buttons' parent — same trick ExportDialog uses for its
-        # processing-state swap. Clearing the layout in place keeps the
-        # QSS ``#dialog_bottom`` styling (slate fill, top border, radii).
+        # SimpleDialog exposes the footer as ``self.bottom_line``. This used
+        # to walk ``self.accept_button.parent()``, which broke silently once
+        # the default button moved into the bottom-right tab — the parent is
+        # then the tab, not the footer. Clearing the layout in place keeps
+        # the QSS ``#dialog_bottom`` styling.
         # ------------------------------------------------------------------
-        bottom_widget = self.accept_button.parent()
+        bottom_widget = self.bottom_line
         bottom_layout = bottom_widget.layout()
         while bottom_layout.count():
             item = bottom_layout.takeAt(0)
