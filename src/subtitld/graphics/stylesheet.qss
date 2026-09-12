@@ -2402,49 +2402,33 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     color: white;
 }
 
-/* The fill lives on #speaker_card_body, which is inset from the card's left
-   edge; the avatar overhangs that inset so a strip of list background shows
-   behind it. The card itself stays transparent and only carries the
-   selected / selected_speaker properties that drive the rules below. */
+/* Selection colours the ITEM (the list row), never the content. The content
+   area — name, share bar, stats, option rows — keeps its own colour in every
+   state, so selecting a speaker does not wash out everything inside it. */
+#left_panel_speakers_panel_content_item[selected=true],
+#left_panel_speakers_panel_content_item[selected=true]:hover {
+    background-color: #80b8cee0;
+}
+
+#left_panel_speakers_panel_content_item[selected_speaker=true] {
+    background-color: #40b8cee0;
+}
+
+#left_panel_speakers_panel_content_item[selected_speaker=true]:hover {
+    background-color: #59b8cee0;
+}
+
+/* The content sits inside the row, inset from its left edge so the avatar can
+   overhang. Bottom-left is rounded because that corner is where the option
+   rows (DUBBING) end. */
 #left_panel_speakers_panel_content_item #speaker_card_body {
     background-color: #e53e5363;
     border-radius: 0;
+    border-bottom-left-radius: 4px;
 }
 
 #left_panel_speakers_panel_content_item:hover #speaker_card_body {
     background-color: #3e5363;
-}
-
-/* The spec asks for "#b8cee080". Qt reads 8-digit hex as #AARRGGBB, not
-   CSS's #RRGGBBAA, so the literal spelling would give alpha b8 over rgb
-   ce/e0/80 — a pale green. 50% alpha goes first. */
-#left_panel_speakers_panel_content_item[selected=true] #speaker_card_body,
-#left_panel_speakers_panel_content_item[selected=true]:hover #speaker_card_body {
-    background-color: #80b8cee0;
-}
-
-/* That tint is light, so the card's own two labels need a dark ink to stay
-   readable. Targeted by id: a bare `QLabel` descendant rule would also
-   repaint every label inside an expanded engine panel. */
-#left_panel_speakers_panel_content_item[selected=true] #speaker_card_name,
-#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_card_name {
-    color: #1e2b36;
-}
-
-#left_panel_speakers_panel_content_item[selected=true] #speaker_card_stats,
-#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_card_stats {
-    color: #d91e2b36;
-}
-
-/* Echo of the selected subtitle's speaker. No border-left here: a border
-   shrinks the content rect and would shove the flush avatar inwards every
-   time the selection moved. */
-#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_card_body {
-    background-color: #40b8cee0;
-}
-
-#left_panel_speakers_panel_content_item[selected_speaker=true]:hover #speaker_card_body {
-    background-color: #59b8cee0;
 }
 
 #speaker_card_name {
@@ -2462,19 +2446,6 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 #speaker_card_actions {
     background-color: transparent;
-}
-
-/* On a selected (light) card the standard dark header band would land on a
-   mid-tone that neither white nor dark ink can read against, so barely tint
-   it there and let the dark ink work against the light card itself. */
-#left_panel_speakers_panel_content_item[selected=true] #speaker_option_section_header,
-#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_option_section_header {
-    background-color: #20304251;
-}
-
-#left_panel_speakers_panel_content_item[selected=true] #speaker_option_section_title,
-#left_panel_speakers_panel_content_item[selected_speaker=true] #speaker_option_section_title {
-    color: #1e2b36;
 }
 
 /* Darkened rather than tinted: a light tint over an already-light selected

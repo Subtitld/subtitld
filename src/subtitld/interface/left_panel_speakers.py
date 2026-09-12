@@ -303,6 +303,8 @@ _CORNER_RADIUS = 4
 # the list edge and overhangs the body, which is why it is a free-standing
 # child positioned by hand rather than a laid-out widget.
 _BODY_LEFT_MARGIN = 10
+# Gap between items in the list.
+_ITEM_SPACING = 10
 # The avatar hangs 3px lower than the rest of the header band.
 _AVATAR_TOP_OFFSET = 3
 # Gap between the avatar and the text column.
@@ -704,6 +706,10 @@ class speakers_list_item(QWidget):
         widget.speaker_data = speaker_data
         
         widget.setObjectName('left_panel_speakers_panel_content_item')
+        # The row paints the selection fill (the content keeps its own colour),
+        # so it needs a styled background. Unselected it stays transparent —
+        # no QSS rule gives it a background in that state.
+        widget.setAttribute(Qt.WA_StyledBackground, True)
         widget.setProperty('class', '')
         widget.setProperty('speaker_name', widget.speaker_name)
         widget.setLayout(QVBoxLayout())
@@ -1071,7 +1077,7 @@ def load(self):
     self.left_panel_speakers_list.setObjectName('left_panel_speakers_list')
     self.left_panel_speakers_list.setLayout(QVBoxLayout())
     self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
-    self.left_panel_speakers_list.layout().setSpacing(6)
+    self.left_panel_speakers_list.layout().setSpacing(_ITEM_SPACING)
     left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
 
     self.left_panel_speakers_add_button = QPushButton()
