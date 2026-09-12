@@ -20,7 +20,15 @@ except Exception:
 from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog
 from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence
 from PySide6.QtCore import QDir, QTimer
-from qframelesswindow import FramelessMainWindow
+# Haiku draws every window with its own native decorator (the yellow tab),
+# which already provides minimise/zoom/close. Using the frameless window
+# there would either hide that decorator or duplicate its buttons, so fall
+# back to a plain QMainWindow and let the system draw the frame.
+IS_HAIKU = sys.platform.startswith('haiku')
+if IS_HAIKU:
+    from PySide6.QtWidgets import QMainWindow as _MainWindowBase
+else:
+    from qframelesswindow import FramelessMainWindow as _MainWindowBase
 
 from subtitld.interface import top_bar
 from subtitld.interface import startscreen
@@ -54,7 +62,7 @@ parser.add_argument('--version', help='Prints the actual version of Subtitld.', 
 args = parser.parse_args()
 
 
-class Window(FramelessMainWindow):
+class Window(_MainWindowBase):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setWindowTitle("Subtitld")
@@ -69,6 +77,15 @@ class Window(FramelessMainWindow):
         self.autosave_original_timer = QTimer(self)
         self.autosave_original_timer.setInterval(int(session.CONFIG['autosave'].get('original_interval', 300000)))
         self.autosave_original_timer.timeout.connect(lambda: file_io.autosave_original_timer_timeout())
+
+        if IS_HAIKU:
+            # No frameless base class here, so stand in for the `titleBar`
+            # widget that top_bar.load() expects. It overlays the top of the
+            # window; resizeEvent() keeps it full-width.
+            self.titleBar = QWidget(self)
+            self.titleBar.setLayout(QHBoxLayout())
+            self.titleBar.layout().setContentsMargins(0, 0, 0, 0)
+            self.titleBar.layout().setSpacing(0)
 
         top_bar.load(self)
 
@@ -180,6 +197,12 @@ class Window(FramelessMainWindow):
 
 
         self.translate()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if IS_HAIKU and getattr(self, 'titleBar', None) is not None:
+            # A plain QMainWindow does not lay the overlay out for us.
+            self.titleBar.setGeometry(0, 0, self.width(), self.titleBar.height())
 
     def translate(self):
         startscreen.translate(self)

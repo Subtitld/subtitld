@@ -39,6 +39,7 @@ dependencies = [
     "psutil",
     "pywhispercpp",
     "deep_translator",
+    "sounddevice",
     "soundfile",
     "edge-tts",
     "gTTS",

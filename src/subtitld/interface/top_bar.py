@@ -138,37 +138,40 @@ def load(self):
     self._trigger_save_wave = _trigger_save_wave
     session._save_success_callbacks.append(_trigger_save_wave)
 
-    # Rearrange icons to top
-    self.titleBar.layout().setAlignment(self.titleBar.minBtn, Qt.AlignTop)
-    self.titleBar.layout().setAlignment(self.titleBar.maxBtn, Qt.AlignTop)
-    self.titleBar.layout().setAlignment(self.titleBar.closeBtn, Qt.AlignTop)
+    # The frameless window supplies its own min/max/close buttons. Haiku's
+    # native decorator provides them instead, so there is nothing to restyle.
+    if hasattr(self.titleBar, 'minBtn'):
+        # Rearrange icons to top
+        self.titleBar.layout().setAlignment(self.titleBar.minBtn, Qt.AlignTop)
+        self.titleBar.layout().setAlignment(self.titleBar.maxBtn, Qt.AlignTop)
+        self.titleBar.layout().setAlignment(self.titleBar.closeBtn, Qt.AlignTop)
 
-    # Min/Max/Close are QAbstractButton subclasses (qframelesswindow) painted
-    # manually — they don't pick up QSS. Their defaults are black-on-dark,
-    # so the hover state (low-alpha black overlay) is invisible against our
-    # titleBar. Apply the app's light palette and a very subtle white-overlay
-    # hover/press tint so the buttons react gently.
-    _icon_color = QColor('#77b8cee0')
-    _hover_bg = QColor(255, 255, 255, 6)
-    _pressed_bg = QColor(255, 255, 255, 12)
-    for _btn in (self.titleBar.minBtn, self.titleBar.maxBtn):
-        _btn.setNormalColor(_icon_color)
-        _btn.setHoverColor(_icon_color)
-        _btn.setPressedColor(_icon_color)
-        _btn.setHoverBackgroundColor(_hover_bg)
-        _btn.setPressedBackgroundColor(_pressed_bg)
+        # Min/Max/Close are QAbstractButton subclasses (qframelesswindow) painted
+        # manually — they don't pick up QSS. Their defaults are black-on-dark,
+        # so the hover state (low-alpha black overlay) is invisible against our
+        # titleBar. Apply the app's light palette and a very subtle white-overlay
+        # hover/press tint so the buttons react gently.
+        _icon_color = QColor('#77b8cee0')
+        _hover_bg = QColor(255, 255, 255, 6)
+        _pressed_bg = QColor(255, 255, 255, 12)
+        for _btn in (self.titleBar.minBtn, self.titleBar.maxBtn):
+            _btn.setNormalColor(_icon_color)
+            _btn.setHoverColor(_icon_color)
+            _btn.setPressedColor(_icon_color)
+            _btn.setHoverBackgroundColor(_hover_bg)
+            _btn.setPressedBackgroundColor(_pressed_bg)
 
-    # qframelesswindow's SvgTitleBarButton.paintEvent drops the alpha of the
-    # configured icon color (it calls QColor.name() which is RGB-only), so
-    # the close button's dimming has to live in the SVG itself via
-    # stroke-opacity. The colour still tints the stroke so hover/press tints
-    # work — share the same `_icon_color` as min/max for consistency.
-    self.titleBar.closeBtn.setIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'titleBar_close.svg'))
-    self.titleBar.closeBtn.setNormalColor(_icon_color)
-    self.titleBar.closeBtn.setHoverColor(_icon_color)
-    self.titleBar.closeBtn.setPressedColor(_icon_color)
-    self.titleBar.closeBtn.setHoverBackgroundColor(_hover_bg)
-    self.titleBar.closeBtn.setPressedBackgroundColor(_pressed_bg)
+        # qframelesswindow's SvgTitleBarButton.paintEvent drops the alpha of the
+        # configured icon color (it calls QColor.name() which is RGB-only), so
+        # the close button's dimming has to live in the SVG itself via
+        # stroke-opacity. The colour still tints the stroke so hover/press tints
+        # work — share the same `_icon_color` as min/max for consistency.
+        self.titleBar.closeBtn.setIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'titleBar_close.svg'))
+        self.titleBar.closeBtn.setNormalColor(_icon_color)
+        self.titleBar.closeBtn.setHoverColor(_icon_color)
+        self.titleBar.closeBtn.setPressedColor(_icon_color)
+        self.titleBar.closeBtn.setHoverBackgroundColor(_hover_bg)
+        self.titleBar.closeBtn.setPressedBackgroundColor(_pressed_bg)
 
     # Remove spacer
     for i in range(self.titleBar.layout().count()):

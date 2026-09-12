@@ -1,5 +1,8 @@
 import cv2
-import mediapipe as mp
+try:
+    import mediapipe as mp
+except Exception:  # optional: unavailable on some platforms (e.g. Haiku)
+    mp = None
 import numpy as np
 from autohex import AutoHex
 
@@ -31,6 +34,12 @@ class FaceExtractorThread(QThread):
     def run(self):
         intervals = subtitles.get_speaker_intervals(self.name)
         if not self.name or not intervals:
+            return
+
+        # A test stub of mediapipe has no `solutions` attribute, and the
+        # module is absent entirely on platforms it does not ship for.
+        if mp is None or not hasattr(mp, 'solutions'):
+            self.error.emit("Face detection is unavailable: MediaPipe is not installed on this platform.")
             return
 
         cap = cv2.VideoCapture(session.VIDEO['filepath'])
