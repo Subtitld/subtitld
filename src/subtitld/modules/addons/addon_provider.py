@@ -53,7 +53,8 @@ def _dubbing_cache_dir() -> Path:
     return cache_dir
 
 
-def _build_addon_env(addon_id: str, options: dict | None) -> dict[str, str]:
+def _build_addon_env(addon_id: str, options: dict | None,
+                     manifest: dict | None = None) -> dict[str, str]:
     """Overlay per-add-on `Configure` values onto the host's environment so
     the subprocess can read them at startup.
 
@@ -75,6 +76,7 @@ def _build_addon_env(addon_id: str, options: dict | None) -> dict[str, str]:
     subprocess spawns (ffmpeg, hugging-face hub network calls, etc.).
     """
     env = dict(os.environ)
+    _overlay_cloud_credentials(env, manifest)
     if not options:
         return env
     prefix = addon_id.replace('-', '_').upper() + '_'
@@ -90,6 +92,43 @@ def _build_addon_env(addon_id: str, options: dict | None) -> dict[str, str]:
         # field types, so this branch is unreachable in practice.
     return env
 
+
+def _overlay_cloud_credentials(env: dict[str, str], manifest: dict | None) -> None:
+    """Export the shared Subtitld Cloud credentials to cloud-backed add-ons.
+
+    The cloud key lives in ONE config slot shared by every cloud-backed
+    provider, so a user pastes it once. Add-ons run out-of-process and can't
+    read `session.CONFIG`, so the slot has to be handed over as env.
+
+    Gated on the manifest's `uses_subtitld_cloud` flag rather than exported
+    to everything: this is the user's billable API key, and a third-party
+    add-on has no business receiving it just because it happens to be
+    installed. An add-on must ask for it in its manifest, which is visible
+    to the user before they install.
+
+    Values already present in the environment win — a developer running with
+    `SUBTITLD_CLOUD_BASE_URL` pointed at draft-cloud expects that to hold.
+    """
+    if not manifest or not manifest.get('uses_subtitld_cloud'):
+        return
+    # Imported lazily: the shared cloud module pulls in `subtitld` for its
+    # User-Agent string, and doing that at module scope here would tangle
+    # the import graph for every add-on, cloud-backed or not.
+    try:
+        from subtitld.modules.addons.builtin import subtitld_cloud_shared as cloud
+    except Exception:
+        log.warning('could not load the shared cloud config; add-on will need its own key')
+        return
+    try:
+        api_key = cloud.read_api_key()
+        base_url = cloud.read_base_url()
+    except Exception:
+        log.exception('reading the shared cloud config failed')
+        return
+    if api_key and not env.get('SUBTITLD_CLOUD_API_KEY'):
+        env['SUBTITLD_CLOUD_API_KEY'] = api_key
+    if base_url and not env.get('SUBTITLD_CLOUD_BASE_URL'):
+        env['SUBTITLD_CLOUD_BASE_URL'] = base_url
 
 class _AddonProviderMixin:
     """Shared bits between the per-task provider classes."""
@@ -137,7 +176,8 @@ class _AddonProviderMixin:
             # the "addons read options at startup only" note in
             # addons_dialog.py — we deliberately don't auto-restart.
             env = _build_addon_env(
-                self._addon_id, _registry.options_for(self._addon_id)
+                self._addon_id, _registry.options_for(self._addon_id),
+                self._manifest,
             )
             self._process = AddonProcess(
                 self._manifest, self._exe_path, env=env

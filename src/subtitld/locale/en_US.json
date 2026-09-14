@@ -291,8 +291,6 @@
     "transcription_panel.scope_range": "Range",
     "transcription_panel.scope_selection": "Selection",
     "transcription_panel.no_model_available": "No model is available for this language.",
-    "transcription_panel.api_key": "API key",
-    "transcription_panel.no_api_key_error": "No API key is provided. Please provide an API key in the settings.",
     "transcription_panel.error": "Error",
     "translation_panel.translate": "Translate",
     "translation_panel.error": "Translation error",

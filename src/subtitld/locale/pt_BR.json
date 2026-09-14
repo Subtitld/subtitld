@@ -228,8 +228,6 @@
     "transcription_panel.scope_range": "Intervalo",
     "transcription_panel.scope_selection": "Seleção",
     "transcription_panel.no_model_available": "Nenhum modelo disponível para este idioma.",
-    "transcription_panel.api_key": "Chave de API",
-    "transcription_panel.no_api_key_error": "Nenhuma chave de API fornecida. Forneça uma chave de API nas configurações.",
     "transcription_panel.error": "Erro",
     "translation_panel.translate": "Traduzir",
     "translation_panel.error": "Erro de tradução",

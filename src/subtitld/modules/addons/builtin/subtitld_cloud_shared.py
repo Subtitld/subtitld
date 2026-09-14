@@ -12,7 +12,7 @@ Backward-compatibility contract — DON'T BREAK
 Older desktop builds must keep working as the cloud evolves. The two
 guardrails this module enforces:
 
-1. ``http_get`` / ``http_post_json`` return raw dicts. The provider modules
+1. ``http_get`` returns raw dicts. The provider modules
    read response fields with ``.get(key, default)``, never ``[key]``. New
    cloud-side fields are silently ignored; missing ones don't crash.
 
@@ -32,9 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import uuid
 import urllib.error
-import urllib.parse
 import urllib.request
 
 import subtitld
@@ -65,8 +63,8 @@ DEFAULT_BASE_URL = os.environ.get(_ENV_BASE_URL_VAR) or PRODUCTION_BASE_URL
 PUBLIC_ID_PREFIX = 'subtitld-cloud:'
 
 # Per-account auth + URL live here. ONE config slot shared across every
-# cloud-backed provider (assemblyai-cloud, elevenlabs-cloud, ...). When
-# the user pastes their API key once, all cloud-backed providers see it.
+# cloud-backed add-on. When the user pastes their API key once, every
+# cloud-backed add-on sees it.
 _CONFIG_ROOT_KEYS = ('transcription', 'engine_options', 'SubtitldCloud')
 
 # User-Agent sent on every cloud request. Cloudflare's bot protection
@@ -176,95 +174,6 @@ def http_get(url: str, *, api_key: str, timeout: float = 15.0) -> dict:
         return json.loads(resp.read().decode('utf-8'))
 
 
-def http_post_json(
-    url: str,
-    body: dict,
-    *,
-    api_key: str,
-    timeout: float = 30.0,
-) -> dict:
-    """POST a JSON body with bearer auth. Returns the decoded JSON dict.
-
-    Same exception semantics as ``http_get``.
-    """
-    payload = json.dumps(body).encode('utf-8')
-    req = urllib.request.Request(url, data=payload, method='POST')
-    req.add_header('Content-Type', 'application/json')
-    req.add_header('User-Agent', USER_AGENT)  # see USER_AGENT comment
-    if api_key:
-        req.add_header('Authorization', f'Bearer {api_key}')
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode('utf-8'))
-
-
-def http_post_multipart(
-    url: str,
-    *,
-    fields: dict | None = None,
-    files: dict,
-    api_key: str,
-    timeout: float = 120.0,
-) -> dict:
-    """POST a ``multipart/form-data`` body with bearer auth.
-
-    ``files`` is a mapping ``{field_name: (filename, bytes, content_type)}``
-    — one entry is the common case (a single audio upload). ``fields`` is
-    an optional mapping of plain text form fields to send alongside.
-
-    Returns the decoded JSON dict on 2xx. Same exception semantics as
-    ``http_get`` — non-2xx raises ``urllib.error.HTTPError`` so the
-    caller can read ``.read()`` for the server's error detail.
-
-    Why hand-rolled instead of ``requests`` or ``email.mime.multipart``:
-    the desktop ships no third-party HTTP dependency, and ``email.mime``
-    produces output the cloud's web framework rejects under strict mode
-    (folded headers, base64 transfer encoding). The wire format here is
-    the same one ``curl --form`` writes — explicit boundary, ``CRLF``
-    line endings, raw binary payload — which every server-side
-    framework parses cleanly.
-
-    Memory note: the file payload is held fully in memory while the
-    request body is assembled. Opus at 24 kbps mono is ~10 MB per hour,
-    so even multi-hour recordings stay well under any realistic limit
-    — chunked streaming would be premature.
-    """
-    boundary = f'----SubtitldBoundary{uuid.uuid4().hex}'
-    boundary_bytes = boundary.encode('ascii')
-
-    parts: list[bytes] = []
-    for name, value in (fields or {}).items():
-        parts.append(b'--' + boundary_bytes + b'\r\n')
-        parts.append(
-            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode('utf-8')
-        )
-        parts.append(str(value).encode('utf-8'))
-        parts.append(b'\r\n')
-
-    for name, (filename, content, content_type) in files.items():
-        parts.append(b'--' + boundary_bytes + b'\r\n')
-        # filename is quoted but NOT escaped — the cloud's upload field
-        # is a passthrough and a quote in the filename would only ever
-        # come from a user file path under their control. If we later
-        # need to defend against that, percent-encode here.
-        parts.append(
-            f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode('utf-8')
-        )
-        parts.append(f'Content-Type: {content_type}\r\n\r\n'.encode('utf-8'))
-        parts.append(content)
-        parts.append(b'\r\n')
-
-    parts.append(b'--' + boundary_bytes + b'--\r\n')
-    body = b''.join(parts)
-
-    req = urllib.request.Request(url, data=body, method='POST')
-    req.add_header('Content-Type', f'multipart/form-data; boundary={boundary}')
-    req.add_header('User-Agent', USER_AGENT)  # see USER_AGENT comment
-    if api_key:
-        req.add_header('Authorization', f'Bearer {api_key}')
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode('utf-8'))
-
-
 def fetch_account(timeout: float = 15.0) -> dict:
     """Fetch the authenticated user's account summary from
     ``GET /api/v1/account``.
@@ -302,36 +211,8 @@ def fetch_account(timeout: float = 15.0) -> dict:
     cloud build doesn't expose /account yet") and ``urllib.error.URLError``
     on network failure. The caller — a background QThread in the settings
     panel — turns these into a user-facing status line. We DON'T swallow
-    them here the way `fetch_catalog_filtered` does, because the user
-    explicitly asked to check their balance and deserves the reason it
-    failed.
+    them here, because the user explicitly asked to check their balance
+    and deserves the reason it failed.
     """
     url = f'{read_base_url().rstrip("/")}/api/v1/account'
     return http_get(url, api_key=read_api_key(), timeout=timeout)
-
-
-def fetch_catalog_filtered(provider: str = '', task: str = '') -> list[dict]:
-    """Fetch ``/api/v1/catalog`` with optional ``?provider=`` and ``?task=`` filters.
-
-    Returns ``[]`` on any error (auth not set, network down, server 5xx, ...).
-    Callers don't differentiate "no entries" from "fetch failed" — both
-    surface as an empty picker, which the UI handles cleanly.
-    """
-    if not is_configured():
-        return []
-    qs_pairs = {k: v for k, v in (('provider', provider), ('task', task)) if v}
-    qs = urllib.parse.urlencode(qs_pairs)
-    url = f'{read_base_url().rstrip("/")}/api/v1/catalog'
-    if qs:
-        url = f'{url}?{qs}'
-    try:
-        data = http_get(url, api_key=read_api_key())
-    except urllib.error.HTTPError as exc:
-        log.info('subtitld-cloud: catalog HTTP %s — likely bad api_key', exc.code)
-        return []
-    except Exception as exc:  # noqa: BLE001 — degrade silently
-        log.debug('subtitld-cloud: catalog fetch failed: %s', exc)
-        return []
-    if isinstance(data, list):
-        return data
-    return []

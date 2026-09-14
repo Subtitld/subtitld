@@ -590,16 +590,16 @@ class _AddonCard(QFrame):
 # OUT of the default per-addon-id bag (``registry.options_for(addon_id)``)
 # and persist into an explicit slot under ``session.CONFIG`` instead.
 #
-# Real-world motivation: every Subtitld Cloud-backed builtin provider
-# (as add-ons: AssemblyAI, ElevenLabs, …) shares ONE auth credential. The cloud bills
-# the same account no matter which upstream brand the user picks, so
+# Real-world motivation: every Subtitld Cloud-backed add-on shares ONE
+# auth credential. The cloud bills the same account no matter which
+# upstream brand the user picks, so
 # storing the key under each provider's per-addon bag would force the
 # user to paste the same string under every provider — and would drift
 # instantly the first time they updated it in one place. The schema
 # redirect points all of them at one shared slot
 # (``session.CONFIG.transcription.engine_options.SubtitldCloud.api_key``)
-# so the key entered under AssemblyAI is read back when the user picks
-# ElevenLabs, with no special-case code in any provider.
+# so a key entered under one cloud add-on is read back when the user
+# picks another, with no special-case code in any provider.
 #
 # Without the redirect being honored here, ``provider.config_schema``
 # declares ``storage`` paths the renderers silently ignore — the user
@@ -968,7 +968,7 @@ class AddonConfigInlineWidget(QWidget):
         # Honor `storage` redirects so a field pointed at a shared slot
         # (e.g. SubtitldCloud's api_key) shows the value entered under
         # ANY other provider sharing that slot. Without this, picking
-        # AssemblyAI after entering the key under ElevenLabs would
+        # one cloud add-on after entering the key under another would
         # render the field empty even though auth is configured.
         current_value = _read_field_value(field, self._options)
 

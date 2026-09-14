@@ -87,13 +87,11 @@ def _audio_source_for_transcription():
 # Subtitld binary stays lean — neither the `vosk` Python wheel nor the
 # `~50 MB` to `~1.6 GB` model zips ship inside the app.
 #
-# AssemblyAI also used to be a built-in here (panel + thread that called
-# the AssemblyAI REST API directly with the user's own key). Removed so
-# fresh installs aren't pre-wired to a single paid cloud vendor. Its
-# cloud-routed replacement (`subtitld_cloud_assemblyai_provider`) has since
-# been dropped as well, for the same reason — a stock Subtitld ships no
-# third-party service integration. Cloud ASR is an add-on now; the shared
-# cloud plumbing it authenticates through stays in
+# A paid cloud ASR vendor used to be wired in here too, first as a direct
+# REST panel and later as a cloud-routed builtin. Both were removed so a
+# stock Subtitld ships no third-party service integration and fresh
+# installs aren't pre-wired to one vendor. Cloud ASR is an add-on now; the
+# shared cloud plumbing those add-ons authenticate through stays in
 # `addons/builtin/subtitld_cloud_shared.py`.
 #
 # The current bundled offline ASR is whisper.cpp via the

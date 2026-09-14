@@ -46,6 +46,7 @@ from subtitld.modules import config
 from subtitld.modules import file_io
 from subtitld.modules import shortcuts
 from subtitld.modules import addons
+from subtitld.modules.addons import registry as addons_registry
 from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provider
 from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
@@ -69,6 +70,16 @@ class Window(_MainWindowBase):
         self.setStyleSheet(open(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'stylesheet.qss')).read())
         
         session.CONFIG = config.Config()
+
+        # Normalise the add-ons config against the CONFIG that was just loaded
+        # from disk. The manager seeds it too, but the manager is built back in
+        # `main()` BEFORE this line runs, when `session.CONFIG` is still the
+        # empty placeholder from `session.py` — so anything it did there was
+        # written to a dict that this assignment throws away. `ensure_seeded`
+        # is idempotent, and its one-shot migration is revision-guarded, so
+        # calling it from both places is safe; this is the call that reaches
+        # the dict `CONFIG.save()` actually writes back.
+        addons_registry.ensure_seeded()
 
         self.autosave_backup_timer = QTimer(self)
         self.autosave_backup_timer.setInterval(int(session.CONFIG['autosave'].get('backup_interval', 300000)))
