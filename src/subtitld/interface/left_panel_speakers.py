@@ -218,7 +218,13 @@ class dubbing_container(QWidget):
         widget.layout().setSpacing(0)
 
         widget.setProperty('is_expanded', False)
-        
+
+        # Who decides whether the engine panel is showing. True: this widget
+        # does, via its own hideexpand_button. False: an enclosing collapsible
+        # owns it, and `update` must not touch `is_expanded` or the content's
+        # visibility beyond "is there an engine to show at all".
+        widget.owns_expansion = True
+
         header_line = QHBoxLayout()
         header_line.setContentsMargins(0, 0, 0, 0)
         header_line.setSpacing(0)
@@ -273,8 +279,6 @@ class dubbing_container(QWidget):
         idx = widget.combobox.combobox.currentIndex()
         has_engine = idx >= 0
         widget.hideexpand_button.setEnabled(has_engine)
-        if not has_engine:
-            widget.setProperty('is_expanded', False)
 
         # Engine panels were added to the QStackedWidget in the same order
         # as combobox items in `update_dubbing_options`, so the indices map
@@ -285,6 +289,18 @@ class dubbing_container(QWidget):
             # currentChanged didn't fire (already at idx) — recompute size
             # anyway so first-show / re-expand picks up the right height.
             _stacked_resize_to_current(widget.content)
+
+        if not widget.owns_expansion:
+            # An enclosing CollapsibleSection decides whether any of this is
+            # on screen. All we decide is whether there is an engine panel
+            # worth showing — a QStackedWidget always has a current page, so
+            # without this the FIRST engine's panel would show while the
+            # combobox still reads "no engine selected".
+            widget.content.setVisible(has_engine)
+            return
+
+        if not has_engine:
+            widget.setProperty('is_expanded', False)
 
         if widget.property('is_expanded'):
             if not widget.hideexpand_button.isChecked():
@@ -834,11 +850,15 @@ class speakers_list_item(QWidget):
         widget.dubbing_container.layout().setContentsMargins(0, 0, 0, 0)
         # The section's own chevron is the single collapse control the mockup
         # shows. dubbing_container's internal hide/expand button would be a
-        # second, nested one, so it is retired and its content pinned open —
-        # everything it holds is revealed by expanding the section instead.
+        # second, nested one, so it is retired and the section does the
+        # collapsing. Handing over `owns_expansion` is what makes that stick:
+        # pinning `is_expanded` by hand did not, because the container's own
+        # `update` cleared it again the moment no engine was selected, and
+        # nothing ever set it back — so picking an engine collapsed the panel
+        # for good, with the only control that could reopen it now hidden.
         widget.dubbing_container.hideexpand_button.setVisible(False)
+        widget.dubbing_container.owns_expansion = False
         widget.dubbing_container.setProperty('is_expanded', True)
-        widget.dubbing_container.content.setVisible(True)
         widget.dubbing_line.set_content(widget.dubbing_container)
 
         widget.update()
