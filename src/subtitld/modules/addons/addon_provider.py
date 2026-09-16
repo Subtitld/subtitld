@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,7 @@ def _build_addon_env(addon_id: str, options: dict | None,
     subprocess spawns (ffmpeg, hugging-face hub network calls, etc.).
     """
     env = dict(os.environ)
+    _overlay_host_paths(env)
     _overlay_cloud_credentials(env, manifest)
     if not options:
         return env
@@ -91,6 +93,24 @@ def _build_addon_env(addon_id: str, options: dict | None,
         # Skip anything else: config_schema currently has no list/dict
         # field types, so this branch is unreachable in practice.
     return env
+
+
+def _overlay_host_paths(env: dict[str, str]) -> None:
+    """Tell add-ons where the host keeps things they need too.
+
+    `SUBTITLD_MODELS_DIR` lets an add-on share the host's model cache (the
+    whisper.cpp add-on reuses the multi-GB files the built-in engine
+    downloaded there), `SUBTITLD_TEMP_DIR` gives it a scratch dir the host
+    cleans up, and `SUBTITLD_FFMPEG_EXECUTABLE` is the ffmpeg the host ships:
+    a frozen Windows/macOS install has no ffmpeg on PATH. Values already in
+    the environment win.
+    """
+    env.setdefault('SUBTITLD_MODELS_DIR', str(session.PATH_SUBTITLD_DATA_MODELS))
+    env.setdefault('SUBTITLD_TEMP_DIR', str(session.PATH_TEMP))
+    ffmpeg = str(session.FFMPEG_EXECUTABLE or '')
+    resolved = ffmpeg if os.path.isfile(ffmpeg) else (shutil.which(ffmpeg) if ffmpeg else None)
+    if resolved:
+        env.setdefault('SUBTITLD_FFMPEG_EXECUTABLE', resolved)
 
 
 def _overlay_cloud_credentials(env: dict[str, str], manifest: dict | None) -> None:
@@ -489,6 +509,17 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         self._stream_request = None
         self._stream_process = None
 
+    def _saved_options(self, options: dict | None) -> dict:
+        """The add-on's saved Configure values, overridden by the request's.
+
+        The process only reads its environment at spawn, so a model changed
+        in Configure mid-session never reached it. Sent with every request
+        too, the add-on (params before env before default) sees it now.
+        """
+        merged = dict(_registry.options_for(self._addon_id) or {})
+        merged.update(options or {})
+        return merged
+
     def clone(self):
         """A second, independent add-on instance.
 
@@ -510,7 +541,7 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         params = {
             'audio_path': str(audio_path),
             'language': language,
-            'options': options or {},
+            'options': self._saved_options(options),
         }
         req = proc.request(TASK_ASR_TRANSCRIBE, params)
         self._active_request = req
@@ -569,7 +600,7 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         self._stream_process = proc
         req = proc.request(TASK_ASR_STREAM, {
             'language': language,
-            'options': options or {},
+            'options': self._saved_options(options),
             'samplerate': 16000,
         }, timeout=None)
         self._stream_request = req

@@ -93,7 +93,7 @@ ctrl2.shutdown()
 from subtitld.modules.addons.addon_provider import AddonASRProvider
 
 class FakeReq(QObject):
-    partial=Signal(dict); result=Signal(dict); error=Signal(str,str)
+    partial=Signal(dict); result=Signal(dict); error=Signal(str,str); progress=Signal(float,str)
     def __init__(s, rid): super().__init__(); s.id=rid
 
 class FakeProc:
@@ -125,6 +125,29 @@ r2.partial.emit({'text':'current','final':False}); app.processEvents()
 if seen['plain']!=['current'] or seen['tagged'][-1]!=('q2','current'): fails.append('provider_current_not_both')
 r2.result.emit({'segments':[]}); app.processEvents()
 if prov._stream_request is not None or seen['done_plain']!=[0]: fails.append('provider_current_finish')
+
+# ===== Host paths and saved options reach the add-on =====
+from subtitld.modules.addons import addon_provider as ap, registry
+import os as _os
+env=ap._build_addon_env('whispercpp', {'model':'large-v3'}, {'id':'whispercpp'})
+if env.get('SUBTITLD_MODELS_DIR')!=str(session.PATH_SUBTITLD_DATA_MODELS): fails.append('env_models_dir')
+if env.get('SUBTITLD_TEMP_DIR')!=str(session.PATH_TEMP): fails.append('env_temp_dir')
+if env.get('WHISPERCPP_MODEL')!='large-v3': fails.append('env_option')
+ff=env.get('SUBTITLD_FFMPEG_EXECUTABLE')
+if ff and not _os.path.isfile(ff): fails.append('env_ffmpeg_not_a_file')
+_os.environ['SUBTITLD_MODELS_DIR']='/elsewhere'
+if ap._build_addon_env('x', None).get('SUBTITLD_MODELS_DIR')!='/elsewhere': fails.append('env_override_lost')
+del _os.environ['SUBTITLD_MODELS_DIR']
+
+session.CONFIG.setdefault('addons',{})
+registry.set_options_for('realtimestt', {'model':'medium','device':'cpu'})
+captured=[]
+proc.request=lambda task, params, timeout=None: (captured.append(params), FakeReq('q9'))[1]
+prov.stream_start('en', {'model':'tiny'})
+prov.transcribe('/tmp/x.wav', 'en', None)
+print("request options:", [c['options'] for c in captured])
+if captured[0]['options']!={'model':'tiny','device':'cpu'}: fails.append('stream_options_not_merged')
+if captured[1]['options']!={'model':'medium','device':'cpu'}: fails.append('transcribe_options_not_merged')
 
 print("\n"+("FAIL: "+",".join(fails) if fails else "RECORD STREAMING TESTS PASS"))
 sys.exit(1 if fails else 0)
