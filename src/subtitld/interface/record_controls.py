@@ -75,14 +75,34 @@ def asr_providers():
 # registry there would cost a manager lock per frame. Invalidated whenever the
 # registered set changes (AddonManager.providers_changed).
 _ASR_ANY = None
+_ASR_WATCHING = False
 
 
 def any_asr_provider():
     """True when at least one engine could actually transcribe."""
     global _ASR_ANY
     if _ASR_ANY is None:
+        _watch_providers()
         _ASR_ANY = bool(asr_providers())
     return _ASR_ANY
+
+
+def _watch_providers():
+    """Invalidate the cache whenever the registered provider set changes.
+
+    Connected here, on first use, rather than left to whichever UI module
+    happens to load first: anything that reads `mode` before that connection
+    existed would otherwise cache a stale answer for the whole session.
+    """
+    global _ASR_WATCHING
+    if _ASR_WATCHING:
+        return
+    try:
+        from subtitld.modules import addons
+        addons.get_manager().providers_changed.connect(invalidate_asr_cache)
+        _ASR_WATCHING = True
+    except Exception:
+        log.debug('record: could not watch provider changes', exc_info=True)
 
 
 def invalidate_asr_cache():
@@ -790,7 +810,11 @@ class RecordController(QObject):
         if base is None:
             return None
         try:
-            clone = base.clone()
+            # Provider subclasses implement clone(). Anything else that merely
+            # quacks like an engine gets the historic no-argument construction;
+            # if that raises too, we fail closed below rather than fall back.
+            maker = getattr(base, 'clone', None)
+            clone = maker() if callable(maker) else type(base)()
         except Exception:
             clone = None
             log.exception('Record: could not clone ASR provider %r',

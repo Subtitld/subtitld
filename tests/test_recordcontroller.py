@@ -9,6 +9,11 @@ from subtitld.modules import session, recorder as recorder_mod
 from subtitld.interface import record_controls
 import soundfile as sf
 recorder_mod.sd=None
+# Fake engines are injected by stubbing controller methods, never registered
+# with the add-on manager. The record mode now asks the manager whether ANY
+# engine exists (no engine => effective mode is audio), so state the
+# precondition explicitly instead of inheriting whatever this machine has.
+record_controls.any_asr_provider=lambda:True
 recorder_mod.list_input_devices=lambda:[(0,'Mic')]; recorder_mod.default_input_device=lambda:0; recorder_mod.input_available=lambda:True
 SR=recorder_mod.SAMPLE_RATE
 def tone(d,a=0.3): t=np.arange(int(d*SR))/SR; return (a*np.sin(2*np.pi*220*t)).astype(np.float32)
@@ -64,14 +69,22 @@ session.SPEAKERS={}; session.SUBTITLE={'segments':[{'start':100.0,'end':102.0,'t
 ctrl_iso=record_controls.RecordController(Host())
 ctrl_iso._resolve_shared_asr_provider=lambda: shared   # real resolver clones this via type(base)()
 ctrl_iso.on_play()
-st=np.concatenate([sil(0.6),tone(1.5),sil(0.9)]); blk=int(0.1*SR)
-for i in range(0,len(st),blk): ctrl_iso._recorder.feed(st[i:i+blk])
+if ctrl_iso._recorder is None:
+    # The recorder refused to start: no private engine instance was available.
+    print("[2b] isolation: recorder did not start (status=%s)" % ctrl_iso.status)
+    fails.append('isolation_not_recording')
+else:
+    st=np.concatenate([sil(0.6),tone(1.5),sil(0.9)]); blk=int(0.1*SR)
+    for i in range(0,len(st),blk): ctrl_iso._recorder.feed(st[i:i+blk])
 ctrl_iso.on_pause()
 for _ in range(120): app.processEvents()
 subs=session.SUBTITLE['segments']
 kept=any(s['text']=='keep me' for s in subs)
-print(f"[2b] isolation: import_handler_fired={wiped['n']} kept_existing={kept} total={len(subs)}")
-if wiped['n']!=0 or not kept: fails.append('isolation')
+transcribed=any(s['text']=='hi' for s in subs)
+print(f"[2b] isolation: import_handler_fired={wiped['n']} kept_existing={kept} transcribed={transcribed} total={len(subs)}")
+# `transcribed` guards against a vacuous pass: if the private clone could not be
+# made, the recorder refuses to run, nothing is written, and "kept" is trivially true.
+if wiped['n']!=0 or not kept or not transcribed: fails.append('isolation')
 ctrl_iso.shutdown()
 
 # ===== WAVE: dub on the subtitle UNDER the cursor; cue grows to cover take, clip not stretched =====
@@ -134,7 +147,8 @@ print("[4] wave no-target -> created", len(segs), "subtitle(s)")
 if not (len(segs)==1 and segs[0].get('dubbing')): fails.append('wave_create')
 ctrl3.shutdown()
 
-# ===== no ASR engine -> status reflects it, audio still captured =====
+# ===== engine exists, but none can be RESOLVED for recording -> fail closed =====
+# (e.g. the configured engine cannot produce a private instance)
 session.CONFIG['record'].update({'mode':'transcript','armed':True})
 session.SUBTITLE={'segments':[],'language':'en-us','position':0.0}; session.SPEAKERS={}
 ctrl4=record_controls.RecordController(Host()); ctrl4._resolve_asr_provider=lambda:None
@@ -148,6 +162,23 @@ session.CONFIG['record']['mode']='transcript'; session.CONFIG['record']['armed']
 c=record_controls.RecordController(Host())
 print("[6] state: armed=",c.armed," mode=",c.mode)
 if c.armed or c.mode!='transcript': fails.append('state')
+
+# ===== NO engine installed at all -> effective mode is audio, preference kept =====
+record_controls.any_asr_provider=lambda:False
+session.CONFIG['record']['mode']='transcript'
+c7=record_controls.RecordController(Host())
+print("[7] no engine: effective mode=",c7.mode," stored=",session.CONFIG['record']['mode'])
+if c7.mode!='audio' or session.CONFIG['record']['mode']!='transcript':
+    fails.append('no_engine_effective_mode')
+# Recording then does what the UI shows (audio is the checked switch), rather
+# than arming, playing and producing nothing at all.
+session.CONFIG['record'].update({'armed':True})
+session.SUBTITLE={'segments':[],'language':'en-us','position':0.0}; session.SPEAKERS={}
+c7.on_play()
+print("[7b] no engine: recording=",c7.is_recording," status=",c7.status)
+if not c7.is_recording: fails.append('no_engine_records_audio')
+c7.shutdown()
+record_controls.any_asr_provider=lambda:True
 
 print("\n"+("FAIL: "+",".join(fails) if fails else "ALL RECORDCONTROLLER TESTS PASS"))
 sys.exit(1 if fails else 0)

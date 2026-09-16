@@ -12,6 +12,13 @@ recorder_mod.list_input_devices=lambda:[(0,'Mic')]; recorder_mod.default_input_d
 SR=recorder_mod.SAMPLE_RATE
 def tone(d): t=np.arange(int(d*SR))/SR; return (0.3*np.sin(2*np.pi*220*t)).astype(np.float32)
 
+# Fake engines are injected by stubbing controller methods rather than
+# registered with the add-on manager, so tell the availability check an
+# engine exists; otherwise the effective record mode is audio and the
+# streaming path is never exercised.
+record_controls.any_asr_provider=lambda:True
+
+
 class FakeStream(QObject):
     stream_segment=Signal(dict,bool); stream_finished=Signal(list); stream_error=Signal(str)
     id='org.subtitld.realtimestt'; tasks=['asr.transcribe']
