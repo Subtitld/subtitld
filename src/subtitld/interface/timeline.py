@@ -3818,7 +3818,31 @@ def _paint_dub_take_rows(widget, painter, subtitle, subtitle_rect, dubs, speaker
 # out of the document while it is being recorded.
 # ---------------------------------------------------------------------------
 _LIVE_BAND_RATIO = 0.25          # same band as a committed dub in _paint_body
-_LIVE_ACCENT = QColor(255, 214, 74, 235)
+
+
+def _live_colors():
+    """Border/fill for an in-progress cue: the ordinary subtitle palette, faded.
+
+    Read from config rather than hardcoded so a retheme carries over. Deriving
+    from `subtitle_border_color` / `subtitle_fill_color` also makes the
+    provisional cue read as "a subtitle that isn't committed yet" rather than a
+    different kind of object — the earlier yellow said "warning", which is the
+    wrong idea for something working exactly as intended.
+    """
+    cfg = session.CONFIG.get('timeline', {}) if isinstance(session.CONFIG, dict) else {}
+    border = QColor(cfg.get('subtitle_border_color', '#ff6a7483'))
+    fill = QColor(cfg.get('subtitle_fill_color', '#c8dbe9'))
+    # Alphas chosen so the dashes stay legible over the track while the body
+    # stays clearly lighter than a committed cue.
+    accent = QColor(border)
+    accent.setAlpha(200)
+    pending_pen = QColor(border)
+    pending_pen.setAlpha(110)
+    body = QColor(fill)
+    body.setAlpha(45)
+    pending_body = QColor(fill)
+    pending_body.setAlpha(30)
+    return accent, body, pending_pen, pending_body
 
 
 def live_take_tick(widget, live):
@@ -3878,6 +3902,12 @@ def _paint_live_take(widget, painter, live, target_rect):
     if x1 - x0 < 2.0:
         x1 = x0 + 2.0
 
+    accent, body, pending_pen, pending_body = _live_colors()
+    # Transcript mode records only to produce text — there is no audio clip to
+    # keep, so drawing a waveform advertises something the take will not leave
+    # behind. Audio mode keeps it: there the waveform IS the deliverable.
+    show_audio = live.get('mode') != 'transcript'
+
     # Cues sealed by silence, still waiting for their transcription.
     top = float(getattr(widget, 'subtitle_y', 0) or 0)
     height = float(getattr(widget, 'subtitle_height', 30) or 30)
@@ -3888,8 +3918,8 @@ def _paint_live_take(widget, painter, live, target_rect):
             continue
         painter.save()
         try:
-            painter.setPen(QPen(QColor(255, 214, 74, 120), 1.0, Qt.DashLine))
-            painter.setBrush(QColor(255, 214, 74, 26))
+            painter.setPen(QPen(pending_pen, 1.0, Qt.DashLine))
+            painter.setBrush(pending_body)
             painter.drawRoundedRect(QRectF(cx0, top, cx1 - cx0, height),
                                     3.0, 3.0, Qt.AbsoluteSize)
         finally:
@@ -3909,60 +3939,67 @@ def _paint_live_take(widget, painter, live, target_rect):
         cue_rect = QRectF(x0, top, x1 - x0, height)
         painter.save()
         try:
-            pen = QPen(_LIVE_ACCENT, 1.5, Qt.DashLine)
+            pen = QPen(accent, 1.5, Qt.DashLine)
             painter.setPen(pen)
-            painter.setBrush(QColor(255, 214, 74, 40))
+            painter.setBrush(body)
             painter.drawRoundedRect(cue_rect, 3.0, 3.0, Qt.AbsoluteSize)
         finally:
             painter.restore()
 
     # The audio band sits in the bottom quarter of the cue, exactly where a
     # committed dub is drawn, so the handover at commit is invisible.
-    band = QRectF(x0,
-                  cue_rect.top() + cue_rect.height() * (1.0 - _LIVE_BAND_RATIO),
-                  x1 - x0,
-                  cue_rect.height() * _LIVE_BAND_RATIO)
-    buf = live.get('buffer')
-    painter.save()
-    try:
-        painter.setClipRect(band.adjusted(-1, -1, 1, 1))
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(26, 115, 168, 190))
-        painter.drawRoundedRect(band, 2.0, 2.0, Qt.AbsoluteSize)
+    #
+    # Transcript mode skips it entirely: that take leaves no audio clip behind,
+    # only text, so drawing a waveform would advertise an artefact the user is
+    # never going to get.
+    if show_audio:
+        band = QRectF(x0,
+                      cue_rect.top() + cue_rect.height() * (1.0 - _LIVE_BAND_RATIO),
+                      x1 - x0,
+                      cue_rect.height() * _LIVE_BAND_RATIO)
+        buf = live.get('buffer')
+        painter.save()
+        try:
+            painter.setClipRect(band.adjusted(-1, -1, 1, 1))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(26, 115, 168, 190))
+            painter.drawRoundedRect(band, 2.0, 2.0, Qt.AbsoluteSize)
 
-        if buf is not None:
-            n = buf.bucket_count
-            if n:
-                _, mins, maxs = buf.read_since(0)
-                if mins is not None and len(mins):
-                    bucket_s = buf.bucket_seconds
-                    cy = band.center().y()
-                    half = band.height() * 0.5
-                    peak = max(0.05, float(live.get('peak', 0.0)) or 0.05)
-                    scale = half / peak
-                    painter.setBrush(QColor(255, 255, 255, 210))
-                    # One rect per pixel column, not per bucket: at low zoom
-                    # many buckets share a column, at high zoom a column spans
-                    # several pixels. Either way the cost tracks pixels shown.
-                    step = max(1, int(round(1.0 / max(1e-6, bucket_s * wpp))))
-                    for i in range(0, len(mins), step):
-                        lo = float(mins[i:i + step].min())
-                        hi = float(maxs[i:i + step].max())
-                        cx = x0 + (i * bucket_s) * wpp
-                        w = max(1.0, step * bucket_s * wpp)
-                        top_y = cy - hi * scale
-                        h = max(1.0, (hi - lo) * scale)
-                        painter.drawRect(QRectF(cx, top_y, w, h))
-    finally:
-        painter.restore()
+            if buf is not None:
+                n = buf.bucket_count
+                if n:
+                    _, mins, maxs = buf.read_since(0)
+                    if mins is not None and len(mins):
+                        bucket_s = buf.bucket_seconds
+                        cy = band.center().y()
+                        half = band.height() * 0.5
+                        peak = max(0.05, float(live.get('peak', 0.0)) or 0.05)
+                        scale = half / peak
+                        painter.setBrush(QColor(255, 255, 255, 210))
+                        # One rect per pixel column, not per bucket: at low zoom
+                        # many buckets share a column, at high zoom a column spans
+                        # several pixels. Either way the cost tracks pixels shown.
+                        step = max(1, int(round(1.0 / max(1e-6, bucket_s * wpp))))
+                        for i in range(0, len(mins), step):
+                            lo = float(mins[i:i + step].min())
+                            hi = float(maxs[i:i + step].max())
+                            cx = x0 + (i * bucket_s) * wpp
+                            w = max(1.0, step * bucket_s * wpp)
+                            top_y = cy - hi * scale
+                            h = max(1.0, (hi - lo) * scale)
+                            painter.drawRect(QRectF(cx, top_y, w, h))
+        finally:
+            painter.restore()
 
-    # Leading edge marker, so the user can see it is live.
-    painter.save()
-    try:
-        painter.setPen(QPen(_LIVE_ACCENT, 1.5))
-        painter.drawLine(QLineF(x1, cue_rect.top(), x1, cue_rect.bottom()))
-    finally:
-        painter.restore()
+    # Leading edge marker, so the user can see it is live. A frozen phantom
+    # is not growing, so marking its edge would claim otherwise.
+    if not live.get('phantom'):
+        painter.save()
+        try:
+            painter.setPen(QPen(accent, 1.5))
+            painter.drawLine(QLineF(x1, cue_rect.top(), x1, cue_rect.bottom()))
+        finally:
+            painter.restore()
 
 
 def _dub_playlist_apply(widget, subtitle, dub, promote):

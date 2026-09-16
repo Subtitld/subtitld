@@ -213,7 +213,16 @@ class RecordController(QObject):
                 wav = None
         # AFTER rec.stop(): that joins the writer thread, so nothing can be
         # appending to the preview buffer by the time it is dropped.
-        self._clear_live_take()
+        #
+        # Freeze rather than clear. Transcription lands seconds after the user
+        # stops, and clearing here left the timeline empty in the meantime —
+        # the cue they just recorded simply vanished, which reads as "it was
+        # lost" rather than "it is still being transcribed". The phantom holds
+        # that space until the text arrives and a real subtitle replaces it.
+        if self.mode == MODE_TRANSCRIPT and self._has_pending_transcription():
+            self._freeze_live_take()
+        else:
+            self._clear_live_take()
 
         if self._stream_provider is not None:
             prov = self._stream_provider
@@ -243,6 +252,10 @@ class RecordController(QObject):
 
             live.status_changed.connect(
                 lambda st, _live=live: _drain(_live) if st == 'done' else None)
+            # Same reasoning as the streaming path: once the batch job is done
+            # its subtitles exist, so the placeholder must come down.
+            live.status_changed.connect(
+                lambda st: self._retire_phantom() if st == 'done' else None)
             QTimer.singleShot(30000, lambda _live=live: _drain(_live))
             try:
                 live.finish()
@@ -314,6 +327,10 @@ class RecordController(QObject):
         self._interim_text = ''
         if prov is not None:
             self._disconnect_stream(prov)
+        # No more text is coming, so the phantom has nothing left to wait for.
+        # Real subtitles were placed as segments streamed in; leaving the
+        # outline up would double-draw them.
+        self._retire_phantom()
         self._refresh_ui()
 
     def _disconnect_stream(self, provider):
@@ -487,6 +504,67 @@ class RecordController(QObject):
             return
         live['pending'] = [c for c in live['pending']
                            if not (c['start'] <= mid <= c['end'])]
+
+    def _retire_phantom(self):
+        """Take down the frozen placeholder, if one is up.
+
+        Deliberately narrow: only clears when the take is actually a phantom,
+        so a new recording started while the old one was still transcribing is
+        never torn down by the previous take's completion.
+        """
+        take = self.live_take
+        if take and take.get('phantom'):
+            self._clear_live_take(take.get('seq'))
+
+    def _has_pending_transcription(self):
+        """True when text is still expected for the take just stopped."""
+        return self._stream_provider is not None or self._live is not None
+
+    def _freeze_live_take(self, ):
+        """Keep the recorded cue on screen, inert, until its text arrives.
+
+        Everything that makes the take *live* is dropped — the tick timer, the
+        audio buffer, the growing edge — leaving only the geometry needed to
+        keep drawing an outline where the subtitle will appear. The buffer in
+        particular must go: `rec.stop()` has joined the writer thread, so the
+        preview data is complete, and holding it would pin megabytes for no
+        reason.
+
+        A backstop clears the phantom if transcription never completes, so a
+        dead engine leaves an empty timeline rather than a cue that never
+        resolves.
+        """
+        take = self.live_take
+        if not take:
+            return
+        if self._live_timer is not None:
+            self._live_timer.stop()
+        self._live_buf = None
+
+        phantom = {
+            'seq': take.get('seq'),
+            'mode': take.get('mode'),
+            'base': take.get('base'),
+            'end': take.get('end'),
+            'subtitle': take.get('subtitle'),
+            'pending': list(take.get('pending') or ()),
+            'cue_start': take.get('cue_start'),
+            'cue_end': take.get('cue_end'),
+            'phantom': True,
+            'buffer': None,
+            'peak': 0.0,
+        }
+        self.live_take = phantom
+        widget = getattr(self._host, 'timeline_widget', None)
+        if widget is not None:
+            widget.live_take = phantom
+            try:
+                widget.update()
+            except Exception:
+                pass
+
+        seq = phantom.get('seq')
+        QTimer.singleShot(45000, lambda s=seq: self._clear_live_take(s))
 
     def _clear_live_take(self, seq=None):
         """Tear down the preview.
