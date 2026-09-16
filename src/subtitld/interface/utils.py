@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent
 
 
 from subtitld.interface.translation import _
@@ -135,6 +135,30 @@ def friendly_time(dt):
             return _("{months} month{plural} ago").format(months=months, plural='' if months == 1 else 's')
 
 
+class _HoverMirror(QObject):
+    """Mirror one widget's hover state onto another as a `hover` property.
+
+    The dialog close button sits inside a slanted notch. A hover fill on the
+    button alone is a rectangle beside the slant, which reads as a box inside
+    the notch; lighting up the notch itself needs the NOTCH to know the
+    button is hovered. Using the notch's own :hover would also trigger over
+    the empty part of its slant slice, where a click does nothing.
+    """
+
+    def __init__(self, target, parent=None):
+        super().__init__(parent)
+        self._target = target
+
+    def eventFilter(self, obj, event):
+        kind = event.type()
+        if kind in (QEvent.Enter, QEvent.Leave):
+            self._target.setProperty('hover', kind == QEvent.Enter)
+            self._target.style().unpolish(self._target)
+            self._target.style().polish(self._target)
+            self._target.update()
+        return False
+
+
 class SimpleDialog(QDialog):
     def __init__(self, parent=None, title='', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -167,11 +191,11 @@ class SimpleDialog(QDialog):
         self.layout().addWidget(self.frame)
 
         # The title bar is two widgets, each painting its own slice of
-        # dialog_title.svg: the label is the tab itself (which carries the
-        # rounded corner and the slant on its right), and the right-hand
-        # widget takes the remaining width and holds the close button. They
-        # are separate because the two need different border-image slices —
-        # one shape cannot express both.
+        # The title sits directly on the dialog gradient. Only the top-right
+        # corner has chrome: a notch (titleBar_right_version_background.svg,
+        # the same artwork as the main window's version tab) behind the close
+        # button. Label, spacer and notch are separate widgets so the notch
+        # can carry its own border-image slices without affecting the rest.
         self.title_line = QWidget()
         self.title_line.setObjectName('dialog_title')
         # Fixed 32px. The title bar otherwise absorbs the frame layout's spare
@@ -187,10 +211,11 @@ class SimpleDialog(QDialog):
         self.title_line.label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
         self.title_line.layout().addWidget(self.title_line.label, 0)
 
-        # Spans whatever the label leaves; the close button sits at its right.
+        # Spans whatever the label leaves. Kept as its own widget (rather than
+        # a bare stretch) so callers have somewhere to put extra title-bar
+        # controls later, left of the notch.
         self.title_line.right = QWidget()
         self.title_line.right.setObjectName('dialog_title_right')
-        self.title_line.right.setAttribute(Qt.WA_StyledBackground, True)
         # Expanding across, but NOT down: a plain QWidget defaults to
         # Preferred vertically and would soak up the frame layout's slack,
         # stretching the title bar to twice its height.
@@ -201,12 +226,30 @@ class SimpleDialog(QDialog):
         self.title_line.right.layout().addStretch()
         self.title_line.layout().addWidget(self.title_line.right, 1)
 
+        # The notch. Its artwork is sliced 0/1/1/36: the left 36px carry the
+        # slanted edge at 1:1 and the rest stretches. QSS border widths do not
+        # inset a plain widget's contents, so the layout margins reserve the
+        # same 36px (slant) and 1px (right edge, bottom hairline) explicitly —
+        # otherwise the close button would sit on top of the slant.
+        self.title_line.notch = QWidget()
+        self.title_line.notch.setObjectName('dialog_title_notch')
+        self.title_line.notch.setAttribute(Qt.WA_StyledBackground, True)
+        self.title_line.notch.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.title_line.notch.setLayout(QHBoxLayout())
+        self.title_line.notch.layout().setContentsMargins(36, 0, 1, 1)
+        self.title_line.notch.layout().setSpacing(0)
+        self.title_line.layout().addWidget(self.title_line.notch, 0)
+
         close_button = QPushButton()
-        close_button.setFixedSize(QSize(32, 32))
+        # 31 tall, not 32: the notch's bottom hairline takes the last row, and
+        # a 32px button would paint over it on hover.
+        close_button.setFixedSize(QSize(32, 31))
         close_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         close_button.setObjectName('dialog_close_button')
         close_button.clicked.connect(lambda: self.reject())
-        self.title_line.right.layout().addWidget(close_button)
+        self.title_line.notch.layout().addWidget(close_button)
+        self._close_hover = _HoverMirror(self.title_line.notch, close_button)
+        close_button.installEventFilter(self._close_hover)
 
         self.frame.layout().addWidget(self.title_line)
 
@@ -235,7 +278,7 @@ class SimpleDialog(QDialog):
 
         # The bottom bar mirrors the title bar: a plain stretch on the left
         # carrying Cancel, and a tab on the right — dialog_bottom.svg is
-        # dialog_title.svg rotated 180 degrees — holding the default button.
+        # dialog_bottom.svg — holding the default button.
         # Exposed as `self.bottom_line` (and `bottom_left` / `bottom_right`)
         # because dialogs used to reach it through `accept_button.parent()`,
         # which silently pointed at the wrong widget the moment the buttons
