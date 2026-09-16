@@ -64,6 +64,18 @@ def existing_proxy(source_path: str, scale: int) -> str | None:
     return None
 
 
+def delete_proxy(source_path: str, scale: int) -> bool:
+    """Remove the cached proxy for (source, scale). True when it is gone."""
+    path = proxy_path_for(source_path, scale)
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    return True
+
+
 def scaled_dimensions(width: int, height: int, scale: int) -> tuple[int, int]:
     """Target (w, h) for a scale %, forced even (H.264 requires even dims)."""
     w = max(2, int(round(width * scale / 100.0)) // 2 * 2)

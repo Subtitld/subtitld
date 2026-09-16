@@ -2976,3 +2976,121 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 #left_panel_speakers_panel_content_item_dubbing_content {
     background-color: #1a1e2a33;
 }
+
+/* Video properties panel -------------------------------------------------- */
+
+/* Facts are cards in the groupbox style: same frame, same small caps title,
+   but the title sits inside the frame. */
+QGroupBox[class="videoproperties_card"] {
+    margin-left: 0;
+    padding: 30px 14px 12px 14px;
+}
+
+QGroupBox[class="videoproperties_card"]::title {
+    subcontrol-origin: border;
+    subcontrol-position: top left;
+    margin: 0;
+    left: 14px;
+    top: 12px;
+}
+
+#videoproperties_card_value {
+    font-family: 'Montserrat';
+    font-size: 22px;
+    font-weight: 500;
+    color: #c8dbe9;
+    padding: 0 4px 6px 0;
+}
+
+#videoproperties_hint,
+#videoproperties_help {
+    font-size: 11px;
+    color: #c8dbe9;
+}
+
+/* Scale: an exclusive strip in the same frame; the chosen size is lit. */
+#videoproperties_scale_segments {
+    border-image: url(graphics:groupbox_background.svg) 3 3 3 3 stretch stretch;
+    border-width: 3px;
+}
+
+#videoproperties_scale_segments QPushButton {
+    background: transparent;
+    border: none;
+    border-left: 1px solid rgba(184, 206, 224, 0.12);
+    border-radius: 0;
+    min-width: 40px;
+    padding: 9px 12px;
+    color: #b8cee0;
+}
+
+#videoproperties_scale_segments QPushButton[segment="first"] {
+    border-left: none;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+#videoproperties_scale_segments QPushButton[segment="last"] {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+#videoproperties_scale_segments QPushButton:hover {
+    background: rgba(184, 206, 224, 0.08);
+}
+
+#videoproperties_scale_segments QPushButton:checked {
+    background: #c8dbe9;
+    color: #3e5363;
+}
+
+#videoproperties_scale_segments QPushButton:disabled {
+    background: transparent;
+    color: rgba(184, 206, 224, 0.35);
+}
+
+#videoproperties_scale_segments QPushButton:checked:disabled {
+    background: rgba(200, 219, 233, 0.30);
+    color: #3e5363;
+}
+
+#videoproperties_status_title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #80b8cee0;
+}
+
+#videoproperties_status_detail {
+    font-size: 11px;
+    color: #80b8cee0;
+}
+
+QProgressBar#videoproperties_progress {
+    background: rgba(184, 206, 224, 0.10);
+    border: none;
+    border-radius: 1px;
+    min-height: 3px;
+    max-height: 3px;
+}
+
+QProgressBar#videoproperties_progress::chunk {
+    background-color: #b8cee0;
+    border-radius: 1px;
+}
+
+QPushButton#videoproperties_delete_button {
+    border-image: url(graphics:groupbox_background.svg) 3 3 3 3 stretch stretch;
+    border-width: 3px;
+    background: transparent;
+    padding: 0;
+    icon: url(graphics:speaker_list_item_remove_icon.svg);
+}
+
+QPushButton#videoproperties_delete_button:hover {
+    icon: url(graphics:speaker_list_item_remove_icon_hover.svg);
+    background: rgba(184, 206, 224, 0.06);
+}
+
+QPushButton#videoproperties_delete_button:pressed {
+    background: rgba(0, 0, 0, 0.15);
+}
