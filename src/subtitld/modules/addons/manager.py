@@ -60,6 +60,23 @@ def _current_platform_key() -> str:
     return _PLATFORM_KEYS.get(sys.platform, sys.platform)
 
 
+def _resolve_executable(entry, exe_rel: str):
+    """The add-on's executable, or None if it is not there.
+
+    Manifests name it once for every platform, without an extension, and a
+    Windows build is `<name>.exe`: look for that too, or every add-on would be
+    skipped on Windows as missing.
+    """
+    exe_path = entry / exe_rel
+    if exe_path.is_file():
+        return exe_path
+    if _current_platform_key() == 'windows' and not exe_path.suffix.lower() == '.exe':
+        with_exe = exe_path.with_name(exe_path.name + '.exe')
+        if with_exe.is_file():
+            return with_exe
+    return None
+
+
 class AddonManager(QObject):
     """Single source of truth for registered providers.
 
@@ -187,10 +204,10 @@ class AddonManager(QObject):
             if not exe_rel:
                 log.warning('AddonManager: %s has no `executable` field — skipping', addon_id)
                 continue
-            exe_path = entry / exe_rel
-            if not exe_path.exists():
+            exe_path = _resolve_executable(entry, exe_rel)
+            if exe_path is None:
                 log.warning('AddonManager: %s executable %s missing — skipping',
-                            addon_id, exe_path)
+                            addon_id, entry / exe_rel)
                 continue
 
             tasks = manifest.get('tasks') or []
