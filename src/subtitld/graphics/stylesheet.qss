@@ -1734,6 +1734,19 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background: rgba(255, 255, 255, 0.24);
 }
 
+/* No transcription engine installed: the transcript switch is disabled, with a
+   tooltip pointing at Add-ons. The disabled cue has to live in the ICON, not
+   the background — "checked" here is a background tint only, so a background
+   treatment would read as "unchecked" instead of "unavailable". `background:
+   transparent` defeats the global QPushButton::disabled slate gradient, which
+   would otherwise paint an opaque block inside the record button. */
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:disabled,
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:checked:disabled,
+#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:hover:disabled {
+    icon: url(graphics:record_transcript_icon_disabled.svg);
+    background: transparent;
+}
+
 #playercontrols_widget_left_top_line #change_playback_speed {
     icon: url(graphics:playback_speed.svg);
     background: transparent;

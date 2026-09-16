@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from bisect import bisect
@@ -34,6 +35,8 @@ from subtitld.modules import session
 from subtitld.modules import utils
 from subtitld.modules import history
 from subtitld.modules.shortcuts import shortcut
+
+log = logging.getLogger(__name__)
 
 STEPS_LIST = ['Frames', 'Seconds']
 
@@ -702,6 +705,10 @@ def load(self):
     self.playercontrols_record_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
     self.playercontrols_record_button.clicked.connect(lambda: playercontrols_record_button_clicked(self))
+    # Keep clicks on a disabled mode switch from falling through and arming
+    # the recorder — see _DisabledChildClickGuard.
+    self._record_child_click_guard = _DisabledChildClickGuard(self.playercontrols_record_button)
+    self.playercontrols_record_button.installEventFilter(self._record_child_click_guard)
     self.playercontrols_record_button.setLayout(QHBoxLayout())
     self.playercontrols_record_button.layout().setContentsMargins(40, 0, 0, 5)
     self.playercontrols_record_button.layout().setSpacing(0)
@@ -751,6 +758,17 @@ def load(self):
     self._record_pulse_running = False
 
     _update_record_mode_buttons(self)
+
+    # Re-evaluate when the installed add-on set changes, so installing a
+    # transcription engine lights the transcript switch up immediately instead
+    # of on the next launch.
+    try:
+        from subtitld.modules import addons
+        from subtitld.interface.record_controls import invalidate_asr_cache
+        addons.get_manager().providers_changed.connect(
+            lambda: (invalidate_asr_cache(), _update_record_mode_buttons(self)))
+    except Exception:
+        log.exception('could not watch add-on changes for the record button')
     
     self.playercontrols_widget_top_line.layout().addSpacing(-30)
 
@@ -2005,6 +2023,15 @@ def playercontrols_record_button_clicked(self):
 
 
 def playercontrols_record_transcript_button_clicked(self):
+    # Guard regardless of how the click arrived. Qt does not deliver clicks
+    # to a disabled widget, but the record button is a checkable PARENT with
+    # these two as laid-out children, so a click landing on a disabled child
+    # can still be routed somewhere useful. Refusing here means the mode can
+    # never be set to something that produces nothing.
+    from subtitld.interface.record_controls import any_asr_provider
+    if not any_asr_provider():
+        _update_record_mode_buttons(self)
+        return
     from subtitld.interface.record_controls import MODE_TRANSCRIPT
     if getattr(self, 'record_controller', None) is not None:
         self.record_controller.mode = MODE_TRANSCRIPT
@@ -2018,14 +2045,61 @@ def playercontrols_record_audio_button_clicked(self):
     _update_record_mode_buttons(self)
 
 
+class _DisabledChildClickGuard(QObject):
+    """Swallow mouse clicks that land on a DISABLED child of the record button.
+
+    The record button is itself a checkable QPushButton with the two mode
+    switches as laid-out children. Disabling a child does not stop a click in
+    its rect from reaching the parent — verified: with the transcript switch
+    disabled, a click over it toggles the parent and ARMS recording. So the
+    disabled option would become an arm/disarm button, which is worse than
+    leaving it enabled.
+
+    Filtering on the parent is the narrow fix: only presses whose position
+    lands on a disabled child are consumed, so clicking the parent's own body
+    still arms as usual.
+    """
+
+    _MOUSE = (QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
+              QEvent.MouseButtonDblClick)
+
+    def eventFilter(self, obj, event):
+        if event.type() in self._MOUSE:
+            try:
+                pos = event.position().toPoint()
+            except AttributeError:      # Qt5-style events
+                pos = event.pos()
+            child = obj.childAt(pos)
+            if child is not None and not child.isEnabled():
+                return True
+        return False
+
+
 def _update_record_mode_buttons(self):
-    """Show which mode switch is active (exactly one checked)."""
+    """Show which mode switch is active, and gate transcript on having an engine.
+
+    Transcription is served entirely by add-ons, so a fresh install may have
+    none. Leaving the switch enabled there means arming, pressing play, and
+    getting nothing at all — no recorder, no error, while the button keeps
+    pulsing. Disabling it with an explanatory tooltip says what to do instead.
+    """
     controller = getattr(self, 'record_controller', None)
     if controller is None:
         return
-    from subtitld.interface.record_controls import MODE_TRANSCRIPT, MODE_WAVE
+    from subtitld.interface.record_controls import (
+        MODE_TRANSCRIPT, MODE_WAVE, any_asr_provider)
+
+    has_engine = any_asr_provider()
+    transcript = self.playercontrols_record_transcript_button
+    transcript.setEnabled(has_engine)
+    transcript.setToolTip(
+        _('record_button.transcript_tooltip') if has_engine
+        else _('record_button.transcript_unavailable_tooltip'))
+
+    # `controller.mode` already reports audio when no engine is installed, so
+    # the two checks stay mutually exclusive without special-casing here.
     mode = controller.mode
-    self.playercontrols_record_transcript_button.setChecked(mode == MODE_TRANSCRIPT)
+    transcript.setChecked(has_engine and mode == MODE_TRANSCRIPT)
     self.playercontrols_record_audio_button.setChecked(mode == MODE_WAVE)
     _update_record_pulse(self)
 

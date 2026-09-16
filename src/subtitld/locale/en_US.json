@@ -382,7 +382,7 @@
     "audio_panel.no_input": "No input device",
     "audio_panel.recording": "Recording…",
     "audio_panel.transcribing": "Recording & transcribing…",
-    "audio_panel.no_engine": "No transcription engine available. Configure one in the Import panel (e.g. Whisper).",
+    "audio_panel.no_engine": "No transcription engine. Install a speech-to-text add-on from Settings ▸ Add-ons.",
     "audio_panel.no_input_device": "No microphone available to record.",
     "audio_panel.error": "Recording error — see log.",
     "audio_panel.idle": "Idle",
@@ -534,5 +534,6 @@
     "addons_dialog.empty.loading": "Loading…",
     "addons_dialog.empty.unreachable": "Could not reach the add-ons catalog.\n{error}",
     "addons_dialog.empty.no_match": "No add-ons match the current filter.",
-    "addons_dialog.empty.catalog_empty": "No add-ons available."
+    "addons_dialog.empty.catalog_empty": "No add-ons available.",
+    "record_button.transcript_unavailable_tooltip": "Transcription needs a speech-to-text add-on. Install one from Settings ▸ Add-ons."
 }

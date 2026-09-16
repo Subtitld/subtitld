@@ -41,6 +41,56 @@ def _config():
     return session.CONFIG.setdefault('record', {})
 
 
+def asr_providers():
+    """ASR engines that are registered *and* usable right now.
+
+    A provider that still needs configuration — a cloud key, say — reports
+    `is_available()` False and is hidden until it is set up. The `import`
+    pseudo-engine is excluded: its `transcribe()` is a no-op, so counting it
+    would make "an engine is installed" true when nothing can actually
+    transcribe.
+
+    Lives here rather than in the Audio panel because the record button needs
+    the same answer, and two copies of this filter would drift.
+    """
+    try:
+        from subtitld.modules import addons
+        from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
+        out = []
+        for p in addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE):
+            if getattr(p, 'id', '') == 'import':
+                continue
+            try:
+                if not p.is_available():
+                    continue
+            except Exception:
+                pass
+            out.append(p)
+        return out
+    except Exception:
+        return []
+
+
+# Cached because `mode` is read on paint-adjacent paths; walking the provider
+# registry there would cost a manager lock per frame. Invalidated whenever the
+# registered set changes (AddonManager.providers_changed).
+_ASR_ANY = None
+
+
+def any_asr_provider():
+    """True when at least one engine could actually transcribe."""
+    global _ASR_ANY
+    if _ASR_ANY is None:
+        _ASR_ANY = bool(asr_providers())
+    return _ASR_ANY
+
+
+def invalidate_asr_cache():
+    """Forget the cached answer — call when add-ons are installed/removed."""
+    global _ASR_ANY
+    _ASR_ANY = None
+
+
 class RecordController(QObject):
     def __init__(self, host_window):
         super().__init__()
@@ -74,8 +124,20 @@ class RecordController(QObject):
 
     @property
     def mode(self):
+        """The EFFECTIVE record mode.
+
+        Falls back to audio when no transcription engine is installed, because
+        transcript mode would otherwise arm, play, and produce nothing at all.
+        Deliberately computed rather than written back: the stored preference
+        stays 'transcript', so installing an engine restores the user's choice
+        without them having to set it again.
+        """
         m = _config().get('mode', MODE_TRANSCRIPT)
-        return m if m in (MODE_TRANSCRIPT, MODE_WAVE) else MODE_TRANSCRIPT
+        if m not in (MODE_TRANSCRIPT, MODE_WAVE):
+            m = MODE_TRANSCRIPT
+        if m == MODE_TRANSCRIPT and not any_asr_provider():
+            return MODE_WAVE
+        return m
 
     @mode.setter
     def mode(self, value):

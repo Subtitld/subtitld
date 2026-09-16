@@ -127,26 +127,9 @@ def _populate_devices(self):
     session.CONFIG.setdefault('record', {})['device'] = combo.currentData()
 
 
-def _asr_providers():
-    """ASR engines that are registered *and* usable right now (a provider that
-    still needs configuration — e.g. a cloud key — reports is_available False
-    and is hidden until it's set up)."""
-    try:
-        from subtitld.modules import addons
-        from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
-        out = []
-        for p in addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE):
-            if getattr(p, 'id', '') == 'import':
-                continue
-            try:
-                if not p.is_available():
-                    continue
-            except Exception:
-                pass
-            out.append(p)
-        return out
-    except Exception:
-        return []
+# The one implementation lives in record_controls: the record button needs
+# the same answer, and two copies of this filter would drift.
+from subtitld.interface.record_controls import asr_providers as _asr_providers
 
 
 def _populate_engines(self):

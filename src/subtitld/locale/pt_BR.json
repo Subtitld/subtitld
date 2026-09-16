@@ -316,7 +316,7 @@
     "audio_panel.no_input": "Nenhum dispositivo de entrada",
     "audio_panel.recording": "Gravando…",
     "audio_panel.transcribing": "Gravando e transcrevendo…",
-    "audio_panel.no_engine": "Nenhum mecanismo de transcrição disponível. Configure um no painel Importar (ex.: Whisper).",
+    "audio_panel.no_engine": "Nenhum mecanismo de transcrição. Instale um complemento de reconhecimento de fala em Configurações ▸ Complementos.",
     "audio_panel.no_input_device": "Nenhum microfone disponível para gravar.",
     "audio_panel.error": "Erro na gravação — veja o log.",
     "audio_panel.idle": "Ocioso",
@@ -421,5 +421,6 @@
     "addons_dialog.empty.loading": "Carregando…",
     "addons_dialog.empty.unreachable": "Não foi possível alcançar o catálogo de add-ons.\n{error}",
     "addons_dialog.empty.no_match": "Nenhum add-on corresponde ao filtro atual.",
-    "addons_dialog.empty.catalog_empty": "Nenhum add-on disponível."
+    "addons_dialog.empty.catalog_empty": "Nenhum add-on disponível.",
+    "record_button.transcript_unavailable_tooltip": "A transcrição precisa de um complemento de reconhecimento de fala. Instale um em Configurações ▸ Complementos."
 }
