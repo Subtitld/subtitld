@@ -106,6 +106,24 @@ class Provider(QObject):
         Default is `{'state': 'idle'}`."""
         return {'state': 'idle'}
 
+    def clone(self):
+        """Return a fresh, independent instance of this provider.
+
+        Registered providers are singletons shared across panels, and their
+        terminal signals are wired to handlers that rewrite the whole project.
+        Anything needing private signals (live recording, say) must drive its
+        own instance rather than the shared one.
+
+        The default assumes a no-argument constructor, which every built-in
+        has. **Subclasses whose constructor takes arguments MUST override
+        this** — see `AddonASRProvider.clone`. Calling `type(provider)()` at
+        the call site instead, as the recorder used to, silently raised
+        TypeError for those subclasses and swallowed it into a fallback that
+        returned the SHARED instance — precisely the object cloning exists to
+        avoid.
+        """
+        return type(self)()
+
 
 class TTSProvider(Provider):
     """Text-to-speech provider.

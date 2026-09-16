@@ -489,6 +489,16 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         self._stream_request = None
         self._stream_process = None
 
+    def clone(self):
+        """A second, independent add-on instance.
+
+        Rebuilds from the same manifest and executable. The subprocess is
+        spawned lazily by `_ensure_process`, so an unused clone costs nothing;
+        a used one is a genuinely separate add-on process, which is the point —
+        its result frames must not reach the panel that owns the shared one.
+        """
+        return type(self)(self._addon_id, self._manifest, self._exe_path)
+
     def transcribe(self, audio_path: str, language: str, options: dict | None = None) -> None:
         try:
             proc = self._ensure_process()

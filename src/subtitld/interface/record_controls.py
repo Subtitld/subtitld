@@ -728,10 +728,22 @@ class RecordController(QObject):
         if base is None:
             return None
         try:
-            return type(base)()
+            clone = base.clone()
         except Exception:
-            log.exception('Record: could not clone ASR provider; falling back to shared')
-            return base
+            clone = None
+            log.exception('Record: could not clone ASR provider %r',
+                          getattr(base, 'id', base))
+        if clone is None or clone is base:
+            # FAIL CLOSED. Falling back to the shared instance was worse than
+            # having no engine: the Import panel's transcript_finished handler
+            # replaces every subtitle in the project with the finished
+            # segments, so each recorded utterance would silently wipe the
+            # track down to one cue. Refusing to record is recoverable; that
+            # was not.
+            log.error('Record: no private ASR instance available; refusing to '
+                      'drive the shared provider (it would overwrite the project)')
+            return None
+        return clone
 
     def _resolve_shared_asr_provider(self):
         # 1. Explicit engine chosen in the Audio ▸ Recording tab (only if it's
