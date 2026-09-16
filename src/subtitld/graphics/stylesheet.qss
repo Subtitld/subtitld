@@ -2438,10 +2438,13 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 /* The content sits inside the row, inset from its left edge so the avatar can
    overhang. Bottom-left is rounded because that corner is where the option
-   rows (DUBBING) end. */
+   rows (DUBBING) end; top-left matches the timeline strip's rounded end, or the
+   body's square corner shows behind it. The option rows clip their own
+   backgrounds to this outline (see _BodyClippedPanel). */
 #left_panel_speakers_panel_content_item #speaker_card_body {
     background-color: #e53e5363;
     border-radius: 0;
+    border-top-left-radius: 4px;
     border-bottom-left-radius: 4px;
 }
 

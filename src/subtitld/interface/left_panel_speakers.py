@@ -6,9 +6,9 @@ except Exception:  # optional: unavailable on some platforms (e.g. Haiku)
 import numpy as np
 from autohex import AutoHex
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush
-from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QPoint
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QIcon
+from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QPoint, QEvent
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -335,6 +335,15 @@ _AVATAR_TOP_OFFSET = 3
 # Gap between the avatar and the text column.
 _INFO_GAP = 10
 _INFO_LEFT = _AVATAR_SIZE + _INFO_GAP
+# The header band is at least as tall as the avatar reaches, so the avatar ends
+# ON the band's bottom edge instead of hanging into the first option row.
+_HEADER_MIN_HEIGHT = _AVATAR_TOP_OFFSET + _AVATAR_SIZE
+# Placeholder chip for a speaker with no face yet. Neutral, never the speaker
+# colour (that belongs to the mini timeline). It is the timeline's own
+# unselected-subtitle fill, and the glyph keeps its #304251 ink — the same
+# light-block/dark-ink pairing as a subtitle on the timeline (7.3:1).
+_AVATAR_PLACEHOLDER_BG = '#c8dbe9'
+_AVATAR_GLYPH_SIZE = 24
 
 
 def _format_speaker_time(seconds):
@@ -379,6 +388,49 @@ def _rounded_path(rect, top_left=0, top_right=0, bottom_right=0, bottom_left=0):
         path.arcTo(QRectF(x, y, 2 * top_left, 2 * top_left), 180, -90)
     path.closeSubpath()
     return path
+
+
+def _card_body_outline(body):
+    """The card body's silhouette, in the body's own coordinates.
+
+    Matches the QSS radii on #speaker_card_body: rounded top-left (under the
+    timeline strip's own rounded end) and bottom-left (beside the last option
+    row); the right side runs to the list edge, square.
+    """
+    return _rounded_path(QRectF(body.rect()),
+                         top_left=_CORNER_RADIUS, bottom_left=_CORNER_RADIUS)
+
+
+class _BodyClippedPanel(QWidget):
+    """A styled row inside a speaker card, painted inside the body's outline.
+
+    QSS border-radius on the body does not clip its children, so a child with
+    its own square background re-squares the body's rounded corner wherever it
+    touches one. This paints the child's QSS background (hover included)
+    through an antialiased clip of the body's outline instead of relying on
+    WA_StyledBackground, which would paint it unclipped first.
+    """
+
+    def _card_body(self):
+        widget = self.parentWidget()
+        while widget is not None and widget.objectName() != 'speaker_card_body':
+            widget = widget.parentWidget()
+        return widget
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            body = self._card_body()
+            if body is not None:
+                offset = self.mapTo(body, QPoint(0, 0))
+                painter.setClipPath(
+                    _card_body_outline(body).translated(-offset.x(), -offset.y()))
+            option = QStyleOption()
+            option.initFrom(self)
+            self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+        finally:
+            painter.end()
 
 
 class ShareBar(QWidget):
@@ -469,12 +521,13 @@ class SpeakerHeader(QWidget):
         self._duration = 60.0
         self._avatar = None          # cached, already rounded
         self._avatar_key = None      # cache key: what the pixmap was built from
+        self._avatar_image = None    # last image handed in, for DPR rebuilds
         # Set by the card: a free-standing QLabel that lives OUTSIDE this
         # header's layout so it can sit flush at the list edge while the
         # body is inset.
         self.avatar_label = None
 
-        self.setMinimumHeight(_AVATAR_SIZE)
+        self.setMinimumHeight(_HEADER_MIN_HEIGHT)
         # Hug the content: the card should be no taller than it needs to be
         # when every option section is collapsed.
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -503,54 +556,72 @@ class SpeakerHeader(QWidget):
         re-masking a pixmap on each of those was measurable with many
         speakers, so the result is cached against its inputs.
         """
-        key = (id(image) if image is not None else None,)   # colour no longer affects it
+        if image is not None and image.isNull():
+            image = None
+        self._avatar_image = image
+        # Built at the screen's device pixel ratio: a 1x pixmap on a 2x screen
+        # is upscaled by the label, which blurs the rounded corners.
+        dpr = max(1.0, float(self.devicePixelRatioF()))
+        key = (id(image) if image is not None else None, dpr)   # colour no longer affects it
         if key == self._avatar_key:
             return
         self._avatar_key = key
 
         size = _AVATAR_SIZE
-        canvas = QPixmap(size, size)
+        canvas = QPixmap(int(round(size * dpr)), int(round(size * dpr)))
+        canvas.setDevicePixelRatio(dpr)
         canvas.fill(Qt.transparent)
         painter = QPainter(canvas)
         try:
             painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
             path = _rounded_path(QRectF(0, 0, size, size),
                                  top_right=_CORNER_RADIUS, bottom_right=_CORNER_RADIUS)
             if image is not None:
                 source = QPixmap.fromImage(image).scaled(
-                    size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    int(round(size * dpr)), int(round(size * dpr)),
+                    Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                source.setDevicePixelRatio(dpr)
                 # Fill the path with the photo as a texture brush rather than
-                # clipping to it: a clip region is not antialiased in Qt's
-                # raster engine, which would stair-step the rounded corners.
+                # clipping to it, so the rounded corners are antialiased.
                 brush = QBrush(source)
-                offset_x = (size - source.width()) / 2.0
-                offset_y = (size - source.height()) / 2.0
+                offset_x = (size - source.width() / dpr) / 2.0
+                offset_y = (size - source.height() / dpr) / 2.0
                 transform = brush.transform()
                 transform.translate(offset_x, offset_y)
                 brush.setTransform(transform)
                 painter.setBrush(brush)
             else:
-                # Neutral chip, NOT the speaker colour — that colour identifies
-                # the mini timeline and nothing else.
-                painter.setBrush(QColor('#3e5363'))
+                # Neutral light chip, NOT the speaker colour — that colour
+                # identifies the mini timeline and nothing else. Light so the
+                # dark glyph reads, and so the chip separates from the card.
+                painter.setBrush(QColor(_AVATAR_PLACEHOLDER_BG))
             painter.setPen(Qt.NoPen)
             painter.drawPath(path)
 
             if image is None:
-                # No face yet: keep the speaker glyph over the colour chip so
-                # the slot still reads as a person, as it did before.
-                glyph = QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg'))
+                # No face yet: the speaker glyph, rendered from the SVG at the
+                # target size and DPR (not a 16px raster scaled up), at full
+                # ink so it reads against the light chip.
+                glyph = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg')).pixmap(
+                    QSize(_AVATAR_GLYPH_SIZE, _AVATAR_GLYPH_SIZE), dpr)
                 if not glyph.isNull():
-                    glyph = glyph.scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    painter.setOpacity(0.55)
-                    painter.drawPixmap(int((size - glyph.width()) / 2),
-                                       int((size - glyph.height()) / 2), glyph)
+                    pos = (size - _AVATAR_GLYPH_SIZE) / 2.0
+                    painter.drawPixmap(QRectF(pos, pos, _AVATAR_GLYPH_SIZE, _AVATAR_GLYPH_SIZE),
+                                       glyph, QRectF(glyph.rect()))
         finally:
             painter.end()
         self._avatar = canvas
         if self.avatar_label is not None:
             self.avatar_label.setPixmap(canvas)
         self.update()
+
+    def event(self, event):
+        # Moving to a screen with another scale factor: rebuild the avatar at
+        # the new ratio (the cache key includes it, so this is a no-op otherwise).
+        if event.type() == QEvent.DevicePixelRatioChange:
+            self.set_avatar(self._avatar_image, None)
+        return super().event(event)
 
     # -- painting -----------------------------------------------------------
     def paintEvent(self, event):
@@ -603,7 +674,7 @@ class SpeakerHeader(QWidget):
             painter.restore()
 
 
-class _SectionHeader(QWidget):
+class _SectionHeader(_BodyClippedPanel):
     """Clickable header row of a CollapsibleSection."""
     clicked = Signal()
 
@@ -629,7 +700,8 @@ class CollapsibleSection(QWidget):
 
         self.header = _SectionHeader()
         self.header.setObjectName('speaker_option_section_header')
-        self.header.setAttribute(Qt.WA_StyledBackground, True)
+        # No WA_StyledBackground: _BodyClippedPanel paints the QSS background
+        # itself, clipped to the card body's rounded outline.
         self.header.setFixedHeight(22)
         self.header.setCursor(Qt.PointingHandCursor)
         self.header.setLayout(QHBoxLayout())
@@ -650,7 +722,9 @@ class CollapsibleSection(QWidget):
 
         self.layout().addWidget(self.header)
 
-        self.body = QWidget()
+        # Clipped for the same reason as the header: when expanded, this is
+        # the row that sits in the card body's rounded bottom-left corner.
+        self.body = _BodyClippedPanel()
         self.body.setObjectName('speaker_option_section_body')
         self.body.setLayout(QVBoxLayout())
         self.body.layout().setContentsMargins(10, 6, 10, 10)
