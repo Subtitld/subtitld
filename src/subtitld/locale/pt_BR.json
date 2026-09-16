@@ -422,5 +422,9 @@
     "addons_dialog.empty.unreachable": "Não foi possível alcançar o catálogo de add-ons.\n{error}",
     "addons_dialog.empty.no_match": "Nenhum add-on corresponde ao filtro atual.",
     "addons_dialog.empty.catalog_empty": "Nenhum add-on disponível.",
-    "record_button.transcript_unavailable_tooltip": "A transcrição precisa de um complemento de reconhecimento de fala. Instale um em Configurações ▸ Complementos."
+    "record_button.transcript_unavailable_tooltip": "A transcrição precisa de um complemento de reconhecimento de fala. Instale um em Configurações ▸ Complementos.",
+    "find_replace_dialog.find": "Localizar",
+    "find_replace_dialog.find_next_tooltip": "Próxima ocorrência após o cursor (Enter)",
+    "find_replace_dialog.find_previous_tooltip": "Ocorrência anterior ao cursor (Shift+Enter)",
+    "find_replace_dialog.replace_all_short": "Tudo"
 }

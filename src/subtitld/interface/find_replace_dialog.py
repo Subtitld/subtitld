@@ -13,8 +13,9 @@ Layout (top → bottom):
     - "FIND" label + Find input with three inline 22×22 toggles
       (``Aa`` match-case / ``ab`` whole-word / ``.*`` regex).
     - "REPLACE WITH" label + Replace input (no toggles).
-* Footer — match count on the left, three buttons on the right
-  (Find next · Replace · Replace all).
+* Footer — match count on the left, then two segmented pairs on the right:
+  ``[ ‹ | FIND › ]`` to step backward/forward through matches, and
+  ``[ REPLACE | ALL ]``.
 
 The default SimpleDialog footer ships an OK/Cancel pair, which doesn't
 fit a 3-button right cluster with a status counter on the left. Rather
@@ -28,9 +29,13 @@ State lives on the dialog instance:
 
 * ``_match_case`` (default True), ``_whole_word`` (default False),
   ``_regex`` (default False).
-* ``_matches`` — list of ``(segment_dict, char_start, char_end)``,
-  recomputed lazily on any Find-text edit or toggle flip.
-* ``_active_index`` — which match Find-next will jump to.
+* ``_matches`` — list of ``(segment_dict, char_start, char_end)`` in
+  timeline order, recomputed on any Find-text edit or toggle flip.
+* ``_current`` / ``_landed_at`` — the match the last find landed on, and the
+  cursor position that landing produced. Navigation is relative to the
+  timeline cursor, EXCEPT while the cursor still sits where the last find put
+  it: then it steps from that match, so several matches in one cue (or cues
+  sharing a start time) are all reachable and ``FIND ›`` never sticks.
 
 Mutation is direct-on-dict assignment of ``segment['text']`` (the
 established codebase convention — see
@@ -46,7 +51,7 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QObject, QEvent
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -64,6 +69,57 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.shortcuts import shortcut
+
+
+# How far the cursor may drift from where a find left it and still count as
+# "not moved". The player reports its position back ms-quantised (and may snap
+# to a frame), so exact equality would break continuation on its own echo.
+# The same tolerance decides whether a cue starts "at" the cursor.
+_CURSOR_TOLERANCE = 0.05
+
+
+class _ShiftReturn(QObject):
+    """Shift+Enter in the Find field steps backward.
+
+    QLineEdit emits ``returnPressed`` for Return whatever the modifiers, so the
+    shifted press has to be consumed here or it would also step forward.
+    """
+
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._callback = callback
+
+    def eventFilter(self, obj, event):
+        if (event.type() == QEvent.KeyPress
+                and event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                and event.modifiers() & Qt.ShiftModifier):
+            self._callback()
+            return True
+        return False
+
+
+def _segmented(*buttons) -> QWidget:
+    """Lay buttons out as one joined control.
+
+    Each gets a ``segment`` property (first / middle / last) so the stylesheet
+    can square off the inner corners and draw the divider between them.
+    """
+    group = QWidget()
+    group.setLayout(QHBoxLayout())
+    group.layout().setContentsMargins(0, 0, 0, 0)
+    group.layout().setSpacing(0)
+    last = len(buttons) - 1
+    for i, button in enumerate(buttons):
+        button.setProperty('segment', 'first' if i == 0 else ('last' if i == last else 'middle'))
+        group.layout().addWidget(button)
+    return group
+
+
+def _cue_start(segment: dict) -> float:
+    try:
+        return float(segment.get('start', 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -115,13 +171,17 @@ class _ToggleButton(QPushButton):
         self.setCheckable(True)
         self.setFixedSize(22, 22)
         self.setProperty('class', 'find_toggle')
+        self.setText(label)
         if underline:
             # The "whole word" toggle's `ab` glyph is conventionally
-            # underlined to distinguish it from the case toggle. Plain
-            # rich text — the QSS sets weight/size at the button level.
-            self.setText(f'<u>{label}</u>')
-        else:
-            self.setText(label)
+            # underlined to distinguish it from the case toggle. Done on the
+            # font: QPushButton does not render rich text, so the previous
+            # `<u>ab</u>` showed its own markup, clipped to "ab<". The
+            # stylesheet's size/weight rules resolve on top of this font and
+            # leave the underline intact.
+            font = self.font()
+            font.setUnderline(True)
+            self.setFont(font)
         if tooltip:
             self.setToolTip(tooltip)
         self.setFocusPolicy(Qt.NoFocus)
@@ -216,7 +276,11 @@ class FindReplaceDialog(utils.SimpleDialog):
 
         # Toggle state — defaults match the handoff (case ON, others OFF).
         self._matches: list[tuple[dict, int, int]] = []
-        self._active_index: int = 0
+        # Parallel to _matches: (cue start, cue position in the list, char
+        # offset) — the timeline order navigation walks in.
+        self._keys: list[tuple[float, int, int]] = []
+        self._current: tuple[dict, int] | None = None
+        self._landed_at: float | None = None
 
         # ------------------------------------------------------------------
         # Body
@@ -278,35 +342,47 @@ class FindReplaceDialog(utils.SimpleDialog):
         self._status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         bottom_layout.addWidget(self._status_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
 
-        self._find_next_button = QPushButton(_('find_replace_dialog.find_next'))
+        self._find_previous_button = QPushButton('‹')
+        self._find_previous_button.setObjectName('find_replace_previous_button')
+        self._find_previous_button.setProperty('class', 'find_replace_button')
+        self._find_previous_button.setToolTip(_('find_replace_dialog.find_previous_tooltip'))
+        self._find_next_button = QPushButton(_('find_replace_dialog.find') + '  ›')
         self._find_next_button.setProperty('class', 'find_replace_button')
-        bottom_layout.addWidget(self._find_next_button, 0, Qt.AlignRight | Qt.AlignVCenter)
+        self._find_next_button.setToolTip(_('find_replace_dialog.find_next_tooltip'))
+        bottom_layout.addWidget(
+            _segmented(self._find_previous_button, self._find_next_button),
+            0, Qt.AlignRight | Qt.AlignVCenter)
 
         self._replace_button = QPushButton(_('subtitles_panel.replace'))
         self._replace_button.setProperty('class', 'find_replace_button')
-        bottom_layout.addWidget(self._replace_button, 0, Qt.AlignRight | Qt.AlignVCenter)
-
-        self._replace_all_button = QPushButton(_('subtitles_panel.replace_all'))
+        self._replace_all_button = QPushButton(_('find_replace_dialog.replace_all_short'))
         self._replace_all_button.setProperty('class', 'find_replace_button_primary')
-        bottom_layout.addWidget(self._replace_all_button, 0, Qt.AlignRight | Qt.AlignVCenter)
+        # "All" alone is terse; the tooltip says what it does.
+        self._replace_all_button.setToolTip(_('subtitles_panel.replace_all'))
+        bottom_layout.addWidget(
+            _segmented(self._replace_button, self._replace_all_button),
+            0, Qt.AlignRight | Qt.AlignVCenter)
 
         # ------------------------------------------------------------------
         # Wiring
         # ------------------------------------------------------------------
-        self._find_field.lineedit.textChanged.connect(self._recompute_matches)
+        self._find_field.lineedit.textChanged.connect(self._on_search_changed)
         self._replace_field.lineedit.textChanged.connect(self._update_buttons_state)
 
-        self._find_field.match_case_toggle.toggled.connect(self._on_toggle_changed)
-        self._find_field.whole_word_toggle.toggled.connect(self._on_toggle_changed)
-        self._find_field.regex_toggle.toggled.connect(self._on_toggle_changed)
+        self._find_field.match_case_toggle.toggled.connect(self._on_search_changed)
+        self._find_field.whole_word_toggle.toggled.connect(self._on_search_changed)
+        self._find_field.regex_toggle.toggled.connect(self._on_search_changed)
 
-        # Enter inside the Find field steps through matches without the
-        # user having to reach for the footer button.
+        # Enter inside the Find field steps forward through matches without
+        # the user having to reach for the footer; Shift+Enter steps back.
         self._find_field.lineedit.returnPressed.connect(self._on_find_next)
+        self._shift_return = _ShiftReturn(self._on_find_previous, self)
+        self._find_field.lineedit.installEventFilter(self._shift_return)
         # Enter inside the Replace field replaces-and-advances — the
         # standard convention for replace dialogs (Sublime, VS Code, …).
         self._replace_field.lineedit.returnPressed.connect(self._on_replace)
 
+        self._find_previous_button.clicked.connect(self._on_find_previous)
         self._find_next_button.clicked.connect(self._on_find_next)
         self._replace_button.clicked.connect(self._on_replace)
         self._replace_all_button.clicked.connect(self._on_replace_all)
@@ -320,7 +396,11 @@ class FindReplaceDialog(utils.SimpleDialog):
     # ----------------------------------------------------------------------
     # Search state
     # ----------------------------------------------------------------------
-    def _on_toggle_changed(self, _checked: bool) -> None:
+    def _on_search_changed(self, *_args) -> None:
+        # A different search is a fresh start: navigate from the cursor again
+        # rather than continuing from a match of the previous query.
+        self._current = None
+        self._landed_at = None
         self._recompute_matches()
 
     def _recompute_matches(self, *_args) -> None:
@@ -331,23 +411,24 @@ class FindReplaceDialog(utils.SimpleDialog):
             whole_word=self._find_field.whole_word_toggle.isChecked(),
             regex=self._find_field.regex_toggle.isChecked(),
         )
-        matches: list[tuple[dict, int, int]] = []
+        found: list[tuple[tuple[float, int, int], tuple[dict, int, int]]] = []
         if pattern is not None:
-            for segment in session.SUBTITLE.get('segments', []) or []:
+            for index, segment in enumerate(session.SUBTITLE.get('segments', []) or []):
                 text = segment.get('text') or ''
+                start_time = _cue_start(segment)
                 for m in pattern.finditer(text):
                     # ``re`` can yield zero-width matches (e.g. user-typed
                     # ``\b``); skip them — they'd cause an infinite Find-
                     # next loop and aren't meaningful for Replace.
                     if m.end() == m.start():
                         continue
-                    matches.append((segment, m.start(), m.end()))
-        self._matches = matches
-        # Clamp active index — count may have shrunk since last edit.
-        if self._matches:
-            self._active_index %= len(self._matches)
-        else:
-            self._active_index = 0
+                    found.append(((start_time, index, m.start()),
+                                  (segment, m.start(), m.end())))
+        # Timeline order, not list order: navigation is relative to the
+        # cursor, so it has to walk cues by time even if the list isn't sorted.
+        found.sort(key=lambda item: item[0])
+        self._keys = [key for key, _match in found]
+        self._matches = [match for _key, match in found]
         self._update_status()
         self._update_buttons_state()
 
@@ -365,6 +446,7 @@ class FindReplaceDialog(utils.SimpleDialog):
     def _update_buttons_state(self, *_args) -> None:
         has_find_text = bool(self._find_field.lineedit.text())
         has_matches = bool(self._matches)
+        self._find_previous_button.setEnabled(has_matches)
         self._find_next_button.setEnabled(has_matches)
         # Replace / Replace-all are valid even if the replacement string
         # is empty (the user might intentionally want to *delete* every
@@ -377,31 +459,117 @@ class FindReplaceDialog(utils.SimpleDialog):
     # ----------------------------------------------------------------------
     # Actions
     # ----------------------------------------------------------------------
-    def _on_find_next(self) -> None:
-        """Advance selection to the next match (wrap at end)."""
+    @staticmethod
+    def _cursor() -> float:
+        """The timeline cursor. ``set_position`` writes it immediately and the
+        player echoes its real position back into the same field."""
+        try:
+            return float(session.SUBTITLE.get('position', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _continuing(self) -> int | None:
+        """Index of the match the last find landed on — but only while the
+        cursor is still where that find put it. Moving the cursor (a click,
+        playback, a seek) makes the next find start from the cursor again."""
+        if self._current is None or self._landed_at is None:
+            return None
+        if abs(self._cursor() - self._landed_at) > _CURSOR_TOLERANCE:
+            return None
+        segment, char_start = self._current
+        for i, (seg, start, _end) in enumerate(self._matches):
+            if seg is segment and start == char_start:
+                return i
+        return None
+
+    def _next_from_cursor(self) -> int:
+        """First match whose cue starts at or after the cursor, wrapping.
+
+        "At" is inclusive: a cue the user just selected (which seeks the
+        cursor to its start) is searched, not skipped."""
+        cursor = self._cursor() - _CURSOR_TOLERANCE
+        for i, key in enumerate(self._keys):
+            if key[0] >= cursor:
+                return i
+        return 0
+
+    def _previous_from_cursor(self) -> int:
+        """Last match whose cue starts before the cursor, wrapping."""
+        cursor = self._cursor() - _CURSOR_TOLERANCE
+        for i in range(len(self._keys) - 1, -1, -1):
+            if self._keys[i][0] < cursor:
+                return i
+        return len(self._keys) - 1
+
+    def _land(self, index: int) -> None:
+        """Select match ``index`` and remember where that left the cursor."""
+        segment, char_start, _end = self._matches[index]
+        self._current = (segment, char_start)
+        self._select_segment(segment)
+        # Read back rather than assume: this is the value a later find will
+        # compare against to decide whether the user moved the cursor.
+        self._landed_at = self._cursor()
+
+    def _step(self, forward: bool) -> None:
         if not self._matches:
             return
-        segment, _start, _end = self._matches[self._active_index]
-        self._select_segment(segment)
-        self._active_index = (self._active_index + 1) % len(self._matches)
+        current = self._continuing()
+        if current is not None:
+            index = (current + (1 if forward else -1)) % len(self._matches)
+        elif forward:
+            index = self._next_from_cursor()
+        else:
+            index = self._previous_from_cursor()
+        self._land(index)
+
+    def _on_find_next(self) -> None:
+        """``FIND ›`` — the next match after the cursor, or after the last
+        match found if the cursor has not moved since."""
+        self._step(forward=True)
+
+    def _on_find_previous(self) -> None:
+        """``‹`` — the last match before the cursor, or before the last match
+        found if the cursor has not moved since."""
+        self._step(forward=False)
 
     def _on_replace(self) -> None:
-        """Replace the currently-active match, then advance."""
+        """Replace the current match, then move on to the next one.
+
+        The current match is the one the last find landed on. If there isn't
+        one (no find yet, or the cursor moved), it is the match ``FIND ›``
+        would land on — so one press still does something sensible.
+
+        This also fixes an older bug: Find-next advanced its index AFTER
+        selecting, so a following Replace changed the match after the one on
+        screen.
+        """
         if not self._matches:
             return
-        segment, start, end = self._matches[self._active_index]
+        index = self._continuing()
+        if index is None:
+            index = self._next_from_cursor()
+        segment, start, end = self._matches[index]
+        cue_time, cue_index, _offset = self._keys[index]
         replacement = self._replace_field.lineedit.text()
         old_text = segment.get('text') or ''
         segment['text'] = old_text[:start] + replacement + old_text[end:]
         session.set_unsaved(True)
-        # Re-derive matches: offsets shifted, count may have changed.
-        # Try to keep the user roughly where they were — same segment
-        # if it still has matches, otherwise the next-along match.
-        previous_index = self._active_index
+
+        # Offsets after the edit have shifted, so re-derive everything, then
+        # continue from just past the inserted text — never inside it, or a
+        # replacement containing the needle ("a" -> "aa") would be matched
+        # again forever.
         self._recompute_matches()
-        if self._matches:
-            self._active_index = previous_index % len(self._matches)
-        self._select_segment(segment)
+        resume = (cue_time, cue_index, start + len(replacement))
+        following = next((i for i, key in enumerate(self._keys) if key >= resume), None)
+        if following is None and self._matches:
+            following = 0
+        if following is not None:
+            self._land(following)
+        else:
+            self._current = None
+            self._landed_at = None
+            self._select_segment(segment)
         self._refresh_host()
 
     def _on_replace_all(self) -> None:
@@ -429,6 +597,8 @@ class FindReplaceDialog(utils.SimpleDialog):
                 affected_segments.add(id(segment))
         if affected_segments:
             session.set_unsaved(True)
+        self._current = None
+        self._landed_at = None
         self._recompute_matches()  # → "0 matches" (typically)
         self._refresh_host()
 

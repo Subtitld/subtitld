@@ -118,7 +118,6 @@
     "find_replace_dialog.find_placeholder": "Search text",
     "find_replace_dialog.replace_label": "Replace with",
     "find_replace_dialog.replace_placeholder": "Replacement text",
-    "find_replace_dialog.find_next": "Find next",
     "find_replace_dialog.match_case": "Match case",
     "find_replace_dialog.whole_word": "Whole word",
     "find_replace_dialog.regex": "Regular expression",
@@ -535,5 +534,9 @@
     "addons_dialog.empty.unreachable": "Could not reach the add-ons catalog.\n{error}",
     "addons_dialog.empty.no_match": "No add-ons match the current filter.",
     "addons_dialog.empty.catalog_empty": "No add-ons available.",
-    "record_button.transcript_unavailable_tooltip": "Transcription needs a speech-to-text add-on. Install one from Settings ▸ Add-ons."
+    "record_button.transcript_unavailable_tooltip": "Transcription needs a speech-to-text add-on. Install one from Settings ▸ Add-ons.",
+    "find_replace_dialog.find": "Find",
+    "find_replace_dialog.find_next_tooltip": "Next match after the cursor (Enter)",
+    "find_replace_dialog.find_previous_tooltip": "Previous match before the cursor (Shift+Enter)",
+    "find_replace_dialog.replace_all_short": "All"
 }

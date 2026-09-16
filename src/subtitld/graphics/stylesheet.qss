@@ -2874,6 +2874,31 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: rgba(74, 95, 112, 100);
 }
 
+/* Footer buttons come in joined pairs ([ ‹ | FIND › ] and [ REPLACE | ALL ]).
+   The inner corners are squared and a hairline divides the two halves; the
+   outer corners keep the 2px radius above. */
+#find_replace_dialog #dialog_bottom QPushButton[segment="first"] {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[segment="last"] {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid #2f3e4a;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[segment="middle"] {
+    border-radius: 0;
+    border-left: 1px solid #2f3e4a;
+}
+
+/* The ‹ half is a glyph, not a word: keep it narrow. */
+#find_replace_dialog #dialog_bottom #find_replace_previous_button {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
 #music_voice_separation_box #music_voice_separation_music_icon {
     icon: url(graphics:music_voice_separation_music_icon.svg);
     padding: 0 13px 0 8px;
