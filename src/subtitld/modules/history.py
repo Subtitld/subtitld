@@ -98,6 +98,35 @@ def history_append(_segments=None):
     REDO_HISTORY.clear()
 
 
+def top_snapshot():
+    """The most recent undo snapshot object, or None. Identity only — callers
+    use it to tell whether anything was pushed since they last looked."""
+    return ALL_HISTORY[-1] if ALL_HISTORY else None
+
+
+def amend_snapshots(update, stop_at=None):
+    """Apply `update(segments)` to stored snapshots, in place.
+
+    For changes that *complete* an earlier edit rather than being a new one —
+    e.g. transcription text arriving for a placeholder the recorder created —
+    so that undoing an unrelated later edit does not also roll the completion
+    back. `update` mutates the snapshot's segment list; snapshots that do not
+    hold its target are simply left alone.
+
+    Redo snapshots are always all visited (there are only as many as recent
+    undos). Undo snapshots are walked newest-first, down to `stop_at` (a
+    snapshot from `top_snapshot()`, not itself visited): older ones predate
+    the thing being completed. A missing gap does not end the walk, since
+    the target may have been deleted and later brought back by undo.
+    """
+    for snap in REDO_HISTORY:
+        update(snap['segments'])
+    for snap in reversed(ALL_HISTORY):
+        if stop_at is not None and snap is stop_at:
+            break
+        update(snap['segments'])
+
+
 def history_undo():
     """Pop the latest snapshot, push current state onto redo, restore it.
     Returns True if the undo happened, False if the stack was empty."""

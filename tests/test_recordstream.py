@@ -1,4 +1,8 @@
 import sys, types, os
+# Import THIS checkout's code. The venv holds a non-editable install, and
+# without this the suite silently tests that stale copy instead.
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'src'))
 sys.modules['mediapipe'] = types.ModuleType('mediapipe')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 import numpy as np
@@ -84,6 +88,43 @@ ctrl2.on_pause()
 print("stream_stop called on pause:", fake2.stopped)
 if not fake2.stopped: fails.append('no_stop')
 ctrl2.shutdown()
+
+# ===== AddonASRProvider: a finishing session never touches the newer one =====
+from subtitld.modules.addons.addon_provider import AddonASRProvider
+
+class FakeReq(QObject):
+    partial=Signal(dict); result=Signal(dict); error=Signal(str,str)
+    def __init__(s, rid): super().__init__(); s.id=rid
+
+class FakeProc:
+    def __init__(s): s.reqs=[]; s.sent=[]
+    def is_running(s): return True
+    def request(s, task, params, timeout=None):
+        s.reqs.append(FakeReq(f'q{len(s.reqs)+1}')); return s.reqs[-1]
+    def stream_send(s, rid, frame): s.sent.append(rid)
+
+prov=AddonASRProvider('realtimestt', {'id':'realtimestt','tasks':['asr.transcribe','asr.stream']}, '/nonexistent')
+proc=FakeProc(); prov._process=proc; prov._ensure_process=lambda: proc
+seen={'tagged':[], 'plain':[], 'done_tagged':[], 'done_plain':[]}
+prov.stream_segment_tagged.connect(lambda sid,seg,final: seen['tagged'].append((sid,seg['text'])))
+prov.stream_segment.connect(lambda seg,final: seen['plain'].append(seg['text']))
+prov.stream_finished_tagged.connect(lambda sid,segs: seen['done_tagged'].append(sid))
+prov.stream_finished.connect(lambda segs: seen['done_plain'].append(len(segs)))
+sid1=prov.stream_start('en'); prov.stream_stop()
+sid2=prov.stream_start('en')
+r1,r2=proc.reqs
+r1.partial.emit({'text':'late one','final':True}); r1.result.emit({'segments':[{'text':'late one'}]}); app.processEvents()
+print("provider:", sid1, sid2, seen)
+if (sid1, sid2) != ('q1','q2'): fails.append('provider_no_ids')
+if seen['tagged']!=[('q1','late one')] or seen['plain']: fails.append('provider_late_leaked_untagged')
+if seen['done_tagged']!=['q1'] or seen['done_plain']: fails.append('provider_late_finish_leaked')
+if prov._stream_request is not r2: fails.append('provider_late_result_cleared_newer_request')
+prov.stream_feed(b'\x00\x00')
+if proc.sent[-1]!='q2': fails.append('provider_feeds_wrong_session')
+r2.partial.emit({'text':'current','final':False}); app.processEvents()
+if seen['plain']!=['current'] or seen['tagged'][-1]!=('q2','current'): fails.append('provider_current_not_both')
+r2.result.emit({'segments':[]}); app.processEvents()
+if prov._stream_request is not None or seen['done_plain']!=[0]: fails.append('provider_current_finish')
 
 print("\n"+("FAIL: "+",".join(fails) if fails else "RECORD STREAMING TESTS PASS"))
 sys.exit(1 if fails else 0)

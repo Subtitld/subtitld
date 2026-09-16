@@ -629,6 +629,9 @@ class Timeline(QWidget):
         # In-progress record take, owned by RecordController and painted as an
         # overlay. None whenever no take is running. See modules/live_peaks.
         widget.live_take = None
+        # Keys (subtitle['_rec']) of recorder placeholders still waiting for
+        # their transcript. Shared set, owned by RecordController.
+        widget.record_pending = set()
         widget.dub_workers = {}   # path -> DubPeaksWorker
 
         # Onset markers (visual aid for dub sync — see
@@ -1041,6 +1044,10 @@ class Timeline(QWidget):
             smart_splice_line_color = QColor(timeline_cfg.get('subtitle_fill_color', '#ccb8cee0'))
             smart_splice_divider_color = QColor("#1a000000")
             subtitle_font = QFont('Montserrat', 10)
+            _rec_pending = getattr(widget, 'record_pending', None) or ()
+            if _rec_pending:
+                _, _, _rec_pen, _rec_body = _live_colors()
+                _rec_pen = QPen(_rec_pen, 1.0, Qt.DashLine)
 
             # Rects of the "≡" alternate-takes badges, rebuilt each paint and
             # hit-tested in mousePressEvent.
@@ -1086,7 +1093,19 @@ class Timeline(QWidget):
                     painter.save()
                     painter.setOpacity(0.18)
 
-                painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
+                # A recorder placeholder still waiting for its transcript is a
+                # real subtitle (selectable, editable) drawn in the faded
+                # "not committed yet" palette the live cue uses.
+                rec_pending = bool(_rec_pending) and subtitle.get('_rec') in _rec_pending
+                if rec_pending:
+                    painter.save()
+                    painter.setPen(_rec_pen)
+                    if current_selected != subtitle:
+                        painter.setBrush(_rec_body)
+                    painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
+                    painter.restore()
+                else:
+                    painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
 
                 # Playlist takes: when the global toggle is on and this subtitle
                 # has more than one dub take, queue its takes to be drawn as
@@ -1769,7 +1788,8 @@ class Timeline(QWidget):
                             painter.setPen(smart_splice_line_color)
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
-                        painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
+                        painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap,
+                                         subtitle['text'] or ('…' if rec_pending else ''))
 
                 if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                     track_height = widget.subtitle_height / subtitle_track[1]
@@ -3902,35 +3922,26 @@ def _paint_live_take(widget, painter, live, target_rect):
     if x1 - x0 < 2.0:
         x1 = x0 + 2.0
 
-    accent, body, pending_pen, pending_body = _live_colors()
+    accent, body, _pending_pen, _pending_body = _live_colors()
     # Transcript mode records only to produce text — there is no audio clip to
     # keep, so drawing a waveform advertises something the take will not leave
     # behind. Audio mode keeps it: there the waveform IS the deliverable.
-    show_audio = live.get('mode') != 'transcript'
+    transcript = live.get('mode') == 'transcript'
+    show_audio = not transcript
 
-    # Cues sealed by silence, still waiting for their transcription.
     top = float(getattr(widget, 'subtitle_y', 0) or 0)
     height = float(getattr(widget, 'subtitle_height', 30) or 30)
-    for cue in (live.get('pending') or ()):
-        cx0 = float(cue['start']) * wpp
-        cx1 = float(cue['end']) * wpp
-        if cx1 <= cx0:
-            continue
-        painter.save()
-        try:
-            painter.setPen(QPen(pending_pen, 1.0, Qt.DashLine))
-            painter.setBrush(pending_body)
-            painter.drawRoundedRect(QRectF(cx0, top, cx1 - cx0, height),
-                                    3.0, 3.0, Qt.AbsoluteSize)
-        finally:
-            painter.restore()
 
-    # The cue currently being spoken takes priority over the take-wide span.
+    # Transcript mode draws only the cue being spoken. Cut cues are real
+    # subtitles already (painted by the segment loop), and silence is not a
+    # cue, so there is no take-wide box to draw.
     cue_start = live.get('cue_start')
     cue_end = live.get('cue_end')
     if cue_start is not None and cue_end is not None and cue_end > cue_start:
         x0 = float(cue_start) * wpp
         x1 = float(cue_end) * wpp
+    elif transcript:
+        return
 
     if target_rect is not None:
         cue_rect = QRectF(target_rect)
@@ -3991,15 +4002,13 @@ def _paint_live_take(widget, painter, live, target_rect):
         finally:
             painter.restore()
 
-    # Leading edge marker, so the user can see it is live. A frozen phantom
-    # is not growing, so marking its edge would claim otherwise.
-    if not live.get('phantom'):
-        painter.save()
-        try:
-            painter.setPen(QPen(accent, 1.5))
-            painter.drawLine(QLineF(x1, cue_rect.top(), x1, cue_rect.bottom()))
-        finally:
-            painter.restore()
+    # Leading edge marker, so the user can see it is live.
+    painter.save()
+    try:
+        painter.setPen(QPen(accent, 1.5))
+        painter.drawLine(QLineF(x1, cue_rect.top(), x1, cue_rect.bottom()))
+    finally:
+        painter.restore()
 
 
 def _dub_playlist_apply(widget, subtitle, dub, promote):

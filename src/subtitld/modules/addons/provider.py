@@ -222,6 +222,12 @@ class ASRProvider(Provider):
     stream_segment = Signal(dict, bool)   # (segment, is_final)
     stream_finished = Signal(list)        # committed segments, on stop
     stream_error = Signal(str)
+    # The same three, tagged with the id `stream_start` returned. A session
+    # that is still finishing when the next one starts reports ONLY through
+    # these; the untagged signals always describe the newest session.
+    stream_segment_tagged = Signal(str, dict, bool)
+    stream_finished_tagged = Signal(str, list)
+    stream_error_tagged = Signal(str, str)
 
     @property
     def tasks(self) -> list[str]:
@@ -244,9 +250,13 @@ class ASRProvider(Provider):
         cutting per-phrase clips through `transcribe`."""
         return False
 
-    def stream_start(self, language: str, options: dict | None = None) -> None:
+    def stream_start(self, language: str, options: dict | None = None) -> str | None:
         """Open a live session. Segments arrive via `stream_segment`; the final
-        committed list via `stream_finished`; failures via `stream_error`."""
+        committed list via `stream_finished`; failures via `stream_error`.
+
+        Segment `start`/`end` are seconds from the first fed sample, or both
+        0 when the engine cannot tell. Returns the session's id when the
+        provider also emits the `*_tagged` signals, else None."""
         raise NotImplementedError
 
     def stream_feed(self, pcm_bytes: bytes) -> None:

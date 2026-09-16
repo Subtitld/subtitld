@@ -1,4 +1,8 @@
 import sys, types, os
+# Import THIS checkout's code. The venv holds a non-editable install, and
+# without this the suite silently tests that stale copy instead.
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'src'))
 sys.modules['mediapipe'] = types.ModuleType('mediapipe')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 import numpy as np

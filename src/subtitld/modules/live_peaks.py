@@ -54,6 +54,12 @@ class LiveTakeBuffer:
         # has no segmenter of its own — gets previews too.
         self._vad = vad
         self._vad_state = (False, 0.0, 0.0, 0.12)
+        # Utterances the VAD has FINALIZED, as (start_s, end_s) take-relative
+        # seconds, waiting for the GUI thread to drain them. Collected from
+        # push()'s return value rather than inferred from state() polling:
+        # polling at 15 Hz cannot see drops (too-short runs), force-cuts at
+        # max_utterance, or a silence->speech flip between two ticks.
+        self._sealed = []
 
     # -- writer thread ------------------------------------------------------
     def append(self, mono):
@@ -89,7 +95,10 @@ class LiveTakeBuffer:
             self._carry = x[nb * self._bucket:].copy()
             if self._vad is not None:
                 try:
-                    self._vad.push(fresh)
+                    done = self._vad.push(fresh)
+                    if done:
+                        sr = float(self._vad.samplerate)
+                        self._sealed.extend((a / sr, b / sr) for a, b in done)
                     self._vad_state = self._vad.state()
                 except Exception:
                     pass
@@ -126,6 +135,29 @@ class LiveTakeBuffer:
             return None
         with self._lock:
             return self._vad_state
+
+    def take_sealed(self):
+        """Drain finalized utterances: list of (start_s, end_s), take-relative."""
+        with self._lock:
+            out, self._sealed = self._sealed, []
+            return out
+
+    def flush_vad(self):
+        """Finalize trailing speech. Call only after the writer thread has
+        stopped (AudioRecorder.stop() joins it), then drain with take_sealed()."""
+        if self._vad is None:
+            return
+        with self._lock:
+            try:
+                done = self._vad.flush()
+            except Exception:
+                done = []
+            sr = float(self._vad.samplerate)
+            self._sealed.extend((a / sr, b / sr) for a, b in done)
+            try:
+                self._vad_state = self._vad.state()
+            except Exception:
+                pass
 
     @property
     def bucket_count(self):

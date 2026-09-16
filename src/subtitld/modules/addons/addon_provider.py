@@ -552,15 +552,20 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
     def supports_streaming(self) -> bool:
         return TASK_ASR_STREAM in (self._manifest.get('tasks') or [])
 
-    def stream_start(self, language: str, options: dict | None = None) -> None:
+    def stream_start(self, language: str, options: dict | None = None) -> str | None:
         """Open an `asr.stream` session. Audio is fed with `stream_feed`;
         segments come back via `stream_segment(seg, is_final)`; the committed
-        list via `stream_finished`; failures via `stream_error`."""
+        list via `stream_finished`; failures via `stream_error`.
+
+        Every event is also emitted tagged with the returned request id. A
+        session the host stopped keeps answering (its last sentence is still
+        being transcribed) after the next one started; those late answers go
+        out tagged only, and never touch the newer session's request."""
         try:
             proc = self._ensure_process()
         except Exception as exc:
             self.stream_error.emit(str(exc))
-            return
+            return None
         self._stream_process = proc
         req = proc.request(TASK_ASR_STREAM, {
             'language': language,
@@ -568,26 +573,38 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
             'samplerate': 16000,
         }, timeout=None)
         self._stream_request = req
+        sid = str(req.id)
+
+        def current() -> bool:
+            return self._stream_request is req
 
         def on_partial(data: dict) -> None:
             if not isinstance(data, dict):
                 return
             final = bool(data.get('final', False))
             seg = {k: v for k, v in data.items() if k != 'final'}
-            self.stream_segment.emit(seg, final)
+            self.stream_segment_tagged.emit(sid, seg, final)
+            if current():
+                self.stream_segment.emit(seg, final)
 
         def on_result(data: dict) -> None:
             segments = data.get('segments') if isinstance(data, dict) else None
-            self._stream_request = None
-            self.stream_finished.emit(segments if isinstance(segments, list) else [])
+            segments = segments if isinstance(segments, list) else []
+            self.stream_finished_tagged.emit(sid, segments)
+            if current():
+                self._stream_request = None
+                self.stream_finished.emit(segments)
 
         def on_error(code: str, message: str) -> None:
-            self._stream_request = None
-            self.stream_error.emit(f'[{code}] {message}')
+            self.stream_error_tagged.emit(sid, f'[{code}] {message}')
+            if current():
+                self._stream_request = None
+                self.stream_error.emit(f'[{code}] {message}')
 
         req.partial.connect(on_partial, Qt.QueuedConnection)
         req.result.connect(on_result, Qt.QueuedConnection)
         req.error.connect(on_error, Qt.QueuedConnection)
+        return sid
 
     def stream_feed(self, pcm_bytes: bytes) -> None:
         req = self._stream_request

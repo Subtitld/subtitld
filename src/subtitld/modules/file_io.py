@@ -1213,7 +1213,19 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
 
         elif subtitle_format in ['JSON']:
             if FORMAT.get('options', {}).get('standard', 'Whisper') == 'Whisper':
-                open(final_file, mode='w', encoding='utf-8').write(json.dumps(SUBTITLE, indent=4))
+                # Underscore-prefixed segment keys are runtime-only markers
+                # (e.g. `_rec`, a recording placeholder id) — never persist them.
+                def _persistable(seg):
+                    if not isinstance(seg, dict):
+                        return seg
+                    return {k: v for k, v in seg.items() if not str(k).startswith('_')}
+                json_doc = dict(SUBTITLE)
+                json_doc['segments'] = [_persistable(seg) for seg in SUBTITLE.get('segments') or []]
+                # `selected` and `current` hold live segment dicts too.
+                for ref in ('selected', 'current'):
+                    if isinstance(json_doc.get(ref), dict):
+                        json_doc[ref] = _persistable(json_doc[ref])
+                open(final_file, mode='w', encoding='utf-8').write(json.dumps(json_doc, indent=4))
             elif FORMAT['options'].get('standard', 'Whisper') == 'AD':
                 new_json_dict = {
                     'metadata': {

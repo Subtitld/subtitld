@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import threading
 
 import numpy as np
 
@@ -169,8 +170,14 @@ class LiveTranscriber(QObject):
 
     # A finalized utterance WAV is ready (emitted from the audio thread, so the
     # ASR dispatch below always runs on the main thread via a queued connection).
-    _utterance_ready = Signal(str, float)
-    subtitle_ready = Signal(dict)   # {'start','end','text','speaker'}
+    _utterance_ready = Signal(str, str, float, float)   # uid, wav, start_s, end_s
+    subtitle_ready = Signal(dict)   # {'start','end','text','speaker','uid'}
+    # Per-utterance lifecycle, all on the main thread and all carrying the
+    # utterance id, so the caller can place a placeholder when a phrase is
+    # cut and fill *that* placeholder when its text comes back.
+    utterance_sealed = Signal(dict)          # {'uid','start','end','speaker'} (timeline s)
+    utterance_done = Signal(str, list)       # uid, [{'start','end','text','speaker'}] (may be [])
+    utterance_failed = Signal(str, str)      # uid, message
     status_changed = Signal(str)
 
     def __init__(self, provider, language='en-us', options=None,
@@ -190,12 +197,21 @@ class LiveTranscriber(QObject):
         self._buf_base = 0  # absolute sample index of _buf[0]
         self._tmpdir = tempfile.mkdtemp(prefix='subtitld_live_')
 
-        self._pending = []        # list of (wav_path, offset_seconds)
+        self._pending = []        # list of (uid, wav_path, offset_seconds)
         self._busy = False
         self._current_offset = 0.0
+        self._current_uid = None
         self._active = True
         self._finishing = False   # recorder stopped; drain what's queued then done
+        self._done_emitted = False
         self._connected = False
+        # Utterances cut (possibly on the writer thread) whose queued
+        # _utterance_ready has not been delivered yet. `done` must wait for
+        # them, or a transcript landing between the cut and its delivery
+        # declares done early and the last phrase is dropped.
+        self._signal_lock = threading.Lock()
+        self._signals_outstanding = 0
+        self._uid_prefix = os.path.basename(self._tmpdir)
 
         self._utterance_ready.connect(self._on_utterance_ready, Qt.QueuedConnection)
         self._connect_provider()
@@ -228,10 +244,18 @@ class LiveTranscriber(QObject):
         self._finishing = True
         for (start, end) in self._seg.flush():
             self._cut_and_signal(start, end)
+        # Main thread, recorder already joined: every cut is counted, so a take
+        # with nothing outstanding can report done now instead of never.
+        self._maybe_done()
 
     def _maybe_done(self):
-        if self._finishing and not self._busy and not self._pending:
-            self.status_changed.emit('done')
+        if self._done_emitted or not self._finishing or self._busy or self._pending:
+            return
+        with self._signal_lock:
+            if self._signals_outstanding:
+                return
+        self._done_emitted = True
+        self.status_changed.emit('done')
 
     def _cut_and_signal(self, start_sample, end_sample):
         lo = start_sample - self._buf_base
@@ -253,29 +277,52 @@ class LiveTranscriber(QObject):
             sf.write(wav, samples, self._sr, subtype='PCM_16')
         except Exception:
             return
-        self._utterance_ready.emit(wav, start_sample / float(self._sr))
+        with self._signal_lock:
+            self._signals_outstanding += 1
+        # Unique per transcriber (tmpdir name) and per cut (start sample).
+        uid = f'{self._uid_prefix}:{int(start_sample)}'
+        self._utterance_ready.emit(uid, wav, start_sample / float(self._sr),
+                                   end_sample / float(self._sr))
 
     # -- main thread -------------------------------------------------------
-    def _on_utterance_ready(self, wav_path, offset):
-        self._pending.append((wav_path, offset))
-        self._dispatch_next()
+    def _on_utterance_ready(self, uid, wav_path, offset, end):
+        with self._signal_lock:
+            self._signals_outstanding -= 1
+        if self._active:
+            # Announce the cut BEFORE dispatching it, so the caller's
+            # placeholder always exists by the time the text can arrive.
+            self.utterance_sealed.emit({
+                'uid': uid,
+                'start': float(offset) + self._base_offset,
+                'end': float(end) + self._base_offset,
+                'speaker': self._speaker,
+            })
+            self._pending.append((uid, wav_path, offset))
+            self._dispatch_next()
+        self._maybe_done()
 
     def _dispatch_next(self):
         if self._busy or not self._pending or not self._active:
             return
-        wav, offset = self._pending.pop(0)
+        uid, wav, offset = self._pending.pop(0)
         self._busy = True
         self._current_offset = float(offset)
+        self._current_uid = uid
         try:
             self.status_changed.emit('transcribing')
             self._provider.transcribe(wav, self._language, dict(self._options))
-        except Exception:
+        except Exception as exc:
             self._busy = False
+            self._current_uid = None
+            self.utterance_failed.emit(uid, str(exc))
             self._dispatch_next()
 
     def _on_transcript_finished(self, segments):
         offset = self._current_offset + self._base_offset
+        uid = self._current_uid
+        self._current_uid = None
         self._busy = False
+        placed = []
         if isinstance(segments, list):
             for seg in segments:
                 if not isinstance(seg, dict):
@@ -287,18 +334,32 @@ class LiveTranscriber(QObject):
                 end = float(seg.get('end', 0.0)) + offset
                 if end <= start:
                     end = start + 0.5
-                self.subtitle_ready.emit({
-                    'start': start, 'end': end, 'text': text,
-                    'speaker': self._speaker,
-                })
+                cue = {'start': start, 'end': end, 'text': text,
+                       'speaker': self._speaker, 'uid': uid}
+                placed.append(cue)
+                self.subtitle_ready.emit(dict(cue))
+        if uid is not None:
+            # Emitted even when empty: "the engine heard nothing" is an answer.
+            self.utterance_done.emit(uid, placed)
         self._dispatch_next()
         self._maybe_done()
 
     def _on_error(self, message):
         # Skip the failed utterance and keep going.
+        uid = self._current_uid
+        self._current_uid = None
         self._busy = False
+        if uid is not None:
+            self.utterance_failed.emit(uid, str(message))
         self._dispatch_next()
         self._maybe_done()
+
+    def outstanding_uids(self):
+        """Utterances cut but not answered (queued or in flight)."""
+        out = [u for (u, _w, _o) in self._pending]
+        if self._current_uid is not None:
+            out.insert(0, self._current_uid)
+        return out
 
     # -- provider wiring / teardown ---------------------------------------
     def _connect_provider(self):
