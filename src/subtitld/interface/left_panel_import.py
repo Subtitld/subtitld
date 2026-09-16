@@ -15,11 +15,19 @@ from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
-# Transcription footer bottom-row padding. Shared by the layout and the
-# start/finish progress toggles so the "running" bar keeps the row's height
-# identical to the idle (Start-button) state.
+# Transcription footer bottom row. It is a QStackedWidget with two pages that
+# each own their layout: the idle page (Start button, inset by these margins)
+# and the running page (edge-to-edge progress bar, no margins). Switching
+# pages swaps the whole row content; nothing is re-margined in place.
 _FOOTER_SIDE_MARGIN = 10
 _FOOTER_BOTTOM_MARGIN = 10
+_FOOTER_PAGE_IDLE = 0
+_FOOTER_PAGE_RUNNING = 1
+
+# Inset of the per-engine options panel (engine name + inline config fields)
+# shown under the TRANSCRIPTION ENGINE combobox. The Import panel itself is
+# padding-free, so without this the options sit flush against its edge.
+_OPTIONS_PANEL_PADDING = 10
 
 _list_of_supported_import_extensions = []
 for _exttype in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS:
@@ -126,7 +134,7 @@ class _GenericASRPanel(QWidget):
         widget.parent = parent
         widget.provider = provider
         widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setContentsMargins(*(_OPTIONS_PANEL_PADDING,) * 4)
         widget.layout().setSpacing(10)
         widget.setProperty('transcription_engine', provider.id)
         widget.setProperty('class', 'transparent_panel')
@@ -630,80 +638,41 @@ def _extract_audio_slice(src, start, end):
 _TRANSCRIPTION_START_PERCENT = 5
 
 
-def _transcription_footer_row_height(self, button):
-    """Height to pin the bottom row to for the duration of a run.
-
-    Called from the running branch while the Start button is still visible,
-    so the height it currently occupies is the truthful answer. The cached
-    idle measurement and then the bare hint are fallbacks for a run that
-    starts before the footer was ever laid out — an unshown widget reports
-    Qt's default 480, and its hint can still be pre-stylesheet, so neither is
-    trustworthy on its own.
-    """
-    if button.isVisible() and button.height() > 1:
-        return max(button.sizeHint().height(), button.height(), 24) + _FOOTER_BOTTOM_MARGIN
-    cached = getattr(self, '_transcription_footer_row_h', 0)
-    if cached:
-        return cached
-    return max(button.sizeHint().height(), 24) + _FOOTER_BOTTOM_MARGIN
-
-
 def _reconcile_transcription_footer(self):
-    """Single source of truth for the footer's Start-button-vs-progress-bar
-    state, derived from ``self._transcription_running``. The button and the
-    bar are strictly mutually exclusive — exactly one is visible — so no
-    stale state (an aborted run, a re-show mid-run, an engine switch) can
-    ever leave both on screen at once. Safe to call any time the footer is
-    (re)shown or updated."""
-    if not hasattr(self, 'global_panel_import_start_transcription_progress'):
+    """Single source of truth for the footer's idle-vs-running state, derived
+    from ``self._transcription_running``. The bottom row is a two-page stack,
+    so the Start button and the progress bar are mutually exclusive by
+    construction — no stale state (an aborted run, a re-show mid-run, an
+    engine switch) can leave both on screen. Safe to call any time the footer
+    is (re)shown or updated; re-selecting the current page is a no-op."""
+    stack = getattr(self, 'transcription_footer_bottom_line', None)
+    if stack is None:
         return  # footer not built yet
     running = bool(getattr(self, '_transcription_running', False))
-    progress = self.global_panel_import_start_transcription_progress
-    button = self.global_panel_import_start_transcription_button
-    row = getattr(self, 'transcription_footer_bottom_line', None)
-    if running:
-        # Pin the ROW to the height the idle state measured, and let the bar
-        # simply fill it. Pinning the *bar* instead (what this used to do) is
-        # what made the row jump: visibility, the bar's fixed height and the
-        # row's side margins are applied in one pass but laid out in the next,
-        # so the frame where the bar is already `button_h + margin` tall while
-        # the row still carries its idle bottom margin forces the row to
-        # `bar + margin` — visibly taller, with the bar inset — until a later
-        # reconcile (the delayed `transcript_started`) settles it. With the row
-        # pinned and the bar free, no ordering can resize it.
-        if row is not None:
-            row.setFixedHeight(_transcription_footer_row_height(self, button))
-        progress.setMaximum(100)
-        progress.setVisible(True)
-        button.setVisible(False)
-    else:
-        progress.setVisible(False)
-        button.setVisible(True)
-        if row is not None:
-            # Idle: the button defines the row again — release the pin.
-            row.setMinimumHeight(0)
-            row.setMaximumHeight(16777215)
-        # Keep a fallback measurement for a run that starts before the footer
-        # has ever been laid out. Only trust `height()` once the button is
-        # actually on screen (an unshown widget reports Qt's default 480).
-        if button.isVisible() and button.height() > 1:
-            self._transcription_footer_row_h = (
-                max(button.sizeHint().height(), button.height(), 24) + _FOOTER_BOTTOM_MARGIN)
+    # One atomic content swap. QStackedLayout gives the incoming page the
+    # row's full rect synchronously while showing it, so the progress bar's
+    # geometry is final before anything can paint it. The row's height never
+    # changes: its hint is the tallest page's, whichever one is current.
+    stack.setCurrentIndex(_FOOTER_PAGE_RUNNING if running else _FOOTER_PAGE_IDLE)
     if hasattr(self, 'transcription_scope_area'):
         self.transcription_scope_area.setVisible(not running)
-    if hasattr(self, 'transcription_footer_bottom_line'):
-        margins = (0, 0, 0, 0) if running else (
-            _FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
-        self.transcription_footer_bottom_line.layout().setContentsMargins(*margins)
 
 
 def global_panel_import_start_transcription_progress_start(self):
-    # Enter running mode: the progress bar takes over the whole bottom row and
-    # the Start button + scope row hide. Idempotent — safe to call from both
-    # the button click and a (possibly delayed) transcript_started signal.
+    # Enter running mode: the running page (edge-to-edge progress bar) replaces
+    # the idle page and the scope row hides. Idempotent — safe to call from
+    # both the button click and a (possibly delayed) transcript_started signal.
+    progress = self.global_panel_import_start_transcription_progress
+    if not getattr(self, '_transcription_running', False):
+        # Seed the value BEFORE the page is shown. QProgressBar.setValue()
+        # repaints synchronously when visible; done while hidden it only
+        # records the value, so the first painted frame is the final one.
+        # Only on the idle->running transition, so a delayed
+        # transcript_started can't knock a bar that already advanced back.
+        progress.setMaximum(100)
+        progress.setValue(_TRANSCRIPTION_START_PERCENT)
     self._transcription_running = True
     _reconcile_transcription_footer(self)
-    self.global_panel_import_start_transcription_progress.setValue(_TRANSCRIPTION_START_PERCENT)
 
 
 def global_panel_import_start_transcription_progress_update(self, value):
@@ -715,7 +684,8 @@ def global_panel_import_start_transcription_progress_update(self, value):
 
 
 def global_panel_import_start_transcription_progress_finish(self):
-    # Leave running mode: hide the bar, bring the Start button + scope row back.
+    # Leave running mode: the idle page (Start button) replaces the running
+    # page and the scope row comes back.
     self._transcription_running = False
     _reconcile_transcription_footer(self)
 
@@ -850,17 +820,20 @@ def load(self):
     footer_v.addWidget(self.transcription_footer_divider)
 
 
-    bottom_line_w = QWidget()
-    bottom_line_w.setObjectName('transcription_footer_bottom_line')
-    # Kept so the running-mode toggle can zero this row's side padding for a
-    # true edge-to-edge progress bar (see progress_start / progress_finish).
-    self.transcription_footer_bottom_line = bottom_line_w
-    bottom_line = QHBoxLayout(bottom_line_w)
-    # Button keeps its side + bottom padding; NO top padding — it hugs the
-    # divider directly above it (no gap between the line and the button).
-    bottom_line.setContentsMargins(_FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
-    bottom_line.setSpacing(0)
-    footer_v.addWidget(bottom_line_w)
+    # Bottom row: a fixed-height two-page stack. Each page owns its layout
+    # and margins; running/idle is a page switch (setCurrentIndex), never a
+    # visibility + margin edit on a shared layout — that in-place edit is
+    # what painted the bar inset for one frame (QProgressBar.setValue
+    # repaints synchronously, before the posted re-layout had run).
+    # objectName kept: the QSS gradient targets it (a QStackedWidget is a
+    # QFrame, so the stylesheet paints its background).
+    self.transcription_footer_bottom_line = QStackedWidget()
+    self.transcription_footer_bottom_line.setObjectName('transcription_footer_bottom_line')
+    # Fixed vertical policy: the row is always exactly its size hint, which
+    # QStackedLayout computes over ALL pages (current or not). So its height
+    # is identical in both states and never follows the current page.
+    self.transcription_footer_bottom_line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+    footer_v.addWidget(self.transcription_footer_bottom_line)
 
     # NB: the three `..._transcription_progress_*` helpers used to be
     # defined here as nested functions. That worked while no ASR
@@ -869,24 +842,37 @@ def load(self):
     # is module-level and only sees module-level names. When whisper.cpp
     # started emitting progress, `connect(... lambda: <nested name>)`
     # crashed with NameError. They now live at module scope.
-
     self._transcription_running = False
-    self.global_panel_import_start_transcription_progress = QProgressBar()
-    self.global_panel_import_start_transcription_progress.setObjectName('transcription_progress_bar')
-    self.global_panel_import_start_transcription_progress.setVisible(False)
-    self.global_panel_import_start_transcription_progress.setProperty('class', 'secondary')
-    # Vertically Expanding (not Fixed): the row is pinned to a set height
-    # during a run and the bar fills it edge-to-edge. Fixed would leave it
-    # at its own sizeHint and inset inside the row.
-    self.global_panel_import_start_transcription_progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-    # Stretch 1: once the Start button is hidden during a run, the bar expands
-    # to fill the whole row (progress_start also zeroes the row's side padding).
-    bottom_line.addWidget(self.global_panel_import_start_transcription_progress, 1)
 
+    # Page 0 — idle: the Start button, right-aligned. Side + bottom padding;
+    # NO top padding, so it hugs the divider directly above it.
+    idle_page = QWidget()
+    idle_line = QHBoxLayout(idle_page)
+    idle_line.setContentsMargins(_FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
+    idle_line.setSpacing(0)
     self.global_panel_import_start_transcription_button = QPushButton()
     self.global_panel_import_start_transcription_button.setObjectName('transcription_start_button')
     self.global_panel_import_start_transcription_button.clicked.connect(lambda: global_panel_import_start_transcription_button_clicked(self))
-    bottom_line.addWidget(self.global_panel_import_start_transcription_button, 0, Qt.AlignRight)
+    idle_line.addWidget(self.global_panel_import_start_transcription_button, 0, Qt.AlignRight)
+    self.transcription_footer_bottom_line.insertWidget(_FOOTER_PAGE_IDLE, idle_page)
+
+    # Page 1 — running: the progress bar, edge to edge (no margins), filling
+    # the whole row including where the idle page's bottom padding is.
+    running_page = QWidget()
+    running_line = QHBoxLayout(running_page)
+    running_line.setContentsMargins(0, 0, 0, 0)
+    running_line.setSpacing(0)
+    self.global_panel_import_start_transcription_progress = QProgressBar()
+    self.global_panel_import_start_transcription_progress.setObjectName('transcription_progress_bar')
+    self.global_panel_import_start_transcription_progress.setProperty('class', 'secondary')
+    # Expanding both ways so it fills the page; it must not contribute a
+    # taller hint than the idle page (QProgressBar's hint is well below it).
+    self.global_panel_import_start_transcription_progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    self.global_panel_import_start_transcription_progress.setMaximum(100)
+    running_line.addWidget(self.global_panel_import_start_transcription_progress)
+    self.transcription_footer_bottom_line.insertWidget(_FOOTER_PAGE_RUNNING, running_page)
+
+    self.transcription_footer_bottom_line.setCurrentIndex(_FOOTER_PAGE_IDLE)
 
     left_panel_import_panel.layout().addWidget(self.transcription_footer)
 
