@@ -230,7 +230,7 @@ class SimpleDialog(QDialog):
         # close button explicitly. It starts 20px in, inside the slant slice:
         # the slant runs down-right, and at the icon's height the notch body
         # already begins left of it, so the icon stays clear of the edge
-        # while the notch stays narrow (20 + 32 + 1 = 53px). Only the icon is
+        # while the notch stays narrow (20 + 38 + 1 = 59px). Only the icon is
         # drawn; the hover fill is the notch's own artwork, not the button.
         self.title_line.notch = QWidget()
         self.title_line.notch.setObjectName('dialog_title_notch')
@@ -244,7 +244,7 @@ class SimpleDialog(QDialog):
         close_button = QPushButton()
         # 31 tall, not 32: the notch's bottom hairline takes the last row, and
         # a 32px button would paint over it on hover.
-        close_button.setFixedSize(QSize(32, 31))
+        close_button.setFixedSize(QSize(38, 31))
         close_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         close_button.setObjectName('dialog_close_button')
         close_button.clicked.connect(lambda: self.reject())
