@@ -2701,10 +2701,11 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 /* Cancel sits in the footer's bottom-left corner, so the corner facing INTO
    the dialog is its top-right — the mirror of the close button's bottom-left.
-   Its hover fill is the only state with a background, so the radius shows
-   there. */
+   Its bottom-left follows the dialog frame's rounded corner (4px). Its hover
+   fill is the only state with a background, so the radii show there. */
 #dialog_bottom QPushButton[class="reject_button"] {
     border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
 }
 
 #dialog_bottom QPushButton[class="accept_button"] {
