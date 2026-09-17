@@ -8,7 +8,7 @@ import os, sys, types
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton
 from PySide6.QtCore import QDir, QPoint, Qt
 from PySide6.QtTest import QTest
 app = QApplication([])
@@ -148,10 +148,14 @@ g = ab.geometry()
 check('All rises from Replace\'s bottom edge, gap above, padding right',
       (g.bottom(), g.top(), rb.width() - 1 - g.right()),
       (rb.height() - 1, rb.INNER_TOP_GAP, rb.INNER_RIGHT_PADDING))
+def hovered(button):
+    opt = QStyleOptionButton()
+    button.initStyleOption(opt)
+    return bool(opt.state & QStyle.State_MouseOver)
 QTest.mouseMove(ab); app.processEvents()
-check('pointing at All drops Replace\'s hover fill', bool(rb.property('inner_hover')), True)
+check('pointing at All shows both hovered', (hovered(rb), hovered(ab)), (True, True))
 QTest.mouseMove(rb, QPoint(4, 4)); app.processEvents()
-check('back on Replace restores it', bool(rb.property('inner_hover')), False)
+check('pointing at Replace\'s text hovers only Replace', (hovered(rb), hovered(ab)), (True, False))
 r._replace_field.lineedit.setText('dog')
 hits = clicks(r)
 QTest.mouseClick(ab, Qt.LeftButton)

@@ -104,9 +104,9 @@ class _ReplaceButton(QPushButton):
     The same pattern as the player's play and record buttons, mirrored: ALL
     rises from REPLACE's bottom edge, with a gap above and some padding to
     its right. The stylesheet left-aligns the text; the width grows by ALL's
-    and that padding, so the text's right padding becomes the gap before it. While the pointer is
-    on ALL this button drops its hover fill (``inner_hover``), so only the
-    action a click would run lights up.
+    and that padding, so the text's right padding becomes the gap before it.
+    Pointing at ALL keeps this button hovered too, as one control; ALL adds
+    its own fill on top.
     """
 
     INNER_TOP_GAP = 3
@@ -117,7 +117,6 @@ class _ReplaceButton(QPushButton):
         self.inner = QPushButton(inner_text, self)
         self.inner.setObjectName('find_replace_all_button')
         self.inner.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
-        self.inner.installEventFilter(self)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, self.INNER_TOP_GAP, self.INNER_RIGHT_PADDING, 0)
         layout.addStretch(1)
@@ -130,19 +129,6 @@ class _ReplaceButton(QPushButton):
 
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
-
-    def eventFilter(self, obj, event):
-        if obj is self.inner and event.type() in (QEvent.Enter, QEvent.Leave):
-            self._set_inner_hover(event.type() == QEvent.Enter)
-        return False
-
-    def _set_inner_hover(self, on: bool) -> None:
-        if bool(self.property('inner_hover')) == on:
-            return
-        self.setProperty('inner_hover', on)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
 
 
 def _cue_start(segment: dict) -> float:
