@@ -14,7 +14,7 @@ Layout (top → bottom):
       (``Aa`` match-case / ``ab`` whole-word / ``.*`` regex).
     - "REPLACE WITH" label + Replace input (no toggles).
 * Footer — match count on the left, then two segmented pairs on the right:
-  ``[ ‹ | FIND › ]`` to step backward/forward through matches, and
+  ``[ ‹ | FIND › ]`` (in the footer tab) to step backward/forward through matches, and
   ``[ REPLACE | ALL ]``.
 
 The default SimpleDialog footer ships an OK/Cancel pair, which doesn't
@@ -111,6 +111,7 @@ def _segmented(*buttons) -> QWidget:
     last = len(buttons) - 1
     for i, button in enumerate(buttons):
         button.setProperty('segment', 'first' if i == 0 else ('last' if i == last else 'middle'))
+        button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
         group.layout().addWidget(button)
     return group
 
@@ -316,66 +317,64 @@ class FindReplaceDialog(utils.SimpleDialog):
         content_layout.addWidget(self._replace_field)
 
         # ------------------------------------------------------------------
-        # Footer — rebuild the SimpleDialog bottom row into:
-        #   [status text]  <stretch>  [find next] [replace] [replace all]
+        # Footer — the regular dialog footer, with this dialog's actions:
+        #   bar: [status text]  <stretch>  [REPLACE | ALL]
+        #   tab: [‹ | FIND ›]
         #
-        # SimpleDialog exposes the footer as ``self.bottom_line``. This used
-        # to walk ``self.accept_button.parent()``, which broke silently once
-        # the default button moved into the bottom-right tab — the parent is
-        # then the tab, not the footer. Clearing the layout in place keeps
-        # the QSS ``#dialog_bottom`` styling.
+        # SimpleDialog's footer is a hairline bar (Cancel lives there as a
+        # plain text button) and a light tab on the right (OK as a dark
+        # label). The secondary actions go on the bar like Cancel; stepping
+        # through matches — what Enter does — takes the tab like OK. Their
+        # own widgets are reused, so the footer keeps the regular height,
+        # artwork and alignment.
         # ------------------------------------------------------------------
-        bottom_widget = self.bottom_line
-        bottom_layout = bottom_widget.layout()
-        while bottom_layout.count():
-            item = bottom_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.setParent(None)
-
-        bottom_layout.setContentsMargins(14, 0, 14, 0)
-        bottom_layout.setSpacing(6)
+        for button in (self.reject_button, self.accept_button):
+            button.hide()
+            button.setParent(None)
+        bar = self.bottom_left.layout()
+        tab = self.bottom_right.layout()
+        while bar.count():
+            bar.takeAt(0)
 
         self._status_label = QLabel()
         self._status_label.setObjectName('find_replace_dialog_status')
         self._status_label.setProperty('class', 'find_replace_status')
         self._status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        bottom_layout.addWidget(self._status_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        bar.addWidget(self._status_label, 1, Qt.AlignVCenter)
+
+        self._replace_button = QPushButton(_('subtitles_panel.replace'))
+        self._replace_all_button = QPushButton(_('find_replace_dialog.replace_all_short'))
+        # "All" alone is terse; the tooltip says what it does.
+        self._replace_all_button.setToolTip(_('subtitles_panel.replace_all'))
+        for button in (self._replace_button, self._replace_all_button):
+            button.setProperty('class', 'find_replace_button')
+        bar.addWidget(_segmented(self._replace_button, self._replace_all_button))
 
         # Chevron icons come from the stylesheet (normal / hover / disabled).
         # A stylesheet icon is only used for painting, though: the button is
         # also given the icon itself, or Qt would size it without one.
-        chevron_back = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_back_icon.svg'))
-        chevron_next = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_next_icon.svg'))
         self._find_previous_button = QPushButton()
-        self._find_previous_button.setIcon(chevron_back)
-        self._find_previous_button.setIconSize(QSize(12, 12))
+        self._find_previous_button.setIcon(
+            QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_back_icon_tab.svg')))
         self._find_previous_button.setObjectName('find_replace_previous_button')
-        self._find_previous_button.setProperty('class', 'find_replace_button')
         self._find_previous_button.setToolTip(_('find_replace_dialog.find_previous_tooltip'))
         # Upper-cased here, not only by the stylesheet: with an icon, Qt sizes
         # the button from the raw text and would clip the capitals.
         self._find_next_button = QPushButton(_('find_replace_dialog.find').upper())
-        self._find_next_button.setIcon(chevron_next)
-        self._find_next_button.setIconSize(QSize(12, 12))
+        self._find_next_button.setIcon(
+            QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_next_icon_tab.svg')))
         self._find_next_button.setObjectName('find_replace_next_button')
-        self._find_next_button.setProperty('class', 'find_replace_button')
         # Right-to-left puts the icon after the text: FIND ›.
         self._find_next_button.setLayoutDirection(Qt.RightToLeft)
         self._find_next_button.setToolTip(_('find_replace_dialog.find_next_tooltip'))
-        bottom_layout.addWidget(
-            _segmented(self._find_previous_button, self._find_next_button),
-            0, Qt.AlignRight | Qt.AlignVCenter)
-
-        self._replace_button = QPushButton(_('subtitles_panel.replace'))
-        self._replace_button.setProperty('class', 'find_replace_button')
-        self._replace_all_button = QPushButton(_('find_replace_dialog.replace_all_short'))
-        self._replace_all_button.setProperty('class', 'find_replace_button')
-        # "All" alone is terse; the tooltip says what it does.
-        self._replace_all_button.setToolTip(_('subtitles_panel.replace_all'))
-        bottom_layout.addWidget(
-            _segmented(self._replace_button, self._replace_all_button),
-            0, Qt.AlignRight | Qt.AlignVCenter)
+        for i, button in enumerate((self._find_previous_button, self._find_next_button)):
+            button.setProperty('class', 'find_replace_tab_button')
+            button.setProperty('segment', 'first' if i == 0 else 'last')
+            button.setIconSize(QSize(12, 12))
+            # Fill the tab's height: the icon-only half is otherwise shorter
+            # than its neighbour and sits lower.
+            button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
+            tab.addWidget(button)
 
         # ------------------------------------------------------------------
         # Wiring

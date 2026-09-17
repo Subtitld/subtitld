@@ -2832,99 +2832,91 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: #c8dbe9;
 }
 
-#find_replace_dialog #dialog_bottom {
-    /* The custom footer needs vertical padding the default rule strips
-       off so the status label + buttons line up at a comfortable height
-       without inheriting the 0-margin treatment from #dialog_bottom. */
-    min-height: 44px;
-}
-
+/* Find & Replace footer: the regular dialog footer (see #dialog_bottom
+   above). Status text and REPLACE | ALL sit on the bar like Cancel; ‹ | FIND ›
+   sits on the tab like OK. */
 #find_replace_dialog #dialog_bottom QLabel[class="find_replace_status"] {
     color: rgba(184, 206, 224, 153);
     font-size: 10px;
     font-weight: 400;
     text-transform: none;
     letter-spacing: 0;
-    padding: 0;
+    padding: 0 0 0 12px;
 }
 
+/* Bar buttons: plain text like Cancel. A hairline divides the pair, and the
+   pair's outer top corners (facing into the dialog) round on hover. */
 #find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"] {
-    padding: 6px 14px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0;
-    border-radius: 2px;
-    border: none;
-    /* Override the default #dialog_bottom radius-0 rule so these buttons
-       have their own 2px corner like the rest of the design system. */
-}
-
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"] {
-    background-color: #4a5f70;
     color: #b8cee0;
-}
-
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:hover {
-    background-color: #566f84;
-    color: #ffffff;
+    font-weight: 700;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:disabled {
     color: rgba(184, 206, 224, 80);
-    background-color: rgba(74, 95, 112, 100);
+    background-color: transparent;
 }
 
-/* Footer buttons come in joined pairs ([ ‹ | FIND › ] and [ REPLACE | ALL ]).
-   The inner corners are squared and a hairline divides the two halves; the
-   outer corners keep the 2px radius above. */
-#find_replace_dialog #dialog_bottom QPushButton[segment="first"] {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"][segment="first"] {
+    border-top-left-radius: 4px;
 }
 
-#find_replace_dialog #dialog_bottom QPushButton[segment="last"] {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    border-left: 1px solid #2f3e4a;
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"][segment="last"] {
+    border-top-right-radius: 4px;
+    border-left: 1px solid rgba(184, 206, 224, 30);
 }
 
-#find_replace_dialog #dialog_bottom QPushButton[segment="middle"] {
-    border-radius: 0;
-    border-left: 1px solid #2f3e4a;
+/* Tab buttons: dark labels like OK; hover darkens the label and the chevron,
+   no fill over the artwork. */
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"] {
+    background-color: transparent;
+    color: #1e2b36;
+    font-weight: 700;
 }
 
-/* The step buttons carry chevron icons, following the text colour. The ‹
-   half is only an icon: keep it narrow. */
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"]:hover {
+    background-color: transparent;
+    color: #0d1319;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"]:disabled {
+    background-color: transparent;
+    color: rgba(30, 43, 54, 90);
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"][segment="last"] {
+    border-left: 1px solid rgba(30, 43, 54, 45);
+}
+
+/* The ‹ half is only an icon: keep it narrow. */
 #find_replace_dialog #dialog_bottom #find_replace_previous_button {
-    padding-left: 9px;
-    padding-right: 9px;
+    padding-left: 10px;
+    padding-right: 10px;
     /* An icon-only button otherwise gets Qt's wide default. */
     min-width: 12px;
     max-width: 12px;
-    icon: url(graphics:find_back_icon.svg);
+    icon: url(graphics:find_back_icon_tab.svg);
     icon-size: 12px 12px;
 }
 
 #find_replace_dialog #dialog_bottom #find_replace_previous_button:hover {
-    icon: url(graphics:find_back_icon_hover.svg);
+    icon: url(graphics:find_back_icon_tab_hover.svg);
 }
 
 #find_replace_dialog #dialog_bottom #find_replace_previous_button:disabled {
-    icon: url(graphics:find_back_icon_disabled.svg);
+    icon: url(graphics:find_back_icon_tab_disabled.svg);
 }
 
 #find_replace_dialog #dialog_bottom #find_replace_next_button {
-    icon: url(graphics:find_next_icon.svg);
+    icon: url(graphics:find_next_icon_tab.svg);
     icon-size: 12px 12px;
 }
 
 #find_replace_dialog #dialog_bottom #find_replace_next_button:hover {
-    icon: url(graphics:find_next_icon_hover.svg);
+    icon: url(graphics:find_next_icon_tab_hover.svg);
 }
 
 #find_replace_dialog #dialog_bottom #find_replace_next_button:disabled {
-    icon: url(graphics:find_next_icon_disabled.svg);
+    icon: url(graphics:find_next_icon_tab_disabled.svg);
 }
 
 #music_voice_separation_box #music_voice_separation_music_icon {
