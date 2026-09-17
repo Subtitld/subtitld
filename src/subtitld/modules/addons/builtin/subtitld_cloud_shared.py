@@ -170,7 +170,8 @@ def http_get(url: str, *, api_key: str, timeout: float = 15.0) -> dict:
     req.add_header('User-Agent', USER_AGENT)
     if api_key:
         req.add_header('Authorization', f'Bearer {api_key}')
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    from subtitld.modules.net import https_context
+    with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as resp:
         return json.loads(resp.read().decode('utf-8'))
 
 

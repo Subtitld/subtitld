@@ -36,6 +36,8 @@ dependencies = [
     "translate",
     "autohex",
     "platformdirs",
+    # Trusted CAs for urllib downloads in frozen builds (modules/net.py).
+    "certifi",
     "psutil",
     "pywhispercpp",
     "deep_translator",

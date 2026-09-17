@@ -453,7 +453,8 @@ class _WhisperWorker(QThread):
             url,
             headers={'User-Agent': 'subtitld-whispercpp/1'},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        from subtitld.modules.net import https_context
+        with urllib.request.urlopen(req, timeout=30, context=https_context()) as resp:
             try:
                 total = int(resp.headers.get('Content-Length') or 0)
             except (TypeError, ValueError):

@@ -29,6 +29,7 @@ from typing import Callable
 from urllib.request import Request, urlopen
 
 from subtitld.modules import session
+from subtitld.modules.net import https_context
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def fetch_catalog(force_refresh: bool = False, url: str = DEFAULT_CATALOG_URL,
 
     try:
         req = Request(url, headers={'User-Agent': 'subtitld-addons/1.0'})
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout, context=https_context()) as resp:
             data = resp.read()
         catalog = json.loads(data.decode('utf-8'))
     except Exception as exc:
@@ -224,7 +225,8 @@ def download_and_install(catalog_entry: dict,
         if on_progress:
             on_progress(0.0, 'Starting download...')
         req = Request(url, headers={'User-Agent': 'subtitld-addons/1.0'})
-        with urlopen(req, timeout=30.0) as resp, open(zip_path, 'wb') as out:
+        with urlopen(req, timeout=30.0, context=https_context()) as resp, \
+                open(zip_path, 'wb') as out:
             total = expected_size or int(resp.headers.get('Content-Length') or 0)
             downloaded = 0
             chunk = 64 * 1024
