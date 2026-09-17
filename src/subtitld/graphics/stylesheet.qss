@@ -2852,6 +2852,8 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     color: #b8cee0;
     font-weight: 700;
     text-align: left;
+    /* With the text left-aligned, this is the gap before ALL. */
+    padding-right: 6px;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
 }
