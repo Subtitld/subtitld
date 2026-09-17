@@ -1812,9 +1812,16 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 }
 
 #timeline_show_mouth_button {
-    border-radius: 2px;
     margin-right: 4px;
     icon: url(graphics:timeline_show_mouth.svg);
+}
+
+/* Top corners rounded like the button groups beside it. Scoped to the bottom
+   line on purpose: `#playercontrols_widget_bottom_line QPushButton` squares
+   every corner and outranks a rule on the id alone. */
+#playercontrols_widget_bottom_line #timeline_show_mouth_button {
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
 }
 
 #timeline_show_mouth_button:checked {
