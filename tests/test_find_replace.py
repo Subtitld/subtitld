@@ -9,7 +9,7 @@ from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QDir, Qt
+from PySide6.QtCore import QDir, QPoint, Qt
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session
@@ -128,9 +128,38 @@ check('chevrons are stylesheet icons, after the text on Find',
       (d._find_previous_button.objectName(), d._find_next_button.objectName(),
        d._find_next_button.layoutDirection()),
       ('find_replace_previous_button', 'find_replace_next_button', Qt.RightToLeft))
-check('All looks like Replace', d._replace_all_button.property('class'), d._replace_button.property('class'))
 d._find_field.lineedit.setText('zzz')
 check('disabled with no matches', (d._find_previous_button.isEnabled(), d._find_next_button.isEnabled()), (False, False))
+
+print('All sits inside Replace')
+def clicks(r):
+    hits = []
+    r._replace_button.clicked.connect(lambda: hits.append('replace'))
+    r._replace_all_button.clicked.connect(lambda: hits.append('all'))
+    return hits
+segs6 = [cue(1.0, 'cat'), cue(5.0, 'cat')]
+r = fresh(segs6, 0.0); r.show(); app.processEvents()
+rb, ab = r._replace_button, r._replace_all_button
+check('All is a child of Replace', ab.parent() is rb, True)
+text_end = 12 + rb.fontMetrics().horizontalAdvance(rb.text().upper())
+check('All is inside Replace, right of its text',
+      (rb.rect().contains(ab.geometry()), ab.geometry().left() >= text_end), (True, True))
+QTest.mouseMove(ab); app.processEvents()
+check('pointing at All drops Replace\'s hover fill', bool(rb.property('inner_hover')), True)
+QTest.mouseMove(rb, QPoint(4, 4)); app.processEvents()
+check('back on Replace restores it', bool(rb.property('inner_hover')), False)
+r._replace_field.lineedit.setText('dog')
+hits = clicks(r)
+QTest.mouseClick(ab, Qt.LeftButton)
+check('clicking All runs Replace all only', (hits, [s['text'] for s in segs6]), (['all'], ['dog', 'dog']))
+r.close()
+segs7 = [cue(1.0, 'cat'), cue(5.0, 'cat')]
+r = fresh(segs7, 0.0); r.show(); app.processEvents()
+r._replace_field.lineedit.setText('dog')
+hits = clicks(r)
+QTest.mouseClick(r._replace_button, Qt.LeftButton, pos=QPoint(4, r._replace_button.height() // 2))
+check('clicking Replace\'s text runs Replace only', (hits, [s['text'] for s in segs7]), (['replace'], ['dog', 'cat']))
+r.close()
 
 print('whole-word toggle label')
 toggle = d._find_field.whole_word_toggle

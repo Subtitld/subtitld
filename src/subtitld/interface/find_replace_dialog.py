@@ -98,22 +98,46 @@ class _ShiftReturn(QObject):
         return False
 
 
-def _segmented(*buttons) -> QWidget:
-    """Lay buttons out as one joined control.
+class _ReplaceButton(QPushButton):
+    """REPLACE with a small ALL button inside it, at its right end.
 
-    Each gets a ``segment`` property (first / middle / last) so the stylesheet
-    can square off the inner corners and draw the divider between them.
+    The stylesheet left-aligns the text; the width grows by the inner button
+    plus its inset, so the text's right padding becomes the gap before it.
+    While the pointer is on the inner button this one drops its hover fill
+    (``inner_hover``), so only the action a click would run lights up.
     """
-    group = QWidget()
-    group.setLayout(QHBoxLayout())
-    group.layout().setContentsMargins(0, 0, 0, 0)
-    group.layout().setSpacing(0)
-    last = len(buttons) - 1
-    for i, button in enumerate(buttons):
-        button.setProperty('segment', 'first' if i == 0 else ('last' if i == last else 'middle'))
-        button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
-        group.layout().addWidget(button)
-    return group
+
+    INNER_INSET = 5
+
+    def __init__(self, text: str, inner_text: str, parent=None):
+        super().__init__(text, parent)
+        self.inner = QPushButton(inner_text, self)
+        self.inner.setObjectName('find_replace_all_button')
+        self.inner.installEventFilter(self)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, self.INNER_INSET, 0)
+        layout.addStretch(1)
+        layout.addWidget(self.inner, 0, Qt.AlignVCenter)
+
+    def sizeHint(self) -> QSize:
+        size = super().sizeHint()
+        return QSize(size.width() + self.inner.sizeHint().width() + self.INNER_INSET, size.height())
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+    def eventFilter(self, obj, event):
+        if obj is self.inner and event.type() in (QEvent.Enter, QEvent.Leave):
+            self._set_inner_hover(event.type() == QEvent.Enter)
+        return False
+
+    def _set_inner_hover(self, on: bool) -> None:
+        if bool(self.property('inner_hover')) == on:
+            return
+        self.setProperty('inner_hover', on)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
 
 def _cue_start(segment: dict) -> float:
@@ -342,13 +366,14 @@ class FindReplaceDialog(utils.SimpleDialog):
         self._status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         bar.addWidget(self._status_label, 1, Qt.AlignVCenter)
 
-        self._replace_button = QPushButton(_('subtitles_panel.replace'))
-        self._replace_all_button = QPushButton(_('find_replace_dialog.replace_all_short'))
+        self._replace_button = _ReplaceButton(
+            _('subtitles_panel.replace'), _('find_replace_dialog.replace_all_short'))
+        self._replace_button.setProperty('class', 'find_replace_button')
+        self._replace_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
+        self._replace_all_button = self._replace_button.inner
         # "All" alone is terse; the tooltip says what it does.
         self._replace_all_button.setToolTip(_('subtitles_panel.replace_all'))
-        for button in (self._replace_button, self._replace_all_button):
-            button.setProperty('class', 'find_replace_button')
-        bar.addWidget(_segmented(self._replace_button, self._replace_all_button))
+        bar.addWidget(self._replace_button)
 
         # Chevron icons come from the stylesheet (normal / hover / disabled).
         # A stylesheet icon is only used for painting, though: the button is

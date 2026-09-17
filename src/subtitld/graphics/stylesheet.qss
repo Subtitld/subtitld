@@ -2844,11 +2844,19 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     padding: 0 0 0 12px;
 }
 
-/* Bar buttons: plain text like Cancel. A hairline divides the pair, and the
-   pair's outer top corners (facing into the dialog) round on hover. */
+/* REPLACE: plain text on the bar like Cancel, with ALL as a small button
+   inside its right end. Its top corners face into the dialog and round on
+   hover; pointing at ALL drops REPLACE's fill (inner_hover). */
 #find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"] {
     color: #b8cee0;
     font-weight: 700;
+    text-align: left;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"][inner_hover="true"] {
+    background-color: transparent;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:disabled {
@@ -2856,13 +2864,27 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: transparent;
 }
 
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"][segment="first"] {
-    border-top-left-radius: 4px;
+#find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button {
+    padding: 2px 6px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #b8cee0;
+    background-color: rgba(184, 206, 224, 36);
+    border-radius: 3px;
 }
 
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"][segment="last"] {
-    border-top-right-radius: 4px;
-    border-left: 1px solid rgba(184, 206, 224, 30);
+#find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:hover {
+    color: #e3edf5;
+    background-color: rgba(184, 206, 224, 72);
+}
+
+#find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:pressed {
+    background-color: rgba(184, 206, 224, 100);
+}
+
+#find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:disabled {
+    color: rgba(184, 206, 224, 70);
+    background-color: rgba(184, 206, 224, 14);
 }
 
 /* Tab buttons: dark labels like OK; hover darkens the label and the chevron,
@@ -2889,8 +2911,8 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 /* The ‹ half is only an icon: keep it narrow. */
 #find_replace_dialog #dialog_bottom #find_replace_previous_button {
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-left: 7px;
+    padding-right: 7px;
     /* An icon-only button otherwise gets Qt's wide default. */
     min-width: 12px;
     max-width: 12px;
@@ -2907,6 +2929,8 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 }
 
 #find_replace_dialog #dialog_bottom #find_replace_next_button {
+    padding-left: 9px;
+    padding-right: 9px;
     icon: url(graphics:find_next_icon_tab.svg);
     icon-size: 12px 12px;
 }
