@@ -110,7 +110,7 @@ class _ReplaceButton(QPushButton):
     """
 
     INNER_VERTICAL_MARGIN = 6
-    INNER_RIGHT_MARGIN = 6
+    INNER_RIGHT_MARGIN = 8
 
     def __init__(self, text: str, inner_text: str, parent=None):
         super().__init__(text, parent)
