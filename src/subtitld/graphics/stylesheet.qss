@@ -2609,25 +2609,26 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: transparent;
 }
 
-/* The notch (dialog_title_close_background.svg, drawn like the main window's
-   version tab). Sliced 0/1/1/36: the left 36px carry the slanted edge and its
-   curve at 1:1, the
-   bottom 1px is the hairline, and the body stretches. The body is a 3% sheen,
-   so the gradient shows through and the notch reads as an outline. QSS border
+/* The notch behind the close button (dialog_title_close_background.svg,
+   drawn like the main window's version tab). Sliced 0/4/1/36: the left 36px
+   carry the slanted edge and its curve at full width, the right 4px the
+   rounded top-right corner that meets the dialog's own, the bottom 1px the
+   hairline; the body stretches. No top slice: it would scale the slant's
+   first rows differently from the rest and put a kink in it. QSS border
    widths do not move a plain widget's children, so SimpleDialog places the
    close button with layout margins; it starts inside the slant slice, where
    the notch body already begins, to keep the notch narrow. */
 #dialog_title_notch {
-    border-image: url(graphics:dialog_title_close_background.svg) 0 1 1 36 stretch stretch;
-    border-width: 0 1px 1px 36px;
+    border-image: url(graphics:dialog_title_close_background.svg) 0 4 1 36 stretch stretch;
+    border-width: 0 4px 1px 36px;
     background-color: transparent;
 }
 
 /* Close button hovered: the whole notch lights up, following its slant,
    instead of a rectangle filling the button beside it. The property is set
-   by SimpleDialog from the button's own enter/leave events. */
+   by SimpleDialog from the button's own enter/leave events. Same slices. */
 #dialog_title_notch[hover="true"] {
-    border-image: url(graphics:dialog_title_notch_hover.svg) 0 1 1 36 stretch stretch;
+    border-image: url(graphics:dialog_title_close_background_hover.svg) 0 4 1 36 stretch stretch;
 }
 
 #dialog_title QLabel {
