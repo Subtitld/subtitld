@@ -2861,8 +2861,8 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: transparent;
 }
 
-/* A pill with a smaller label than REPLACE's, inset evenly (INNER_MARGIN)
-   so it sits centred on REPLACE's line. At rest only its outline shows, in
+/* A pill with a smaller label than REPLACE's, inset equally top and bottom
+   (INNER_VERTICAL_MARGIN) so it sits centred on REPLACE's line. At rest only its outline shows, in
    the hover fill's colour; hover fills it in. The fill already runs under
    the border, so hover clears the border rather than doubling it into a
    brighter ring. */
@@ -2873,7 +2873,7 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     color: #b8cee0;
     background-color: transparent;
     border: 1px solid rgba(184, 206, 224, 60);
-    border-radius: 4px;
+    border-radius: 3px;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:hover {
