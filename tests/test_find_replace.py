@@ -145,9 +145,9 @@ text_end = 12 + rb.fontMetrics().horizontalAdvance(rb.text().upper())
 check('All is inside Replace, right of its text',
       (rb.rect().contains(ab.geometry()), ab.geometry().left() >= text_end), (True, True))
 g = ab.geometry()
-check('All rises from Replace\'s bottom edge, gap above, padding right',
-      (g.bottom(), g.top(), rb.width() - 1 - g.right()),
-      (rb.height() - 1, rb.INNER_TOP_GAP, rb.INNER_RIGHT_PADDING))
+m = rb.INNER_MARGIN
+check('All is inset evenly from Replace\'s top, right and bottom',
+      (g.top(), rb.width() - 1 - g.right(), rb.height() - 1 - g.bottom()), (m, m, m))
 def hovered(button):
     opt = QStyleOptionButton()
     button.initStyleOption(opt)

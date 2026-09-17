@@ -2845,10 +2845,9 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     padding: 0 0 0 12px;
 }
 
-/* REPLACE: plain text on the bar like Cancel, with ALL inside its right end
-   — the player's play/record pattern, mirrored: ALL rises from the bottom
-   edge with rounded top corners. Their top corners face into the dialog.
-   Pointing at ALL keeps REPLACE hovered too, with ALL's own fill on top. */
+/* REPLACE: plain text on the bar like Cancel, with ALL as a pill inside its
+   right end. REPLACE's top corners face into the dialog. Pointing at ALL
+   keeps REPLACE hovered too, with ALL's own fill on top. */
 #find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"] {
     color: #b8cee0;
     font-weight: 700;
@@ -2862,31 +2861,36 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: transparent;
 }
 
-/* A smaller label than REPLACE's. padding-bottom equals the gap above ALL
-   (INNER_TOP_GAP, 4px), so the label is centred on the same line as
-   REPLACE's. No border; only hover gives it a fill. */
+/* A pill with a smaller label than REPLACE's, inset evenly (INNER_MARGIN)
+   so it sits centred on REPLACE's line. At rest only its outline shows, in
+   the hover fill's colour; hover fills it in. The fill already runs under
+   the border, so hover clears the border rather than doubling it into a
+   brighter ring. */
 #find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button {
-    padding: 0 8px 4px 8px;
+    padding: 0 8px;
     font-size: 9px;
     font-weight: 700;
     color: #b8cee0;
     background-color: transparent;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
+    border: 1px solid rgba(184, 206, 224, 60);
+    border-radius: 4px;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:hover {
     color: #e3edf5;
     background-color: rgba(184, 206, 224, 60);
+    border-color: transparent;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:pressed {
     background-color: rgba(184, 206, 224, 90);
+    border-color: transparent;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton#find_replace_all_button:disabled {
     color: rgba(184, 206, 224, 70);
     background-color: transparent;
+    border-color: rgba(184, 206, 224, 25);
 }
 
 /* Tab buttons: dark labels like OK; hover darkens the label and the chevron,
