@@ -105,6 +105,19 @@ check('resolution frame carries the dimensions',
       (host.videoproperties_resolution_card.frame._w, host.videoproperties_resolution_card.frame._h) == (1920, 1080))
 check('frame hugs a 16:9 drawing', host.videoproperties_resolution_card.frame.size() == QSize(142, 80),
       host.videoproperties_resolution_card.frame.size())
+frame = host.videoproperties_resolution_card.frame
+for (w, h), want in (((1440, 1080), 107), ((2560, 1080), 190), ((3840, 1080), 284),
+                     ((1080, 1920), 45), ((720, 2160), 27), ((8000, 1000), 320)):
+    frame.set_dimensions(w, h)
+    rect = frame.frame_rect()
+    check(f'frame for {w}x{h}: fixed height, width {want}',
+          (round(rect.width()), round(rect.height())) == (want, 80) and frame.height() == 80,
+          (rect.width(), rect.height(), frame.width()))
+frame.set_dimensions(720, 2160)
+check('a very tall frame keeps its width; the widget widens for the labels',
+      frame.width() > 27 and abs(frame.frame_rect().center().x() - frame.width() / 2) < 0.01,
+      (frame.width(), frame.frame_rect()))
+frame.set_dimensions(1920, 1080)
 check('frame rate', host.videoproperties_framerate_card.value.text() == '30.0013fps',
       host.videoproperties_framerate_card.value.text())
 check('duration', host.videoproperties_duration_card.value.text() == '00:24:36')

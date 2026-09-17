@@ -2982,17 +2982,19 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 /* Facts are cards in the groupbox style: same frame, same small caps title,
    but the title sits inside the frame. */
+/* Padding sits inside the 3px frame; the card height in
+   left_panel_videoproperties.py (_CARD_HEIGHT) adds up the same numbers. */
 QGroupBox[class="videoproperties_card"] {
     margin-left: 0;
-    padding: 30px 14px 12px 14px;
+    padding: 24px 10px 8px 10px;
 }
 
 QGroupBox[class="videoproperties_card"]::title {
     subcontrol-origin: border;
     subcontrol-position: top left;
     margin: 0;
-    left: 14px;
-    top: 12px;
+    left: 10px;
+    top: 8px;
 }
 
 #videoproperties_card_value {
@@ -3000,7 +3002,7 @@ QGroupBox[class="videoproperties_card"]::title {
     font-size: 22px;
     font-weight: 500;
     color: #c8dbe9;
-    padding: 0 4px 6px 0;
+    padding: 0 0 2px 0;
 }
 
 #videoproperties_hint,

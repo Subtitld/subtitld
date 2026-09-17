@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QGridLayout,
 )
 from PySide6.QtCore import Qt, QRect, QRectF, QSize, QPoint, QTimer
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
@@ -27,9 +27,14 @@ _TAB_SOURCE = 0
 _TAB_PROXY = 1
 
 # Every card shares one height, so a row of them reads as one strip. The
-# resolution card sets it: title, then the frame drawing.
-_CARD_HEIGHT = 124
-_FRAME_AREA = QSize(170, 80)
+# resolution card sets it: the 3px frame and the stylesheet's padding (24 top,
+# 8 bottom) around the frame drawing.
+# The frame drawing is always this tall; its width follows the video's aspect
+# ratio. Only a panorama past _FRAME_MAX_RATIO is drawn narrower than true.
+_FRAME_HEIGHT = 80
+_FRAME_MAX_RATIO = 4.0
+_FRAME_LABEL_INSET = 6
+_CARD_HEIGHT = 3 + 24 + _FRAME_HEIGHT + 8 + 3
 
 _STATUS_PAGE_TEXT = 0
 _STATUS_PAGE_PROGRESS = 1
@@ -127,12 +132,21 @@ class _FlowLayout(QLayout):
 
 class _ResolutionFrame(QWidget):
     """A frame drawn in the video's own aspect ratio, labelled with its width
-    along the top edge and its height along the right edge."""
+    along the top edge and its height along the right edge.
+
+    The frame is always _FRAME_HEIGHT tall and exactly as wide as the video's
+    aspect ratio makes it. For a very tall video the labels are wider than the
+    frame; the widget is then widened for them and the frame stays centred at
+    its true width.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._w = 0
         self._h = 0
+        self._label_font = QFont('Montserrat')
+        self._label_font.setPixelSize(9)
+        self._label_font.setWeight(QFont.Medium)
         self._fit()
 
     def set_dimensions(self, width, height):
@@ -140,37 +154,52 @@ class _ResolutionFrame(QWidget):
         self._fit()
         self.update()
 
-    def _ratio(self):
+    def _labels(self):
+        if self._w <= 0 or self._h <= 0:
+            return '', ''
+        return f'{self._w}px', f'{self._h}px'
+
+    def frame_width(self):
         ratio = (self._w / self._h) if self._w > 0 and self._h > 0 else 16 / 9
-        # Clamp so extreme ratios still leave room for both labels.
-        return min(max(ratio, 0.5), 4.0)
+        return max(1, round(_FRAME_HEIGHT * min(ratio, _FRAME_MAX_RATIO)))
+
+    def frame_rect(self):
+        """Where the frame is drawn, in widget coordinates."""
+        fw = self.frame_width()
+        return QRectF((self.width() - fw) / 2.0, 0, fw, _FRAME_HEIGHT)
 
     def _fit(self):
-        # The widget IS the frame, so the card around it hugs the drawing.
-        ratio = self._ratio()
-        width = min(_FRAME_AREA.width(), round(_FRAME_AREA.height() * ratio))
-        self.setFixedSize(QSize(width, round(width / ratio)))
+        fm = QFontMetrics(self._label_font)
+        text_w = max((fm.horizontalAdvance(t) for t in self._labels()), default=0)
+        needed = text_w + 2 * _FRAME_LABEL_INSET if text_w else 0
+        self.setFixedSize(QSize(max(self.frame_width(), needed), _FRAME_HEIGHT))
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        box = self.frame_rect().adjusted(0.5, 0.5, -0.5, -0.5)
 
         p.setPen(QPen(QColor(184, 206, 224, 64), 1))
         p.setBrush(QColor(10, 14, 18, 70))
         p.drawRoundedRect(box, 3, 3)
 
-        if self._w <= 0 or self._h <= 0:
+        width_text, height_text = self._labels()
+        if not width_text:
             return
-        font = QFont(self.font())
-        font.setFamily('Montserrat')
-        font.setPixelSize(9)
-        font.setWeight(QFont.Medium)
-        p.setFont(font)
+        p.setFont(self._label_font)
         p.setPen(QColor('#c8dbe9'))
-        inner = box.adjusted(6, 5, -6, -5)
-        p.drawText(inner, Qt.AlignHCenter | Qt.AlignTop, f'{self._w}px')
-        p.drawText(inner, Qt.AlignRight | Qt.AlignVCenter, f'{self._h}px')
+        inset = _FRAME_LABEL_INSET
+        inner = box.adjusted(inset, 5, -inset, -5)
+        fm = QFontMetrics(self._label_font)
+        # Centred on the frame; wider than a narrow frame, it overflows both
+        # sides evenly (the widget was widened for that).
+        wide = QRectF(0, inner.top(), self.width(), inner.height())
+        p.drawText(wide if fm.horizontalAdvance(width_text) > inner.width() else inner,
+                   Qt.AlignHCenter | Qt.AlignTop, width_text)
+        if fm.horizontalAdvance(height_text) <= inner.width():
+            p.drawText(inner, Qt.AlignRight | Qt.AlignVCenter, height_text)
+        else:
+            p.drawText(wide, Qt.AlignHCenter | Qt.AlignVCenter, height_text)
 
 
 class _ElidedLabel(QLabel):
@@ -276,6 +305,7 @@ def _value_card(object_name):
     card = _card(object_name)
     card.value = QLabel()
     card.value.setObjectName('videoproperties_card_value')
+    card.value.setIndent(0)   # no extra room after the text: equal padding both sides
     card.layout().addWidget(card.value, 0, Qt.AlignLeft | Qt.AlignVCenter)
     return card
 
