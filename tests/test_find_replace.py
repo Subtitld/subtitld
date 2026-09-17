@@ -144,6 +144,9 @@ check('All is a child of Replace', ab.parent() is rb, True)
 text_end = 12 + rb.fontMetrics().horizontalAdvance(rb.text().upper())
 check('All is inside Replace, right of its text',
       (rb.rect().contains(ab.geometry()), ab.geometry().left() >= text_end), (True, True))
+g = ab.geometry()
+check('All rises from Replace\'s bottom edge, flush right, gap above',
+      (g.bottom(), g.right(), g.top()), (rb.height() - 1, rb.width() - 1, rb.INNER_TOP_GAP))
 QTest.mouseMove(ab); app.processEvents()
 check('pointing at All drops Replace\'s hover fill', bool(rb.property('inner_hover')), True)
 QTest.mouseMove(rb, QPoint(4, 4)); app.processEvents()

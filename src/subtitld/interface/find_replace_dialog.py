@@ -101,27 +101,30 @@ class _ShiftReturn(QObject):
 class _ReplaceButton(QPushButton):
     """REPLACE with a small ALL button inside it, at its right end.
 
-    The stylesheet left-aligns the text; the width grows by the inner button
-    plus its inset, so the text's right padding becomes the gap before it.
-    While the pointer is on the inner button this one drops its hover fill
-    (``inner_hover``), so only the action a click would run lights up.
+    The same pattern as the player's play and record buttons, mirrored: ALL
+    rises from REPLACE's bottom edge, flush with its right edge, with a gap
+    above. The stylesheet left-aligns the text; the width grows by ALL's, so
+    the text's right padding becomes the gap before it. While the pointer is
+    on ALL this button drops its hover fill (``inner_hover``), so only the
+    action a click would run lights up.
     """
 
-    INNER_INSET = 5
+    INNER_TOP_GAP = 5
 
     def __init__(self, text: str, inner_text: str, parent=None):
         super().__init__(text, parent)
         self.inner = QPushButton(inner_text, self)
         self.inner.setObjectName('find_replace_all_button')
+        self.inner.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
         self.inner.installEventFilter(self)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, self.INNER_INSET, 0)
+        layout.setContentsMargins(0, self.INNER_TOP_GAP, 0, 0)
         layout.addStretch(1)
-        layout.addWidget(self.inner, 0, Qt.AlignVCenter)
+        layout.addWidget(self.inner)
 
     def sizeHint(self) -> QSize:
         size = super().sizeHint()
-        return QSize(size.width() + self.inner.sizeHint().width() + self.INNER_INSET, size.height())
+        return QSize(size.width() + self.inner.sizeHint().width(), size.height())
 
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
