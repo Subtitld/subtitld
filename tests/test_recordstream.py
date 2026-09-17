@@ -149,5 +149,38 @@ print("request options:", [c['options'] for c in captured])
 if captured[0]['options']!={'model':'tiny','device':'cpu'}: fails.append('stream_options_not_merged')
 if captured[1]['options']!={'model':'medium','device':'cpu'}: fails.append('transcribe_options_not_merged')
 
+# ===== Idle add-on processes are stopped; busy ones are not =====
+class IdleProc:
+    def __init__(s, pending=False, idle_for=999.0):
+        s.pending=pending; s.idle_for=idle_for; s.stopped=0; s.running=True
+    def is_running(s): return s.running
+    def is_idle(s): return not s.pending
+    def idle_seconds(s): return s.idle_for
+    def shutdown(s): s.stopped+=1; s.running=False
+
+def fresh_provider(proc):
+    p=AddonASRProvider('whispercpp', {'id':'whispercpp','tasks':['asr.transcribe']}, '/nonexistent')
+    p._process=proc; p._idle_gc_sec=300.0
+    return p
+
+busy=IdleProc(pending=True); p=fresh_provider(busy); p._stop_if_idle()
+if busy.stopped or p._process is None: fails.append('idle_gc_stopped_a_busy_process')
+recent=IdleProc(idle_for=10.0); p=fresh_provider(recent); p._stop_if_idle()
+if recent.stopped: fails.append('idle_gc_stopped_a_recent_process')
+idle=IdleProc(); p=fresh_provider(idle); p._stop_if_idle()
+if idle.stopped!=1 or p._process is not None: fails.append('idle_gc_kept_an_idle_process')
+busy2=IdleProc(pending=True); p=fresh_provider(busy2)
+if p.release_if_idle() or busy2.stopped: fails.append('release_stopped_a_busy_process')
+idle2=IdleProc(idle_for=0.0); p=fresh_provider(idle2)
+if not p.release_if_idle() or idle2.stopped!=1: fails.append('release_kept_an_idle_process')
+
+from subtitld.modules.addons.addon_provider import AddonTTSProvider
+t=AddonTTSProvider('sanotts', {'id':'sanotts','tasks':['tts.synthesize']}, '/nonexistent')
+tp=IdleProc(); t._process=tp; t._idle_gc_sec=0.0
+t._tts_queue.append(('x', {}, 'y', {}))
+t._stop_if_idle()
+if tp.stopped or not t._tts_queue: fails.append('idle_gc_dropped_queued_tts_work')
+print("idle gc checks done")
+
 print("\n"+("FAIL: "+",".join(fails) if fails else "RECORD STREAMING TESTS PASS"))
 sys.exit(1 if fails else 0)

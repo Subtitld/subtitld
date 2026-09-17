@@ -39,7 +39,9 @@ dependencies = [
     # Trusted CAs for urllib downloads in frozen builds (modules/net.py).
     "certifi",
     "psutil",
-    "pywhispercpp",
+    # Imported directly by the audio, recording and timeline code. It used to
+    # arrive only through other packages (pywhispercpp among them).
+    "numpy",
     "deep_translator",
     "sounddevice",
     "soundfile",
@@ -52,14 +54,13 @@ dependencies = [
 # above; once the relevant panels guard their imports with try/except, the
 # corresponding packages can be removed from `dependencies` so that
 # `pip install subtitld` installs only the core runtime and users opt into
-# features via e.g. `pip install subtitld[transcribe]`.
+# features via e.g. `pip install subtitld[translate]`. Speech-to-text engines
+# are add-ons (installed from the Add-ons panel), not extras.
 [project.optional-dependencies]
-transcribe = ["pywhispercpp"]
 translate = ["translate", "deep_translator"]
 vision = ["mediapipe==0.10.21", "opencv-python"]
 dub = ["edge-tts", "gTTS"]
 all = [
-    "pywhispercpp",
     "translate",
     "deep_translator",
     "mediapipe==0.10.21",

@@ -155,8 +155,9 @@ class AddonManager(QObject):
             provider = self.get(configured)
             if provider is not None and task in provider.tasks and registry.is_enabled(provider.id):
                 return provider
-        # Fall back to first built-in, then first add-on.
-        candidates = self.providers_for_task(task)
+        # Fall back to first built-in, then first add-on. Never the Import
+        # pseudo-engine: its transcribe() does nothing.
+        candidates = [p for p in self.providers_for_task(task) if p.id != 'import']
         if not candidates:
             return None
         candidates.sort(key=lambda p: (not p.is_builtin, p.id))

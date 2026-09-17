@@ -146,12 +146,15 @@ def _populate_engines(self):
     for p in providers:
         combo.addItem(getattr(p, 'display_name', None) or p.id, p.id)
     saved = session.CONFIG.get('record', {}).get('engine', None)
-    if saved is not None:
-        pos = combo.findData(saved)
-        if pos >= 0:
-            combo.setCurrentIndex(pos)
+    pos = combo.findData(saved) if saved else -1
+    if pos >= 0:
+        combo.setCurrentIndex(pos)
     combo.blockSignals(False)
-    session.CONFIG.setdefault('record', {})['engine'] = combo.currentData()
+    # A saved engine that is not listed is kept: its add-on may simply not be
+    # installed (yet), and overwriting the choice here would lose it for good
+    # the first time this tab is shown.
+    if pos >= 0 or not saved:
+        session.CONFIG.setdefault('record', {})['engine'] = combo.currentData()
 
 
 def _engine_changed(self):

@@ -280,6 +280,15 @@ class AddonProcess(QObject):
             'add-on shut down with pending request',
         )
 
+    def is_idle(self) -> bool:
+        """No request (or stream) is waiting for an answer."""
+        with self._requests_lock:
+            return not self._requests
+
+    def idle_seconds(self) -> float:
+        """Time since the last frame either way."""
+        return time.monotonic() - self._last_activity
+
     # ------------------------------------------------------------------
     # Request API
     # ------------------------------------------------------------------

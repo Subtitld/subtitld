@@ -122,7 +122,7 @@ class _Row:
     action buttons to expose without re-querying the registry.
 
     `is_builtin` is set for providers that ship inside the Subtitld binary
-    (Edge TTS, whisper.cpp). They appear in the list so users can configure
+    (Edge TTS, gTTS, the FFmpeg separator). They appear in the list so users can configure
     defaults / see capabilities, but the Install / Remove buttons are
     suppressed since their lifecycle isn't user-managed.
     """
@@ -269,7 +269,7 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
 
     Order: built-ins first (alphabetised), then user-installed add-ons, then
     catalog-only ones. Built-ins are pinned to the top so the user always
-    sees `Edge TTS` / `whisper.cpp` as a stable anchor regardless of how many
+    sees the built-in engines (`Edge TTS`, ...) as a stable anchor regardless of how many
     add-ons they install.
     """
     by_id: dict[str, _Row] = {}
@@ -524,8 +524,8 @@ class _AddonCard(QFrame):
             # at least one `config_schema.fields` entry the user can set.
             # Built-ins don't carry manifests so they currently get no
             # Configure button — by convention they expose their settings
-            # via the legacy left-panel UIs (Edge TTS rate, whisper.cpp
-            # model, etc.). If we later port built-in providers to also use
+            # via the legacy left-panel UIs (Edge TTS rate, etc.). If we
+            # later port built-in providers to also use
             # `config_schema`, the `getattr` fallback below will pick them
             # up without any further wiring.
             schema_source: dict | None = (

@@ -26,7 +26,7 @@ from subtitld.modules import session
 from subtitld.modules.addons import languages as _languages
 from subtitld.modules.addons import protocol
 from subtitld.modules.addons import registry as _registry
-from subtitld.modules.addons.process import AddonProcess
+from subtitld.modules.addons.process import AddonProcess, DEFAULT_IDLE_GC_SEC
 from subtitld.modules.addons.provider import (
     ASRProvider,
     AudioSeparatorProvider,
@@ -99,7 +99,7 @@ def _overlay_host_paths(env: dict[str, str]) -> None:
     """Tell add-ons where the host keeps things they need too.
 
     `SUBTITLD_MODELS_DIR` lets an add-on share the host's model cache (the
-    whisper.cpp add-on reuses the multi-GB files the built-in engine
+    whisper.cpp add-on reuses the multi-GB files the former built-in engine
     downloaded there), `SUBTITLD_TEMP_DIR` gives it a scratch dir the host
     cleans up, and `SUBTITLD_FFMPEG_EXECUTABLE` is the ffmpeg the host ships:
     a frozen Windows/macOS install has no ffmpeg on PATH. Values already in
@@ -150,6 +150,10 @@ def _overlay_cloud_credentials(env: dict[str, str], manifest: dict | None) -> No
     if base_url and not env.get('SUBTITLD_CLOUD_BASE_URL'):
         env['SUBTITLD_CLOUD_BASE_URL'] = base_url
 
+# How often an add-on's process is checked for having gone idle.
+_IDLE_CHECK_MS = 30_000
+
+
 class _AddonProviderMixin:
     """Shared bits between the per-task provider classes."""
 
@@ -158,6 +162,10 @@ class _AddonProviderMixin:
         self._manifest = manifest
         self._exe_path = str(exe_path)
         self._process: AddonProcess | None = None
+        # An add-on process can hold GBs (a loaded model). One nothing has
+        # talked to for this long is stopped; the next request restarts it.
+        self._idle_gc_sec = DEFAULT_IDLE_GC_SEC
+        self._idle_timer = None
         # Pre-compute the normalized language tag list once: manifests can
         # declare them in arbitrary case (`pt_BR`, `pt-BR`, `PT-br`), and
         # we want a single canonical form for filter matching. Empty list
@@ -203,9 +211,46 @@ class _AddonProviderMixin:
                 self._manifest, self._exe_path, env=env
             )
             self._process.start()
+            self._watch_idle()
         return self._process
 
+    def _watch_idle(self) -> None:
+        if self._idle_timer is None:
+            self._idle_timer = QTimer(self)
+            self._idle_timer.setInterval(_IDLE_CHECK_MS)
+            self._idle_timer.timeout.connect(self._stop_if_idle)
+        self._idle_timer.start()
+
+    def _has_queued_work(self) -> bool:
+        """Work the provider holds that the process has not been sent yet."""
+        return False
+
+    def _stop_if_idle(self) -> None:
+        proc = self._process
+        if proc is None or not proc.is_running():
+            if self._idle_timer is not None:
+                self._idle_timer.stop()
+            return
+        if (proc.is_idle() and not self._has_queued_work()
+                and proc.idle_seconds() >= self._idle_gc_sec):
+            log.info('%s: idle for %.0f s, stopping its process',
+                     self._addon_id, proc.idle_seconds())
+            self.shutdown()
+
+    def release_if_idle(self) -> bool:
+        """Stop the process now if nothing is waiting on it (it restarts on
+        the next request). False when it is busy."""
+        proc = self._process
+        if proc is None:
+            return True
+        if self._has_queued_work() or (proc.is_running() and not proc.is_idle()):
+            return False
+        self.shutdown()
+        return True
+
     def shutdown(self) -> None:
+        if self._idle_timer is not None:
+            self._idle_timer.stop()
         if self._process is not None:
             self._process.shutdown()
             self._process = None
@@ -255,6 +300,9 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         # `generate_speeches` calls just extend the same queue.
         self._tts_queue: deque[tuple[str, dict, str, dict]] = deque()
         self._tts_in_flight: bool = False
+
+    def _has_queued_work(self) -> bool:
+        return bool(self._tts_queue) or self._tts_in_flight
 
     def list_voices(self) -> list[dict]:
         # Most TTS add-ons declare their voices statically in the manifest;

@@ -24,19 +24,27 @@ from __future__ import annotations
 from subtitld.modules import session
 
 
-# Provider ids that USED to ship as built-ins and no longer do. Their config
-# entries outlive the removal, which matters because an add-on may legitimately
-# reuse the same id — the AssemblyAI cloud provider came back as an
-# out-of-process add-on with id `assemblyai`. A stale `enabled: False` left by
-# the removed built-in would then hide the freshly installed add-on from every
-# engine picker, with no error and nothing on screen to explain it.
-_REMOVED_BUILTIN_IDS = frozenset({'assemblyai'})
+# Providers that USED to ship as built-ins, and which of their config entries
+# go once they are gone. Their config outlives the removal, which matters
+# because an add-on may legitimately reuse the same id — AssemblyAI and
+# whisper.cpp both came back as out-of-process add-ons under their old ids.
+#
+#   'enabled'  — always. `is_enabled` only falls back to True when the key is
+#                ABSENT, so a leftover `False` from the built-in silently hides
+#                the same-id add-on from every engine picker.
+#   'options'  — only when the settings bag is stale: AssemblyAI's held an API
+#                key the add-on never reads. whisper.cpp's holds the chosen
+#                model, backed by a multi-GB download the add-on reuses, and
+#                its keys mean the same there: kept.
+#   'defaults' — always: a defaults[task] naming a provider that is gone.
+_REMOVED_BUILTINS = {
+    'assemblyai': frozenset({'enabled', 'options', 'defaults'}),
+    'whispercpp': frozenset({'enabled', 'defaults'}),
+}
 
-# Bump when `_REMOVED_BUILTIN_IDS` grows, so the prune runs again for the new
-# entries. Without a revision marker this would either run once and miss later
-# additions, or run every launch and wipe settings the user has since entered
-# for a same-id add-on.
-_PRUNE_REVISION = 1
+# Which ids have been pruned, so each is pruned exactly once: once an add-on
+# owns the id, its settings are the user's. A list of ids; the legacy value 1
+# (a single revision counter) meant `assemblyai`.
 _PRUNE_KEY = '_removed_builtins_pruned'
 
 
@@ -58,47 +66,53 @@ def ensure_seeded() -> None:
 
 
 def prune_removed_builtins() -> None:
-    """Drop config left behind by providers that were removed from the app.
-
-    Runs once per `_PRUNE_REVISION` (tracked by `_PRUNE_KEY`) rather than on
-    every launch: once an add-on legitimately owns one of these ids, its
-    settings are the user's and must not be cleared out from under them.
-
-    Three things go:
-
-      * `enabled[id]` — an explicit `False` from the removed built-in. This is
-        the one that bites: `is_enabled` only falls back to its `True` default
-        when the key is ABSENT, so a leftover `False` silently hides a
-        same-id add-on.
-      * `options[id]` — the removed provider's settings bag. For the cloud
-        providers this held an API key, which is both stale and a credential
-        we have no reason to keep sitting in the config file. Cloud-backed
-        add-ons read auth from the shared SubtitldCloud slot anyway, so
-        nothing the user still needs is lost.
-      * any `defaults[task]` pointing at a removed id, which would otherwise
-        resolve to a provider that no longer exists.
-    """
+    """Drop config left behind by providers that were removed from the app,
+    once per removed id (see `_REMOVED_BUILTINS` for what goes)."""
     root = _root()
     if not isinstance(root, dict):
         return
-    if int(root.get(_PRUNE_KEY, 0) or 0) >= _PRUNE_REVISION:
+    marker = root.get(_PRUNE_KEY)
+    if isinstance(marker, list):
+        done = {str(x) for x in marker}
+    elif marker:
+        done = {'assemblyai'}      # the old single-revision marker
+    else:
+        done = set()
+    pending = [i for i in _REMOVED_BUILTINS if i not in done]
+    if not pending and isinstance(marker, list):
         return
 
     enabled = root.get('enabled')
     options = root.get('options')
-    for addon_id in _REMOVED_BUILTIN_IDS:
-        if isinstance(enabled, dict):
-            enabled.pop(addon_id, None)
-        if isinstance(options, dict):
-            options.pop(addon_id, None)
-
     defaults = root.get('defaults')
-    if isinstance(defaults, dict):
-        for task, provider_id in list(defaults.items()):
-            if provider_id in _REMOVED_BUILTIN_IDS:
-                del defaults[task]
+    for addon_id in pending:
+        drop = _REMOVED_BUILTINS[addon_id]
+        if 'enabled' in drop and isinstance(enabled, dict):
+            enabled.pop(addon_id, None)
+        if 'options' in drop and isinstance(options, dict):
+            options.pop(addon_id, None)
+        if 'defaults' in drop and isinstance(defaults, dict):
+            for task, provider_id in list(defaults.items()):
+                if provider_id == addon_id:
+                    del defaults[task]
+        done.add(addon_id)
+    _migrate_whispercpp_options(options)
+    root[_PRUNE_KEY] = sorted(done)
 
-    root[_PRUNE_KEY] = _PRUNE_REVISION
+
+# The whisper.cpp add-on's `threads` choices ("0" is auto).
+_WHISPERCPP_THREADS = (0, 1, 2, 4, 8, 16)
+
+
+def _migrate_whispercpp_options(options) -> None:
+    """The built-in stored `threads` as any number; the add-on's Configure
+    field is a list of strings, which shows a value it does not list as its
+    first entry and saves that back. Snap to the nearest choice not above it
+    (0 and below: auto). Idempotent."""
+    bag = options.get('whispercpp') if isinstance(options, dict) else None
+    value = bag.get('threads') if isinstance(bag, dict) else None
+    if isinstance(value, int) and not isinstance(value, bool):
+        bag['threads'] = str(max(t for t in _WHISPERCPP_THREADS if t <= max(value, 0)))
 
 
 def is_enabled(addon_id: str, default: bool = True) -> bool:

@@ -102,13 +102,12 @@ def _audio_source_for_transcription():
 # shared cloud plumbing those add-ons authenticate through stays in
 # `addons/builtin/subtitld_cloud_shared.py`.
 #
-# The current bundled offline ASR is whisper.cpp via the
-# ``whispercpp_provider`` builtin (registered in ``__main__.py``). The
-# model itself isn't shipped inside the binary — it's downloaded once on
-# first use to ``PATH_SUBTITLD_DATA_MODELS/whispercpp/``. The picker
-# entry below is auto-populated through ``_GenericASRPanel`` like any
-# other registered ASR provider; no bespoke widget is needed because the
-# provider's settings live entirely in the AddonsDialog config UI.
+# No speech-to-text engine is bundled any more. Offline whisper.cpp is an
+# add-on too (addon-whispercpp); it downloads its model on first use into
+# ``PATH_SUBTITLD_DATA_MODELS/whispercpp/``, the folder the former
+# built-in used, so earlier downloads are reused. Every engine's picker
+# entry is auto-populated through ``_GenericASRPanel``; no bespoke widget
+# is needed because settings live entirely in the AddonsDialog config UI.
 
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
 
@@ -119,8 +118,8 @@ class _GenericASRPanel(QWidget):
     Renders just the engine name and pipes the provider's
     `partial` / `transcript_finished` / `error` / `progress` signals
     back to the host UI. Used for every ASR engine in the picker today —
-    the built-in whisper.cpp provider and add-ons discovered at runtime
-    (including cloud-routed ones) — because none of them need a bespoke
+    add-ons discovered at runtime, offline and cloud-routed alike —
+    because none of them need a bespoke
     widget here: model/threads/api-key settings all live in
     the AddonsDialog config UI rendered from ``provider.config_schema``.
     """
@@ -338,9 +337,8 @@ class _ImportASRPanel(QWidget):
 
 # Built-in transcription provider IDs whose panels are constructed once
 # at load() time (because they own expensive state we can't afford to
-# discard on `providers_changed`). Empty today: the bundled whisper.cpp
-# provider — and every other registered ASR engine — uses
-# ``_GenericASRPanel``, which carries no state worth preserving across
+# discard on `providers_changed`). Empty today: every registered ASR
+# engine uses ``_GenericASRPanel``, which carries no state worth preserving across
 # rebuilds (model selection lives in the addons registry, not on the
 # widget). This constant is the seam where a future ASR engine with a
 # heavy hand-built panel (e.g. one that streams visualizations or holds
@@ -769,9 +767,8 @@ def load(self):
 
     self.global_panel_import_tabwidget = QStackedWidget()
 
-    # No hand-coded ASR panel here today. Every ASR engine — including
-    # the bundled whisper.cpp builtin registered in ``__main__.py`` —
-    # arrives through the addons system below via ``_GenericASRPanel``.
+    # No hand-coded ASR panel here today. Every ASR engine arrives through
+    # the addons system below via ``_GenericASRPanel``.
     # See ``_BUILTIN_ASR_IDS`` above for the seam where a future ASR
     # engine with a hand-coded panel would slot in.
 
@@ -839,7 +836,7 @@ def load(self):
     # defined here as nested functions. That worked while no ASR
     # provider ever actually emitted `transcript_progress`, but the
     # nested-scope names are invisible to `_populate_asr_addons`, which
-    # is module-level and only sees module-level names. When whisper.cpp
+    # is module-level and only sees module-level names. When an engine
     # started emitting progress, `connect(... lambda: <nested name>)`
     # crashed with NameError. They now live at module scope.
     self._transcription_running = False

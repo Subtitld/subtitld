@@ -5,8 +5,8 @@ switchers pick the mode; the input device is chosen in the Audio ▸ Recording
 tab. Once armed, recording follows playback — pressing Play records the mic
 from the current playhead:
 
-  * **transcript** — live STT (whisper.cpp offline, or whatever ASR provider is
-    active) writes subtitles as you narrate. If a subtitle sits under the
+  * **transcript** — live STT (a speech-to-text add-on: whisper.cpp offline,
+    RealtimeSTT, or whichever is active) writes subtitles as you narrate. If a subtitle sits under the
     playhead when an utterance is transcribed, its text is filled in; otherwise
     a new subtitle is created using the detected phrase boundaries.
   * **wave** — on Stop the recording becomes a *dub* on the subtitle under the
@@ -1524,6 +1524,14 @@ class RecordController(QObject):
         base = self._resolve_shared_asr_provider()
         if base is None:
             return None
+        # The shared instance (the Import panel's) would otherwise keep a
+        # second copy of the same model loaded while the private one works.
+        release = getattr(base, 'release_if_idle', None)
+        if callable(release):
+            try:
+                release()
+            except Exception:
+                log.debug('Record: could not release the shared engine', exc_info=True)
         # A clone is a whole engine (for an add-on, a process holding its
         # model): reuse an idle one of this engine rather than start another
         # per take, and let idle ones of an engine no longer chosen go.
@@ -1569,6 +1577,12 @@ class RecordController(QObject):
                         and getattr(provider, 'id', '') != 'import' \
                         and self._provider_available(provider):
                     return provider
+                # The saved engine is not usable (its add-on is not installed,
+                # say): use what the Recording tab shows in its place, so the
+                # tab and the take agree. The saved choice itself is kept.
+                listed = asr_providers()
+                if listed:
+                    return listed[0]
         except Exception:
             pass
         # 2. Whatever the Import panel currently has selected.

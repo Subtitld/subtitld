@@ -1,6 +1,6 @@
 """Live (as-you-speak) transcription for Record mode.
 
-Streaming ASR is hard and the bundled engines (whisper.cpp, cloud) are
+Streaming ASR is hard and most engines (whisper.cpp, cloud) are
 batch-oriented, so we get "live" the pragmatic, robust way:
 
     recorded blocks ─▶ VadSegmenter ─▶ per-utterance WAV ─▶ ASRProvider.transcribe

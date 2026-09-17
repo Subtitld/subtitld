@@ -848,5 +848,49 @@ feed(ctrl, UTT); ctrl.on_pause()
 ctrl.shutdown()
 check('P5 shutdown stops every private engine', c6.shut == 1 and ctrl._clones == [])
 
+# P6: starting a private engine stops an idle shared one (one model copy).
+class ReleasingASR(PoolASR):
+    def __init__(s, engine='held'):
+        super().__init__(engine); s.released = 0
+    def clone(s):
+        c = ReleasingASR(s.engine); PoolASR.made.append(c); return c
+    def release_if_idle(s):
+        s.released += 1; return True
+
+reset(pos=0.0)
+ctrl = record_controls.RecordController(Host())
+shared = ReleasingASR()
+c = pool_take(ctrl, shared, 0.0)
+check('P6 the shared engine is released before the private one starts', shared.released == 1)
+feed(ctrl, UTT); ctrl.on_pause(); c.answer(text='x')
+pool_take(ctrl, shared, 20.0)
+check('P6 ...and again when the warm private engine is reused', shared.released == 2)
+ctrl.on_pause(); ctrl.shutdown()
+
+# P7: the saved record engine is not installed: the take uses what the
+# Recording tab shows (the first usable engine), and the choice is kept.
+first, second = PoolASR('first'), PoolASR('second')
+first.id, second.id = 'first', 'second'
+class _Mgr:
+    def providers_for_task(s, task): return [first, second]
+    def get(s, pid): return {'first': first, 'second': second}.get(pid)
+from subtitld.modules import addons as _addons
+_real_get_manager = _addons.get_manager
+_addons.get_manager = lambda: _Mgr()
+try:
+    reset(pos=0.0)
+    session.CONFIG['record']['engine'] = 'whispercpp'
+    ctrl = record_controls.RecordController(Host())
+    ctrl._host.global_panel_import_tabwidget = types.SimpleNamespace(
+        currentWidget=lambda: types.SimpleNamespace(provider=second))
+    check('P7 the take uses the engine the tab shows', ctrl._resolve_shared_asr_provider() is first)
+    check('P7 the saved choice is kept', session.CONFIG['record']['engine'] == 'whispercpp')
+    session.CONFIG['record']['engine'] = None
+    check('P7 with no saved choice the Import panel\'s still counts',
+          ctrl._resolve_shared_asr_provider() is second)
+    ctrl.shutdown()
+finally:
+    _addons.get_manager = _real_get_manager
+
 print('\n' + ('FAIL: ' + ','.join(fails) if fails else 'ALL PLACEHOLDER TESTS PASS'))
 sys.exit(1 if fails else 0)

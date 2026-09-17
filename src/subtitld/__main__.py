@@ -51,7 +51,6 @@ from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provi
 from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
 from subtitld.modules.addons.builtin import import_provider as _import_provider
-from subtitld.modules.addons.builtin import whispercpp_provider as _whispercpp_provider
 # Video-manipulation plugin family (real-time per-frame). The mouth crop
 # helps the user focus on lip-sync while dubbing.
 from subtitld.modules.addons.builtin import mouth_crop_provider as _mouth_crop_provider
@@ -346,10 +345,9 @@ def main():
     # panel. Today's set:
     #   - Edge TTS — speech synthesis, no credentials required
     #   - FFmpeg separator — audio source separation, no model required
-    #   - whisper.cpp — offline ASR. Models aren't bundled; the chosen
-    #     model is downloaded once on first use to PATH_SUBTITLD_DATA_MODELS.
-    # No cloud-routed ASR ships as a built-in: those are distributed as
-    # add-ons instead, so a stock Subtitld carries no third-party service
+    # No speech-to-text engine ships as a built-in. Offline whisper.cpp and
+    # RealtimeSTT are add-ons, which keeps the app download small; the cloud
+    # ones are add-ons so a stock Subtitld carries no third-party service
     # integration the user did not ask for. The cloud plumbing itself
     # (subtitld_cloud_shared, the account dashboard) stays — it is what an
     # installed cloud add-on authenticates through.
@@ -362,7 +360,6 @@ def main():
     addon_manager.register_builtin(_ffmpeg_separator_provider.get_provider())
     addon_manager.register_builtin(_gtts_provider.get_provider())
     addon_manager.register_builtin(_import_provider.get_provider())
-    addon_manager.register_builtin(_whispercpp_provider.get_provider())
     addon_manager.register_builtin(_mouth_crop_provider.get_provider())
     try:
         discovered = addon_manager.discover()
