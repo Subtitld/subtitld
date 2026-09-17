@@ -109,7 +109,7 @@ class _ReplaceButton(QPushButton):
     its own fill on top.
     """
 
-    INNER_TOP_GAP = 3
+    INNER_TOP_GAP = 4
     INNER_RIGHT_PADDING = 4
 
     def __init__(self, text: str, inner_text: str, parent=None):
