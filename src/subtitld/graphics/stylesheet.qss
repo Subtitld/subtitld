@@ -2836,13 +2836,18 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 /* Find & Replace footer: the regular dialog footer (see #dialog_bottom
    above). Status text and REPLACE | ALL sit on the bar like Cancel; ‹ | FIND ›
    sits on the tab like OK. */
+/* The status text lines up with the body's labels and fields: 17px is the
+   body's 16px margin plus the frame's 1px border. A padded QLabel also
+   gets an automatic indent (half an "x"), which would push it off that
+   line, so the indent is zeroed. */
 #find_replace_dialog #dialog_bottom QLabel[class="find_replace_status"] {
     color: rgba(184, 206, 224, 153);
     font-size: 10px;
     font-weight: 400;
     text-transform: none;
     letter-spacing: 0;
-    padding: 0 0 0 12px;
+    padding: 0 0 0 17px;
+    qproperty-indent: 0;
 }
 
 /* REPLACE: plain text on the bar like Cancel, with ALL as a pill inside its
