@@ -123,7 +123,12 @@ QTest.keyClick(le, Qt.Key_Return, Qt.ShiftModifier); check('Shift+Enter = previo
 
 print('buttons')
 check('labels', (d._find_previous_button.text(), d._find_next_button.text(), d._replace_button.text(), d._replace_all_button.text()),
-      ('‹', 'Find  ›', 'Replace', 'All'))
+      ('', 'FIND', 'Replace', 'All'))
+check('chevrons are stylesheet icons, after the text on Find',
+      (d._find_previous_button.objectName(), d._find_next_button.objectName(),
+       d._find_next_button.layoutDirection()),
+      ('find_replace_previous_button', 'find_replace_next_button', Qt.RightToLeft))
+check('All looks like Replace', d._replace_all_button.property('class'), d._replace_button.property('class'))
 d._find_field.lineedit.setText('zzz')
 check('disabled with no matches', (d._find_previous_button.isEnabled(), d._find_next_button.isEnabled()), (False, False))
 

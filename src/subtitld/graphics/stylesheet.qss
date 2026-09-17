@@ -2839,8 +2839,7 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     padding: 0;
 }
 
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"],
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"] {
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"] {
     padding: 6px 14px;
     font-size: 11px;
     font-weight: 700;
@@ -2862,18 +2861,7 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     color: #ffffff;
 }
 
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"] {
-    background-color: #c8dbe9;
-    color: #3e5363;
-}
-
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"]:hover {
-    background-color: #d6e4ef;
-    color: #1a232b;
-}
-
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:disabled,
-#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button_primary"]:disabled {
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:disabled {
     color: rgba(184, 206, 224, 80);
     background-color: rgba(74, 95, 112, 100);
 }
@@ -2897,10 +2885,37 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     border-left: 1px solid #2f3e4a;
 }
 
-/* The ‹ half is a glyph, not a word: keep it narrow. */
+/* The step buttons carry chevron icons, following the text colour. The ‹
+   half is only an icon: keep it narrow. */
 #find_replace_dialog #dialog_bottom #find_replace_previous_button {
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-left: 9px;
+    padding-right: 9px;
+    /* An icon-only button otherwise gets Qt's wide default. */
+    min-width: 12px;
+    max-width: 12px;
+    icon: url(graphics:find_back_icon.svg);
+    icon-size: 12px 12px;
+}
+
+#find_replace_dialog #dialog_bottom #find_replace_previous_button:hover {
+    icon: url(graphics:find_back_icon_hover.svg);
+}
+
+#find_replace_dialog #dialog_bottom #find_replace_previous_button:disabled {
+    icon: url(graphics:find_back_icon_disabled.svg);
+}
+
+#find_replace_dialog #dialog_bottom #find_replace_next_button {
+    icon: url(graphics:find_next_icon.svg);
+    icon-size: 12px 12px;
+}
+
+#find_replace_dialog #dialog_bottom #find_replace_next_button:hover {
+    icon: url(graphics:find_next_icon_hover.svg);
+}
+
+#find_replace_dialog #dialog_bottom #find_replace_next_button:disabled {
+    icon: url(graphics:find_next_icon_disabled.svg);
 }
 
 #music_voice_separation_box #music_voice_separation_music_icon {

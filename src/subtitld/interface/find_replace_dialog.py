@@ -342,12 +342,26 @@ class FindReplaceDialog(utils.SimpleDialog):
         self._status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         bottom_layout.addWidget(self._status_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
 
-        self._find_previous_button = QPushButton('‹')
+        # Chevron icons come from the stylesheet (normal / hover / disabled).
+        # A stylesheet icon is only used for painting, though: the button is
+        # also given the icon itself, or Qt would size it without one.
+        chevron_back = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_back_icon.svg'))
+        chevron_next = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_next_icon.svg'))
+        self._find_previous_button = QPushButton()
+        self._find_previous_button.setIcon(chevron_back)
+        self._find_previous_button.setIconSize(QSize(12, 12))
         self._find_previous_button.setObjectName('find_replace_previous_button')
         self._find_previous_button.setProperty('class', 'find_replace_button')
         self._find_previous_button.setToolTip(_('find_replace_dialog.find_previous_tooltip'))
-        self._find_next_button = QPushButton(_('find_replace_dialog.find') + '  ›')
+        # Upper-cased here, not only by the stylesheet: with an icon, Qt sizes
+        # the button from the raw text and would clip the capitals.
+        self._find_next_button = QPushButton(_('find_replace_dialog.find').upper())
+        self._find_next_button.setIcon(chevron_next)
+        self._find_next_button.setIconSize(QSize(12, 12))
+        self._find_next_button.setObjectName('find_replace_next_button')
         self._find_next_button.setProperty('class', 'find_replace_button')
+        # Right-to-left puts the icon after the text: FIND ›.
+        self._find_next_button.setLayoutDirection(Qt.RightToLeft)
         self._find_next_button.setToolTip(_('find_replace_dialog.find_next_tooltip'))
         bottom_layout.addWidget(
             _segmented(self._find_previous_button, self._find_next_button),
@@ -356,7 +370,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         self._replace_button = QPushButton(_('subtitles_panel.replace'))
         self._replace_button.setProperty('class', 'find_replace_button')
         self._replace_all_button = QPushButton(_('find_replace_dialog.replace_all_short'))
-        self._replace_all_button.setProperty('class', 'find_replace_button_primary')
+        self._replace_all_button.setProperty('class', 'find_replace_button')
         # "All" alone is terse; the tooltip says what it does.
         self._replace_all_button.setToolTip(_('subtitles_panel.replace_all'))
         bottom_layout.addWidget(
