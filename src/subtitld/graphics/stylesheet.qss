@@ -2605,9 +2605,10 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 /* The notch, on the same artwork as the main window's version tab. Sliced
    0/1/1/36: the left 36px carry the slanted edge and its curve at 1:1, the
    bottom 1px is the hairline, and the body stretches. The body is a 3% sheen,
-   so the gradient shows through and the notch reads as an outline. The layout
-   in SimpleDialog reserves the same 36/1/1 as margins, because QSS border
-   widths do not move a plain widget's children. */
+   so the gradient shows through and the notch reads as an outline. QSS border
+   widths do not move a plain widget's children, so SimpleDialog places the
+   close button with layout margins; it starts inside the slant slice, where
+   the notch body already begins, to keep the notch narrow. */
 #dialog_title_notch {
     border-image: url(graphics:titleBar_right_version_background.svg) 0 1 1 36 stretch stretch;
     border-width: 0 1px 1px 36px;
