@@ -304,7 +304,9 @@ class FindReplaceDialog(utils.SimpleDialog):
         # ------------------------------------------------------------------
         content_layout = self.content.layout()
         content_layout.setSpacing(0)
-        content_layout.setContentsMargins(16, 14, 16, 14)
+        # 14px + the frame's 1px border puts the labels and fields on the
+        # dialog's 15px text edge, with the title and the footer status.
+        content_layout.setContentsMargins(14, 14, 14, 14)
 
         find_label = QLabel(_('find_replace_dialog.find_label'))
         find_label.setObjectName('find_replace_dialog_label')

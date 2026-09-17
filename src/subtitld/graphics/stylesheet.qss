@@ -2600,9 +2600,14 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: transparent;
 }
 
+/* The title starts 15px from the dialog's left edge, the text edge Find &
+   Replace also uses. A padded QLabel gets an automatic indent (half an "x",
+   about 3px here) on top of its padding, so the indent is zeroed and the
+   padding carries the whole offset. */
 #dialog_title_label {
     background-color: transparent;
-    padding-left: 12px;
+    padding-left: 15px;
+    qproperty-indent: 0;
 }
 
 #dialog_title_right {
@@ -2836,17 +2841,17 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 /* Find & Replace footer: the regular dialog footer (see #dialog_bottom
    above). Status text and REPLACE | ALL sit on the bar like Cancel; ‹ | FIND ›
    sits on the tab like OK. */
-/* The status text lines up with the body's labels and fields: 17px is the
-   body's 16px margin plus the frame's 1px border. A padded QLabel also
-   gets an automatic indent (half an "x"), which would push it off that
-   line, so the indent is zeroed. */
+/* The status text starts on the dialog's 15px text edge, with the title and
+   the body's labels and fields. A padded QLabel also gets an automatic
+   indent (half an "x"), which would push it off that line, so the indent
+   is zeroed. */
 #find_replace_dialog #dialog_bottom QLabel[class="find_replace_status"] {
     color: rgba(184, 206, 224, 153);
     font-size: 10px;
     font-weight: 400;
     text-transform: none;
     letter-spacing: 0;
-    padding: 0 0 0 17px;
+    padding: 0 0 0 15px;
     qproperty-indent: 0;
 }
 
