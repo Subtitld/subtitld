@@ -149,6 +149,9 @@ class RecordController(QObject):
         self._live_timer = None
         self._live_seq = 0        # identity for backstop timers
         self._asr_provider = None
+        # Private engine instances for the batch path, see _resolve_asr_provider.
+        self._clones = []           # [{'base', 'clone', 'busy'}]
+        self._live_clone = {}       # id(LiveTranscriber) -> the clone it drives
         self._draining_lives = []   # strong refs while queued subtitles drain
         self._drain_backstops = {}  # id(live) -> generation of its live backstop
         self._drain_gen = 0
@@ -275,6 +278,7 @@ class RecordController(QObject):
                     base_offset=base,
                 )
                 live, token = self._live, self._take_token
+                self._live_clone[id(live)] = provider
                 live.utterance_sealed.connect(
                     lambda info, _t=token: self._on_utterance_sealed(info, _t))
                 live.utterance_done.connect(
@@ -339,6 +343,7 @@ class RecordController(QObject):
             if self._live is not None:
                 self._detach_provider_error()
                 self._live.cleanup()
+                self._release_clone_of(self._live, reusable=True)   # nothing was sent
                 self._live = None
 
     def on_pause(self):
@@ -434,16 +439,20 @@ class RecordController(QObject):
             return
         self._draining_lives.remove(live)
         self._drain_backstops.pop(id(live), None)
+        unanswered = list(live.outstanding_uids()) if abandoned else []
         if abandoned:
             # The engine never answered these. Keep their subtitles — the
             # timing is still useful and the user can type — but stop
             # drawing them as "waiting for text".
-            for uid in live.outstanding_uids():
+            for uid in unanswered:
                 self._on_utterance_failed(uid, 'no answer')
         try:
             live.cleanup()
         except Exception:
             pass
+        # A clone still working on an unanswered request would hand that late
+        # answer to whichever take used it next.
+        self._release_clone_of(live, reusable=not unanswered)
 
     # -- transcript output -------------------------------------------------
     def _on_live_status(self, st):
@@ -1480,6 +1489,28 @@ class RecordController(QObject):
         stamp = time.strftime('%Y%m%d_%H%M%S')
         return os.path.join(rec_dir, f'recording_{stamp}_{secrets.token_hex(2)}.wav')
 
+    def _release_clone_of(self, live, reusable):
+        clone = self._live_clone.pop(id(live), None)
+        if clone is None:
+            return
+        entry = next((e for e in self._clones if e['clone'] is clone), None)
+        if entry is None:
+            return
+        spare = any(e is not entry and e['base'] is entry['base'] and not e['busy']
+                    for e in self._clones)
+        if reusable and not spare:
+            entry['busy'] = False        # kept warm for the next take
+            return
+        self._clones.remove(entry)
+        self._shutdown_engine(clone)
+
+    @staticmethod
+    def _shutdown_engine(provider):
+        try:
+            provider.shutdown()
+        except Exception:
+            log.debug('Record: could not shut down a private engine', exc_info=True)
+
     def _resolve_asr_provider(self):
         """Return a PRIVATE provider instance for live transcription.
 
@@ -1493,6 +1524,16 @@ class RecordController(QObject):
         base = self._resolve_shared_asr_provider()
         if base is None:
             return None
+        # A clone is a whole engine (for an add-on, a process holding its
+        # model): reuse an idle one of this engine rather than start another
+        # per take, and let idle ones of an engine no longer chosen go.
+        for entry in self._clones:
+            if entry['base'] is base and not entry['busy']:
+                entry['busy'] = True
+                return entry['clone']
+        for entry in [e for e in self._clones if e['base'] is not base and not e['busy']]:
+            self._clones.remove(entry)
+            self._shutdown_engine(entry['clone'])
         try:
             # Provider subclasses implement clone(). Anything else that merely
             # quacks like an engine gets the historic no-argument construction;
@@ -1513,6 +1554,7 @@ class RecordController(QObject):
             log.error('Record: no private ASR instance available; refusing to '
                       'drive the shared provider (it would overwrite the project)')
             return None
+        self._clones.append({'base': base, 'clone': clone, 'busy': True})
         return clone
 
     def _resolve_shared_asr_provider(self):
@@ -1609,6 +1651,10 @@ class RecordController(QObject):
             except Exception:
                 pass
         self._draining_lives.clear()
+        for entry in self._clones:
+            self._shutdown_engine(entry['clone'])
+        self._clones.clear()
+        self._live_clone.clear()
         self._drain_backstops.clear()
         self._uid_rec.clear()
         self._ph.clear()

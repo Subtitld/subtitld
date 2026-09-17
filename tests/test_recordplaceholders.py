@@ -791,5 +791,62 @@ check('Q8 failed start closes its session', ctrl.status == 'error' and eng.stops
       and not ctrl._streams and ctrl._stream is None, (ctrl.status, eng.stops, ctrl._streams))
 ctrl.shutdown()
 
+# --------------------------------------------------------------------------
+# Private engines (batch path): one per take used to leak, each an add-on
+# process holding its model.
+class PoolASR(HeldASR):
+    made = []
+    def __init__(s, engine='held'):
+        super().__init__(); s.engine = engine; s.shut = 0
+    def clone(s):
+        c = PoolASR(s.engine); PoolASR.made.append(c); return c
+    def shutdown(s): s.shut += 1
+
+def pool_take(ctrl, base, pos):
+    session.SUBTITLE['position'] = pos
+    ctrl._resolve_shared_asr_provider = lambda: base
+    ctrl.on_play()
+    return ctrl._live_clone[id(ctrl._live)]
+
+reset(pos=0.0)
+PoolASR.made.clear()
+ctrl = record_controls.RecordController(Host())
+base = PoolASR()
+c1 = pool_take(ctrl, base, 0.0)
+feed(ctrl, UTT); ctrl.on_pause(); c1.answer(text='one')
+check('P1 a clean take keeps its engine warm', c1.shut == 0 and not ctrl._draining_lives
+      and [e['busy'] for e in ctrl._clones] == [False])
+c2 = pool_take(ctrl, base, 20.0)
+check('P1 the next take reuses it', c2 is c1 and len(PoolASR.made) == 1)
+feed(ctrl, UTT)
+ctrl.on_pause()                                  # take 2 still waiting for its answer
+c3 = pool_take(ctrl, base, 40.0)                 # take 3 while take 2 drains
+check('P2 overlapping takes get separate engines', c3 is not c1 and len(PoolASR.made) == 2)
+feed(ctrl, UTT); ctrl.on_pause(); c3.answer(text='three')
+c1.answer(text='two')
+check('P2 both drained: one engine kept warm, the spare shut down',
+      sorted(e['clone'].shut for e in ctrl._clones) == [0] and (c1.shut + c3.shut) == 1,
+      (c1.shut, c3.shut, [e['busy'] for e in ctrl._clones]))
+check('P2 texts in place', texts() == ['one', 'two', 'three'], texts())
+
+warm = ctrl._clones[0]['clone']
+c4 = pool_take(ctrl, base, 60.0)
+feed(ctrl, UTT); ctrl.on_pause()
+check('P3 reused again', c4 is warm)
+TIMERS.clear()
+ctrl._rearm_drain(ctrl._draining_lives[0])
+fire_timers(30000)                               # the engine never answered
+check('P3 an abandoned engine is shut down, not reused', c4.shut == 1 and ctrl._clones == [])
+
+other = PoolASR('other')
+c5 = pool_take(ctrl, base, 80.0)
+feed(ctrl, UTT); ctrl.on_pause(); c5.answer(text='five')
+c6 = pool_take(ctrl, other, 100.0)
+check('P4 switching engines lets the idle one go', c5.shut == 1 and c6.engine == 'other'
+      and [e['base'] for e in ctrl._clones] == [other])
+feed(ctrl, UTT); ctrl.on_pause()
+ctrl.shutdown()
+check('P5 shutdown stops every private engine', c6.shut == 1 and ctrl._clones == [])
+
 print('\n' + ('FAIL: ' + ','.join(fails) if fails else 'ALL PLACEHOLDER TESTS PASS'))
 sys.exit(1 if fails else 0)
