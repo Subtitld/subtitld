@@ -109,8 +109,8 @@ class _ReplaceButton(QPushButton):
     action a click would run lights up.
     """
 
-    INNER_TOP_GAP = 5
-    INNER_RIGHT_PADDING = 6
+    INNER_TOP_GAP = 3
+    INNER_RIGHT_PADDING = 4
 
     def __init__(self, text: str, inner_text: str, parent=None):
         super().__init__(text, parent)
