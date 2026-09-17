@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg width="100" height="36" version="1.1" viewBox="0 0 100 36" xmlns="http://www.w3.org/2000/svg">
+ <defs>
+  <linearGradient id="linearGradient38" x1="5" x2="30" y1="36" gradientTransform="matrix(-1,0,0,1,36,0)" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#07090b" stop-opacity=".3" offset="0"/>
+   <stop stop-color="#07090b" stop-opacity="0" offset="1"/>
+  </linearGradient>
+  <linearGradient id="linearGradient16" x1="6.5" x2="100" y1="12.267" y2="12.267" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#fff" stop-opacity=".03" offset="0"/>
+   <stop stop-color="#fff" stop-opacity="0" offset="1"/>
+  </linearGradient>
+  <linearGradient id="linearGradient19" x1="6.5" x2="100" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#777" stop-opacity=".2" offset="0"/>
+   <stop stop-color="#777" stop-opacity="0" offset="1"/>
+  </linearGradient>
+ </defs>
+ <g stroke-linejoin="round">
+  <path d="m100 35h-68c-2.216 0-4.798-1.5961-5.7891-3.5781l-13.922-27.844c-0.99103-1.982-3.5731-3.5781-5.7891-3.5781h93.5z" fill="url(#linearGradient16)" stroke-width="2" style="paint-order:fill markers stroke"/>
+  <path d="m10.078 0c1.3241 0.72403 2.4487 1.8173 3.1055 3.1309l13.922 27.844c0.77634 1.5527 3.1587 3.0254 4.8945 3.0254h68v1h-68c-0.1385 0-0.27904-5e-3 -0.41992-0.0176-2.1132-0.18261-4.4401-1.7024-5.3691-3.5606l-13.922-27.844c-0.61939-1.2388-1.8596-2.3269-3.2441-2.9688-0.27692-0.12836-0.56112-0.23782-0.8457-0.32812-0.56918-0.1806-1.1452-0.28125-1.6992-0.28125z" fill="url(#linearGradient19)" stop-color="#000000" style="paint-order:fill markers stroke"/>
+  <path d="m6.5 0c2.216 0 4.798 1.5961 5.7891 3.5781l13.922 27.844c0.99102 1.982 3.5731 3.5781 5.7891 3.5781h68v1h-68c-2.6962 0-5.4779-1.7194-6.6836-4.1309l-13.922-27.844c-0.77634-1.5527-3.1587-3.0254-4.8945-3.0254h-6.5v-1z" fill="url(#linearGradient38)" stop-color="#000000" style="paint-order:fill markers stroke"/>
+ </g>
+ <rect x="99" width="1" height="35" fill="#fff" fill-opacity=".05" stroke-linejoin="round" stroke-width="2" style="paint-order:fill markers stroke"/>
+</svg>

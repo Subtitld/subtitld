@@ -190,11 +190,9 @@ class SimpleDialog(QDialog):
         self.frame.layout().setSpacing(0)
         self.layout().addWidget(self.frame)
 
-        # The title bar is two widgets, each painting its own slice of
         # The title sits directly on the dialog gradient. Only the top-right
-        # corner has chrome: a notch (titleBar_right_version_background.svg,
-        # the same artwork as the main window's version tab) behind the close
-        # button. Label, spacer and notch are separate widgets so the notch
+        # corner has chrome: a notch (dialog_title_close_background.svg, drawn
+        # like the main window's version tab) behind the close button. Label, spacer and notch are separate widgets so the notch
         # can carry its own border-image slices without affecting the rest.
         self.title_line = QWidget()
         self.title_line.setObjectName('dialog_title')
