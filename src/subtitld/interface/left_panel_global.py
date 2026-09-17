@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget, QStyle
 from PySide6.QtCore import Qt, QMimeData, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
@@ -82,6 +82,11 @@ def handle_json_drop(window, filepath):
     list_widget = QListWidget()
     list_widget.setMinimumHeight(400)
     list_widget.setProperty('class', 'section_list')
+    # The list has no frame of its own, so its checkboxes are the first thing
+    # seen; the style draws them this far inside each item. Pull the viewport
+    # back by that much so they start on the dialog's 15px text edge.
+    item_inset = list_widget.style().pixelMetric(QStyle.PM_FocusFrameHMargin, None, list_widget) + 1
+    list_widget.setViewportMargins(-item_inset, 0, 0, 0)
     for section in sorted(available_sections):
         item = QListWidgetItem(section)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)

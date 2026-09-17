@@ -263,7 +263,9 @@ class SimpleDialog(QDialog):
         self.content = QWidget()
         self.content.setObjectName('dialog_content')
         self.content.setLayout(QVBoxLayout())
-        self.content.layout().setContentsMargins(10, 10, 10, 10)
+        # 14px sides + the content row's 1px inset: body content starts on
+        # the dialogs' 15px text edge, with the title and Cancel.
+        self.content.layout().setContentsMargins(14, 10, 14, 10)
         # The content sits in a 1px-inset row so the frame's side border stays
         # visible beside it. The title bar and footer are deliberately NOT
         # inset — they run edge to edge so their tab artwork lands in the
@@ -334,10 +336,11 @@ class SimpleDialog(QDialog):
 
         self.frame.layout().addWidget(self.bottom_line)
 
-    # A plain message dialog gets roomier padding and wrapped text. Applied
-    # centrally rather than at the ~17 call sites that build one, so future
-    # dialogs get it for free and none can forget it.
-    _TEXT_DIALOG_PADDING = (20, 16, 20, 16)
+    # A plain message dialog gets roomier vertical padding and wrapped text;
+    # its sides stay on the 15px text edge. Applied centrally rather than at
+    # the ~17 call sites that build one, so future dialogs get it for free
+    # and none can forget it.
+    _TEXT_DIALOG_PADDING = (14, 16, 14, 16)
     _TEXT_DIALOG_MAX_WIDTH = 520
 
     def _prepare_text_content(self):
@@ -354,6 +357,11 @@ class SimpleDialog(QDialog):
         layout.setContentsMargins(*self._TEXT_DIALOG_PADDING)
         for label in widgets:
             label.setWordWrap(True)
+            # A word longer than the line (a URL, a path) sets the label's
+            # minimum width to that word's width, and the layout then shares
+            # out height as if the label were that wide. Qt breaks such a
+            # word anyway, so let the label narrow to what it is given.
+            label.setMinimumWidth(1)
             # A wrapped label's height depends on the width it is given, and
             # the layout only asks when the policy says to — without this the
             # dialog keeps its one-line height and clips the wrapped text.
@@ -370,6 +378,14 @@ class SimpleDialog(QDialog):
         self.content.layout().activate()
         self.layout().activate()
         self.adjustSize()
+        # adjustSize() takes the height the text needs at the size-hint width,
+        # before the minimum/maximum width is applied. Take it again at the
+        # width the dialog actually got, or the text is clipped (hint wider
+        # than the maximum) or left with a spare line (hint narrower than the
+        # minimum).
+        outer = self.layout()
+        if outer.hasHeightForWidth():
+            self.resize(self.width(), outer.totalHeightForWidth(self.width()))
 
     def showEvent(self, event):
         self._prepare_text_content()
