@@ -301,9 +301,6 @@ QLineEdit#transcription_scope_input {
     font-family: 'Montserrat';
     font-size: 13px;
 }
-QComboBox#transcription_scope_combobox {
-    font-weight: 600;
-}
 QComboBox#transcription_scope_combobox::drop-down {
     background: transparent;
     border: 0;
@@ -321,13 +318,16 @@ QComboBox#transcription_scope_combobox QAbstractItemView {
     outline: 0;
 }
 
-/* DURATION is read-only/computed — same box shape, muted text. */
-QLabel#transcription_scope_duration_value {
-    background: #304251;
-    border: 1px solid rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
-    padding: 5px 10px;
-    color: rgba(184, 206, 224, 0.5);
+/* DURATION — and FROM/TO under scope "selection" — are computed, so they
+   are plain text rather than boxes that look like disabled inputs: the
+   value in the same type as the FROM/TO inputs, and their padding +
+   min-height (1px border included) so it sits on their line. */
+QLabel[class="transcription_scope_value"] {
+    background: transparent;
+    border: 0;
+    padding: 5px 11px;
+    min-height: 20px;
+    color: rgba(255, 255, 255, 0.92);
     font-family: 'Montserrat';
     font-size: 13px;
 }

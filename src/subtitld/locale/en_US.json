@@ -289,6 +289,7 @@
     "transcription_panel.scope_all": "All",
     "transcription_panel.scope_range": "Range",
     "transcription_panel.scope_selection": "Selection",
+    "transcription_panel.scope_selection_empty": "Select a subtitle on the timeline first — a selection run writes its text into that subtitle.",
     "transcription_panel.no_model_available": "No model is available for this language.",
     "transcription_panel.error": "Error",
     "translation_panel.translate": "Translate",

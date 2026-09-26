@@ -227,6 +227,7 @@
     "transcription_panel.scope_all": "Tudo",
     "transcription_panel.scope_range": "Intervalo",
     "transcription_panel.scope_selection": "Seleção",
+    "transcription_panel.scope_selection_empty": "Selecione uma legenda na linha do tempo primeiro — a transcrição por seleção escreve o texto nela.",
     "transcription_panel.no_model_available": "Nenhum modelo disponível para este idioma.",
     "transcription_panel.error": "Erro",
     "translation_panel.translate": "Traduzir",

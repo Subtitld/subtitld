@@ -1,8 +1,9 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QLineEdit, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog, QComboBox
-from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QLineEdit, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog, QComboBox, QStyle, QStyleOption
+from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve, QSize
+from PySide6.QtGui import QPainter
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
@@ -188,6 +189,21 @@ class _GenericASRPanel(QWidget):
         # Append directly so live updates show on the timeline.
         if not isinstance(segment, dict):
             return
+        target = getattr(widget, '_scope_target', None)
+        if target is not None:
+            # Selection run: the text belongs to the selected subtitle, so
+            # fill it in as it arrives instead of adding cues of our own.
+            if any(seg is target for seg in session.SUBTITLE.get('segments', []) or []):
+                text = str(segment.get('text', '') or '').strip()
+                if text:
+                    widget._scope_target_parts.append(text)
+                    target['text'] = ' '.join(widget._scope_target_parts)
+                    try:
+                        widget.window().timeline_widget.update()
+                    except Exception:
+                        pass
+                    session.set_unsaved()
+            return
         # Offset back onto the full timeline when a scope range was used
         # (the provider saw a slice starting at 0).
         offset = getattr(widget, '_scope_offset', 0.0)
@@ -222,7 +238,24 @@ class _GenericASRPanel(QWidget):
                     if isinstance(seg, dict):
                         seg['start'] = float(seg.get('start', 0.0)) + offset
                         seg['end'] = float(seg.get('end', 0.0)) + offset
-            if scope_range is not None:
+            target = getattr(widget, '_scope_target', None)
+            if target is not None and not any(
+                    seg is target for seg in session.SUBTITLE.get('segments', []) or []):
+                target = None  # deleted mid-run; fall back to a plain scoped merge
+            if target is not None and scope_range is not None:
+                # Selection run: the whole transcript is this subtitle's text.
+                # Its timing is left alone, and anything that landed inside it
+                # during the run (live partials) goes.
+                text = _joined_text(segments)
+                if text:
+                    target['text'] = text
+                f, t = scope_range
+                existing = session.SUBTITLE.get('segments', []) or []
+                kept = [s for s in existing
+                        if s is target or not (f - 1e-6 <= float(s.get('start', 0.0)) < t)]
+                kept.sort(key=lambda s: float(s.get('start', 0.0)))
+                session.SUBTITLE['segments'] = kept
+            elif scope_range is not None:
                 # Scoped run: replace only the subtitles inside the range
                 # (including any partials appended live during this run),
                 # keep everything outside it, then splice the results in.
@@ -273,12 +306,16 @@ class _GenericASRPanel(QWidget):
         scope_range = getattr(widget.window(), '_transcription_scope_range', None)
         widget._scope_offset = 0.0
         widget._scope_range = None
+        # Set for a "selection" run: the subtitle whose text this run writes.
+        widget._scope_target = None
+        widget._scope_target_parts = []
         if scope_range is not None:
             sliced = _extract_audio_slice(audio_file, scope_range[0], scope_range[1])
             if sliced:
                 audio_file = sliced
                 widget._scope_offset = float(scope_range[0])
                 widget._scope_range = scope_range
+                widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None)
         widget.transcript_started.emit()
         language = session.SUBTITLE.get('language', 'en-us')
         opts = session.CONFIG.get('transcription', {}).get('engine_options', {}).get(widget.provider.id, {})
@@ -390,12 +427,38 @@ def _scope_bar_set_expanded(self, expanded):
     anim.start()
 
 
+class _ScopeValueLabel(QLabel):
+    """A computed time in the scope bar: the duration, and From/To under
+    scope "selection".
+
+    Plain text in the inputs' type rather than a box that would read as a
+    disabled field. It elides instead of forcing the bar wider, so a narrow
+    panel squeezes the value and not the fields beside it — a label's own
+    minimum width is its whole text, which would raise the left panel's
+    minimum width by the three times together.
+    """
+
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        option = QStyleOption()
+        option.initFrom(self)
+        # Whatever the stylesheet paints behind the text (nothing today).
+        self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+        rect = self.contentsRect()
+        text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, rect.width())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(rect, int(self.alignment()), text)
+
+
 def _build_transcription_scope(self, container_layout):
     """Build the collapsible transcription-scope selector (chip + bar).
 
     Widgets are attached to `self`; `global_panel_import_scope_update`
     drives their visibility/values from the persisted config."""
-    def _labeled_field(field_widget, label_attr, control):
+    def _labeled_field(field_widget, label_attr, *controls):
         v = QVBoxLayout(field_widget)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(2)
@@ -403,7 +466,13 @@ def _build_transcription_scope(self, container_layout):
         lbl.setProperty('class', 'widget_label')
         setattr(self, label_attr, lbl)
         v.addWidget(lbl)
-        v.addWidget(control)
+        for control in controls:
+            v.addWidget(control)
+
+    def _value_label():
+        value = _ScopeValueLabel()
+        value.setProperty('class', 'transcription_scope_value')
+        return value
 
     scope_area = QWidget()
     scope_area.setObjectName('transcription_scope_area')
@@ -448,11 +517,15 @@ def _build_transcription_scope(self, container_layout):
     self.transcription_scope_from_input.setObjectName('transcription_scope_input')
     self.transcription_scope_from_input.setPlaceholderText('00:00:00.000')
     self.transcription_scope_from_input.editingFinished.connect(lambda: global_panel_import_scope_field_edited(self))
-    _labeled_field(self.transcription_scope_from_field, 'transcription_scope_from_label', self.transcription_scope_from_input)
+    # Scope "selection" takes its times from the selected subtitle, so the
+    # field shows this label instead of the editable input.
+    self.transcription_scope_from_value = _value_label()
+    _labeled_field(self.transcription_scope_from_field, 'transcription_scope_from_label',
+                   self.transcription_scope_from_input, self.transcription_scope_from_value)
     bar.addWidget(self.transcription_scope_from_field, 1)
 
     self.transcription_scope_duration_field = QWidget()
-    self.transcription_scope_duration_value = QLabel()
+    self.transcription_scope_duration_value = _value_label()
     self.transcription_scope_duration_value.setObjectName('transcription_scope_duration_value')
     _labeled_field(self.transcription_scope_duration_field, 'transcription_scope_duration_label', self.transcription_scope_duration_value)
     bar.addWidget(self.transcription_scope_duration_field, 1)
@@ -462,7 +535,9 @@ def _build_transcription_scope(self, container_layout):
     self.transcription_scope_to_input.setObjectName('transcription_scope_input')
     self.transcription_scope_to_input.setPlaceholderText('00:00:00.000')
     self.transcription_scope_to_input.editingFinished.connect(lambda: global_panel_import_scope_field_edited(self))
-    _labeled_field(self.transcription_scope_to_field, 'transcription_scope_to_label', self.transcription_scope_to_input)
+    self.transcription_scope_to_value = _value_label()
+    _labeled_field(self.transcription_scope_to_field, 'transcription_scope_to_label',
+                   self.transcription_scope_to_input, self.transcription_scope_to_value)
     bar.addWidget(self.transcription_scope_to_field, 1)
 
     scope_v.addWidget(self.transcription_scope_bar)
@@ -495,6 +570,29 @@ def _scope_selected_range():
         except (TypeError, ValueError):
             return None
     return None
+
+
+def _scope_selected_segment():
+    """The selected subtitle, if it is still on the timeline and spans a
+    usable range. A selection-scoped run writes its transcript into it."""
+    sel = session.SUBTITLE.get('selected')
+    if not isinstance(sel, dict):
+        return None
+    if not any(seg is sel for seg in session.SUBTITLE.get('segments', []) or []):
+        return None
+    try:
+        if float(sel.get('end', 0.0)) <= float(sel.get('start', 0.0)):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return sel
+
+
+def _joined_text(segments):
+    """Every returned segment's text as one line — what a selection-scoped
+    run puts in the selected subtitle."""
+    parts = [str(seg.get('text', '') or '').strip() for seg in segments if isinstance(seg, dict)]
+    return ' '.join(part for part in parts if part)
 
 
 def _current_scope_range(self):
@@ -572,6 +670,14 @@ def global_panel_import_scope_update(self):
     self.transcription_scope_to_field.setVisible(show_range)
     self.transcription_scope_duration_field.setVisible(True)
 
+    # Range is typed in; selection is read off the selected subtitle, so its
+    # times show as plain labels in place of the inputs.
+    editable = scope == 'range'
+    for field_input, value in ((self.transcription_scope_from_input, self.transcription_scope_from_value),
+                               (self.transcription_scope_to_input, self.transcription_scope_to_value)):
+        field_input.setVisible(editable)
+        value.setVisible(not editable)
+
     if scope == 'all':
         self.transcription_scope_duration_value.setText(_format_tc(total))
     elif scope == 'range':
@@ -585,19 +691,17 @@ def global_panel_import_scope_update(self):
         if not self.transcription_scope_to_input.hasFocus():
             self.transcription_scope_to_input.setText(_format_tc(t))
         self.transcription_scope_duration_value.setText(_format_tc(max(0.0, t - f)))
-    else:  # selection — read From/To off the selected subtitle (read-only).
-        self.transcription_scope_from_input.setReadOnly(True)
-        self.transcription_scope_to_input.setReadOnly(True)
+    else:  # selection — the selected subtitle's own times.
         rng = _scope_selected_range()
+        values = (self.transcription_scope_from_value, self.transcription_scope_duration_value,
+                  self.transcription_scope_to_value)
         if rng:
             f, t = rng
-            self.transcription_scope_from_input.setText(_format_tc(f))
-            self.transcription_scope_to_input.setText(_format_tc(t))
-            self.transcription_scope_duration_value.setText(_format_tc(max(0.0, t - f)))
+            for value, text in zip(values, (f, max(0.0, t - f), t)):
+                value.setText(_format_tc(text))
         else:
-            self.transcription_scope_from_input.setText('—')
-            self.transcription_scope_to_input.setText('—')
-            self.transcription_scope_duration_value.setText('—')
+            for value in values:
+                value.setText('—')
 
 
 def _extract_audio_slice(src, start, end):
@@ -937,6 +1041,18 @@ def global_panel_import_start_transcription_button_clicked(self):
     scope_range = _current_scope_range(self)
     self._transcription_scope_range = scope_range
 
+    # Scope "selection" transcribes the selected subtitle and writes the
+    # text into it, so it needs one — and must never fall through to the
+    # whole-media run below, which would replace every subtitle.
+    scope = session.CONFIG.get('transcription', {}).get('scope', 'all')
+    self._transcription_scope_target = _scope_selected_segment() if scope == 'selection' else None
+    if scope == 'selection' and (self._transcription_scope_target is None or scope_range is None):
+        error_dialog = utils.SimpleDialog(self, title=_('transcription_panel.error'))
+        error_dialog.content.layout().addWidget(QLabel(_('transcription_panel.scope_selection_empty')))
+        error_dialog.reject_button.setVisible(False)
+        error_dialog.exec()
+        return
+
     if scope_range is None:
         # Whole-media transcription REPLACES all subtitles → confirm when
         # some already exist, then clear.
@@ -1009,6 +1125,11 @@ def translate(self):
                   _('transcription_panel.scope_selection')]
         for i, text in enumerate(labels):
             self.transcription_scope_combobox.setItemText(i, text)
+        # The times beside it are labels, which never shrink, so a narrow
+        # panel would squeeze the scope name away. Hold its widest label.
+        self.transcription_scope_combobox.setMinimumContentsLength(max(len(text) for text in labels))
+        self.transcription_scope_combobox.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon)
         global_panel_import_scope_update(self)
     for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
         if 'translate_callback' in dir(widget):
