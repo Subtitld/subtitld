@@ -16,17 +16,17 @@ from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
 # Transcription footer bottom row. It is a QStackedWidget with two pages that
-# each own their layout: the idle page (Start button, inset by these margins)
-# and the running page (edge-to-edge progress bar, no margins). Switching
-# pages swaps the whole row content; nothing is re-margined in place.
-_FOOTER_SIDE_MARGIN = 10
-_FOOTER_BOTTOM_MARGIN = 10
+# each own their layout: the idle page (Start button) and the running page
+# (progress bar). Both run edge to edge inside the panel's own 10px padding.
+# Switching pages swaps the whole row content; nothing is re-margined in
+# place.
 _FOOTER_PAGE_IDLE = 0
 _FOOTER_PAGE_RUNNING = 1
 
 # Inset of the per-engine options panel (engine name + inline config fields)
-# shown under the TRANSCRIPTION ENGINE combobox. The Import panel itself is
-# padding-free, so without this the options sit flush against its edge.
+# shown under the TRANSCRIPTION ENGINE combobox. It matches the text padding
+# inside the comboboxes above, so the engine's fields line up with their
+# labels rather than with the panel's edge.
 _OPTIONS_PANEL_PADDING = 10
 
 _list_of_supported_import_extensions = []
@@ -410,17 +410,15 @@ def _build_transcription_scope(self, container_layout):
     scope_area.setAttribute(Qt.WA_StyledBackground, True)
     self.transcription_scope_area = scope_area
     scope_v = QVBoxLayout(scope_area)
-    # No side padding here — the expanded bar must span the full panel
-    # width (edge to edge). The chip supplies its own right inset below.
-    # Top breathing room keeps the chip off the content above; NO bottom
-    # padding — the chip/bar sit directly on the line.
+    # No side padding here — the expanded bar spans the panel's whole
+    # content width. Top breathing room keeps the chip off the content
+    # above; NO bottom padding — the chip/bar sit directly on the line.
     scope_v.setContentsMargins(0, 8, 0, 0)
     scope_v.setSpacing(0)
 
-    # Collapse/expand chip (right-aligned, inset 10px from the right edge
-    # to line up with the Start button below it).
+    # Collapse/expand chip, right-aligned with the Start button below it.
     chip_row = QHBoxLayout()
-    chip_row.setContentsMargins(0, 0, 10, 0)
+    chip_row.setContentsMargins(0, 0, 0, 0)
     chip_row.addStretch()
     self.transcription_scope_chip = QPushButton()
     self.transcription_scope_chip.setObjectName('transcription_scope_chip')
@@ -790,10 +788,9 @@ def load(self):
     left_panel_import_panel.layout().addWidget(self.global_panel_import_tabwidget, 1)
 
     # --- Bottom "global" footer -------------------------------------------
-    # The panel itself is padding-free (options span edge to edge); the
-    # footer band supplies its own left/right/bottom padding so the scope
-    # selector + Start button are inset while the content above is full-bleed.
-    left_panel_import_panel.layout().setContentsMargins(0, 0, 0, 0)
+    # The panel keeps left_panel's own 10px padding, like every other left
+    # panel, and that is the only inset: the footer band and its rows run
+    # edge to edge inside it.
 
     self.transcription_footer = QWidget()
     self.transcription_footer.setObjectName('transcription_footer')
@@ -808,8 +805,8 @@ def load(self):
     # Collapsible scope selector (chip + bar) inside the footer.
     _build_transcription_scope(self, footer_v)
 
-    # Edge-to-edge delimiter BETWEEN the scope row (above) and the Start
-    # button (below). Its own 1px strip so it touches both panel edges.
+    # Delimiter BETWEEN the scope row (above) and the Start button (below).
+    # Its own 1px strip so it spans the panel's whole content width.
     self.transcription_footer_divider = QWidget()
     self.transcription_footer_divider.setObjectName('transcription_footer_divider')
     self.transcription_footer_divider.setAttribute(Qt.WA_StyledBackground, True)
@@ -841,11 +838,11 @@ def load(self):
     # crashed with NameError. They now live at module scope.
     self._transcription_running = False
 
-    # Page 0 — idle: the Start button, right-aligned. Side + bottom padding;
-    # NO top padding, so it hugs the divider directly above it.
+    # Page 0 — idle: the Start button, right-aligned. No margins of its own:
+    # it hugs the divider above and the panel's padding does the rest.
     idle_page = QWidget()
     idle_line = QHBoxLayout(idle_page)
-    idle_line.setContentsMargins(_FOOTER_SIDE_MARGIN, 0, _FOOTER_SIDE_MARGIN, _FOOTER_BOTTOM_MARGIN)
+    idle_line.setContentsMargins(0, 0, 0, 0)
     idle_line.setSpacing(0)
     self.global_panel_import_start_transcription_button = QPushButton()
     self.global_panel_import_start_transcription_button.setObjectName('transcription_start_button')
@@ -853,8 +850,7 @@ def load(self):
     idle_line.addWidget(self.global_panel_import_start_transcription_button, 0, Qt.AlignRight)
     self.transcription_footer_bottom_line.insertWidget(_FOOTER_PAGE_IDLE, idle_page)
 
-    # Page 1 — running: the progress bar, edge to edge (no margins), filling
-    # the whole row including where the idle page's bottom padding is.
+    # Page 1 — running: the progress bar, filling the whole row.
     running_page = QWidget()
     running_line = QHBoxLayout(running_page)
     running_line.setContentsMargins(0, 0, 0, 0)
