@@ -24,9 +24,14 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
 ]
 dependencies = [
-    "PySide6==6.10.0",
+    # Ranged, not exact: PyPI stopped serving 6.10.0 and the exact pin made
+    # every fresh install fail. The upper bound keeps a Qt minor bump from
+    # arriving unnoticed.
+    "PySide6>=6.11.2,<6.12",
     "PySideSix-Frameless-Window",
-    "mediapipe==0.10.21",
+    # 0.10.21 is no longer on PyPI; kept on the 0.10 line rather than 1.x,
+    # whose API the speaker and mouth-tracking code has not moved to.
+    "mediapipe>=0.10.30,<0.11",
     "opencv-python",
     "python-i18n",
     "python-docx",
@@ -58,12 +63,12 @@ dependencies = [
 # are add-ons (installed from the Add-ons panel), not extras.
 [project.optional-dependencies]
 translate = ["translate", "deep_translator"]
-vision = ["mediapipe==0.10.21", "opencv-python"]
+vision = ["mediapipe>=0.10.30,<0.11", "opencv-python"]
 dub = ["edge-tts", "gTTS"]
 all = [
     "translate",
     "deep_translator",
-    "mediapipe==0.10.21",
+    "mediapipe>=0.10.30,<0.11",
     "opencv-python",
     "edge-tts",
     "gTTS",
