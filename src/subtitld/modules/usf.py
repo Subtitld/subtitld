@@ -106,6 +106,11 @@ class USFReader():
                         parsed = _parse_numeric(dub_elem.attrs[key], int)
                         if parsed is not None:
                             dub_data[key] = parsed
+                # "Fit dub to subtitle duration". Absent means off, which is
+                # what every project saved before the flag existed holds.
+                if 'fit_to_subtitle' in dub_elem.attrs:
+                    dub_data['fit_to_subtitle'] = (
+                        str(dub_elem.attrs['fit_to_subtitle']).strip().lower() in ('true', '1', 'yes'))
                 if dub_data:
                     entry['dubbing'] = dub_data
             if entry:
@@ -297,6 +302,10 @@ class USFWriter():
                     val = dubbing_settings.get(key)
                     if val is not None:
                         dub_tag[key] = str(val)
+                # Written only when on, so files without the setting stay
+                # byte-for-byte what they were.
+                if dubbing_settings.get('fit_to_subtitle'):
+                    dub_tag['fit_to_subtitle'] = 'true'
                 if dub_tag.attrs:
                     style.append(dub_tag)
             styles_tag.append(style)
