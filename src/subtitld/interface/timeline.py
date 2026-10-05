@@ -1046,7 +1046,10 @@ class Timeline(QWidget):
             subtitle_font = QFont('Montserrat', 10)
             _rec_pending = getattr(widget, 'record_pending', None) or ()
             if _rec_pending:
-                _, _, _rec_pen, _rec_body = _live_colors()
+                # Not `_, _, pen, body = ...`: assigning `_` anywhere in this
+                # function makes it a local for all of it, which hides the
+                # translation function `_()` the empty-state label calls.
+                _rec_pen, _rec_body = _live_colors()[2:]
                 _rec_pen = QPen(_rec_pen, 1.0, Qt.DashLine)
 
             # Rects of the "≡" alternate-takes badges, rebuilt each paint and
