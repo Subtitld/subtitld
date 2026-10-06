@@ -18,6 +18,8 @@ Provider id: ``mouth_crop``.
 from __future__ import annotations
 
 from subtitld.modules.addons.provider import VideoProvider
+import time
+
 from subtitld.modules import mouth_tracker
 
 
@@ -68,6 +70,12 @@ class MouthCropProvider(VideoProvider):
         self._tracker = None
         self._ref_speaker = None
         self._ref_descriptor = None
+        # Temporal smoothing state. Lives here, beside _tracker and
+        # _ref_descriptor, and is touched ONLY on the worker thread. The host
+        # never reaches in to reset it — it just bumps an integer `epoch` in
+        # the context, which we compare below. That avoids mutating
+        # worker-owned state from the GUI thread while a frame is in flight.
+        self._stab = mouth_tracker.CropStabiliser()
 
     def shutdown(self) -> None:
         tracker = self._tracker
@@ -106,7 +114,11 @@ class MouthCropProvider(VideoProvider):
 
         detections = tracker.detect(frame)
         if not detections:
-            return {'image': None, 'label': '', 'found': False}
+            # No face: show the whole picture. Returning None here used to make
+            # the view re-display its last good crop, which froze on a stale
+            # mouth while the video carried on.
+            self._stab.reset()
+            return {'image': frame, 'label': '', 'found': False}
 
         ref = None
         if match_speaker:
@@ -115,14 +127,26 @@ class MouthCropProvider(VideoProvider):
 
         det, matched = mouth_tracker.pick_face(detections, frame, ref)
         if det is None:
-            return {'image': None, 'label': '', 'found': False}
+            self._stab.reset()
+            return {'image': frame, 'label': '', 'found': False}
 
         h, w = frame.shape[:2]
-        rect = mouth_tracker.mouth_crop_rect(
-            det['face_box'], det['mouth'], w, h, zoom=zoom)
+        # Smooth in float, continuous space and quantise once at the end —
+        # filtering already-rounded rects would feed the filter its own
+        # quantisation noise.
+        cx, cy, cw = mouth_tracker.mouth_crop_geometry(
+            det['face_box'], det['mouth'], zoom)
+        self._stab.set_strength(cfg.get('stabilise', 1.0))
+        rect = self._stab.update(
+            cx, cy, cw, w, h,
+            now=float(context.get('t') or time.perf_counter()),
+            epoch=context.get('epoch'),
+            zoom=zoom,
+            speaker=context.get('active_speaker') if match_speaker else None,
+        )
         crop = mouth_tracker.crop(frame, rect)
         if crop is None:
-            return {'image': None, 'label': '', 'found': False}
+            return {'image': frame, 'label': '', 'found': False}
 
         speaker = context.get('active_speaker')
         label = (speaker or '') if matched else ''

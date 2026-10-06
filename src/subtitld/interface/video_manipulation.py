@@ -258,6 +258,22 @@ class VideoOutputView(QWidget):
             pass
 
 
+def _opt_float(opts, key, default):
+    """Read a float option, treating 0.0 as a real value.
+
+    `float(opts.get(k, d) or d)` is the idiom used elsewhere here, but it
+    turns a deliberate 0 back into the default — which would make the "off"
+    end of the stabilise knob unreachable.
+    """
+    value = opts.get(key, default)
+    if value is None:
+        return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 class VideoManipulationController:
     """Owns the worker + output panel for one player and mediates the frame
     flow. The preview panel calls ``on_frame`` (throttled) and ``set_enabled``."""
@@ -268,6 +284,10 @@ class VideoManipulationController:
         self._worker = None
         self._enabled = False
         self._last_submit_t = 0.0
+        # Bumped whenever the crop's history becomes meaningless (toggle,
+        # media change, seek). Shipped in the context; the provider snaps
+        # instead of gliding when it changes.
+        self._epoch = 0
         self._provider = None
         self._ref_cache = {}          # speaker name -> (QImage id, rgb ndarray)
 
@@ -325,6 +345,10 @@ class VideoManipulationController:
 
     def set_enabled(self, enabled):
         enabled = bool(enabled)
+        # Both edges: the stale crop from before the toggle must not glide in
+        # when the view comes back. This is the leak the singleton provider
+        # would otherwise have across videos.
+        self.mark_discontinuity()
         self._enabled = enabled
         session.CONFIG.setdefault('video_manipulation', {})['enabled'] = enabled
         if enabled:
@@ -388,6 +412,11 @@ class VideoManipulationController:
             'active_speaker': speaker,
             'reference_rgb': self._speaker_reference_rgb(speaker),
             'config': self._provider_config(),
+            # Reuse the throttle's own timestamp: it is the true
+            # inter-capture interval, so the filter's dt spans dropped
+            # frames correctly instead of measuring detector latency.
+            't': self._last_submit_t,
+            'epoch': self._epoch,
         }
 
     def _provider_config(self):
@@ -395,6 +424,7 @@ class VideoManipulationController:
         opts = cfg.get('options', {}) if isinstance(cfg.get('options'), dict) else {}
         return {
             'zoom': float(opts.get('zoom', 1.0) or 1.0),
+            'stabilise': _opt_float(opts, 'stabilise', 1.0),
             'match_speaker': bool(opts.get('match_speaker', True)),
         }
 
@@ -418,12 +448,25 @@ class VideoManipulationController:
         if not self._enabled or self._view is None:
             return
         rgb = result.get('image')
-        if result.get('found') and rgb is not None:
+        if rgb is not None:
+            # `found` only decides the label now. With no face the provider
+            # hands back the whole frame, so the panel shows the full picture
+            # rather than freezing on the last crop — a stale mouth sitting
+            # still while the video moves on reads as a glitch.
             qimg = mouth_tracker.rgb_to_qimage(rgb)
             self._view.set_output(qimg, result.get('label') or '')
         else:
-            # Keep the last good crop but drop the label when the face is lost.
             self._view.set_output(self._view._image, '')
+
+
+    def mark_discontinuity(self):
+        """Tell the provider its crop history is meaningless from here.
+
+        Called on both edges of the toggle, on a media change and on a seek.
+        Only ever increments an int the host owns; the provider reads it on
+        its own thread, so there is no cross-thread mutation of filter state.
+        """
+        self._epoch += 1
 
     # ---- teardown -------------------------------------------------------
     def shutdown(self):

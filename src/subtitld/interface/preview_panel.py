@@ -304,6 +304,12 @@ class PlayerWidget(QWidget):
         QTimer.singleShot(0, widget._force_resize_update)
 
     def loadfile(widget, filepath):
+        vm = getattr(widget, 'video_manipulation', None)
+        if vm is not None:
+            # The crop's history is meaningless across a media change or a
+            # seek — without this the mouth crop glides in from wherever it
+            # was in the previous shot.
+            vm.mark_discontinuity()
         if os.path.isfile(filepath):
             from PySide6.QtCore import QUrl
             widget._media_player.setSource(QUrl.fromLocalFile(str(filepath)))
@@ -333,6 +339,12 @@ class PlayerWidget(QWidget):
         without an immediate write, the queued-seek case would leave
         the cursor at 0 until the player's positionChanged signal
         finally lands, well after the user can see the screen."""
+        vm = getattr(widget, 'video_manipulation', None)
+        if vm is not None:
+            # The crop's history is meaningless across a media change or a
+            # seek — without this the mouth crop glides in from wherever it
+            # was in the previous shot.
+            vm.mark_discontinuity()
         pos_f = float(pos)
         session.SUBTITLE['position'] = pos_f
         status = widget._media_player.mediaStatus()
