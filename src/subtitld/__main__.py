@@ -4,8 +4,8 @@ import argparse
 import pathlib
 import inspect
 
-# MediaPipe (used by the Speakers face detection and the lip-sync mouth
-# tracker) must be imported before PySide6/Qt. With this venv's protobuf
+# MediaPipe (used by the Speakers face detection) must be imported before
+# PySide6/Qt. With this venv's protobuf
 # runtime, importing MediaPipe *after* Qt has loaded fails to build its
 # bundled proto descriptors ("Invalid default '0.5' ... into descriptor
 # pool"); importing it first registers them cleanly, and the later
@@ -51,9 +51,6 @@ from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provi
 from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
 from subtitld.modules.addons.builtin import import_provider as _import_provider
-# Video-manipulation plugin family (real-time per-frame). The mouth crop
-# helps the user focus on lip-sync while dubbing.
-from subtitld.modules.addons.builtin import mouth_crop_provider as _mouth_crop_provider
 
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
@@ -360,7 +357,6 @@ def main():
     addon_manager.register_builtin(_ffmpeg_separator_provider.get_provider())
     addon_manager.register_builtin(_gtts_provider.get_provider())
     addon_manager.register_builtin(_import_provider.get_provider())
-    addon_manager.register_builtin(_mouth_crop_provider.get_provider())
     try:
         discovered = addon_manager.discover()
         if discovered:

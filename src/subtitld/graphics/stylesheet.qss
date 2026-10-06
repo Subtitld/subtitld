@@ -1811,24 +1811,6 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     icon: url(graphics:timeline_show_dub_takes_checked.svg);
 }
 
-#timeline_show_mouth_button {
-    margin-right: 4px;
-    icon: url(graphics:timeline_show_mouth.svg);
-}
-
-/* Top corners rounded like the button groups beside it. Scoped to the bottom
-   line on purpose: `#playercontrols_widget_bottom_line QPushButton` squares
-   every corner and outranks a rule on the id alone. */
-#playercontrols_widget_bottom_line #timeline_show_mouth_button {
-    border-top-left-radius: 2px;
-    border-top-right-radius: 2px;
-}
-
-#timeline_show_mouth_button:checked {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a86c8, stop:1 #2b689c);
-    icon: url(graphics:timeline_show_mouth_checked.svg);
-}
-
 #change_playback_speed QPushButton {
     border-radius: 0;
 }

@@ -25,7 +25,6 @@ TASK_ASR_TRANSCRIBE = 'asr.transcribe'
 TASK_ASR_STREAM = 'asr.stream'
 TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
-TASK_VIDEO_MANIPULATE = 'video.manipulate'
 TASK_VIDEO_LIPSYNC = 'video.lipsync'
 
 
@@ -331,62 +330,13 @@ class TranslationProvider(Provider):
         raise NotImplementedError
 
 
-class VideoProvider(Provider):
-    """Real-time video-frame manipulation provider — the first member of the
-    *video manipulation* plugin family (e.g. the lip-sync mouth crop).
-
-    Unlike the audio/text providers, these run **per frame** while the video
-    plays, so the contract is a single synchronous ``process_frame`` the host
-    calls on a dedicated worker thread. There is deliberately no subprocess
-    IPC path here (per-frame round-trips would be far too slow) — video
-    plugins are in-process. The host feeds frames and displays whatever image
-    the plugin returns in its output panel, so a plugin is free to crop, zoom,
-    annotate, or otherwise transform the frame.
-
-    Implementations must be safe to construct on the main thread (registration)
-    but may lazily build heavy/thread-affine resources (ML models) on first
-    ``process_frame`` call, which always happens on the host's worker thread.
-    """
-
-    @property
-    def tasks(self) -> list[str]:
-        return [TASK_VIDEO_MANIPULATE]
-
-    def process_frame(self, frame, context: dict) -> dict | None:
-        """Transform one video frame.
-
-        Parameters
-        ----------
-        frame : numpy.ndarray
-            The current video frame as an ``(H, W, 3)`` uint8 RGB array.
-        context : dict
-            Playback context the host assembles on the main thread::
-
-                {
-                  'playhead': float,            # seconds
-                  'active_speaker': str | None, # speaker at the playhead
-                  'reference_rgb': ndarray|None,# that speaker's stored face
-                  'config': dict,               # this provider's settings
-                }
-
-        Returns
-        -------
-        dict | None
-            ``{'image': (h, w, 3) uint8 RGB ndarray, 'label': str,
-            'found': bool}`` — the panel shows ``image`` and, optionally,
-            ``label``. Return ``None`` (or ``found=False`` with no image) to
-            leave the panel showing its previous output.
-        """
-        raise NotImplementedError
-
-
 class VideoLipsyncProvider(Provider):
     """Generative lip-sync: given a video and a (dubbed) audio track, produce a
     new video whose mouth movements match the audio ("visual dubbing").
 
-    A batch/offline task — unlike the real-time ``VideoProvider``, the add-on
-    reads the whole clip, runs its model, and writes the result to
-    ``output_path`` (mirrors ``audio.separate``, which also produces a file).
+    A batch/offline task: the add-on reads the whole clip, runs its model,
+    and writes the result to ``output_path`` (mirrors ``audio.separate``,
+    which also produces a file).
 
     Signals
     -------
