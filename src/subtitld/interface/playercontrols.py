@@ -8,6 +8,10 @@ from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpi
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
 
+# Follow-mode scrolls repaint the viewport, so ignore drift smaller than this
+# rather than scrolling on every tick.
+_FOLLOW_DEADBAND_PX = 2
+
 
 class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
     """QDoubleSpinBox that fully consumes Return/Enter so neither global
@@ -1405,6 +1409,7 @@ def load(self):
         new_x = smoothed * wpp
         old_x = self._last_playhead_x
         self._last_playhead_x = new_x
+        _apply_timeline_scrolling(self, new_x)
         # Strip wide enough to catch the cursor (2 px) + the speed/repeat
         # badge that extends ~80 px to the left of it, with safety pad.
         pad_left = 96
@@ -2118,6 +2123,40 @@ def _update_record_pulse(self):
             button.setProperty('pulse', False)
             button.style().unpolish(button)
             button.style().polish(button)
+
+
+
+def _apply_timeline_scrolling(self, cursor_x):
+    """Keep the timeline view following the playhead while it plays.
+
+    This used to happen inside `timeline.update(self)`, which was called on
+    every QMediaPlayer position update. That call was replaced by the much
+    cheaper strip repaint below (it was the audio-chunkiness root cause), and
+    the scrolling went with it — so both `follow` and `page` silently stopped
+    working during playback. The scroll *decision* is pure arithmetic, so it
+    is cheap to make here; only an actual scroll costs a repaint.
+    """
+    mode = session.CONFIG.get('timeline', {}).get('scrolling', 'page')
+    if mode == 'none':
+        return
+    scroll = getattr(self, 'timeline_scroll', None)
+    if scroll is None:
+        return
+    bar = scroll.horizontalScrollBar()
+    viewport = scroll.width()
+    if viewport <= 0:
+        return
+
+    if mode == 'follow':
+        # Centre the cursor. The deadband keeps sub-pixel drift from
+        # scrolling (and therefore repainting) on every single tick.
+        target = int(cursor_x - viewport * 0.5)
+        if abs(bar.value() - target) >= _FOLLOW_DEADBAND_PX:
+            timeline.update_scrollbar(self, position='middle')
+    elif mode == 'page':
+        # Cursor has run past the right edge — bring the next chunk into view.
+        if cursor_x > viewport + bar.value():
+            timeline.update_scrollbar(self)
 
 
 def update_playercontrols_playpause_button(self):
