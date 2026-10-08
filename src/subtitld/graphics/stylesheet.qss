@@ -3550,3 +3550,91 @@ QPushButton#audio_fx_add_slot::menu-indicator {
     width: 0;
 }
 
+/* ---- Autosave panel ---- */
+QLabel#autosave_card_last {
+    color: rgba(184, 206, 224, 0.6);
+    font-size: 10px;
+}
+
+QLabel#autosave_card_description {
+    color: rgba(184, 206, 224, 0.6);
+    font-size: 11px;
+}
+
+QLabel#autosave_card_description[warning="true"] {
+    color: #d8a657;
+}
+
+QPushButton#autosave_backup_now_button {
+    background: transparent;
+    border: 1px solid rgba(184, 206, 224, 0.25);
+    border-radius: 3px;
+    padding: 4px 10px;
+    min-width: 0;
+    color: #b8cee0;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QPushButton#autosave_backup_now_button:hover {
+    background: rgba(184, 206, 224, 0.08);
+    color: #e8f1f8;
+}
+
+QPushButton#autosave_filter_button {
+    background: #121a20;
+    color: rgba(184, 206, 224, 0.55);
+    border: 0;
+    border-radius: 0;
+    padding: 3px 9px;
+    min-width: 0;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QPushButton#autosave_filter_button[position="first"] {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+QPushButton#autosave_filter_button[position="last"] {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+QPushButton#autosave_filter_button:hover {
+    background: #212c36;
+    color: #b8cee0;
+}
+
+QPushButton#autosave_filter_button:checked {
+    background: #304251;
+    color: #ffffff;
+}
+
+QPushButton#autosave_filter_button:disabled {
+    color: rgba(184, 206, 224, 0.2);
+}
+
+QListWidget#panel_autosave_backup_listwidget {
+    background: #121a20;
+    border: 1px solid #0affffff;
+    border-radius: 3px;
+    padding: 2px 0 6px 0;
+    outline: 0;
+}
+
+QListWidget#panel_autosave_backup_listwidget::item {
+    border: 0;
+    padding: 0;
+    background: transparent;
+}
+
+QLabel#autosave_empty_label {
+    background: #121a20;
+    border: 1px dashed rgba(184, 206, 224, 0.2);
+    border-radius: 3px;
+    padding: 24px 18px;
+    color: rgba(184, 206, 224, 0.6);
+    font-size: 11px;
+}
