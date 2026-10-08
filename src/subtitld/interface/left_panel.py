@@ -127,6 +127,10 @@ def show(self):
     # Opacity = 1 immediately — setUpdatesEnabled handles flash-hiding.
     # See preview_panel.show() for the full rationale.
     self.left_panel.opacity.setOpacity(1.0)
+    # At full opacity the effect does nothing but cost: everything in the
+    # panel would be drawn through it, softening the text, and an opacity
+    # effect inside it (a faded speaker card) would draw nothing at all.
+    self.left_panel.opacity.setEnabled(False)
     # A project was just opened: the plain-text tab drops any text it had.
     left_panel_plaintext.reset(self)
     # Settle the subtitles panel's visibility BEFORE the slide starts, so the

@@ -6,12 +6,13 @@ except Exception:  # optional: unavailable on some platforms (e.g. Haiku)
 import numpy as np
 from autohex import AutoHex
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QIcon
 from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QPoint, QEvent
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
+from subtitld.interface.scope_selector import ScopeFooter
 from subtitld.interface.translation import _
 
 from subtitld.modules import session
@@ -820,6 +821,13 @@ class speakers_list_item(QWidget):
         # Shrink to fit: with every section collapsed the card is just the
         # header plus the section headers, not a fixed block.
         widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        # A speaker with no subtitles is drawn at half strength (update()
+        # turns this on). Off otherwise: drawing through an opacity effect
+        # softens the text even at full opacity.
+        widget.unused_fade = QGraphicsOpacityEffect(widget)
+        widget.unused_fade.setOpacity(0.5)
+        widget.unused_fade.setEnabled(False)
+        widget.setGraphicsEffect(widget.unused_fade)
 
         # Carries the background / hover / selected fill. Separate from the
         # card so the card itself can stay transparent where the avatar
@@ -992,6 +1000,8 @@ class speakers_list_item(QWidget):
 
         mine = [s for s in session.SUBTITLE['segments']
                 if s.get('speaker', 'A') == widget.speaker_name]
+        widget.unused_fade.setEnabled(not mine)
+        widget.setProperty('unused', not mine)
         widget.header.set_timeline(
             [[s['start'], s['end']] for s in mine],
             session.VIDEO.get('duration', 60),
@@ -1158,8 +1168,8 @@ def load(self):
         translate_callback=translate
     )
     # Full-bleed list: the cards reach both panel edges so the avatar can sit
-    # flush against the left. The add button re-inserts its own inset below,
-    # otherwise it would end up jammed into the corner.
+    # flush against the left. The add button sits in the footer below the
+    # list, which insets it.
     left_panel_speakers_panel.layout().setContentsMargins(0, 0, 0, 0)
 
     left_panel_speakers_panel_scroll = QScrollArea()
@@ -1183,17 +1193,16 @@ def load(self):
     self.left_panel_speakers_list.layout().setSpacing(_ITEM_SPACING)
     left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
 
-    self.left_panel_speakers_add_button = QPushButton()
-    self.left_panel_speakers_add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
-    add_button_row = QWidget()
-    add_button_row.setProperty('class', 'transparent_panel')
-    add_button_row.setLayout(QHBoxLayout())
-    add_button_row.layout().setContentsMargins(10, 10, 10, 10)
-    add_button_row.layout().addStretch()
-    add_button_row.layout().addWidget(self.left_panel_speakers_add_button)
-    left_panel_speakers_panel_content.layout().addWidget(add_button_row)
-
     left_panel_speakers_panel_content.layout().addStretch()
+
+    # Add speaker: in a bottom line that stays put under the scrolling list,
+    # as Start transcription does — the same footer, without a scope.
+    self.left_panel_speakers_footer = ScopeFooter(None, parent=left_panel_speakers_panel)
+    self.left_panel_speakers_add_button = QPushButton()
+    self.left_panel_speakers_add_button.setObjectName('left_panel_speakers_add_button')
+    self.left_panel_speakers_add_button.clicked.connect(lambda: left_panel_speakers_add_speaker_button_clicked(self))
+    self.left_panel_speakers_footer.add_action(self.left_panel_speakers_add_button, primary=True)
+    left_panel_speakers_panel.layout().addWidget(self.left_panel_speakers_footer)
 
     def handle_face_result(data):
         if data["image"] is not None:
