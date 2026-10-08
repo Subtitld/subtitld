@@ -52,6 +52,7 @@ class Config(dict):
         self.setdefault('record', {})
         self.setdefault('audio_effects', {})
         self.setdefault('video_manipulation', {})
+        self.setdefault('subtitldcc', {})
 
     @staticmethod
     def get_valid_keys():
@@ -79,6 +80,7 @@ class Config(dict):
             'record',
             'audio_effects',
             'video_manipulation',
+            'subtitldcc',
         }
 
     @staticmethod

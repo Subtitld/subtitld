@@ -282,9 +282,11 @@ def _open_backup_into_session(self, backup_path):
         window.timeline_widget.load_waveform()
         window.timeline_widget.update()
     from subtitld.interface import left_panel as _left_panel
+    from subtitld.interface import left_panel_subtitldcc as _subtitldcc
     from subtitld.interface import top_bar as _top_bar
     _left_panel.update(window)
     _top_bar.update(window)
+    _subtitldcc.video_opened(window)
 
 
 def panel_autosave_backup_listwidget_item_double_clicked(self, item):

@@ -3135,3 +3135,134 @@ QPushButton#videoproperties_delete_button:hover {
 QPushButton#videoproperties_delete_button:pressed {
     background: rgba(0, 0, 0, 0.15);
 }
+
+/* ====================================================================
+   subtitld.cc panel (interface/left_panel_subtitldcc.py) and its
+   publish dialog (interface/subtitldcc_publish.py). Cards follow the
+   Subtitld Cloud dashboard above.
+   ==================================================================== */
+
+QWidget#subtitldcc_card {
+    background: rgba(62, 83, 99, 0.9);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+}
+
+QLabel#subtitldcc_card_title {
+    color: #ffffff;
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 12px;
+}
+
+QLabel#subtitldcc_kicker,
+QLabel#subtitldcc_wlabel {
+    color: rgba(184, 206, 224, 0.55);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+QLabel#subtitldcc_text {
+    color: #b8cee0;
+    font-size: 11px;
+}
+
+QLabel#subtitldcc_code {
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.22);
+    border-radius: 2px;
+    padding: 8px;
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 3px;
+}
+
+QWidget#subtitldcc_result {
+    background: rgba(0, 0, 0, 0.16);
+    border-radius: 3px;
+}
+
+QLabel#subtitldcc_result_title {
+    color: #ffffff;
+    font-family: 'Montserrat';
+    font-weight: 600;
+    font-size: 11px;
+}
+
+QLabel#subtitldcc_result_details {
+    color: rgba(184, 206, 224, 0.7);
+    font-size: 10px;
+}
+
+QLabel#subtitldcc_badge {
+    color: rgba(184, 206, 224, 0.75);
+    background: rgba(184, 206, 224, 0.1);
+    border: 1px solid rgba(184, 206, 224, 0.18);
+    border-radius: 2px;
+    padding: 1px 5px;
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 8px;
+    text-transform: uppercase;
+}
+QLabel#subtitldcc_badge[kind="exact"] {
+    color: #8fe57f;
+    border-color: rgba(85, 212, 63, 0.45);
+    background: rgba(85, 212, 63, 0.12);
+}
+
+QPushButton#subtitldcc_small_button {
+    padding: 3px 8px;
+    font-size: 9px;
+}
+
+QPushButton#subtitldcc_star {
+    background: transparent;
+    border: 0;
+    padding: 0px 1px;
+    font-size: 16px;
+    color: rgba(184, 206, 224, 0.3);
+}
+QPushButton#subtitldcc_star:hover {
+    color: rgba(245, 197, 66, 0.7);
+}
+QPushButton#subtitldcc_star:checked {
+    color: #f5c542;
+}
+
+QLabel#subtitldcc_message {
+    color: #dff5da;
+    background: rgba(85, 212, 63, 0.14);
+    border: 1px solid rgba(85, 212, 63, 0.4);
+    border-radius: 3px;
+    padding: 6px 8px;
+}
+QLabel#subtitldcc_message[error="true"] {
+    color: #ffd9d9;
+    background: rgba(197, 82, 82, 0.18);
+    border-color: rgba(197, 82, 82, 0.55);
+}
+
+QLabel#subtitldcc_error {
+    color: #ff9c9c;
+}
+
+QWidget#subtitldcc_problem {
+    background: rgba(0, 0, 0, 0.15);
+    border-left: 3px solid #e0b040;
+    border-radius: 2px;
+}
+QWidget#subtitldcc_problem[severity="block"] {
+    border-left-color: #c55252;
+}
+QWidget#subtitldcc_problem[severity="info"] {
+    border-left-color: #5ba3d9;
+}
+
+/* Subtitles were found for the open video (left_panel_subtitldcc._mark_navigation). */
+#left_panel_navigation QPushButton[class=navigation_button][has_matches="true"]:!checked {
+    border-left: 10px solid #55d43f;
+}

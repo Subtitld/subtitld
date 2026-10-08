@@ -306,6 +306,10 @@ def load_productionscreen(self):
 
         self.timeline_widget.load_waveform()
 
+        # Subtitles on subtitld.cc for this video (by fingerprint; unless turned off).
+        from subtitld.interface import left_panel_subtitldcc
+        left_panel_subtitldcc.video_opened(self)
+
     QTimer.singleShot(0, _post_show_setup)
 
 def start_screen_recent_listwidget_item_clicked(self, item):
