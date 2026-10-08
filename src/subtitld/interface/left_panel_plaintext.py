@@ -19,9 +19,10 @@ gutter.
 
 import re
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit, QLabel, QPushButton,
-                               QButtonGroup, QListWidget, QListWidgetItem, QTextEdit, QFrame, QSizePolicy)
-from PySide6.QtCore import Qt, QTimer, QRect, QSize, QPoint, Signal
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit, QLabel,
+                               QPushButton, QButtonGroup, QListWidget, QListWidgetItem, QTextEdit, QFrame,
+                               QSizePolicy, QFontComboBox, QSpinBox)
+from PySide6.QtCore import Qt, QTimer, QRect, QSize, QPoint, Signal, QEvent
 from PySide6.QtGui import (QFont, QColor, QPainter, QTextCharFormat, QSyntaxHighlighter, QTextCursor,
                            QTextFormat, QTextOption, QIcon, QPixmap)
 
@@ -36,30 +37,81 @@ APPLY_DELAY_MS = 400
 # The language codes a Markdown translation line may carry.
 _LANGUAGES = frozenset(session.LANGUAGE_DICT_LIST.values())
 
-_COLORS = {
-    'text': '#d4e1eb',
-    'timing': '#8fd0ea',
-    'punctuation': '#56707f',
-    'index': '#5f7889',
-    'comment_key': '#d0b27a',
-    'comment_value': '#91a8b8',
-    'speaker': '#c9b3f0',
-    'translation': '#a3c4b0',
-    'error': '#ff6b6b',
-    'warning': '#e7b85a',
-    'gutter_text': '#4a6070',
-    'gutter_current': '#b8cee0',
-    'selected_bar': '#b8cee0',
-    'current_line': '#0bffffff',
-    'error_line': '#1fff5050',
+DEFAULT_FONT = 'Ubuntu Mono'
+DEFAULT_SIZE = 14
+FONT_SIZES = (8, 32)
+
+# The editor's colour themes. Every theme names every role; colours with
+# an alpha are #AARRGGBB, as Qt reads them.
+THEMES = {
+    'subtitld': {
+        'name': 'Subtitld',
+        'background': '#24000000', 'text': '#d4e1eb', 'selection': '#3e5363', 'selection_text': '#ffffff',
+        'timing': '#8fd0ea', 'punctuation': '#56707f', 'index': '#5f7889',
+        'comment_key': '#d0b27a', 'comment_value': '#91a8b8', 'speaker': '#c9b3f0', 'translation': '#a3c4b0',
+        'error': '#ff6b6b', 'warning': '#e7b85a',
+        'gutter_background': '#12000000', 'gutter_text': '#4a6070', 'gutter_current': '#b8cee0',
+        'selected_bar': '#b8cee0', 'current_line': '#0bffffff', 'error_line': '#1fff5050',
+    },
+    'monokai': {
+        'name': 'Monokai',
+        'background': '#272822', 'text': '#f8f8f2', 'selection': '#49483e', 'selection_text': '#f8f8f2',
+        'timing': '#66d9ef', 'punctuation': '#75715e', 'index': '#ae81ff',
+        'comment_key': '#fd971f', 'comment_value': '#e6db74', 'speaker': '#a6e22e', 'translation': '#c2c2b0',
+        'error': '#f92672', 'warning': '#e6db74',
+        'gutter_background': '#21221d', 'gutter_text': '#75715e', 'gutter_current': '#f8f8f2',
+        'selected_bar': '#a6e22e', 'current_line': '#3e3d32', 'error_line': '#40f92672',
+    },
+    'dracula': {
+        'name': 'Dracula',
+        'background': '#282a36', 'text': '#f8f8f2', 'selection': '#44475a', 'selection_text': '#f8f8f2',
+        'timing': '#8be9fd', 'punctuation': '#6272a4', 'index': '#bd93f9',
+        'comment_key': '#ffb86c', 'comment_value': '#f1fa8c', 'speaker': '#ff79c6', 'translation': '#50fa7b',
+        'error': '#ff5555', 'warning': '#f1fa8c',
+        'gutter_background': '#21222c', 'gutter_text': '#6272a4', 'gutter_current': '#f8f8f2',
+        'selected_bar': '#bd93f9', 'current_line': '#9944475a', 'error_line': '#33ff5555',
+    },
+    'nord': {
+        'name': 'Nord',
+        'background': '#2e3440', 'text': '#d8dee9', 'selection': '#434c5e', 'selection_text': '#eceff4',
+        'timing': '#88c0d0', 'punctuation': '#4c566a', 'index': '#81a1c1',
+        'comment_key': '#ebcb8b', 'comment_value': '#a3be8c', 'speaker': '#b48ead', 'translation': '#8fbcbb',
+        'error': '#bf616a', 'warning': '#ebcb8b',
+        'gutter_background': '#2a2f3a', 'gutter_text': '#4c566a', 'gutter_current': '#d8dee9',
+        'selected_bar': '#88c0d0', 'current_line': '#3b4252', 'error_line': '#40bf616a',
+    },
+    'solarized_light': {
+        'name': 'Solarized Light',
+        'background': '#fdf6e3', 'text': '#586e75', 'selection': '#e0d9c2', 'selection_text': '#073642',
+        'timing': '#268bd2', 'punctuation': '#93a1a1', 'index': '#6c71c4',
+        'comment_key': '#b58900', 'comment_value': '#2aa198', 'speaker': '#d33682', 'translation': '#859900',
+        'error': '#dc322f', 'warning': '#cb4b16',
+        'gutter_background': '#eee8d5', 'gutter_text': '#93a1a1', 'gutter_current': '#586e75',
+        'selected_bar': '#268bd2', 'current_line': '#eee8d5', 'error_line': '#26dc322f',
+    },
 }
+DEFAULT_THEME = 'subtitld'
 
 
 def _config():
     config = session.CONFIG.setdefault('plaintext_panel', {})
     if config.get('format') not in plaintext.FORMATS:
         config['format'] = plaintext.SRT
+    if config.get('theme') not in THEMES:
+        config['theme'] = DEFAULT_THEME
+    if not isinstance(config.get('font_family'), str) or not config['font_family']:
+        config['font_family'] = DEFAULT_FONT
+    try:
+        config['font_size'] = max(FONT_SIZES[0], min(FONT_SIZES[1], int(config.get('font_size', DEFAULT_SIZE))))
+    except (TypeError, ValueError):
+        config['font_size'] = DEFAULT_SIZE
     return config
+
+
+def _css(color):
+    """A theme colour for a stylesheet, which reads #AARRGGBB differently."""
+    value = QColor(color)
+    return f'rgba({value.red()}, {value.green()}, {value.blue()}, {value.alpha()})'
 
 
 def _format(color):
@@ -101,12 +153,17 @@ class Highlighter(QSyntaxHighlighter):
     def __init__(self, document):
         super().__init__(document)
         self.fmt = plaintext.SRT
-        self.formats = {name: _format(color) for name, color in _COLORS.items()}
+        self.primaries = plaintext._primary_tags(_LANGUAGES)
+        self.set_theme(THEMES[DEFAULT_THEME], rehighlight=False)
+
+    def set_theme(self, theme, rehighlight=True):
+        self.formats = {name: _format(color) for name, color in theme.items() if name != 'name'}
         self.formats['timing'].setFontWeight(QFont.Bold)
         self.formats['comment_key'].setFontItalic(True)
         self.formats['comment_value'].setFontItalic(True)
         self.formats['translation'].setFontItalic(True)
-        self.primaries = plaintext._primary_tags(_LANGUAGES)
+        if rehighlight:
+            self.rehighlight()
 
     def set_format(self, fmt):
         if fmt != self.fmt:
@@ -260,22 +317,39 @@ class Editor(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.setFrameShape(QFrame.NoFrame)
-        font = QFont('Ubuntu Mono')
-        font.setStyleHint(QFont.Monospace)
-        font.setPixelSize(14)
-        self.setFont(font)
         self.document().setDocumentMargin(6)
-        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
+        self.theme = THEMES[DEFAULT_THEME]
         self.highlighter = Highlighter(self.document())
         self.gutter = _Gutter(self)
         # line -> 'error' | 'warning' (the worst on that line)
         self.markers = {}
+        self.issues = []
         self.issue_selections = []
         self.selected_lines = None   # (first, last) of the selected subtitle
         self.blockCountChanged.connect(self._update_gutter_width)
         self.updateRequest.connect(self._update_gutter)
         self.cursorPositionChanged.connect(self.refresh_selections)
+        self.set_appearance(DEFAULT_FONT, DEFAULT_SIZE, DEFAULT_THEME)
+
+    def set_appearance(self, family, size, theme_name):
+        """Font and colour theme, as chosen in the tab's options."""
+        font = QFont(family)
+        font.setStyleHint(QFont.Monospace)
+        font.setPixelSize(int(size))
+        self.setFont(font)
+        self.gutter.setFont(font)
+        self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
+        self.theme = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
+        theme = self.theme
+        # Set on the widget, so it wins over the application stylesheet.
+        self.setStyleSheet(
+            'QPlainTextEdit#plaintext_panel_editor {'
+            f' background-color: {_css(theme["background"])}; color: {_css(theme["text"])};'
+            f' selection-background-color: {_css(theme["selection"])};'
+            f' selection-color: {_css(theme["selection_text"])}; border: 0; }}')
+        self.highlighter.set_theme(theme)
         self._update_gutter_width()
+        self.set_issues(self.issues)
 
     # -- gutter --------------------------------------------------------------
 
@@ -299,7 +373,7 @@ class Editor(QPlainTextEdit):
 
     def paint_gutter(self, event):
         painter = QPainter(self.gutter)
-        painter.fillRect(event.rect(), QColor('#12000000'))
+        painter.fillRect(event.rect(), QColor(self.theme['gutter_background']))
         painter.setFont(self.font())
         width = self.gutter.width()
         line_height = self.fontMetrics().height()
@@ -311,14 +385,14 @@ class Editor(QPlainTextEdit):
             if block.isVisible() and bottom >= event.rect().top():
                 line = block.blockNumber() + 1
                 if self.selected_lines and self.selected_lines[0] <= line <= self.selected_lines[1]:
-                    painter.fillRect(QRect(0, top, 3, bottom - top), QColor(_COLORS['selected_bar']))
+                    painter.fillRect(QRect(0, top, 3, bottom - top), QColor(self.theme['selected_bar']))
                 severity = self.markers.get(line)
                 if severity:
                     painter.setRenderHint(QPainter.Antialiasing)
                     painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(_COLORS[severity]))
+                    painter.setBrush(QColor(self.theme[severity]))
                     painter.drawEllipse(QPoint(10, top + line_height // 2), 3, 3)
-                painter.setPen(QColor(_COLORS['gutter_current'] if block.blockNumber() == current else _COLORS['gutter_text']))
+                painter.setPen(QColor(self.theme['gutter_current'] if block.blockNumber() == current else self.theme['gutter_text']))
                 painter.drawText(0, top, width - 8, line_height, Qt.AlignRight | Qt.AlignVCenter, str(line))
             block = block.next()
             top = bottom
@@ -337,12 +411,13 @@ class Editor(QPlainTextEdit):
         return cursor
 
     def set_issues(self, issues):
+        self.issues = list(issues)
         self.markers = {}
         self.issue_selections = []
         for issue in issues:
             if self.markers.get(issue.line) != plaintext.ERROR:
                 self.markers[issue.line] = issue.severity
-            color = QColor(_COLORS['error' if issue.severity == plaintext.ERROR else 'warning'])
+            color = QColor(self.theme['error' if issue.severity == plaintext.ERROR else 'warning'])
             mark = QTextEdit.ExtraSelection()
             mark.cursor = self.cursor_at(issue.line, issue.column, issue.length)
             if not mark.cursor.hasSelection():
@@ -355,7 +430,7 @@ class Editor(QPlainTextEdit):
             if issue.severity == plaintext.ERROR:
                 line_mark = QTextEdit.ExtraSelection()
                 line_mark.cursor = self.cursor_at(issue.line, 1)
-                line_mark.format.setBackground(QColor(_COLORS['error_line']))
+                line_mark.format.setBackground(QColor(self.theme['error_line']))
                 line_mark.format.setProperty(QTextFormat.FullWidthSelection, True)
                 self.issue_selections.insert(0, line_mark)
         self.refresh_selections()
@@ -370,7 +445,7 @@ class Editor(QPlainTextEdit):
         current = QTextEdit.ExtraSelection()
         current.cursor = self.textCursor()
         current.cursor.clearSelection()
-        current.format.setBackground(QColor(_COLORS['current_line']))
+        current.format.setBackground(QColor(self.theme['current_line']))
         current.format.setProperty(QTextFormat.FullWidthSelection, True)
         self.setExtraSelections([current] + self.issue_selections)
         self.gutter.update()
@@ -399,13 +474,6 @@ class PlainTextPanel(QWidget):
         self._applying = False
         self._setting_text = False
 
-        header = QWidget(objectName='plaintext_panel_header')
-        header.setLayout(QHBoxLayout())
-        header.layout().setContentsMargins(15, 0, 10, 0)
-        header.layout().setSpacing(8)
-        self.title_label = QLabel(objectName='plaintext_panel_title')
-        header.layout().addWidget(self.title_label)
-        header.layout().addStretch(1)
         format_switch = QWidget(objectName='plaintext_panel_format_switch')
         format_switch.setLayout(QHBoxLayout())
         format_switch.layout().setContentsMargins(0, 0, 0, 0)
@@ -423,8 +491,6 @@ class PlainTextPanel(QWidget):
             self.format_group.addButton(button)
             self.format_buttons[fmt] = button
             format_switch.layout().addWidget(button)
-        header.layout().addWidget(format_switch)
-        self.layout().addWidget(header)
 
         self.stale_bar = QWidget(objectName='plaintext_panel_stale_bar')
         self.stale_bar.setLayout(QHBoxLayout())
@@ -455,19 +521,32 @@ class PlainTextPanel(QWidget):
         footer.setLayout(QVBoxLayout())
         footer.layout().setContentsMargins(0, 0, 0, 0)
         footer.layout().setSpacing(0)
+        footer.layout().addWidget(self._options_strip())
         status = QWidget(objectName='plaintext_panel_status')
         status.setLayout(QHBoxLayout())
-        status.layout().setContentsMargins(15, 0, 15, 0)
+        status.layout().setContentsMargins(15, 0, 10, 0)
         status.layout().setSpacing(8)
         self.status_icon = QLabel(objectName='plaintext_panel_status_icon')
         self.status_icon.setFixedSize(8, 8)
         status.layout().addWidget(self.status_icon, 0, Qt.AlignVCenter)
-        self.status_label = QLabel(objectName='plaintext_panel_status_label')
-        # Clipped rather than widening the left panel to fit it.
-        self.status_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.status_label = _ElidedLabel(objectName='plaintext_panel_status_label')
         status.layout().addWidget(self.status_label, 1)
         self.position_label = QLabel(objectName='plaintext_panel_position_label')
         status.layout().addWidget(self.position_label)
+        status.layout().addWidget(format_switch, 0, Qt.AlignVCenter)
+        self.format_switch = format_switch
+        # The options chip, as the scope chip over "Start transcription": a
+        # tab in the strip's colour, hanging from the top of this line, so
+        # the open strip above and the chip read as one shape.
+        self.options_chip = QPushButton(objectName='plaintext_panel_options_chip')
+        self.options_chip.setCursor(Qt.PointingHandCursor)
+        self.options_chip.setFixedHeight(24)   # the width is in the stylesheet
+        self.options_chip.setCheckable(True)
+        self.options_chip.setIcon(_options_icon())
+        self.options_chip.setIconSize(QSize(16, 16))
+        self.options_chip.clicked.connect(lambda: self.set_options_open(self.options.isHidden()))
+        status.layout().addWidget(self.options_chip, 0, Qt.AlignTop)
+        status.installEventFilter(self)
         self.status = status
         footer.layout().addWidget(status)
         self.issue_list = QListWidget(objectName='plaintext_panel_issue_list')
@@ -491,8 +570,99 @@ class PlainTextPanel(QWidget):
         self.selection_poll = QTimer(self, interval=250)
         self.selection_poll.timeout.connect(self._sync_selected_mark)
 
+        self.apply_appearance()
         self.translate()
         self._update_status()
+        self.set_options_open(bool(_config().get('options_open', False)))
+
+    # -- options -------------------------------------------------------------
+
+    def eventFilter(self, watched, event):
+        if watched is self.status and event.type() == QEvent.Resize:
+            self._fit_status_line()
+        return super().eventFilter(watched, event)
+
+    def _fit_status_line(self):
+        """The line holds the status, the cursor position, the format switch
+        and the options chip. When it is too narrow for all of them, the
+        position goes first: the status says whether the text is applied,
+        and each problem still gives its line and column in the list."""
+        layout = self.status.layout()
+        margins = layout.contentsMargins()
+        others = [self.status_icon, self.format_switch, self.options_chip]
+        needed = (margins.left() + margins.right() + layout.spacing() * (len(others) + 1)
+                  + sum(widget.sizeHint().width() for widget in others)
+                  + self.status_label.fontMetrics().horizontalAdvance(self.status_label.text()) + 4)
+        position = self.position_label.sizeHint().width() + layout.spacing()
+        self.position_label.setVisible(self.status.width() >= needed + position)
+
+    def set_options_open(self, open_):
+        _config()['options_open'] = bool(open_)
+        self.options.setVisible(bool(open_))
+        self.status.setProperty('options_open', bool(open_))
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+        self._update_options_chip()
+
+    def _update_options_chip(self):
+        # The settings icon, dim when closed and lit when open, like the
+        # scope chip's text. The tooltip names it.
+        self.options_chip.setChecked(not self.options.isHidden())
+
+    def _options_strip(self):
+        """Font, size and colour theme; opened from the bottom line. The
+        app's labelled comboboxes, the label inside the block."""
+        self.options = QWidget(objectName='plaintext_panel_options')
+        box = QVBoxLayout(self.options)
+        box.setContentsMargins(15, 10, 15, 12)
+        box.setSpacing(8)
+        config = _config()
+
+        # Font: the family and, in the same block, the size.
+        self.font_block = utils.LabeledComboBox()
+        stock = self.font_block.combobox
+        self.font_block.bottom_line.removeWidget(stock)
+        stock.setParent(None)
+        stock.deleteLater()
+        self.font_combobox = QFontComboBox(objectName='plaintext_panel_font_combobox')
+        self.font_combobox.setFontFilters(QFontComboBox.MonospacedFonts)
+        self.font_combobox.setCurrentFont(QFont(config['font_family']))
+        self.font_combobox.currentFontChanged.connect(lambda font: self._option_changed('font_family', font.family()))
+        self.font_block.combobox = self.font_combobox
+        self.font_block.bottom_line.addWidget(self.font_combobox, 1)
+        self.size_spinbox = QSpinBox(objectName='plaintext_panel_size_spinbox')
+        self.size_spinbox.setRange(*FONT_SIZES)
+        self.size_spinbox.setSuffix(' px')
+        self.size_spinbox.setValue(config['font_size'])
+        self.size_spinbox.valueChanged.connect(lambda size: self._option_changed('font_size', size))
+        self.font_block.bottom_line.addWidget(self.size_spinbox)
+        box.addWidget(self.font_block)
+
+        self.theme_block = utils.LabeledComboBox()
+        self.theme_combobox = self.theme_block.combobox
+        self.theme_combobox.setObjectName('plaintext_panel_theme_combobox')
+        for key, theme in THEMES.items():
+            self.theme_combobox.addItem(theme['name'], key)
+        self.theme_combobox.setCurrentIndex(list(THEMES).index(config['theme']))
+        self.theme_combobox.activated.connect(
+            lambda index: self._option_changed('theme', self.theme_combobox.itemData(index)))
+        box.addWidget(self.theme_block)
+        self.options.hide()
+        return self.options
+
+    def _option_changed(self, key, value):
+        _config()[key] = value
+        self.apply_appearance()
+
+    def apply_appearance(self):
+        config = _config()
+        # Re-colouring reports the text as changed; it is not an edit.
+        self._setting_text = True
+        try:
+            self.editor.set_appearance(config['font_family'], config['font_size'], config['theme'])
+        finally:
+            self._setting_text = False
+        self._fill_issue_list()     # its dots take the theme's colours
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -504,7 +674,11 @@ class PlainTextPanel(QWidget):
         self.selection_poll.stop()
 
     def translate(self):
-        self.title_label.setText(_('plaintext_panel.title').upper())
+        self.font_block.setLabel(_('plaintext_panel.font').upper())
+        self.size_spinbox.setToolTip(_('plaintext_panel.font_size'))
+        self.theme_block.setLabel(_('plaintext_panel.theme').upper())
+        self.options_chip.setToolTip(_('plaintext_panel.options'))
+        self._update_options_chip()
         self.stale_label.setText(_('plaintext_panel.stale'))
         self.reload_button.setText(_('plaintext_panel.reload'))
         self.reload_button.setToolTip(_('plaintext_panel.reload_tooltip'))
@@ -690,7 +864,11 @@ class PlainTextPanel(QWidget):
         self.fmt = fmt
         _config()['format'] = fmt
         self.format_buttons[fmt].setChecked(True)
-        self.editor.highlighter.set_format(fmt)
+        self._setting_text = True
+        try:
+            self.editor.highlighter.set_format(fmt)
+        finally:
+            self._setting_text = False
         self.model_text = None
         self.apply_timer.stop()
         self.refresh_from_subtitles(force=True)
@@ -733,17 +911,22 @@ class PlainTextPanel(QWidget):
         _selection_changed(self.window_ref)
 
     def _sync_selected_mark(self, force=False):
+        """Mark the selected subtitle beside its lines. When the selection
+        was changed elsewhere (the timeline, the list), also take the
+        cursor and the view to the start of its text; a selection made
+        from here (`_select_under_cursor`) is already where the cursor is."""
         selected = session.SUBTITLE.get('selected')
-        if not force and id(selected) == self._selected_id:
+        changed = id(selected) != self._selected_id
+        if not force and not changed:
             return
         self._selected_id = id(selected)
-        lines = None
+        cue = None
         if selected is not None and self.result and not self.pending:
-            for segment, cue in zip(self.cue_segments, self.result.cues):
-                if segment is selected:
-                    lines = (cue.first_line, cue.last_line)
-                    break
-        self.editor.set_selected_lines(lines)
+            cue = next((cue for segment, cue in zip(self.cue_segments, self.result.cues) if segment is selected), None)
+        self.editor.set_selected_lines((cue.first_line, cue.last_line) if cue else None)
+        if changed and cue is not None:
+            self.editor.setTextCursor(self.editor.cursor_at(cue.text_line, cue.text_column))
+            self.editor.centerCursor()
 
     # -- problems ------------------------------------------------------------
 
@@ -753,7 +936,7 @@ class PlainTextPanel(QWidget):
         for issue in issues:
             item = QListWidgetItem(f'{_("plaintext_panel.position").format(line=issue.line, column=issue.column)}   {issue_text(issue)}')
             item.setData(Qt.UserRole, issue)
-            item.setIcon(_dot_icon(_COLORS['error' if issue.severity == plaintext.ERROR else 'warning']))
+            item.setIcon(_dot_icon(self.editor.theme['error' if issue.severity == plaintext.ERROR else 'warning']))
             item.setToolTip(issue_text(issue))
             self.issue_list.addItem(item)
         self.issue_list.setVisible(bool(issues))
@@ -785,25 +968,68 @@ class PlainTextPanel(QWidget):
         """The line under the editor: whether the timeline has this text."""
         errors = self.result.errors if self.result else []
         warnings = [i for i in (self.result.issues if self.result else []) if i.severity != plaintext.ERROR]
+        # Short, to share the line with the format switch; the tooltip says more.
         if self.stale:
-            state, text = 'warning', _('plaintext_panel.status_stale')
+            state, text, tip = 'warning', _('plaintext_panel.status_stale'), _('plaintext_panel.stale')
         elif checking:
-            state, text = 'checking', _('plaintext_panel.status_checking')
+            state, text, tip = 'checking', _('plaintext_panel.status_checking'), ''
         elif errors:
             state = 'error'
             text = _('plaintext_panel.status_error' if len(errors) == 1 else 'plaintext_panel.status_errors').format(count=len(errors))
+            tip = _('plaintext_panel.status_errors_tooltip')
         elif warnings:
             state = 'warning'
             text = _('plaintext_panel.status_warning' if len(warnings) == 1 else 'plaintext_panel.status_warnings').format(count=len(warnings))
+            tip = _('plaintext_panel.status_warnings_tooltip')
         else:
-            state, text = 'ok', _('plaintext_panel.status_ok')
+            state, text, tip = 'ok', _('plaintext_panel.status_ok'), _('plaintext_panel.status_ok_tooltip')
         self.status_label.setText(text)
+        self.status.setToolTip(tip)
+        self._fit_status_line()
         if self.status.property('state') != state:
             self.status.setProperty('state', state)
             for widget in (self.status, self.status_icon, self.status_label):
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
         self._update_position()
+
+
+class _ElidedLabel(QLabel):
+    """A one-line label that ends in "…" when it does not fit, instead of
+    widening the panel or being cut off mid-letter."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setMinimumWidth(0)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        rect = self.contentsRect()
+        text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, rect.width())
+        self.style().drawItemText(painter, rect, Qt.AlignLeft | Qt.AlignVCenter, self.palette(),
+                                  self.isEnabled(), text, self.foregroundRole())
+        painter.end()
+
+
+def _options_icon():
+    """The settings icon: dim while the options are closed, full when open
+    (the chip is checked then). Built from pixmaps so both states are kept."""
+    source = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'plaintext_options_icon.svg'))
+    icon = QIcon()
+    for size in (16, 32):
+        full = source.pixmap(QSize(size, size))
+        dim = QPixmap(full.size())
+        dim.fill(Qt.transparent)
+        painter = QPainter(dim)
+        painter.setOpacity(0.6)
+        painter.drawPixmap(0, 0, full)
+        painter.end()
+        icon.addPixmap(dim, QIcon.Normal, QIcon.Off)
+        icon.addPixmap(full, QIcon.Normal, QIcon.On)
+        icon.addPixmap(full, QIcon.Active, QIcon.Off)    # hovered
+        icon.addPixmap(full, QIcon.Active, QIcon.On)
+    return icon
 
 
 def _dot_icon(color):
@@ -862,8 +1088,11 @@ def load(self):
 
 
 def update(self):
-    """The left panel's refresh, while this tab is the one shown."""
+    """The left panel's refresh, while this tab is the one shown — run on
+    every change of the selection, so the tab follows it straight away."""
     self.plaintext_panel.schedule_refresh()
+    if self.plaintext_panel.isVisible():
+        self.plaintext_panel._sync_selected_mark()
 
 
 def reset(self):

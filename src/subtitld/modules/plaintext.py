@@ -113,6 +113,8 @@ class Cue:
     first_line: int = 0  # the cue's whole block, comments included
     last_line: int = 0
     fmt: str = SRT
+    text_line: int = 0   # where its text starts (1-based)
+    text_column: int = 1
 
 
 @dataclass
@@ -357,7 +359,7 @@ class _Reader:
         return None if bad else h * 3600 + m * 60 + s + ms / 1000.0
 
     def finish_cue(self, start, end, text, meta, line, end_column, end_length, first_line=0, last_line=0,
-                   end_line=None):
+                   end_line=None, text_at=None):
         if start is None or end is None:
             return
         if end <= start:
@@ -371,7 +373,9 @@ class _Reader:
             self.issue(line, 1, len(self.lines[line - 1]), 'out_of_order',
                        'Starts before the previous subtitle; it will be put in order', WARNING)
         self._previous_start = start
-        self.cues.append(Cue(start, end, text, meta, line, first_line or line, last_line or line, self.fmt))
+        text_line, text_column = text_at or (line + 1, 1)
+        self.cues.append(Cue(start, end, text, meta, line, first_line or line, last_line or line, self.fmt,
+                             text_line, text_column))
 
     # -- SRT ------------------------------------------------------------------
 
@@ -439,7 +443,10 @@ class _Reader:
         for n in numbers[position:]:
             self.kinds[n] = 'text'
         text = '\n'.join(line_of(n) for n in numbers[position:])
-        self.finish_cue(start, end, text, meta, timing_line, end_column, end_length, numbers[0], numbers[-1])
+        # No text yet: the end of the timing line, where it would follow.
+        text_at = (numbers[position], 1) if position < len(numbers) else (timing_line, len(line_of(timing_line)) + 1)
+        self.finish_cue(start, end, text, meta, timing_line, end_column, end_length, numbers[0], numbers[-1],
+                        text_at=text_at)
 
     def srt_timing(self, line):
         content = self.lines[line - 1]
@@ -534,6 +541,8 @@ class _Reader:
             if content.strip():
                 self.kinds[number] = 'text'
                 current['last'] = number
+                if current['text_at'] is None:
+                    current['text_at'] = (number, 2 if content.startswith('\\') else 1)
         self.md_close(current)
         return self
 
@@ -581,15 +590,17 @@ class _Reader:
                 self.issue(line, 1, len(self.lines[line - 1]), 'attr_duplicate',
                            "'translations' is set twice for this subtitle", key='translations')
             meta['translations'] = {language: '\n'.join(lines) for language, lines in current['translations'].items()}
+        text_at = current['text_at'] or (line, len(self.lines[line - 1]) + 1)
         self.finish_cue(current['start'], current['end'], '\n'.join(text), meta,
-                        line, current['end_column'], current['end_length'], line, current['last'])
+                        line, current['end_column'], current['end_length'], line, current['last'],
+                        text_at=text_at)
 
     def md_timing(self, line):
         """The timing line read into a fresh cue in progress."""
         content = self.lines[line - 1]
         current = {'start': None, 'end': None, 'line': line, 'text': [], 'last': line,
                    'end_column': 1, 'end_length': 1, 'speaker': '', 'speaker_column': 1,
-                   'attrs': {}, 'translations': {}, 'open': None}
+                   'attrs': {}, 'translations': {}, 'open': None, 'text_at': None}
         bracket = content.index('[')
         close = content.find(']', bracket)
         if close < 0:
@@ -786,9 +797,10 @@ class _Reader:
                     if key not in CORE_KEYS and key not in _JSON_SKIPPED}
             end_node = fields['end'][1]
             end_line, end_column = at(end_node.start)
+            text_at = at(fields['text'][1].start + 1)
             self.finish_cue(float(values['start']), float(values['end']), values['text'].strip(), meta,
                             first_line, end_column, end_node.end - end_node.start, first_line, last_line,
-                            end_line=end_line)
+                            end_line=end_line, text_at=text_at)
         return self
 
 

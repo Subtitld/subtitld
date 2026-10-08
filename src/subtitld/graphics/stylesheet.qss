@@ -785,6 +785,7 @@ LabeledLineEdit {
 }
 
 LabeledComboBox QComboBox,
+LabeledComboBox QSpinBox,
 LabeledLineEdit QLineEdit {
     background-color: #304251; 
     border: 0;
@@ -798,6 +799,7 @@ LabeledLineEdit QLineEdit {
 }
 
 LabeledComboBox QComboBox::hover,
+LabeledComboBox QSpinBox::hover,
 LabeledLineEdit QLineEdit::hover {
     background-color: #3e5363; 
 }
@@ -3141,20 +3143,6 @@ QPushButton#videoproperties_delete_button:pressed {
     background: transparent;
 }
 
-#plaintext_panel_header {
-    min-height: 36px;
-    max-height: 36px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0, 0, 0, 0.12), stop:1 rgba(0, 0, 0, 0));
-    border-bottom: 1px solid #0affffff;
-}
-
-QLabel#plaintext_panel_title {
-    color: #b8cee0;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 1px;
-}
-
 QPushButton#plaintext_panel_format_button {
     background: #1e2832;
     color: rgba(184, 206, 224, 0.55);
@@ -3184,14 +3172,6 @@ QPushButton#plaintext_panel_format_button:hover {
 QPushButton#plaintext_panel_format_button:checked {
     background: #4a5f70;
     color: #ffffff;
-}
-
-QPlainTextEdit#plaintext_panel_editor {
-    background: rgba(0, 0, 0, 0.14);
-    color: #d4e1eb;
-    border: 0;
-    selection-background-color: #3e5363;
-    selection-color: #ffffff;
 }
 
 QWidget#plaintext_panel_stale_bar {
@@ -3289,3 +3269,50 @@ QListWidget#plaintext_panel_issue_list::item:selected {
     background: rgba(255, 255, 255, 0.07);
     color: #ffffff;
 }
+
+QWidget#plaintext_panel_options {
+    background: #1e2832;
+}
+
+/* The options chip: the scope chip's tab, upside down. It hangs from the
+   top of the status line in the strip's colour, square where it meets the
+   strip, so an open strip and its chip read as one connected shape. */
+QPushButton#plaintext_panel_options_chip {
+    background: #1e2832;
+    color: rgba(184, 206, 224, 0.6);
+    border: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+    padding: 0;
+    min-width: 28px;
+    max-width: 28px;
+    font-family: 'Montserrat';
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QPushButton#plaintext_panel_options_chip:hover {
+    color: #b8cee0;
+}
+
+/* Open: the line between the strip and the status line takes the strip's
+   colour, so nothing separates the strip from its chip. */
+QWidget#plaintext_panel_status[options_open="true"] {
+    border-top: 1px solid #1e2832;
+}
+/* A value sharing a labelled combobox's block (the plain-text font size):
+   split from the combobox by a hairline, its corner rounded. */
+LabeledComboBox QSpinBox {
+    border-left: 1px solid #1e2832;
+    border-bottom-left-radius: 0;
+    min-width: 46px;
+}
+
+LabeledComboBox QSpinBox::up-button,
+LabeledComboBox QSpinBox::down-button {
+    width: 0;
+    border: 0;
+}
+

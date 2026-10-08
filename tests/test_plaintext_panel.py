@@ -100,6 +100,10 @@ def reset_calls():
         calls[key] = 0
 
 
+print('no title line: the format switch and the options are on the bottom line')
+check('format buttons in the status line', all(panel.status.isAncestorOf(b) for b in panel.format_buttons.values()), True)
+check('the options chip too', panel.status.isAncestorOf(panel.options_chip), True)
+
 print('a tab of the left panel, after the subtitle list, showing the subtitles as SRT')
 check('second tab', [host.left_panel_stackedwidgets.widget(i).property('tab_name')
                      for i in range(host.left_panel_stackedwidgets.count())], ['subtitles', 'plaintext'])
@@ -199,16 +203,24 @@ editor.undo()
 settle()
 check('undone', first['text'], 'First, edited')
 
-print('the selected subtitle is marked beside its lines')
+print('selecting a subtitle elsewhere marks it, and takes the cursor and view to its text')
+editor.setTextCursor(editor.cursor_at(1, 1))
+editor.verticalScrollBar().setValue(0)
+settle(300)     # a cursor put in the first subtitle selects it; then the timeline picks the second
 session.SUBTITLE['selected'] = second
 settle(300)
 check('lines of the second block', editor.selected_lines, (6, 10))
+check('cursor at the start of its text', (editor.textCursor().blockNumber() + 1, editor.textCursor().positionInBlock() + 1), (9, 1))
+check('the line is in view', editor.viewport().rect().contains(editor.cursorRect()), True)
+check('the subtitle is not re-selected from here', session.SUBTITLE['selected'] is second, True)
 
-print('putting the cursor in a subtitle selects it')
-editor.setTextCursor(editor.cursor_at(14, 1))
+print('putting the cursor in a subtitle selects it, and leaves the cursor there')
+editor.setTextCursor(editor.cursor_at(14, 5))
 panel._select_under_cursor()
+settle(300)
 check('third selected', session.SUBTITLE['selected'] is session.SUBTITLE['segments'][2], True)
 check('marked', editor.selected_lines, (12, 15))
+check('the cursor did not jump', (editor.textCursor().blockNumber() + 1, editor.textCursor().positionInBlock() + 1), (14, 5))
 
 print('deleting the selected subtitle in the text clears the selection')
 text = editor.toPlainText()
@@ -293,6 +305,35 @@ settle()
 check('editing the language changes the project\'s', session.SUBTITLE['language'], 'pt-br')
 panel.format_buttons['md'].click()
 app.processEvents()
+
+print('options: font, size and colour theme')
+check('closed at first', panel.options.isVisible(), False)
+panel.options_chip.click()
+app.processEvents()
+check('opened from the bottom line', panel.options.isVisible(), True)
+check('the chip says so, and it is remembered', (panel.options_chip.isChecked(), session.CONFIG['plaintext_panel']['options_open'],
+                                                  panel.status.property('options_open')), (True, True, True))
+check('defaults', (session.CONFIG['plaintext_panel']['font_size'], session.CONFIG['plaintext_panel']['theme'],
+                   editor.font().pixelSize()), (ptp.DEFAULT_SIZE, 'subtitld', ptp.DEFAULT_SIZE))
+panel.size_spinbox.setValue(18)
+check('size applied and remembered', (editor.font().pixelSize(), session.CONFIG['plaintext_panel']['font_size']), (18, 18))
+panel.size_spinbox.setValue(99)
+check('held to the range', panel.size_spinbox.value(), ptp.FONT_SIZES[1])
+panel.theme_combobox.setCurrentIndex(list(ptp.THEMES).index('solarized_light'))
+panel.theme_combobox.activated.emit(panel.theme_combobox.currentIndex())
+check('theme remembered', session.CONFIG['plaintext_panel']['theme'], 'solarized_light')
+check('the editor takes its colours', ('rgba(253, 246, 227, 255)' in editor.styleSheet(),
+                                      editor.highlighter.formats['timing'].foreground().color().name()), (True, '#268bd2'))
+panel.font_combobox.setCurrentIndex(0)
+check('font remembered', session.CONFIG['plaintext_panel']['font_family'], panel.font_combobox.currentFont().family())
+check('changing them is not an edit', (panel.pending, panel.apply_timer.isActive()), (False, False))
+session.CONFIG['plaintext_panel'].update({'font_size': 'big', 'theme': 'nope'})
+check('bad saved values fall back', (ptp._config()['font_size'], ptp._config()['theme']), (ptp.DEFAULT_SIZE, 'subtitld'))
+panel.apply_appearance()
+panel.options_chip.click()
+app.processEvents()
+check('closed again', (panel.options.isVisible(), panel.options_chip.isChecked(),
+                       session.CONFIG['plaintext_panel']['options_open']), (False, False, False))
 
 print('while another tab is shown, the text catches up when it comes back')
 show_tab(other_tab)
