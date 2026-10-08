@@ -6,6 +6,7 @@ from subtitld.modules import session
 
 from subtitld.interface import left_panel_subtitleslist
 from subtitld.interface import left_panel_plaintext
+from subtitld.interface import left_panel_vtimeline
 from subtitld.interface import left_panel_metadata
 from subtitld.interface import left_panel_videoproperties
 from subtitld.interface import left_panel_audio
@@ -107,6 +108,7 @@ def load(self):
 
     left_panel_subtitleslist.load(self)
     left_panel_plaintext.load(self)
+    left_panel_vtimeline.load(self)
     left_panel_metadata.load(self)
     left_panel_videoproperties.load(self)
     left_panel_audio.load(self)

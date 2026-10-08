@@ -3628,6 +3628,54 @@ LabeledComboBox QSpinBox::down-button {
     border: 0;
 }
 
+/* ---- Vertical timeline tab (left panel) ---- */
+#vtimeline_panel,
+QScrollArea#vtimeline_scroll > QWidget,
+QWidget#vtimeline_canvas {
+    background: transparent;
+}
+
+QWidget#vtimeline_panel_status {
+    min-height: 26px;
+    max-height: 26px;
+    background: #1a232b;
+    border-top: 1px solid #0affffff;
+}
+
+QLabel#vtimeline_panel_position_label {
+    color: rgba(184, 206, 224, 0.7);
+    font-family: 'Ubuntu Mono', monospace;
+    font-size: 11px;
+}
+
+QLabel#vtimeline_panel_selected_label {
+    color: rgba(184, 206, 224, 0.5);
+    font-size: 10px;
+}
+
+QPushButton#vtimeline_panel_zoom_button {
+    background: #1e2832;
+    border: 0;
+    border-radius: 0;
+    padding: 3px 9px;
+    min-width: 0;
+}
+
+QPushButton#vtimeline_panel_zoom_button[position="first"] {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+QPushButton#vtimeline_panel_zoom_button[position="last"] {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+    border-left: 1px solid #151d24;
+}
+
+QPushButton#vtimeline_panel_zoom_button:hover {
+    background: #2a3743;
+}
+
 /* ---- Audio panel: input monitor (Recording) ---- */
 QFrame#audio_record_monitor {
     background: #1a232b;
