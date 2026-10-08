@@ -705,7 +705,11 @@ class SubtitldccPanel(QWidget):
         self.publish_new_button.style().polish(self.publish_new_button)
         self.publish_version_button.setEnabled(has_text)
         self.publish_new_button.setEnabled(connected and has_text)
-        if not connected:
+        if service.outdated():
+            self.publish_version_button.setEnabled(False)
+            self.publish_new_button.setEnabled(False)
+            self.publish_text.setText(_('subtitldcc.outdated'))
+        elif not connected:
             self.publish_text.setText(_('subtitldcc.publish_connect'))
         elif not has_text:
             self.publish_text.setText(_('subtitldcc.publish_empty'))
@@ -757,6 +761,7 @@ class SubtitldccPanel(QWidget):
     def _render_lists(self):
         if self._matches:
             self._render_video()
+        self._render_publish()
 
     def refresh(self):
         """Called when the panel is shown (and after changes). Nothing goes to subtitld.cc before the

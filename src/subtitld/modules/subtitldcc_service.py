@@ -12,6 +12,7 @@ last, to show the account without waiting for the network) and ``base_url`` (onl
 """
 
 import os
+import re
 import tempfile
 import urllib.error
 import urllib.parse
@@ -157,6 +158,18 @@ def meta():
 def cached_meta():
     """/meta if it was fetched already, else None. Never blocks."""
     return _meta
+
+
+def _version(text):
+    return tuple(int(part) for part in re.findall(r'\d+', str(text))[:3])
+
+
+def outdated():
+    """subtitld.cc asks for a newer Subtitld (/meta's min_subtitld_version). Development builds never are."""
+    minimum = (cached_meta() or {}).get('min_subtitld_version') or '0'
+    if __version__.startswith('0.0.0'):
+        return False
+    return _version(__version__) < _version(minimum)
 
 
 # --- Running calls off the UI thread ---------------------------------------------------------------------

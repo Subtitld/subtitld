@@ -552,5 +552,6 @@
     "subtitldcc.error_access_denied": "A conexão foi cancelada no navegador.",
     "subtitldcc.error_expired_token": "O código expirou. Tente de novo.",
     "subtitldcc.error_state_mismatch": "A conexão falhou. Tente de novo.",
-    "subtitldcc.error_unknown": "Algo deu errado. Tente de novo."
+    "subtitldcc.error_unknown": "Algo deu errado. Tente de novo.",
+    "subtitldcc.outdated": "Esta versão do Subtitld é antiga demais para publicar no subtitld.cc. Atualize o Subtitld em subtitld.org."
 }

@@ -210,6 +210,13 @@ print('the token stops working: back to Connect')
 panel._token_expired()
 check('disconnected', (service.is_connected(), panel.connect_button.isVisibleTo(host)), (False, True))
 
+print('subtitld.cc can ask for a newer Subtitld (development builds never count as old)')
+import subtitld.modules.subtitldcc_service as service_module
+service_module._meta = {**service.cached_meta(), 'min_subtitld_version': '26.10'}
+for version, want in (('26.9', True), ('26.10', False), ('27.1.2', False), ('0.0.0.dev0', False)):
+    service_module.__version__ = version
+    check(f'{version} is outdated', service.outdated(), want)
+
 panel.shutdown()
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
