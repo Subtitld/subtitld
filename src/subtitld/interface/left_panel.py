@@ -5,6 +5,7 @@ from PySide6.QtGui import QIcon
 from subtitld.modules import session
 
 from subtitld.interface import left_panel_subtitleslist
+from subtitld.interface import left_panel_plaintext
 from subtitld.interface import left_panel_metadata
 from subtitld.interface import left_panel_videoproperties
 from subtitld.interface import left_panel_audio
@@ -105,6 +106,7 @@ def load(self):
     self.left_panel.layout().addWidget(self.left_panel_stackedwidgets)
 
     left_panel_subtitleslist.load(self)
+    left_panel_plaintext.load(self)
     left_panel_metadata.load(self)
     left_panel_videoproperties.load(self)
     left_panel_audio.load(self)
@@ -125,6 +127,8 @@ def show(self):
     # Opacity = 1 immediately — setUpdatesEnabled handles flash-hiding.
     # See preview_panel.show() for the full rationale.
     self.left_panel.opacity.setOpacity(1.0)
+    # A project was just opened: the plain-text tab drops any text it had.
+    left_panel_plaintext.reset(self)
     # Settle the subtitles panel's visibility BEFORE the slide starts, so the
     # panel animates in already wearing its final configuration. This is only
     # visibility (no content work), and it happens ahead of the animation, so

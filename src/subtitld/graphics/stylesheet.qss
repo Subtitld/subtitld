@@ -3135,3 +3135,157 @@ QPushButton#videoproperties_delete_button:hover {
 QPushButton#videoproperties_delete_button:pressed {
     background: rgba(0, 0, 0, 0.15);
 }
+
+/* ---- Plain-text tab (left panel) ---- */
+#plaintext_panel {
+    background: transparent;
+}
+
+#plaintext_panel_header {
+    min-height: 36px;
+    max-height: 36px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0, 0, 0, 0.12), stop:1 rgba(0, 0, 0, 0));
+    border-bottom: 1px solid #0affffff;
+}
+
+QLabel#plaintext_panel_title {
+    color: #b8cee0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+QPushButton#plaintext_panel_format_button {
+    background: #1e2832;
+    color: rgba(184, 206, 224, 0.55);
+    border: 0;
+    border-radius: 0;
+    padding: 3px 10px;
+    min-width: 0;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QPushButton#plaintext_panel_format_button[position="first"] {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+QPushButton#plaintext_panel_format_button[position="last"] {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+QPushButton#plaintext_panel_format_button:hover {
+    background: #2a3743;
+    color: #b8cee0;
+}
+
+QPushButton#plaintext_panel_format_button:checked {
+    background: #4a5f70;
+    color: #ffffff;
+}
+
+QPlainTextEdit#plaintext_panel_editor {
+    background: rgba(0, 0, 0, 0.14);
+    color: #d4e1eb;
+    border: 0;
+    selection-background-color: #3e5363;
+    selection-color: #ffffff;
+}
+
+QWidget#plaintext_panel_stale_bar {
+    background: rgba(231, 184, 90, 0.12);
+    border-bottom: 1px solid rgba(231, 184, 90, 0.25);
+}
+
+QLabel#plaintext_panel_stale_label {
+    color: #e7c98a;
+    font-size: 11px;
+}
+
+QPushButton#plaintext_panel_stale_button {
+    background: rgba(231, 184, 90, 0.16);
+    color: #f1dcae;
+    border: 0;
+    border-radius: 3px;
+    padding: 3px 8px;
+    min-width: 0;
+    font-size: 10px;
+}
+
+QPushButton#plaintext_panel_stale_button:hover {
+    background: rgba(231, 184, 90, 0.3);
+}
+
+QWidget#plaintext_panel_status {
+    min-height: 26px;
+    max-height: 26px;
+    background: #1a232b;
+    border-top: 1px solid #0affffff;
+}
+
+QWidget#plaintext_panel_status[state="error"] {
+    background: rgba(255, 107, 107, 0.14);
+    border-top: 1px solid rgba(255, 107, 107, 0.35);
+}
+
+QWidget#plaintext_panel_status[state="warning"] {
+    background: rgba(231, 184, 90, 0.10);
+    border-top: 1px solid rgba(231, 184, 90, 0.25);
+}
+
+QLabel#plaintext_panel_status_icon {
+    border-radius: 4px;
+    background: #5fc48a;
+}
+
+QWidget#plaintext_panel_status[state="error"] QLabel#plaintext_panel_status_icon {
+    background: #ff6b6b;
+}
+
+QWidget#plaintext_panel_status[state="warning"] QLabel#plaintext_panel_status_icon {
+    background: #e7b85a;
+}
+
+QWidget#plaintext_panel_status[state="checking"] QLabel#plaintext_panel_status_icon {
+    background: #6f8596;
+}
+
+QLabel#plaintext_panel_status_label,
+QLabel#plaintext_panel_position_label {
+    color: rgba(184, 206, 224, 0.7);
+    font-size: 10px;
+}
+
+QWidget#plaintext_panel_status[state="error"] QLabel#plaintext_panel_status_label {
+    color: #ffb3b3;
+}
+
+QLabel#plaintext_panel_position_label {
+    font-family: 'Ubuntu Mono', monospace;
+    font-size: 11px;
+}
+
+QListWidget#plaintext_panel_issue_list {
+    background: #161e25;
+    border: 0;
+    padding: 4px 0;
+    font-size: 11px;
+    color: #c6d6e2;
+    outline: 0;
+}
+
+QListWidget#plaintext_panel_issue_list::item {
+    padding: 2px 15px 2px 9px;
+    border: 0;
+}
+
+QListWidget#plaintext_panel_issue_list::item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+QListWidget#plaintext_panel_issue_list::item:selected {
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+}

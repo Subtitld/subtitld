@@ -344,6 +344,9 @@ AUTOSAVE_LAST_ORIGINAL = None
 _unsaved_change_callbacks = []
 _autosave_status_callbacks = []
 _save_success_callbacks = []
+# Called on every set_unsaved() — after any edit, not just when the
+# unsaved state flips — for views that mirror the whole document.
+_document_change_callbacks = []
 def set_unsaved(value=True):
     global UNSAVED, AUTOSAVE_BACKUP_DIRTY
     old_value = UNSAVED
@@ -353,6 +356,8 @@ def set_unsaved(value=True):
     if old_value != value:
         for callback in _unsaved_change_callbacks:
             callback()
+    for callback in list(_document_change_callbacks):
+        callback()
 
 
 def notify_save_success():
