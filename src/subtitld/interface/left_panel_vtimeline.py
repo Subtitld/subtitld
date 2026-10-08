@@ -184,10 +184,7 @@ def _move(mode, subtitle, position, record, push=None):
         delta = position - subtitle['start']
         subtitles.move_subtitle(selected_subtitle=subtitle, amount=delta, record=record)
     elif mode == 'start':
-        if position > 0:
-            subtitles.move_start_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record)
-        else:       # an absolute time of 0 would read as "none given"
-            subtitles.move_start_subtitle(selected_subtitle=subtitle, amount=-subtitle['start'], record=record)
+        subtitles.move_start_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record)
     elif mode == 'end':
         subtitles.move_end_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record)
 

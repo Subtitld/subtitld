@@ -203,7 +203,7 @@ def _shift_locked_dubs(subtitle, delta):
                 dub['end'] = dub['end'] + delta
 
 
-def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, record=True):
+def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, record=True):
     """Function to move a subtitle in the main subtitle list. `record=False`
     leaves the undo history alone: a drag records one step when it starts,
     not one for every move of the mouse."""
@@ -211,7 +211,7 @@ def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, reco
         if record:
             history.history_append(session.SUBTITLE['segments'])
         old_start = selected_subtitle['start']
-        if absolute_time:
+        if absolute_time is not None:
             duration = selected_subtitle['end'] - selected_subtitle['start']
             selected_subtitle['start'] = absolute_time
             selected_subtitle['end'] = absolute_time + duration
@@ -221,7 +221,7 @@ def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, reco
         _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
-def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False, record=True):
+def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True):
     """Function to move the start a subtitle in the main subtitle list"""
     if selected_subtitle:
         if record:
@@ -230,19 +230,19 @@ def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False
         if move_nereast:
             subt = [item['end'] for item in session.SUBTITLE['segments']]
             nearest = bisect(subt, selected_subtitle['start']) - 1
-            if round(session.SUBTITLE['segments'][nearest]['end'], 3) == round(selected_subtitle['start'] - .001, 3):
-                if absolute_time:
+            if nearest >= 0 and round(session.SUBTITLE['segments'][nearest]['end'], 3) == round(selected_subtitle['start'] - .001, 3):
+                if absolute_time is not None:
                     session.SUBTITLE['segments'][nearest]['end'] = absolute_time - 0.001
                 else:
-                    session.SUBTITLE['segments'][nearest]['end'] -= amount
-        if absolute_time:
+                    session.SUBTITLE['segments'][nearest]['end'] += amount
+        if absolute_time is not None:
             selected_subtitle['start'] = absolute_time
         else:
             selected_subtitle['start'] += amount
         _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
-def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, move_nereast=False, record=True):
+def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True):
     """Function to move the end of a subtitle in the main subtitle list"""
     if selected_subtitle:
         if record:
@@ -250,12 +250,12 @@ def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=False, 
         if move_nereast:
             subt = [item['start'] for item in session.SUBTITLE['segments']]
             nearest = bisect(subt, selected_subtitle['end'])
-            if round(session.SUBTITLE['segments'][nearest]['start'], 3) == round(selected_subtitle['end'] + .001, 3):
-                if absolute_time:
+            if nearest < len(subt) and round(session.SUBTITLE['segments'][nearest]['start'], 3) == round(selected_subtitle['end'] + .001, 3):
+                if absolute_time is not None:
                     session.SUBTITLE['segments'][nearest]['start'] = absolute_time + 0.001
                 else:
                     session.SUBTITLE['segments'][nearest]['start'] += amount
-        if absolute_time:
+        if absolute_time is not None:
             selected_subtitle['end'] = absolute_time
         else:
             selected_subtitle['end'] += amount
