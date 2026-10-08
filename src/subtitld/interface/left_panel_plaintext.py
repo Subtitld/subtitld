@@ -613,7 +613,8 @@ class PlainTextPanel(QWidget):
         """Font, size and colour theme; opened from the bottom line. The
         app's labelled comboboxes, the label inside the block."""
         self.options = QWidget(objectName='plaintext_panel_options')
-        box = QVBoxLayout(self.options)
+        # One row: the font block, then the theme block.
+        box = QHBoxLayout(self.options)
         box.setContentsMargins(15, 10, 15, 12)
         box.setSpacing(8)
         config = _config()
@@ -626,6 +627,9 @@ class PlainTextPanel(QWidget):
         stock.deleteLater()
         self.font_combobox = QFontComboBox(objectName='plaintext_panel_font_combobox')
         self.font_combobox.setFontFilters(QFontComboBox.MonospacedFonts)
+        # A font combobox is editable by default; its text field scrolls to
+        # the end when narrow ("ntu Mono"). A plain picker elides instead.
+        self.font_combobox.setEditable(False)
         self.font_combobox.setCurrentFont(QFont(config['font_family']))
         self.font_combobox.currentFontChanged.connect(lambda font: self._option_changed('font_family', font.family()))
         self.font_block.combobox = self.font_combobox
@@ -633,10 +637,11 @@ class PlainTextPanel(QWidget):
         self.size_spinbox = QSpinBox(objectName='plaintext_panel_size_spinbox')
         self.size_spinbox.setRange(*FONT_SIZES)
         self.size_spinbox.setSuffix(' px')
+        self.size_spinbox.setFixedWidth(60)     # "32 px", and the rest to the font name
         self.size_spinbox.setValue(config['font_size'])
         self.size_spinbox.valueChanged.connect(lambda size: self._option_changed('font_size', size))
         self.font_block.bottom_line.addWidget(self.size_spinbox)
-        box.addWidget(self.font_block)
+        box.addWidget(self.font_block, 3)
 
         self.theme_block = utils.LabeledComboBox()
         self.theme_combobox = self.theme_block.combobox
@@ -646,7 +651,11 @@ class PlainTextPanel(QWidget):
         self.theme_combobox.setCurrentIndex(list(THEMES).index(config['theme']))
         self.theme_combobox.activated.connect(
             lambda index: self._option_changed('theme', self.theme_combobox.itemData(index)))
-        box.addWidget(self.theme_block)
+        box.addWidget(self.theme_block, 2)
+        # The same height side by side (the size box makes the font block a
+        # little taller); the extra goes to the labels, the boxes stay level.
+        for block in (self.font_block, self.theme_block):
+            block.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.options.hide()
         return self.options
 

@@ -3307,7 +3307,6 @@ QWidget#plaintext_panel_status[options_open="true"] {
 LabeledComboBox QSpinBox {
     border-left: 1px solid #1e2832;
     border-bottom-left-radius: 0;
-    min-width: 46px;
 }
 
 LabeledComboBox QSpinBox::up-button,
