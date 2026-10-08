@@ -197,9 +197,28 @@ check('speakers', sorted(session.SPEAKERS), ['A', 'B'])
 wait(lambda: panel._origin_info and 'permissions' in panel._origin_info)
 check('origin card', (panel.origin_card.isVisibleTo(host), panel.origin_title.text()), (True, 'Sintel (2010)'))
 
+print('connecting: the browser answers, and the card says who is connected')
+real_sign_in = service.sign_in
+
+
+def fake_sign_in(device_code_shown=None, cancelled=lambda: False):
+    time.sleep(0.2)
+    service.store().save('sct_test')
+    return FakeClient().me()
+
+
+service.sign_in = fake_sign_in
+panel.connect_button.click()
+check('waiting while the browser is open', (panel.cancel_button.isVisibleTo(host),
+                                             panel.connect_button.isVisibleTo(host)), (True, False))
+check('done', wait(lambda: panel._sign_in_call is None), True)
+app.processEvents()
+check('connected, not waiting any more', (panel.disconnect_button.isVisibleTo(host),
+                                          panel.cancel_button.isVisibleTo(host)), (True, False))
+check('says who', '@marina' in panel.account_text.text(), True)
+service.sign_in = real_sign_in
+
 print('connected and allowed to edit: publish the next version')
-service.store().save('sct_test')
-service.remember_account(FakeClient().me())
 panel.refresh()
 check('connected', panel.disconnect_button.isVisibleTo(host), True)
 check('version offered', (panel.publish_version_button.isVisibleTo(host), panel.publish_version_button.isEnabled()),

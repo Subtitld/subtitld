@@ -299,7 +299,9 @@ class SubtitldccPanel(QWidget):
         self._render_account(waiting=True, code=code)
 
     def _sign_in_finished(self):
+        # Runs after _signed_in / _sign_in_failed (finished comes last): redraw without "waiting".
         self._sign_in_call = None
+        self._render_account()
 
     def _signed_in(self, me):
         service.remember_account(me)
