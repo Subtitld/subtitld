@@ -1,3 +1,5 @@
+import logging
+
 import cv2
 try:
     import mediapipe as mp
@@ -7,8 +9,8 @@ import numpy as np
 from autohex import AutoHex
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QIcon
-from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QPoint, QEvent
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QPen, QIcon
+from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QLineF, QPoint, QEvent
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
@@ -19,6 +21,8 @@ from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import history
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
+
+log = logging.getLogger(__name__)
 
 
 class FaceExtractorThread(QThread):
@@ -329,8 +333,10 @@ _CORNER_RADIUS = 4
 # the list edge and overhangs the body, which is why it is a free-standing
 # child positioned by hand rather than a laid-out widget.
 _BODY_LEFT_MARGIN = 10
-# Gap between items in the list.
-_ITEM_SPACING = 10
+# Breathing room above and below each item's content, inside the item itself
+# rather than as list spacing — so the row's selection fill covers it instead
+# of leaving a dead gap between highlighted rows.
+_ITEM_PAD_V = 10
 # The avatar hangs 3px lower than the rest of the header band.
 _AVATAR_TOP_OFFSET = 3
 # Gap between the avatar and the text column.
@@ -527,6 +533,9 @@ class SpeakerHeader(QWidget):
         # header's layout so it can sit flush at the list edge while the
         # body is inset.
         self.avatar_label = None
+        # x of the hover indicator on the strip, or None when not hovering.
+        self._hover_x = None
+        self.setMouseTracking(True)
 
         self.setMinimumHeight(_HEADER_MIN_HEIGHT)
         # Hug the content: the card should be no taller than it needs to be
@@ -536,6 +545,92 @@ class SpeakerHeader(QWidget):
         # Top margin clears the strip so the name's glyphs never sit under it.
         layout.setContentsMargins(_INFO_LEFT - _BODY_LEFT_MARGIN, _TIMELINE_HEIGHT + 2, 4, 2)
         layout.setSpacing(0)
+
+
+    # -- strip interaction --------------------------------------------------
+    # The strip is only _TIMELINE_HEIGHT tall, which is a hard target for a
+    # mouse, so the hit zone is padded a few pixels below it. The indicator
+    # still draws inside the strip itself.
+    _STRIP_HIT_PAD = 5
+
+    def _strip_hit(self, pos):
+        return 0 <= pos.y() <= _TIMELINE_HEIGHT + self._STRIP_HIT_PAD
+
+    def _strip_time(self, x):
+        """Map an x on the strip back to a position in the media."""
+        width = max(1, self.width())
+        frac = min(1.0, max(0.0, float(x) / float(width)))
+        return frac * self._duration
+
+
+    def _page_width(self, strip_width):
+        """Width on the strip matching one timeline page at the current zoom.
+
+        The timeline lives in a scroll area, so the visible span in seconds is
+        the viewport width divided by pixels-per-second. Falls back to a thin
+        marker when the timeline is not measurable yet.
+        """
+        fallback = 3.0
+        if self._duration <= 0:
+            return fallback
+        timeline = getattr(self.window(), 'timeline_widget', None)
+        if timeline is None:
+            return fallback
+        wpp = float(getattr(timeline, 'width_proportion', 0) or 0)
+        scroll = getattr(self.window(), 'timeline_scroll', None)
+        viewport = float(scroll.width()) if scroll is not None else 0.0
+        if wpp <= 0 or viewport <= 0:
+            return fallback
+        visible_seconds = viewport / wpp
+        width = (visible_seconds / self._duration) * strip_width
+        # Keep it visible when zoomed out far, and never wider than the strip.
+        return max(3.0, min(width, strip_width))
+
+    def _repaint_strip(self):
+        # Whole strip width: the page rectangle is centred on the cursor and
+        # can be wide, so a narrow region around the cursor would clip it.
+        self.update(QRect(0, 0, self.width(), _TIMELINE_HEIGHT + 1))
+
+    def mouseMoveEvent(self, event):
+        inside = self._strip_hit(event.position()) if hasattr(event, 'position') else False
+        new_x = int(event.position().x()) if inside else None
+        if new_x != self._hover_x:
+            self._hover_x = new_x
+            self._repaint_strip()
+        return super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        if self._hover_x is not None:
+            self._hover_x = None
+            self._repaint_strip()
+        return super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        # Gate on the REAL media duration, not `self._duration`: set_timeline
+        # coerces a missing duration to 60 so the strip can still be drawn, so
+        # that value is never 0 and would let a click seek into a span that
+        # does not exist.
+        media = float((session.VIDEO or {}).get('duration', 0) or 0)
+        if self._strip_hit(event.position()) and media > 0:
+            target = self._strip_time(event.position().x())
+            window = self.window()
+            player = getattr(window, 'preview_panel_player', None)
+            if player is not None:
+                try:
+                    # seek() writes session.SUBTITLE['position'] synchronously,
+                    # so the scroll below reads the new position.
+                    player.seek(target)
+                    # timeline.update() only scrolls while playing, so a click
+                    # made while paused would move the video but leave the
+                    # timeline where it was. Page it over explicitly.
+                    from subtitld.interface import timeline as _timeline
+                    _timeline.update_scrollbar(window, position='middle')
+                    window.timeline_widget.update()
+                except Exception:
+                    log.exception('Speakers: seek from the mini timeline failed')
+        # Not accepted: the press still reaches the card, so clicking the strip
+        # also selects the speaker, as clicking anywhere else on it does.
+        return super().mousePressEvent(event)
 
     # -- data ---------------------------------------------------------------
     def set_color(self, color):
@@ -673,6 +768,23 @@ class SpeakerHeader(QWidget):
                                         run_end - run_start, band.height()))
         finally:
             painter.restore()
+
+        if self._hover_x is not None:
+            # A rectangle the width of what the real timeline would show at
+            # its current zoom, so the hover previews the page you would land
+            # on rather than just a point.
+            page_w = self._page_width(band.width())
+            painter.save()
+            try:
+                # The strip's own path, not its bounding rect: a rect clip
+                # would let the highlight square off the rounded left end.
+                painter.setClipPath(path)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(255, 255, 255, 46))
+                painter.drawRect(QRectF(float(self._hover_x) - page_w / 2.0,
+                                        band.top(), page_w, band.height()))
+            finally:
+                painter.restore()
 
 
 class _SectionHeader(_BodyClippedPanel):
@@ -816,7 +928,8 @@ class speakers_list_item(QWidget):
         # Inset the body, not the whole card: the avatar is a child of the card
         # (not of the body) so it still starts at x=0 and overhangs this margin,
         # leaving a strip of list background behind it.
-        widget.layout().setContentsMargins(_BODY_LEFT_MARGIN, 0, 0, 0)
+        widget.layout().setContentsMargins(
+            _BODY_LEFT_MARGIN, _ITEM_PAD_V, 0, _ITEM_PAD_V)
         widget.layout().setSpacing(0)
         # Shrink to fit: with every section collapsed the card is just the
         # header plus the section headers, not a fixed block.
@@ -949,7 +1062,7 @@ class speakers_list_item(QWidget):
     def resizeEvent(widget, event):
         # Pinned to the card's own left edge (x=0), outside the body's inset,
         # and raised so the header's strip cannot paint over it.
-        widget.avatar_label.move(0, _AVATAR_TOP_OFFSET)
+        widget.avatar_label.move(0, _ITEM_PAD_V + _AVATAR_TOP_OFFSET)
         widget.avatar_label.raise_()
         return super().resizeEvent(event)
 
@@ -1190,7 +1303,8 @@ def load(self):
     self.left_panel_speakers_list.setObjectName('left_panel_speakers_list')
     self.left_panel_speakers_list.setLayout(QVBoxLayout())
     self.left_panel_speakers_list.layout().setContentsMargins(0, 0, 0, 0)
-    self.left_panel_speakers_list.layout().setSpacing(_ITEM_SPACING)
+    # No spacing: the gap is the items' own top/bottom padding now.
+    self.left_panel_speakers_list.layout().setSpacing(0)
     left_panel_speakers_panel_content.layout().addWidget(self.left_panel_speakers_list)
 
     left_panel_speakers_panel_content.layout().addStretch()
