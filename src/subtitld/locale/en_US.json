@@ -439,7 +439,6 @@
     "autosave_panel.never": "never",
     "autosave_panel.requires_usfx_tooltip": "Save the project as USFX first to enable in-place autosave",
     "playercontrols.music_voice_separation": "Music/Voice",
-    "export_json_dialog.format": "JSON Format",
     "export_usf_dialog.embed_speaker_images": "Embed speaker images",
     "export_usf_dialog.embed_audio_clips": "Embed audio clips",
     "left_panel_speakers.change_image_tooltip": "Select a face in the video to use as this speaker's image",

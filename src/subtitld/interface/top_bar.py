@@ -597,26 +597,6 @@ def toppanel_export_quick_button_clicked(self):
     file_io.save_file(filepath, selected_format, session.CONFIG['selected_language'])
 
 
-class export_json_dialog(utils.SimpleDialog):
-    def __init__(self, parent=None, title=''):
-        super().__init__(parent, title)
-
-        self.format_combobox = utils.LabeledComboBox()
-        self.format_combobox.setLabel(_('export_json_dialog.format'))
-        self.format_combobox.addItems(['Whisper', 'AD'])
-        self.format_combobox.setCurrentText('Whisper')
-        # self.format_combobox.activated.connect(lambda: self.format_combobox_activated())
-
-        self.content.layout().addWidget(self.format_combobox)
-
-    def exec_and_get_values(self):
-        if self.exec() == QDialog.Accepted:
-            return {
-                'standard': self.format_combobox.currentText()
-            }
-        return None
-
-
 class export_audio_dialog(utils.SimpleDialog):
     def __init__(self, parent=None, title='', is_mp4=False, has_background=False, has_vocals=False):
         super().__init__(parent, title)

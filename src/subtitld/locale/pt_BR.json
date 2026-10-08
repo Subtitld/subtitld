@@ -328,7 +328,6 @@
     "autosave_panel.autosave_backup_enable": "Ativar backup automático",
     "autosave_panel.autosave_backup_interval": "Intervalo de backup automático",
     "playercontrols.music_voice_separation": "Música/Voz",
-    "export_json_dialog.format": "Formato JSON",
     "global_panel.import_settings": "Importar configurações",
     "global_panel.select_sections": "Selecione as seções para importar",
     "global_panel.import": "Importar",

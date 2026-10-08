@@ -46,17 +46,6 @@ class _SubtitlesPanel(QWidget):
         usf_panel.layout().addStretch()
         self.options_stack.addWidget(usf_panel)
 
-        json_panel = QWidget()
-        json_panel.setLayout(QVBoxLayout())
-        json_panel.layout().setContentsMargins(0, 8, 0, 0)
-        self.json_standard = utils.LabeledComboBox()
-        self.json_standard.setLabel(_('export_json_dialog.format'))
-        self.json_standard.addItems(['Whisper', 'AD'])
-        self.json_standard.setCurrentText('Whisper')
-        json_panel.layout().addWidget(self.json_standard)
-        json_panel.layout().addStretch()
-        self.options_stack.addWidget(json_panel)
-
         self._empty_panel = QWidget()
         self._empty_panel.setLayout(QVBoxLayout())
         self._empty_panel.layout().addStretch()
@@ -69,10 +58,8 @@ class _SubtitlesPanel(QWidget):
         fmt = self.format_combo.currentText()
         if fmt == 'USF':
             self.options_stack.setCurrentIndex(0)
-        elif fmt == 'JSON':
-            self.options_stack.setCurrentIndex(1)
         else:
-            self.options_stack.setCurrentIndex(2)
+            self.options_stack.setCurrentIndex(1)
 
     def get_config(self):
         fmt = self.format_combo.currentText()
@@ -82,8 +69,6 @@ class _SubtitlesPanel(QWidget):
                 'embed_speaker_images': self.usf_embed_images.isChecked(),
                 'embed_audio_clips': self.usf_embed_dubs.isChecked(),
             }
-        elif fmt == 'JSON':
-            config['options'] = {'standard': self.json_standard.currentText()}
         return config
 
 

@@ -5,7 +5,6 @@ import shutil
 import threading
 import zipfile
 from docx import Document
-import json
 import pycaption
 from pycaption.exceptions import CaptionReadSyntaxError, CaptionReadNoCaptions
 import chardet
@@ -18,6 +17,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import timecode
+from subtitld.modules import plaintext
 from subtitld.modules import session
 from subtitld.modules import waveform
 from subtitld.modules import usf
@@ -765,23 +765,22 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = {}
 
         elif subtitle_file.lower().endswith(('.json')):
+            # Whisper's format, read as the plain-text editor reads it: every
+            # field of a segment kept, Whisper's decoder statistics left out.
             subtitle_format = 'JSON'
 
             with open(subtitle_file, encoding='utf-8') as json_file:
-                source_content = json.load(json_file)
-
-                for segment in source_content['segments']:
-                    segments_list.append({
-                        'start': segment['start'],
-                        'end': segment['end'],
-                        'text': segment['text'],
-                        'speaker': segment.get('speaker', 'A'),
-                        'translations': segment.get('translations', {})
-                    })
-            if not 'config' in session.FORMAT:
-                session.FORMAT['config'] = {
-                    'standard': 'Whisper'
-                }
+                result = plaintext.parse(json_file.read(), plaintext.JSON, session.LANGUAGE_DICT_LIST.values())
+            if not result.ok:
+                problem = result.errors[0]
+                raise CorruptedProjectFileError(f'Line {problem.line}, column {problem.column}: {problem.message}')
+            for cue in result.cues:
+                segment = {'start': cue.start, 'end': cue.end, 'text': cue.text}
+                segment.update(cue.meta)
+                segment.setdefault('speaker', 'A')
+                segments_list.append(segment)
+            if result.language:
+                session.SUBTITLE['language'] = result.language
 
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
@@ -1212,42 +1211,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             #     writer.write()
 
         elif subtitle_format in ['JSON']:
-            if FORMAT.get('options', {}).get('standard', 'Whisper') == 'Whisper':
-                # Underscore-prefixed segment keys are runtime-only markers
-                # (e.g. `_rec`, a recording placeholder id) — never persist them.
-                def _persistable(seg):
-                    if not isinstance(seg, dict):
-                        return seg
-                    return {k: v for k, v in seg.items() if not str(k).startswith('_')}
-                json_doc = dict(SUBTITLE)
-                json_doc['segments'] = [_persistable(seg) for seg in SUBTITLE.get('segments') or []]
-                # `selected` and `current` hold live segment dicts too.
-                for ref in ('selected', 'current'):
-                    if isinstance(json_doc.get(ref), dict):
-                        json_doc[ref] = _persistable(json_doc[ref])
-                open(final_file, mode='w', encoding='utf-8').write(json.dumps(json_doc, indent=4))
-            elif FORMAT['options'].get('standard', 'Whisper') == 'AD':
-                new_json_dict = {
-                    'metadata': {
-                        'framerate': VIDEO.get('framerate', 25),
-                        'video_name': os.path.basename(VIDEO.get('filepath', ''))
-                    },
-                    'description_cues': [],
-                }
-                for i, segment in enumerate(SUBTITLE['segments']):
-                    new_json_dict['description_cues'].append({
-                        'cue_number': i,
-                        'text': segment['text'],
-                        'start_frame': int(segment['start'] * VIDEO.get('framerate', 25)),
-                        'end_frame': int(segment['end'] * VIDEO.get('framerate', 25)),
-                        'start_time_smpte': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=False)),
-                        'end_time_smpte': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=False)),
-                        'start_time': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['start'], fractional=True)),
-                        'end_time': str(timecode.Timecode(VIDEO.get('framerate', 25), start_seconds=segment['end'], fractional=True)),
-                        'speaker': segment.get('speaker', 'A')
-                    })
-
-                open(final_file, mode='w', encoding='utf-8').write(json.dumps(new_json_dict, indent=4))
+            # Whisper's format, as the plain-text editor writes it. Runtime
+            # keys (`_`-prefixed, e.g. `_rec`) are never written.
+            text = plaintext.serialize(SUBTITLE.get('segments') or [], plaintext.JSON,
+                                       language=SUBTITLE.get('language'))
+            open(final_file, mode='w', encoding='utf-8').write(text)
 
 
         elif subtitle_format in ['USF']:
