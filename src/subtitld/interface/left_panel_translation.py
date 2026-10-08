@@ -3,12 +3,14 @@ import time
 from deep_translator import GoogleTranslator
 import subprocess
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QProgressBar, QPushButton, QRadioButton, QButtonGroup, QLineEdit, QApplication
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QProgressBar, QPushButton, QApplication
+from PySide6.QtCore import Qt, QSize, QThread, Signal
+from PySide6.QtGui import QIcon
 
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.interface.scope_selector import ScopeFooter
 from subtitld.modules import session
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
@@ -213,6 +215,10 @@ class AddonTranslatorPanel(QWidget):
         widget.layout().setSpacing(10)
         widget.setProperty('translation_engine', provider.id)
         widget.setProperty('class', 'transparent_panel')
+        # Add-on engines are told the source language — the project's
+        # subtitle language — instead of detecting it, as GoogleTranslator
+        # does. See _source_differs_from_target().
+        widget.uses_subtitle_language = True
 
         widget.info_label = QLabel(provider.display_name)
         widget.info_label.setWordWrap(True)
@@ -335,21 +341,31 @@ def load(self):
         translate_callback=translate
     )
 
+    # The panel's 10px padding lives on this content column, not on the
+    # panel layout: the footer band below reaches both panel edges, and a
+    # padded panel layout would inset its hairline and gradient.
+    left_panel_translation_panel.layout().setContentsMargins(0, 10, 0, 0)
+    content = QWidget()
+    content_layout = QVBoxLayout(content)
+    content_layout.setContentsMargins(10, 0, 10, 0)
+    content_layout.setSpacing(left_panel_translation_panel.layout().spacing())
+    left_panel_translation_panel.layout().addWidget(content, 1)
+
     self.global_panel_translation_show_translations_button = QCheckBox()
     self.global_panel_translation_show_translations_button.setObjectName('global_panel_translation_show_translations_button')
     self.global_panel_translation_show_translations_button.clicked.connect(lambda: global_panel_translation_show_translations_button_clicked(self))
-    left_panel_translation_panel.layout().addWidget(self.global_panel_translation_show_translations_button)
+    content_layout.addWidget(self.global_panel_translation_show_translations_button)
 
     self.global_panel_translation_target_language_combobox = utils.LabeledComboBox()
     self.global_panel_translation_target_language_combobox.addItems(LANGUAGE_DESCRIPTIONS)
     self.global_panel_translation_target_language_combobox.activated.connect(lambda: global_panel_translation_target_language_combobox_activated(self))
-    left_panel_translation_panel.layout().addWidget(self.global_panel_translation_target_language_combobox, 1)
+    content_layout.addWidget(self.global_panel_translation_target_language_combobox, 1)
 
     self.global_panel_translation_engine_combobox = utils.LabeledComboBox()
     self.global_panel_translation_engine_combobox.setProperty('class', 'button')
     self.global_panel_translation_engine_combobox.addItems(['GoogleTranslator'])
     self.global_panel_translation_engine_combobox.activated.connect(lambda: global_panel_translation_engine_combobox_activated(self))
-    left_panel_translation_panel.layout().addWidget(self.global_panel_translation_engine_combobox)
+    content_layout.addWidget(self.global_panel_translation_engine_combobox)
 
     self.global_panel_translation_tabwidget = QStackedWidget()
 
@@ -361,104 +377,48 @@ def load(self):
 
 
     # Add-on translation engines (any provider serving `translate.text`),
-    # discovered from the registry and appended after the built-in engines —
-    # mirrors how the Import panel surfaces ASR add-ons.
-    try:
-        _translate_providers = addons.get_manager().providers_for_task(TASK_TRANSLATE)
-    except Exception:
-        _translate_providers = []
+    # appended after the built-in engine — and kept current: installing,
+    # removing, enabling or disabling an add-on fires `providers_changed`,
+    # as the Import and Dubbing panels already handle.
     self.global_panel_translation_addon_widgets = {}
-    for _provider in _translate_providers:
-        _panel = AddonTranslatorPanel(_provider)
-        _panel.translation_started.connect(lambda: global_panel_translation_start_translation_progress_start(self))
-        _panel.translation_progress.connect(lambda value: global_panel_translation_start_translation_progress_update(self, value))
-        _panel.translation_finished.connect(lambda: global_panel_translation_start_translation_progress_finish(self))
-        self.global_panel_translation_tabwidget.addWidget(_panel)
-        self.global_panel_translation_engine_combobox.combobox.addItem(_provider.id)
-        self.global_panel_translation_addon_widgets[_provider.id] = _panel
+    _populate_translation_addons(self)
+    addons.get_manager().providers_changed.connect(lambda: _populate_translation_addons(self))
 
-    # Restore the previously selected engine.
-    _saved_engine = session.CONFIG['translation'].get('engine', 'GoogleTranslator')
-    if self.global_panel_translation_engine_combobox.combobox.findText(_saved_engine) >= 0:
-        self.global_panel_translation_engine_combobox.setCurrentText(_saved_engine)
+    content_layout.addWidget(self.global_panel_translation_tabwidget, 1)
 
-    left_panel_translation_panel.layout().addWidget(self.global_panel_translation_tabwidget, 1)
-
-    self.translation_scope_box = QWidget()
-    self.translation_scope_box.setLayout(QHBoxLayout())
-    self.translation_scope_box.layout().setContentsMargins(0, 0, 0, 0)
-    self.translation_scope_box.layout().setSpacing(8)
-    left_panel_translation_panel.layout().addWidget(self.translation_scope_box)
-
-    self.translation_scope_label = QLabel()
-    self.translation_scope_label.setProperty('class', 'widget_label')
-    self.translation_scope_box.layout().addWidget(self.translation_scope_label)
-
-    self.translation_scope_group = QButtonGroup(self)
-    self.translation_scope_all = QRadioButton()
-    self.translation_scope_selected = QRadioButton()
-    self.translation_scope_range = QRadioButton()
-    self.translation_scope_all.setChecked(True)
-    for btn in (self.translation_scope_all, self.translation_scope_selected, self.translation_scope_range):
-        self.translation_scope_group.addButton(btn)
-        self.translation_scope_box.layout().addWidget(btn)
-    self.translation_scope_box.layout().addStretch()
-
-    self.translation_scope_range_box = QWidget()
-    self.translation_scope_range_box.setLayout(QHBoxLayout())
-    self.translation_scope_range_box.layout().setContentsMargins(0, 0, 0, 0)
-    self.translation_scope_range_box.layout().setSpacing(6)
-    self.translation_scope_range_box.setVisible(False)
-    left_panel_translation_panel.layout().addWidget(self.translation_scope_range_box)
-
-    self.translation_scope_range_from_label = QLabel()
-    self.translation_scope_range_box.layout().addWidget(self.translation_scope_range_from_label)
-    self.translation_scope_range_from = QLineEdit()
-    self.translation_scope_range_from.setPlaceholderText('00:00:00.000')
-    self.translation_scope_range_box.layout().addWidget(self.translation_scope_range_from, 1)
-
-    self.translation_scope_range_to_label = QLabel()
-    self.translation_scope_range_box.layout().addWidget(self.translation_scope_range_to_label)
-    self.translation_scope_range_to = QLineEdit()
-    self.translation_scope_range_to.setPlaceholderText('00:00:00.000')
-    self.translation_scope_range_box.layout().addWidget(self.translation_scope_range_to, 1)
-
-    self.translation_scope_range.toggled.connect(lambda checked: self.translation_scope_range_box.setVisible(checked))
-
-    bottom_line = QHBoxLayout()
-    bottom_line.setContentsMargins(0, 0, 0, 0)
-    bottom_line.setSpacing(0)
-    left_panel_translation_panel.layout().addLayout(bottom_line)
-
-    def global_panel_translation_start_translation_progress_start(self):
-        self.global_panel_translation_start_translation_progress.setVisible(True)
-        self.global_panel_translation_start_translation_progress.setValue(0)
-        self.global_panel_translation_start_translation_progress.setMaximum(100)
-        self.global_panel_translation_start_translation_button.setVisible(False)
-        self.global_panel_translation_invert_translation_button.setVisible(False)
-    
-    def global_panel_translation_start_translation_progress_update(self, value):
-        self.global_panel_translation_start_translation_progress.setValue(value)
-
-    def global_panel_translation_start_translation_progress_finish(self):
-        self.global_panel_translation_start_translation_progress.setVisible(False)
-        self.global_panel_translation_start_translation_button.setVisible(True)
-        update(self)
+    # The same footer the transcription panel ends with: the SCOPE chip +
+    # bar, a hairline, and the action row under it. See
+    # interface/scope_selector.py.
+    self.translation_footer = ScopeFooter('translation', parent=left_panel_translation_panel)
+    self.translation_scope = self.translation_footer.selector
+    self.translation_footer.changed.connect(lambda: _reconcile_start_button(self))
+    left_panel_translation_panel.layout().addWidget(self.translation_footer)
 
     self.global_panel_translation_invert_translation_button = QPushButton()
-    self.global_panel_translation_invert_translation_button.setProperty('class', 'secondary')
+    # The footer's quieter action: text on the band, like REPLACE in the
+    # Find & Replace footer, so only START TRANSLATION reads as the action.
+    self.global_panel_translation_invert_translation_button.setProperty('class', 'scope_action_quiet')
+    # Set here as well as in the stylesheet: a QSS icon paints but does not
+    # count towards the button's size hint, which would clip the label.
+    self.global_panel_translation_invert_translation_button.setIcon(
+        QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'invert_translation_icon.svg')))
+    self.global_panel_translation_invert_translation_button.setIconSize(QSize(12, 12))
     self.global_panel_translation_invert_translation_button.clicked.connect(lambda: global_panel_translation_invert_translation_button_clicked(self))
-    bottom_line.addWidget(self.global_panel_translation_invert_translation_button, 0, Qt.AlignLeft)
+    # Bottom-aligned, so it sits on the same line as START TRANSLATION.
+    self.translation_footer.add_action(self.global_panel_translation_invert_translation_button,
+                                      Qt.AlignLeft | Qt.AlignBottom)
 
     self.global_panel_translation_start_translation_progress = QProgressBar()
-    self.global_panel_translation_start_translation_progress.setVisible(False)
     self.global_panel_translation_start_translation_progress.setProperty('class', 'secondary')
-    bottom_line.addWidget(self.global_panel_translation_start_translation_progress)
+    self.translation_footer.set_progress_bar(self.global_panel_translation_start_translation_progress)
+
+    # INVERT at the left end, START at the right.
+    self.translation_footer.add_stretch()
 
     self.global_panel_translation_start_translation_button = QPushButton()
-    self.global_panel_translation_start_translation_button.setProperty('class', 'secondary')
     self.global_panel_translation_start_translation_button.clicked.connect(lambda: global_panel_translation_start_translation_button_clicked(self))
-    bottom_line.addWidget(self.global_panel_translation_start_translation_button, 0, Qt.AlignRight)
+    self.translation_footer.add_action(self.global_panel_translation_start_translation_button,
+                                      Qt.AlignRight, primary=True)
 
     update(self)
 
@@ -479,6 +439,81 @@ def update(self):
     )
     self.global_panel_translation_invert_translation_button.setVisible(has_translations)
 
+    # The timeline calls left_panel.update() on every selection change, so
+    # refreshing here is what keeps scope "selection" (its times, its hint,
+    # and the Start button) in step with what's selected.
+    self.translation_scope.refresh()
+    _reconcile_start_button(self)
+
+    global_panel_translation_tabwidget_update(self)
+
+
+def global_panel_translation_start_translation_progress_start(self):
+    # The footer swaps its buttons for the bar, which fills the row edge to
+    # edge (see ScopeFooter.show_progress).
+    self.global_panel_translation_start_translation_progress.setValue(0)
+    self.global_panel_translation_start_translation_progress.setMaximum(100)
+    self.translation_footer.show_progress(True)
+
+
+def global_panel_translation_start_translation_progress_update(self, value):
+    self.global_panel_translation_start_translation_progress.setValue(value)
+
+
+def global_panel_translation_start_translation_progress_finish(self):
+    self.translation_footer.show_progress(False)
+    update(self)
+
+
+def _populate_translation_addons(self):
+    """(Re)build the add-on engines in the picker and the panel stack.
+
+    Runs at load and on every `providers_changed`, so an add-on installed,
+    removed, enabled or disabled while the app runs appears (or goes)
+    without a restart. An add-on whose provider is unchanged keeps its
+    panel, so a translation running through it is left alone.
+    """
+    try:
+        providers = {p.id: p for p in addons.get_manager().providers_for_task(TASK_TRANSLATE)}
+    except Exception:
+        providers = {}
+    combobox = self.global_panel_translation_engine_combobox.combobox
+    stack = self.global_panel_translation_tabwidget
+    panels = self.global_panel_translation_addon_widgets
+
+    for engine_id, panel in list(panels.items()):
+        if providers.get(engine_id) is panel.provider:
+            continue
+        index = combobox.findText(engine_id)
+        if index >= 0:
+            combobox.removeItem(index)
+        # removeWidget() leaves the panel a child of the stack until the
+        # deferred delete runs, so a lookup by engine (findChildren) could
+        # still reach it. Detach it now; hidden first, or a parentless
+        # widget would show as a window of its own.
+        stack.removeWidget(panel)
+        panel.hide()
+        panel.setParent(None)
+        panel.deleteLater()
+        del panels[engine_id]
+
+    for engine_id, provider in providers.items():
+        if engine_id in panels:
+            continue
+        panel = AddonTranslatorPanel(provider)
+        panel.translation_started.connect(lambda: global_panel_translation_start_translation_progress_start(self))
+        panel.translation_progress.connect(lambda value: global_panel_translation_start_translation_progress_update(self, value))
+        panel.translation_finished.connect(lambda: global_panel_translation_start_translation_progress_finish(self))
+        panel.translate_callback()
+        stack.addWidget(panel)
+        combobox.addItem(engine_id)
+        panels[engine_id] = panel
+
+    # The engine the user picked last, whenever it is (back) in the list;
+    # otherwise whatever the combobox fell back to when its item went.
+    saved = session.CONFIG['translation'].get('engine', 'GoogleTranslator')
+    if combobox.findText(saved) >= 0:
+        self.global_panel_translation_engine_combobox.setCurrentText(saved)
     global_panel_translation_tabwidget_update(self)
 
 
@@ -552,46 +587,22 @@ def global_panel_translation_invert_translation_button_clicked(self):
         self.timeline_widget.update()
 
 
-def _parse_timecode_input(text):
-    """Parse a 'HH:MM:SS.mmm' / 'MM:SS.mmm' / 'SS.mmm' input into seconds.
-    Returns None if it can't be parsed."""
-    if not text:
-        return None
-    text = text.strip()
-    if not text:
-        return None
-    try:
-        parts = text.split(':')
-        seconds = float(parts[-1])
-        if len(parts) >= 2:
-            seconds += int(parts[-2]) * 60
-        if len(parts) >= 3:
-            seconds += int(parts[-3]) * 3600
-        return seconds
-    except (TypeError, ValueError):
-        return None
-
-
-def _scoped_segments(self):
-    """Return the segment subset selected by the translation scope radios."""
-    segments = session.SUBTITLE.get('segments', []) or []
-    if self.translation_scope_selected.isChecked():
-        sel = session.SUBTITLE.get('selected')
-        return [sel] if sel else []
-    if self.translation_scope_range.isChecked():
-        rng_from = _parse_timecode_input(self.translation_scope_range_from.text())
-        rng_to = _parse_timecode_input(self.translation_scope_range_to.text())
-        if rng_from is None:
-            rng_from = 0.0
-        if rng_to is None:
-            rng_to = float('inf')
-        return [s for s in segments if s.get('end', 0) > rng_from and s.get('start', 0) < rng_to]
-    return list(segments)
+def _reconcile_start_button(self):
+    """The Start button is only live when the current scope can actually be
+    satisfied — scope "selection" with nothing selected has nothing to
+    translate, and the scope selector shows the hint that says so."""
+    button = getattr(self, 'global_panel_translation_start_translation_button', None)
+    scope = getattr(self, 'translation_scope', None)
+    if button is None or scope is None:
+        return
+    button.setEnabled(scope.is_ready())
 
 
 def global_panel_translation_start_translation_button_clicked(self):
-    scoped = _scoped_segments(self)
+    scoped = self.translation_scope.scoped_segments()
     if not scoped:
+        return
+    if not _source_differs_from_target(self):
         return
 
     confirm_translation = False
@@ -613,6 +624,52 @@ def global_panel_translation_start_translation_button_clicked(self):
                 break
 
 
+def _current_engine_panel(self):
+    """The options panel of the engine picked in the combobox, or None."""
+    engine = self.global_panel_translation_engine_combobox.currentText()
+    for widget in self.global_panel_translation_tabwidget.findChildren(QWidget):
+        if widget.property('translation_engine') == engine:
+            return widget
+    return None
+
+
+def _source_differs_from_target(self):
+    """False when the job would hand the subtitles back unchanged — having
+    said why — so Start translation does not quietly copy them.
+
+    Only engines that are TOLD the source language can hit this: they use
+    the project's subtitle language, and a project marked with the target
+    language (say an English one labelled Portuguese) asks them to translate
+    Portuguese into Portuguese. GoogleTranslator detects the language itself
+    and is never stopped here.
+    """
+    panel = _current_engine_panel(self)
+    if not getattr(panel, 'uses_subtitle_language', False):
+        return True
+    source = (session.SUBTITLE.get('language') or 'en-us').lower()
+    target = (session.CONFIG['translation'].get('engine_options', {}).get('target_language') or 'en-us').lower()
+    if source.split('-')[0] != target.split('-')[0]:
+        return True
+
+    where = _('translation_panel.same_language_fix').format(field=_('transcription_panel.language'))
+    dialog = utils.SimpleDialog(self, title=_('translation_panel.same_language_title'))
+    if source == target:
+        text = _('translation_panel.same_language_text').format(
+            language=INVERTED_LANGUAGES.get(target, target))
+        dialog.content.layout().addWidget(QLabel(text + '\n\n' + where))
+        dialog.reject_button.setVisible(False)
+        dialog.exec()
+        return False
+    # Two variants of one language (en-us / en-gb, zh-cn / zh-tw): some
+    # engines treat them as one and return the text as-is, so ask.
+    text = _('translation_panel.same_language_variant_text').format(
+        source=INVERTED_LANGUAGES.get(source, source), target=INVERTED_LANGUAGES.get(target, target))
+    dialog.content.layout().addWidget(QLabel(text + '\n\n' + where))
+    dialog.accept_button.setText(_('translation_panel.translate_anyway'))
+    dialog.exec()
+    return dialog.result() == 1
+
+
 def hide(self):
     pass
 
@@ -626,12 +683,8 @@ def translate(self):
     self.global_panel_translation_show_translations_button.setToolTip(_('translation_panel.show_translations'))
     self.global_panel_translation_invert_translation_button.setText(_('translation_panel.invert_translation'))
     self.global_panel_translation_invert_translation_button.setToolTip(_('translation_panel.invert_translation'))
-    self.translation_scope_label.setText(_('panel_scope.label'))
-    self.translation_scope_all.setText(_('panel_scope.all'))
-    self.translation_scope_selected.setText(_('panel_scope.selected'))
-    self.translation_scope_range.setText(_('panel_scope.range'))
-    self.translation_scope_range_from_label.setText(_('panel_scope.from'))
-    self.translation_scope_range_to_label.setText(_('panel_scope.to'))
+    self.translation_scope.retranslate()
+    _reconcile_start_button(self)
     for widget in self.global_panel_translation_tabwidget.findChildren(QWidget):
         if 'translate_callback' in dir(widget):
             widget.translate_callback()

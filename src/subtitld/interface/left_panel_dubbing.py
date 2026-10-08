@@ -2,13 +2,14 @@ import hashlib
 import os
 import secrets
 
-from PySide6.QtWidgets import QStackedWidget, QWidget, QVBoxLayout, QHBoxLayout, QSpinBox, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QApplication, QRadioButton, QButtonGroup
+from PySide6.QtWidgets import QStackedWidget, QWidget, QVBoxLayout, QHBoxLayout, QSpinBox, QPushButton, QLabel, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QApplication
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor
 from PySide6.QtCore import QThread, QObject, Signal, Qt, QSize
 
 from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
+from subtitld.interface.scope_selector import ScopeFooter
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
@@ -79,25 +80,6 @@ def _addon_display_name(provider) -> str:
         if translated and translated != key:
             return translated
     return getattr(provider, 'display_name', None) or addon_id
-
-
-def _parse_timecode_input(text):
-    """Parse 'HH:MM:SS.mmm' / 'MM:SS.mmm' / 'SS.mmm' into seconds, or None."""
-    if not text:
-        return None
-    text = text.strip()
-    if not text:
-        return None
-    try:
-        parts = text.split(':')
-        seconds = float(parts[-1])
-        if len(parts) >= 2:
-            seconds += int(parts[-2]) * 60
-        if len(parts) >= 3:
-            seconds += int(parts[-3]) * 3600
-        return seconds
-    except (TypeError, ValueError):
-        return None
 
 
 # NOTE: the engine logic that used to live here (`_EdgeTTSSignals`,
@@ -184,6 +166,83 @@ def _install_fit_checkbox(widget):
     widget.layout().addWidget(checkbox)
 
 
+def _install_scope_footer(widget):
+    """Close the panel the way transcription and translation close theirs:
+    the SCOPE chip + bar, a hairline, and "Generate all speeches" in the
+    action row under it. See interface/scope_selector.py.
+
+    Both speaker panels persist under the same ``dubbing`` config section, so
+    the scope a user picks holds when they switch engines."""
+    # Everything the panel has built so far moves into a column that carries
+    # its side padding, so the footer below can span the panel edge to edge —
+    # its band, hairline and gradient reach both sides, as in the
+    # transcription and translation panels. The footer's own rows inset
+    # themselves.
+    layout = widget.layout()
+    margins = layout.contentsMargins()
+    content = QWidget()
+    content_layout = QVBoxLayout(content)
+    content_layout.setContentsMargins(margins.left(), 0, margins.right(), 0)
+    content_layout.setSpacing(layout.spacing())
+    while layout.count():
+        stretch = layout.stretch(0)
+        item = layout.takeAt(0)
+        if item.widget() is not None:
+            content_layout.addWidget(item.widget(), stretch, item.alignment())
+        elif item.layout() is not None:
+            content_layout.addLayout(item.layout(), stretch)
+        else:
+            content_layout.addItem(item)
+    layout.setContentsMargins(0, margins.top(), 0, 0)
+    layout.addWidget(content)
+
+    footer = ScopeFooter('dubbing', parent=widget)
+    footer.changed.connect(lambda: _reconcile_generate_button(widget))
+    widget.scope_footer = footer
+    widget.scope_selector = footer.selector
+    widget.layout().addWidget(footer)
+
+    widget.generate_all_speeches_button = QPushButton()
+    widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
+    footer.add_action(widget.generate_all_speeches_button, primary=True)
+
+
+def _reconcile_generate_button(widget):
+    """"Generate all speeches" is only live when the current scope can be
+    satisfied — scope "selection" with nothing selected has no lines to
+    synthesize, and the scope selector shows the hint that says so."""
+    button = getattr(widget, 'generate_all_speeches_button', None)
+    selector = getattr(widget, 'scope_selector', None)
+    if button is None or selector is None:
+        return
+    button.setEnabled(selector.is_ready())
+
+
+def _speaker_scoped_segments(widget, speaker_name):
+    """This speaker's subtitles, narrowed to the panel's SCOPE.
+
+    Speaker filtering comes first, so scope "selection" yields the selected
+    subtitle only when it actually belongs to this speaker — the panel
+    synthesizes one speaker's voice, and generating it over someone else's
+    line would put the wrong voice on it."""
+    segments = session.SUBTITLE.get('segments', []) or []
+    speaker_segments = [s for s in segments if s.get('speaker', 'A') == speaker_name]
+    selector = getattr(widget, 'scope_selector', None)
+    if selector is None:
+        return speaker_segments
+    return selector.scoped_segments(speaker_segments)
+
+
+def _sync_scope_selector(widget):
+    """Refresh the scope selector from the timeline selection + config, then
+    re-evaluate the generate button. Called from each panel's `update()`."""
+    selector = getattr(widget, 'scope_selector', None)
+    if selector is None:
+        return
+    selector.refresh()
+    _reconcile_generate_button(widget)
+
+
 def _sync_fit_checkbox(widget):
     """Reflect the current speaker's stored auto-fit choice into the box.
     Called from each panel's `update()` (which runs right after the panel's
@@ -245,64 +304,10 @@ class _EdgeTTSSpeakerPanel(QWidget):
 
         widget.layout().addLayout(settings_line)
 
-        scope_box = QWidget()
-        scope_box.setLayout(QHBoxLayout())
-        scope_box.layout().setContentsMargins(0, 0, 0, 0)
-        scope_box.layout().setSpacing(8)
-        widget.layout().addWidget(scope_box)
-
-        widget.scope_label = QLabel()
-        widget.scope_label.setProperty('class', 'widget_label')
-        scope_box.layout().addWidget(widget.scope_label)
-
-        widget.scope_group = QButtonGroup(widget)
-        widget.scope_all = QRadioButton()
-        widget.scope_selected = QRadioButton()
-        widget.scope_range = QRadioButton()
-        widget.scope_all.setChecked(True)
-        for btn in (widget.scope_all, widget.scope_selected, widget.scope_range):
-            widget.scope_group.addButton(btn)
-            scope_box.layout().addWidget(btn)
-        scope_box.layout().addStretch()
-
-        widget.scope_range_box = QWidget()
-        widget.scope_range_box.setLayout(QHBoxLayout())
-        widget.scope_range_box.layout().setContentsMargins(0, 0, 0, 0)
-        widget.scope_range_box.layout().setSpacing(6)
-        widget.scope_range_box.setVisible(False)
-        widget.layout().addWidget(widget.scope_range_box)
-
-        widget.scope_range_from_label = QLabel()
-        widget.scope_range_box.layout().addWidget(widget.scope_range_from_label)
-        widget.scope_range_from = QLineEdit()
-        widget.scope_range_from.setPlaceholderText('00:00:00.000')
-        widget.scope_range_box.layout().addWidget(widget.scope_range_from, 1)
-        widget.scope_range_from_capture = QPushButton('⤓')
-        widget.scope_range_from_capture.setObjectName('scope_range_capture_button')
-        widget.scope_range_from_capture.clicked.connect(
-            lambda: widget._capture_playback_position(widget.scope_range_from)
-        )
-        widget.scope_range_box.layout().addWidget(widget.scope_range_from_capture)
-
-        widget.scope_range_to_label = QLabel()
-        widget.scope_range_box.layout().addWidget(widget.scope_range_to_label)
-        widget.scope_range_to = QLineEdit()
-        widget.scope_range_to.setPlaceholderText('00:00:00.000')
-        widget.scope_range_box.layout().addWidget(widget.scope_range_to, 1)
-        widget.scope_range_to_capture = QPushButton('⤓')
-        widget.scope_range_to_capture.setObjectName('scope_range_capture_button')
-        widget.scope_range_to_capture.clicked.connect(
-            lambda: widget._capture_playback_position(widget.scope_range_to)
-        )
-        widget.scope_range_box.layout().addWidget(widget.scope_range_to_capture)
-
-        widget.scope_range.toggled.connect(lambda checked: widget.scope_range_box.setVisible(checked))
-
         _install_fit_checkbox(widget)
 
-        widget.generate_all_speeches_button = QPushButton()
-        widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
-        widget.layout().addWidget(widget.generate_all_speeches_button, 0, Qt.AlignRight)
+        # Last, so the scope row + Generate button sit at the panel's foot.
+        _install_scope_footer(widget)
 
         EdgeTTSEngine.signals.voices_updated.connect(widget._refresh_voices)
         EdgeTTSEngine.signals.speech_error.connect(widget._on_speech_error)
@@ -340,27 +345,8 @@ class _EdgeTTSSpeakerPanel(QWidget):
             session.SPEAKERS[speaker_name]['dubbing']['pitch'] = value
             session.set_unsaved(True)
 
-    def _capture_playback_position(widget, line_edit):
-        """Stamp the current playback position into `line_edit`. Uses
-        the same ``timecode.Timecode('1000', ..., fractional=True)``
-        spelling the playercontrols header shows, so the captured text
-        round-trips through `_parse_timecode_input` exactly."""
-        from subtitld.modules import timecode
-        pos = float(session.SUBTITLE.get('position', 0) or 0)
-        line_edit.setText(str(timecode.Timecode('1000', start_seconds=pos, fractional=True)))
-
     def _scoped_segments_for_speaker(widget, speaker_name):
-        segments = session.SUBTITLE.get('segments', []) or []
-        speaker_segments = [s for s in segments if s.get('speaker', 'A') == speaker_name]
-        if widget.scope_selected.isChecked():
-            sel = session.SUBTITLE.get('selected')
-            return [sel] if sel and sel.get('speaker', 'A') == speaker_name else []
-        if widget.scope_range.isChecked():
-            rng_from = _parse_timecode_input(widget.scope_range_from.text()) or 0.0
-            raw_to = _parse_timecode_input(widget.scope_range_to.text())
-            rng_to = float('inf') if raw_to is None else raw_to
-            return [s for s in speaker_segments if s.get('end', 0) > rng_from and s.get('start', 0) < rng_to]
-        return speaker_segments
+        return _speaker_scoped_segments(widget, speaker_name)
 
     def generate_all_speeches_button_clicked(widget):
         speaker_name = widget.property('speaker')
@@ -419,6 +405,7 @@ class _EdgeTTSSpeakerPanel(QWidget):
         widget.voice_pitch.blockSignals(False)
 
         _sync_fit_checkbox(widget)
+        _sync_scope_selector(widget)
 
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
@@ -426,14 +413,8 @@ class _EdgeTTSSpeakerPanel(QWidget):
         widget.voice_pitch_label.setText(_('subtitles_panel_widget_dubbing.pitch'))
         widget.fit_to_subtitle_checkbox.setText(_('subtitles_panel_widget_dubbing.fit_to_subtitle'))
         widget.generate_all_speeches_button.setText(_('subtitles_panel_widget_dubbing.generate_all_speeches'))
-        widget.scope_label.setText(_('panel_scope.label'))
-        widget.scope_all.setText(_('panel_scope.all'))
-        widget.scope_selected.setText(_('panel_scope.selected'))
-        widget.scope_range.setText(_('panel_scope.range'))
-        widget.scope_range_from_label.setText(_('panel_scope.from'))
-        widget.scope_range_to_label.setText(_('panel_scope.to'))
-        for btn in (widget.scope_range_from_capture, widget.scope_range_to_capture):
-            btn.setToolTip(_('panel_scope.capture_tooltip'))
+        widget.scope_selector.retranslate()
+        _reconcile_generate_button(widget)
 
 class _EdgeTTSDubbingPanel(QWidget):
     def __init__(widget, parent=None):
@@ -833,14 +814,20 @@ class _GenericTTSSpeakerPanel(QWidget):
 
         _install_fit_checkbox(widget)
 
-        widget.generate_all_speeches_button = QPushButton()
-        widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
-        widget.layout().addWidget(widget.generate_all_speeches_button, 0, Qt.AlignRight)
+        # Last, so the scope row + Generate button sit at the panel's foot.
+        _install_scope_footer(widget)
 
         try:
             provider.voices_updated.connect(widget._populate_voices)
         except Exception:
             pass
+
+        # The scope selector is installed before the button exists, so its
+        # first `changed` couldn't reach it. Unlike the Edge TTS panel this
+        # one has no `update()` call here, so settle the button now — a panel
+        # built while scope is "selection" with nothing selected must not open
+        # with a live button.
+        _reconcile_generate_button(widget)
 
     def _populate_voices(widget):
         current_id = widget.voice_combobox.combobox.currentData()
@@ -933,9 +920,7 @@ class _GenericTTSSpeakerPanel(QWidget):
         # generation: subtitle overrides win, then speaker default, then 0.
         speaker_rate = speaker_dubbing.get('rate', 0)
         speaker_pitch = speaker_dubbing.get('pitch', 0)
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
-            if subtitle.get('speaker', 'A') != speaker_name:
-                continue
+        for subtitle in _speaker_scoped_segments(widget, speaker_name):
             overrides = subtitle.setdefault('dubbing_options', {})
             subtitle['locked'] = True
             voice_id = overrides.get('voice') or speaker_voice
@@ -1029,11 +1014,14 @@ class _GenericTTSSpeakerPanel(QWidget):
         widget.voice_combobox.combobox.blockSignals(False)
 
         _sync_fit_checkbox(widget)
+        _sync_scope_selector(widget)
 
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
         widget.generate_all_speeches_button.setText(_('subtitles_panel_widget_dubbing.generate_all_speeches'))
         widget.fit_to_subtitle_checkbox.setText(_('subtitles_panel_widget_dubbing.fit_to_subtitle'))
+        widget.scope_selector.retranslate()
+        _reconcile_generate_button(widget)
         if widget.slow_speech_checkbox is not None:
             widget.slow_speech_checkbox.setText(
                 _('subtitles_panel_widget_dubbing.slow_speech')

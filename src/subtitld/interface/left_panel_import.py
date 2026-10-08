@@ -1,9 +1,8 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QLineEdit, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog, QComboBox, QStyle, QStyleOption
-from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve, QSize
-from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog
+from PySide6.QtCore import Qt, Signal
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
@@ -15,14 +14,8 @@ from subtitld.modules import addons
 from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
+from subtitld.interface.scope_selector import ScopeFooter
 
-# Transcription footer bottom row. It is a QStackedWidget with two pages that
-# each own their layout: the idle page (Start button) and the running page
-# (progress bar). Both run edge to edge inside the panel's own 10px padding.
-# Switching pages swaps the whole row content; nothing is re-margined in
-# place.
-_FOOTER_PAGE_IDLE = 0
-_FOOTER_PAGE_RUNNING = 1
 
 # Inset of the per-engine options panel (engine name + inline config fields)
 # shown under the TRANSCRIPTION ENGINE combobox. It matches the text padding
@@ -34,38 +27,6 @@ _list_of_supported_import_extensions = []
 for _exttype in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS:
     for _ext in LIST_OF_SUPPORTED_IMPORT_EXTENSIONS[_exttype]['extensions']:
         _list_of_supported_import_extensions.append(_ext)
-
-
-def _format_tc(seconds):
-    """Seconds → ``HH:MM:SS.mmm`` (the transcription-scope timecode form)."""
-    try:
-        seconds = max(0.0, float(seconds))
-    except (TypeError, ValueError):
-        seconds = 0.0
-    ms = int(round(seconds * 1000))
-    h, ms = divmod(ms, 3600000)
-    m, ms = divmod(ms, 60000)
-    s, ms = divmod(ms, 1000)
-    return f'{h:02d}:{m:02d}:{s:02d}.{ms:03d}'
-
-
-def _parse_tc(text):
-    """``HH:MM:SS.mmm`` / ``MM:SS.mmm`` / ``SS.mmm`` → seconds, or None."""
-    if not text:
-        return None
-    text = str(text).strip()
-    if not text:
-        return None
-    try:
-        parts = text.split(':')
-        seconds = float(parts[-1])
-        if len(parts) >= 2:
-            seconds += int(parts[-2]) * 60
-        if len(parts) >= 3:
-            seconds += int(parts[-3]) * 3600
-        return max(0.0, seconds)
-    except (TypeError, ValueError):
-        return None
 
 
 def _audio_source_for_transcription():
@@ -389,319 +350,12 @@ _BUILTIN_ASR_IDS: set[str] = set()
 _BUILTIN_ASR_COUNT = 0
 
 
-# Scope ids, in dropdown order.
-_SCOPE_IDS = ('all', 'range', 'selection')
-
-
-# Qt's QWIDGETSIZE_MAX — the "no maximum" sentinel we restore once the bar
-# is fully open, so later field changes can still grow it.
-_QWIDGETSIZE_MAX = 16777215
-
-
-def _scope_bar_set_expanded(self, expanded):
-    """Show/hide the scope bar with a vertical slide.
-
-    Animates only when the expanded state actually flips — a plain field
-    refresh (scope change, edit) snaps instead of re-sliding, and the very
-    first render snaps too (no animation on panel load)."""
-    bar = self.transcription_scope_bar
-    bar.setVisible(True)  # always laid out; maxHeight drives visibility
-    natural = bar.sizeHint().height()
-
-    prev = getattr(self, '_scope_expanded_state', None)
-    self._scope_expanded_state = expanded
-
-    anim = self._scope_bar_anim
-    anim.stop()
-    if prev is None or prev == expanded:
-        # First render, or a refresh that didn't toggle the state: snap.
-        bar.setMaximumHeight(_QWIDGETSIZE_MAX if expanded else 0)
-        return
-
-    # Toggle flipped → slide between 0 and the bar's natural height. A
-    # persistent `finished` handler (wired at build time) releases the
-    # maxHeight clamp once the bar is fully open.
-    start = min(bar.maximumHeight(), natural)
-    anim.setStartValue(start)
-    anim.setEndValue(natural if expanded else 0)
-    anim.start()
-
-
-class _ScopeValueLabel(QLabel):
-    """A computed time in the scope bar: the duration, and From/To under
-    scope "selection".
-
-    Plain text in the inputs' type rather than a box that would read as a
-    disabled field. It elides instead of forcing the bar wider, so a narrow
-    panel squeezes the value and not the fields beside it — a label's own
-    minimum width is its whole text, which would raise the left panel's
-    minimum width by the three times together.
-    """
-
-    def minimumSizeHint(self):
-        return QSize(0, super().minimumSizeHint().height())
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        option = QStyleOption()
-        option.initFrom(self)
-        # Whatever the stylesheet paints behind the text (nothing today).
-        self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
-        rect = self.contentsRect()
-        text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, rect.width())
-        painter.setPen(self.palette().color(self.foregroundRole()))
-        painter.drawText(rect, int(self.alignment()), text)
-
-
-def _build_transcription_scope(self, container_layout):
-    """Build the collapsible transcription-scope selector (chip + bar).
-
-    Widgets are attached to `self`; `global_panel_import_scope_update`
-    drives their visibility/values from the persisted config."""
-    def _labeled_field(field_widget, label_attr, *controls):
-        v = QVBoxLayout(field_widget)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(2)
-        lbl = QLabel()
-        lbl.setProperty('class', 'widget_label')
-        setattr(self, label_attr, lbl)
-        v.addWidget(lbl)
-        for control in controls:
-            v.addWidget(control)
-
-    def _value_label():
-        value = _ScopeValueLabel()
-        value.setProperty('class', 'transcription_scope_value')
-        return value
-
-    scope_area = QWidget()
-    scope_area.setObjectName('transcription_scope_area')
-    scope_area.setAttribute(Qt.WA_StyledBackground, True)
-    self.transcription_scope_area = scope_area
-    scope_v = QVBoxLayout(scope_area)
-    # No side padding here — the expanded bar spans the panel's whole
-    # content width. Top breathing room keeps the chip off the content
-    # above; NO bottom padding — the chip/bar sit directly on the line.
-    scope_v.setContentsMargins(0, 8, 0, 0)
-    scope_v.setSpacing(0)
-
-    # Collapse/expand chip, right-aligned with the Start button below it.
-    chip_row = QHBoxLayout()
-    chip_row.setContentsMargins(0, 0, 0, 0)
-    chip_row.addStretch()
-    self.transcription_scope_chip = QPushButton()
-    self.transcription_scope_chip.setObjectName('transcription_scope_chip')
-    self.transcription_scope_chip.setCursor(Qt.PointingHandCursor)
-    self.transcription_scope_chip.clicked.connect(lambda: global_panel_import_scope_toggle(self))
-    chip_row.addWidget(self.transcription_scope_chip)
-    scope_v.addLayout(chip_row)
-
-    # The bar itself (collapsible).
-    self.transcription_scope_bar = QWidget()
-    self.transcription_scope_bar.setObjectName('transcription_scope_bar')
-    bar = QHBoxLayout(self.transcription_scope_bar)
-    bar.setContentsMargins(12, 8, 12, 10)
-    bar.setSpacing(14)
-
-    scope_field = QWidget()
-    self.transcription_scope_combobox = QComboBox()
-    self.transcription_scope_combobox.setObjectName('transcription_scope_combobox')
-    # One item per _SCOPE_IDS entry, in order. Labels are set in translate().
-    self.transcription_scope_combobox.addItems(['All', 'Range', 'Selection'])
-    self.transcription_scope_combobox.activated.connect(lambda: global_panel_import_scope_combobox_changed(self))
-    _labeled_field(scope_field, 'transcription_scope_label', self.transcription_scope_combobox)
-    bar.addWidget(scope_field)
-
-    self.transcription_scope_from_field = QWidget()
-    self.transcription_scope_from_input = QLineEdit()
-    self.transcription_scope_from_input.setObjectName('transcription_scope_input')
-    self.transcription_scope_from_input.setPlaceholderText('00:00:00.000')
-    self.transcription_scope_from_input.editingFinished.connect(lambda: global_panel_import_scope_field_edited(self))
-    # Scope "selection" takes its times from the selected subtitle, so the
-    # field shows this label instead of the editable input.
-    self.transcription_scope_from_value = _value_label()
-    _labeled_field(self.transcription_scope_from_field, 'transcription_scope_from_label',
-                   self.transcription_scope_from_input, self.transcription_scope_from_value)
-    bar.addWidget(self.transcription_scope_from_field, 1)
-
-    self.transcription_scope_duration_field = QWidget()
-    self.transcription_scope_duration_value = _value_label()
-    self.transcription_scope_duration_value.setObjectName('transcription_scope_duration_value')
-    _labeled_field(self.transcription_scope_duration_field, 'transcription_scope_duration_label', self.transcription_scope_duration_value)
-    bar.addWidget(self.transcription_scope_duration_field, 1)
-
-    self.transcription_scope_to_field = QWidget()
-    self.transcription_scope_to_input = QLineEdit()
-    self.transcription_scope_to_input.setObjectName('transcription_scope_input')
-    self.transcription_scope_to_input.setPlaceholderText('00:00:00.000')
-    self.transcription_scope_to_input.editingFinished.connect(lambda: global_panel_import_scope_field_edited(self))
-    self.transcription_scope_to_value = _value_label()
-    _labeled_field(self.transcription_scope_to_field, 'transcription_scope_to_label',
-                   self.transcription_scope_to_input, self.transcription_scope_to_value)
-    bar.addWidget(self.transcription_scope_to_field, 1)
-
-    scope_v.addWidget(self.transcription_scope_bar)
-
-    # Vertical slide for expand/collapse: animate the bar's maxHeight.
-    # Parented to the bar so it's cleaned up with it.
-    self._scope_bar_anim = QPropertyAnimation(
-        self.transcription_scope_bar, b'maximumHeight', self.transcription_scope_bar)
-    self._scope_bar_anim.setDuration(170)
-    self._scope_bar_anim.setEasingCurve(QEasingCurve.OutCubic)
-    self._scope_expanded_state = None  # None until first update → no anim on load
-
-    # Once the open animation finishes, drop the maxHeight clamp so later
-    # field changes (e.g. Range adds From/To) can still grow the bar. On a
-    # collapse the state is False, so this is a no-op and the bar stays 0.
-    def _release_scope_clamp():
-        if getattr(self, '_scope_expanded_state', False):
-            self.transcription_scope_bar.setMaximumHeight(_QWIDGETSIZE_MAX)
-    self._scope_bar_anim.finished.connect(_release_scope_clamp)
-
-    container_layout.addWidget(scope_area)
-
-
-def _scope_selected_range():
-    """(start, end) of the currently selected subtitle, or None."""
-    sel = session.SUBTITLE.get('selected')
-    if isinstance(sel, dict):
-        try:
-            return float(sel.get('start', 0.0)), float(sel.get('end', 0.0))
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def _scope_selected_segment():
-    """The selected subtitle, if it is still on the timeline and spans a
-    usable range. A selection-scoped run writes its transcript into it."""
-    sel = session.SUBTITLE.get('selected')
-    if not isinstance(sel, dict):
-        return None
-    if not any(seg is sel for seg in session.SUBTITLE.get('segments', []) or []):
-        return None
-    try:
-        if float(sel.get('end', 0.0)) <= float(sel.get('start', 0.0)):
-            return None
-    except (TypeError, ValueError):
-        return None
-    return sel
-
 
 def _joined_text(segments):
     """Every returned segment's text as one line — what a selection-scoped
     run puts in the selected subtitle."""
     parts = [str(seg.get('text', '') or '').strip() for seg in segments if isinstance(seg, dict)]
     return ' '.join(part for part in parts if part)
-
-
-def _current_scope_range(self):
-    """The [from, to] seconds the next transcription should cover, or
-    None for the whole media (scope 'all', or an invalid/empty range)."""
-    cfg = session.CONFIG.get('transcription', {})
-    scope = cfg.get('scope', 'all')
-    if scope == 'range':
-        f = _parse_tc(self.transcription_scope_from_input.text())
-        t = _parse_tc(self.transcription_scope_to_input.text())
-        if f is not None and t is not None and t > f:
-            return (f, t)
-        return None
-    if scope == 'selection':
-        rng = _scope_selected_range()
-        if rng and rng[1] > rng[0]:
-            return rng
-        return None
-    return None
-
-
-def global_panel_import_scope_toggle(self):
-    cfg = session.CONFIG.setdefault('transcription', {})
-    cfg['scope_expanded'] = not bool(cfg.get('scope_expanded', False))
-    global_panel_import_scope_update(self)
-
-
-def global_panel_import_scope_combobox_changed(self):
-    cfg = session.CONFIG.setdefault('transcription', {})
-    idx = self.transcription_scope_combobox.currentIndex()
-    if 0 <= idx < len(_SCOPE_IDS):
-        cfg['scope'] = _SCOPE_IDS[idx]
-    global_panel_import_scope_update(self)
-
-
-def global_panel_import_scope_field_edited(self):
-    cfg = session.CONFIG.setdefault('transcription', {})
-    f = _parse_tc(self.transcription_scope_from_input.text())
-    t = _parse_tc(self.transcription_scope_to_input.text())
-    if f is not None:
-        cfg['scope_from'] = f
-    if t is not None:
-        cfg['scope_to'] = t
-    global_panel_import_scope_update(self)
-
-
-def global_panel_import_scope_update(self):
-    """Refresh the scope selector — chip label/icon, bar visibility, and
-    each field's value/visibility from the current scope + config."""
-    if not hasattr(self, 'transcription_scope_combobox'):
-        return
-    cfg = session.CONFIG.setdefault('transcription', {})
-    scope = cfg.get('scope', 'all')
-    if scope not in _SCOPE_IDS:
-        scope = 'all'
-        cfg['scope'] = scope
-    expanded = bool(cfg.get('scope_expanded', False))
-
-    total = float(session.VIDEO.get('duration', 0.0) or 0.0)
-
-    # Combobox selection (block signals to avoid re-entrancy).
-    self.transcription_scope_combobox.blockSignals(True)
-    self.transcription_scope_combobox.setCurrentIndex(_SCOPE_IDS.index(scope))
-    self.transcription_scope_combobox.blockSignals(False)
-
-    # Chip: "<SCOPE>  <icon>" — icon is ≡ (expand) when collapsed, − (collapse) when open.
-    scope_name = self.transcription_scope_combobox.currentText() or scope.upper()
-    self.transcription_scope_chip.setText(f'{scope_name.upper()}   {"−" if expanded else "≡"}')
-
-    _scope_bar_set_expanded(self, expanded)
-
-    # Field visibility + values per scope.
-    show_range = scope in ('range', 'selection')
-    self.transcription_scope_from_field.setVisible(show_range)
-    self.transcription_scope_to_field.setVisible(show_range)
-    self.transcription_scope_duration_field.setVisible(True)
-
-    # Range is typed in; selection is read off the selected subtitle, so its
-    # times show as plain labels in place of the inputs.
-    editable = scope == 'range'
-    for field_input, value in ((self.transcription_scope_from_input, self.transcription_scope_from_value),
-                               (self.transcription_scope_to_input, self.transcription_scope_to_value)):
-        field_input.setVisible(editable)
-        value.setVisible(not editable)
-
-    if scope == 'all':
-        self.transcription_scope_duration_value.setText(_format_tc(total))
-    elif scope == 'range':
-        # Editable From/To from config; duration = To − From.
-        self.transcription_scope_from_input.setReadOnly(False)
-        self.transcription_scope_to_input.setReadOnly(False)
-        f = float(cfg.get('scope_from', 0.0) or 0.0)
-        t = float(cfg.get('scope_to', total) or total)
-        if not self.transcription_scope_from_input.hasFocus():
-            self.transcription_scope_from_input.setText(_format_tc(f))
-        if not self.transcription_scope_to_input.hasFocus():
-            self.transcription_scope_to_input.setText(_format_tc(t))
-        self.transcription_scope_duration_value.setText(_format_tc(max(0.0, t - f)))
-    else:  # selection — the selected subtitle's own times.
-        rng = _scope_selected_range()
-        values = (self.transcription_scope_from_value, self.transcription_scope_duration_value,
-                  self.transcription_scope_to_value)
-        if rng:
-            f, t = rng
-            for value, text in zip(values, (f, max(0.0, t - f), t)):
-                value.setText(_format_tc(text))
-        else:
-            for value in values:
-                value.setText('—')
 
 
 def _extract_audio_slice(src, start, end):
@@ -745,17 +399,30 @@ def _reconcile_transcription_footer(self):
     construction — no stale state (an aborted run, a re-show mid-run, an
     engine switch) can leave both on screen. Safe to call any time the footer
     is (re)shown or updated; re-selecting the current page is a no-op."""
-    stack = getattr(self, 'transcription_footer_bottom_line', None)
-    if stack is None:
+    footer = getattr(self, 'transcription_footer', None)
+    if footer is None or not hasattr(self, 'global_panel_import_start_transcription_progress'):
         return  # footer not built yet
     running = bool(getattr(self, '_transcription_running', False))
     # One atomic content swap. QStackedLayout gives the incoming page the
     # row's full rect synchronously while showing it, so the progress bar's
     # geometry is final before anything can paint it. The row's height never
     # changes: its hint is the tallest page's, whichever one is current.
-    stack.setCurrentIndex(_FOOTER_PAGE_RUNNING if running else _FOOTER_PAGE_IDLE)
-    if hasattr(self, 'transcription_scope_area'):
-        self.transcription_scope_area.setVisible(not running)
+    footer.show_progress(running)
+    if hasattr(self, 'transcription_scope'):
+        self.transcription_scope.setVisible(not running)
+
+
+def _reconcile_start_button(self):
+    """The Start button is only live when the current scope can actually be
+    satisfied — scope "selection" with nothing selected has nothing to
+    transcribe, and the scope selector shows the hint that says so."""
+    button = getattr(self, 'global_panel_import_start_transcription_button', None)
+    scope = getattr(self, 'transcription_scope', None)
+    if button is None or scope is None:
+        return
+    # Also dead while the Subtitld Cloud account is being checked, so a
+    # second click cannot start a second check.
+    button.setEnabled(scope.is_ready() and getattr(self, '_cloud_check', None) is None)
 
 
 def global_panel_import_start_transcription_progress_start(self):
@@ -852,6 +519,16 @@ def load(self):
         translate_callback=translate
     )
 
+    # The panel's 10px padding is carried by this content column instead of
+    # the panel layout: the footer band below has to reach both panel edges,
+    # and a padded panel layout would inset its hairline and gradient.
+    left_panel_import_panel.layout().setContentsMargins(0, 10, 0, 0)
+    content = QWidget()
+    content_layout = QVBoxLayout(content)
+    content_layout.setContentsMargins(10, 0, 10, 0)
+    content_layout.setSpacing(left_panel_import_panel.layout().spacing())
+    left_panel_import_panel.layout().addWidget(content, 1)
+
     # NB: the old standalone "Import" button lived here. It is now the
     # built-in ``import`` engine (import_provider) — it shows up in the
     # engine picker below, and its panel (_ImportASRPanel) carries the
@@ -860,12 +537,12 @@ def load(self):
     self.global_panel_import_language_combobox = utils.LabeledComboBox()
     self.global_panel_import_language_combobox.addItems(LANGUAGE_DESCRIPTIONS)
     self.global_panel_import_language_combobox.activated.connect(lambda: global_panel_import_language_combobox_activated(self))
-    left_panel_import_panel.layout().addWidget(self.global_panel_import_language_combobox, 1)
+    content_layout.addWidget(self.global_panel_import_language_combobox, 1)
 
     self.global_panel_import_engine_combobox = utils.LabeledComboBox()
     self.global_panel_import_engine_combobox.setProperty('class', 'button')
     self.global_panel_import_engine_combobox.activated.connect(lambda: global_panel_import_engine_combobox_activated(self))
-    left_panel_import_panel.layout().addWidget(self.global_panel_import_engine_combobox)
+    content_layout.addWidget(self.global_panel_import_engine_combobox)
 
     self.global_panel_import_tabwidget = QStackedWidget()
 
@@ -889,49 +566,18 @@ def load(self):
     # Options area (per-engine ASR settings) — subtle background gradient
     # so it reads as the panel's "content", distinct from the footer below.
     self.global_panel_import_tabwidget.setObjectName('transcription_options_area')
-    left_panel_import_panel.layout().addWidget(self.global_panel_import_tabwidget, 1)
+    content_layout.addWidget(self.global_panel_import_tabwidget, 1)
 
-    # --- Bottom "global" footer -------------------------------------------
-    # The panel keeps left_panel's own 10px padding, like every other left
-    # panel, and that is the only inset: the footer band and its rows run
-    # edge to edge inside it.
+    # --- Bottom footer ----------------------------------------------------
+    # The shared scope footer: chip + bar, hairline, action row. It is added
+    # to the PANEL, not to the padded content column, so its band spans the
+    # panel edge to edge; its rows inset themselves instead. The translation
+    # and dubbing panels mount the same footer.
 
-    self.transcription_footer = QWidget()
-    self.transcription_footer.setObjectName('transcription_footer')
-    self.transcription_footer.setAttribute(Qt.WA_StyledBackground, True)
-    footer_v = QVBoxLayout(self.transcription_footer)
-    # Full-bleed: no side padding on the footer itself, so the divider
-    # below spans edge to edge. The scope row and the button row each
-    # supply their own inset padding instead.
-    footer_v.setContentsMargins(0, 0, 0, 0)
-    footer_v.setSpacing(0)
-
-    # Collapsible scope selector (chip + bar) inside the footer.
-    _build_transcription_scope(self, footer_v)
-
-    # Delimiter BETWEEN the scope row (above) and the Start button (below).
-    # Its own 1px strip so it spans the panel's whole content width.
-    self.transcription_footer_divider = QWidget()
-    self.transcription_footer_divider.setObjectName('transcription_footer_divider')
-    self.transcription_footer_divider.setAttribute(Qt.WA_StyledBackground, True)
-    self.transcription_footer_divider.setFixedHeight(1)
-    footer_v.addWidget(self.transcription_footer_divider)
-
-
-    # Bottom row: a fixed-height two-page stack. Each page owns its layout
-    # and margins; running/idle is a page switch (setCurrentIndex), never a
-    # visibility + margin edit on a shared layout — that in-place edit is
-    # what painted the bar inset for one frame (QProgressBar.setValue
-    # repaints synchronously, before the posted re-layout had run).
-    # objectName kept: the QSS gradient targets it (a QStackedWidget is a
-    # QFrame, so the stylesheet paints its background).
-    self.transcription_footer_bottom_line = QStackedWidget()
-    self.transcription_footer_bottom_line.setObjectName('transcription_footer_bottom_line')
-    # Fixed vertical policy: the row is always exactly its size hint, which
-    # QStackedLayout computes over ALL pages (current or not). So its height
-    # is identical in both states and never follows the current page.
-    self.transcription_footer_bottom_line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-    footer_v.addWidget(self.transcription_footer_bottom_line)
+    self.transcription_footer = ScopeFooter('transcription', parent=left_panel_import_panel)
+    self.transcription_scope = self.transcription_footer.selector
+    self.transcription_footer.changed.connect(lambda: _reconcile_start_button(self))
+    self.transcription_footer_divider = self.transcription_footer.divider
 
     # NB: the three `..._transcription_progress_*` helpers used to be
     # defined here as nested functions. That worked while no ASR
@@ -942,34 +588,19 @@ def load(self):
     # crashed with NameError. They now live at module scope.
     self._transcription_running = False
 
-    # Page 0 — idle: the Start button, right-aligned. No margins of its own:
-    # it hugs the divider above and the panel's padding does the rest.
-    idle_page = QWidget()
-    idle_line = QHBoxLayout(idle_page)
-    idle_line.setContentsMargins(0, 0, 0, 0)
-    idle_line.setSpacing(0)
+    # The footer's action row has two pages: the Start button (inset) while
+    # idle, the progress bar (edge to edge) while a job runs. See
+    # ScopeFooter in scope_selector.py.
     self.global_panel_import_start_transcription_button = QPushButton()
     self.global_panel_import_start_transcription_button.setObjectName('transcription_start_button')
     self.global_panel_import_start_transcription_button.clicked.connect(lambda: global_panel_import_start_transcription_button_clicked(self))
-    idle_line.addWidget(self.global_panel_import_start_transcription_button, 0, Qt.AlignRight)
-    self.transcription_footer_bottom_line.insertWidget(_FOOTER_PAGE_IDLE, idle_page)
+    self.transcription_footer.add_action(self.global_panel_import_start_transcription_button, primary=True)
 
-    # Page 1 — running: the progress bar, filling the whole row.
-    running_page = QWidget()
-    running_line = QHBoxLayout(running_page)
-    running_line.setContentsMargins(0, 0, 0, 0)
-    running_line.setSpacing(0)
     self.global_panel_import_start_transcription_progress = QProgressBar()
     self.global_panel_import_start_transcription_progress.setObjectName('transcription_progress_bar')
     self.global_panel_import_start_transcription_progress.setProperty('class', 'secondary')
-    # Expanding both ways so it fills the page; it must not contribute a
-    # taller hint than the idle page (QProgressBar's hint is well below it).
-    self.global_panel_import_start_transcription_progress.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     self.global_panel_import_start_transcription_progress.setMaximum(100)
-    running_line.addWidget(self.global_panel_import_start_transcription_progress)
-    self.transcription_footer_bottom_line.insertWidget(_FOOTER_PAGE_RUNNING, running_page)
-
-    self.transcription_footer_bottom_line.setCurrentIndex(_FOOTER_PAGE_IDLE)
+    self.transcription_footer.set_progress_bar(self.global_panel_import_start_transcription_progress)
 
     left_panel_import_panel.layout().addWidget(self.transcription_footer)
 
@@ -1005,7 +636,11 @@ def update(self):
         session.CONFIG.get('transcription', {}).get('engine', '')
     )
 
-    global_panel_import_scope_update(self)
+    # The timeline calls left_panel.update() on every selection change, so
+    # refreshing here is what keeps scope "selection" (its times, its hint,
+    # and the Start button) in step with what's selected.
+    self.transcription_scope.refresh()
+    _reconcile_start_button(self)
     global_panel_import_tabwidget_update(self)
 
 
@@ -1038,14 +673,16 @@ def global_panel_import_engine_combobox_activated(self):
 def global_panel_import_start_transcription_button_clicked(self):
     # Resolve the scope range once, here — the panel's transcript() reads
     # it to slice the audio and offset the returned timestamps.
-    scope_range = _current_scope_range(self)
+    scope_range = self.transcription_scope.current_range()
     self._transcription_scope_range = scope_range
 
     # Scope "selection" transcribes the selected subtitle and writes the
     # text into it, so it needs one — and must never fall through to the
-    # whole-media run below, which would replace every subtitle.
-    scope = session.CONFIG.get('transcription', {}).get('scope', 'all')
-    self._transcription_scope_target = _scope_selected_segment() if scope == 'selection' else None
+    # whole-media run below, which would replace every subtitle. The Start
+    # button is disabled in that state, so this is the belt to its braces
+    # (a selection can vanish between the last refresh and the click).
+    scope = self.transcription_scope.scope
+    self._transcription_scope_target = self.transcription_scope.selected_segment()
     if scope == 'selection' and (self._transcription_scope_target is None or scope_range is None):
         error_dialog = utils.SimpleDialog(self, title=_('transcription_panel.error'))
         error_dialog.content.layout().addWidget(QLabel(_('transcription_panel.scope_selection_empty')))
@@ -1053,6 +690,72 @@ def global_panel_import_start_transcription_button_clicked(self):
         error_dialog.exec()
         return
 
+    # A cloud engine fails mid-job (after the audio is uploaded and the
+    # subtitles cleared) when the key is missing or wrong or the balance
+    # is empty. Check the account first; start only once it is good.
+    engine_panel = _current_engine_panel(self)
+    if getattr(getattr(engine_panel, 'provider', None), 'uses_subtitld_cloud', False):
+        _check_cloud_account(self, lambda: _start_transcription(self, scope_range))
+        return
+    _start_transcription(self, scope_range)
+
+
+def _current_engine_panel(self):
+    """The options panel of the engine picked in the combobox, or None."""
+    engine = self.global_panel_import_engine_combobox.currentText()
+    for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
+        if widget.property('transcription_engine') == engine:
+            return widget
+    return None
+
+
+def _check_cloud_account(self, proceed):
+    """Check the Subtitld Cloud account in the background, then `proceed`
+    — or explain what is wrong and start nothing.
+
+    Only a definite answer blocks: no key, a rejected key, an empty
+    balance, or no connection at all. A cloud build without the account
+    endpoint, or a server error on it, lets the job run and speak for
+    itself.
+    """
+    if getattr(self, '_cloud_check', None) is not None:
+        return
+    from subtitld.interface.cloud_dashboard import _CloudAccountWorker
+    from subtitld.modules.addons.builtin import subtitld_cloud_shared as cloud
+
+    button = self.global_panel_import_start_transcription_button
+    worker = _CloudAccountWorker(self)
+    self._cloud_check = worker
+    button.setText(_('transcription_panel.cloud_checking'))
+    _reconcile_start_button(self)
+
+    def done(problem):
+        self._cloud_check = None
+        button.setText(_('transcription_panel.start_transcription'))
+        _reconcile_start_button(self)
+        messages = {
+            'no_key': _('cloud_preflight.no_key').format(url=cloud.read_dashboard_url()),
+            'bad_key': _('cloud_preflight.bad_key').format(url=cloud.read_dashboard_url()),
+            'no_balance': _('cloud_preflight.no_balance').format(url=cloud.read_topup_url()),
+            'network': _('cloud_preflight.network'),
+        }
+        if problem not in messages:
+            proceed()
+            return
+        dialog = utils.SimpleDialog(self, title=_('transcription_panel.error'))
+        dialog.content.layout().addWidget(QLabel(messages[problem]))
+        dialog.reject_button.setVisible(False)
+        dialog.exec()
+
+    worker.loaded.connect(lambda account: done(cloud.account_problem(account)))
+    worker.failed.connect(done)
+    worker.finished.connect(worker.deleteLater)
+    worker.start()
+
+
+def _start_transcription(self, scope_range):
+    """Clear what a whole-media run replaces, then hand the job to the
+    selected engine."""
     if scope_range is None:
         # Whole-media transcription REPLACES all subtitles → confirm when
         # some already exist, then clear.
@@ -1068,10 +771,9 @@ def global_panel_import_start_transcription_button_clicked(self):
     # A scoped (range/selection) run MERGES: it only replaces subtitles
     # inside the range (handled in _on_finished), so no clear / confirm.
 
-    for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
-        if widget.property('transcription_engine') == self.global_panel_import_engine_combobox.currentText():
-            widget.transcript_callback()
-            break
+    engine_panel = _current_engine_panel(self)
+    if engine_panel is not None:
+        engine_panel.transcript_callback()
     # Switch to running mode right away so the Start button + ALL row vanish
     # the instant the user clicks — don't wait for the engine's (possibly
     # delayed) transcript_started signal, which re-runs this harmlessly.
@@ -1116,21 +818,9 @@ def translate(self):
     self.global_panel_import_language_combobox.setLabel(_('transcription_panel.language'))
     self.global_panel_import_start_transcription_button.setText(_('transcription_panel.start_transcription'))
     self.global_panel_import_engine_combobox.setLabel(_('transcription_panel.engine'))
-    if hasattr(self, 'transcription_scope_combobox'):
-        self.transcription_scope_label.setText(_('transcription_panel.scope'))
-        self.transcription_scope_from_label.setText(_('transcription_panel.scope_from'))
-        self.transcription_scope_duration_label.setText(_('transcription_panel.scope_duration'))
-        self.transcription_scope_to_label.setText(_('transcription_panel.scope_to'))
-        labels = [_('transcription_panel.scope_all'), _('transcription_panel.scope_range'),
-                  _('transcription_panel.scope_selection')]
-        for i, text in enumerate(labels):
-            self.transcription_scope_combobox.setItemText(i, text)
-        # The times beside it are labels, which never shrink, so a narrow
-        # panel would squeeze the scope name away. Hold its widest label.
-        self.transcription_scope_combobox.setMinimumContentsLength(max(len(text) for text in labels))
-        self.transcription_scope_combobox.setSizeAdjustPolicy(
-            QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        global_panel_import_scope_update(self)
+    if hasattr(self, 'transcription_scope'):
+        self.transcription_scope.retranslate()
+        _reconcile_start_button(self)
     for widget in self.global_panel_import_tabwidget.findChildren(QWidget):
         if 'translate_callback' in dir(widget):
             widget.translate_callback()

@@ -217,3 +217,18 @@ def fetch_account(timeout: float = 15.0) -> dict:
     """
     url = f'{read_base_url().rstrip("/")}/api/v1/account'
     return http_get(url, api_key=read_api_key(), timeout=timeout)
+
+
+def account_problem(account: dict) -> str:
+    """Why `account` cannot run a paid job, or '' when it can.
+
+    'no_balance' only when the cloud reports an empty balance or credit;
+    a field it leaves out never blocks a job (older cloud builds send less).
+    """
+    if not isinstance(account, dict):
+        return ''
+    for key in ('balance', 'credits'):
+        value = account.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value <= 0:
+            return 'no_balance'
+    return ''
