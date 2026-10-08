@@ -323,7 +323,7 @@
     "panel_scope.from": "From",
     "panel_scope.to": "To",
     "panel_scope.capture": "⤓",
-    "panel_scope.capture_tooltip": "Capture current playback position",
+    "panel_scope.capture_tooltip": "Set to the current playback position",
     "left_panel.tab_subtitles": "Subtitles list",
     "left_panel.tab_plaintext": "Plain text editor",
     "left_panel.tab_metadata": "Metadata",
@@ -645,5 +645,8 @@
     "autosave_panel.no_backups_project": "No backups of this project yet. With changes to keep, one is made every few minutes.",
     "autosave_panel.interval": "Interval",
     "autosave_panel.keep_at_most": "Keep at most",
-    "autosave_panel.backups_unit": "backups"
+    "autosave_panel.backups_unit": "backups",
+    "panel_scope.duration": "Duration",
+    "panel_scope.selection": "Selection",
+    "panel_scope.selection_empty": "Select a subtitle on the timeline to use this scope."
 }

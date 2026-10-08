@@ -540,5 +540,14 @@
     "autosave_panel.no_backups_project": "Nenhum backup deste projeto ainda. Havendo alterações, um é feito a cada poucos minutos.",
     "autosave_panel.interval": "Intervalo",
     "autosave_panel.keep_at_most": "Manter no máximo",
-    "autosave_panel.backups_unit": "backups"
+    "autosave_panel.backups_unit": "backups",
+    "panel_scope.all": "Tudo",
+    "panel_scope.capture_tooltip": "Definir para a posição atual de reprodução",
+    "panel_scope.duration": "Duração",
+    "panel_scope.from": "De",
+    "panel_scope.label": "Escopo",
+    "panel_scope.range": "Intervalo",
+    "panel_scope.selection": "Seleção",
+    "panel_scope.selection_empty": "Selecione uma legenda na linha do tempo para usar este escopo.",
+    "panel_scope.to": "Até"
 }

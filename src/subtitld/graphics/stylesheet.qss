@@ -3637,3 +3637,112 @@ QLabel#autosave_empty_label {
     color: rgba(184, 206, 224, 0.6);
     font-size: 11px;
 }
+
+/* ---- Shared panel footer (interface/scope_selector.py) ----
+   The scope row, its hairline and the action row, with the primary
+   and quiet action styles. Transcription, translation and dubbing
+   move onto it; the speakers panel uses its action row. */
+
+/* The shared scope footer (interface/scope_selector.py): scope row,
+   hairline, action row — the same ending for transcription, translation
+   and dubbing. */
+QWidget#scope_footer {
+    background: transparent;
+}
+
+QWidget#scope_footer_row {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(0, 0, 0, 0.1), stop:1 rgba(0, 0, 0, 0));
+}
+
+/* Full-width delimiter that sits BELOW the scope row and ABOVE the Start
+   button. It's its own edge-to-edge 1px strip, so it touches both panel
+   edges while the chip and button keep their side padding. Same slate as
+   the chip/bar so an expanded (full-width) bar flows straight into it. */
+QWidget#scope_footer_divider {
+    background: #1e2832;
+}
+
+/* Why the action button below is dead, when scope is "selection" and
+   nothing is selected. It sits OUTSIDE the collapsible bar, so a collapsed
+   bar can't hide the only explanation for a disabled button. Amber rather
+   than red: nothing has gone wrong, there's just a step still to take. */
+QLabel#scope_hint_label {
+    background: transparent;
+    border: 0;
+    padding: 6px 2px 2px 2px;
+    color: #d8a657;
+    font-family: 'Montserrat';
+    font-size: 11px;
+}
+
+/* The primary action in a scope footer — Start transcription, Start
+   translation, Generate all speeches. One class, so the three panels end
+   with the same button: square on top, rounded at the bottom, where it
+   rises out of the footer band and sits on the panel's edge. */
+QPushButton[class~="scope_action"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
+    color: #3e5363;
+    border: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+    padding: 7px 16px;
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+/* The footer's quieter action (INVERT TRANSLATION): text on the band, the
+   same idea as REPLACE in the Find & Replace footer, so the main action is
+   the only filled button. Smaller than that one, so it sits inside the row
+   with air above and below. */
+QPushButton[class~="scope_action_quiet"] {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 4px 10px;
+    icon-size: 12px 12px;
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #b8cee0;
+}
+
+QPushButton[class~="scope_action_quiet"]:hover {
+    background-color: #26b8cee0;
+}
+
+QPushButton[class~="scope_action_quiet"]:pressed {
+    background-color: #38b8cee0;
+}
+
+QPushButton[class~="scope_action_quiet"]:disabled {
+    background: transparent;
+    color: #66b8cee0;
+}
+
+/* Nothing to act on — scope "selection" with nothing selected. */
+QPushButton[class~="scope_action"]:disabled {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #66c8dbe9, stop:1 #66b8cee0);
+    color: #803e5363;
+}
+
+QPushButton[class~="scope_action"]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
+}
+
+QPushButton[class~="scope_action"]:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #b8cee0, stop:1 #a9c1d4);
+}
+
+/* A scope footer's progress bar (transcription, translation, …) fills the
+   whole action row during a run, edge to edge, so it sits flush in the
+   corners — square edges, no rounding, for the bar and its fill alike. */
+#scope_footer_row QProgressBar,
+#scope_footer_row QProgressBar::chunk {
+    border-radius: 0;
+}
