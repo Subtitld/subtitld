@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QDoubleSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -41,6 +42,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import addons, session
 from subtitld.modules.addons import installer, languages as _languages, registry
+from subtitld.modules.addons import schema as addon_schema
 from subtitld.modules.addons.provider import (
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
@@ -532,7 +534,7 @@ class _AddonCard(QFrame):
                 row.installed_manifest if not row.is_builtin else None
             )
             schema = (schema_source or {}).get('config_schema') or {}
-            if (schema.get('fields') or []):
+            if _user_settable_fields(schema.get('fields')):
                 configure = QPushButton(_('addons_dialog.actions.configure'))
                 configure.clicked.connect(lambda: self.configure_clicked.emit(row))
                 actions.addWidget(configure)
@@ -708,6 +710,68 @@ def _write_field_value(field: dict, addon_options: dict, value) -> None:
 # ---------------------------------------------------------------------------
 # Config-schema renderer
 # ---------------------------------------------------------------------------
+# Config keys that name a SERVICE ADDRESS are infrastructure, not user
+# settings, so no renderer below ever shows one. Which host an add-on talks
+# to decides where the user's API key and their media are sent; a field
+# inviting them to change it is a support burden at best and a way to walk
+# a key off to another server at worst.
+#
+# Subtitld's own add-ons no longer declare one (addon-assemblyai dropped
+# `base_url` in 1.0.4), but an older INSTALLED copy still does and a
+# third-party manifest always could — so this is filtered at render time
+# rather than trusted to every manifest. Developers pointing a build at a
+# staging server use the SUBTITLD_CLOUD_BASE_URL environment variable that
+# every cloud-backed add-on honours; see
+# `addons/builtin/subtitld_cloud_shared.py`.
+_HIDDEN_CONFIG_KEYS = frozenset({
+    'base_url', 'base_uri', 'endpoint', 'cloud_endpoint', 'api_url',
+    'api_base', 'api_endpoint', 'server_url',
+})
+
+
+def _user_settable_fields(fields):
+    """The schema fields a user may see, in order. Drops service-address
+    fields (see `_HIDDEN_CONFIG_KEYS`) and anything malformed."""
+    return [field for field in (fields or [])
+            if isinstance(field, dict) and field.get('key')
+            and str(field['key']).strip().lower() not in _HIDDEN_CONFIG_KEYS]
+
+
+def _number_spinbox(field: dict, current_value):
+    """The input for an ``int`` / ``number`` setting: whole or decimal as the
+    schema says, held to its range, showing the saved value clamped into it.
+
+    Both types appear across the published add-ons; ``number`` used to fall
+    through to a free-text box, which accepted anything (a Beam size of 8
+    where the add-on allows 1-5).
+    """
+    integral = addon_schema.is_integral(field)
+    spin = QSpinBox() if integral else QDoubleSpinBox()
+    # A bound the manifest leaves out stays generous rather than capping a
+    # legitimate value.
+    try:
+        low = float(field.get('min', -999999))
+        high = float(field.get('max', 999999))
+        step = float(field.get('step', 1))
+    except (TypeError, ValueError):
+        low, high, step = -999999.0, 999999.0, 1.0
+    if integral:
+        spin.setRange(int(low), int(high))
+        spin.setSingleStep(max(1, int(step)))
+    else:
+        text = repr(step)
+        spin.setDecimals(len(text.split('.')[1]) if '.' in text else 2)
+        spin.setRange(low, high)
+        spin.setSingleStep(step)
+    value = addon_schema.coerce_number(field, current_value)
+    if value is None:
+        value = addon_schema.coerce_number(field, field.get('default'))
+    if value is None:
+        value = spin.minimum()
+    spin.setValue(value)
+    return spin
+
+
 class _AddonConfigDialog(utils.SimpleDialog):
     """Renders an add-on's `manifest['config_schema']['fields']` as a set
     of Qt widgets, persisting accepted values to `registry.options_for(id)`.
@@ -746,7 +810,7 @@ class _AddonConfigDialog(utils.SimpleDialog):
         # ordering of field rendering.
         self._readers: list[tuple[str, callable, dict]] = []
 
-        fields = (manifest or {}).get('config_schema', {}).get('fields') or []
+        fields = _user_settable_fields((manifest or {}).get('config_schema', {}).get('fields'))
         if not fields:
             empty = QLabel(_('addons_dialog.configure.no_fields'))
             empty.setWordWrap(True)
@@ -756,8 +820,6 @@ class _AddonConfigDialog(utils.SimpleDialog):
 
         current = dict(registry.options_for(addon_id))
         for field in fields:
-            if not isinstance(field, dict):
-                continue
             key = field.get('key')
             if not key:
                 continue
@@ -820,6 +882,11 @@ class _AddonConfigDialog(utils.SimpleDialog):
             # `currentData()` returns whatever was stored as userData (the
             # raw `value` — string, int, bool — depending on the manifest).
             self._readers.append((key, lambda c=combo: c.currentData()))
+        elif ftype in addon_schema.NUMERIC_TYPES:
+            row.layout().addWidget(QLabel(label_text))
+            spin = _number_spinbox(field, current_value)
+            row.layout().addWidget(spin)
+            self._readers.append((key, lambda s=spin: s.value()))
         elif ftype == 'file':
             row.layout().addWidget(QLabel(label_text))
             picker = QHBoxLayout()
@@ -919,9 +986,7 @@ class AddonConfigInlineWidget(QWidget):
         self.setLayout(layout)
 
         rendered = 0
-        for field in fields or []:
-            if not isinstance(field, dict) or not field.get('key'):
-                continue
+        for field in _user_settable_fields(fields):
             # Secrets (API keys, tokens) are NOT exposed in the always-visible
             # inline strip (e.g. the transcription engine config) — they're set
             # in the add-ons Configure dialog. Keeps the Subtitld Cloud key off
@@ -945,10 +1010,7 @@ class AddonConfigInlineWidget(QWidget):
         usable fields — caller decides whether to add anything to the
         layout. Saves every call site from doing the same None-checks."""
         schema = getattr(provider, 'config_schema', None) or {}
-        if isinstance(schema, dict):
-            fields = schema.get('fields') or []
-        else:
-            fields = []
+        fields = _user_settable_fields(schema.get('fields')) if isinstance(schema, dict) else []
         if not fields:
             return None
         return cls(getattr(provider, 'id', ''), fields, parent=parent)
@@ -1005,18 +1067,10 @@ class AddonConfigInlineWidget(QWidget):
                 lambda _i, c=combo, k=key: self._store(k, c.currentData())
             )
             row.layout().addWidget(combo)
-        elif ftype == 'int':
+        elif ftype in addon_schema.NUMERIC_TYPES:
             row.layout().addWidget(QLabel(label_text))
-            spin = QSpinBox()
-            # Manifests may set min/max; keep generous defaults so a
-            # missing bound doesn't cap a legitimate value. -1..999999
-            # covers every numeric setting we currently surface.
-            spin.setRange(int(field.get('min', -1)), int(field.get('max', 999999)))
-            try:
-                spin.setValue(int(current_value) if current_value is not None else 0)
-            except (TypeError, ValueError):
-                spin.setValue(0)
-            spin.valueChanged.connect(lambda v, k=key: self._store(k, int(v)))
+            spin = _number_spinbox(field, current_value)
+            spin.valueChanged.connect(lambda v, k=key: self._store(k, v))
             row.layout().addWidget(spin)
         elif ftype == 'file':
             row.layout().addWidget(QLabel(label_text))

@@ -24,6 +24,7 @@ from PySide6.QtCore import QObject, Qt, QTimer
 
 from subtitld.modules import session
 from subtitld.modules.addons import languages as _languages
+from subtitld.modules.addons import schema as _schema
 from subtitld.modules.addons import protocol
 from subtitld.modules.addons import registry as _registry
 from subtitld.modules.addons.process import AddonProcess, DEFAULT_IDLE_GC_SEC
@@ -79,6 +80,7 @@ def _build_addon_env(addon_id: str, options: dict | None,
     env = dict(os.environ)
     _overlay_host_paths(env)
     _overlay_cloud_credentials(env, manifest)
+    options = _schema.normalize_options(manifest, options)
     if not options:
         return env
     prefix = addon_id.replace('-', '_').upper() + '_'
@@ -188,12 +190,32 @@ class _AddonProviderMixin:
         return False
 
     @property
+    def uses_subtitld_cloud(self) -> bool:
+        """True when the add-on bills against the user's Subtitld Cloud key,
+        so the host can check the account before starting a job."""
+        return bool(self._manifest.get('uses_subtitld_cloud'))
+
+    @property
     def languages(self) -> list[str]:
         return list(self._languages)
 
     @property
     def config_schema(self) -> dict | None:
         return self._manifest.get('config_schema')
+
+    def _saved_options(self, options: dict | None) -> dict:
+        """The add-on's saved Configure values, overridden by the request's,
+        with numeric ones clamped to the schema's range.
+
+        The process only reads its environment at spawn, so a setting changed
+        in Configure mid-session never reached it — and an add-on that reads
+        its settings from the request alone never saw them at all. Sent with
+        every request, the add-on (params before env before default) sees
+        the current value.
+        """
+        merged = dict(_registry.options_for(self._addon_id) or {})
+        merged.update(options or {})
+        return _schema.normalize_options(self._manifest, merged)
 
     def _ensure_process(self) -> AddonProcess:
         if self._process is None or not self._process.is_running():
@@ -557,17 +579,6 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         self._stream_request = None
         self._stream_process = None
 
-    def _saved_options(self, options: dict | None) -> dict:
-        """The add-on's saved Configure values, overridden by the request's.
-
-        The process only reads its environment at spawn, so a model changed
-        in Configure mid-session never reached it. Sent with every request
-        too, the add-on (params before env before default) sees it now.
-        """
-        merged = dict(_registry.options_for(self._addon_id) or {})
-        merged.update(options or {})
-        return merged
-
     def clone(self):
         """A second, independent add-on instance.
 
@@ -860,7 +871,7 @@ class AddonTranslationProvider(_AddonProviderMixin, TranslationProvider):
             'text': text,
             'source': source,
             'target': target,
-            'options': options or {},
+            'options': self._saved_options(options),
         }
         req = proc.request(TASK_TRANSLATE, params)
 
