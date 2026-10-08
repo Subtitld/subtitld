@@ -512,7 +512,7 @@ def global_panel_interface_videoplayer_color_button_clicked(self):
 
 
 def global_panel_interface_videoplayer_backgroundbox_group_toggled(self):
-    session.CONFIG['videoplayer']['safe_margin_action_enabled'] = self.global_panel_interface_videoplayer_backgroundbox_group.isChecked()
+    session.CONFIG['videoplayer']['backgroundbox_enabled'] = self.global_panel_interface_videoplayer_backgroundbox_group.isChecked()
     # self.preview_panel_player.update()
 
 
