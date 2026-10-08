@@ -908,6 +908,9 @@ class Track:
         # Updated each Track.read() — read by the engine's debug printer.
         self.last_in_window_clips = 0
         self.last_total_clips = 0
+        # Peak of the last block this track put out (after effects and gain),
+        # for the Audio panel's track meters.
+        self.last_peak = 0.0
 
     def add_clip(self, clip):
         self.clips.append(clip)
@@ -919,6 +922,7 @@ class Track:
         self.last_total_clips = 0
 
         if not self.enabled:
+            self.last_peak = 0.0
             return out
 
         # Snapshot the clip list so the audio callback can't be torn apart
@@ -947,6 +951,7 @@ class Track:
                 pass
 
         out *= self.gain
+        self.last_peak = float(np.abs(out).max()) if out.size else 0.0
         return out
 
 

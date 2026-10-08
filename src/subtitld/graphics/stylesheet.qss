@@ -3316,3 +3316,237 @@ LabeledComboBox QSpinBox::down-button {
     border: 0;
 }
 
+/* ---- Audio panel: input monitor (Recording) ---- */
+QFrame#audio_record_monitor {
+    background: #1a232b;
+    border: 1px solid #0affffff;
+    border-radius: 3px;
+}
+
+QLabel#audio_record_monitor_label {
+    color: #b8cee0;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QLabel#audio_record_elapsed {
+    color: #e8f1f8;
+    font-family: 'Ubuntu Mono', monospace;
+    font-size: 22px;
+}
+
+QLabel#audio_record_status {
+    color: rgba(184, 206, 224, 0.75);
+    font-size: 11px;
+}
+
+QLabel#audio_record_status_light {
+    border-radius: 4px;
+    background: #4a6070;
+}
+
+QLabel#audio_record_status_light[state="live"] {
+    background: #ff4d4d;
+}
+
+QLabel#audio_record_status_light[state="problem"] {
+    background: #e7b85a;
+}
+
+QLabel#audio_record_interim {
+    background: #121a20;
+    border-radius: 3px;
+    padding: 6px 8px;
+    color: #d4e1eb;
+    font-style: italic;
+}
+
+/* ---- Audio panel: effects (tracks and chains) ---- */
+QFrame#audio_fx_tracks {
+    background: #121a20;
+    border: 1px solid #0affffff;
+    border-radius: 3px;
+}
+
+QFrame#audio_fx_track_row {
+    background: #1a232b;
+    border: 0;
+}
+
+QFrame#audio_fx_track_row:hover {
+    background: #212c36;
+}
+
+QFrame#audio_fx_track_row[selected="true"] {
+    background: #304251;
+}
+
+QLabel#audio_fx_track_name {
+    color: #d4e1eb;
+    font-size: 12px;
+}
+
+QFrame#audio_fx_track_row[selected="true"] QLabel#audio_fx_track_name {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QLabel#audio_fx_track_count {
+    background: rgba(184, 206, 224, 0.16);
+    color: #d4e1eb;
+    border-radius: 7px;
+    min-width: 14px;
+    max-height: 14px;
+    padding: 0 4px;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QFrame#audio_fx_device {
+    background: #1a232b;
+    border: 1px solid #0affffff;
+    border-left: 3px solid #56707f;
+    border-radius: 3px;
+}
+
+QFrame#audio_fx_device[effect="eq"] {
+    border-left-color: #8fd0ea;
+}
+
+QFrame#audio_fx_device[effect="compressor"] {
+    border-left-color: #e7b85a;
+}
+
+QFrame#audio_fx_device[effect="gate"] {
+    border-left-color: #c9b3f0;
+}
+
+QLabel#audio_fx_device_title {
+    color: #e8f1f8;
+    font-size: 10px;
+    font-weight: 700;
+    padding-left: 2px;
+}
+
+QPushButton#audio_fx_icon_button {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 0;
+    min-width: 0;
+    color: rgba(184, 206, 224, 0.6);
+    font-size: 9px;
+}
+
+QPushButton#audio_fx_icon_button:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: #e8f1f8;
+}
+
+QPushButton#audio_fx_icon_button:disabled {
+    color: rgba(184, 206, 224, 0.18);
+}
+
+QPushButton#audio_fx_icon_button[role="remove"]:hover {
+    background: rgba(255, 107, 107, 0.2);
+    color: #ff8f8f;
+}
+
+QPushButton#audio_fx_range_chip {
+    background: rgba(184, 206, 224, 0.08);
+    border: 0;
+    border-radius: 9px;
+    min-width: 0;
+    min-height: 18px;
+    max-height: 18px;
+    padding: 0 8px;
+    color: rgba(184, 206, 224, 0.7);
+    font-family: 'Ubuntu Mono', monospace;
+    font-size: 10px;
+}
+
+QPushButton#audio_fx_range_chip[limited="true"] {
+    background: rgba(143, 208, 234, 0.16);
+    color: #8fd0ea;
+}
+
+QPushButton#audio_fx_range_chip:hover,
+QPushButton#audio_fx_range_chip:checked {
+    background: rgba(184, 206, 224, 0.2);
+    color: #e8f1f8;
+}
+
+QPushButton#audio_fx_band_button {
+    background: #121a20;
+    color: rgba(184, 206, 224, 0.55);
+    border: 0;
+    border-radius: 0;
+    padding: 4px 8px;
+    min-width: 0;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QPushButton#audio_fx_band_button[position="first"] {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+QPushButton#audio_fx_band_button[position="last"] {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+QPushButton#audio_fx_band_button:hover {
+    background: #212c36;
+    color: #b8cee0;
+}
+
+QPushButton#audio_fx_band_button:checked {
+    background: #304251;
+    color: #ffffff;
+}
+
+QFrame#audio_fx_range_editor {
+    background: #121a20;
+    border: 0;
+    border-radius: 3px;
+}
+
+QPushButton#audio_fx_range_selected {
+    background: transparent;
+    border: 1px solid rgba(184, 206, 224, 0.2);
+    border-radius: 3px;
+    padding: 4px 8px;
+    color: #b8cee0;
+    font-size: 10px;
+}
+
+QPushButton#audio_fx_range_selected:hover {
+    background: rgba(184, 206, 224, 0.08);
+}
+
+QPushButton#audio_fx_range_selected:disabled {
+    color: rgba(184, 206, 224, 0.3);
+}
+
+QPushButton#audio_fx_add_slot {
+    background: transparent;
+    border: 1px dashed rgba(184, 206, 224, 0.3);
+    border-radius: 3px;
+    padding: 9px;
+    color: rgba(184, 206, 224, 0.75);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+QPushButton#audio_fx_add_slot:hover {
+    background: rgba(184, 206, 224, 0.06);
+    border-color: rgba(184, 206, 224, 0.55);
+    color: #e8f1f8;
+}
+
+QPushButton#audio_fx_add_slot::menu-indicator {
+    width: 0;
+}
+

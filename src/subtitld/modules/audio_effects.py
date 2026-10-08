@@ -134,6 +134,35 @@ def _biquad_sos(band: dict, fs: float) -> list:
     return [b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]
 
 
+def eq_response(params: dict, freqs, fs: float = SAMPLERATE_DEFAULT) -> np.ndarray:
+    """The EQ's magnitude response in dB at `freqs` (Hz) — what the panel
+    draws. The same biquads the processor runs, so the curve is the sound."""
+    freqs = np.asarray(freqs, dtype=np.float64)
+    total = np.zeros_like(freqs)
+    z = np.exp(-1j * 2.0 * math.pi * np.clip(freqs, 1.0, fs * 0.5) / fs)
+    for band in params.get('bands', []):
+        b0, b1, b2, _a0, a1, a2 = _biquad_sos(band, fs)
+        h = (b0 + b1 * z + b2 * z * z) / (1.0 + a1 * z + a2 * z * z)
+        total += 20.0 * np.log10(np.maximum(np.abs(h), 1e-12))
+    return total
+
+
+def compressor_output_db(params: dict, input_db):
+    """Static transfer curve: the output level for an input level (dB)."""
+    x = np.asarray(input_db, dtype=np.float64)
+    threshold = float(params.get('threshold_db', -18.0))
+    ratio = max(float(params.get('ratio', 3.0)), 1.0)
+    over = np.maximum(x - threshold, 0.0)
+    return x - over * (1.0 - 1.0 / ratio) + float(params.get('makeup_db', 0.0))
+
+
+def gate_output_db(params: dict, input_db, floor_db: float = -120.0):
+    """Static transfer curve of the gate: unchanged above the threshold,
+    silent (`floor_db`) below it."""
+    x = np.asarray(input_db, dtype=np.float64)
+    return np.where(x >= float(params.get('threshold_db', -45.0)), x, floor_db)
+
+
 class EQProcessor:
     def __init__(self, params: dict, fs: float):
         self.fs = fs
@@ -219,6 +248,10 @@ class CompressorProcessor:
         self.release_ms = float(params.get('release_ms', 120.0))
         self.makeup_db = float(params.get('makeup_db', 0.0))
         self._env = _Envelope(fs)
+        # For the panel's meters (read from the UI thread): the input level
+        # and the gain reduction of the last block, in dB.
+        self.last_input_db = -120.0
+        self.last_reduction_db = 0.0
 
     def process(self, block: np.ndarray) -> None:
         if block.shape[0] == 0:
@@ -226,9 +259,11 @@ class CompressorProcessor:
         env = self._env.follow(_peak_detector(block), self.attack_ms, self.release_ms)
         env_db = 20.0 * np.log10(env + 1e-9)
         over = env_db - self.threshold_db
-        gain_db = np.where(over > 0.0, -over * (1.0 - 1.0 / self.ratio), 0.0) + self.makeup_db
-        gain = np.power(10.0, gain_db / 20.0).astype(block.dtype)
+        reduction_db = np.where(over > 0.0, -over * (1.0 - 1.0 / self.ratio), 0.0)
+        gain = np.power(10.0, (reduction_db + self.makeup_db) / 20.0).astype(block.dtype)
         block *= gain[:, None]
+        self.last_input_db = float(env_db.max())
+        self.last_reduction_db = float(reduction_db.min())
 
 
 class GateProcessor:
@@ -239,6 +274,9 @@ class GateProcessor:
         self.release_ms = float(params.get('release_ms', 120.0))
         self._level = _Envelope(fs)     # fast level detector
         self._gain = _Envelope(fs)      # smooth the open/close so it doesn't click
+        # For the panel's meters, as on the compressor.
+        self.last_input_db = -120.0
+        self.last_reduction_db = 0.0
 
     def process(self, block: np.ndarray) -> None:
         if block.shape[0] == 0:
@@ -248,6 +286,8 @@ class GateProcessor:
         target = (level_db > self.threshold_db).astype(np.float64)   # 1 open / 0 closed
         gain = self._gain.follow(target, self.attack_ms, self.release_ms).astype(block.dtype)
         block *= gain[:, None]
+        self.last_input_db = float(level_db.max())
+        self.last_reduction_db = float(20.0 * np.log10(max(float(gain.min()), 1e-6)))
 
 
 # --------------------------------------------------------------------------- #
@@ -293,6 +333,14 @@ class EffectChain:
 
     def __bool__(self):
         return bool(self._entries)
+
+    def processor_for(self, spec_id):
+        """The running processor of the effect with this id, or None (not
+        running: disabled, a 0 dB EQ, or not on this track)."""
+        for spec, proc in self._entries:
+            if spec.get('id') == spec_id:
+                return proc
+        return None
 
     def process(self, block: np.ndarray, playhead: float, samplerate: float) -> None:
         if not self._entries or block is None or block.shape[0] == 0:
