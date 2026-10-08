@@ -3138,6 +3138,246 @@ QPushButton#videoproperties_delete_button:pressed {
     background: rgba(0, 0, 0, 0.15);
 }
 
+/* ====================================================================
+   Keyboard shortcuts panel (interface/left_panel_keyboard.py).
+   The command list, then the capture area where the selected command's
+   shortcut is drawn as physical keys. Depth comes from the thick bottom
+   border and the gradient — no shadows, per the design system.
+   Everything is scoped to the panel, so the keycap and action classes
+   cannot leak into other panels.
+
+   Two Qt rules shape what is written here: QSS min-width/min-height are
+   the CONTENT box (so the big keycap's outer size is set in Python), and
+   letter-spacing must be px — an em value is misread as a percentage.
+   ==================================================================== */
+
+/* Tab strip. The panel's own, so the other panels keep the app's tabs. */
+#keyboard_panel_tabwidget::pane {
+    background: transparent;
+    border: none;
+    border-top: 1px solid #0affffff;
+    margin-top: -1px;
+}
+
+#keyboard_panel_tabwidget QTabBar {
+    background: transparent;
+    border: none;
+}
+
+#keyboard_panel_tabwidget QTabBar::tab {
+    background: transparent;
+    color: #80b8cee0;
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.72px;
+    padding: 12px 0 8px 0;
+    margin-left: 16px;
+    margin-right: 18px;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+
+#keyboard_panel_tabwidget QTabBar::tab:hover {
+    color: #b8cee0;
+}
+
+#keyboard_panel_tabwidget QTabBar::tab:selected {
+    color: #ffffff;
+    border-bottom: 2px solid #b8cee0;
+}
+
+/* Column header over the list, and the capture area's title. */
+#left_panel_keyboard QLabel[class="shortcut_column_label"] {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.72px;
+    color: #80b8cee0;
+}
+
+/* The capture area's title is the same type in the brighter ink. */
+#left_panel_keyboard #keyboard_panel_capture_title {
+    color: #b8cee0;
+}
+
+/* The list well. A dark inset panel; its rows are transparent until
+   hovered or selected. */
+#left_panel_keyboard #keyboard_panel_list_scroll {
+    background: #40000000;
+    border-radius: 2px;
+    margin: 0 12px 0 12px;
+}
+
+#left_panel_keyboard #keyboard_panel_list {
+    background: transparent;
+}
+
+#left_panel_keyboard QWidget[class="shortcut_row"] {
+    background: transparent;
+    border-bottom: 1px solid #05ffffff;
+    min-height: 34px;
+}
+
+#left_panel_keyboard QWidget[class="shortcut_row"]:hover {
+    background: #1ab8cee0;
+}
+
+/* After the hover rule on purpose: hovering the selected row keeps the
+   selection's fill rather than replacing it. */
+#left_panel_keyboard QWidget[class="shortcut_row"][selected="true"],
+#left_panel_keyboard QWidget[class="shortcut_row"][selected="true"]:hover {
+    background: #736a7483;
+}
+
+#left_panel_keyboard QLabel[class="shortcut_row_command"] {
+    font-family: 'Montserrat';
+    font-size: 12px;
+    font-weight: 400;
+    color: #b8cee0;
+    padding-right: 12px;
+}
+
+#left_panel_keyboard QWidget[class="shortcut_row"][selected="true"] QLabel[class="shortcut_row_command"] {
+    color: #ffffff;
+}
+
+#left_panel_keyboard QLabel[class="shortcut_row_not_set"] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.8px;
+    color: #80b8cee0;
+}
+
+/* Small keycap — a key on a list row. The 3px bottom border is the key's
+   side; the gradient is its face. min-width 12 + the 14px of padding and
+   border is the 26px minimum cap. */
+#left_panel_keyboard QLabel[class="keycap"] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #b8cee0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
+    border: 1px solid #566f84;
+    border-bottom: 3px solid #1a232b;
+    border-radius: 3px;
+    padding: 2px 6px 1px 6px;
+    min-width: 12px;
+    min-height: 14px;
+}
+
+#left_panel_keyboard QLabel[class="keycap_plus"] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 400;
+    color: #80b8cee0;
+}
+
+/* Capture area: the selected command's shortcut, big. */
+#left_panel_keyboard #keyboard_panel_capture {
+    background: #304251;
+    border-radius: 2px;
+    margin: 14px 12px 0 12px;
+}
+
+/* Big keycap. Its size comes from Python; this paints the face, the 1px
+   edge and the 6px side. Pressed, the side shrinks to 2px while the key
+   sinks 4px (the panel moves it), so it reads as pushed in. */
+#left_panel_keyboard QWidget[class="big_keycap"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #6a7483, stop:0.7 #566f84, stop:1 #4a5f70);
+    border: 1px solid #7a8494;
+    border-bottom: 6px solid #1a232b;
+    border-radius: 4px;
+}
+
+#left_panel_keyboard QWidget[class="big_keycap"][pressed="true"] {
+    border-bottom: 2px solid #1a232b;
+}
+
+#left_panel_keyboard QLabel[class="big_keycap_label"] {
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.88px;
+    color: #ffffff;
+}
+
+#left_panel_keyboard QLabel[class="big_keycap_plus"] {
+    font-family: 'Montserrat';
+    font-size: 14px;
+    font-weight: 700;
+    color: #80b8cee0;
+}
+
+/* "Press a key combination…" stands in for the keycaps while listening,
+   in the key row's own height so nothing shifts. It blinks through a
+   QPropertyAnimation — QSS has no animations. */
+#left_panel_keyboard #keyboard_panel_listening_label {
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 600;
+    color: #b8cee0;
+}
+
+/* The line under the keys: what to do, or why there is nothing to show.
+   Its min-height keeps the area from resizing when it empties. */
+#left_panel_keyboard #keyboard_panel_hint {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 400;
+    color: #80b8cee0;
+    min-height: 14px;
+}
+
+/* CHANGE / CLEAR. CHANGE turns into CANCEL (secondary) while listening. */
+#left_panel_keyboard QPushButton[class~="shortcut_action"] {
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.88px;
+    padding: 6px 12px;
+    border: 1px solid #20000000;
+    border-radius: 2px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
+    color: #b8cee0;
+}
+
+#left_panel_keyboard QPushButton[class~="shortcut_action"]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f84, stop:1 #4a5f70);
+}
+
+#left_panel_keyboard QPushButton[class~="shortcut_action"]:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3e5363, stop:1 #4a5f70);
+}
+
+#left_panel_keyboard QPushButton[class~="shortcut_action"]:disabled {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
+    color: #80b8cee0;
+}
+
+#left_panel_keyboard QPushButton[class~="primary"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7a8494, stop:1 #6a7483);
+    color: #ffffff;
+}
+
+#left_panel_keyboard QPushButton[class~="primary"]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8a94a4, stop:1 #7a8494);
+}
+
+#left_panel_keyboard QPushButton[class~="secondary"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
+    color: #3e5363;
+}
+
+#left_panel_keyboard QPushButton[class~="secondary"]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d8e7f2, stop:1 #c8dbe9);
+    color: #3e5363;
+}
+
 /* ---- Plain-text tab (left panel) ---- */
 #plaintext_panel {
     background: transparent;

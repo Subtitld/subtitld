@@ -64,13 +64,35 @@ def load(self, shortcut_commands):
         if command_id not in shortcut_commands:
             shortcut_commands[command_id] = _registry.get_default_keys(command_id)
     
+    # Keep each command's action, so a shortcut edited in the panel can be
+    # put on the live QAction instead of waiting for the next start. Without
+    # this the only handle on an action is its text, and re-running load()
+    # would add a second action per command rather than update it.
+    self._shortcut_actions = {}
+
     for command_id, keys in shortcut_commands.items():
         handler = _registry.get_handler(command_id)
         if handler:
             action = QAction(_registry.get_description(command_id), self)
-            action.setShortcuts(keys)
+            action.setShortcuts([keys] if isinstance(keys, str) else list(keys))
             action.triggered.connect(lambda checked=False, h=handler: h(self))
             self.addAction(action)
+            self._shortcut_actions[command_id] = action
+
+
+def apply(self, command_id, keys):
+    """Put `keys` on a command that is already loaded, so a shortcut changed
+    in the keyboard panel works straight away.
+
+    Returns False when the command has no action (nothing registered a
+    handler for it), which is the panel's cue that a restart is needed."""
+    action = getattr(self, '_shortcut_actions', {}).get(command_id)
+    if action is None:
+        return False
+    if isinstance(keys, str):
+        keys = [keys]
+    action.setShortcuts([key for key in keys if key])
+    return True
 
 
 def disable_actions(self):

@@ -648,5 +648,13 @@
     "autosave_panel.backups_unit": "backups",
     "panel_scope.duration": "Duration",
     "panel_scope.selection": "Selection",
-    "panel_scope.selection_empty": "Select a subtitle on the timeline to use this scope."
+    "panel_scope.selection_empty": "Select a subtitle on the timeline to use this scope.",
+    "keyboard_panel.tab": "Shortcuts",
+    "keyboard_panel.command": "Command",
+    "keyboard_panel.shortkeys": "Shortkeys",
+    "keyboard_panel.not_set": "Not set",
+    "keyboard_panel.press_combination": "Press a key combination…",
+    "keyboard_panel.listening_hint": "Esc is captured as a key. Click Cancel to stop.",
+    "keyboard_panel.no_shortcut": "No shortcut assigned",
+    "keyboard_panel.conflict": "{keys} is already used by {command}"
 }

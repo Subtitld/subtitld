@@ -549,5 +549,13 @@
     "panel_scope.range": "Intervalo",
     "panel_scope.selection": "Seleção",
     "panel_scope.selection_empty": "Selecione uma legenda na linha do tempo para usar este escopo.",
-    "panel_scope.to": "Até"
+    "panel_scope.to": "Até",
+    "keyboard_panel.tab": "Atalhos",
+    "keyboard_panel.command": "Comando",
+    "keyboard_panel.shortkeys": "Teclas de atalho",
+    "keyboard_panel.not_set": "Sem atalho",
+    "keyboard_panel.press_combination": "Pressione uma combinação de teclas…",
+    "keyboard_panel.listening_hint": "Esc é capturado como tecla. Clique em Cancelar para parar.",
+    "keyboard_panel.no_shortcut": "Nenhum atalho atribuído",
+    "keyboard_panel.conflict": "{keys} já é usado por {command}"
 }
