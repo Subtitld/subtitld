@@ -529,9 +529,14 @@ def update(self):
         self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(False)
 
+        # setAlignment edits the document, so it emits textChanged as well:
+        # unblocked, it would write the text back, add an empty translation
+        # and mark the project unsaved just for selecting a subtitle.
         qalignment = TEXT_ALIGNMENTS[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
-        self.left_panel_subtitleslist_textedit.setAlignment(qalignment)
-        self.left_panel_subtitleslist_translation_textedit.setAlignment(qalignment)
+        for textedit in (self.left_panel_subtitleslist_textedit, self.left_panel_subtitleslist_translation_textedit):
+            textedit.blockSignals(True)
+            textedit.setAlignment(qalignment)
+            textedit.blockSignals(False)
 
         if self.preview_panel_player.is_paused():
             position = session.SUBTITLE.get('position', 0)
