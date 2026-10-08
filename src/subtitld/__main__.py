@@ -18,7 +18,7 @@ except Exception:
     pass
 
 from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog
-from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence
+from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence, QIcon
 from PySide6.QtCore import QDir, QTimer
 # Haiku draws every window with its own native decorator (the yellow tab),
 # which already provides minimise/zoom/close. Using the frameless window
@@ -373,6 +373,9 @@ def main():
 
     app.setApplicationName("Subtitld")
     app.setFont(QFont('Montserrat', 10))
+    # The window's icon (title bar, taskbar, alt-tab). Packaged builds also
+    # name it in their desktop entry; run from source, this is the only one.
+    app.setWindowIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld.png')))
 
     main_window = Window()
     main_window.show()

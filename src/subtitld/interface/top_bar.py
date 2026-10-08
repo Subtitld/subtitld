@@ -316,7 +316,12 @@ def load(self):
     self.tilteBar_subtitld_label.setFixedHeight(36)
     # self.tilteBar_subtitld_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.MinimumExpanding))
     self.titleBar.layout().insertWidget(1, self.tilteBar_subtitld_label, alignment=Qt.AlignRight | Qt.AlignVCenter)
-    self.tilteBar_subtitld_label.setText(f'<b>SUBTITLD</b>  v{subtitld.__version__}')
+    # The mark before the name. Its file is 11 px tall; Qt takes the @2x one
+    # beside it on a high-DPI screen.
+    mark = os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld_mark.png')
+    self.tilteBar_subtitld_label.setText(
+        f'<img src="{mark}" width="13" height="11" style="vertical-align: middle">'
+        f'&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
 
 
 def update(self):
