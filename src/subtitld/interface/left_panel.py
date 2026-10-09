@@ -19,6 +19,7 @@ from subtitld.interface import left_panel_keyboard
 from subtitld.interface import left_panel_import
 from subtitld.interface import left_panel_translation
 from subtitld.interface import left_panel_autosave
+from subtitld.interface import left_panel_subtitldcc
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
@@ -120,6 +121,7 @@ def load(self):
     left_panel_keyboard.load(self)
     left_panel_import.load(self)
     left_panel_translation.load(self)
+    left_panel_subtitldcc.load(self)
     left_panel_autosave.load(self)
 
     self.left_panel_navigation.layout().itemAt(0).widget().click()

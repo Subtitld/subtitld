@@ -423,6 +423,8 @@ class ThreadGenerateHashOfVideo(QThread):
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
+    # Only USF and USFX files remember a subtitld.cc origin; any other file starts without one.
+    session.SUBTITLE.pop('origin', None)
 
     if subtitle_file and os.path.isfile(subtitle_file):
         if subtitle_file.lower().endswith(('.srt')):
@@ -549,9 +551,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.usf')):
             subtitle_format = 'USF'
             reader = usf.USFReader()
-            segments_list = reader.read(open(subtitle_file).read())
+            # USF is XML: UTF-8 unless it says otherwise (the platform default would garble accents on Windows).
+            with open(subtitle_file, encoding='utf-8-sig', errors='replace') as usf_file:
+                segments_list = reader.read(usf_file.read())
             if reader.language:
                 session.SUBTITLE['language'] = reader.language
+            if reader.origin:
+                session.SUBTITLE['origin'] = reader.origin
             # Speaker color/dubbing metadata is cheap — set synchronously.
             # Image decode + downscale moves to `_SpeakerImageLoader` so
             # 20 HD face crops don't add 0.5–2 s to the main-thread open.
@@ -628,6 +634,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
             if reader.language:
                 session.SUBTITLE['language'] = reader.language
+            if reader.origin:
+                session.SUBTITLE['origin'] = reader.origin
 
             # Speaker color/dubbing metadata stays inline; image decode
             # is dispatched to `_SpeakerImageLoader` (same rationale as
@@ -1247,6 +1255,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 speakers=writer_speakers,
                 language=language,
                 embed_audio_clips=embed_audio_clips,
+                origin=SUBTITLE.get('origin'),
             ))
 
         elif subtitle_format in ['USFX']:
@@ -1360,6 +1369,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 speakers=writer_speakers,
                 language=language,
                 embed_audio_clips=False,
+                origin=SUBTITLE.get('origin'),
             )
 
             def _mime_for(path_in_zip):
