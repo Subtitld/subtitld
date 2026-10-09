@@ -101,9 +101,11 @@ def _page():
 
 
 class PublishFlow(QWidget):
-    """The publish steps, shown in the panel's Publish card. Emits ``finished`` once: with
-    (share_id, version) after publishing, or None when canceled."""
+    """The publish steps, shown in the panel's Publish card. Emits ``published`` (share_id, version) as soon
+    as subtitld.cc has it, and ``finished`` once when the steps close: with (share_id, version) after
+    publishing, or None when canceled."""
 
+    published_now = Signal(object)
     finished = Signal(object)
 
     def __init__(self, target=None, video=None):
@@ -633,6 +635,7 @@ class PublishFlow(QWidget):
         self.done_link.setText(asset['url'])
         self.cancel_button.hide()
         self._show(self.done_page, _('subtitldcc.done'))
+        self.published_now.emit(self.published)
 
     # --- 4. Done -----------------------------------------------------------------------------------------
 
@@ -651,5 +654,8 @@ class PublishFlow(QWidget):
         open_page = _button(_('subtitldcc.page'))
         open_page.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self.done_link.text())))
         page.addWidget(_row(copy, open_page))
+        next_time = _text()
+        next_time.setText(_('subtitldcc.published_next'))
+        page.addWidget(next_time)
         self.pages.append(self.done_page)
         layout.addWidget(self.done_page)

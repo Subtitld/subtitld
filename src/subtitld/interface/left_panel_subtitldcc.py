@@ -787,6 +787,7 @@ class SubtitldccPanel(QWidget):
             target = dict(self._origin_info, opened_version=(service.origin() or {}).get('version'))
         self._flow = PublishFlow(target=target, video=self._video)
         self._flow_origin = service.origin()
+        self._flow.published_now.connect(self._published)
         self._flow.finished.connect(self._publish_finished)
         self.publish_flow_host.addWidget(self._flow)
         self._flow.show()  # added to a card already on screen: Qt would only show it on the next event
@@ -794,20 +795,24 @@ class SubtitldccPanel(QWidget):
         self._flow.start()
         QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.publish_card))
 
-    def _publish_finished(self, published):
+    def _published(self, published):
+        """Published (the steps still show the link): the editor now holds that subtitle, so the next
+        Publish offers its next version. Not if another subtitle was opened in the editor meanwhile."""
+        if service.origin() != self._flow_origin:
+            return
+        share_id, version = published
+        service.set_origin(share_id, version)
+        session.set_unsaved(True)  # the origin is new: saving keeps it with the project
+        self._origin_info = None
+        self._load_origin()
+        if self._video and session.VIDEO.get('filepath'):
+            self._run_lookup()  # it may be among the matches now, or a version newer
+
+    def _publish_finished(self, _published):
         flow, self._flow = self._flow, None
         if flow is not None:
             flow.hide()
             flow.deleteLater()
-        # Remember the new origin, unless another subtitle was opened in the editor meanwhile.
-        if published and service.origin() == self._flow_origin:
-            share_id, version = published
-            service.set_origin(share_id, version)
-            session.set_unsaved(True)  # the origin is new: saving keeps it with the project
-            self._origin_info = None
-            self._load_origin()
-            if self._video and session.VIDEO.get('filepath'):
-                self._run_lookup()  # it may be among the matches now, or a version newer
         self._render_publish()
 
     # --- Shared ------------------------------------------------------------------------------------------

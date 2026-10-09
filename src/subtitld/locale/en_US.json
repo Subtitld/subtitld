@@ -667,5 +667,6 @@
     "subtitldcc.error_timeout": "Connecting took too long. Try again.",
     "subtitldcc.error_access_denied": "Connecting was canceled in the browser.",
     "subtitldcc.error_expired_token": "The code expired. Try again.",
-    "subtitldcc.error_state_mismatch": "Connecting failed. Try again."
+    "subtitldcc.error_state_mismatch": "Connecting failed. Try again.",
+    "subtitldcc.published_next": "To send changes later, edit the subtitles and use “Publish new version” in this card. Save the project to keep this link to subtitld.cc."
 }

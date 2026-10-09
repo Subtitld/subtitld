@@ -555,5 +555,6 @@
     "subtitldcc.error_timeout": "A conexão demorou demais. Tente de novo.",
     "subtitldcc.error_access_denied": "A conexão foi cancelada no navegador.",
     "subtitldcc.error_expired_token": "O código expirou. Tente de novo.",
-    "subtitldcc.error_state_mismatch": "A conexão falhou. Tente de novo."
+    "subtitldcc.error_state_mismatch": "A conexão falhou. Tente de novo.",
+    "subtitldcc.published_next": "Para enviar alterações depois, edite as legendas e use “Publicar nova versão” neste cartão. Salve o projeto para manter este vínculo com o subtitld.cc."
 }

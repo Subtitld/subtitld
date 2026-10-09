@@ -272,8 +272,13 @@ check('asks, in place, about the edit made after the check', (flow.question.isVi
       (True, True))
 flow.question_no.click()  # "Publish as checked"
 check('published', wait(lambda: flow.published is not None), True)
-check('as the next version of what was opened', calls[-1][:3], ('new_version', 'Xk3pQ9aZ2bT', 2))
+check('as the next version of what was opened', [c[:3] for c in calls if c[0] == 'new_version'],
+      [('new_version', 'Xk3pQ9aZ2bT', 2)])
 check('the link', (flow.done_page.isVisibleTo(host), flow.done_link.text()), (True, RESULT['url']))
+check('the editor holds the new version right away, before Done', service.origin(),
+      {'share_id': 'Xk3pQ9aZ2bT', 'version': 3})
+check('says how to send changes later', 'Publish new version' in flow.done_page.findChildren(
+    type(flow.done_text))[-1].text(), True)
 flow.next_button.click()  # Done
 app.processEvents()
 check('back to the card', (panel._flow, panel.publish_buttons.isVisibleTo(host)), (None, True))
