@@ -40,7 +40,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['packaging/pyinstaller/rthook_stdio.py'],
     excludes=['FixTk', 'tcl', 'tk', '_tkinter', 'tkinter', 'Tkinter'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
