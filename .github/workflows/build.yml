@@ -259,9 +259,18 @@ jobs:
           $p.Refresh()
           if ($p.HasExited) { throw "Subtitld exited ($($p.ExitCode))" }
           $title = $p.MainWindowTitle
-          Stop-Process $p -Force
           Write-Host "Main window: '$title'"
-          if ($title -ne 'Subtitld') { throw "expected the Subtitld window, found '$title'" }
+          if ($title -ne 'Subtitld') {
+            # Most likely PyInstaller's error dialog: print what it says.
+            Add-Type -AssemblyName UIAutomationClient
+            $window = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowHandle)
+            $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                [System.Windows.Automation.Condition]::TrueCondition) |
+              ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Write-Host
+            Stop-Process $p -Force
+            throw "expected the Subtitld window, found '$title'"
+          }
+          Stop-Process $p -Force
       - name: Portable (zip)
         run: Compress-Archive dist\Subtitld "Subtitld-$env:VERSION-portable.zip"
       - name: Installer (NSIS)
