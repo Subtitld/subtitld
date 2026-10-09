@@ -364,13 +364,16 @@ jobs:
           git ls-files -co --exclude-standard -z |
             tar --null -T - --transform "s,^,subtitld-$VERSION/," -czf "../subtitld-$VERSION.tar.gz"
           mv "../subtitld-$VERSION.tar.gz" .
-      - uses: cross-platform-actions/action@v1.6.0
+      - name: Start a Haiku VM
+        uses: cross-platform-actions/action@v1.6.0
         with:
           operating_system: haiku
           version: r1beta6
           memory: 8G
-          run: bash .github/scripts/haiku-build.sh "$VERSION" "subtitld-$VERSION.tar.gz" haiku-out
-          environment_variables: VERSION
+      - name: Build in the VM
+        # Runs in the VM, with the checkout synced there and back.
+        shell: cpa.sh {0}
+        run: bash .github/scripts/haiku-build.sh "${{ env.VERSION }}" "subtitld-${{ env.VERSION }}.tar.gz" haiku-out
       - uses: actions/upload-artifact@v7
         with:
           name: haiku
