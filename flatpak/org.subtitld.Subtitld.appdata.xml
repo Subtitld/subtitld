@@ -15,11 +15,27 @@
   <launchable type="desktop-id">org.subtitld.Subtitld.desktop</launchable>
   <url type="homepage">https://subtitld.org</url>
   <url type="bugtracker">https://github.com/Subtitld/subtitld/issues</url>
-  <developer_name>Jonatã Bolzan Loss</developer_name>
+  <developer id="org.subtitld">
+    <name>Jonatã Bolzan Loss</name>
+  </developer>
   <categories>
     <category>AudioVideo</category>
     <category>AudioVideoEditing</category>
   </categories>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Subtitles over the video and the waveform timeline (Tears of Steel, CC BY, Blender Foundation)</caption>
+      <image>https://raw.githubusercontent.com/Subtitld/subtitld/master/flatpak/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Speakers, each on their own timeline track</caption>
+      <image>https://raw.githubusercontent.com/Subtitld/subtitld/master/flatpak/screenshots/speakers.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The vertical timeline</caption>
+      <image>https://raw.githubusercontent.com/Subtitld/subtitld/master/flatpak/screenshots/vertical-timeline.png</image>
+    </screenshot>
+  </screenshots>
   <content_rating type="oars-1.1" />
   <releases>
     <release version="26.03.0.0" date="2026-03-01" />
