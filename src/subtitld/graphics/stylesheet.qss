@@ -775,6 +775,13 @@ QScrollBar:corner {
     background: transparent;
 }
 
+/* The track on either side of the handle. Left unstyled, it falls back to
+   the platform style, which on Windows fills it with a checkered pattern. */
+QScrollBar::add-page,
+QScrollBar::sub-page {
+    background: none;
+}
+
 QListView,
 QScrollBar,
 QTextEdit {
