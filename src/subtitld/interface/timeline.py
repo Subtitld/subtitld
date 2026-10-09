@@ -140,12 +140,31 @@ class AudioLoaderThread(QThread):
                 self.proc.kill()
 
 
+def _release_worker(workers, key, results):
+    """Slot for a worker's own QThread.finished: drop `workers[key]` now
+    that its thread has really returned. Dropping it any earlier, e.g.
+    in the slot for the result it emits as the last thing run() does,
+    can destroy the QThread while its thread is still unwinding, and Qt
+    aborts the process ("QThread: Destroyed while thread is still
+    running").
+
+    A worker that ended without putting anything in `results` (ffmpeg
+    failed, say) stays registered, so the paint that asked for it
+    doesn't start it again on every frame."""
+    if key not in results:
+        return
+    worker = workers.pop(key, None)
+    if worker is not None:
+        worker.wait()  # past run(), at most still unwinding: returns at once
+        worker.deleteLater()
+
+
 class WaveformWorker(QThread):
     """
     Background worker to compute min/max buckets for a zoom level.
-    Emits (zoom_key, (mins, maxs, samples_per_bucket)) when done.
+    Emits level_ready(zoom_key, (mins, maxs, samples_per_bucket)) when done.
     """
-    finished = Signal(object, object)
+    level_ready = Signal(object, object)
 
     def __init__(self, samples, zoom_key, samples_per_bucket, parent=None):
         super().__init__(parent)
@@ -181,7 +200,7 @@ class WaveformWorker(QThread):
                 # at +/-1.0 before conversion stays at +/-1.0 after.
                 mins = (mins.astype(np.float32) / 32768.0)
                 maxs = (maxs.astype(np.float32) / 32768.0)
-        self.finished.emit(self.zoom_key, (mins, maxs, self.samples_per_bucket))
+        self.level_ready.emit(self.zoom_key, (mins, maxs, self.samples_per_bucket))
     
 
 class WaveformManager:
@@ -227,7 +246,7 @@ class WaveformManager:
                 samples = (samples_f * 32767.0).astype(np.int16)
                 # Rewrite the cache in the new format on a future save.
                 # _schedule_cache_save isn't invoked here on purpose — we
-                # let the next worker_finished do it so we don't block
+                # let the next level_ready do it so we don't block
                 # project-open on disk I/O.
             self.samples = samples
             self.levels = data.get('levels', {})
@@ -272,11 +291,12 @@ class WaveformManager:
         # No longer load individual levels from disk - all loaded at once via _load_from_cache
         samples_per_bucket = zoom_key
         worker = WaveformWorker(self.samples, zoom_key, samples_per_bucket)
-        worker.finished.connect(self._on_worker_finished)
+        worker.level_ready.connect(self._on_level_ready)
+        worker.finished.connect(lambda: _release_worker(self.workers, zoom_key, self.levels))
         self.workers[zoom_key] = worker
         worker.start()
 
-    def _on_worker_finished(self, zoom_key, payload):
+    def _on_level_ready(self, zoom_key, payload):
         mins, maxs, samples_per_bucket = payload
         mins = np.asarray(mins, dtype=np.float32)
         maxs = np.asarray(maxs, dtype=np.float32)
@@ -286,8 +306,6 @@ class WaveformManager:
         # each np.save() blocks the main thread with a large disk write,
         # which is what made Ctrl+wheel feel stuck.
         self._schedule_cache_save()
-        if zoom_key in self.workers:
-            del self.workers[zoom_key]
 
     def _schedule_cache_save(self):
         if self._cache_save_timer is None:
@@ -440,7 +458,7 @@ class DubOnsetsWorker(QThread):
     """Per-dub-file onset extractor. Decodes the dub WAV via ffmpeg at
     ONSET_DETECTION_SAMPLERATE, runs the detector, emits onset times in
     seconds (relative to the dub file)."""
-    finished = Signal(str, object)  # path, np.ndarray[float32]
+    onsets_ready = Signal(str, object)  # path, np.ndarray[float32]
 
     def __init__(self, path, parent=None):
         super().__init__(parent)
@@ -450,7 +468,7 @@ class DubOnsetsWorker(QThread):
         try:
             onsets = _detect_onsets_via_ffmpeg(self.path)
             if onsets is not None:
-                self.finished.emit(self.path, onsets)
+                self.onsets_ready.emit(self.path, onsets)
         except Exception:
             pass
 
@@ -477,7 +495,7 @@ class BackgroundOnsetsFromFileWorker(QThread):
 
 class DubPeaksWorker(QThread):
     """Loads a small dub WAV via ffmpeg and computes min/max peaks + duration."""
-    finished = Signal(str, object, object, float)  # path, mins, maxs, duration_sec
+    peaks_ready = Signal(str, object, object, float)  # path, mins, maxs, duration_sec
 
     def __init__(self, path, target_buckets=400, parent=None):
         super().__init__(parent)
@@ -520,7 +538,7 @@ class DubPeaksWorker(QThread):
             buckets = samples[:length].reshape(-1, spb)
             mins = buckets.min(axis=1).astype(np.float32)
             maxs = buckets.max(axis=1).astype(np.float32)
-            self.finished.emit(self.path, mins, maxs, duration)
+            self.peaks_ready.emit(self.path, mins, maxs, duration)
         except Exception:
             pass
 
@@ -3529,13 +3547,13 @@ class Timeline(QWidget):
         if not os.path.exists(path):
             return
         worker = DubPeaksWorker(path)
-        worker.finished.connect(widget._on_dub_peaks_ready)
+        worker.peaks_ready.connect(widget._on_dub_peaks_ready)
+        worker.finished.connect(lambda: _release_worker(widget.dub_workers, path, widget.dub_peaks))
         widget.dub_workers[path] = worker
         worker.start()
 
     def _on_dub_peaks_ready(widget, path, mins, maxs, duration):
         widget.dub_peaks[path] = (mins, maxs, duration)
-        widget.dub_workers.pop(path, None)
         cache_file = widget._dub_cache_path(path)
         if cache_file:
             try:
@@ -3615,13 +3633,13 @@ class Timeline(QWidget):
         if not os.path.exists(path):
             return
         worker = DubOnsetsWorker(path)
-        worker.finished.connect(widget._on_dub_onsets_ready)
+        worker.onsets_ready.connect(widget._on_dub_onsets_ready)
+        worker.finished.connect(lambda: _release_worker(widget.dub_onset_workers, path, widget.dub_onsets))
         widget.dub_onset_workers[path] = worker
         worker.start()
 
     def _on_dub_onsets_ready(widget, path, onsets):
         widget.dub_onsets[path] = onsets
-        widget.dub_onset_workers.pop(path, None)
         cache_file = widget._dub_onsets_cache_path(path)
         if cache_file:
             try:
