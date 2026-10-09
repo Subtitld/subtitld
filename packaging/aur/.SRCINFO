@@ -23,7 +23,6 @@ pkgbase = subtitld
 	optdepends = python-mediapipe: speaker face detection
 	optdepends = python-opencv: speaker face detection
 	optdepends = python-edge-tts: dubbing with Microsoft Edge voices
-	optdepends = python-deep-translator: translation
 	source = subtitld-26.03.0.0.tar.gz::https://github.com/Subtitld/subtitld/archive/refs/tags/v26.03.0.0.tar.gz
 	sha256sums = SKIP
 

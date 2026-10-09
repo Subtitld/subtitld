@@ -1,10 +1,8 @@
 import os
-import time
-from deep_translator import GoogleTranslator
 import subprocess
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QProgressBar, QPushButton, QApplication
-from PySide6.QtCore import Qt, QSize, QThread, Signal
+from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QIcon
 
 from subtitld.interface import left_panel
@@ -20,177 +18,8 @@ from subtitld.modules.addons.provider import TASK_TRANSLATE
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
 INVERTED_LANGUAGES = {v: k for k, v in session.LANGUAGE_DICT_LIST.items()}
 
-# Google rate-limits / 500s its free (scraped) endpoint. deep-translator then
-# parses the HTML error page and returns its visible text as a bogus
-# "translation" ("Error 500 (Server Error)… That's all we know."). Detect that
-# so we never store it over a real subtitle.
-_GOOGLE_ERROR_MARKERS = (
-    "that's all we know",
-    "that’s all we know",
-    "error 500 (server error)",
-    "error 502 (server error)",
-    "error 503 (server error)",
-)
-
-
-def _looks_like_google_error(text):
-    if not isinstance(text, str) or not text.strip():
-        return False
-    low = text.lower()
-    if any(m in low for m in _GOOGLE_ERROR_MARKERS):
-        return True
-    return "server error" in low and "try again later" in low
-
-
-def _translate_with_retry(translator, text, should_stop=None):
-    """Translate one string, retrying transient Google failures (500 / 429 /
-    rate-limit) with capped exponential backoff until a real response comes
-    back. Keeps trying indefinitely — Google throttling the free endpoint is
-    temporary — so it never stores an error page or gives up on a line. Only
-    returns None if ``should_stop()`` asks us to bail (the user cancelled or
-    the app is quitting)."""
-    delay = 1.0
-    while True:
-        if should_stop is not None and should_stop():
-            return None
-        try:
-            result = translator.translate(text)
-        except Exception:
-            result = None
-        if isinstance(result, str) and result.strip() and not _looks_like_google_error(result):
-            return result
-        # Transient failure — back off (capped at 30s), then try again, staying
-        # responsive to a stop request in small slices meanwhile.
-        waited = 0.0
-        while waited < delay:
-            if should_stop is not None and should_stop():
-                return None
-            time.sleep(0.25)
-            waited += 0.25
-        delay = min(delay * 1.7, 30.0)
-
-
-class GoogleTranslatorPanel(QWidget):
-    translation_started = Signal()
-    translation_progress = Signal(int)
-    translation_finished = Signal()
-    def __init__(widget, parent=None):
-        super().__init__(parent=None)
-        widget.parent = parent
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
-        widget.layout().setSpacing(10)
-        widget.setProperty('translation_engine', 'GoogleTranslator')
-        widget.setProperty('class', 'transparent_panel')
-
-        widget.use_context = QCheckBox()
-        widget.use_context.clicked.connect(lambda: widget.save_config())
-        widget.use_context.setObjectName('global_panel_translation_google_translator_use_context')
-        widget.layout().addWidget(widget.use_context)
-
-        widget.layout().addStretch()
-
-        class GoogleTranslatorThread(QThread):
-            response = Signal(dict)
-            response_error = Signal(str)
-            progress = Signal(int)
-            sentences_list = None
-            
-            def run(self):
-                if self.sentences_list:
-                    target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
-                    use_context = session.CONFIG['translation'].get('engine_options', {}). get('GoogleTranslator', {}).get('use_context', False)
-                    try:
-                        translator = GoogleTranslator(source='auto', target=target_language[:2])
-                        context_full = []
-
-                        for index, segment in enumerate(self.sentences_list):
-                            if self.isInterruptionRequested():
-                                break
-                            self.progress.emit(int((index / len(self.sentences_list)) * 100))
-                            if not segment['text'].strip():
-                                continue
-                            context = ''
-                            
-                            if use_context:
-                                if context_full:
-                                    index = 0
-                                    while index < len(context_full) and (len(context + list(reversed(context_full))[index] + segment['text']) + 7 < 5000):
-                                        context = list(reversed(context_full))[index] + ' ' + context
-                                        index += 1
-
-                                context_full.append(segment['text'])
-
-                            translated_text = _translate_with_retry(
-                                translator, (f'{context}␟' if context else '') + segment['text'],
-                                should_stop=self.isInterruptionRequested)
-                            if translated_text is None:
-                                # Interrupted (user cancelled / app quitting) —
-                                # stop; the lines done so far are already saved.
-                                break
-
-                            translated_text = translated_text.rsplit('␟')[-1].strip().replace('\u200b', '')
-
-                            self.response.emit({
-                                'original': segment['text'],
-                                'translation': translated_text,
-                                'language': target_language    
-                            })
-
-                    except Exception as e:
-                        self.response_error.emit(str(e))
-                
-        def translate_thread_response(response):
-            if isinstance(response, dict):
-                for segment in session.SUBTITLE['segments']:
-                    if segment['text'] == response['original']:
-                        if 'translations' not in segment:
-                            segment['translations'] = {}
-                        segment['translations'][response['language']] = response['translation']
-                widget.window().timeline_widget.update()
-                session.set_unsaved()
-
-        def translate_thread_error(response):
-            error_dialog = utils.SimpleDialog(widget, title=_('translation_panel.error'))
-            label = QLabel(response)
-            error_dialog.content.layout().addWidget(label)
-            error_dialog.reject_button.setVisible(False)
-            error_dialog.exec()
-
-        widget.translate_thread = GoogleTranslatorThread()
-        widget.translate_thread.started.connect(lambda: widget.translation_started.emit())
-        widget.translate_thread.progress.connect(lambda value: widget.translation_progress.emit(value))
-        widget.translate_thread.finished.connect(lambda: widget.translation_finished.emit())
-        widget.translate_thread.response.connect(translate_thread_response)
-        widget.translate_thread.response_error.connect(translate_thread_error)
-        # The translate loop retries rate-limited lines indefinitely; make sure
-        # a quit doesn't block on it — ask it to stop when the app is closing.
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.connect(widget.translate_thread.requestInterruption)
-
-        widget.update_callback = widget.update
-        widget.translate_process_callback = widget.translate_process
-        widget.translate_callback = widget.translate
-
-    def save_config(widget):
-        if not 'engine_options' in session.CONFIG['translation']:
-            session.CONFIG['translation']['engine_options'] = {}
-        if not 'GoogleTranslator' in session.CONFIG['translation']['engine_options']:
-            session.CONFIG['translation']['engine_options']['GoogleTranslator'] = {}
-        session.CONFIG['translation']['engine_options']['GoogleTranslator']['use_context'] = widget.use_context.isChecked()
-
-    def update(widget):
-        widget.use_context.setChecked(session.CONFIG['translation'].get('engine_options', {}).get('GoogleTranslator', {}).get('use_context', False))
-        
-    def translate_process(widget, segments_list=None):
-        if segments_list is None:
-            segments_list = session.SUBTITLE['segments']
-        widget.translate_thread.sentences_list = segments_list
-        widget.translate_thread.start()
-
-    def translate(widget):
-        widget.use_context.setText(_('translation_panel.use_context'))
+# The engine picker's entry while no translation add-on is installed.
+_NO_ENGINE = 'no-engine'
 
 
 class AddonTranslatorPanel(QWidget):
@@ -215,9 +44,8 @@ class AddonTranslatorPanel(QWidget):
         widget.layout().setSpacing(10)
         widget.setProperty('translation_engine', provider.id)
         widget.setProperty('class', 'transparent_panel')
-        # Add-on engines are told the source language — the project's
-        # subtitle language — instead of detecting it, as GoogleTranslator
-        # does. See _source_differs_from_target().
+        # Add-on engines are told the source language: the project's
+        # subtitle language. See _source_differs_from_target().
         widget.uses_subtitle_language = True
 
         widget.info_label = QLabel(provider.display_name)
@@ -363,23 +191,20 @@ def load(self):
 
     self.global_panel_translation_engine_combobox = utils.LabeledComboBox()
     self.global_panel_translation_engine_combobox.setProperty('class', 'button')
-    self.global_panel_translation_engine_combobox.addItems(['GoogleTranslator'])
     self.global_panel_translation_engine_combobox.activated.connect(lambda: global_panel_translation_engine_combobox_activated(self))
     content_layout.addWidget(self.global_panel_translation_engine_combobox)
 
+    # There is no built-in engine: with no translation add-on installed,
+    # this says where to get one.
+    self.global_panel_translation_no_engine_label = QLabel()
+    self.global_panel_translation_no_engine_label.setWordWrap(True)
+    content_layout.addWidget(self.global_panel_translation_no_engine_label)
+
     self.global_panel_translation_tabwidget = QStackedWidget()
 
-    self.global_panel_translation_googletranslator_widget = GoogleTranslatorPanel()
-    self.global_panel_translation_googletranslator_widget.translation_started.connect(lambda: global_panel_translation_start_translation_progress_start(self))
-    self.global_panel_translation_googletranslator_widget.translation_progress.connect(lambda value: global_panel_translation_start_translation_progress_update(self, value))
-    self.global_panel_translation_googletranslator_widget.translation_finished.connect(lambda: global_panel_translation_start_translation_progress_finish(self))
-    self.global_panel_translation_tabwidget.addWidget(self.global_panel_translation_googletranslator_widget)
-
-
-    # Add-on translation engines (any provider serving `translate.text`),
-    # appended after the built-in engine — and kept current: installing,
-    # removing, enabling or disabling an add-on fires `providers_changed`,
-    # as the Import and Dubbing panels already handle.
+    # The translation engines: every add-on serving `translate.text`, kept
+    # current: installing, removing, enabling or disabling an add-on fires
+    # `providers_changed`, as the Import and Dubbing panels already handle.
     self.global_panel_translation_addon_widgets = {}
     _populate_translation_addons(self)
     addons.get_manager().providers_changed.connect(lambda: _populate_translation_addons(self))
@@ -509,12 +334,33 @@ def _populate_translation_addons(self):
         combobox.addItem(engine_id)
         panels[engine_id] = panel
 
+    _sync_no_engine(self)
     # The engine the user picked last, whenever it is (back) in the list;
     # otherwise whatever the combobox fell back to when its item went.
-    saved = session.CONFIG['translation'].get('engine', 'GoogleTranslator')
-    if combobox.findText(saved) >= 0:
+    saved = session.CONFIG['translation'].get('engine')
+    if saved and combobox.findText(saved) >= 0:
         self.global_panel_translation_engine_combobox.setCurrentText(saved)
     global_panel_translation_tabwidget_update(self)
+    _reconcile_start_button(self)
+
+
+def _sync_no_engine(self):
+    """With no translation add-on installed there is nothing to pick: the
+    picker holds a disabled "No translation engine" entry, and the panel
+    says where to get one."""
+    combobox = self.global_panel_translation_engine_combobox.combobox
+    has_engines = bool(self.global_panel_translation_addon_widgets)
+    placeholder = combobox.findData(_NO_ENGINE)
+    if has_engines and placeholder >= 0:
+        combobox.removeItem(placeholder)
+    elif not has_engines:
+        if placeholder < 0:
+            combobox.addItem('', _NO_ENGINE)
+            placeholder = combobox.count() - 1
+        combobox.setItemText(placeholder, _('translation_panel.no_engine_available'))
+    combobox.setEnabled(has_engines)
+    self.global_panel_translation_no_engine_label.setText(_('translation_panel.no_engine'))
+    self.global_panel_translation_no_engine_label.setVisible(not has_engines)
 
 
 def global_panel_translation_tabwidget_update(self):
@@ -588,17 +434,20 @@ def global_panel_translation_invert_translation_button_clicked(self):
 
 
 def _reconcile_start_button(self):
-    """The Start button is only live when the current scope can actually be
-    satisfied — scope "selection" with nothing selected has nothing to
-    translate, and the scope selector shows the hint that says so."""
+    """The Start button is only live when there is an engine to translate
+    with and the current scope can actually be satisfied — scope "selection"
+    with nothing selected has nothing to translate, and the scope selector
+    shows the hint that says so."""
     button = getattr(self, 'global_panel_translation_start_translation_button', None)
     scope = getattr(self, 'translation_scope', None)
     if button is None or scope is None:
         return
-    button.setEnabled(scope.is_ready())
+    button.setEnabled(_current_engine_panel(self) is not None and scope.is_ready())
 
 
 def global_panel_translation_start_translation_button_clicked(self):
+    if _current_engine_panel(self) is None:
+        return
     scoped = self.translation_scope.scoped_segments()
     if not scoped:
         return
@@ -637,11 +486,10 @@ def _source_differs_from_target(self):
     """False when the job would hand the subtitles back unchanged — having
     said why — so Start translation does not quietly copy them.
 
-    Only engines that are TOLD the source language can hit this: they use
-    the project's subtitle language, and a project marked with the target
-    language (say an English one labelled Portuguese) asks them to translate
-    Portuguese into Portuguese. GoogleTranslator detects the language itself
-    and is never stopped here.
+    Only engines that are TOLD the source language can hit this, which every
+    add-on engine is: they use the project's subtitle language, and a project
+    marked with the target language (say an English one labelled Portuguese)
+    asks them to translate Portuguese into Portuguese.
     """
     panel = _current_engine_panel(self)
     if not getattr(panel, 'uses_subtitle_language', False):
@@ -684,6 +532,7 @@ def translate(self):
     self.global_panel_translation_invert_translation_button.setText(_('translation_panel.invert_translation'))
     self.global_panel_translation_invert_translation_button.setToolTip(_('translation_panel.invert_translation'))
     self.translation_scope.retranslate()
+    _sync_no_engine(self)
     _reconcile_start_button(self)
     for widget in self.global_panel_translation_tabwidget.findChildren(QWidget):
         if 'translate_callback' in dir(widget):

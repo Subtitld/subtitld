@@ -31,7 +31,6 @@ REQUIRES="
 	autohex_python310
 	beautifulsoup4_python310
 	chardet_python310
-	deep_translator_python310
 	edge_tts_python310
 	gtts_python310
 	lxml_python310

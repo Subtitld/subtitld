@@ -2,7 +2,9 @@
 
 An add-on installed (or removed, enabled, disabled) at runtime makes the
 add-on manager emit `providers_changed`; the engine picker must follow.
-The manager here is a stand-in — no real add-on is started.
+There is no built-in engine: with no translation add-on, the panel says where
+to get one and START TRANSLATION stays off. The manager here is a stand-in —
+no real add-on is started.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -77,6 +79,7 @@ host = Host()
 host.show()
 lpt.load(host)
 lpt.translate(host)
+app.processEvents()  # widgets added to a shown window show on the next pass
 combobox = host.global_panel_translation_engine_combobox.combobox
 
 
@@ -84,15 +87,21 @@ def engines():
     return [combobox.itemText(i) for i in range(combobox.count())]
 
 
-print('with no add-on installed, the built-in engine is there alone')
-check('engines', engines(), ['GoogleTranslator'])
+no_engine = lpt._('translation_panel.no_engine_available')
+hint = host.global_panel_translation_no_engine_label
+print('with no add-on installed there is no engine, and the panel says where to get one')
+check('engines', engines(), [no_engine])
+check('the picker is off', combobox.isEnabled(), False)
+check('the hint is shown', (hint.isVisible(), hint.text()), (True, lpt._('translation_panel.no_engine')))
 
 print('installing an add-on while the app runs adds it to the picker')
 offline = FakeProvider('translate-offline', 'Offline Translate (CTranslate2)')
 manager.providers = [offline]
 manager.providers_changed.emit()
 app.processEvents()
-check('engines', engines(), ['GoogleTranslator', 'translate-offline'])
+check('engines', engines(), ['translate-offline'])
+check('the picker is on', combobox.isEnabled(), True)
+check('the hint goes', hint.isVisible(), False)
 check('the engine picked before comes back selected', combobox.currentText(), 'translate-offline')
 check('and its panel is the one shown',
       host.global_panel_translation_tabwidget.currentWidget().property('translation_engine'), 'translate-offline')
@@ -102,7 +111,7 @@ print('an unrelated change keeps the existing panel')
 manager.providers = [offline, FakeProvider('other-mt', 'Other MT')]
 manager.providers_changed.emit()
 app.processEvents()
-check('engines', engines(), ['GoogleTranslator', 'translate-offline', 'other-mt'])
+check('engines', engines(), ['translate-offline', 'other-mt'])
 check('same panel object, so a running translation is untouched',
       host.global_panel_translation_addon_widgets['translate-offline'] is panel, True)
 
@@ -110,16 +119,14 @@ print('removing it takes it out of the picker')
 manager.providers = []
 manager.providers_changed.emit()
 app.processEvents()
-check('engines', engines(), ['GoogleTranslator'])
-check('falls back to the built-in engine', combobox.currentText(), 'GoogleTranslator')
+check('engines', engines(), [no_engine])
+check('the picker is off again', combobox.isEnabled(), False)
+check('and the hint is back', hint.isVisible(), True)
 check('no stale panel left behind as a child either',
       sorted(w.property('translation_engine') for w in host.global_panel_translation_tabwidget.findChildren(QWidget)
              if w.property('translation_engine')),
-      ['GoogleTranslator'])
-check('no stale panel left in the stack',
-      [host.global_panel_translation_tabwidget.widget(i).property('translation_engine')
-       for i in range(host.global_panel_translation_tabwidget.count())],
-      ['GoogleTranslator'])
+      [])
+check('no stale panel left in the stack', host.global_panel_translation_tabwidget.count(), 0)
 
 print('Start translation warns instead of copying the subtitles unchanged')
 shown = []
@@ -151,8 +158,6 @@ app.processEvents()
 started = []
 host.global_panel_translation_addon_widgets['translate-offline'].translate_process_callback = \
     lambda segments: started.append(len(segments))
-host.global_panel_translation_googletranslator_widget.translate_process_callback = \
-    lambda segments: started.append(('google', len(segments)))
 session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 2.0, 'text': 'Hello', 'speaker': 'A'}]
 
 
@@ -187,9 +192,18 @@ check('cancelled, nothing starts', started, [])
 start('translate-offline', 'en-us', 'en-gb', answer=1)
 check('"Translate anyway" starts it', started, [1])
 
-start('GoogleTranslator', 'pt-br', 'pt-br')
-check('GoogleTranslator detects the language itself: never warned', warned(), [])
-check('and starts', started, [('google', 1)])
+print('with the last engine gone, START TRANSLATION is off and does nothing')
+start_button = host.global_panel_translation_start_translation_button
+lpt.update(host)
+check('on while there is an engine', start_button.isEnabled(), True)
+manager.providers = []
+manager.providers_changed.emit()
+app.processEvents()
+check('off once it goes', start_button.isEnabled(), False)
+shown.clear()
+started.clear()
+lpt.global_panel_translation_start_translation_button_clicked(host)
+check('clicked anyway: no dialog, nothing starts', (shown, started), ([], []))
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

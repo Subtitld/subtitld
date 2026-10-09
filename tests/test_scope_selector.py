@@ -87,10 +87,31 @@ sel.refresh()
 check('a straddling subtitle is in scope', [s['text'] for s in sel.scoped_segments()], ['middle'])
 
 print('the translation panel mounts it and gates START TRANSLATION')
+from PySide6.QtCore import QObject, Signal
+from subtitld.modules import addons
 from subtitld.interface import left_panel_translation as lpt
+
+
+class FakeTranslator(QObject):
+    # An installed translation add-on: the panel has no built-in engine.
+    translation_ready = Signal(object)
+    error = Signal(str)
+    id = display_name = 'translate-offline'
+    config_schema = None
+
+
+class FakeManager(QObject):
+    providers_changed = Signal()
+
+    def providers_for_task(self, task):
+        return [translator]
+
+
+translator, manager = FakeTranslator(), FakeManager()
+addons.get_manager = lambda: manager
 picked = cue(5.0, 8.0, 'translate me')
 session.SUBTITLE = {'segments': [picked], 'selected': picked, 'language': 'en-us', 'position': 0.0}
-session.CONFIG['translation'] = {'engine': 'GoogleTranslator', 'engine_options': {'target_language': 'en-us'},
+session.CONFIG['translation'] = {'engine': 'translate-offline', 'engine_options': {'target_language': 'pt-br'},
                                  'scope': 'selection'}
 host = Host()
 host.resize(520, 560)

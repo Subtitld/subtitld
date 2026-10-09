@@ -12,7 +12,6 @@ import hashlib, io, json, os, re, tarfile, urllib.request, zipfile
 PKGS = [
     ("autohex",         "0.1.1",  "autohex",         []),
     ("cssutils",        "2.15.0", "cssutils",        []),
-    ("deep-translator", "1.11.4", "deep_translator", ["beautifulsoup4_$pythonPackage", "requests_$pythonPackage"]),
     ("edge-tts",        "7.2.8",  "edge_tts",        ["aiohttp_$pythonPackage", "certifi_$pythonPackage", "tabulate_$pythonPackage"]),
     ("encutils",        "1.0.0",  "encutils",        []),
     ("gTTS",            "2.5.4",  "gtts",            ["requests_$pythonPackage", "click_$pythonPackage"]),
@@ -66,8 +65,6 @@ META = {
    "Generates deterministic hexadecimal colour codes from arbitrary strings, so that the same input always maps to the same colour. Useful for giving stable colours to named items such as speakers or tags."),
  "cssutils": ("A CSS Cascading Style Sheets library for Python",
    "Parses CSS into a DOM-like object model that can be inspected and modified, then serialised back out to CSS text. It follows the W3C CSSOM specifications."),
- "deep_translator": ("Translate text between languages using several online providers",
-   "A flexible translation library that exposes several online translation providers through a single API, so the backend can be swapped without changing calling code."),
  "edge_tts": ("Use Microsoft Edge's online text-to-speech service from Python",
    "Lets Python code synthesise speech through Microsoft Edge's online text-to-speech service, without installing the browser or holding an API key. Audio can be written to a file or streamed."),
  "encutils": ("Detect the character encoding of HTTP, XML and HTML content",

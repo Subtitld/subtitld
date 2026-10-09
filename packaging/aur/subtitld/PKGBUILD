@@ -19,7 +19,6 @@ depends=(
     'python-beautifulsoup4'
     'python-certifi'
     'python-chardet'
-    'python-deep-translator'
     'python-docx'
     'python-edge-tts'
     'python-gtts'
