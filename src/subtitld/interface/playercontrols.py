@@ -4,7 +4,7 @@ import time
 from bisect import bisect
 import subprocess
 
-from PySide6.QtWidgets import QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
 
@@ -2695,17 +2695,83 @@ def merge_next_selected_subtitle_button_clicked(self):
         session.set_unsaved()
 
 
+class _NudgeHold(QObject):
+    """Keeps a held nudge key to one undo step.
+
+    A nudge shortcut repeats while its key is held, and each repeat would
+    push its own snapshot. The first nudge of a press records; the repeats
+    add to that step. The press ends when the key is let go, another key or
+    a mouse button is pressed, or the window loses focus — watched by a
+    filter on the application, which sees every event, so it is only
+    installed while a press is on. A nudge button click is a press with no
+    key to let go: the next click or key ends it, and if none comes it
+    lapses, so the filter does not linger."""
+
+    LAPSE_MS = 1500     # longer than the usual delay before a key repeats
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._pressed = False
+        self._snapshot = None   # the undo step this press made
+        self._lapse = QTimer(self)
+        self._lapse.setSingleShot(True)
+        self._lapse.setInterval(self.LAPSE_MS)
+        self._lapse.timeout.connect(self.end)
+
+    def holding(self):
+        """Whether a press is on and its step is still the latest one."""
+        return self._pressed and self._snapshot is history.top_snapshot()
+
+    def start(self):
+        if not self._pressed:
+            QApplication.instance().installEventFilter(self)
+            self._pressed = True
+        self._snapshot = history.top_snapshot()
+        self._lapse.start()
+
+    def end(self):
+        if self._pressed:
+            QApplication.instance().removeEventFilter(self)
+            self._pressed = False
+        self._snapshot = None
+        self._lapse.stop()
+
+    def eventFilter(self, obj, event):
+        kind = event.type()
+        if kind in (QEvent.ShortcutOverride, QEvent.KeyPress, QEvent.KeyRelease):
+            if not event.isAutoRepeat():
+                self.end()
+        elif kind in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick, QEvent.WindowDeactivate):
+            self.end()
+        return False
+
+
+def step_amount(self):
+    """How far a nudge steps: a frame, or the step set beside the step
+    button while it is on."""
+    framerate = session.VIDEO['framerate']
+    if self.step_button.isChecked():
+        if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
+            return int(session.CONFIG['timeline'].get('step_value', 1)) / framerate
+        return float(session.CONFIG['timeline'].get('step_value', 1.0))
+    return 1.0 / framerate
+
+
+def nudge(self, move, **kwargs):
+    """Step the selected subtitle with `move`, one undo step a key press."""
+    hold = getattr(self, '_nudge_hold', None)
+    if hold is None:
+        hold = self._nudge_hold = _NudgeHold(self)
+    move(selected_subtitle=session.SUBTITLE['selected'], record=not hold.holding(), **kwargs)
+    hold.start()
+
+
 @shortcut('move_step_backward_subtitle', 'Move subtitle a step backward', ['4'])
 def move_backward_subtitle_clicked(self):
     """Function to move subtitle backward"""
     if session.SUBTITLE.get('selected', None) is not None:
-        amount = (1.0 / session.VIDEO['framerate'])
-        if self.step_button.isChecked():
-            if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
-                amount = (int(session.CONFIG['timeline'].get('step_value', 1)) / session.VIDEO['framerate'])
-            else:
-                amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
-        subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=-amount)
+        amount = step_amount(self)
+        nudge(self, subtitles.move_subtitle, amount=-amount)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2716,13 +2782,8 @@ def move_backward_subtitle_clicked(self):
 def move_forward_subtitle_clicked(self):
     """Function to move subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
-        amount = (1.0 / session.VIDEO['framerate'])
-        if self.step_button.isChecked():
-            if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
-                amount = (int(session.CONFIG['timeline'].get('step_value', 1)) / session.VIDEO['framerate'])
-            else:
-                amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
-        subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=amount)
+        amount = step_amount(self)
+        nudge(self, subtitles.move_subtitle, amount=amount)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2733,13 +2794,8 @@ def move_forward_subtitle_clicked(self):
 def move_start_back_subtitle_clicked(self):
     """Function to move starting position of selected subtitle backward"""
     if session.SUBTITLE.get('selected', None) is not None:
-        amount = (1.0 / session.VIDEO['framerate'])
-        if self.step_button.isChecked():
-            if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
-                amount = (int(session.CONFIG['timeline'].get('step_value', 1)) / session.VIDEO['framerate'])
-            else:
-                amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
-        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
+        amount = step_amount(self)
+        nudge(self, subtitles.move_start_subtitle, amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2750,13 +2806,8 @@ def move_start_back_subtitle_clicked(self):
 def move_start_forward_subtitle_clicked(self):
     """Function to move starting position of selected subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
-        amount = (1.0 / session.VIDEO['framerate'])
-        if self.step_button.isChecked():
-            if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
-                amount = (int(session.CONFIG['timeline'].get('step_value', 1)) / session.VIDEO['framerate'])
-            else:
-                amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
-        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
+        amount = step_amount(self)
+        nudge(self, subtitles.move_start_subtitle, amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2767,13 +2818,8 @@ def move_start_forward_subtitle_clicked(self):
 def move_end_back_subtitle_clicked(self):
     """Function to move ending position of selected subtitle backwards"""
     if session.SUBTITLE.get('selected', None) is not None:
-        amount = (1.0 / session.VIDEO['framerate'])
-        if self.step_button.isChecked():
-            if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
-                amount = (int(session.CONFIG['timeline'].get('step_value', 1)) / session.VIDEO['framerate'])
-            else:
-                amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
-        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=-amount)
+        amount = step_amount(self)
+        nudge(self, subtitles.move_end_subtitle, amount=-amount)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2784,13 +2830,8 @@ def move_end_back_subtitle_clicked(self):
 def move_end_forward_subtitle_clicked(self):
     """Function to move ending position of selected subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
-        amount = (1.0 / session.VIDEO['framerate'])
-        if self.step_button.isChecked():
-            if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Frames':
-                amount = (int(session.CONFIG['timeline'].get('step_value', 1)) / session.VIDEO['framerate'])
-            else:
-                amount = float(session.CONFIG['timeline'].get('step_value', 1.0))
-        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], amount=amount)
+        amount = step_amount(self)
+        nudge(self, subtitles.move_end_subtitle, amount=amount)
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)

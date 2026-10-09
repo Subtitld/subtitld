@@ -1,8 +1,10 @@
 """Vertical timeline tab: the timeline on its side, in the left panel.
 
 Clicks select and seek, drags move a subtitle or its start or end (snapping
-as the timeline does, one undo step per drag), Ctrl+wheel and the buttons
-zoom, and the view follows the playhead and the selection.
+as the timeline does, one undo step per drag), the arrow keys step the
+selected subtitle, or with Shift its start and with Ctrl its end (one undo
+step a press), Ctrl+wheel and the buttons zoom,
+and the view follows the playhead and the selection.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -16,9 +18,9 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
     os.environ[_key] = os.path.join(_xdg, _key.lower())
 SRC = Path(__file__).resolve().parents[1] / 'src'
 sys.path.insert(0, str(SRC))
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget, QPushButton
 from PySide6.QtCore import Qt, QPoint, QPointF
-from PySide6.QtGui import QWheelEvent, QColor
+from PySide6.QtGui import QAction, QWheelEvent, QColor
 import numpy as np
 from PySide6.QtTest import QTest
 app = QApplication([])
@@ -77,6 +79,8 @@ class Host(QWidget):
                                                      selected_onset=None, _request_dub_peaks=lambda path: None,
                                                      _request_dub_onsets=lambda path: None)
         self.preview_panel_player = Player()
+        self.step_button = QPushButton()
+        self.step_button.setCheckable(True)
 
 
 def reset_document():
@@ -94,7 +98,7 @@ def reset_document():
 
 session.CONFIG = {'timeline': {'snap': False}, 'default_values': {'minimum_subtitle_width': 0.5},
                   'vertical_timeline': {'zoom': 40.0}}
-session.VIDEO = {'duration': 60.0}
+session.VIDEO = {'duration': 60.0, 'framerate': 25}
 session.SPEAKERS = {'A': {'color': '#ff2e93'}, 'H': {'color': '#2e7fb8', 'hidden': True}}
 reset_document()
 
@@ -405,6 +409,147 @@ check('the position', panel.position_label.text(), '00:01:01.500')
 session.SUBTITLE['selected'] = one
 panel.update_labels()
 check('the selected subtitle\'s length', panel.selected_label.text().split()[-2], f'{one["end"] - one["start"]:.3f}')
+
+print('the arrow keys step the selected subtitle, one undo step a press')
+FRAME = 1 / 25
+reset_document()
+one, two, three, locked, hidden, far = session.SUBTITLE['segments']
+host.activateWindow()
+QTest.qWait(50)
+QTest.mouseClick(canvas, Qt.LeftButton, Qt.NoModifier, point(6.0))
+check('a click selects, and gives the canvas the keys', (session.SUBTITLE['selected'] is two, canvas.hasFocus()),
+      (True, True))
+
+
+def arrow(key, press, repeat=False, modifier=Qt.NoModifier):
+    QTest.simulateEvent(canvas, press, int(key), modifier, '', repeat, -1)
+
+
+def hold_arrow(key, repeats=0, modifier=Qt.NoModifier):
+    """Press, repeat as X11 does (a release and a press, both flagged as
+    repeats), then let go."""
+    arrow(key, True, modifier=modifier)
+    for _ in range(repeats):
+        arrow(key, False, repeat=True, modifier=modifier)
+        arrow(key, True, repeat=True, modifier=modifier)
+    arrow(key, False, modifier=modifier)
+
+
+hold_arrow(Qt.Key_Down)
+hold_arrow(Qt.Key_Down)
+check('Down: a frame later a tap', (near(two['start']), near(two['end'])), (near(5.0 + 2 * FRAME), near(7.0 + 2 * FRAME)))
+check('one undo step a tap', len(history.ALL_HISTORY), 2)
+history.history_undo()
+history.history_undo()
+two = session.SUBTITLE['segments'][1]
+session.UNSAVED = False
+arrow(Qt.Key_Down, True)
+for _ in range(10):
+    arrow(Qt.Key_Down, False, repeat=True)
+    arrow(Qt.Key_Down, True, repeat=True)
+check('held: a frame a repeat', near(two['start']), near(5.0 + 11 * FRAME))
+check('the rest are not told yet', session.UNSAVED, False)
+arrow(Qt.Key_Down, False)
+check('but once it is let go', session.UNSAVED, True)
+check('one undo step for the press', len(history.ALL_HISTORY), 1)
+history.history_undo()
+two = session.SUBTITLE['segments'][1]
+check('undone in one go', (two['start'], two['end']), (5.0, 7.0))
+
+QTest.mouseClick(canvas, Qt.LeftButton, Qt.NoModifier, point(2.0))
+one = session.SUBTITLE['selected']
+hold_arrow(Qt.Key_Up, 40)
+check('Up: earlier, but not before the start of the video', (near(one['start']), near(one['end'])), (0.0, 2.0))
+check('still one undo step', len(history.ALL_HISTORY), 1)
+hold_arrow(Qt.Key_Up)
+check('at the start, Up does nothing, and adds no step', (one['start'], len(history.ALL_HISTORY)), (0.0, 1))
+host.step_button.setChecked(True)
+session.CONFIG['timeline'] = {'step_unit': 'Seconds', 'step_value': 0.5}
+hold_arrow(Qt.Key_Down)
+check('with the step button on, the step set beside it', near(one['start']), 0.5)
+host.step_button.setChecked(False)
+session.CONFIG['timeline'] = {'snap': False}
+
+print('with Shift the arrows step the start, with Ctrl the end')
+SHIFT, CTRL = Qt.ShiftModifier, Qt.ControlModifier
+reset_document()
+one, two, three, locked, hidden, far = session.SUBTITLE['segments']
+session.SUBTITLE['selected'] = two
+hold_arrow(Qt.Key_Down, modifier=SHIFT)
+hold_arrow(Qt.Key_Up, 4, modifier=CTRL)
+check('Shift+Down: the start a frame later; Ctrl+Up held: the end five earlier',
+      (near(two['start']), near(two['end'])), (near(5.0 + FRAME), near(7.0 - 5 * FRAME)))
+check('one undo step a press', len(history.ALL_HISTORY), 2)
+history.history_undo()
+check('undoing the end', (near(session.SUBTITLE['selected']['start']), session.SUBTITLE['selected']['end']),
+      (near(5.0 + FRAME), 7.0))
+history.history_undo()
+two = session.SUBTITLE['selected']
+check('then the start', (two['start'], two['end']), (5.0, 7.0))
+hold_arrow(Qt.Key_Up, 100, modifier=CTRL)
+check('the end stops at the minimum length', (two['start'], near(two['end'])), (5.0, 5.5))
+hold_arrow(Qt.Key_Up, modifier=CTRL)
+check('and goes no further, adding no step', (near(two['end']), len(history.ALL_HISTORY)), (5.5, 1))
+history.history_undo()
+two = session.SUBTITLE['selected']
+hold_arrow(Qt.Key_Down, 100, modifier=SHIFT)
+check('so does the start', (near(two['start']), two['end']), (6.5, 7.0))
+session.SUBTITLE['selected'] = one
+hold_arrow(Qt.Key_Up, 40, modifier=SHIFT)
+check('the start stops at the start of the video', (near(one['start']), one['end']), (0.0, 3.0))
+session.SUBTITLE['selected'] = far
+host.step_button.setChecked(True)
+session.CONFIG['timeline'] = {'snap': False, 'step_unit': 'Seconds', 'step_value': 1.0}
+hold_arrow(Qt.Key_Down, 30, modifier=CTRL)
+check('and the end at its end', (far['start'], near(far['end'])), (40.0, 60.0))
+host.step_button.setChecked(False)
+
+print('and push a touching neighbour, with "move nearest" on')
+reset_document()
+one, two, three, locked, hidden, far = session.SUBTITLE['segments']
+three['start'] = 7.001
+session.CONFIG['timeline'] = {'snap': False, 'snap_move_nereast': True}
+session.SUBTITLE['selected'] = two
+hold_arrow(Qt.Key_Down, modifier=CTRL)
+check('Ctrl+Down: the next start follows the end', (near(two['end']), near(three['start'])),
+      (near(7.0 + FRAME), near(7.001 + FRAME)))
+check('in one undo step', len(history.ALL_HISTORY), 1)
+history.history_undo()
+one, two, three, locked, hidden, far = session.SUBTITLE['segments']
+check('undone together', (two['end'], three['start']), (7.0, 7.001))
+session.SUBTITLE['selected'] = three
+hold_arrow(Qt.Key_Up, 100, modifier=SHIFT)
+check('Shift+Up held: the previous end gives way, down to its minimum length',
+      (near(two['end']), near(three['start'])), (5.5, 5.501))
+check('in one undo step', len(history.ALL_HISTORY), 1)
+session.CONFIG['timeline'] = {'snap': False}
+reset_document()
+
+bar = scroll.verticalScrollBar()
+QTest.mouseClick(canvas, Qt.LeftButton, Qt.NoModifier, point(13.0))
+locked = session.SUBTITLE['selected']
+before = len(history.ALL_HISTORY)
+bar.setValue(0)
+hold_arrow(Qt.Key_Down)
+check('a locked subtitle holds still', ((locked['start'], locked['end']), len(history.ALL_HISTORY)), ((12.0, 14.0), before))
+check('and the view scrolls instead', bar.value() > 0, True)
+session.SUBTITLE['selected'] = None
+bar.setValue(0)
+hold_arrow(Qt.Key_Down)
+check('with nothing selected, the view scrolls, as before', bar.value() > 0, True)
+
+shortcut_hits = []
+down_action = QAction(host)
+down_action.setShortcut('Down')
+down_action.triggered.connect(lambda: shortcut_hits.append(1))
+host.addAction(down_action)
+hold_arrow(Qt.Key_Down)
+check('nothing selected: a shortcut on Down keeps it', len(shortcut_hits), 1)
+QTest.mouseClick(canvas, Qt.LeftButton, Qt.NoModifier, point(8.0))
+hold_arrow(Qt.Key_Down)
+check('a subtitle selected: the arrow steps it instead', (len(shortcut_hits), near(session.SUBTITLE['selected']['start'])),
+      (1, near(7.5 + FRAME)))
+host.removeAction(down_action)
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

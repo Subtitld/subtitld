@@ -7,8 +7,10 @@ the timeline's colours, follows the timeline's options (snap, grid,
 scrolling, speaker colours and tracks, onset markers) and edits as the
 timeline does: a click on a subtitle selects it, dragging it moves it,
 dragging its top or bottom edge moves its start or end, and dragging where
-two subtitles meet moves both; a click anywhere else seeks there. Ctrl+wheel
-zooms, around the pointer.
+two subtitles meet moves both; a click anywhere else seeks there. The Up and
+Down arrows step the selected subtitle earlier or later, as the nudge keys
+do, and with Shift its start, with Ctrl its end. Ctrl+wheel zooms, around the
+pointer.
 """
 
 import os
@@ -39,6 +41,8 @@ TEXT_PADDING = QMarginsF(16, 11, 14, 11)
 CLIP_WIDTH = 24         # px along a block's right side for its dub clip (at most a quarter of it)
 AUTOSCROLL_ZONE = 28    # px from the view's top or bottom that scroll a drag
 FOLLOW_DEADBAND = 2     # px of drift "follow" lets be, as the timeline does
+NUDGE_KEYS = {Qt.Key_Up: -1, Qt.Key_Down: 1}    # a step earlier or later: time runs down
+NUDGE_PARTS = {Qt.NoModifier: 'body', Qt.ShiftModifier: 'start', Qt.ControlModifier: 'end'}
 
 DEFAULT_ZOOM = 40.0     # px per second
 ZOOM_RANGE = (8.0, 400.0)
@@ -121,14 +125,37 @@ def _snap_to_grid(position, cfg):
     return position
 
 
+def limit_start(subtitle, position, push=None):
+    """How far toward `position` the subtitle's start may go: on the video,
+    the subtitle no shorter than its minimum, nor a neighbour it pushes."""
+    previous, _following = _neighbours(subtitle)
+    position = max(0.0, min(position, subtitle['end'] - _shortest(subtitle)))
+    if _pushes(push) and previous is not None and _glued(previous, subtitle):
+        # The previous one gives way, down to its own minimum.
+        position = max(position, previous['start'] + _shortest(previous) + .001)
+    return position
+
+
+def limit_end(subtitle, position, push=None):
+    """How far toward `position` the subtitle's end may go, as for a start."""
+    _previous, following = _neighbours(subtitle)
+    position = max(subtitle['start'] + _shortest(subtitle), min(position, _duration()))
+    if _pushes(push) and following is not None and _glued(subtitle, following):
+        position = min(position, following['end'] - _shortest(following) - .001)
+    return position
+
+
+def limit_move(subtitle, position):
+    """How far toward starting at `position` the whole subtitle may go: on the video."""
+    return max(0.0, min(position, _duration() - (subtitle['end'] - subtitle['start'])))
+
+
 def snap_start(subtitle, position, push=None):
     """Where dragging the subtitle's start to `position` puts it."""
     cfg = _timeline_config()
     previous, _following = _neighbours(subtitle)
     pushing = _pushes(push) and previous is not None and _glued(previous, subtitle)
-    position = max(0.0, min(position, subtitle['end'] - _shortest(subtitle)))
-    if pushing:     # the previous one gives way, down to its own minimum
-        position = max(position, previous['start'] + _shortest(previous) + .001)
+    position = limit_start(subtitle, position, push)
     if not cfg.get('snap', True):
         return position
     value = float(cfg.get('snap_value', .1) or .1)
@@ -144,9 +171,7 @@ def snap_end(subtitle, position, push=None):
     cfg = _timeline_config()
     _previous, following = _neighbours(subtitle)
     pushing = _pushes(push) and following is not None and _glued(subtitle, following)
-    position = max(subtitle['start'] + _shortest(subtitle), min(position, _duration()))
-    if pushing:
-        position = min(position, following['end'] - _shortest(following) - .001)
+    position = limit_end(subtitle, position, push)
     if not cfg.get('snap', True):
         return position
     value = float(cfg.get('snap_value', .1) or .1)
@@ -161,7 +186,7 @@ def snap_move(subtitle, position):
     """Where dragging the whole subtitle to start at `position` puts it."""
     cfg = _timeline_config()
     length = subtitle['end'] - subtitle['start']
-    position = max(0.0, min(position, _duration() - length))
+    position = limit_move(subtitle, position)
     if not cfg.get('snap', True):
         return position
     previous, following = _neighbours(subtitle)
@@ -257,6 +282,7 @@ class VerticalTimeline(QWidget):
         self.push = None            # a drag where two subtitles meet moves both
         self.recorded = False       # this drag has its undo step
         self.moved = False
+        self.nudged = False         # the arrow keys moved the selection, still held
         self.hover = None           # (id(subtitle), zone) under the pointer
         self.tug = None             # (earlier, later) meeting under the pointer
         self.last_pointer_y = None
@@ -1151,6 +1177,69 @@ class VerticalTimeline(QWidget):
             event.accept()
             return
         self.scroll.wheelEvent(event)       # the scroll area scrolls
+
+    # -- keys ------------------------------------------------------------------
+
+    def nudge_target(self, event):
+        """What an arrow key steps: the selected subtitle (unless it is
+        locked or a drag is on), and the part its modifier names — the
+        whole of it, its start (Shift) or its end (Ctrl). None for any
+        other key."""
+        part = NUDGE_PARTS.get(event.modifiers() & ~Qt.KeypadModifier)
+        if event.key() not in NUDGE_KEYS or part is None:
+            return None
+        selected = session.SUBTITLE.get('selected')
+        if not selected or selected.get('locked') or self.mode is not None:
+            return None
+        return selected, part
+
+    def event(self, event):
+        if event.type() == QEvent.ShortcutOverride and self.nudge_target(event) is not None:
+            event.accept()      # the arrows step the selection here, over any shortcut on them
+            return True
+        return super().event(event)
+
+    def keyPressEvent(self, event):
+        target = self.nudge_target(event)
+        if target is None:
+            super().keyPressEvent(event)        # the scroll area scrolls
+            return
+        from subtitld.interface import playercontrols
+        subtitle, part = target
+        direction = NUDGE_KEYS[event.key()]
+        step = playercontrols.step_amount(self.window_ref)
+        current = subtitle['end'] if part == 'end' else subtitle['start']
+        limit = {'body': limit_move, 'start': limit_start, 'end': limit_end}[part]
+        # A step this way, or what the drags' limits leave of one. Unlike a
+        # drag it does not snap: it is a step, as the nudge keys take.
+        moved = min(step, (limit(subtitle, current + direction * step) - current) * direction)
+        if moved > 1e-6:
+            position = current + direction * moved
+            # One undo step a press: the key's repeats add to it.
+            playercontrols.nudge(self.window_ref, lambda selected_subtitle, record:
+                                 _move(part, selected_subtitle, position, record))
+            self.nudged = True
+            self.scroll.ensure_time_visible(subtitle['start'], subtitle['end'])
+            self.update()
+            timeline = self.timeline()
+            if timeline is not None:
+                timeline.update()
+        event.accept()
+
+    def keyReleaseEvent(self, event):
+        if not event.isAutoRepeat():
+            self.finish_nudge()
+        super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event):
+        self.finish_nudge()     # the key may be let go elsewhere
+        super().focusOutEvent(event)
+
+    def finish_nudge(self):
+        """The arrow is let go: the rest are told once, as at the end of a drag."""
+        if self.nudged:
+            self.nudged = False
+            _subtitles_changed(self.window_ref)
 
     def seek_to(self, seconds):
         seconds = max(0.0, min(_duration(), seconds))
