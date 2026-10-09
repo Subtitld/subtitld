@@ -1145,15 +1145,33 @@ class SoundDeviceAudioEngine:
         # so the very first audio block already exists when the device
         # asks for it (instead of being filled during the first
         # callback, which is the most jitter-prone one).
-        self.stream = sd.OutputStream(
-            samplerate=self.samplerate,
-            blocksize=self.blocksize,
-            channels=2,
-            dtype='float32',
-            latency='high',
-            prime_output_buffers_using_stream_callback=True,
-            callback=self._callback,
-        )
+        self.stream = None
+        self._no_output_logged = False
+        self._open_stream()
+
+    def _open_stream(self):
+        """Open the output stream. With no output device (no sound card,
+        PipeWire/PulseAudio not running, a headless box) PortAudio
+        raises; that must not stop the app from starting. Log it once,
+        leave ``self.stream`` None, and let ``play()`` try again: the
+        engine still mixes and renders, playback is just silent."""
+        try:
+            self.stream = sd.OutputStream(
+                samplerate=self.samplerate,
+                blocksize=self.blocksize,
+                channels=2,
+                dtype='float32',
+                latency='high',
+                prime_output_buffers_using_stream_callback=True,
+                callback=self._callback,
+            )
+        except sd.PortAudioError as exc:
+            self.stream = None
+            if not self._no_output_logged:
+                self._no_output_logged = True
+                sys.stderr.write(f'[audioengine] WARNING: no audio output device, playback is silent ({exc})\n')
+                sys.stderr.flush()
+        return self.stream is not None
 
     @property
     def playhead(self):
@@ -1388,6 +1406,10 @@ class SoundDeviceAudioEngine:
             sys.stderr.flush()
 
     def play(self, position=0.0):
+        if self.stream is None and not self._open_stream():
+            # Still no output device: nothing to play to. The video
+            # plays on regardless; only the engine's audio is missing.
+            return
         if not self.playing:
             # Cyclic GC is the dominant cause of audio underruns in projects
             # with hundreds of dubs: each scan of the object graph blocks for
@@ -1652,7 +1674,8 @@ class SoundDeviceAudioEngine:
     def shutdown(self):
         """Cleanly shut down the engine and all clip prefetch threads."""
         self.stop()
-        self.stream.close()
+        if self.stream is not None:
+            self.stream.close()
         # Stop the mixer thread before clips' shutdown — clips clear
         # cached source data, so a still-running mixer would race the
         # teardown.

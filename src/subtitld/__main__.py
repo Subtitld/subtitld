@@ -102,8 +102,18 @@ class Window(_MainWindowBase):
         self.setCentralWidget(self.central_widget)
 
         startscreen.load(self)
-        productionscreen.load(self)
-        
+        try:
+            productionscreen.load(self)
+        except BaseException:
+            # The add-ons panel is built first and starts its catalog fetch
+            # at once. If a later panel fails, this half-built window is
+            # destroyed with that QThread still running, and Qt aborts the
+            # process over it, burying the real traceback: stop it first.
+            addons_panel = getattr(self, 'left_panel_global_addons_panel', None)
+            if addons_panel is not None:
+                addons_panel.shutdown()
+            raise
+
         shortcuts.load(self, session.CONFIG['shortcuts'])
 
         self.titleBar.raise_()
