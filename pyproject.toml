@@ -36,14 +36,15 @@ dependencies = [
     "python-i18n",
     "python-docx",
     "pycaption",
+    # Imported directly by file_io and usf; it used to arrive only through
+    # pycaption.
+    "beautifulsoup4",
     "chardet==6.0.0",
     "pysubs2",
-    "translate",
     "autohex",
     "platformdirs",
     # Trusted CAs for urllib downloads in frozen builds (modules/net.py).
     "certifi",
-    "psutil",
     # Imported directly by the audio, recording and timeline code. It used to
     # arrive only through other packages (pywhispercpp among them).
     "numpy",
@@ -62,11 +63,10 @@ dependencies = [
 # features via e.g. `pip install subtitld[translate]`. Speech-to-text engines
 # are add-ons (installed from the Add-ons panel), not extras.
 [project.optional-dependencies]
-translate = ["translate", "deep_translator"]
+translate = ["deep_translator"]
 vision = ["mediapipe>=0.10.30,<0.11", "opencv-python"]
 dub = ["edge-tts", "gTTS"]
 all = [
-    "translate",
     "deep_translator",
     "mediapipe>=0.10.30,<0.11",
     "opencv-python",
