@@ -1,45 +1,78 @@
 # Maintainer: Jonatã Bolzan Loss <jbopen@gmail.com>
+#
+# CI sets pkgver, _tag and the checksum for each stable release
+# (.github/scripts/aur-build.sh); what is here is only a starting point.
 pkgname=subtitld
 pkgver=26.03.0.0
+_tag=v$pkgver
 pkgrel=1
 pkgdesc="Professional subtitle editor and dubbing application"
 arch=('any')
 url="https://subtitld.org"
 license=('GPL-3.0-or-later')
 depends=(
-    'python'
-    'pyside6'
-    'python-pycaption'
-    'python-pysubs2'
-    'python-chardet'
-    'python-platformdirs'
-    'python-psutil'
-    'python-soundfile'
-    'python-i18n'
-    'python-docx'
     'ffmpeg'
+    'portaudio'
+    'pyside6'
+    'python'
+    'python-autohex'
+    'python-beautifulsoup4'
+    'python-certifi'
+    'python-chardet'
+    'python-deep-translator'
+    'python-docx'
+    'python-edge-tts'
+    'python-gtts'
+    'python-i18n'
+    'python-numpy'
+    'python-opencv'
+    'python-platformdirs'
+    'python-pycaption'
+    'python-pysidesix-frameless-window'
+    'python-pysubs2'
+    'python-scipy'
+    'python-sounddevice'
+    'python-soundfile'
+    # Optional for pyside6 on Arch, but the app needs them.
+    'qt6-multimedia'
+    'qt6-svg'
+    'hicolor-icon-theme'
 )
 optdepends=(
-    'python-mediapipe: speaker face detection'
-    'python-opencv: speaker face detection'
-    'python-edge-tts: dubbing with Microsoft Edge voices'
-    'python-deep-translator: translation'
+    'python-mediapipe: speaker face and mouth detection'
 )
 makedepends=(
     'python-build'
     'python-installer'
-    'python-wheel'
     'python-setuptools'
+    'python-wheel'
 )
-source=("$pkgname-$pkgver.tar.gz::https://github.com/Subtitld/subtitld/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Subtitld/subtitld/archive/refs/tags/$_tag.tar.gz")
 sha256sums=('SKIP')
 
+# GitHub drops the tag's leading "v" from the archive's top directory.
+_dir="$pkgname-${_tag#v}"
+
+prepare() {
+    cd "$_dir"
+    # The tag's sources carry a placeholder version; the build's is pkgver.
+    sed -i "s/^__version__ = .*/__version__ = '$pkgver'/" src/subtitld/__init__.py
+}
+
 build() {
-    cd "$pkgname-$pkgver"
+    cd "$_dir"
     python -m build --wheel --no-isolation
 }
 
 package() {
-    cd "$pkgname-$pkgver"
+    cd "$_dir"
     python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 flatpak/org.subtitld.Subtitld.desktop \
+        "$pkgdir/usr/share/applications/org.subtitld.Subtitld.desktop"
+    install -Dm644 flatpak/org.subtitld.Subtitld.appdata.xml \
+        "$pkgdir/usr/share/metainfo/org.subtitld.Subtitld.metainfo.xml"
+    install -Dm644 src/subtitld/graphics/subtitld.svg \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/org.subtitld.Subtitld.svg"
+    install -Dm644 src/subtitld/graphics/subtitld.png \
+        "$pkgdir/usr/share/icons/hicolor/512x512/apps/org.subtitld.Subtitld.png"
 }
