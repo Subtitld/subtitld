@@ -7,6 +7,9 @@ Name "${APPNAME}"
 OutFile "Subtitld-Setup.exe"
 InstallDir "$PROGRAMFILES64\${APPNAME}"
 RequestExecutionLevel admin
+; Rendered by packaging/branding/render-icons.py
+Icon "packaging\nsis\installer.ico"
+UninstallIcon "packaging\nsis\uninstaller.ico"
 
 Page directory
 Page instfiles

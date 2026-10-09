@@ -19,6 +19,9 @@ Writes:
     packaging/msix/tiles.svg                  the Store tiles, laid out for
     packaging/msix/assets/*.png               generate-assets.py, which this
                                               runs to render them
+    packaging/nsis/installer.ico              the Windows installer and its
+    packaging/nsis/uninstaller.ico            uninstaller: the mark with a
+                                              badge (install / remove)
 
 Usage:  python packaging/branding/render-icons.py
 
@@ -178,6 +181,64 @@ def write_small_mark(flat: str, box: tuple[float, float, float, float]) -> None:
         source.unlink()
 
 
+# The installer's icons: (size, mark width, badge diameter), as shares of the
+# icon. The badge grows as the icon shrinks, so its glyph stays legible.
+INSTALLER_LAYOUT = ((16, 0.80, 0.62), (24, 0.80, 0.58), (32, 0.80, 0.54), (48, 0.80, 0.50),
+                    (64, 0.80, 0.47), (128, 0.80, 0.44), (256, 0.80, 0.44))
+
+# A slate disc, and on it a pale arrow into a tray (install) or a red cross
+# (remove), drawn on a 100-unit disc.
+BADGE_GLYPHS = {
+    'installer': ('<g fill="none" stroke="#b8cee0" stroke-width="11" stroke-linecap="round" '
+                  'stroke-linejoin="round"><path d="M50 24V58"/><path d="M33 43 50 60 67 43"/>'
+                  '<path d="M28 74H72"/></g>'),
+    'uninstaller': ('<g fill="none" stroke="#ef5b5b" stroke-width="12" stroke-linecap="round">'
+                    '<path d="M34 34 66 66"/><path d="M66 34 34 66"/></g>'),
+}
+
+
+def write_installer_icons(defs: str, mark: str, flat: str, box: tuple[float, float, float, float]) -> None:
+    """The NSIS installer's and uninstaller's icons: the mark, up and to the
+    left, with a badge over its lower right. Each size drawn at that size;
+    from 48 px down, without the mark's soft shadow."""
+    from PIL import Image
+
+    x, y, width, _ = box
+    out_dir = ROOT / 'packaging' / 'nsis'
+    out_dir.mkdir(exist_ok=True)
+    for name, glyph in BADGE_GLYPHS.items():
+        renders = {}
+        for size, mark_share, badge_share in INSTALLER_LAYOUT:
+            scale = mark_share * size / width
+            radius = badge_share * size / 2
+            centre = size - radius - 0.02 * size
+            unit = radius / 50
+            source = HERE / f'.{name}-{size}.svg'
+            source.write_text(
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
+                f'viewBox="0 0 {size} {size}"><defs>{defs}'
+                '<linearGradient id="badgeFill" x1="0" y1="0" x2="0" y2="1">'
+                '<stop offset="0" stop-color="#3a4a58"/><stop offset="1" stop-color="#1a232b"/>'
+                '</linearGradient></defs>'
+                f'<g transform="translate({0.02 * size - x * scale:.3f},{0.04 * size - y * scale:.3f}) '
+                f'scale({scale:.5f})">{mark if size > 48 else flat}</g>'
+                f'<circle cx="{centre:.3f}" cy="{centre:.3f}" r="{radius:.3f}" fill="url(#badgeFill)" '
+                f'stroke="#0c1014" stroke-width="{3 * unit:.3f}"/>'
+                f'<g transform="translate({centre - 50 * unit:.3f},{centre - 50 * unit:.3f}) '
+                f'scale({unit:.5f})">{glyph}</g></svg>\n')
+            png = HERE / f'.{name}-{size}.png'
+            try:
+                inkscape_png(source, png, size)
+                renders[size] = Image.open(png).convert('RGBA')
+            finally:
+                source.unlink()
+                png.unlink(missing_ok=True)
+        sizes = [size for size, _, _ in INSTALLER_LAYOUT]
+        renders[max(sizes)].save(out_dir / f'{name}.ico', format='ICO', sizes=[(s, s) for s in sizes],
+                                 append_images=[renders[s] for s in sizes if s != max(sizes)])
+        print(f'packaging/nsis/{name}.ico')
+
+
 def main() -> int:
     if shutil.which('inkscape') is None:
         sys.exit('Inkscape is needed on the PATH.')
@@ -220,6 +281,7 @@ def main() -> int:
 
     print(write_watermark(outline, box).relative_to(ROOT))
     write_small_mark(flat, box)
+    write_installer_icons(defs, mark, flat, box)
     tiles = write_tiles(defs, mark, box)
     print(tiles.relative_to(ROOT))
     subprocess.run([sys.executable, str(MSIX / 'generate-assets.py'), str(tiles), '--clean'], check=True)
