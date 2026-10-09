@@ -199,8 +199,10 @@ BADGE_GLYPHS = {
 
 def write_installer_icons(defs: str, mark: str, flat: str, box: tuple[float, float, float, float]) -> None:
     """The NSIS installer's and uninstaller's icons: the mark, up and to the
-    left, with a badge over its lower right. Each size drawn at that size;
-    from 48 px down, without the mark's soft shadow."""
+    right, with a badge in the lower left, below the bar. Not the lower
+    right: Windows draws its admin shield there on the installer, which asks
+    for elevation. Each size drawn at that size; from 48 px down, without
+    the mark's soft shadow."""
     from PIL import Image
 
     x, y, width, _ = box
@@ -211,7 +213,7 @@ def write_installer_icons(defs: str, mark: str, flat: str, box: tuple[float, flo
         for size, mark_share, badge_share in INSTALLER_LAYOUT:
             scale = mark_share * size / width
             radius = badge_share * size / 2
-            centre = size - radius - 0.02 * size
+            centre_x, centre_y = radius + 0.02 * size, size - radius - 0.02 * size
             unit = radius / 50
             source = HERE / f'.{name}-{size}.svg'
             source.write_text(
@@ -220,11 +222,11 @@ def write_installer_icons(defs: str, mark: str, flat: str, box: tuple[float, flo
                 '<linearGradient id="badgeFill" x1="0" y1="0" x2="0" y2="1">'
                 '<stop offset="0" stop-color="#3a4a58"/><stop offset="1" stop-color="#1a232b"/>'
                 '</linearGradient></defs>'
-                f'<g transform="translate({0.02 * size - x * scale:.3f},{0.04 * size - y * scale:.3f}) '
+                f'<g transform="translate({0.98 * size - (x + width) * scale:.3f},{0.02 * size - y * scale:.3f}) '
                 f'scale({scale:.5f})">{mark if size > 48 else flat}</g>'
-                f'<circle cx="{centre:.3f}" cy="{centre:.3f}" r="{radius:.3f}" fill="url(#badgeFill)" '
+                f'<circle cx="{centre_x:.3f}" cy="{centre_y:.3f}" r="{radius:.3f}" fill="url(#badgeFill)" '
                 f'stroke="#0c1014" stroke-width="{3 * unit:.3f}"/>'
-                f'<g transform="translate({centre - 50 * unit:.3f},{centre - 50 * unit:.3f}) '
+                f'<g transform="translate({centre_x - 50 * unit:.3f},{centre_y - 50 * unit:.3f}) '
                 f'scale({unit:.5f})">{glyph}</g></svg>\n')
             png = HERE / f'.{name}-{size}.png'
             try:
