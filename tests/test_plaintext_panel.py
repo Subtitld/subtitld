@@ -324,7 +324,8 @@ panel.theme_combobox.activated.emit(panel.theme_combobox.currentIndex())
 check('theme remembered', session.CONFIG['plaintext_panel']['theme'], 'solarized_light')
 check('the editor takes its colours', ('rgba(253, 246, 227, 255)' in editor.styleSheet(),
                                       editor.highlighter.formats['timing'].foreground().color().name()), (True, '#268bd2'))
-panel.font_combobox.setCurrentIndex(0)
+# Another font than the current one, or nothing changes (and nothing is saved).
+panel.font_combobox.setCurrentIndex(1 if panel.font_combobox.currentIndex() == 0 else 0)
 check('font remembered', session.CONFIG['plaintext_panel']['font_family'], panel.font_combobox.currentFont().family())
 check('changing them is not an edit', (panel.pending, panel.apply_timer.isActive()), (False, False))
 session.CONFIG['plaintext_panel'].update({'font_size': 'big', 'theme': 'nope'})
