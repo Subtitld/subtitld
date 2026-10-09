@@ -36,13 +36,11 @@ foreach ($var in @('MSIX_PUBLISHER_ID', 'MSIX_PUBLISHER_CN', 'MSIX_PUBLISHER_DIS
 
 # Our canonical build version is YY.MM.DD.HHMM (e.g. 26.04.24.0340),
 # but Microsoft Store rejects MSIX packages where the revision (4th)
-# component is non-zero. Repack the date into YYYY.MMDD.HHMM.0 so each
-# field stays < 65535 and ordering is preserved across days.
+# component is non-zero. Use the date alone, YYYY.MM.DD.0: two builds
+# on the same day share a version, so only one of them can go to the
+# Store.
 $parts = $env:MSIX_VERSION.Split('.') | ForEach-Object { [int]$_ }
-$year     = 2000 + $parts[0]
-$monthDay = $parts[1] * 100 + $parts[2]
-$hhmm     = $parts[3]
-$MsixVersion = "$year.$monthDay.$hhmm.0"
+$MsixVersion = "$(2000 + $parts[0]).$($parts[1]).$($parts[2]).0"
 Write-Host "MSIX version: $env:MSIX_VERSION -> $MsixVersion"
 
 # Fresh staging dir
