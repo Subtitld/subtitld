@@ -59,6 +59,19 @@ parts:
       # option; it still falls back to PulseAudio if the pipewire socket
       # isn't accessible at runtime.
       - libpipewire-0.3-0
+    prime:
+      # Graphics drivers come from the kf6-core22 content snap (the
+      # kde-neon-6 extension points LIBGL_DRIVERS_PATH there); the copies
+      # ffmpeg's dependencies pull in are never used.
+      - -usr/lib/x86_64-linux-gnu/dri
+      - -usr/lib/x86_64-linux-gnu/vdpau
+      - -usr/lib/x86_64-linux-gnu/libLLVM*
+      - -usr/lib/x86_64-linux-gnu/libGLX_mesa*
+      - -usr/lib/x86_64-linux-gnu/libgallium*
+      - -usr/lib/x86_64-linux-gnu/libdrm_amdgpu*
+      - -usr/lib/x86_64-linux-gnu/libdrm_intel*
+      - -usr/lib/x86_64-linux-gnu/libdrm_nouveau*
+      - -usr/lib/x86_64-linux-gnu/libdrm_radeon*
     override-pull: |
       craftctl default
       craftctl set version="$(grep -oP "__version__\s*=\s*'\K[^']+" src/subtitld/__init__.py)"
@@ -66,6 +79,26 @@ parts:
       craftctl default
       # Install the package itself (with all extras) into the snap
       $CRAFT_PART_INSTALL/bin/pip install --no-compile "$CRAFT_PART_SRC"
+      # Slim it: pip installs more than the app uses.
+      SITE="$CRAFT_PART_INSTALL/lib/python3.10/site-packages"
+      # The app asks for opencv-python and mediapipe for
+      # opencv-contrib-python: pip installs both, two whole OpenCVs, each
+      # with its own Qt 5. One headless contrib build (a superset, minus
+      # the windows neither of them opens) serves both.
+      OPENCV=$($CRAFT_PART_INSTALL/bin/pip show opencv-contrib-python | awk '/^Version:/{print $2}')
+      $CRAFT_PART_INSTALL/bin/pip uninstall -y opencv-python opencv-contrib-python
+      $CRAFT_PART_INSTALL/bin/pip install --no-compile --no-deps "opencv-contrib-python-headless==$OPENCV"
+      # PySide6 comes whole. Drop the Qt modules the app never imports
+      # (WebEngine alone is 200 MB), QML, and Qt's own translations, which
+      # it does not load.
+      QT="$SITE/PySide6/Qt"
+      rm -rf "$QT/qml" "$QT/translations" "$QT/libexec/QtWebEngineProcess" "$QT"/resources/qtwebengine* \
+        "$QT"/plugins/designer "$QT"/plugins/webview "$QT"/plugins/sceneparsers "$QT"/plugins/geometryloaders \
+        "$QT"/plugins/renderers "$QT"/plugins/renderplugins "$QT"/plugins/assetimporters "$QT"/plugins/qmltooling \
+        "$QT"/plugins/imageformats/libqpdf.so
+      for module in WebEngine Pdf 3D Quick3D Designer WebView Graphs DataVisualization; do
+        rm -f "$QT"/lib/libQt6"$module"*.so* "$SITE"/PySide6/Qt"$module"*
+      done
       # Ship a minimal self-contained alsa.conf that routes the
       # default PCM through PulseAudio. The stock alsa.conf in
       # core22 loads its real definitions from
