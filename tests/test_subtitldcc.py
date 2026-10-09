@@ -124,8 +124,12 @@ class FakeClient:
         return DOWNLOADED
 
     def asset(self, share_id):
-        return {**RESULT, 'permissions': {'can_edit': True, 'can_share': True, 'can_rate': False},
+        return {**RESULT, 'permissions': {'can_edit': True, 'can_share': True, 'can_rate': False,
+                                          'can_delete': True},
                 'my_rating': None}
+
+    def delete(self, share_id):
+        calls.append(('delete', share_id))
 
     def check(self, name, data, target=None):
         calls.append(('check', name, target, data))
@@ -283,6 +287,22 @@ flow.next_button.click()  # Done
 app.processEvents()
 check('back to the card', (panel._flow, panel.publish_buttons.isVisibleTo(host)), (None, True))
 check('the editor now holds version 3', service.origin(), {'share_id': 'Xk3pQ9aZ2bT', 'version': 3})
+
+print('deleting it from subtitld.cc asks first, and keeps the subtitles in the editor')
+wait(lambda: panel._origin_info and 'permissions' in panel._origin_info)
+panel._render_origin()
+check('offered to its owner', panel.delete_button.isVisibleTo(host), True)
+calls.clear()
+panel.delete_button.click()
+check('asks in place', (panel.delete_confirm.isVisibleTo(host), 'Sintel (2010)' in panel.delete_confirm.text.text()),
+      (True, True))
+check('nothing deleted yet', calls, [])
+panel.delete_confirm.yes.click()
+check('deleted', wait(lambda: ('delete', 'Xk3pQ9aZ2bT') in calls), True)
+check('the editor forgets the link, keeps the text', wait(lambda: service.origin() is None), True)
+check('still there', [s['text'] for s in session.SUBTITLE['segments']][:1], ['Primeira, editada'])
+check('says so', 'deleted from subtitld.cc' in panel.message.text(), True)
+check('the card goes away', panel.origin_card.isVisibleTo(host), False)
 
 print('disconnecting asks in the card first')
 panel.disconnect_button.click()

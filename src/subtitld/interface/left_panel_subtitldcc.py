@@ -152,9 +152,12 @@ class Confirm(QWidget):
         self._action = None
         self.hide()
 
-    def ask(self, text, action_label, action):
+    def ask(self, text, action_label, action, danger=False):
         self.text.setText(text)
         self.yes.setText(action_label)
+        self.yes.setProperty('class', 'danger' if danger else 'primary')
+        self.yes.style().unpolish(self.yes)
+        self.yes.style().polish(self.yes)
         self._action = action
         self.show()
 
@@ -409,7 +412,11 @@ class SubtitldccPanel(QWidget):
         self.works_button.clicked.connect(self.confirm_works)
         self.origin_page_button = _button(small=True)
         self.origin_page_button.clicked.connect(self._open_origin_page)
-        layout.addWidget(_row(self.works_button, self.origin_page_button))
+        self.delete_button = _button(small=True)
+        self.delete_button.clicked.connect(self._ask_delete)
+        layout.addWidget(_row(self.works_button, self.origin_page_button, self.delete_button))
+        self.delete_confirm = Confirm()
+        layout.addWidget(self.delete_confirm)
         self.cards.addWidget(card)
 
     def _render_origin(self):
@@ -434,6 +441,7 @@ class SubtitldccPanel(QWidget):
         for index, star in enumerate(self.stars):
             star.setChecked(index < mine)
         self.works_button.setVisible(bool(info) and service.is_connected() and bool(session.VIDEO.get('filepath')))
+        self.delete_button.setVisible(service.is_connected() and bool(permissions.get('can_delete')))
 
     def _load_origin(self):
         origin = service.origin()
@@ -471,6 +479,42 @@ class SubtitldccPanel(QWidget):
         if origin:
             path = origin['share_id'] + (f"/v{origin['version']}" if origin.get('version') else '')
             QDesktopServices.openUrl(QUrl(service.site_url(path)))
+
+    def _ask_delete(self):
+        title = (self._origin_info or {}).get('title') or (service.origin() or {}).get('share_id', '')
+        self.delete_confirm.ask(_('subtitldcc.delete_question').format(title=title), _('subtitldcc.delete'),
+                                self._delete_origin, danger=True)
+
+    def _delete_origin(self):
+        """Delete the subtitle the editor came from, on subtitld.cc. The subtitles in the editor stay; they
+        just stop being linked to it."""
+        origin = service.origin()
+        if not origin:
+            return
+        share_id = origin['share_id']
+        title = (self._origin_info or {}).get('title') or share_id
+        self.delete_button.setEnabled(False)
+
+        def done(_answer=None):
+            self.delete_button.setEnabled(True)
+            if (service.origin() or {}).get('share_id') == share_id:
+                session.SUBTITLE.pop('origin', None)
+                session.set_unsaved(True)  # saving the project forgets the link too
+            self._origin_info = None
+            self._render_origin()
+            self._render_publish()
+            if self._video and session.VIDEO.get('filepath'):
+                self._run_lookup()
+            self.show_message(_('subtitldcc.deleted').format(title=title))
+
+        def failed(error):
+            if service.error_code(error) == 'not_found':  # already gone (a request repeated after a timeout)
+                done()
+                return
+            self.delete_button.setEnabled(True)
+            self._failed(error)
+
+        service.call(lambda: service.client().delete(share_id), done, failed)
 
     def rate(self, stars):
         origin = service.origin()
@@ -877,6 +921,8 @@ class SubtitldccPanel(QWidget):
         self.works_button.setText(_('subtitldcc.works'))
         self.works_button.setToolTip(_('subtitldcc.works_tip'))
         self.origin_page_button.setText(_('subtitldcc.page'))
+        self.delete_button.setText(_('subtitldcc.delete'))
+        self.delete_button.setToolTip(_('subtitldcc.delete_tip'))
         self.video_title.setText(_('subtitldcc.for_this_video'))
         self.lookup_button.setText(_('subtitldcc.look_up'))
         self.auto_lookup.setText(_('subtitldcc.auto_lookup'))

@@ -556,5 +556,9 @@
     "subtitldcc.error_access_denied": "A conexão foi cancelada no navegador.",
     "subtitldcc.error_expired_token": "O código expirou. Tente de novo.",
     "subtitldcc.error_state_mismatch": "A conexão falhou. Tente de novo.",
-    "subtitldcc.published_next": "Para enviar alterações depois, edite as legendas e use “Publicar nova versão” neste cartão. Salve o projeto para manter este vínculo com o subtitld.cc."
+    "subtitldcc.published_next": "Para enviar alterações depois, edite as legendas e use “Publicar nova versão” neste cartão. Salve o projeto para manter este vínculo com o subtitld.cc.",
+    "subtitldcc.delete": "Excluir",
+    "subtitldcc.delete_tip": "Excluí-la do subtitld.cc",
+    "subtitldcc.delete_question": "Excluir “{title}” do subtitld.cc? A página, todas as versões e os downloads são removidos para todos, e isso não pode ser desfeito. As legendas do editor continuam aqui.",
+    "subtitldcc.deleted": "“{title}” foi excluída do subtitld.cc. As legendas do editor continuam aqui."
 }

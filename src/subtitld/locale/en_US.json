@@ -668,5 +668,9 @@
     "subtitldcc.error_access_denied": "Connecting was canceled in the browser.",
     "subtitldcc.error_expired_token": "The code expired. Try again.",
     "subtitldcc.error_state_mismatch": "Connecting failed. Try again.",
-    "subtitldcc.published_next": "To send changes later, edit the subtitles and use “Publish new version” in this card. Save the project to keep this link to subtitld.cc."
+    "subtitldcc.published_next": "To send changes later, edit the subtitles and use “Publish new version” in this card. Save the project to keep this link to subtitld.cc.",
+    "subtitldcc.delete": "Delete",
+    "subtitldcc.delete_tip": "Delete it from subtitld.cc",
+    "subtitldcc.delete_question": "Delete “{title}” from subtitld.cc? Its page, all its versions and the downloads are removed for everyone, and this can't be undone. The subtitles in the editor stay.",
+    "subtitldcc.deleted": "“{title}” was deleted from subtitld.cc. The subtitles in the editor are still here."
 }

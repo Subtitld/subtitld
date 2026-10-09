@@ -248,6 +248,10 @@ class Client:
         key = idempotency_key or str(uuid.uuid4())
         return self.request("POST", f"/assets/{share_id}/versions", json_body=body, idempotency_key=key)
 
+    def delete(self, share_id: str) -> None:
+        """Delete a subtitle you own: its page, every version and the downloads. Not undoable."""
+        self.request("DELETE", f"/assets/{share_id}")
+
     # --- Community -----------------------------------------------------------------------------------------
 
     def rate(self, share_id: str, stars: int, tags: list[str] | None = None, note: str = "") -> dict:
