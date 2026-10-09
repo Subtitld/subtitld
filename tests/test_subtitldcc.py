@@ -127,6 +127,19 @@ class FakeClient:
         return {**RESULT, 'permissions': {'can_edit': True, 'can_share': True, 'can_rate': False},
                 'my_rating': None}
 
+    def check(self, name, data, target=None):
+        calls.append(('check', name, target, data))
+        time.sleep(0.2)  # a slow upload: Subtitld must stay usable meanwhile
+        return {'id': 'u1', 'problems': [], 'suggestions': [], 'cue_count': 2, 'fixes': [], 'language': 'pt-BR',
+                'title_hint': 'Sintel', 'year_hint': 2010}
+
+    def discard_upload(self, upload_id):
+        calls.append(('discard', upload_id))
+
+    def new_version(self, share_id, upload_id, *, parent, changelog, kind='fix', video=None, idempotency_key=None):
+        calls.append(('new_version', share_id, parent, changelog))
+        return {'asset': {**RESULT, 'version': 3}, 'version': 3}
+
 
 service.client = lambda token=None: FakeClient()
 
@@ -186,9 +199,22 @@ check('setting kept', service.settings()['auto_lookup'], False)
 panel.auto_lookup.setChecked(True)
 wait(lambda: panel._lookup_call is None and panel._matches is not None)
 
-print('opening a subtitle replaces the editor\'s and remembers where it came from')
+print('opening over subtitles in the editor asks first, in the row (never a dialog)')
+session.SUBTITLE['segments'] = [{'start': 0.0, 'end': 1.0, 'text': 'mine', 'speaker': 'A'}]
+calls.clear()
 rows = [panel.video_results.itemAt(i).widget() for i in range(panel.video_results.count())]
 rows[0].open_button.click()
+app.processEvents()
+check('asks in the row', (rows[0].confirm.isVisibleTo(host), 'Sintel (2010)' in rows[0].confirm.text.text()),
+      (True, True))
+check('nothing downloaded yet', calls, [])
+rows[0].confirm.no.click()
+check('cancel keeps the editor', (rows[0].confirm.isVisibleTo(host), session.SUBTITLE['segments'][0]['text']),
+      (False, 'mine'))
+
+print('opening a subtitle replaces the editor\'s and remembers where it came from')
+rows[0].open_button.click()
+rows[0].confirm.yes.click()
 check('opened', wait(lambda: len(session.SUBTITLE.get('segments', [])) == 2), True)
 check('texts', [s['text'] for s in session.SUBTITLE['segments']], ['Primeira', 'Segunda'])
 check('origin', service.origin(), {'share_id': 'Xk3pQ9aZ2bT', 'version': 2})
@@ -224,6 +250,40 @@ check('connected', panel.disconnect_button.isVisibleTo(host), True)
 check('version offered', (panel.publish_version_button.isVisibleTo(host), panel.publish_version_button.isEnabled()),
       (True, True))
 check('text says which version', 'version 3 of “Sintel (2010)”' in panel.publish_text.text(), True)
+
+print('publishing happens in the panel, and the editor stays usable while it uploads')
+calls.clear()
+panel.publish_version_button.click()
+flow = panel._flow
+check('the steps are in the panel', (flow is not None, flow.parent() is not None,
+                                     panel.publish_buttons.isVisibleTo(host)), (True, True, False))
+check('checking in the background', (flow.check_page.isVisibleTo(host), 'keep working' in flow.check_status.text()),
+      (True, True))
+session.SUBTITLE['segments'][0]['text'] = 'Primeira, editada'  # the person keeps working meanwhile
+check('checked', wait(lambda: flow.upload is not None), True)
+check('sent the subtitles as they were', b'Primeira</text>' in calls[0][3] and calls[0][2] == 'Xk3pQ9aZ2bT', True)
+flow.next_button.click()
+check('describe: what changed', (flow.describe_page.isVisibleTo(host), flow.changelog.isVisibleTo(host)),
+      (True, True))
+flow.changelog.setText('Fixed a typo.')
+flow.next_button.click()
+check('asks, in place, about the edit made after the check', (flow.question.isVisibleTo(host),
+                                                               'changed after' in flow.question_text.text()),
+      (True, True))
+flow.question_no.click()  # "Publish as checked"
+check('published', wait(lambda: flow.published is not None), True)
+check('as the next version of what was opened', calls[-1][:3], ('new_version', 'Xk3pQ9aZ2bT', 2))
+check('the link', (flow.done_page.isVisibleTo(host), flow.done_link.text()), (True, RESULT['url']))
+flow.next_button.click()  # Done
+app.processEvents()
+check('back to the card', (panel._flow, panel.publish_buttons.isVisibleTo(host)), (None, True))
+check('the editor now holds version 3', service.origin(), {'share_id': 'Xk3pQ9aZ2bT', 'version': 3})
+
+print('disconnecting asks in the card first')
+panel.disconnect_button.click()
+check('asks in place', panel.disconnect_confirm.isVisibleTo(host), True)
+panel.disconnect_confirm.no.click()
+check('still connected', service.is_connected(), True)
 
 print('the token stops working: back to Connect')
 panel._token_expired()

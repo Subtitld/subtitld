@@ -7,9 +7,10 @@
 - **Open** a subtitle in the editor. The editor then remembers where it came from (USF ``origin``), so
   this panel can show it, let you rate it or confirm it works with your video, and publish your changes
   as its next version.
-- **Publish** the subtitles in the editor (interface/subtitldcc_publish.py).
+- **Publish** the subtitles in the editor (interface/subtitldcc_publish.py), in the panel.
 
-The network side is modules/subtitldcc_service.py; every call runs off the UI thread.
+Nothing here is a dialog: questions are asked in place and every call runs in the background
+(modules/subtitldcc_service.py), so Subtitld stays usable while subtitld.cc works.
 """
 
 from PySide6.QtCore import Qt, QUrl, QTimer, Signal
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from subtitld.interface import left_panel
-from subtitld.interface.subtitldcc_publish import PublishDialog, ask
+from subtitld.interface.subtitldcc_publish import PublishFlow
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import subtitldcc_service as service
@@ -129,6 +130,40 @@ def describe_subtitle(result):
     return ' · '.join(parts)
 
 
+class Confirm(QWidget):
+    """A question asked in place, never in a dialog: the text, Cancel, and the action."""
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('subtitldcc_problem')
+        self.setProperty('severity', 'warn')
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+        self.text = _label('subtitldcc_text')
+        layout.addWidget(self.text)
+        self.no = _button(small=True)
+        self.no.setText(_('subtitldcc.cancel'))
+        self.no.clicked.connect(self.hide)
+        self.yes = _button('primary', small=True)
+        self.yes.clicked.connect(self._accept)
+        layout.addWidget(_row(self.no, self.yes))
+        self._action = None
+        self.hide()
+
+    def ask(self, text, action_label, action):
+        self.text.setText(text)
+        self.yes.setText(action_label)
+        self._action = action
+        self.show()
+
+    def _accept(self):
+        self.hide()
+        if self._action is not None:
+            self._action()
+
+
 class ResultRow(QWidget):
     """One subtitle in a list: title, details, Open and a link to its page."""
 
@@ -171,6 +206,8 @@ class ResultRow(QWidget):
         actions.layout().addWidget(page_button)
         actions.layout().addWidget(self.open_button)
         layout.addWidget(actions)
+        self.confirm = Confirm()
+        layout.addWidget(self.confirm)
 
     def set_busy(self, busy):
         self.open_button.setEnabled(not busy)
@@ -205,6 +242,7 @@ class SubtitldccPanel(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
+        self.scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -256,6 +294,8 @@ class SubtitldccPanel(QWidget):
         self.disconnect_button.clicked.connect(self.sign_out)
         layout.addWidget(_row(self.connect_button, self.code_button, self.device_page_button,
                               self.cancel_button, self.disconnect_button))
+        self.disconnect_confirm = Confirm()
+        layout.addWidget(self.disconnect_confirm)
         self.cards.addWidget(card)
         self._device_uri = ''
 
@@ -323,9 +363,9 @@ class SubtitldccPanel(QWidget):
         QDesktopServices.openUrl(QUrl(getattr(self, '_device_full_uri', '') or self._device_uri))
 
     def sign_out(self):
-        if not ask(self.window_, _('subtitldcc.disconnect_title'), _('subtitldcc.disconnect_text'),
-                   _('subtitldcc.disconnect')):
-            return
+        self.disconnect_confirm.ask(_('subtitldcc.disconnect_text'), _('subtitldcc.disconnect'), self._sign_out)
+
+    def _sign_out(self):
         self.disconnect_button.setEnabled(False)
 
         def done(_result=None):
@@ -653,12 +693,16 @@ class SubtitldccPanel(QWidget):
     # --- Opening -----------------------------------------------------------------------------------------
 
     def open_subtitle(self, row):
-        result = row.result
+        """Open: straight away into an empty editor, after asking in the row when it has subtitles."""
         if session.SUBTITLE.get('segments'):
             key = 'subtitldcc.replace_unsaved' if session.UNSAVED else 'subtitldcc.replace_text'
-            if not ask(self.window_, _('subtitldcc.replace_title'), _(key).format(title=result.get('title', '')),
-                       _('subtitldcc.replace')):
-                return
+            row.confirm.ask(_(key).format(title=row.result.get('title', '')), _('subtitldcc.replace'),
+                            lambda: self._download(row))
+            return
+        self._download(row)
+
+    def _download(self, row):
+        result = row.result
         row.set_busy(True)
         share_id = result['share_id']
 
@@ -690,7 +734,12 @@ class SubtitldccPanel(QWidget):
         self.publish_version_button.clicked.connect(lambda: self.publish(as_version=True))
         self.publish_new_button = _button()
         self.publish_new_button.clicked.connect(lambda: self.publish(as_version=False))
-        layout.addWidget(_row(self.publish_version_button, self.publish_new_button))
+        self.publish_buttons = _row(self.publish_version_button, self.publish_new_button)
+        layout.addWidget(self.publish_buttons)
+        self.publish_flow_host = QVBoxLayout()  # the steps, while publishing (subtitldcc_publish.PublishFlow)
+        layout.addLayout(self.publish_flow_host)
+        self.publish_card = card
+        self._flow = None
         self.cards.addWidget(card)
 
     def _can_publish_version(self):
@@ -698,6 +747,11 @@ class SubtitldccPanel(QWidget):
         return bool(service.origin()) and bool((info.get('permissions') or {}).get('can_edit'))
 
     def _render_publish(self):
+        publishing = self._flow is not None
+        self.publish_text.setVisible(not publishing)
+        self.publish_buttons.setVisible(not publishing)
+        if publishing:
+            return
         connected = service.is_connected()
         has_text = bool(session.SUBTITLE.get('segments'))
         as_version = connected and self._can_publish_version()
@@ -724,20 +778,37 @@ class SubtitldccPanel(QWidget):
             self.publish_text.setText(_('subtitldcc.publish_text'))
 
     def publish(self, as_version):
+        """Start publishing, in this card. Subtitld stays usable: the steps wait for the person and the
+        calls run in the background."""
+        if self._flow is not None:
+            return
         target = None
         if as_version and self._can_publish_version():
             target = dict(self._origin_info, opened_version=(service.origin() or {}).get('version'))
-        dialog = PublishDialog(self.window_, target=target, video=self._video)
-        dialog.exec()
-        if dialog.published:
-            share_id, version = dialog.published
+        self._flow = PublishFlow(target=target, video=self._video)
+        self._flow_origin = service.origin()
+        self._flow.finished.connect(self._publish_finished)
+        self.publish_flow_host.addWidget(self._flow)
+        self._flow.show()  # added to a card already on screen: Qt would only show it on the next event
+        self._render_publish()
+        self._flow.start()
+        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.publish_card))
+
+    def _publish_finished(self, published):
+        flow, self._flow = self._flow, None
+        if flow is not None:
+            flow.hide()
+            flow.deleteLater()
+        # Remember the new origin, unless another subtitle was opened in the editor meanwhile.
+        if published and service.origin() == self._flow_origin:
+            share_id, version = published
             service.set_origin(share_id, version)
             session.set_unsaved(True)  # the origin is new: saving keeps it with the project
             self._origin_info = None
             self._load_origin()
-            self._render_publish()
             if self._video and session.VIDEO.get('filepath'):
                 self._run_lookup()  # it may be among the matches now, or a version newer
+        self._render_publish()
 
     # --- Shared ------------------------------------------------------------------------------------------
 
