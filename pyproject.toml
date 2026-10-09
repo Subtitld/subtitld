@@ -41,7 +41,6 @@ dependencies = [
     "beautifulsoup4",
     "chardet==6.0.0",
     "pysubs2",
-    "autohex",
     "platformdirs",
     # Trusted CAs for urllib downloads in frozen builds (modules/net.py).
     "certifi",

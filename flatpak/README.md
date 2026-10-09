@@ -26,7 +26,7 @@ BaseApp has it.
         --prefer-wheels scipy,opencv-python-headless,numpy --wheel-arches x86_64 \
         -o flatpak/python-modules \
         PySideSix-Frameless-Window python-i18n python-docx pycaption beautifulsoup4 \
-        chardet==6.0.0 pysubs2 autohex platformdirs certifi \
+        chardet==6.0.0 pysubs2 platformdirs certifi \
         sounddevice soundfile edge-tts gTTS scipy opencv-python-headless
 
 then remove the `numpy-*.whl` sources from the result. The list follows

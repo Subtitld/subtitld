@@ -162,20 +162,6 @@
             ]
         },
         {
-            "name": "python3-autohex",
-            "buildsystem": "simple",
-            "build-commands": [
-                "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"autohex\" --no-build-isolation"
-            ],
-            "sources": [
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/29/7c/a76be4095cebd5be4a41835afaeb1ff3ff15fe8dab83c406854d4072d18a/autohex-0.1.1-py3-none-any.whl",
-                    "sha256": "732dbd2b6a4788a15659b7542a1f1c916ca5735f8a536ab67dacb60a1d25223b"
-                }
-            ]
-        },
-        {
             "name": "python3-platformdirs",
             "buildsystem": "simple",
             "build-commands": [

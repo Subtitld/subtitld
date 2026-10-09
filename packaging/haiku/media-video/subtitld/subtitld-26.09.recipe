@@ -32,7 +32,6 @@ REQUIRES="
 	cmd:python3.10
 	cmd:ffmpeg
 	# Python dependencies
-	autohex_python310
 	beautifulsoup4_python310
 	chardet_python310
 	edge_tts_python310

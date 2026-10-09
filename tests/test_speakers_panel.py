@@ -79,6 +79,16 @@ lps.update(host)
 QTest.qWait(100)
 check('given a subtitle, B is drawn fully', cards['B'].unused_fade.isEnabled(), False)
 
+print('a speaker with no colour gets one from its name')
+check('the colours autohex gave, before it was dropped',
+      [lps._default_speaker_color(name) for name in ('A', 'B', 'Speaker 1', 'Jonatã')],
+      ['#fb2ea5', '#3198dc', '#fefa3b', '#5bd6e3'])
+session.SPEAKERS['C'] = {}
+lps.update(host)
+QTest.qWait(100)
+check('C, added without one, gets its own', session.SPEAKERS['C'].get('color'), '#f136d5')
+check('A keeps the one it had', session.SPEAKERS['A']['color'], '#ff2e93')
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -10,7 +10,6 @@ import hashlib, io, json, os, re, tarfile, urllib.request, zipfile
 
 # pypi name -> (version, haiku package name, extra REQUIRES lines)
 PKGS = [
-    ("autohex",         "0.1.1",  "autohex",         []),
     ("cssutils",        "2.15.0", "cssutils",        []),
     ("edge-tts",        "7.2.8",  "edge_tts",        ["aiohttp_$pythonPackage", "certifi_$pythonPackage", "tabulate_$pythonPackage"]),
     ("encutils",        "1.0.0",  "encutils",        []),
@@ -61,8 +60,6 @@ LICENSE_MAP = {
 # Curated text: scraped PyPI long-descriptions are full of badges and code
 # blocks, and haikuports requires DESCRIPTION to differ from SUMMARY.
 META = {
- "autohex": ("Deterministic colour codes generated from strings",
-   "Generates deterministic hexadecimal colour codes from arbitrary strings, so that the same input always maps to the same colour. Useful for giving stable colours to named items such as speakers or tags."),
  "cssutils": ("A CSS Cascading Style Sheets library for Python",
    "Parses CSS into a DOM-like object model that can be inspected and modified, then serialised back out to CSS text. It follows the W3C CSSOM specifications."),
  "edge_tts": ("Use Microsoft Edge's online text-to-speech service from Python",

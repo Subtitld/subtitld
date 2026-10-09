@@ -15,7 +15,6 @@ depends=(
     'portaudio'
     'pyside6'
     'python'
-    'python-autohex'
     'python-beautifulsoup4'
     'python-certifi'
     'python-chardet'

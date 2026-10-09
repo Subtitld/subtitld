@@ -1,3 +1,5 @@
+import colorsys
+import hashlib
 import logging
 
 import cv2
@@ -6,7 +8,6 @@ try:
 except Exception:  # optional: unavailable on some platforms (e.g. Haiku)
     mp = None
 import numpy as np
-from autohex import AutoHex
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QPen, QIcon
@@ -368,6 +369,23 @@ def _format_speaker_time(seconds):
     if minutes:
         return f'{minutes}min {secs}s' if secs else f'{minutes}min'
     return f'{secs}s'
+
+
+def _default_speaker_color(name):
+    """A vivid "#rrggbb" for a speaker who has no colour yet, always the
+    same for the same name.
+
+    The SHA-256 of the name picks the hue and nudges saturation (70-100%)
+    and lightness (50-65%), so no speaker comes out grey or washed out. Same
+    formula as the autohex package this replaces: speakers keep the colours
+    they had.
+    """
+    value = int(hashlib.sha256(name.encode('utf-8')).hexdigest(), 16)
+    hue = (value % 360) / 360.0
+    saturation = 0.7 + ((value >> 8) & 0xFF) / 255.0 * 0.3
+    lightness = 0.5 + ((value >> 16) & 0xFF) / 255.0 * 0.15
+    red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
+    return f'#{int(red * 255):02x}{int(green * 255):02x}{int(blue * 255):02x}'
 
 
 def _rounded_path(rect, top_left=0, top_right=0, bottom_right=0, bottom_left=0):
@@ -1565,8 +1583,7 @@ def _update_speakers_list_actual(self):
     for index, speaker_name in enumerate(current_names):
         speaker_data = session.SPEAKERS[speaker_name]
         if not speaker_data.get('color', False):
-            gen = AutoHex()
-            speaker_data['color'] = f'{gen.gen(speaker_name)}'
+            speaker_data['color'] = _default_speaker_color(speaker_name)
 
         widget = registry.get(speaker_name)
         if widget is None:
