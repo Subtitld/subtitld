@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget, QStyle
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget, QStyle
 from PySide6.QtCore import Qt, QMimeData, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
@@ -305,6 +305,11 @@ def load(self):
 
     self.left_panel_global_addons_panel = AddonsPanel()
     self.left_panel_global_tab_addons.layout().addWidget(self.left_panel_global_addons_panel)
+    # Its catalog fetch (up to 15 s on a slow network) or an install may
+    # still be running when Subtitld quits.
+    application = QApplication.instance()
+    if application is not None:
+        application.aboutToQuit.connect(self.left_panel_global_addons_panel.shutdown)
 
     # --- Subtitld Cloud tab ---
     # Account dashboard (CloudDashboardPanel) — identity, balance ring,

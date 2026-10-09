@@ -1399,7 +1399,7 @@ class AddonsPanel(QWidget):
         self._render_list()
         thread = _CatalogFetchThread(force_refresh=force)
         thread.finished_with.connect(self._on_catalog)
-        thread.finished.connect(lambda: setattr(self, '_fetch_thread', None))
+        thread.finished.connect(lambda: self._release_thread('_fetch_thread'))
         self._fetch_thread = thread
         thread.start()
 
@@ -1527,7 +1527,7 @@ class AddonsPanel(QWidget):
         thread = _InstallThread(row.catalog_entry)
         thread.progress.connect(self._on_install_progress)
         thread.done.connect(self._on_install_done)
-        thread.finished.connect(lambda: setattr(self, '_install_thread', None))
+        thread.finished.connect(lambda: self._release_thread('_install_thread'))
         self._install_thread = thread
         thread.start()
         # Re-render so all cards' Install/Update buttons disable while a
@@ -1676,9 +1676,23 @@ class AddonsPanel(QWidget):
         self._render_list()
 
     # -- Teardown ----------------------------------------------------------
+    def _release_thread(self, attr: str):
+        """Slot for a worker's own QThread.finished: drop `self.<attr>`.
+        The signal comes while the worker's thread is still returning, and
+        destroying a QThread before it has returned makes Qt abort the
+        process ("QThread: Destroyed while thread is still running"), so
+        wait for it first."""
+        thread = getattr(self, attr, None)
+        setattr(self, attr, None)
+        if thread is not None:
+            thread.wait()  # past run(), at most still unwinding: returns at once
+            thread.deleteLater()
+
     def shutdown(self):
-        """Drain in-flight worker threads. Called from the host on app
-        teardown so we don't leave a dangling QThread behind."""
+        """Drain in-flight worker threads. Hooked to the application's
+        aboutToQuit (see `left_panel_global.load`), and called when the
+        window fails half-way through being built, so we don't leave a
+        dangling QThread behind."""
         for attr in ('_fetch_thread', '_install_thread'):
             thread = getattr(self, attr, None)
             if thread is None:
