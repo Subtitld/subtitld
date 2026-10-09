@@ -1,0 +1,68 @@
+SUMMARY="Detect the character encoding of HTTP, XML and HTML content"
+DESCRIPTION="Determines the character encoding of text retrieved over HTTP or contained in \
+XML and HTML documents, following the encoding rules those specifications \
+define."
+HOMEPAGE="https://pypi.org/project/encutils/"
+COPYRIGHT="2026 Jason R. Coombs"
+LICENSE="GNU LGPL v3"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/28/cb/27d1c167d7b6607316c0c4ec5869b256104eb2c9607f76ef2ffa10806d3e/encutils-1.0.0-py3-none-any.whl"
+CHECKSUM_SHA256="605297da19a23d1b2da7d3b9bd75513acc979e9facf03aa7ec7ba04b5f567a79"
+SOURCE_DIR=""
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		encutils_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		# Upstream ships no setup.py (PEP 517-only) and its build backend
+		# (hatchling/flit) is not packaged for Haiku yet. This is a pure-Python
+		# wheel, which haikuporter has already unpacked, so install its contents
+		# directly - they include the .dist-info that importlib.metadata reads.
+		cp -R ./* $installLocation/
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

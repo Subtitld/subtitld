@@ -1,0 +1,67 @@
+SUMMARY="Format tabular data as plain-text tables"
+DESCRIPTION="Renders lists, dictionaries and NumPy arrays as readable plain-text tables in \
+a range of styles, including grid, pipe, rst and HTML output."
+HOMEPAGE="https://pypi.org/project/tabulate/"
+COPYRIGHT="2026 Sergey Astanin"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl"
+CHECKSUM_SHA256="f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3"
+SOURCE_DIR=""
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		tabulate_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		# Upstream ships no setup.py (PEP 517-only) and its build backend
+		# (hatchling/flit) is not packaged for Haiku yet. This is a pure-Python
+		# wheel, which haikuporter has already unpacked, so install its contents
+		# directly - they include the .dist-info that importlib.metadata reads.
+		cp -R ./* $installLocation/
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

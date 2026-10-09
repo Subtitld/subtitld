@@ -1,0 +1,69 @@
+SUMMARY="Create and update Microsoft Word .docx files from Python"
+DESCRIPTION="Creates, reads and modifies Microsoft Word .docx documents, giving \
+programmatic access to paragraphs, runs, styles, tables and inline images."
+HOMEPAGE="https://pypi.org/project/python-docx/"
+COPYRIGHT="2025 Steve Canny"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/d0/00/1e03a4989fa5795da308cd774f05b704ace555a70f9bf9d3be057b680bcf/python_docx-1.2.0-py3-none-any.whl"
+CHECKSUM_SHA256="3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7"
+SOURCE_DIR=""
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		python_docx_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		lxml_$pythonPackage
+		typing_extensions_$pythonPackage
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		# Upstream ships no setup.py (PEP 517-only) and its build backend
+		# (hatchling/flit) is not packaged for Haiku yet. This is a pure-Python
+		# wheel, which haikuporter has already unpacked, so install its contents
+		# directly - they include the .dist-info that importlib.metadata reads.
+		cp -R ./* $installLocation/
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

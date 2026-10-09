@@ -1,0 +1,69 @@
+SUMMARY="Read, write and convert caption and subtitle formats"
+DESCRIPTION="Reads and writes caption and subtitle formats including SRT, WebVTT, DFXP/TTML \
+and SAMI, and converts between them while preserving timing and styling where \
+the formats allow."
+HOMEPAGE="https://pypi.org/project/pycaption/"
+COPYRIGHT="2026 Joe Norton"
+LICENSE="Apache v2"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/25/97/af65fd767ea5c12ee30dbfb722b98db7ac02182b32f65a317c5cb343591d/pycaption-2.3.9.tar.gz"
+CHECKSUM_SHA256="63067362ad31cdfcd46f218b6298276231c2cddad9437b05eea5d0dde49ace0c"
+SOURCE_DIR="pycaption-2.3.9"
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		pycaption_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		beautifulsoup4_$pythonPackage
+		lxml_$pythonPackage
+		cssutils_$pythonPackage
+		python_i18n_$pythonPackage
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		$python setup.py build install \
+			--root=/ --prefix=$prefix
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

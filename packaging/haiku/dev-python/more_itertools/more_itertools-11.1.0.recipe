@@ -1,0 +1,65 @@
+SUMMARY="Additional building blocks for working with Python iterables"
+DESCRIPTION="A collection of routines for working with iterables that complements the \
+standard library itertools module, covering grouping, windowing, chunking and \
+related operations."
+HOMEPAGE="https://pypi.org/project/more-itertools/"
+COPYRIGHT="2026 Erik Rose"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/de/1d/f4da6f02cdffe04d6362210b807146a26044c88d839208aec273bb0d9184/more_itertools-11.1.0.tar.gz"
+CHECKSUM_SHA256="48e8f4d9e7e5878571ecf6f2b4e57634f93cd474cc8cfbd2376f2d11b396e30d"
+SOURCE_DIR="more_itertools-11.1.0"
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		more_itertools_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		$python setup.py build install \
+			--root=/ --prefix=$prefix
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

@@ -1,0 +1,70 @@
+SUMMARY="Python interface to Google Translate's text-to-speech API"
+DESCRIPTION="Provides a library and command line tool that turn text into spoken audio \
+using Google Translate's text-to-speech service, writing the result to a file \
+or stream."
+HOMEPAGE="https://pypi.org/project/gTTS/"
+COPYRIGHT="2024 Pierre Nicolas Durette"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/e3/6c/8b8b1fdcaee7e268536f1bb00183a5894627726b54a9ddc6fc9909888447/gTTS-2.5.4-py3-none-any.whl"
+CHECKSUM_SHA256="5dd579377f9f5546893bc26315ab1f846933dc27a054764b168f141065ca8436"
+SOURCE_DIR=""
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		gtts_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		requests_$pythonPackage
+		click_$pythonPackage
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		# Upstream ships no setup.py (PEP 517-only) and its build backend
+		# (hatchling/flit) is not packaged for Haiku yet. This is a pure-Python
+		# wheel, which haikuporter has already unpacked, so install its contents
+		# directly - they include the .dist-info that importlib.metadata reads.
+		cp -R ./* $installLocation/
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

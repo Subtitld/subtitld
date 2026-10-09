@@ -1,0 +1,68 @@
+SUMMARY="Load, edit and save subtitle files in several formats"
+DESCRIPTION="A library and command line tool for loading, editing and saving subtitle files \
+in the SubStation Alpha, SubRip, WebVTT and MicroDVD formats, including \
+retiming and format conversion."
+HOMEPAGE="https://pypi.org/project/pysubs2/"
+COPYRIGHT="2026 Tomas Karabela"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/0b/bb/0dc8b9a38609701ca3f107dc516300b317641bed9b2ef1c964a9ad37ae9e/pysubs2-1.8.1-py3-none-any.whl"
+CHECKSUM_SHA256="eb5d8872b7f87208070dd6f0d85fc110b7ad6cc2a7ec422f5b12363e9194e4e4"
+SOURCE_DIR=""
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	eval "PROVIDES_$pythonPackage=\"
+		pysubs2_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		\""
+
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		# Upstream ships no setup.py (PEP 517-only) and its build backend
+		# (hatchling/flit) is not packaged for Haiku yet. This is a pure-Python
+		# wheel, which haikuporter has already unpacked, so install its contents
+		# directly - they include the .dist-info that importlib.metadata reads.
+		cp -R ./* $installLocation/
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

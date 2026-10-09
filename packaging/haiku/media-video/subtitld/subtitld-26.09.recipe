@@ -1,0 +1,100 @@
+SUMMARY="A subtitle editor"
+DESCRIPTION="Subtitld is a free and open source software to create, edit, \
+transcribe and translate subtitles. It offers a timeline with an audio \
+waveform, a video preview, speaker management, automatic transcription and \
+translation, and import/export for the common subtitle formats."
+HOMEPAGE="https://subtitld.org"
+COPYRIGHT="2020-2026 Jonatã Bolzan Loss"
+LICENSE="GNU GPL v3"
+REVISION="1"
+SOURCE_URI="https://github.com/Subtitld/subtitld/archive/refs/tags/$portVersion.tar.gz"
+CHECKSUM_SHA256="0000000000000000000000000000000000000000000000000000000000000000"
+SOURCE_DIR="subtitld-$portVersion"
+
+# pyside6 is x86_64-only on Haiku, so the app follows it.
+ARCHITECTURES="x86_64"
+
+PROVIDES="
+	subtitld = $portVersion
+	app:Subtitld = $portVersion
+	cmd:subtitld = $portVersion
+	"
+REQUIRES="
+	haiku
+	pyside6
+	# Optional for pyside6 on Haiku, but the preview panel needs it.
+	lib:libQt6Multimedia
+	lib:libQt6MultimediaWidgets
+	cmd:python3.10
+	cmd:ffmpeg
+	# Python dependencies
+	autohex_python310
+	beautifulsoup4_python310
+	chardet_python310
+	deep_translator_python310
+	edge_tts_python310
+	gtts_python310
+	lxml_python310
+	numpy_python310
+	opencv_python3.10
+	platformdirs_python310
+	pycaption_python310
+	pysubs2_python310
+	python_docx_python310
+	python_i18n_python310
+	requests_python310
+	scipy_python310
+	sounddevice_python310
+	soundfile_python310
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	setuptools_python310
+	"
+BUILD_PREREQUIRES="
+	cmd:python3.10
+	"
+
+BUILD()
+{
+	# The tag's sources carry a placeholder version; the package's is this one.
+	sed -i "s/^__version__ = .*/__version__ = '$portVersion'/" src/subtitld/__init__.py
+
+	# Upstream ships only a pyproject.toml. Its build backend is setuptools,
+	# which is packaged, so a shim setup.py avoids needing pip here.
+	if [ ! -f setup.py ]; then
+		echo "from setuptools import setup; setup()" > setup.py
+	fi
+}
+
+INSTALL()
+{
+	python=python3.10
+	installLocation=$prefix/lib/$python/vendor-packages
+	export PYTHONPATH=$installLocation:$PYTHONPATH
+	mkdir -p $installLocation
+
+	$python setup.py build install --root=/ --prefix=$prefix
+
+	# GUI apps live in the apps directory and are launched from Deskbar.
+	mkdir -p $appsDir/Subtitld
+	cat > $appsDir/Subtitld/Subtitld <<EOF
+#!/bin/sh
+exec $prefix/bin/subtitld "\$@"
+EOF
+	chmod +x $appsDir/Subtitld/Subtitld
+
+	addAppDeskbarSymlink $appsDir/Subtitld/Subtitld Subtitld
+}
+
+TEST()
+{
+	# Import the UI modules headlessly; this catches missing dependencies
+	# without needing app_server.
+	QT_QPA_PLATFORM=offscreen python3.10 -c "
+from subtitld.interface import startscreen, productionscreen, top_bar
+from subtitld.modules import audioengine, file_io
+print('subtitld imports OK')
+"
+}
