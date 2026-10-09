@@ -1,4 +1,13 @@
-name: Build & Release
+name: Release
+
+# Builds everything (build.yml), then publishes it.
+#
+#   channel=stable  →  a tag push (refs/tags/v*)
+#   channel=beta    →  a push whose commit subject ends with "(build)"
+#   channel=<input> →  run by hand with a channel chosen
+#
+# Any other push stops at the first, few-seconds job. To build without
+# publishing, run build.yml instead.
 
 on:
   push:
@@ -9,312 +18,62 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Publish channel (overrides commit-message detection)'
-        required: false
-        default: ''
+        description: Publish channel
+        required: true
         type: choice
         options:
-          - ''
           - beta
           - stable
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+
 env:
-  PYTHON_VERSION: '3.11'
-  # MSStore publisher identity (public values — safe in repo)
-  MSIX_PUBLISHER_ID: '62905jonata.org.subtitld'
-  MSIX_PUBLISHER_CN: 'CN=BED8C990-8289-49D1-B2A9-438CB5220AAF'
-  MSIX_PUBLISHER_DISPLAY: 'jonata.org'
   MSSTORE_SELLER_ID: '80111150'
   MSSTORE_APP_ID: '9MXLZSL8JPQH'
 
 jobs:
-  # ────────────────────────────────────────────────────────────────
-  # prep — extract version + resolve publish channel
-  # ────────────────────────────────────────────────────────────────
-  #   channel=stable  →  tag push (refs/tags/v*)
-  #   channel=beta    →  commit subject ends with "(build)" on any branch
-  #   channel=<input> →  workflow_dispatch override
-  #   channel=""      →  no publish; all build jobs skip
-  prep:
+  channel:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
       channel: ${{ steps.channel.outputs.channel }}
     steps:
-      - uses: actions/checkout@v4
-      - id: version
-        # Date-based version (UTC, YY.MM.DD.HHMM) is the single source of
-        # truth for every build — tag names are free-form labels.
-        run: |
-          v=$(date -u +'%y.%m.%d.%H%M')
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "Computed version: $v"
       - id: channel
         env:
           HEAD_MSG: ${{ github.event.head_commit.message }}
-          DISPATCH_CHANNEL: ${{ github.event.inputs.channel }}
+          DISPATCH_CHANNEL: ${{ inputs.channel }}
         run: |
           if [ -n "$DISPATCH_CHANNEL" ]; then
             channel="$DISPATCH_CHANNEL"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            channel="stable"
+            channel=stable
           elif printf '%s' "$HEAD_MSG" | head -n 1 | grep -qE '\(build\)[[:space:]]*$'; then
-            channel="beta"
+            channel=beta
           else
-            channel=""
+            channel=
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "Resolved channel: '${channel:-<none>}'"
+          echo "Channel: '${channel:-<none, nothing to publish>}'"
 
-  # ────────────────────────────────────────────────────────────────
-  # Linux: AppImage
-  # ────────────────────────────────────────────────────────────────
-  build-appimage:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: ubuntu-22.04
-    env:
-      VERSION: ${{ needs.prep.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Apply version
-        run: python .github/scripts/inject-version.py "$VERSION"
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg libpulse0 libportaudio2 libsndfile1 wget file
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install .
-      - name: Build AppImage
-        run: bash build-appimage.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: appimage
-          path: Subtitld-*.AppImage
+  build:
+    needs: channel
+    if: needs.channel.outputs.channel != ''
+    uses: ./.github/workflows/build.yml
 
-  # ────────────────────────────────────────────────────────────────
-  # Linux: Snap
-  # ────────────────────────────────────────────────────────────────
-  build-snap:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: ubuntu-22.04
-    env:
-      VERSION: ${{ needs.prep.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Apply version
-        run: python3 .github/scripts/inject-version.py "$VERSION"
-      - uses: snapcore/action-build@v1
-        id: snapcraft
-      - uses: actions/upload-artifact@v4
-        with:
-          name: snap
-          path: ${{ steps.snapcraft.outputs.snap }}
-
-  # ────────────────────────────────────────────────────────────────
-  # Linux: Flatpak
-  # ────────────────────────────────────────────────────────────────
-  build-flatpak:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: ubuntu-22.04
-    container:
-      image: bilelmoussaoui/flatpak-github-actions:kde-6.7
-      options: --privileged
-    env:
-      VERSION: ${{ needs.prep.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Apply version
-        run: python3 .github/scripts/inject-version.py "$VERSION"
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: subtitld-${{ needs.prep.outputs.version }}.flatpak
-          manifest-path: flatpak/org.subtitld.Subtitld.yml
-          cache-key: flatpak-builder-${{ github.sha }}
-
-  # ────────────────────────────────────────────────────────────────
-  # Linux: AUR PKGBUILD validation
-  # ────────────────────────────────────────────────────────────────
-  validate-aur:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: ubuntu-22.04
-    container:
-      image: archlinux:latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install tooling
-        run: pacman -Sy --noconfirm base-devel namcap sudo
-      - name: Create build user (makepkg refuses to run as root)
-        run: |
-          useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-      - name: Lint PKGBUILD with namcap
-        run: namcap packaging/aur/PKGBUILD || true
-      - name: Verify .SRCINFO matches PKGBUILD
-        run: |
-          cd packaging/aur
-          chown -R builder:builder .
-          sudo -u builder makepkg --printsrcinfo > .SRCINFO.generated
-          if ! diff -q .SRCINFO .SRCINFO.generated; then
-            echo "::error::.SRCINFO is out of date. Regenerate with: makepkg --printsrcinfo > .SRCINFO"
-            diff .SRCINFO .SRCINFO.generated || true
-            exit 1
-          fi
-
-  # ────────────────────────────────────────────────────────────────
-  # Windows: NSIS standalone installer
-  # ────────────────────────────────────────────────────────────────
-  build-windows-nsis:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: windows-latest
-    env:
-      VERSION: ${{ needs.prep.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Apply version
-        run: python .github/scripts/inject-version.py "$env:VERSION"
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install .
-      - name: Install NSIS
-        run: choco install nsis -y
-      - name: Build with PyInstaller
-        run: pyinstaller subtitld-windows.spec --clean --noconfirm
-      - name: Build NSIS installer
-        shell: pwsh
-        run: |
-          $nsis = Get-ChildItem -Path 'C:\Program Files*','C:\ProgramData\chocolatey\lib' -Filter 'makensis.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $nsis) { throw 'makensis.exe not found after choco install nsis' }
-          Write-Host "Using makensis: $nsis"
-          & $nsis nsis-installer.nsi
-      - name: Rename artifact
-        run: |
-          Move-Item Subtitld-Setup.exe "Subtitld-$env:VERSION-Setup.exe"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-nsis
-          path: Subtitld-*-Setup.exe
-
-  # ────────────────────────────────────────────────────────────────
-  # Windows: MSIX for Microsoft Store
-  # ────────────────────────────────────────────────────────────────
-  build-windows-msix:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: windows-latest
-    env:
-      VERSION: ${{ needs.prep.outputs.version }}
-      MSIX_VERSION: ${{ needs.prep.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Apply version
-        run: python .github/scripts/inject-version.py "$env:VERSION"
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install .
-      - name: Build with PyInstaller
-        run: pyinstaller subtitld-windows.spec --clean --noconfirm
-      - name: Build MSIX
-        shell: pwsh
-        run: pwsh ./packaging/msix/build-msix.ps1
-      - name: Upload staging file list on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: msix-staging-files
-          path: msix-staging-files.txt
-          if-no-files-found: ignore
-      - name: Rename artifact
-        shell: pwsh
-        run: Move-Item Subtitld.msix "Subtitld-$env:VERSION.msix"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-msix
-          path: Subtitld-*.msix
-
-  # ────────────────────────────────────────────────────────────────
-  # macOS: .dmg
-  # ────────────────────────────────────────────────────────────────
-  build-macos-dmg:
-    if: needs.prep.outputs.channel != ''
-    needs: prep
-    runs-on: macos-latest
-    env:
-      VERSION: ${{ needs.prep.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Apply version
-        run: python .github/scripts/inject-version.py "$VERSION"
-      - name: Install system dependencies
-        run: |
-          brew install ffmpeg create-dmg
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install .
-      - name: Build with PyInstaller
-        run: pyinstaller subtitld-macos.spec --clean --noconfirm
-      - name: Create DMG
-        run: |
-          create-dmg \
-            --volname "Subtitld" \
-            --window-size 540 380 \
-            --icon-size 96 \
-            --icon "Subtitld.app" 140 190 \
-            --app-drop-link 400 190 \
-            "Subtitld-${VERSION}.dmg" \
-            "dist/Subtitld.app"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: Subtitld-*.dmg
-
-  # ────────────────────────────────────────────────────────────────
-  # Publish: user server (AppImage + NSIS) — both beta and stable
-  # ────────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # builds.subtitld.org: AppImage and Windows installer, both channels
+  # ──────────────────────────────────────────────────────────────
   publish-server:
-    if: needs.prep.outputs.channel != ''
-    needs:
-      - prep
-      - build-appimage
-      - build-windows-nsis
+    needs: [channel, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: appimage
-          path: .
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-nsis
-          path: .
+          pattern: '{appimage,windows-installer}'
+          merge-multiple: true
       - name: Upload to builds.subtitld.org
         env:
           SSHPASS: ${{ secrets.USER_PASS }}
@@ -325,50 +84,38 @@ jobs:
           sshpass -e scp -o stricthostkeychecking=no *-Setup.exe \
             subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
 
-  # ────────────────────────────────────────────────────────────────
-  # Publish: Snap Store — beta or stable channel
-  # ────────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # Snap Store: the beta or stable channel
+  # ──────────────────────────────────────────────────────────────
   publish-snap:
-    if: needs.prep.outputs.channel != ''
-    needs:
-      - prep
-      - build-snap
-    runs-on: ubuntu-22.04
+    needs: [channel, build]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: snap
-          path: .
-      - name: Resolve snap filename
-        id: snap
+      - id: snap
         run: echo "path=$(ls subtitld_*.snap | head -n1)" >> "$GITHUB_OUTPUT"
       - uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
           snap: ${{ steps.snap.outputs.path }}
-          release: ${{ needs.prep.outputs.channel }}
+          release: ${{ needs.channel.outputs.channel }}
 
-  # ────────────────────────────────────────────────────────────────
-  # Publish: Microsoft Store — stable releases only
-  # ────────────────────────────────────────────────────────────────
-  # Beta builds intentionally skip the Store: we don't have a
-  # Package Flight set up for pre-release distribution there, so
-  # the only Store submissions go to the main listing on stable.
+  # ──────────────────────────────────────────────────────────────
+  # Microsoft Store: stable only (no package flight for betas)
+  # ──────────────────────────────────────────────────────────────
   publish-msstore:
-    if: needs.prep.outputs.channel == 'stable'
-    needs:
-      - prep
-      - build-windows-msix
+    needs: [channel, build]
+    if: needs.channel.outputs.channel == 'stable'
     runs-on: windows-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: windows-msix
-          path: .
       - uses: microsoft/setup-msstore-cli@v1
       - name: Configure msstore CLI
-        shell: pwsh
         run: |
           msstore reconfigure `
             --tenantId "${{ secrets.MSSTORE_TENANT_ID }}" `
@@ -376,79 +123,87 @@ jobs:
             --clientId "${{ secrets.MSSTORE_CLIENT_ID }}" `
             --clientSecret "${{ secrets.MSSTORE_CLIENT_SECRET }}"
       - name: Publish to Microsoft Store
-        shell: pwsh
         run: |
           $msix = Get-ChildItem -Filter 'Subtitld-*.msix' | Select-Object -First 1
           msstore publish --appId $env:MSSTORE_APP_ID $msix.FullName
 
-  # ────────────────────────────────────────────────────────────────
-  # Publish: GitHub Release — stable (tag) only
-  # ────────────────────────────────────────────────────────────────
-  publish-github-release:
-    if: needs.prep.outputs.channel == 'stable'
-    needs:
-      - prep
-      - build-appimage
-      - build-snap
-      - build-flatpak
-      - validate-aur
-      - build-windows-nsis
-      - build-windows-msix
-      - build-macos-dmg
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          # Model B: tag is a free-form label, build version is the date;
-          # release title shows tag, body shows the internal version.
-          name: Subtitld ${{ github.ref_name }}
-          body: |
-            Build version: `${{ needs.prep.outputs.version }}`
-          append_body: true
-          files: artifacts/*
-          generate_release_notes: true
-
-  # ────────────────────────────────────────────────────────────────
-  # Publish: PyPI — stable (tag) only
-  # ────────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # PyPI: stable only; the wheel and sdist build.yml tested
+  # ──────────────────────────────────────────────────────────────
   publish-pypi:
-    if: needs.prep.outputs.channel == 'stable'
-    needs: prep
+    needs: [channel, build]
+    if: needs.channel.outputs.channel == 'stable'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/download-artifact@v8
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install build twine
-      - run: python -m build
-      - run: twine upload dist/* -u __token__ -p "${{ secrets.PYPI_TOKEN }}"
+          name: pip
+          path: dist
+      - run: |
+          pip install twine
+          twine upload dist/* -u __token__ -p "${{ secrets.PYPI_TOKEN }}"
 
-  # ────────────────────────────────────────────────────────────────
-  # Publish: AUR — stable (tag) only
-  # ────────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # AUR: stable only, building from the tag
+  # ──────────────────────────────────────────────────────────────
   publish-aur:
-    if: needs.prep.outputs.channel == 'stable'
-    needs:
-      - prep
-      - validate-aur
+    needs: [channel, build]
+    if: needs.channel.outputs.channel == 'stable'
     runs-on: ubuntu-latest
     continue-on-error: true  # remove once AUR_SSH_PRIVATE_KEY is configured
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Publish PKGBUILD to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+      - uses: actions/checkout@v7
+      - name: Point the PKGBUILD at the tag
+        run: |
+          curl -fsSL -o tag.tar.gz "https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz"
+          sum=$(sha256sum tag.tar.gz | cut -d' ' -f1)
+          sed -i -e "s/^pkgver=.*/pkgver=$VERSION/" -e "s/^_tag=.*/_tag=$TAG/" \
+            -e "s/^sha256sums=.*/sha256sums=('$sum')/" packaging/aur/subtitld/PKGBUILD
+      - uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
         with:
           pkgname: subtitld
-          pkgbuild: packaging/aur/PKGBUILD
+          pkgbuild: packaging/aur/subtitld/PKGBUILD
           commit_username: ${{ github.actor }}
           commit_email: ${{ github.actor }}@users.noreply.github.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: Update to ${{ needs.prep.outputs.version }}
+          commit_message: Update to ${{ env.VERSION }}
           ssh_keyscan_types: rsa,ecdsa,ed25519
+
+  # ──────────────────────────────────────────────────────────────
+  # GitHub Release: stable only, with every package and the Haiku
+  # recipe as it goes to haikuports
+  # ──────────────────────────────────────────────────────────────
+  publish-github-release:
+    needs: [channel, build]
+    if: needs.channel.outputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          pattern: '{pip,appimage,snap,flatpak,windows-*,macos-dmg,haiku}'
+          merge-multiple: true
+      - name: Point the Haiku recipe at the tag
+        run: |
+          curl -fsSL -o tag.tar.gz "https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz"
+          sum=$(sha256sum tag.tar.gz | cut -d' ' -f1)
+          sed -i -e "s|^SOURCE_URI=.*|SOURCE_URI=\"https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz\"|" \
+            -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$sum\"|" \
+            -e "s|^SOURCE_DIR=.*|SOURCE_DIR=\"subtitld-${TAG#v}\"|" \
+            "artifacts/subtitld-$VERSION.recipe"
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          # The tag is a free-form label; the build version is the date.
+          name: Subtitld ${{ github.ref_name }}
+          body: |
+            Build version: `${{ env.VERSION }}`
+          append_body: true
+          files: artifacts/*
+          generate_release_notes: true

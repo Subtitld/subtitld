@@ -1,25 +1,45 @@
 name: CI
 
+# The test suite, on every push and pull request. Packaging is build.yml's.
+
 on:
   push:
-    branches:
-      - '**'
+    branches: ['**']
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip
-      - run: pip install build
-      - name: Build wheel
-        run: python -m build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-          retention-days: 7
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libportaudio2 libsndfile1 libegl1 libgl1 libopengl0 \
+            libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-dejavu-core fonts-liberation
+          pip install .
+      - name: Tests
+        # Each test is a script that sets up its own off-screen Qt and scratch
+        # config directories.
+        run: |
+          # No sound card on the runner: a null ALSA device stands in for one.
+          printf 'pcm.!default { type null }\nctl.!default { type hw card 0 }\n' > ~/.asoundrc
+          failed=
+          for t in tests/test_*.py; do
+            echo "::group::$t"
+            timeout 300 python "$t" || { echo "::error file=$t::$t failed"; failed=1; }
+            echo "::endgroup::"
+          done
+          [ -z "$failed" ]

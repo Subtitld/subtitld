@@ -1,0 +1,377 @@
+name: Build
+
+# Builds every package, checks each one starts, and keeps them as artifacts of
+# the run. Publishes nothing: run it by hand (Actions → Build → Run workflow)
+# to test the packaging without a release. release.yml calls it, then
+# publishes what it built.
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'all, or some of: pip,appimage,snap,flatpak,aur,windows,macos,haiku'
+        default: all
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: Build version (YY.MM.DD.HHMM); empty for now
+        default: ''
+        type: string
+      targets:
+        default: all
+        type: string
+    outputs:
+      version:
+        value: ${{ jobs.plan.outputs.version }}
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+  # MSStore publisher identity (public values, safe in the repository)
+  MSIX_PUBLISHER_ID: '62905jonata.org.subtitld'
+  MSIX_PUBLISHER_CN: 'CN=BED8C990-8289-49D1-B2A9-438CB5220AAF'
+  MSIX_PUBLISHER_DISPLAY: 'jonata.org'
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - id: plan
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          all=pip,appimage,snap,flatpak,aur,windows,macos,haiku
+          targets=$(printf '%s' "${TARGETS:-all}" | tr -d ' ')
+          [ "$targets" = all ] && targets=$all
+          for t in ${targets//,/ }; do
+            case ",$all," in
+              *",$t,"*) ;;
+              *) echo "::error::Unknown target '$t' (known: $all)"; exit 1 ;;
+            esac
+          done
+          # Date-based (UTC, YY.MM.DD.HHMM): the one version of every package.
+          version=${VERSION:-$(date -u +%y.%m.%d.%H%M)}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "targets=,$targets," >> "$GITHUB_OUTPUT"
+          echo "Version $version; building: $targets"
+
+  # ──────────────────────────────────────────────────────────────
+  # pip: wheel and sdist
+  # ──────────────────────────────────────────────────────────────
+  pip:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',pip,')
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python .github/scripts/inject-version.py "$VERSION"
+      - name: Build
+        run: |
+          python -m pip install build twine
+          python -m build
+          twine check dist/*
+      - name: Install the wheel in a clean environment and start it
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1 libdbus-1-3
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          # No sound card on the runner: a null ALSA device stands in for one.
+          printf 'pcm.!default { type null }\nctl.!default { type hw card 0 }\n' > ~/.asoundrc
+          QT_QPA_PLATFORM=offscreen bash .github/scripts/smoke.sh 25 /tmp/venv/bin/subtitld
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pip
+          path: dist/*
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux: AppImage
+  # ──────────────────────────────────────────────────────────────
+  appimage:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',appimage,')
+    # The oldest supported Ubuntu: the AppImage runs on systems at least as new.
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python .github/scripts/inject-version.py "$VERSION"
+      - name: Install the libraries to bundle
+        # Qt's xcb platform plugin needs the libxcb-* helpers; without them on
+        # the build machine they are left out, and the AppImage fails on
+        # systems that lack them too.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libportaudio2 libsndfile1 libpulse0 file wget \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libsm6 libice6
+      - name: Build
+        run: bash build-appimage.sh
+      - name: Start it on clean systems
+        run: |
+          for image in ubuntu:24.04 fedora:latest; do
+            echo "::group::$image"
+            docker run --rm -v "$PWD":/w -w /w "$image" \
+              bash .github/scripts/smoke-appimage.sh "Subtitld-$VERSION-x86_64.AppImage"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage
+          path: Subtitld-*.AppImage
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux: Snap
+  # ──────────────────────────────────────────────────────────────
+  snap:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',snap,')
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 .github/scripts/inject-version.py "$VERSION"
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snap
+          path: ${{ steps.snapcraft.outputs.snap }}
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux: Flatpak (Flathub's runtimes and linter)
+  # ──────────────────────────────────────────────────────────────
+  flatpak:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',flatpak,')
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      options: --privileged
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 .github/scripts/inject-version.py "$VERSION"
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: Subtitld-${{ env.VERSION }}.flatpak
+          manifest-path: flatpak/org.subtitld.Subtitld.yml
+          cache-key: flatpak-builder-${{ hashFiles('flatpak/**') }}
+          upload-artifact: false
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flatpak
+          path: Subtitld-*.flatpak
+
+  flatpak-lint:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',flatpak,')
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-builder-lint:latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Lint the manifest and the metainfo as Flathub does
+        # flathub-exceptions.json holds what Flathub has to grant on submission.
+        run: |
+          flatpak-builder-lint --exceptions --user-exceptions flatpak/flathub-exceptions.json \
+            manifest flatpak/org.subtitld.Subtitld.yml
+          flatpak-builder-lint appstream flatpak/org.subtitld.Subtitld.appdata.xml
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux: AUR (built and installed on Arch, dependencies from the AUR)
+  # ──────────────────────────────────────────────────────────────
+  aur:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',aur,')
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      # With git present, checkout makes a real clone, which the script reads.
+      - run: pacman -Syu --noconfirm git
+      - uses: actions/checkout@v7
+      - run: bash .github/scripts/aur-build.sh "$VERSION" aur-out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aur
+          path: aur-out/
+          include-hidden-files: true
+
+  # ──────────────────────────────────────────────────────────────
+  # Windows: one PyInstaller build, three packages: portable zip,
+  # NSIS installer, MSIX for the Microsoft Store
+  # ──────────────────────────────────────────────────────────────
+  windows:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',windows,')
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      MSIX_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python .github/scripts/inject-version.py "$env:VERSION"
+      - name: Get FFmpeg
+        # The spec bundles the ffmpeg/ffprobe found on PATH next to the app,
+        # where the app looks for them. A static build, so they need nothing
+        # else.
+        run: |
+          $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-8.1.zip -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+          $bin = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Build with PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller .
+          pyinstaller subtitld-windows.spec --clean --noconfirm
+          & dist\Subtitld\ffmpeg.exe -hide_banner -version | Select-Object -First 1
+      - name: Start it
+        # A windowed app that fails shows an error dialog and stays up, so
+        # look at its window as well as whether it is still running.
+        run: |
+          $p = Start-Process dist\Subtitld\Subtitld.exe -PassThru
+          Start-Sleep 40
+          $p.Refresh()
+          if ($p.HasExited) { throw "Subtitld exited ($($p.ExitCode))" }
+          $title = $p.MainWindowTitle
+          Stop-Process $p -Force
+          Write-Host "Main window: '$title'"
+          if ($title -ne 'Subtitld') { throw "expected the Subtitld window, found '$title'" }
+      - name: Portable (zip)
+        run: Compress-Archive dist\Subtitld "Subtitld-$env:VERSION-portable.zip"
+      - name: Installer (NSIS)
+        run: |
+          $nsis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if (-not $nsis) {
+            choco install nsis -y --no-progress
+            $nsis = Get-ChildItem 'C:\Program Files*\NSIS' -Recurse -Filter makensis.exe | Select-Object -First 1 -ExpandProperty FullName
+          }
+          & $nsis nsis-installer.nsi
+          Move-Item Subtitld-Setup.exe "Subtitld-$env:VERSION-Setup.exe"
+      - name: Microsoft Store (MSIX)
+        run: |
+          pwsh ./packaging/msix/build-msix.ps1
+          Move-Item Subtitld.msix "Subtitld-$env:VERSION.msix"
+      - name: Upload the MSIX staging list on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: msix-staging-files
+          path: msix-staging-files.txt
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-portable
+          path: Subtitld-*-portable.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: Subtitld-*-Setup.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-msix
+          path: Subtitld-*.msix
+
+  # ──────────────────────────────────────────────────────────────
+  # macOS: .app in a .dmg (unsigned, Apple Silicon)
+  # ──────────────────────────────────────────────────────────────
+  macos:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',macos,')
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python .github/scripts/inject-version.py "$VERSION"
+      - run: brew install ffmpeg create-dmg
+      - name: Build with PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller .
+          pyinstaller subtitld-macos.spec --clean --noconfirm
+      - name: Check the bundle
+        run: |
+          app=dist/Subtitld.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
+          ff=$(find "$app" -name ffmpeg -type f -perm -u+x | head -1)
+          "$ff" -hide_banner -version | head -1
+          # Bundled binaries must not reach into Homebrew, which users lack.
+          if otool -L "$ff" | grep -q /opt/homebrew; then
+            otool -L "$ff"
+            echo "::error::the bundled ffmpeg links to Homebrew libraries"
+            exit 1
+          fi
+      - name: Start it
+        run: bash .github/scripts/smoke.sh 40 dist/Subtitld.app/Contents/MacOS/Subtitld
+      - name: Create the DMG
+        run: |
+          create-dmg \
+            --volname "Subtitld" \
+            --window-size 540 380 \
+            --icon-size 96 \
+            --icon "Subtitld.app" 140 190 \
+            --app-drop-link 400 190 \
+            "Subtitld-${VERSION}.dmg" \
+            "dist/Subtitld.app"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-dmg
+          path: Subtitld-*.dmg
+
+  # ──────────────────────────────────────────────────────────────
+  # Haiku: haikuporter in a Haiku VM
+  # ──────────────────────────────────────────────────────────────
+  haiku:
+    needs: plan
+    if: contains(needs.plan.outputs.targets, ',haiku,')
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Source tarball, shaped like GitHub's tag archive
+        run: |
+          python3 .github/scripts/inject-version.py "$VERSION"
+          git ls-files -co --exclude-standard -z |
+            tar --null -T - --transform "s,^,subtitld-$VERSION/," -czf "../subtitld-$VERSION.tar.gz"
+          mv "../subtitld-$VERSION.tar.gz" .
+      - uses: cross-platform-actions/action@v1.6.0
+        with:
+          operating_system: haiku
+          version: r1beta6
+          memory: 8G
+          run: bash .github/scripts/haiku-build.sh "$VERSION" "subtitld-$VERSION.tar.gz" haiku-out
+          environment_variables: VERSION
+      - uses: actions/upload-artifact@v7
+        with:
+          name: haiku
+          path: haiku-out/
