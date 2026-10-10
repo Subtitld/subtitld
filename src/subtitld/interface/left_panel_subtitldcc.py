@@ -144,13 +144,16 @@ class Confirm(QWidget):
         self.text = _label('subtitldcc_text')
         layout.addWidget(self.text)
         self.no = _button(small=True)
-        self.no.setText(_('subtitldcc.cancel'))
         self.no.clicked.connect(self.hide)
         self.yes = _button('primary', small=True)
         self.yes.clicked.connect(self._accept)
         layout.addWidget(_row(self.no, self.yes))
         self._action = None
+        self.retranslate()
         self.hide()
+
+    def retranslate(self):
+        self.no.setText(_('subtitldcc.cancel'))
 
     def ask(self, text, action_label, action, danger=False):
         self.text.setText(text)
@@ -934,4 +937,6 @@ class SubtitldccPanel(QWidget):
         self.publish_title.setText(_('subtitldcc.publish_title'))
         self.publish_version_button.setText(_('subtitldcc.publish_version'))
         self.publish_new_button.setText(_('subtitldcc.publish_new'))
+        for confirm in self.findChildren(Confirm):
+            confirm.retranslate()
         self.refresh()

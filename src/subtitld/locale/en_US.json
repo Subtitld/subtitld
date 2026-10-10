@@ -1,4 +1,5 @@
 {
+    "language_name": "English",
     "window.title": "Subtitld",
     "units.seconds": "Seconds",
     "units.minutes": "Minutes",
@@ -237,6 +238,8 @@
     "global_panel.save_copy": "Save a copy",
     "global_panel.minimum_duration": "Minimum duration",
     "global_panel.export_settings": "Export settings",
+    "global_panel.language": "Interface language",
+    "global_panel.language_system": "System language ({language})",
     "interface_panel.title": "Interface settings",
     "interface_panel.shadow": "Shadow",
     "interface_panel.x_position": "X position",

@@ -3365,5 +3365,9 @@ def translate(self):
     self.zoomout_button.setToolTip(_('playercontrols.zoom_out'))
     self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))
     self.timeline_show_speaker_tracks_button.setToolTip(_('playercontrols.timeline_show_speaker_tracks'))
+    self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
+    self.playercontrols_record_audio_button.setToolTip(_('record_button.wave_tooltip'))
+    # The transcript switch's tooltip depends on whether an engine is installed.
+    _update_record_mode_buttons(self)
 
 

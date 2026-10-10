@@ -180,6 +180,8 @@ class CloudDashboardPanel(QWidget):
         self.setObjectName('cloud_dashboard_panel')
         self._worker = None
         self._account = {}
+        # What the error card says, kept as a key so retranslate() can redo it.
+        self._error_key = 'cloud_dashboard.error_network'
 
         # Plain vertical layout with the two state cards stacked and a
         # trailing stretch (top-aligns the card). We toggle visibility
@@ -301,10 +303,11 @@ class CloudDashboardPanel(QWidget):
         if self._account:
             self._set_state(self._connected_card)
             return
-        self._error_body.setText(_({
+        self._error_key = {
             'http': 'cloud_dashboard.error_server',
             'no_endpoint': 'cloud_dashboard.error_unavailable',
-        }.get(reason, 'cloud_dashboard.error_network')))
+        }.get(reason, 'cloud_dashboard.error_network')
+        self._error_body.setText(_(self._error_key))
         self._set_state(self._error_card)
 
     # ---- connected card --------------------------------------------------
@@ -734,6 +737,11 @@ class CloudDashboardPanel(QWidget):
         self._empty_signup_button.setText(_('cloud_dashboard.create_account'))
         self._loading_label.setText(_('cloud_dashboard.loading'))
         self._error_title.setText(_('cloud_dashboard.error_title'))
-        if not self._error_body.text():
-            self._error_body.setText(_('cloud_dashboard.error_network'))
+        self._error_body.setText(_(self._error_key))
+        if self._empty_error.text():
+            self._empty_error.setText(_('cloud_dashboard.error_bad_key'))
         self._error_retry_button.setText(_('cloud_dashboard.retry'))
+        # The status ("connected" or "low balance"), the credits unit and the
+        # usage rows come from the account.
+        if self._account:
+            self._populate_connected(self._account)

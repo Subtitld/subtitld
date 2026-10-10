@@ -35,6 +35,7 @@ from subtitld.interface import startscreen
 from subtitld.interface import productionscreen
 from subtitld.interface import actionmanager
 from subtitld.interface import utils
+from subtitld.interface import translation
 from subtitld.interface.translation import _
 # Imported for the side-effect of registering its ``@shortcut`` handler
 # at module load time — `shortcuts.load(self, ...)` below picks it up
@@ -66,6 +67,10 @@ class Window(_MainWindowBase):
         self.setStyleSheet(open(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'stylesheet.qss')).read())
         
         session.CONFIG = config.Config()
+
+        # The language picked in the global settings, or else the system's.
+        # Set before any widget is built: some take their texts as they are.
+        translation.set_language(translation.pick_language(session.CONFIG.get('interface_language')))
 
         # Normalise the add-ons config against the CONFIG that was just loaded
         # from disk. The manager seeds it too, but the manager is built back in

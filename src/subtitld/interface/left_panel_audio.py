@@ -875,4 +875,10 @@ def translate(self):
     self.audio_record_help.setText(_('audio_panel.help'))
     self.audio_record_monitor_label.setText(_('audio_panel.input_monitor').upper())
     self.audio_fx_tracks_label.setText(_('audio_panel.tracks'))
+    # The pickers' "none available" entries; update() fills the pickers, and
+    # listing engines and input devices again is not needed for a text.
+    for combo, key in ((self.audio_record_engine_combobox, 'audio_panel.no_engine_available'),
+                       (self.audio_record_device_combobox, 'audio_panel.no_input')):
+        if combo.count() == 1 and combo.itemData(0) is None:
+            combo.setItemText(0, _(key))
     _fx_rebuild(self)

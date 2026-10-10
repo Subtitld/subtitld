@@ -10,6 +10,7 @@ from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.addons_dialog import AddonsPanel
 from subtitld.interface.cloud_dashboard import CloudDashboardPanel
+from subtitld.interface import translation
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.config import Config
@@ -123,6 +124,8 @@ def handle_json_drop(window, filepath):
 
         session.CONFIG.save()
         update(window)
+        if 'interface_language' in sections_to_import:
+            apply_language(window)
         select_dialog.accept()
 
     select_dialog.accept_button.clicked.connect(import_sections)
@@ -211,6 +214,13 @@ def load(self):
     self.left_panel_global_tab_general.layout().setContentsMargins(10, 10, 10, 10)
     self.left_panel_global_tab_general.layout().setSpacing(10)
     self.left_panel_global_tabs.addTab(self.left_panel_global_tab_general, '')
+
+    # Interface language. Following the system's is the first entry and the
+    # default; picking one switches the whole interface at once, through the
+    # window's translate().
+    self.global_panel_language_combobox = utils.LabeledComboBox()
+    self.global_panel_language_combobox.activated.connect(lambda: global_panel_language_combobox_activated(self))
+    self.left_panel_global_tab_general.layout().addWidget(self.global_panel_language_combobox)
 
     self.global_panel_general_save_as_line = QVBoxLayout()
     self.global_panel_general_save_as_line.setContentsMargins(0, 0, 0, 0)
@@ -424,8 +434,37 @@ def global_panel_audio_separator_combobox_activated(self):
         registry.set_default_for_task(TASK_AUDIO_SEPARATE, provider_id)
 
 
+def global_panel_language_combobox_populate(self):
+    """The system's language first (stored as ''), then every language there
+    is a locale file for, by its name in itself; the saved one selected."""
+    combobox = self.global_panel_language_combobox
+    inner = combobox.combobox
+    languages = translation.get_available_language_names()
+    inner.blockSignals(True)
+    try:
+        combobox.clear()
+        inner.addItem(_('global_panel.language_system').format(language=languages[translation.system_language()]), '')
+        for code, name in languages.items():
+            inner.addItem(name, code)
+        inner.setCurrentIndex(max(0, inner.findData(session.CONFIG.get('interface_language') or '')))
+    finally:
+        inner.blockSignals(False)
+
+
+def global_panel_language_combobox_activated(self):
+    session.CONFIG['interface_language'] = self.global_panel_language_combobox.combobox.currentData() or ''
+    apply_language(self)
+
+
+def apply_language(self):
+    """Switch the interface to the saved language (or the system's)."""
+    translation.set_language(translation.pick_language(session.CONFIG.get('interface_language')))
+    self.translate()
+
+
 def update(self):
     global_panel_audio_separator_combobox_populate(self)
+    global_panel_language_combobox_populate(self)
 
     for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
         if session.CONFIG['default_values'] and item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USFX')):
@@ -507,6 +546,8 @@ def translate(self):
     self.left_panel_global_subtitle_alignment.setLabel(_('global_panel.subtitle_alignment'))
     if hasattr(self, 'global_panel_audio_separator_combobox'):
         self.global_panel_audio_separator_combobox.setLabel(_('global_panel.audio_separator'))
+    self.global_panel_language_combobox.setLabel(_('global_panel.language'))
+    global_panel_language_combobox_populate(self)
     if hasattr(self, 'global_panel_cloud_dashboard'):
         self.global_panel_cloud_dashboard.retranslate()
 

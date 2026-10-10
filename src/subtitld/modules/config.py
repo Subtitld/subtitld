@@ -53,6 +53,8 @@ class Config(dict):
         self.setdefault('audio_effects', {})
         self.setdefault('video_manipulation', {})
         self.setdefault('subtitldcc', {})
+        # A locale file's name ('pt_BR'), or '' to follow the system's language.
+        self.setdefault('interface_language', '')
 
     @staticmethod
     def get_valid_keys():
@@ -81,6 +83,7 @@ class Config(dict):
             'audio_effects',
             'video_manipulation',
             'subtitldcc',
+            'interface_language',
         }
 
     @staticmethod
