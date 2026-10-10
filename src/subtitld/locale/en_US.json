@@ -17,7 +17,7 @@
     "startscreen.open_subtitle_or_video": "Open a subtitle or a video",
     "startscreen.open": "Open",
     "startscreen.open_tooltip": "Open a subtitle and/or video file to start editing",
-    "startscreen.recent_subitles": "Recent subtitles",
+    "startscreen.recent_subtitles": "Recent subtitles",
     "startscreen.no_recent_file_history": "There is no recent file history.",
     "startscreen.version_number": "Version {}",
     "startscreen.visit_website": "Visit <b>subtitld.org</b> for<br>more information.",

@@ -335,7 +335,7 @@ def translate(self):
     self.start_screen_open_label.setText(_('startscreen.open_subtitle_or_video'))
     self.start_screen_open_button.setText(_('startscreen.open'))
     self.start_screen_open_button.setToolTip(_('startscreen.open_tooltip'))
-    self.start_screen_recent_label.setText(_('startscreen.recent_subitles'))
+    self.start_screen_recent_label.setText(_('startscreen.recent_subtitles'))
     self.start_screen_adver_label.setText((_('startscreen.version_number').format(__version__)))
     self.start_screen_adver_label_details.setText(_('startscreen.visit_website'))
 
