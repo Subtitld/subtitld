@@ -280,7 +280,7 @@ jobs:
             choco install nsis -y --no-progress
             $nsis = Get-ChildItem 'C:\Program Files*\NSIS' -Recurse -Filter makensis.exe | Select-Object -First 1 -ExpandProperty FullName
           }
-          & $nsis nsis-installer.nsi
+          & $nsis /DVERSION=$env:VERSION nsis-installer.nsi
           Move-Item Subtitld-Setup.exe "Subtitld-$env:VERSION-Setup.exe"
       - name: Microsoft Store (MSIX)
         run: |

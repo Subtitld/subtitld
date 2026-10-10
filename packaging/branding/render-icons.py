@@ -22,6 +22,11 @@ Writes:
     packaging/nsis/installer.ico              the Windows installer and its
     packaging/nsis/uninstaller.ico            uninstaller: the mark with a
                                               badge (install / remove)
+    packaging/nsis/wizard.bmp                 the installer's Welcome and
+                                              Finish pages: the mark and the
+                                              name on the slate glow
+    packaging/nsis/header.bmp                 the installer's other pages:
+                                              the mark, in the header
 
 Usage:  python packaging/branding/render-icons.py
 
@@ -241,6 +246,70 @@ def write_installer_icons(defs: str, mark: str, flat: str, box: tuple[float, flo
         print(f'packaging/nsis/{name}.ico')
 
 
+def write_installer_images(defs: str, mark: str, flat: str, box: tuple[float, float, float, float]) -> None:
+    """The installer's two pictures, at twice Modern UI's size (164 x 314 and
+    150 x 57), so they stay sharp on high-DPI screens; NSIS fits them to the
+    page. 24-bit BMPs, which is what it takes.
+
+    wizard.bmp, beside the Welcome and Finish pages: the mark on the Store
+    tiles' slate glow, the name below it in Montserrat Light, spaced as in
+    the app's title. header.bmp, in the header of the other pages, which is
+    white: the mark without its shadow, to the right."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    x, y, width, height = box
+    out_dir = ROOT / 'packaging' / 'nsis'
+    out_dir.mkdir(exist_ok=True)
+
+    def render(name: str, w: int, h: int, body: str) -> Image.Image:
+        source = HERE / f'.{name}.svg'
+        png = HERE / f'.{name}.png'
+        source.write_text(
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<defs>{defs}<radialGradient id="wizardGlow" cx="0.5" cy="0.36" r="0.75" '
+            'gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#566f84"/>'
+            f'<stop offset="1" stop-color="#1a232b"/></radialGradient></defs>{body}</svg>\n')
+        try:
+            inkscape_png(source, png, w)
+            return Image.open(png).convert('RGB')
+        finally:
+            source.unlink()
+            png.unlink(missing_ok=True)
+
+    # Beside the Welcome and Finish pages.
+    w, h = 328, 628
+    mark_w = 0.56 * w
+    scale = mark_w / width
+    tx = (w - mark_w) / 2 - 0.05 * mark_w - x * scale      # a little left: it points right
+    ty = 0.36 * h - height * scale / 2 - y * scale
+    image = render('wizard', w, h,
+                   f'<rect width="{w}" height="{h}" fill="url(#wizardGlow)"/>'
+                   f'<g transform="translate({tx:.3f},{ty:.3f}) scale({scale:.5f})">{mark}</g>')
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(str(GRAPHICS / 'Montserrat-Light.ttf'), 30)
+    text, spacing = 'SUBTITLD', 0.34 * 30
+    widths = [draw.textlength(ch, font=font) for ch in text]
+    total = sum(widths) + spacing * (len(text) - 1)
+    cursor, baseline = (w - total) / 2, 0.36 * h + height * scale / 2 + 46
+    for ch, advance in zip(text, widths):
+        draw.text((cursor, baseline), ch, font=font, fill='#dfe8f0')
+        cursor += advance + spacing
+    image.save(out_dir / 'wizard.bmp')
+    print('packaging/nsis/wizard.bmp')
+
+    # The header.
+    w, h = 300, 114
+    mark_h = 0.62 * h
+    scale = mark_h / height
+    tx = w - 0.10 * h - width * scale - x * scale
+    ty = (h - mark_h) / 2 - y * scale
+    render('header', w, h,
+           f'<rect width="{w}" height="{h}" fill="#ffffff"/>'
+           f'<g transform="translate({tx:.3f},{ty:.3f}) scale({scale:.5f})">{flat}</g>'
+           ).save(out_dir / 'header.bmp')
+    print('packaging/nsis/header.bmp')
+
+
 def main() -> int:
     if shutil.which('inkscape') is None:
         sys.exit('Inkscape is needed on the PATH.')
@@ -284,6 +353,7 @@ def main() -> int:
     print(write_watermark(outline, box).relative_to(ROOT))
     write_small_mark(flat, box)
     write_installer_icons(defs, mark, flat, box)
+    write_installer_images(defs, mark, flat, box)
     tiles = write_tiles(defs, mark, box)
     print(tiles.relative_to(ROOT))
     subprocess.run([sys.executable, str(MSIX / 'generate-assets.py'), str(tiles), '--clean'], check=True)
