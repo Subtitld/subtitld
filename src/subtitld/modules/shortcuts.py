@@ -21,9 +21,13 @@ class ShortcutRegistry:
     
     def shortcut(self, command_id, description, keys):
         """Decorator to register a function as a shortcut handler
-        
+
+        `description` is the key of its text in the locale files
+        (shortcuts.<command_id>); the keyboard panel shows it through _(),
+        in the interface language.
+
         Usage:
-            @shortcut('my_command', 'My Command Description', ['Ctrl+K'])
+            @shortcut('my_command', 'shortcuts.my_command', ['Ctrl+K'])
             def my_handler(self):
                 # handler code
         """

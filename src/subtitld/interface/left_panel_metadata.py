@@ -8,42 +8,43 @@ from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 
 
-# Field tables — (key, label, QMediaMetaData attribute) per tab. Tabs render
-# rows in this order; the third column lets us look up raw values directly
-# from QMediaMetaData (or pass `None` for fields we derive ourselves).
+# Field tables — (key, label's key in the locale files, QMediaMetaData
+# attribute) per tab. Tabs render rows in this order; the third column lets
+# us look up raw values directly from QMediaMetaData (or pass `None` for
+# fields we derive ourselves).
 TAGS_FIELDS = [
-    ('title', 'TITLE', QMediaMetaData.Title),
-    ('author', 'AUTHOR', QMediaMetaData.Author),
-    ('genre', 'GENRE', QMediaMetaData.Genre),
-    ('date', 'DATE', QMediaMetaData.Date),
-    ('description', 'DESCRIPTION', QMediaMetaData.Description),
-    ('language', 'LANGUAGE', QMediaMetaData.Language),
-    ('url', 'URL', QMediaMetaData.Url),
-    ('comment', 'COMMENT', QMediaMetaData.Comment),
-    ('publisher', 'PUBLISHER', QMediaMetaData.Publisher),
-    ('copyright', 'COPYRIGHT', QMediaMetaData.Copyright),
-    ('album_title', 'ALBUM TITLE', QMediaMetaData.AlbumTitle),
-    ('album_artist', 'ALBUM ARTIST', QMediaMetaData.AlbumArtist),
-    ('contributing_artist', 'CONTRIBUTING ARTIST', QMediaMetaData.ContributingArtist),
-    ('track_number', 'TRACK NUMBER', QMediaMetaData.TrackNumber),
-    ('composer', 'COMPOSER', QMediaMetaData.Composer),
-    ('lead_performer', 'LEAD PERFORMER', QMediaMetaData.LeadPerformer),
+    ('title', 'metadata_panel.field_title', QMediaMetaData.Title),
+    ('author', 'metadata_panel.field_author', QMediaMetaData.Author),
+    ('genre', 'metadata_panel.field_genre', QMediaMetaData.Genre),
+    ('date', 'metadata_panel.field_date', QMediaMetaData.Date),
+    ('description', 'metadata_panel.field_description', QMediaMetaData.Description),
+    ('language', 'metadata_panel.field_language', QMediaMetaData.Language),
+    ('url', 'metadata_panel.field_url', QMediaMetaData.Url),
+    ('comment', 'metadata_panel.field_comment', QMediaMetaData.Comment),
+    ('publisher', 'metadata_panel.field_publisher', QMediaMetaData.Publisher),
+    ('copyright', 'metadata_panel.field_copyright', QMediaMetaData.Copyright),
+    ('album_title', 'metadata_panel.field_album_title', QMediaMetaData.AlbumTitle),
+    ('album_artist', 'metadata_panel.field_album_artist', QMediaMetaData.AlbumArtist),
+    ('contributing_artist', 'metadata_panel.field_contributing_artist', QMediaMetaData.ContributingArtist),
+    ('track_number', 'metadata_panel.field_track_number', QMediaMetaData.TrackNumber),
+    ('composer', 'metadata_panel.field_composer', QMediaMetaData.Composer),
+    ('lead_performer', 'metadata_panel.field_lead_performer', QMediaMetaData.LeadPerformer),
 ]
 
 AUDIO_FIELDS = [
-    ('audio_bitrate', 'AUDIO BITRATE', QMediaMetaData.AudioBitRate),
+    ('audio_bitrate', 'metadata_panel.field_audio_bitrate', QMediaMetaData.AudioBitRate),
 ]
 
 VIDEO_FIELDS = [
-    ('duration', 'DURATION', QMediaMetaData.Duration),
-    ('media_type', 'MEDIA TYPE', QMediaMetaData.MediaType),
-    ('video_bitrate', 'VIDEO BITRATE', QMediaMetaData.VideoBitRate),
-    ('video_frame_rate', 'VIDEO FRAME RATE', QMediaMetaData.VideoFrameRate),
-    ('orientation', 'ORIENTATION', None),
-    ('resolution', 'RESOLUTION', QMediaMetaData.Resolution),
-    ('has_hdr_content', 'HAS HDR CONTENT', QMediaMetaData.HasHdrContent),
-    ('thumbnail_image', 'THUMBNAIL IMAGE', QMediaMetaData.ThumbnailImage),
-    ('cover_art_image', 'COVER ART IMAGE', QMediaMetaData.CoverArtImage),
+    ('duration', 'metadata_panel.field_duration', QMediaMetaData.Duration),
+    ('media_type', 'metadata_panel.field_media_type', QMediaMetaData.MediaType),
+    ('video_bitrate', 'metadata_panel.field_video_bitrate', QMediaMetaData.VideoBitRate),
+    ('video_frame_rate', 'metadata_panel.field_video_frame_rate', QMediaMetaData.VideoFrameRate),
+    ('orientation', 'metadata_panel.field_orientation', None),
+    ('resolution', 'metadata_panel.field_resolution', QMediaMetaData.Resolution),
+    ('has_hdr_content', 'metadata_panel.field_has_hdr_content', QMediaMetaData.HasHdrContent),
+    ('thumbnail_image', 'metadata_panel.field_thumbnail_image', QMediaMetaData.ThumbnailImage),
+    ('cover_art_image', 'metadata_panel.field_cover_art_image', QMediaMetaData.CoverArtImage),
 ]
 
 # Cap rendered metadata images so a 4K cover doesn't blow up the panel.
@@ -179,7 +180,8 @@ def _format_value(cell, raw):
 def _build_metadata_tab(fields):
     """Build one metadata tab: a scrollable two-column grid. Returns the tab
     widget plus a `{key: value_cell}` map so `update()` can populate the
-    cells without rebuilding."""
+    cells without rebuilding, and a `{label_key: label}` map for
+    `translate()` to name the rows."""
     tab = QWidget()
     tab.setProperty('class', 'transparent_panel')
     tab.setLayout(QVBoxLayout())
@@ -204,8 +206,9 @@ def _build_metadata_tab(fields):
     scroll.setWidget(inner)
 
     cells = {}
-    for row, (key, label_text, _attr) in enumerate(fields):
-        label = QLabel(label_text)
+    labels = {}
+    for row, (key, label_key, _attr) in enumerate(fields):
+        label = QLabel()
         label.setProperty('class', 'metadata_field_label')
         label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         label.setMinimumWidth(96)
@@ -221,9 +224,10 @@ def _build_metadata_tab(fields):
         grid.addWidget(cell, row, 1, Qt.AlignTop)
 
         cells[key] = cell
+        labels[label_key] = label
 
     grid.setRowStretch(len(fields), 1)
-    return tab, cells
+    return tab, cells, labels
 
 
 def load(self):
@@ -241,13 +245,18 @@ def load(self):
     self.left_panel_metadata_tabwidget.setObjectName('left_panel_metadata_tabwidget')
     left_panel_metadata_panel.layout().addWidget(self.left_panel_metadata_tabwidget)
 
-    tags_tab, self.left_panel_metadata_tag_cells = _build_metadata_tab(TAGS_FIELDS)
+    self.left_panel_metadata_labels = {}
+
+    tags_tab, self.left_panel_metadata_tag_cells, labels = _build_metadata_tab(TAGS_FIELDS)
+    self.left_panel_metadata_labels.update(labels)
     self.left_panel_metadata_tabwidget.addTab(tags_tab, '')
 
-    audio_tab, self.left_panel_metadata_audio_cells = _build_metadata_tab(AUDIO_FIELDS)
+    audio_tab, self.left_panel_metadata_audio_cells, labels = _build_metadata_tab(AUDIO_FIELDS)
+    self.left_panel_metadata_labels.update(labels)
     self.left_panel_metadata_tabwidget.addTab(audio_tab, '')
 
-    video_tab, self.left_panel_metadata_video_cells = _build_metadata_tab(VIDEO_FIELDS)
+    video_tab, self.left_panel_metadata_video_cells, labels = _build_metadata_tab(VIDEO_FIELDS)
+    self.left_panel_metadata_labels.update(labels)
     self.left_panel_metadata_tabwidget.addTab(video_tab, '')
 
 
@@ -266,11 +275,11 @@ def update(self):
 
     orientation_value = md.value(QMediaMetaData.Orientation)
     if orientation_value == QtVideo.Rotation.Clockwise90:
-        orientation = 'Clockwise 90°'
+        orientation = _('metadata_panel.orientation_clockwise_90')
     elif orientation_value == QtVideo.Rotation.Clockwise270:
-        orientation = 'Clockwise 270°'
+        orientation = _('metadata_panel.orientation_clockwise_270')
     elif orientation_value == QtVideo.Rotation.Clockwise180:
-        orientation = 'Clockwise 180°'
+        orientation = _('metadata_panel.orientation_clockwise_180')
     elif orientation_value == QtVideo.Rotation.None_:
         orientation = '0°'
     else:
@@ -292,3 +301,8 @@ def translate(self):
     self.left_panel_metadata_tabwidget.setTabText(0, _('metadata_panel.tab_tags'))
     self.left_panel_metadata_tabwidget.setTabText(1, _('metadata_panel.tab_audio'))
     self.left_panel_metadata_tabwidget.setTabText(2, _('metadata_panel.tab_video'))
+    # Qt ignores QSS text-transform on a label, so the caps are ours.
+    for label_key, label in self.left_panel_metadata_labels.items():
+        label.setText(_(label_key).upper())
+    # The values hold texts too: "Not set", the orientation.
+    update(self)

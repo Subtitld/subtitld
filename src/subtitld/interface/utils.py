@@ -82,11 +82,16 @@ def animate_element(animation, duration=1000, effect='fadein'):
 
 from datetime import datetime, timedelta
 
+def _counted(count, one, many):
+    """`one` for a count of 1, else `many`, with {count} filled in. The two
+    are separate texts, so each language words its own singular and plural
+    rather than English's added "s"."""
+    return (one if count == 1 else many).format(count=count)
+
+
 def friendly_time(dt):
-    """
-    Returns a human-friendly string showing the time difference between `dt` and now,
-    using `_()` for translatable strings.
-    """
+    """How long ago `dt` was, or how long until it, in words: "just now",
+    "3 minutes ago", "in 1 week". `dt` is a datetime or a timestamp."""
     now = datetime.now()
     
     # Convert timestamp to datetime
@@ -99,40 +104,30 @@ def friendly_time(dt):
     if seconds < 0:  # Future
         seconds = abs(seconds)
         if seconds < 60:
-            return _("in a few seconds") if seconds < 5 else _("in {seconds} seconds").format(seconds=seconds)
+            return _('friendly_time.in_a_few_seconds') if seconds < 5 else _('friendly_time.in_seconds').format(count=seconds)
         elif seconds < 3600:
-            minutes = seconds // 60
-            return _("in {minutes} minute{plural}").format(minutes=minutes, plural='' if minutes == 1 else 's')
+            return _counted(seconds // 60, _('friendly_time.in_minutes_one'), _('friendly_time.in_minutes_many'))
         elif seconds < 86400:
-            hours = seconds // 3600
-            return _("in {hours} hour{plural}").format(hours=hours, plural='' if hours == 1 else 's')
+            return _counted(seconds // 3600, _('friendly_time.in_hours_one'), _('friendly_time.in_hours_many'))
         elif seconds < 604800:
-            days = seconds // 86400
-            return _("in {days} day{plural}").format(days=days, plural='' if days == 1 else 's')
+            return _counted(seconds // 86400, _('friendly_time.in_days_one'), _('friendly_time.in_days_many'))
         elif seconds < 2419200:
-            weeks = seconds // 604800
-            return _("in {weeks} week{plural}").format(weeks=weeks, plural='' if weeks == 1 else 's')
+            return _counted(seconds // 604800, _('friendly_time.in_weeks_one'), _('friendly_time.in_weeks_many'))
         else:
-            months = seconds // 2419200
-            return _("in {months} month{plural}").format(months=months, plural='' if months == 1 else 's')
+            return _counted(seconds // 2419200, _('friendly_time.in_months_one'), _('friendly_time.in_months_many'))
     else:  # Past
         if seconds < 60:
-            return _("just now") if seconds < 5 else _("{seconds} seconds ago").format(seconds=seconds)
+            return _('friendly_time.just_now') if seconds < 5 else _('friendly_time.seconds_ago').format(count=seconds)
         elif seconds < 3600:
-            minutes = seconds // 60
-            return _("{minutes} minute{plural} ago").format(minutes=minutes, plural='' if minutes == 1 else 's')
+            return _counted(seconds // 60, _('friendly_time.minutes_ago_one'), _('friendly_time.minutes_ago_many'))
         elif seconds < 86400:
-            hours = seconds // 3600
-            return _("{hours} hour{plural} ago").format(hours=hours, plural='' if hours == 1 else 's')
+            return _counted(seconds // 3600, _('friendly_time.hours_ago_one'), _('friendly_time.hours_ago_many'))
         elif seconds < 604800:
-            days = seconds // 86400
-            return _("{days} day{plural} ago").format(days=days, plural='' if days == 1 else 's')
+            return _counted(seconds // 86400, _('friendly_time.days_ago_one'), _('friendly_time.days_ago_many'))
         elif seconds < 2419200:
-            weeks = seconds // 604800
-            return _("{weeks} week{plural} ago").format(weeks=weeks, plural='' if weeks == 1 else 's')
+            return _counted(seconds // 604800, _('friendly_time.weeks_ago_one'), _('friendly_time.weeks_ago_many'))
         else:
-            months = seconds // 2419200
-            return _("{months} month{plural} ago").format(months=months, plural='' if months == 1 else 's')
+            return _counted(seconds // 2419200, _('friendly_time.months_ago_one'), _('friendly_time.months_ago_many'))
 
 
 class _HoverMirror(QObject):
@@ -297,10 +292,10 @@ class SimpleDialog(QDialog):
         self.bottom_line.layout().setContentsMargins(0, 0, 0, 0)
         self.bottom_line.layout().setSpacing(0)
 
-        self.accept_button = QPushButton("OK")
+        self.accept_button = QPushButton(_('dialog.ok'))
         self.accept_button.setProperty('class', 'accept_button')
 
-        self.reject_button = QPushButton("Cancel")
+        self.reject_button = QPushButton(_('dialog.cancel'))
         self.reject_button.setProperty('class', 'reject_button')
 
         self.bottom_left = QWidget()
@@ -423,6 +418,14 @@ class SimpleDialog(QDialog):
     
     def set_title(self, title):
         self.title_line.label.setText(title)
+
+    def retranslate(self):
+        """Put OK and Cancel on the buttons in the current language. A dialog
+        built once and kept has its panel's translate() call this, so it
+        follows a change of interface language; one that names its buttons
+        itself does that after."""
+        self.accept_button.setText(_('dialog.ok'))
+        self.reject_button.setText(_('dialog.cancel'))
 
     def accept(self):
         super().accept()

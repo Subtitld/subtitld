@@ -95,8 +95,8 @@ def handle_json_drop(window, filepath):
         list_widget.addItem(item)
 
     select_dialog.content.layout().addWidget(list_widget)
-    select_dialog.reject_button.setText(_('cancel'))
-    select_dialog.accept_button.setText(_('import'))
+    select_dialog.reject_button.setText(_('global_panel.cancel'))
+    select_dialog.accept_button.setText(_('global_panel.import'))
 
     def import_sections():
         sections_to_import = []
@@ -200,8 +200,11 @@ def load(self):
 
     self.left_panel_global_tab_subtitles.layout().addLayout(self.global_panel_general_minimum_duration_line)
 
+    # Each alignment is stored in the settings by name ('left', ...), held
+    # as the item's data; the labels are set in translate().
     self.left_panel_global_subtitle_alignment = utils.LabeledComboBox()
-    self.left_panel_global_subtitle_alignment.addItems(['Left', 'Center', 'Right'])
+    for alignment in ('left', 'center', 'right'):
+        self.left_panel_global_subtitle_alignment.combobox.addItem('', alignment)
     self.left_panel_global_subtitle_alignment.activated.connect(lambda: left_panel_global_subtitle_alignment_activated(self))
     self.left_panel_global_tab_subtitles.layout().addWidget(self.left_panel_global_subtitle_alignment)
 
@@ -475,7 +478,8 @@ def update(self):
 
     self.global_panel_general_minimum_duration_spinbox.setValue(session.CONFIG['default_values'].get('minimum_subtitle_width', 1.0))
 
-    self.left_panel_global_subtitle_alignment.setCurrentText(session.CONFIG['default_values'].get('subtitle_alignment', 'left').capitalize())
+    alignment_combobox = self.left_panel_global_subtitle_alignment.combobox
+    alignment_combobox.setCurrentIndex(max(0, alignment_combobox.findData(session.CONFIG['default_values'].get('subtitle_alignment', 'left'))))
 
     options = _get_usfx_options()
     for key, checkbox in (
@@ -494,7 +498,7 @@ def update(self):
 
 
 def left_panel_global_subtitle_alignment_activated(self):
-    session.CONFIG['default_values']['subtitle_alignment'] = self.left_panel_global_subtitle_alignment.currentText().lower()
+    session.CONFIG['default_values']['subtitle_alignment'] = self.left_panel_global_subtitle_alignment.combobox.currentData()
     self.timeline_widget.subtitle_alignment = {'left' : Qt.AlignLeft, 'center' : Qt.AlignCenter, 'right' : Qt.AlignRight}[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
 
 
@@ -544,6 +548,9 @@ def translate(self):
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
     self.left_panel_global_panel_export_settings_button.setToolTip(_('global_panel.export_settings'))
     self.left_panel_global_subtitle_alignment.setLabel(_('global_panel.subtitle_alignment'))
+    alignment_combobox = self.left_panel_global_subtitle_alignment.combobox
+    for alignment, label in (('left', _('units.left')), ('center', _('units.center')), ('right', _('units.right'))):
+        alignment_combobox.setItemText(alignment_combobox.findData(alignment), label)
     if hasattr(self, 'global_panel_audio_separator_combobox'):
         self.global_panel_audio_separator_combobox.setLabel(_('global_panel.audio_separator'))
     self.global_panel_language_combobox.setLabel(_('global_panel.language'))
