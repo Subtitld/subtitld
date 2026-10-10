@@ -27,6 +27,9 @@ Writes:
                                               name on the slate glow
     packaging/nsis/header.bmp                 the installer's other pages:
                                               the mark, in the header
+    .github/readme/banner.png                 the top of the README: the
+                                              mark, the name and a line
+                                              on the slate glow
     packaging/haiku/media-video/subtitld/additional-files/
         subtitld.hvif                         the Haiku icon (HVIF, Haiku's
                                               vector format), for HaikuDepot
@@ -53,6 +56,9 @@ GRAPHICS = ROOT / 'src' / 'subtitld' / 'graphics'
 MSIX = ROOT / 'packaging' / 'msix'
 
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+
+# The line under the name on the README's banner.
+README_TAGLINE = 'Create, edit, transcribe, translate and dub subtitles'
 
 # The Store tiles: (generate-assets.py name, width, height, mark width as a
 # share of the tile's shorter side). logo.svg sets the mark at 41% of its
@@ -315,6 +321,74 @@ def write_installer_images(defs: str, mark: str, flat: str, box: tuple[float, fl
     print('packaging/nsis/header.bmp')
 
 
+def write_readme_banner(defs: str, mark: str, box: tuple[float, float, float, float]) -> None:
+    """The banner at the top of the README: the installer's picture laid out
+    wide. The mark on the slate glow, the name beside it in Montserrat Light,
+    spaced as in the app's title, and a line on what Subtitld does below.
+    Twice the size it is shown at, with rounded corners."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    x, y, width, height = box
+    w, h, radius = 1760, 440, 28
+    out = ROOT / '.github' / 'readme' / 'banner.png'
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    name_font = ImageFont.truetype(str(GRAPHICS / 'Montserrat-Light.ttf'), 112)
+    name, name_spacing = 'SUBTITLD', 0.34 * 112
+    line_font = ImageFont.truetype(str(GRAPHICS / 'Montserrat-Regular.ttf'), 38)
+    line = README_TAGLINE
+    probe = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+    name_widths = [probe.textlength(ch, font=name_font) for ch in name]
+    name_w = sum(name_widths) + name_spacing * (len(name) - 1)
+    line_w = probe.textlength(line, font=line_font)
+
+    # The mark and the text side by side, centred together.
+    mark_h = 0.52 * h
+    scale = mark_h / height
+    mark_w = width * scale
+    gap = 0.38 * mark_h
+    left = (w - (mark_w + gap + max(name_w, line_w))) / 2
+    tx = left - x * scale
+    ty = (h - mark_h) / 2 - y * scale
+
+    source, png = HERE / '.banner.svg', HERE / '.banner.png'
+    source.write_text(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+        f'<defs>{defs}<radialGradient id="bannerGlow" cx="{(left + mark_w / 2) / w:.3f}" cy="0.45" '
+        f'r="0.8" gradientUnits="objectBoundingBox">'
+        '<stop offset="0" stop-color="#566f84"/><stop offset="1" stop-color="#1a232b"/>'
+        '</radialGradient></defs>'
+        f'<rect width="{w}" height="{h}" fill="url(#bannerGlow)"/>'
+        f'<g transform="translate({tx:.3f},{ty:.3f}) scale({scale:.5f})">{mark}</g></svg>\n')
+    try:
+        inkscape_png(source, png, w)
+        image = Image.open(png).convert('RGBA')
+    finally:
+        source.unlink()
+        png.unlink(missing_ok=True)
+
+    # The name's capitals and the line below, as one block on the mark's
+    # middle.
+    draw = ImageDraw.Draw(image)
+    cap = name_font.getbbox('S', anchor='ls')[1] * -1
+    line_cap = line_font.getbbox('C', anchor='ls')[1] * -1
+    between = 0.62 * cap
+    name_base = h / 2 - (cap + between + line_cap) / 2 + cap
+    cursor = left + mark_w + gap
+    for ch, advance in zip(name, name_widths):
+        draw.text((cursor, name_base), ch, font=name_font, fill='#dfe8f0', anchor='ls')
+        cursor += advance + name_spacing
+    draw.text((left + mark_w + gap + 4, name_base + between + line_cap), line, font=line_font,
+              fill='#9fb3c4', anchor='ls')
+
+    # Rounded corners, drawn large and scaled down so their edge is smooth.
+    mask = Image.new('L', (w * 4, h * 4), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w * 4 - 1, h * 4 - 1), radius * 4, fill=255)
+    image.putalpha(mask.resize((w, h), Image.LANCZOS))
+    image.save(out, optimize=True)
+    print(out.relative_to(ROOT))
+
+
 # Haiku's vector icon format, HVIF: as much of it as the mark needs. Solid
 # colours; closed paths of lines and cubic curves on a 64 x 64 canvas;
 # shapes, which fill paths with a style, optionally through a stroke.
@@ -523,6 +597,7 @@ def main() -> int:
     write_small_mark(flat, box)
     write_installer_icons(defs, mark, flat, box)
     write_installer_images(defs, mark, flat, box)
+    write_readme_banner(defs, mark, box)
     write_haiku_icon(text)
     tiles = write_tiles(defs, mark, box)
     print(tiles.relative_to(ROOT))
