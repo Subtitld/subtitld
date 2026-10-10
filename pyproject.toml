@@ -29,9 +29,11 @@ dependencies = [
     # arriving unnoticed.
     "PySide6>=6.11.2,<6.12",
     "PySideSix-Frameless-Window",
-    # 0.10.21 is no longer on PyPI; kept on the 0.10 line rather than 1.x,
-    # whose API the speaker and mouth-tracking code has not moved to.
-    "mediapipe>=0.10.30,<0.11",
+    # Speaker face detection (modules/face_detection.py). No release from
+    # 0.10.30 on has the legacy `solutions` API, and the Tasks API runs the
+    # bundled model from 0.10.33. Kept below 1.0, which runs the detector too
+    # but has not been tried with the whole app.
+    "mediapipe>=0.10.33,<0.11",
     "opencv-python",
     "python-i18n",
     "python-docx",
@@ -62,10 +64,10 @@ dependencies = [
 # translation engines are add-ons (installed from the Add-ons panel), not
 # extras.
 [project.optional-dependencies]
-vision = ["mediapipe>=0.10.30,<0.11", "opencv-python"]
+vision = ["mediapipe>=0.10.33,<0.11", "opencv-python"]
 dub = ["edge-tts", "gTTS"]
 all = [
-    "mediapipe>=0.10.30,<0.11",
+    "mediapipe>=0.10.33,<0.11",
     "opencv-python",
     "edge-tts",
     "gTTS",
@@ -86,4 +88,4 @@ where = ["src"]
 include = ["subtitld*"]
 
 [tool.setuptools.package-data]
-subtitld = ["graphics/*", "locale/*", "ftfy/*"]
+subtitld = ["graphics/*", "locale/*", "ftfy/*", "models/*"]

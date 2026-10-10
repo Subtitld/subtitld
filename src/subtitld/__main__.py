@@ -5,12 +5,13 @@ import pathlib
 import inspect
 
 # MediaPipe (used by the Speakers face detection) must be imported before
-# PySide6/Qt. With this venv's protobuf
-# runtime, importing MediaPipe *after* Qt has loaded fails to build its
+# PySide6/Qt when it is a release with the legacy `solutions` API (0.10.21
+# and older, built on protobuf; 0.10.33 and newer do not care). Importing
+# one of those *after* Qt has loaded fails to build its
 # bundled proto descriptors ("Invalid default '0.5' ... into descriptor
 # pool"); importing it first registers them cleanly, and the later
-# `import mediapipe` in those modules reuses this cached, working module.
-# Guarded so a missing/broken install degrades gracefully instead of
+# `import mediapipe` in modules/face_detection reuses this cached, working
+# module. Guarded so a missing/broken install degrades gracefully instead of
 # blocking app start.
 try:
     import mediapipe as _mediapipe_boot  # noqa: F401

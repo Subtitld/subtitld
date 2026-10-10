@@ -25,6 +25,7 @@ a = Analysis(
         ('src/subtitld/graphics', 'subtitld/graphics'),
         ('src/subtitld/locale', 'subtitld/locale'),
         ('src/subtitld/ftfy', 'subtitld/ftfy'),
+        ('src/subtitld/models', 'subtitld/models'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -37,7 +38,7 @@ a = Analysis(
         'charset_normalizer',
         'shiboken6',
     ],
-    hookspath=[],
+    hookspath=['packaging/pyinstaller'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=['FixTk', 'tcl', 'tk', '_tkinter', 'tkinter', 'Tkinter'],

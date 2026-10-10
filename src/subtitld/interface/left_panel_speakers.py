@@ -3,10 +3,6 @@ import hashlib
 import logging
 
 import cv2
-try:
-    import mediapipe as mp
-except Exception:  # optional: unavailable on some platforms (e.g. Haiku)
-    mp = None
 import numpy as np
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
@@ -21,6 +17,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import history
+from subtitld.modules.face_detection import FaceDetector, Unavailable as FaceDetectionUnavailable
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
 log = logging.getLogger(__name__)
@@ -39,37 +36,38 @@ class FaceExtractorThread(QThread):
 
     def run(self):
         intervals = subtitles.get_speaker_intervals(self.name)
-        if not self.name or not intervals:
+        # A project without a video keeps session.VIDEO empty.
+        filepath = (session.VIDEO or {}).get('filepath')
+        if not self.name or not intervals or not filepath:
             return
 
-        # A test stub of mediapipe has no `solutions` attribute, and the
-        # module is absent entirely on platforms it does not ship for.
-        if mp is None or not hasattr(mp, 'solutions'):
-            self.error.emit("Face detection is unavailable: MediaPipe is not installed on this platform.")
+        # MediaPipe is absent on platforms it does not ship for, and 0.10.30
+        # to 0.10.32 cannot run the face model (see modules/face_detection).
+        try:
+            face_detector = FaceDetector()
+        except FaceDetectionUnavailable as e:
+            self.error.emit(f"Face detection is unavailable: {e}.")
             return
 
-        cap = cv2.VideoCapture(session.VIDEO['filepath'])
+        cap = cv2.VideoCapture(filepath)
         if not cap.isOpened():
-            self.error.emit(f"Cannot open video: {session.VIDEO['filepath']}")
+            self.error.emit(f"Cannot open video: {filepath}")
+            face_detector.close()
             return
 
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0:
             self.error.emit("Invalid FPS in video file.")
             cap.release()
+            face_detector.close()
             return
 
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         total_duration = frame_count / fps if fps else 0
 
-        mp_face_detection = mp.solutions.face_detection
-
         try:
-            with mp_face_detection.FaceDetection(
-                model_selection=1,
-                min_detection_confidence=0.5
-            ) as face_detector:
-            
+            with face_detector:
+
                 face_found = False
                 
                 for start_time, end_time in intervals:
@@ -92,19 +90,10 @@ class FaceExtractorThread(QThread):
                             break
 
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        results = face_detector.process(rgb)
+                        faces = face_detector.detect(rgb)
 
-                        if results.detections:
-                            det = results.detections[0]
-                            box = det.location_data.relative_bounding_box
-                            h, w, _ = rgb.shape
-                            x1 = int(box.xmin * w)
-                            y1 = int(box.ymin * h)
-                            x2 = int((box.xmin + box.width) * w)
-                            y2 = int((box.ymin + box.height) * h)
-                            x1, y1 = max(0, x1), max(0, y1)
-                            x2, y2 = min(w, x2), min(h, y2)
-
+                        if faces:
+                            x1, y1, x2, y2 = faces[0]
                             face_crop = rgb[y1:y2, x1:x2]
                             qimg = self._to_qimage(face_crop)
                             if qimg:

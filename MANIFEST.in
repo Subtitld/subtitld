@@ -3,3 +3,4 @@ include LICENSE
 recursive-include src/subtitld/graphics *
 recursive-include src/subtitld/locale *.json
 recursive-include src/subtitld/ftfy *.dat
+recursive-include src/subtitld/models *

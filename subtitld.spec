@@ -27,6 +27,7 @@ a = Analysis(
         ('src/subtitld/graphics', 'subtitld/graphics'),
         ('src/subtitld/locale', 'subtitld/locale'),
         ('src/subtitld/ftfy', 'subtitld/ftfy'),
+        ('src/subtitld/models', 'subtitld/models'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -34,7 +35,7 @@ a = Analysis(
         'PySide6.QtWidgets',
         'qframelesswindow'
     ],
-    hookspath=[],
+    hookspath=['packaging/pyinstaller'],
     hooksconfig={},
     runtime_hooks=['packaging/pyinstaller/rthook_portaudio.py'],
     excludes=['FixTk', 'tcl', 'tk', '_tkinter', 'tkinter', 'Tkinter'],
