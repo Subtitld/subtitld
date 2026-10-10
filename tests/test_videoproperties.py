@@ -7,6 +7,9 @@ instead silently tests stale code.
 import os, sys, tempfile
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout
 from PySide6.QtCore import QDir, QSize

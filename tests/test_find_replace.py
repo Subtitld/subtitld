@@ -4,9 +4,12 @@ Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import os, sys, types
+import os, sys, tempfile, types
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton
 from PySide6.QtCore import QDir, QPoint, Qt

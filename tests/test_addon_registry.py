@@ -4,9 +4,14 @@ Standalone script, like the other suites here; puts this checkout's src/ on
 the path itself (the venv holds a non-editable install).
 """
 import copy
+import os
 import sys
+import tempfile
 from pathlib import Path
 
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from subtitld.modules import session
 from subtitld.modules.addons import registry
