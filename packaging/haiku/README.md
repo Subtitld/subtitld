@@ -5,7 +5,7 @@ Haiku does not package yet.
 
     media-video/subtitld/subtitld-26.09.recipe   the application
     media-video/subtitld/additional-files/       its launcher, resources and icon
-    dev-python/<name>/<name>-<version>.recipe    14 dependencies
+    dev-python/<name>/<name>-<version>.recipe    13 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
 
 ## A native application
@@ -33,7 +33,7 @@ launch, so "Open with Subtitld" would open it empty.
 
 The Build workflow (`.github/workflows/build.yml`, job `haiku`) runs
 `.github/scripts/haiku-build.sh` in a Haiku R1/beta6 VM: it lints the tree,
-builds all 15 recipes with haikuporter, installs the packages with `pkgman`
+builds all 14 recipes with haikuporter, installs the packages with `pkgman`
 and checks the app's modules import. No release is needed: the app's recipe
 is renamed to the build's version and pointed at a tarball of the checkout,
 shaped like GitHub's tag archive and served from localhost.
@@ -69,7 +69,7 @@ Dropped on Haiku:
 
 ## Two INSTALL templates
 
-Eight dependencies ship no `setup.py` (PEP 517-only) and their build backends
+Seven dependencies ship no `setup.py` (PEP 517-only) and their build backends
 (hatchling, flit) are not packaged for Haiku. Those recipes fetch the
 `py3-none-any` wheel and install its unpacked contents, which keeps the
 `.dist-info` that `importlib.metadata` reads. They set `SOURCE_DIR=""`, because a
@@ -81,7 +81,7 @@ The other six use the house `setup.py build install` idiom. Two of them
 `BUILD_REQUIRES`; otherwise setuptools tries to pip-fetch it, and pip does not
 exist inside the chroot.
 
-A reviewer may prefer sdists over wheels. Building the eight from source means
+A reviewer may prefer sdists over wheels. Building the seven from source means
 packaging hatchling and flit_core for Haiku first.
 
 ## Building it yourself
