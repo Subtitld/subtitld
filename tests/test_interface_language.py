@@ -44,20 +44,28 @@ def check(name, got, want):
 EN = json.loads((session.PATH_LOCALE / 'en_US.json').read_text(encoding='utf-8'))
 PT = json.loads((session.PATH_LOCALE / 'pt_BR.json').read_text(encoding='utf-8'))
 MISSING = next(key for key in EN if key not in PT)
+# Every locale file, by its own name, in the order the picker lists them
+# (sorted by file name). Swedish is the stand-in for a language with no file.
+LANGUAGES = {
+    'cs': 'Čeština', 'de': 'Deutsch', 'en_US': 'English', 'es': 'Español',
+    'fr': 'Français', 'id': 'Bahasa Indonesia', 'it': 'Italiano', 'ja': '日本語',
+    'ko': '한국어', 'nl': 'Nederlands', 'pl': 'Polski', 'pt_BR': 'Português (Brasil)',
+    'ru': 'Русский', 'tr': 'Türkçe', 'uk': 'Українська', 'vi': 'Tiếng Việt',
+    'zh_Hans': '简体中文',
+}
 
 print('the system language')
 check('the system prefers pt_BR (LANGUAGE)', QLocale.system().uiLanguages()[0].startswith('pt'), True)
 check('found from the system', translation.system_language(), 'pt_BR')
 check('a region with no file: same language', translation.system_language(['pt-PT']), 'pt_BR')
 check('in the order preferred', translation.system_language(['en-GB', 'pt-BR']), 'en_US')
-check('skipping what has no file', translation.system_language(['de-DE', 'pt-BR']), 'pt_BR')
-check('none there: English', [translation.system_language(tags) for tags in (['de-DE'], ['C'], [])],
+check('skipping what has no file', translation.system_language(['sv-SE', 'pt-BR']), 'pt_BR')
+check('none there: English', [translation.system_language(tags) for tags in (['sv-SE'], ['C'], [])],
       ['en_US', 'en_US', 'en_US'])
 check('a saved language wins', translation.pick_language('en_US', ['pt-BR']), 'en_US')
 check('nothing saved, or no file for it: the system\'s',
       (translation.pick_language('', ['pt-BR']), translation.pick_language('xx_XX', ['pt-BR'])), ('pt_BR', 'pt_BR'))
-check('every locale file, by its own name', translation.get_available_language_names(),
-      {'en_US': 'English', 'pt_BR': 'Português (Brasil)'})
+check('every locale file, by its own name', translation.get_available_language_names(), LANGUAGES)
 
 print('lookups')
 translation.set_language('pt_BR')
@@ -118,8 +126,8 @@ combobox = window.global_panel_language_combobox
 check('in the General tab', window.left_panel_global_tab_general.isAncestorOf(combobox), True)
 inner = combobox.combobox
 check('the system\'s, then each language', [(inner.itemText(i), inner.itemData(i)) for i in range(inner.count())],
-      [(translation._('global_panel.language_system').format(language='Português (Brasil)'), ''),
-       ('English', 'en_US'), ('Português (Brasil)', 'pt_BR')])
+      [(translation._('global_panel.language_system').format(language='Português (Brasil)'), '')]
+      + [(name, code) for code, name in LANGUAGES.items()])
 check('the system\'s selected', inner.currentIndex(), 0)
 
 print('switching, live')
