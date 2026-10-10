@@ -4,14 +4,36 @@ A haikuports recipe tree for Subtitld and the Python packages it needs that
 Haiku does not package yet.
 
     media-video/subtitld/subtitld-26.09.recipe   the application
-    dev-python/<name>/<name>-<version>.recipe    15 dependencies
+    media-video/subtitld/additional-files/       its launcher, resources and icon
+    dev-python/<name>/<name>-<version>.recipe    14 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
+
+## A native application
+
+Subtitld is Python, but on Haiku it looks and behaves like a native app:
+
+* `/boot/system/apps/Subtitld` is a small native program (`launcher.c`) that
+  runs Subtitld inside the system's Python rather than starting the
+  interpreter. The running application is therefore Subtitld, and Deskbar
+  shows its name and icon, not Python's.
+* It carries Subtitld's signature (`application/x-vnd.qt6-Subtitld`, the one
+  Qt gives an application on Haiku), version and
+  vector icon as resources (`subtitld.rdef.in`), so Tracker, the Deskbar
+  menu and HaikuDepot show the icon. HaikuDepot's server takes an app's icon
+  from its package when the package holds a single application with one.
+* The icon, `subtitld.hvif`, is generated from `packaging/branding/icon.svg`
+  by `packaging/branding/render-icons.py`, along with the resources: the
+  mark's two shapes in their colours over a darker outline, and its shadow,
+  flat (HVIF has no blur).
+
+No file types are declared yet: Subtitld does not open files given to it at
+launch, so "Open with Subtitld" would open it empty.
 
 ## Built by CI
 
 The Build workflow (`.github/workflows/build.yml`, job `haiku`) runs
 `.github/scripts/haiku-build.sh` in a Haiku R1/beta6 VM: it lints the tree,
-builds all 16 recipes with haikuporter, installs the packages with `pkgman`
+builds all 15 recipes with haikuporter, installs the packages with `pkgman`
 and checks the app's modules import. No release is needed: the app's recipe
 is renamed to the build's version and pointed at a tarball of the checkout,
 shaped like GitHub's tag archive and served from localhost.
@@ -20,9 +42,10 @@ The same script runs locally in the image CI uses
 ([haiku-builder](https://github.com/cross-platform-actions/haiku-builder)
 releases, a qcow2 for QEMU; log in over SSH as `user`, no password).
 
-On a stable release, `release.yml` attaches the app's recipe to the GitHub
-release, pointed at the tag with its checksum: that is the file for
-haikuports.
+On a stable release, `release.yml` attaches
+`subtitld-<version>-haikuports.tar.gz` to the GitHub release: this tree's
+ports, with the app's recipe pointed at the tag with its checksum. Unpack it
+into a haikuports checkout (`tar -xzf ... -C haikuports`).
 
 ## Dependencies
 
@@ -46,7 +69,7 @@ Dropped on Haiku:
 
 ## Two INSTALL templates
 
-Nine dependencies ship no `setup.py` (PEP 517-only) and their build backends
+Eight dependencies ship no `setup.py` (PEP 517-only) and their build backends
 (hatchling, flit) are not packaged for Haiku. Those recipes fetch the
 `py3-none-any` wheel and install its unpacked contents, which keeps the
 `.dist-info` that `importlib.metadata` reads. They set `SOURCE_DIR=""`, because a
@@ -58,14 +81,14 @@ The other six use the house `setup.py build install` idiom. Two of them
 `BUILD_REQUIRES`; otherwise setuptools tries to pip-fetch it, and pip does not
 exist inside the chroot.
 
-A reviewer may prefer sdists over wheels. Building the nine from source means
+A reviewer may prefer sdists over wheels. Building the eight from source means
 packaging hatchling and flit_core for Haiku first.
 
 ## Building it yourself
 
     pkgman install haikuporter
     git clone https://github.com/haikuports/haikuports.git
-    cp -r dev-python/* media-video/* haikuports/    # merge this tree in
+    cp -r dev-python media-video haikuports/    # merge this tree in
     cd haikuports && haikuporter --lint
     haikuporter -y subtitld
 

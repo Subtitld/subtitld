@@ -8,8 +8,8 @@
 # cross-platform-actions VM, locally in the same image under QEMU. The tarball
 # is the source shaped like GitHub's tag archive (top directory
 # "subtitld-<version>"), so no release is needed: the recipe is pointed at a
-# copy served from localhost. Out come the packages, and the recipe with that
-# version and checksum, for haikuports.
+# copy served from localhost. Out come the packages, and the ports for
+# haikuports (haikuports/: the recipes, the app's for that version).
 set -euo pipefail
 
 VERSION=${1:?usage: haiku-build.sh <version> <source-tarball> [out-dir]}
@@ -76,16 +76,27 @@ from subtitld.interface import startscreen, productionscreen, top_bar
 from subtitld.modules import audioengine, file_io
 print('subtitld imports OK')
 "
-test -x /boot/system/apps/Subtitld/Subtitld
 command -v subtitld
-# And start it: it should still be running after 25 s.
-QT_QPA_PLATFORM=offscreen bash "$SRC/.github/scripts/smoke.sh" 25 subtitld
+# The application: the native launcher, with Subtitld's signature (and so
+# its icon) as Deskbar and Tracker see it.
+app=/boot/system/apps/Subtitld
+test -x "$app"
+[ "$(catattr -d BEOS:APP_SIG "$app")" = application/x-vnd.qt6-Subtitld ]
+catattr -d BEOS:ICON "$app" > /dev/null
+# And start it as Deskbar would: it should still be running after 25 s.
+QT_QPA_PLATFORM=offscreen bash "$SRC/.github/scripts/smoke.sh" 25 "$app"
 
 mkdir -p "$OUT"
 cp "$TREE"/packages/*.hpkg "$OUT/"
-# For haikuports: the recipe as it would be submitted, pointing at the GitHub
-# tag. Its checksum is only known once the tag exists (release.yml fills it in).
+# For haikuports: what goes into its tree, as it would be submitted. The app's
+# recipe points at the GitHub tag; its checksum is only known once the tag
+# exists (release.yml fills it in).
+ports=$OUT/haikuports
+rm -rf "$ports"
+mkdir -p "$ports/media-video/subtitld"
+cp -r "$SRC/packaging/haiku/dev-python" "$ports/"
+cp -r "$SRC/packaging/haiku/media-video/subtitld/additional-files" "$ports/media-video/subtitld/"
 sed -e "s|^SOURCE_URI=.*|SOURCE_URI=\"https://github.com/Subtitld/subtitld/archive/refs/tags/\$portVersion.tar.gz\"|" \
     -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$(printf '0%.0s' $(seq 64))\"|" \
-    "$recipe" > "$OUT/subtitld-$VERSION.recipe"
+    "$recipe" > "$ports/media-video/subtitld/subtitld-$VERSION.recipe"
 ls -la "$OUT"

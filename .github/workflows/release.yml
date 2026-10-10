@@ -174,7 +174,7 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────
   # GitHub Release: stable only, with every package and the Haiku
-  # recipe as it goes to haikuports
+  # ports as they go to haikuports
   # ──────────────────────────────────────────────────────────────
   publish-github-release:
     needs: [channel, build]
@@ -196,7 +196,10 @@ jobs:
           sed -i -e "s|^SOURCE_URI=.*|SOURCE_URI=\"https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz\"|" \
             -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$sum\"|" \
             -e "s|^SOURCE_DIR=.*|SOURCE_DIR=\"subtitld-${TAG#v}\"|" \
-            "artifacts/subtitld-$VERSION.recipe"
+            "artifacts/haikuports/media-video/subtitld/subtitld-$VERSION.recipe"
+          # One file for the release: the ports, to unpack into haikuports.
+          tar -C artifacts/haikuports -czf "artifacts/subtitld-$VERSION-haikuports.tar.gz" dev-python media-video
+          rm -r artifacts/haikuports
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}

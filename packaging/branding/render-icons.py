@@ -27,6 +27,11 @@ Writes:
                                               name on the slate glow
     packaging/nsis/header.bmp                 the installer's other pages:
                                               the mark, in the header
+    packaging/haiku/media-video/subtitld/additional-files/
+        subtitld.hvif                         the Haiku icon (HVIF, Haiku's
+                                              vector format), for HaikuDepot
+        subtitld.rdef.in                      the launcher's resources, the
+                                              icon included, for the recipe
 
 Usage:  python packaging/branding/render-icons.py
 
@@ -310,6 +315,170 @@ def write_installer_images(defs: str, mark: str, flat: str, box: tuple[float, fl
     print('packaging/nsis/header.bmp')
 
 
+# Haiku's vector icon format, HVIF: as much of it as the mark needs. Solid
+# colours; closed paths of lines and cubic curves on a 64 x 64 canvas;
+# shapes, which fill paths with a style, optionally through a stroke.
+HVIF_STYLE_COLOR, HVIF_STYLE_COLOR_NO_ALPHA = 1, 3
+HVIF_SHAPE_PATH_SOURCE = 10
+HVIF_TRANSFORMER_STROKE = 23
+HVIF_PATH_CLOSED, HVIF_PATH_NO_CURVES = 1 << 1, 1 << 3
+HVIF_SHAPE_HAS_TRANSFORMERS = 1 << 4
+HVIF_ROUND = 2                      # round join, round cap
+
+
+def svg_contours(d: str, matrix: tuple[float, ...]) -> list[list[list[float]]]:
+    """The closed contours of an SVG path (M, L, H, V, C, Z, absolute or
+    relative), mapped through matrix (a, b, c, d, e, f), as HVIF points:
+    [x, y, x_in, y_in, x_out, y_out], the controls of the curves into and
+    out of each point."""
+    tokens = re.findall(r'[MmLlHhVvCcZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?', d)
+    contours: list[list[list[float]]] = []
+    nodes: list[list[float]] = []
+    x = y = start_x = start_y = 0.0
+    command, i = 'M', 0
+
+    def number() -> float:
+        nonlocal i
+        i += 1
+        return float(tokens[i - 1])
+
+    def close() -> None:
+        nonlocal nodes
+        if len(nodes) > 1 and abs(nodes[-1][0] - nodes[0][0]) < 1e-6 and abs(nodes[-1][1] - nodes[0][1]) < 1e-6:
+            nodes[0][2:4] = nodes[-1][2:4]          # the last point is the first again
+            nodes.pop()
+        if nodes:
+            contours.append(nodes)
+        nodes = []
+
+    while i < len(tokens):
+        if tokens[i].isalpha():
+            command = tokens[i]
+            i += 1
+            if command in 'Zz':
+                close()
+                x, y = start_x, start_y
+                continue
+        rel = command.islower()
+        dx, dy = (x, y) if rel else (0.0, 0.0)
+        kind = command.upper()
+        if kind == 'M':
+            close()
+            x, y = number() + dx, number() + dy
+            start_x, start_y = x, y
+            nodes = [[x, y, x, y, x, y]]
+            command = 'l' if rel else 'L'           # further pairs are lines
+        elif kind in 'LHV':
+            nx = number() + dx if kind in 'LH' else x
+            ny = number() + dy if kind in 'LV' else y
+            x, y = nx, ny
+            nodes.append([x, y, x, y, x, y])
+        elif kind == 'C':
+            x1, y1, x2, y2, nx, ny = (number() + (dx, dy)[k % 2] for k in range(6))
+            nodes[-1][4:6] = [x1, y1]
+            x, y = nx, ny
+            nodes.append([x, y, x2, y2, x, y])
+    close()
+
+    a, b, c, dd, e, f = matrix
+    return [[[a * p[k] + c * p[k + 1] + e if j == 0 else b * p[k] + dd * p[k + 1] + f
+              for k in (0, 2, 4) for j in (0, 1)] for p in contour] for contour in contours]
+
+
+def hvif_coord(value: float) -> bytes:
+    """A coordinate: one byte for a whole number from -32 to 95, else two
+    (a 1/102 resolution from -128 to 192)."""
+    if value == int(value) and -32 <= value <= 95:
+        return bytes([int(value) + 32])
+    if not -128 <= value <= 192:
+        raise ValueError(f'HVIF coordinate out of range: {value}')
+    stored = round((value + 128) * 102)
+    return bytes([(stored >> 8) | 0x80, stored & 0xff])
+
+
+def hvif_path(points: list[list[float]]) -> bytes:
+    straight = all(p[0:2] == p[2:4] == p[4:6] for p in points)
+    data = bytes([HVIF_PATH_CLOSED | (HVIF_PATH_NO_CURVES if straight else 0), len(points)])
+    for point in points:
+        for value in (point[:2] if straight else point):
+            data += hvif_coord(round(value, 2))
+    return data
+
+
+def hvif_shape(style: int, paths: list[int], stroke: int = 0) -> bytes:
+    """A shape: the paths filled with the style, or, with stroke, outlined
+    stroke units wide (round joins and caps)."""
+    data = bytes([HVIF_SHAPE_PATH_SOURCE, style, len(paths), *paths,
+                  HVIF_SHAPE_HAS_TRANSFORMERS if stroke else 0])
+    if stroke:
+        data += bytes([1, HVIF_TRANSFORMER_STROKE, stroke + 128, HVIF_ROUND | HVIF_ROUND << 4, 4])
+    return data
+
+
+def write_haiku_icon(icon_svg: str) -> None:
+    """The Haiku icon, from icon.svg's three paths: the shadow, flat and
+    faint (HVIF has no blur), and the bar and the arrow, each in its colour
+    over a darker outline, the way Haiku's icons are drawn, which also keeps
+    the pale bar visible on Haiku's light backgrounds. Written as an .hvif,
+    and into the launcher's resources (subtitld.rdef.in, for the recipe)."""
+    def element(path_id: str) -> tuple[str, tuple[float, ...]]:
+        tag = re.search(rf'<path\b[^>]*\bid="{path_id}"[^>]*>', icon_svg, re.S).group(0)
+        transform = re.search(r'\stransform="matrix\(([^)]+)\)"', tag)
+        matrix = tuple(float(v) for v in re.split(r'[\s,]+', transform.group(1).strip())) if transform \
+            else (1, 0, 0, 1, 0, 0)
+        return re.search(r'\sd="([^"]+)"', tag).group(1), matrix
+
+    layer = re.search(r'<g\b[^>]*\bid="layer1"[^>]*>', icon_svg, re.S).group(0)
+    tx, ty = (float(v) for v in re.search(r'translate\(([^,]+),([^)]+)\)', layer).groups())
+    canvas = 64 / float(re.search(r'<svg\b[^>]*\bwidth="([\d.]+)"', icon_svg, re.S).group(1))
+
+    def to_canvas(matrix: tuple[float, ...]) -> tuple[float, ...]:
+        a, b, c, d, e, f = matrix                   # then the layer's translation, then the scale
+        return (a * canvas, b * canvas, c * canvas, d * canvas, (e + tx) * canvas, (f + ty) * canvas)
+
+    shadow, bar, arrow = (svg_contours(d, to_canvas(m)) for d, m in map(element, ('path26', 'path22', 'path23')))
+    paths = shadow + bar + arrow
+    shadow_ids = list(range(len(shadow)))
+    bar_ids = list(range(len(shadow), len(shadow) + len(bar)))
+    arrow_ids = list(range(len(shadow) + len(bar), len(paths)))
+
+    styles = [
+        bytes([HVIF_STYLE_COLOR, 0, 0, 0, 44]),                 # the shadow, as faint as icon.svg's
+        bytes([HVIF_STYLE_COLOR_NO_ALPHA, 0x5b, 0x70, 0x83]),   # the bar's outline
+        bytes([HVIF_STYLE_COLOR_NO_ALPHA, 0xb8, 0xce, 0xe0]),   # the bar
+        bytes([HVIF_STYLE_COLOR_NO_ALPHA, 0x2a, 0x84, 0x1d]),   # the arrow's outline
+        bytes([HVIF_STYLE_COLOR_NO_ALPHA, 0x55, 0xd4, 0x3f]),   # the arrow
+    ]
+    shapes = [
+        hvif_shape(0, shadow_ids),
+        hvif_shape(1, bar_ids, stroke=2), hvif_shape(2, bar_ids),
+        hvif_shape(3, arrow_ids, stroke=2), hvif_shape(4, arrow_ids),
+    ]
+    hvif = (b'ncif' + bytes([len(styles)]) + b''.join(styles)
+            + bytes([len(paths)]) + b''.join(hvif_path(p) for p in paths)
+            + bytes([len(shapes)]) + b''.join(shapes))
+
+    out = ROOT / 'packaging' / 'haiku' / 'media-video' / 'subtitld' / 'additional-files'
+    (out / 'subtitld.hvif').write_bytes(hvif)
+    hex_lines = '\n'.join(f'\t$"{hvif[k:k + 32].hex().upper()}"' for k in range(0, len(hvif), 32))
+    (out / 'subtitld.rdef.in').write_text(
+        '/* Subtitld\'s launcher on Haiku: its signature, version and icon.\n'
+        '   Generated by packaging/branding/render-icons.py; the recipe fills in\n'
+        '   the version. */\n\n'
+        # Qt names a Haiku application "application/x-vnd.qt6-" and its file
+        # name; the resources must say the same.
+        'resource app_signature "application/x-vnd.qt6-Subtitld";\n\n'
+        'resource app_flags B_MULTIPLE_LAUNCH;\n\n'
+        'resource app_version {\n'
+        '\tmajor = @MAJOR@,\n\tmiddle = @MIDDLE@,\n\tminor = @MINOR@,\n\n'
+        '\tvariety = B_APPV_FINAL,\n\tinternal = 0,\n\n'
+        '\tshort_info = "Subtitld",\n'
+        '\tlong_info = "Subtitld: create, edit, transcribe, translate and dub subtitles"\n'
+        '};\n\n'
+        f'resource vector_icon array {{\n{hex_lines}\n}};\n')
+    print(f'subtitld.hvif ({len(hvif)} bytes), subtitld.rdef.in')
+
+
 def main() -> int:
     if shutil.which('inkscape') is None:
         sys.exit('Inkscape is needed on the PATH.')
@@ -354,6 +523,7 @@ def main() -> int:
     write_small_mark(flat, box)
     write_installer_icons(defs, mark, flat, box)
     write_installer_images(defs, mark, flat, box)
+    write_haiku_icon(text)
     tiles = write_tiles(defs, mark, box)
     print(tiles.relative_to(ROOT))
     subprocess.run([sys.executable, str(MSIX / 'generate-assets.py'), str(tiles), '--clean'], check=True)
