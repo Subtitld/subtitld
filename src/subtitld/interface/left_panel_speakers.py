@@ -1209,7 +1209,7 @@ class new_speaker_name_dialog(utils.SimpleDialog):
         self.input_line.setLayout(QHBoxLayout())
         self.input_line.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.input_label = QLabel('Please enter your name:')
+        self.input_label = QLabel()
         self.input_line.layout().addWidget(self.input_label)
 
         self.input = QLineEdit()
@@ -1232,7 +1232,7 @@ class rename_speaker_name_dialog(utils.SimpleDialog):
         self.input_line.setLayout(QHBoxLayout())
         self.input_line.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.input_label = QLabel('Please enter your name:')
+        self.input_label = QLabel()
         self.input_line.layout().addWidget(self.input_label)
 
         self.input = QLineEdit()
@@ -1262,7 +1262,7 @@ class remove_speaker_name_dialog(utils.SimpleDialog):
         self.input_line.setLayout(QHBoxLayout())
         self.input_line.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.input_label = QLabel('Please select the speaker to replace with the removed speaker:')
+        self.input_label = QLabel()
         self.input_line.layout().addWidget(self.input_label)
 
         self.select = QComboBox()
@@ -1358,7 +1358,7 @@ def load(self):
     # selection shows an empty list until the user re-selects the panel.
     _SESSION_SIGNALS.speakers_changed.connect(lambda: update_speakers_list(self))
 
-    self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
+    self.left_panel_speakers_new_name_dialog = new_speaker_name_dialog(self)
 
     self.left_panel_speakers_rename_dialog = rename_speaker_name_dialog(parent=self)
     self.left_panel_speakers_remove_dialog = remove_speaker_name_dialog(parent=self)
@@ -1651,3 +1651,8 @@ def translate(self):
     self.left_panel_speakers_add_button.setText(_('subtitles_panel_widget_speakers.add_speaker'))
     self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
     self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
+    # Built once and kept, so OK and Cancel follow the language here; the
+    # rename and remove dialogs set their other texts as they open.
+    for dialog in (self.left_panel_speakers_new_name_dialog, self.left_panel_speakers_rename_dialog,
+                   self.left_panel_speakers_remove_dialog):
+        dialog.retranslate()

@@ -42,6 +42,8 @@ from subtitld.modules.shortcuts import shortcut
 
 log = logging.getLogger(__name__)
 
+# The step units as the settings store them (CONFIG['timeline']['step_unit']),
+# held as the step unit items' data; their labels are set in translate().
 STEPS_LIST = ['Frames', 'Seconds']
 
 
@@ -1659,7 +1661,8 @@ def load(self):
 
     self.step_unit = QComboBox()
     self.step_unit.setObjectName('step_unit')
-    self.step_unit.insertItems(0, STEPS_LIST)
+    for unit in STEPS_LIST:
+        self.step_unit.addItem('', unit)
     self.step_unit.activated.connect(lambda: step_value_changed(self))
     # self.step_unit.setFixedHeight(24)
     # self.step_unit.setFixedWidth(80)
@@ -1967,7 +1970,7 @@ def playercontrols_stop_button_clicked(self):
     update_playercontrols_playpause_button(self)
     timeline.update(self)
 
-@shortcut('playpause', 'Play/Pause', ['Space'])
+@shortcut('playpause', 'shortcuts.playpause', ['Space'])
 def playercontrols_playpause_button_pressed(self):
     if self.playercontrols_widget.isVisible():
         playercontrols_playpause_button_clicked(self)
@@ -2225,7 +2228,7 @@ def _refresh_after_history(self):
             device.sync_subtitle_dubs(session.SUBTITLE.get('segments', []) or [])
 
 
-@shortcut('history_undo', 'Undo last action', ['Ctrl+Z'])
+@shortcut('history_undo', 'shortcuts.history_undo', ['Ctrl+Z'])
 def history_undo_command(self):
     if _focus_is_text_widget(self):
         return
@@ -2233,7 +2236,7 @@ def history_undo_command(self):
         _refresh_after_history(self)
 
 
-@shortcut('history_redo', 'Redo last undone action', ['Ctrl+Shift+Z', 'Ctrl+Y'])
+@shortcut('history_redo', 'shortcuts.history_redo', ['Ctrl+Shift+Z', 'Ctrl+Y'])
 def history_redo_command(self):
     if _focus_is_text_widget(self):
         return
@@ -2268,7 +2271,7 @@ def _refresh_dub_after_edit(self):
             device.sync_subtitle_dubs(session.SUBTITLE.get('segments', []) or [])
 
 
-@shortcut('split_dub_at_cursor', 'Split dub clip at cursor', ['Shift+S'])
+@shortcut('split_dub_at_cursor', 'shortcuts.split_dub_at_cursor', ['Shift+S'])
 def split_dub_at_cursor(self):
     if _focus_is_text_widget(self):
         return
@@ -2285,7 +2288,7 @@ def split_dub_at_cursor(self):
         _refresh_dub_after_edit(self)
 
 
-@shortcut('zoom_in', 'Zoom in', ['+'])
+@shortcut('zoom_in', 'shortcuts.zoom_in', ['+'])
 def zoomin_button_clicked(self):
     """Function to call when zoonin button is clicked"""
     # Button/keyboard zoom has no meaningful pointer position over the
@@ -2296,7 +2299,7 @@ def zoomin_button_clicked(self):
     zoom_buttons_update(self)
 
 
-@shortcut('zoom_out', 'Zoom out', ['-'])
+@shortcut('zoom_out', 'shortcuts.zoom_out', ['-'])
 def zoomout_button_clicked(self):
     """Function to call when zoonout button is clicked"""
     self._zoom_mouse_pivot_x = None
@@ -2388,7 +2391,7 @@ def snap_value_changed(self):
 
 def step_value_changed(self):
     """Function to set variables to settings"""
-    session.CONFIG['timeline']['step_unit'] = self.step_unit.currentText()
+    session.CONFIG['timeline']['step_unit'] = self.step_unit.currentData()
     if session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Seconds':
         session.CONFIG['timeline']['step_value'] = self.step_value_f.value()
     else:
@@ -2406,7 +2409,7 @@ def update_step_buttons(self):
 
 def update_step_information(self):
     """Updates the widgets information"""
-    self.step_unit.setCurrentIndex(STEPS_LIST.index(session.CONFIG['timeline'].get('step_unit', 'Frames')))
+    self.step_unit.setCurrentIndex(max(0, self.step_unit.findData(session.CONFIG['timeline'].get('step_unit', 'Frames'))))
     self.step_value_f.setValue(float(session.CONFIG['timeline'].get('step_value', 1.0)))
     self.step_value_i.setValue(int(session.CONFIG['timeline'].get('step_value', 1)))
     self.step_value_f.setVisible(session.CONFIG['timeline'].get('step_unit', 'Frames') == 'Seconds')
@@ -2567,7 +2570,7 @@ def playercontrols_play_from_next_start_button_clicked(self):
     update_playercontrols_playpause_button(self)
 
 
-@shortcut('add_new_subtitle_to_current_position', 'Add new subtitle to current position', ['Enter'])
+@shortcut('add_new_subtitle_to_current_position', 'shortcuts.add_new_subtitle_to_current_position', ['Enter'])
 def add_subtitle_command(self):
     if self.focusWidget() is not self.timeline_widget:
         return
@@ -2591,7 +2594,7 @@ def add_subtitle_button_clicked(self):
     session.set_unsaved()
 
 
-@shortcut('remove_current_subtitle', 'Remove current subtitle', ['*'])
+@shortcut('remove_current_subtitle', 'shortcuts.remove_current_subtitle', ['*'])
 def remove_selected_subtitle_button_clicked(self):
     """Function to call when remove selected subtitle button is clicked"""
     subtitles.remove_subtitle(selected_subtitle=session.SUBTITLE['selected'])
@@ -2603,7 +2606,7 @@ def remove_selected_subtitle_button_clicked(self):
     session.set_unsaved()
 
 
-@shortcut('toggle_lock_current_subtitle', 'Toggle lock on current subtitle', ['L'])
+@shortcut('toggle_lock_current_subtitle', 'shortcuts.toggle_lock_current_subtitle', ['L'])
 def toggle_lock_selected_subtitle(self):
     """Lock / unlock the selected subtitle. Locked subtitles and their dub
     clips cannot be dragged or resized on the timeline."""
@@ -2615,7 +2618,7 @@ def toggle_lock_selected_subtitle(self):
     session.set_unsaved()
 
 
-@shortcut('slice_current_subtitle', 'Slice current subtitle', ['/'])
+@shortcut('slice_current_subtitle', 'shortcuts.slice_current_subtitle', ['/'])
 def slice_selected_subtitle_command(self):
     if self.focusWidget() is not self.timeline_widget:
         return
@@ -2646,7 +2649,7 @@ def slice_selected_subtitle_button_update(self):
     self.slice_selected_subtitle_button.setChecked(bool(self.timeline_widget.is_smart_splicing))
 
 
-@shortcut('select_subtitle_in_current_position', 'Select subtitle in current position', ['5'])
+@shortcut('select_subtitle_in_current_position', 'shortcuts.select_subtitle_in_current_position', ['5'])
 def select_subtitle_in_current_position(self):
     """Function to call when actual subtitle under cursor need to be selected"""
     subtitle = subtitles.subtitle_under_current_position(position=session.SUBTITLE.get('position', 0))
@@ -2655,7 +2658,7 @@ def select_subtitle_in_current_position(self):
         timeline.update(self)
 
 
-@shortcut('select_next_subtitle_over_current_position', 'Select next subtitle over current position', ['8'])
+@shortcut('select_next_subtitle_over_current_position', 'shortcuts.select_next_subtitle_over_current_position', ['8'])
 def select_next_subtitle_over_current_position(self):
     """Function to call when next subtitle under cursor need to be selected"""
     subtitle = subtitles.next_subtitle_current_position(position=session.SUBTITLE.get('position', 0))
@@ -2664,7 +2667,7 @@ def select_next_subtitle_over_current_position(self):
         timeline.update(self)
 
 
-@shortcut('select_last_subtitle_over_current_position', 'Select last subtitle over current position', ['2'])
+@shortcut('select_last_subtitle_over_current_position', 'shortcuts.select_last_subtitle_over_current_position', ['2'])
 def select_last_subtitle_over_current_position(self):
     """Function to call when last subtitle under cursor need to be selected"""
     subtitle = subtitles.last_subtitle_current_position(position=session.SUBTITLE.get('position', 0))
@@ -2766,7 +2769,7 @@ def nudge(self, move, **kwargs):
     hold.start()
 
 
-@shortcut('move_step_backward_subtitle', 'Move subtitle a step backward', ['4'])
+@shortcut('move_step_backward_subtitle', 'shortcuts.move_step_backward_subtitle', ['4'])
 def move_backward_subtitle_clicked(self):
     """Function to move subtitle backward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -2778,7 +2781,7 @@ def move_backward_subtitle_clicked(self):
         session.set_unsaved()
 
 
-@shortcut('move_step_forward_subtitle', 'Move subtitle a step forward', ['6'])
+@shortcut('move_step_forward_subtitle', 'shortcuts.move_step_forward_subtitle', ['6'])
 def move_forward_subtitle_clicked(self):
     """Function to move subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -2790,7 +2793,7 @@ def move_forward_subtitle_clicked(self):
         session.set_unsaved()
 
 
-@shortcut('subtract_step_subtitle_start', 'Subtract a step to subtitle start', ['1'])
+@shortcut('subtract_step_subtitle_start', 'shortcuts.subtract_step_subtitle_start', ['1'])
 def move_start_back_subtitle_clicked(self):
     """Function to move starting position of selected subtitle backward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -2802,7 +2805,7 @@ def move_start_back_subtitle_clicked(self):
         session.set_unsaved()
 
 
-@shortcut('add_step_subtitle_start', 'Add a step to subtitle start', ['7'])
+@shortcut('add_step_subtitle_start', 'shortcuts.add_step_subtitle_start', ['7'])
 def move_start_forward_subtitle_clicked(self):
     """Function to move starting position of selected subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -2814,7 +2817,7 @@ def move_start_forward_subtitle_clicked(self):
         session.set_unsaved()
 
 
-@shortcut('subtract_step_subtitle_end', 'Subtract a step to subtitle end', ['3'])
+@shortcut('subtract_step_subtitle_end', 'shortcuts.subtract_step_subtitle_end', ['3'])
 def move_end_back_subtitle_clicked(self):
     """Function to move ending position of selected subtitle backwards"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -2826,7 +2829,7 @@ def move_end_back_subtitle_clicked(self):
         session.set_unsaved()
 
 
-@shortcut('add_step_subtitle_end', 'Add a step to subtitle end', ['9'])
+@shortcut('add_step_subtitle_end', 'shortcuts.add_step_subtitle_end', ['9'])
 def move_end_forward_subtitle_clicked(self):
     """Function to move ending position of selected subtitle forward"""
     if session.SUBTITLE.get('selected', None) is not None:
@@ -3296,7 +3299,7 @@ def timeline_show_speaker_tracks_button_clicked(self):
     self.timeline_widget.update()
 
 
-@shortcut('timeline_escape_action', 'Escape timeline actions', ['Escape'])
+@shortcut('timeline_escape_action', 'shortcuts.timeline_escape_action', ['Escape'])
 def escape_actions(self):
     if self.timeline_widget.is_smart_splicing:
         self.timeline_widget.is_smart_splicing = False
@@ -3361,6 +3364,8 @@ def translate(self):
     self.grid_seconds_button.setToolTip(_('playercontrols.grid_seconds'))
     self.grid_scenes_button.setToolTip(_('playercontrols.grid_scenes'))
     self.step_button.setToolTip(_('playercontrols.step'))
+    for unit, label in (('Frames', _('units.frames')), ('Seconds', _('units.seconds'))):
+        self.step_unit.setItemText(self.step_unit.findData(unit), label)
     self.zoomin_button.setToolTip(_('playercontrols.zoom_in'))
     self.zoomout_button.setToolTip(_('playercontrols.zoom_out'))
     self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))

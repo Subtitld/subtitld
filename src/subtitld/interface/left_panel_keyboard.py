@@ -449,7 +449,7 @@ def keyboard_panel_rebuild_list(self):
     self.keyboard_panel_rows = {}
 
     for command_id, description in shortcuts.shortcuts_dict.items():
-        row = _CommandRow(command_id, description, _first_key(command_id))
+        row = _CommandRow(command_id, _(description), _first_key(command_id))
         keys = _current_keys(command_id)
         if len([key for key in keys if key]) > 1:
             # A command can hold more than one binding; the row shows the
@@ -490,7 +490,7 @@ def keyboard_panel_update_capture(self):
         return
 
     # Qt ignores QSS text-transform on a label, so the caps are ours.
-    self.keyboard_panel_capture_title.setText(shortcuts.shortcuts_dict.get(selected, '').upper())
+    self.keyboard_panel_capture_title.setText(_(shortcuts.shortcuts_dict.get(selected, '')).upper())
     keys = _first_key(selected)
     layout = self.keyboard_panel_keycaps.layout()
     _clear(layout)
@@ -579,7 +579,7 @@ def keyboard_panel_capture_keys(self, event):
         # Warn rather than steal it: the other command would silently lose
         # its shortcut, and two commands on one key is ambiguous anyway.
         self.keyboard_panel_hint.setText(_('keyboard_panel.conflict').format(
-            keys=combination, command=shortcuts.shortcuts_dict.get(clash, clash)))
+            keys=combination, command=_(shortcuts.shortcuts_dict.get(clash, clash))))
         return True
 
     keyboard_panel_set_shortcut(self, command_id, [combination] + [

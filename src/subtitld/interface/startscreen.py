@@ -338,6 +338,9 @@ def translate(self):
     self.start_screen_recent_label.setText(_('startscreen.recent_subtitles'))
     self.start_screen_adver_label.setText((_('startscreen.version_number').format(__version__)))
     self.start_screen_adver_label_details.setText(_('startscreen.visit_website'))
+    for label in self.start_screen_recent_listwidget.findChildren(QLabel):
+        if label.property('class') == 'age':
+            label.setText(utils.friendly_time(label.property('last_opened')))
 
 
 def update_recent_files_list(self):
@@ -383,6 +386,8 @@ def update_recent_files_list(self):
                     age = utils.friendly_time(datetime.datetime.fromtimestamp(float(config['last_opened'])))
                     item_widget_age_line = QLabel()
                     item_widget_age_line.setProperty('class', 'age')
+                    # For translate() to say it again in another language.
+                    item_widget_age_line.setProperty('last_opened', float(config['last_opened']))
                     item_widget_age_line.setAlignment(Qt.AlignRight)
                     item_widget_age_line.setText(age)
                     item_widget.layout().addWidget(item_widget_age_line, 0, Qt.AlignRight | Qt.AlignTop)

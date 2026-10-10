@@ -204,7 +204,7 @@ class _VideoPanel(QWidget):
         self.ffmpeg_left_panel.layout().setSpacing(20)
 
         # Font group ------------------------------------------------------
-        self.ffmpeg_font_group = QGroupBox('Font')
+        self.ffmpeg_font_group = QGroupBox(_('units.font'))
         self.ffmpeg_font_group.setLayout(QHBoxLayout())
         self.ffmpeg_font_group.layout().setContentsMargins(10, 10, 10, 10)
         self.ffmpeg_font_group.layout().setSpacing(20)

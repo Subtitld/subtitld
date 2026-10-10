@@ -451,7 +451,7 @@ def load(self):
     left_panel_subtitles_panel.layout().addWidget(subtitles_panel_simplelist_qsplitter)
 
 
-    self.left_panel_subtitleslist_new_name_dialog = new_speaker_name_dialog(self, 'New speaker')
+    self.left_panel_subtitleslist_new_name_dialog = new_speaker_name_dialog(self)
 
 
 def subtitles_panel_empty_state_button_clicked(self):
@@ -800,8 +800,9 @@ def translate(self):
     self.subtitles_panel_empty_state_label.setText(_('left_panel_subtitleslist.empty_state_label'))
     self.subtitles_panel_empty_state_button.setToolTip(_('left_panel_subtitleslist.empty_state_button'))
 
-    # self.left_panel_speakers_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
-    # self.left_panel_speakers_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
+    self.left_panel_subtitleslist_new_name_dialog.set_title(_('subtitles_panel_widget_speakers.new_speaker'))
+    self.left_panel_subtitleslist_new_name_dialog.input_label.setText(_('subtitles_panel_widget_speakers.enter_speaker_name'))
+    self.left_panel_subtitleslist_new_name_dialog.retranslate()
 
 
 class SpeakerSelector(QWidget):
@@ -989,33 +990,6 @@ class SpeakerSelector(QWidget):
         self.selector_list = list(parent=self)
         self.selector_list.hide()
 
-        class NewNameDialog(QDialog):
-            def __init__(self, parent=None):
-                super().__init__(parent)
-                self.setWindowTitle("Enter Your Name")
-                self.name = None
-
-                layout = QVBoxLayout(self)
-
-                self.label = QLabel("Please enter your name:")
-                self.input = QLineEdit()
-                self.ok_button = QPushButton("OK")
-                self.cancel_button = QPushButton("Cancel")
-
-                layout.addWidget(self.label)
-                layout.addWidget(self.input)
-                layout.addWidget(self.ok_button)
-                layout.addWidget(self.cancel_button)
-
-                self.ok_button.clicked.connect(self.accept)
-                self.cancel_button.clicked.connect(self.reject)
-
-            def accept(self):
-                self.name = self.input.text().strip()
-                super().accept()
-
-        self.new_name_dialog = NewNameDialog(parent=self)
-
     ## start animation on mouse hover:
     def enterEvent(self, event):
         # self.add_button.opacity.setOpacity(1)  
@@ -1076,7 +1050,7 @@ class new_speaker_name_dialog(utils.SimpleDialog):
         self.input_line.setLayout(QHBoxLayout())
         self.input_line.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.input_label = QLabel('Please enter your name:')
+        self.input_label = QLabel()
         self.input_line.layout().addWidget(self.input_label)
 
         self.input = QLineEdit()

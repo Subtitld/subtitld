@@ -768,7 +768,7 @@ def show_find_replace_dialog(host) -> None:
 
 @shortcut(
     'show_find_replace_dialog',
-    'Open the Find & Replace dialog',
+    'shortcuts.show_find_replace_dialog',
     ['Ctrl+H', 'Ctrl+F'],
 )
 def _shortcut_show_find_replace_dialog(host):
