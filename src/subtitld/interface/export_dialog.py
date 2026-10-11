@@ -117,7 +117,7 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.sub_options)
 
-        # ASS: the look of its one style.
+        # ASS and TTML: the look of their one style.
         self.ass_options = QWidget()
         row = QHBoxLayout(self.ass_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -155,9 +155,10 @@ class _SubtitlesPanel(QWidget):
         self._refresh_options()
 
     def _speaker_choices(self, fmt):
-        """The speaker choices for `fmt`: leave out, before the text and,
-        for WebVTT, its voice tags. The one last chosen stays chosen when it
-        is offered; voice tags fall back to names before the text."""
+        """The speaker choices for `fmt`: leave out, before the text and the
+        format's own way, if it has one: WebVTT's voice tags, TTML's agents.
+        The one last chosen stays chosen when it is offered; the format's own
+        way falls back to names before the text."""
         combo = self.speakers_combo.combobox
         combo.blockSignals(True)
         combo.clear()
@@ -165,6 +166,8 @@ class _SubtitlesPanel(QWidget):
         combo.addItem(_('export_dialog.speaker_names_prefix'), 'prefix')
         if fmt == 'VTT':
             combo.addItem(_('export_dialog.speaker_names_voice'), 'voice')
+        elif fmt in ('DFXP', 'TTML'):
+            combo.addItem(_('export_dialog.speaker_names_agent'), 'voice')
         if not _select(self.speakers_combo, self._speakers_wanted):
             _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
         combo.blockSignals(False)
@@ -175,7 +178,10 @@ class _SubtitlesPanel(QWidget):
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
         self.srt_options.setVisible(fmt == 'SRT')
         self.sub_options.setVisible(fmt == 'SUB')
-        self.ass_options.setVisible(fmt == 'ASS')
+        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
+        # TTML has no shadow to give.
+        self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
+                                             else _('export_dialog.ttml_look_preview'))
         self.usf_options.setVisible(fmt == 'USF')
 
     def get_config(self):
@@ -206,7 +212,7 @@ class _SubtitlesPanel(QWidget):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
         if fmt == 'SUB':
             options['fps'] = choices['fps']
-        if fmt == 'ASS':
+        if fmt in ('ASS', 'DFXP', 'TTML'):
             options['look'] = choices['look']
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],

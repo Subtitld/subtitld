@@ -4,6 +4,7 @@ import hashlib
 import shutil
 import threading
 import zipfile
+import xml.etree.ElementTree as ET
 from docx import Document
 import pycaption
 import pysubs2
@@ -21,6 +22,7 @@ from subtitld.modules import markup
 from subtitld.modules import plaintext
 from subtitld.modules import srt
 from subtitld.modules import session
+from subtitld.modules import ttml
 from subtitld.modules import waveform
 from subtitld.modules import webvtt
 from subtitld.modules import usf
@@ -423,6 +425,23 @@ class ThreadGenerateHashOfVideo(QThread):
             self.response.emit([self.filepath, md5_hash])
 
 
+def _known_language(tag):
+    """Subtitld's code ('pt-br') for a language a file names ('pt-BR',
+    'pt_BR', 'fr'), or '' when it names none Subtitld knows. A language
+    alone is its main country's ('fr-fr'), English the United States'."""
+    tag = (tag or '').strip().lower().replace('_', '-')
+    known = list(session.LANGUAGE_DICT_LIST.values())
+    if not tag:
+        return ''
+    if tag in known:
+        return tag
+    primary = tag.split('-')[0]
+    for candidate in ('en-us' if primary == 'en' else '', f'{primary}-{primary}'):
+        if candidate in known:
+            return candidate
+    return next((code for code in known if code.split('-')[0] == primary), '')
+
+
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
@@ -438,22 +457,18 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             segments_list = webvtt.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
-            if '<tt ' in open(subtitle_file).read():
-                subtitle_format = 'TTML'
-            else:
-                subtitle_format = 'DFXP'
-
-            with open(subtitle_file, encoding='utf-8') as dfxp_file:
-                dfxp_reader = pycaption.DFXPReader().read(dfxp_file.read())
-                languages = dfxp_reader.get_languages()
-                language = languages[0]
-                captions = dfxp_reader.get_captions(language)
-                for caption in captions:
-                    segments_list.append({
-                        'start': caption.start / 1000000,
-                        'end': caption.end / 1000000,
-                        'text': caption.get_text()
-                    })
+            # TTML in any of its profiles; a .dfxp is saved as DFXP again.
+            subtitle_format = 'DFXP' if subtitle_file.lower().endswith('.dfxp') else 'TTML'
+            try:
+                segments_list, ttml_language = ttml.read(subtitle_file)
+            except ET.ParseError as error:
+                line, column = error.position
+                raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            language = _known_language(ttml_language)
+            if language:
+                session.SUBTITLE['language'] = language
 
         elif subtitle_file.lower().endswith(('.smi', '.sami')):
             subtitle_format = 'SAMI'
@@ -1143,7 +1158,17 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Speakers as voice tags when the export asks for them.
             webvtt.save(final_file, segments, voices=options.get('speakers') == 'voice')
 
-        elif subtitle_format in ['DFXP', 'TTML', 'SAMI', 'SCC']:
+        elif subtitle_format in ['DFXP', 'TTML']:
+            # In the language of the text written: a translation's alone, the
+            # original's otherwise. Speakers as agents when the export asks.
+            ttml.save(final_file, segments,
+                      language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                      else language,
+                      agents=options.get('speakers') == 'voice',
+                      look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
+                      preview=session.CONFIG.get('videoplayer', {}))
+
+        elif subtitle_format in ['SAMI', 'SCC']:
             captions = pycaption.CaptionList()
             for sub in segments:
                 # The text's formatting tags as pycaption's styles, which each
@@ -1153,9 +1178,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 captions.append(caption)
             caption_set = pycaption.CaptionSet({language: captions})
 
-            if subtitle_format in ['DFXP', 'TTML']:
-                open(final_file, mode='w', encoding='utf-8').write(pycaption.DFXPWriter().write(caption_set))
-            elif subtitle_format == 'SAMI':
+            if subtitle_format == 'SAMI':
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.SAMIWriter().write(caption_set))
             elif subtitle_format == 'SCC':
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.SCCWriter().write(caption_set))

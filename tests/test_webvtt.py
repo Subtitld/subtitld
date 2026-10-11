@@ -116,7 +116,7 @@ for speakers, want in (('voice', '<v Thom><i>Hello</i>'), ('prefix', 'Thom: <i>H
     file_io.save_file(str(folder / 'out.vtt'), 'VTT')
     check(f'speakers: {speakers}', (folder / 'out.vtt').read_text(encoding='utf-8').split('\n')[3], want)
 
-print('the dialog offers voice tags for WebVTT only')
+print('the dialog offers voice tags for WebVTT, not for SRT')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
 panel = _SubtitlesPanel()
