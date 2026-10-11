@@ -146,8 +146,7 @@ class _SubtitlesPanel(QWidget):
             if key == mcc.rate_for(video_fps):
                 label = _('export_dialog.frame_rate_video').format(fps=label)
             self.mcc_rate_combo.combobox.addItem(label, key)
-        row.addWidget(self.mcc_rate_combo)
-        row.addStretch()
+        row.addWidget(self.mcc_rate_combo, 1)
         self.layout().addWidget(self.mcc_options)
 
         # EBU STL: its frame rate, its display and the programme's start.
