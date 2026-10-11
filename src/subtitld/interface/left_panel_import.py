@@ -2,7 +2,7 @@ import os
 import json
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
@@ -399,6 +399,201 @@ class _CaptionsPanel(_GenericASRPanel):
             combo.setItemText(index, text)
 
 
+# Short names of subtitle codecs, as players and muxing tools show them.
+_CODEC_NAMES = {
+    'subrip': 'SRT', 'srt': 'SRT', 'ass': 'ASS', 'ssa': 'SSA', 'webvtt': 'WebVTT', 'mov_text': 'MP4 Timed Text',
+    'microdvd': 'MicroDVD', 'subviewer': 'SubViewer', 'subviewer1': 'SubViewer 1', 'mpl2': 'MPL2', 'pjs': 'PJS',
+    'realtext': 'RealText', 'sami': 'SAMI', 'stl': 'Spruce STL', 'jacosub': 'JACOsub', 'vplayer': 'VPlayer',
+    'hdmv_pgs_subtitle': 'PGS', 'dvd_subtitle': 'VobSub', 'dvb_subtitle': 'DVB', 'xsub': 'XSUB', 'eia_608': 'CEA-608',
+}
+
+
+def _track_language(track):
+    """A subtitle track's language by name: "Portuguese" for "por", the
+    country too only when the track names one ("pt-BR"); else the code it
+    gives, or ''."""
+    for name, code in session.LANGUAGE_DICT_LIST.items():
+        if track.get('language') and code == track['language']:
+            return name if '-' in track.get('language_tag', '').replace('_', '-') else name.split(' (')[0]
+    return track.get('language_tag', '')
+
+
+def _track_project_language(track):
+    """Subtitld's code for a subtitle track's language, as the project takes
+    it: a language the track names without its country ("por") keeps the
+    country the project, or the transcription settings, already give it
+    ("pt-br"), rather than its main country's ("pt-pt"); '' for none."""
+    code = track.get('language') or ''
+    if not code or '-' in track.get('language_tag', '').replace('_', '-'):
+        return code
+    primary = code.split('-')[0]
+    for known in (session.SUBTITLE.get('language'), session.CONFIG.get('transcription', {}).get('language')):
+        if known and known.split('-')[0] == primary:
+            return known
+    return code
+
+
+def _track_label(track, number):
+    """"2. Portuguese “Brasil” · ASS · default": a subtitle track's place
+    among the video's, language, title, codec and flags; why it cannot be
+    read, for one that is no text."""
+    name = _track_language(track) or track.get('title') or _('import_panel.subtitles_unknown_language')
+    title = track.get('title', '') if track.get('title', '') != name else ''
+    parts = [f'{number}. {name}' + (f' “{title}”' if title else ''),
+             _CODEC_NAMES.get(track['codec'], track['codec'].upper())]
+    if track.get('default'):
+        parts.append(_('import_panel.subtitles_default'))
+    if track.get('forced'):
+        parts.append(_('import_panel.subtitles_forced'))
+    if track['kind'] == 'pictures':
+        parts.append(_('import_panel.subtitles_pictures'))
+    elif track['kind'] == 'captions':
+        parts.append(_('import_panel.subtitles_captions'))
+    return ' · '.join(parts)
+
+
+class _SubtitleTracksPanel(_GenericASRPanel):
+    """Panel for the built-in ``subtitles`` engine: which of the subtitle
+    tracks the video carries to read, as opening it listed them. Tracks
+    drawn as pictures, and closed captions, are listed but cannot be
+    chosen. Like a transcription the track replaces the subtitles, or those
+    of the range or selection chosen; its times are the video's own, so
+    nothing is cut out or shifted. A track that replaces every subtitle
+    makes its language the project's."""
+
+    def __init__(widget, provider, parent=None):
+        super().__init__(provider, parent)
+        widget._listed = None                        # (video, tracks) the combo shows
+        widget._reading = None                       # the track the run reads
+        widget.track_combo = utils.LabeledComboBox()
+        widget.track_combo.combobox.activated.connect(lambda _index: widget._remember())
+        widget.layout().insertWidget(1, widget.track_combo)
+        widget.translate()
+
+    def _tracks(widget):
+        return list((session.VIDEO or {}).get('subtitle_tracks') or [])
+
+    def _track(widget):
+        """The text track chosen, or None."""
+        index = widget.track_combo.combobox.currentData()
+        return next((track for track in widget._tracks() if track['index'] == index and track['kind'] == 'text'), None)
+
+    def _preferred(widget, tracks):
+        """The text track to offer first: the language (and title) chosen
+        last time, else the default one, else the first not forced."""
+        remembered = session.CONFIG.get('transcription', {}).get('subtitles_track') or {}
+        language, title = remembered.get('language'), remembered.get('title')
+        texts = [track for track in tracks if track['kind'] == 'text']
+        for wanted in (lambda track: language is not None and (track['language_tag'], track['title']) == (language, title),
+                       lambda track: bool(language) and track['language_tag'] == language,
+                       lambda track: track['default'] and not track['forced'],
+                       lambda track: not track['forced'],
+                       lambda track: True):
+            for track in texts:
+                if wanted(track):
+                    return track
+        return None
+
+    def _list(widget, again=False):
+        """List the tracks of the video open, unless they are listed
+        already (`again`: their labels anew, the choice kept)."""
+        video, tracks = (session.VIDEO or {}).get('filepath'), widget._tracks()
+        if widget._listed == (video, tracks) and not again:
+            return
+        combo = widget.track_combo.combobox
+        chosen = combo.currentData() if widget._listed == (video, tracks) else None
+        widget._listed = (video, tracks)
+        combo.clear()
+        for number, track in enumerate(tracks, 1):
+            combo.addItem(_track_label(track, number), track['index'])
+            if track['kind'] != 'text':
+                combo.model().item(combo.count() - 1).setEnabled(False)
+        if chosen is None:
+            preferred = widget._preferred(tracks)
+            chosen = preferred['index'] if preferred else None
+        combo.setCurrentIndex(combo.findData(chosen) if chosen is not None else -1)
+        combo.setPlaceholderText(_('import_panel.no_subtitles_title'))
+        # Open even with no text track, to show why those there cannot be read.
+        combo.setEnabled(bool(tracks))
+
+    def _remember(widget):
+        track = widget._track()
+        if track is not None:
+            session.CONFIG.setdefault('transcription', {})['subtitles_track'] = {
+                'language': track['language_tag'], 'title': track['title']}
+
+    def _say(widget, title, text):
+        dialog = utils.SimpleDialog(widget, title=title)
+        label = QLabel(text)
+        label.setWordWrap(True)
+        dialog.content.layout().addWidget(label)
+        dialog.reject_button.setVisible(False)
+        dialog.exec()
+
+    def can_start(widget):
+        """Whether there is a text track to read; when there is none, say
+        so, before anything is cleared for the run."""
+        widget._list()
+        if session.VIDEO.get('filepath') and widget._track() is not None:
+            return True
+        widget._say(_('import_panel.no_subtitles_title'), _('import_panel.no_subtitles'))
+        return False
+
+    def update(widget):
+        widget._list()
+
+    def transcript(widget):
+        widget._list()
+        video, track = session.VIDEO.get('filepath'), widget._track()
+        if not video or track is None:
+            # can_start() keeps this from happening; should it, the run that
+            # is about to show as started ends at once.
+            QTimer.singleShot(0, widget.transcript_finished.emit)
+            return
+        scope_range = getattr(widget.window(), '_transcription_scope_range', None)
+        widget._scope_offset = 0.0
+        widget._scope_range = scope_range
+        widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None) if scope_range else None
+        widget._scope_target_parts = []
+        widget._reading = track
+        widget.transcript_started.emit()
+        widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'), {
+            'track': track['index'], 'codec': track['codec'], 'duration': float(session.VIDEO.get('duration') or 0)})
+
+    def _on_finished(widget, segments):
+        scope_range = getattr(widget, '_scope_range', None)
+        if scope_range is not None:
+            first, last = scope_range
+            segments = [segment for segment in segments if first - 1e-6 <= float(segment['start']) < last]
+        if not segments:
+            widget._say(_('import_panel.no_subtitles_title'), _('import_panel.no_subtitles_in_track'))
+            widget.transcript_finished.emit()
+            return
+        if scope_range is None and widget._reading is not None:
+            widget._adopt_language(widget._reading)
+        _GenericASRPanel._on_finished(widget, segments)
+
+    def _adopt_language(widget, track):
+        """Every subtitle is now the track's: the project's subtitles are in
+        its language, when it names one. What is spoken stays as declared
+        (source_language, frozen first if it never was), as a translation
+        inverted leaves it. A range or selection leaves the language alone:
+        the other subtitles are still in theirs."""
+        language = _track_project_language(track)
+        if not language or language == session.SUBTITLE.get('language'):
+            return
+        if not session.SUBTITLE.get('source_language') and session.SUBTITLE.get('language'):
+            session.SUBTITLE['source_language'] = session.SUBTITLE['language']
+        session.SUBTITLE['language'] = language
+        if hasattr(widget.window(), 'global_panel_import_language_combobox'):
+            _show_language(widget.window())
+
+    def translate(widget):
+        widget.info_label.setText(_('import_panel.subtitles_info'))
+        widget.track_combo.setLabel(_('import_panel.subtitles_track'))
+        widget._list(again=True)
+
+
 # Built-in transcription provider IDs whose panels are constructed once
 # at load() time (because they own expensive state we can't afford to
 # discard on `providers_changed`). Empty today: every registered ASR
@@ -550,11 +745,11 @@ def _populate_asr_addons(self):
             stack.removeWidget(widget)
             widget.deleteLater()
 
-        # "import" (file import) first, then the video's own closed captions,
-        # then the real ASR engines by id — the most basic ways to get
-        # subtitles in first.
+        # "import" (file import) first, then the video's own closed captions
+        # and subtitle tracks, then the real ASR engines by id — the most
+        # basic ways to get subtitles in first.
         providers = addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE)
-        providers.sort(key=lambda p: ({'import': 0, 'captions': 1}.get(p.id, 2), p.id))
+        providers.sort(key=lambda p: ({'import': 0, 'captions': 1, 'subtitles': 2}.get(p.id, 3), p.id))
         for provider in providers:
             if provider.id in _BUILTIN_ASR_IDS:
                 continue
@@ -562,6 +757,8 @@ def _populate_asr_addons(self):
                 panel = _ImportASRPanel(provider)
             elif provider.id == 'captions':
                 panel = _CaptionsPanel(provider)
+            elif provider.id == 'subtitles':
+                panel = _SubtitleTracksPanel(provider)
             else:
                 panel = _GenericASRPanel(provider)
             panel.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
@@ -680,6 +877,16 @@ def show(self):
     update(self)
 
 
+def _show_language(self):
+    """The language combobox on the project's language."""
+    selected_language_name = 'English (United States)'
+    for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
+        if language_code == session.SUBTITLE['language']:
+            selected_language_name = language_name
+            break
+    self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
+
+
 def update(self):
     if not session.SUBTITLE.get('language', False):
         session.SUBTITLE['language'] = session.CONFIG.get('transcription', {}).get('language', 'en-us')
@@ -689,12 +896,7 @@ def update(self):
     # transcript as `voice_ref_text`. See clone_ref._resolve_source_language.
     if not session.SUBTITLE.get('source_language'):
         session.SUBTITLE['source_language'] = session.SUBTITLE['language']
-    selected_language_name = 'English (United States)'
-    for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
-        if language_code == session.SUBTITLE['language']:
-            selected_language_name = language_name
-            break
-    self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
+    _show_language(self)
 
     # Restore the previously saved engine selection. There is no
     # default built-in any more — when the user's saved engine isn't in
@@ -759,10 +961,16 @@ def global_panel_import_start_transcription_button_clicked(self):
         error_dialog.exec()
         return
 
+    # An engine that can tell up front it has nothing to read (a video with
+    # no text subtitle track) says so here, before the subtitles are cleared.
+    engine_panel = _current_engine_panel(self)
+    can_start = getattr(engine_panel, 'can_start', None)
+    if can_start is not None and not can_start():
+        return
+
     # A cloud engine fails mid-job (after the audio is uploaded and the
     # subtitles cleared) when the key is missing or wrong or the balance
     # is empty. Check the account first; start only once it is good.
-    engine_panel = _current_engine_panel(self)
     if getattr(getattr(engine_panel, 'provider', None), 'uses_subtitld_cloud', False):
         _check_cloud_account(self, lambda: _start_transcription(self, scope_range))
         return
@@ -851,11 +1059,16 @@ def _start_transcription(self, scope_range):
 
 def _label_start_button(self):
     """The Start button says what the engine does: read the video's
-    captions, or transcribe."""
+    captions or a subtitle track of it, or transcribe."""
     button = getattr(self, 'global_panel_import_start_transcription_button', None)
     if button is not None:
-        captions = self.global_panel_import_engine_combobox.currentText() == 'captions'
-        button.setText(_('import_panel.read_captions') if captions else _('transcription_panel.start_transcription'))
+        engine = self.global_panel_import_engine_combobox.currentText()
+        if engine == 'captions':
+            button.setText(_('import_panel.read_captions'))
+        elif engine == 'subtitles':
+            button.setText(_('import_panel.read_subtitles'))
+        else:
+            button.setText(_('transcription_panel.start_transcription'))
 
 
 def global_panel_import_tabwidget_update(self):

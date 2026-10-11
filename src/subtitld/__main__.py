@@ -54,6 +54,7 @@ from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provi
 from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
 from subtitld.modules.addons.builtin import import_provider as _import_provider
+from subtitld.modules.addons.builtin import subtitles_provider as _subtitles_provider
 
 
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
@@ -378,6 +379,7 @@ def main():
     addon_manager.register_builtin(_gtts_provider.get_provider())
     addon_manager.register_builtin(_import_provider.get_provider())
     addon_manager.register_builtin(_captions_provider.get_provider())
+    addon_manager.register_builtin(_subtitles_provider.get_provider())
     try:
         discovered = addon_manager.discover()
         if discovered:

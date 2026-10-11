@@ -96,8 +96,10 @@ i18n.translations.container['pt_BR'] = {key: f'⟦{value}⟧' for key, value in 
 # the formatting bar's letters show them in every language.
 ENGLISH = {text for value in EN.values() for text in (value, value.upper()) if len(value) > 1}
 # Names, the same in every language: English in the language picker, the
-# plain-text editor's Subtitld theme, the subtitld.cc card's title.
-NAMES = {'English', 'Subtitld', 'subtitld.cc'}
+# plain-text editor's Subtitld theme, the subtitld.cc card's title, and the
+# machine's recording devices (ALSA has one called "default").
+from subtitld.modules import recorder
+NAMES = {'English', 'Subtitld', 'subtitld.cc'} | {name for _index, name in recorder.list_input_devices()}
 
 print('friendly_time, in another language')
 translation.set_language('pt_BR')
