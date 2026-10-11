@@ -152,7 +152,7 @@ check('read back', pt.parse(md, pt.MD, LANGUAGES).cues[0].meta, {'speaker': 'wei
 print('Markdown: text lines that would read as something else are escaped')
 tricky = [{'start': 1.0, 'end': 2.0, 'text': '> quoted\n[1] footnote\n\\back\n  [2] indented'}]
 md = pt.serialize(tricky, pt.MD, LANGUAGES)
-check('escaped', md.split('\n')[1:5], ['\\> quoted', '\\[1] footnote', '\\\\back', '\\  [2] indented'])
+check('escaped (a backslash before a letter is text, as in Markdown)', md.split('\n')[1:5], ['\\> quoted', '\\[1] footnote', '\\back', '\\  [2] indented'])
 check('read back', pt.parse(md, pt.MD, LANGUAGES).cues[0].text, tricky[0]['text'])
 check('a quote line of no known language is text',
       pt.parse('[00:00:01.000 - 00:00:02.000]\n> ok: fine', pt.MD, LANGUAGES).cues[0].text, '> ok: fine')
@@ -307,6 +307,36 @@ segments = project()
 result = pt.parse(pt.serialize(segments, pt.SRT) + '\n4\n00:00:30,000 --> 00:00:31,000\nNot applied\n', pt.SRT)
 mapped = pt.segments_for(segments, result.cues)
 check('existing ones found, the new one None', [m is s for m, s in zip(mapped, segments)] + [mapped[3]], [True, True, True, None])
+
+print('Markdown writes formatting the Markdown way, and the position as a field')
+formatted = [
+    {'start': 1.0, 'end': 2.0, 'text': '{\\an8}<font color="#ffd700">Why</font>\n<i>you\'re <b>freaked</b> out</i>', 'speaker': 'Thom',
+     'translations': {'pt-br': '<i>Olá</i> mundo'}},
+    {'start': 3.0, 'end': 4.0, 'text': '*sigh*\n> like a quote\n\\n stays', 'speaker': 'A'},
+    {'start': 5.0, 'end': 6.0, 'text': '{\\fad(1,2)}{\\an7}<u>under</u>', 'speaker': 'A'},
+    {'start': 7.0, 'end': 8.0, 'text': '<i>Hello </i>world', 'speaker': 'A'},
+]
+md = pt.serialize(formatted, pt.MD)
+check('the blocks', md.rstrip('\n').split('\n\n'), [
+    '[00:00:01.000 - 00:00:02.000] Thom {position=top}\n[Why]{color=#ffd700}\n*you\'re **freaked** out*\n> pt-br: *Olá* mundo',
+    '[00:00:03.000 - 00:00:04.000] A\n\\*sigh\\*\n\\> like a quote\n\\n stays',
+    '[00:00:05.000 - 00:00:06.000] A {position=top-left}\n{\\fad(1,2)}[under]{.underline}',
+    '[00:00:07.000 - 00:00:08.000] A\n*Hello* world',
+])
+result = pt.parse(md, pt.MD, LANGUAGES)
+check('read back', [(c.text, c.meta.get('translations')) for c in result.cues], [
+    ('{\\an8}<font color="#ffd700">Why</font>\n<i>you\'re <b>freaked</b> out</i>', {'pt-br': '<i>Olá</i> mundo'}),
+    ('*sigh*\n> like a quote\n\\n stays', None),
+    ('{\\an7}{\\fad(1,2)}<u>under</u>', None),
+    ('<i>Hello</i> world', None),
+])
+import copy
+before = copy.deepcopy(formatted)
+check('the text unedited changes nothing (the same, spelt otherwise)', (pt.apply_cues(formatted, result.cues, dry_run=True), formatted == before), (False, True))
+check('an unknown position', issues('[00:00:01.000 - 00:00:02.000] {position=up}\nx', pt.MD), [(1, 1, 'position_unknown', pt.ERROR)])
+edited = pt.parse(md.replace('*Hello* world', '**Hello** world'), pt.MD, LANGUAGES)
+pt.apply_cues(formatted, edited.cues)
+check('an edit in Markdown reaches the subtitle as tags', formatted[-1]['text'], '<b>Hello</b> world')
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

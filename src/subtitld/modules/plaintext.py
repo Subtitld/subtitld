@@ -18,19 +18,26 @@ SRT
 Markdown
     One line for the timing, then the text, then the translations::
 
-        [00:00:01.000 - 00:00:02.500] A {style=italic}
-        AI never sleeps.
-        > pt-br: A IA nunca dorme.
+        [00:00:01.000 - 00:00:02.500] A {position=top}
+        AI *never* sleeps.
+        > pt-br: A IA *nunca* dorme.
 
     After the timing come the speaker and, in braces, every other field
     (``key=value``; a value is bare when that is unambiguous, JSON
     otherwise). Translations are ``> language: text`` lines; a ``>`` line
     with no language goes on with the translation above it. A text line that
-    would read as one of those starts with a backslash, as in Markdown.
+    would read as one of those starts with a backslash (``\\>``, ``\\[``), as
+    Markdown escapes them.
 
     Fields of machine data nobody edits by hand (``MD_KEPT``: the dubs) are
     not written; ``apply_cues`` keeps them by matching each edited cue to
     the subtitle it came from.
+
+    Formatting is written the Markdown way, not as the tags the text keeps
+    (modules.markup): ``*italic*``, ``**bold**``, ``~~strikeout~~``,
+    ``[underlined]{.underline}``, ``[coloured]{color=#ff0000}``. Where the
+    subtitle sits on the screen is a field, ``position`` (top, top-left,
+    middle, ..., bottom-right; bottom is the default and not written).
 
 JSON
     Whisper's format: ``{"language": "en-us", "segments": [{"id": 0,
@@ -52,6 +59,8 @@ import difflib
 import json
 import re
 from dataclasses import dataclass, field
+
+from subtitld.modules import markup
 
 SRT = 'srt'
 MD = 'md'
@@ -214,9 +223,9 @@ def _encode_attr(value):
 
 
 def _md_escape(line):
-    """A text line that would read as a timing or a translation line, or
-    that starts with a backslash, gets a backslash in front."""
-    if line.startswith(('>', '\\')) or _MD_TIMING_CANDIDATE.match(line):
+    """A text line that would read as a timing or a translation line gets a
+    backslash in front, Markdown's escape for its first character."""
+    if line.startswith('>') or _MD_TIMING_CANDIDATE.match(line):
         return '\\' + line
     return line
 
@@ -230,7 +239,7 @@ def _md_translation_lines(translations, primaries):
     for language, value in translations.items():
         if not isinstance(value, str) or not _is_language(language, primaries):
             return None
-        first, *rest = value.split('\n')
+        first, *rest = _md_text(value).split('\n')
         lines.append(f'> {language}: {first}' if first else f'> {language}:')
         for part in rest:
             tag = _MD_TAG.match(part)
@@ -240,10 +249,20 @@ def _md_translation_lines(translations, primaries):
     return lines
 
 
+def _md_text(text):
+    """A text as Markdown writes it: its formatting the Markdown way, the
+    codes it starts with other than the position kept as they are."""
+    lead, _rest = markup.split_lead(text or '')
+    return markup.with_alignment(lead, 2) + markup.to_markdown(text or '')
+
+
 def _md_block(segment, start, end, text, primaries):
     meta = shown_meta(segment, MD)
     head = f'[{start} - {end}]'
     attrs = {}
+    keypad = markup.alignment(markup.split_lead(text or '')[0])
+    if keypad != 2:
+        attrs['position'] = markup.POSITION_NAMES[keypad]
     quotes = []
     for key, value in meta.items():
         if key == 'speaker' and isinstance(value, str) and value and value == value.strip() \
@@ -255,6 +274,7 @@ def _md_block(segment, start, end, text, primaries):
             attrs[key] = value
     if attrs:
         head += ' {' + ' '.join(f'{key}={_encode_attr(value)}' for key, value in attrs.items()) + '}'
+    text = _md_text(text)
     lines = [head] + ([_md_escape(line) for line in text.split('\n')] if text else []) + quotes
     return '\n'.join(lines)
 
@@ -537,12 +557,15 @@ class _Reader:
                     self.issue(number, 1 + len(content) - len(content.lstrip()), len(content.strip()),
                                'text_after_translation', 'Write the subtitle text above its translations')
                 continue
-            current['text'].append(content[1:] if content.startswith('\\') else content)
+            # The backslash that keeps a line from reading as a translation
+            # or a timing goes; any other is the text's Markdown.
+            unescaped = content[1:] if content.startswith('\\') and _md_escape(content[1:]) != content[1:] else content
+            current['text'].append(unescaped)
             if content.strip():
                 self.kinds[number] = 'text'
                 current['last'] = number
                 if current['text_at'] is None:
-                    current['text_at'] = (number, 2 if content.startswith('\\') else 1)
+                    current['text_at'] = (number, 1 + len(content) - len(unescaped))
         self.md_close(current)
         return self
 
@@ -580,6 +603,16 @@ class _Reader:
             text.pop()
         meta = dict(current['attrs'])
         line = current['line']
+        lead = ''
+        if 'position' in meta:
+            position = meta.pop('position')
+            keypad = {name: key for key, name in markup.POSITION_NAMES.items()}.get(str(position).strip().lower())
+            if keypad is None:
+                self.issue(line, 1, len(self.lines[line - 1]), 'position_unknown',
+                           f"'{position}' is not a position: write top, middle or bottom, or one with -left or -right",
+                           position=position)
+            else:
+                lead = markup.with_alignment('', keypad)
         if current['speaker']:
             if 'speaker' in meta:
                 self.issue(line, current['speaker_column'], len(current['speaker']), 'attr_duplicate',
@@ -589,9 +622,10 @@ class _Reader:
             if 'translations' in meta:
                 self.issue(line, 1, len(self.lines[line - 1]), 'attr_duplicate',
                            "'translations' is set twice for this subtitle", key='translations')
-            meta['translations'] = {language: '\n'.join(lines) for language, lines in current['translations'].items()}
+            meta['translations'] = {language: markup.from_markdown('\n'.join(lines))
+                                    for language, lines in current['translations'].items()}
         text_at = current['text_at'] or (line, len(self.lines[line - 1]) + 1)
-        self.finish_cue(current['start'], current['end'], '\n'.join(text), meta,
+        self.finish_cue(current['start'], current['end'], lead + markup.from_markdown('\n'.join(text)), meta,
                         line, current['end_column'], current['end_length'], line, current['last'],
                         text_at=text_at)
 
@@ -949,7 +983,8 @@ def _ms(seconds):
 
 
 def _key(start, end, text):
-    return (_ms(start), _ms(end), text or '')
+    # The text by what it is: Markdown cannot spell every tag as written.
+    return (_ms(start), _ms(end), markup.key(text))
 
 
 def _same(a, b):
@@ -959,11 +994,19 @@ def _same(a, b):
     return json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(b, sort_keys=True, ensure_ascii=False)
 
 
+def _same_field(key, a, b):
+    """The same value for field `key`; translations by what they are."""
+    if key == 'translations' and isinstance(a, dict) and isinstance(b, dict):
+        return set(a) == set(b) and all(isinstance(a[k], str) and isinstance(b[k], str)
+                                        and markup.key(a[k]) == markup.key(b[k]) or _same(a[k], b[k]) for k in a)
+    return _same(a, b)
+
+
 def _differs(segment, cue):
     if _key(segment.get('start'), segment.get('end'), segment.get('text')) != _key(cue.start, cue.end, cue.text):
         return True
     current = shown_meta(segment, cue.fmt)
-    return set(current) != set(cue.meta) or any(not _same(current[k], cue.meta[k]) for k in current)
+    return set(current) != set(cue.meta) or any(not _same_field(k, current[k], cue.meta[k]) for k in current)
 
 
 def _pair(segments, cues):
@@ -1020,13 +1063,13 @@ def apply_cues(segments, cues, dry_run=False):
                 segment['start'] = cue.start
             if _ms(segment.get('end')) != _ms(cue.end):
                 segment['end'] = cue.end
-            if (segment.get('text') or '') != cue.text:
+            if markup.key(segment.get('text')) != markup.key(cue.text):
                 segment['text'] = cue.text
             for key in list(shown_meta(segment, cue.fmt)):
                 if key not in cue.meta:
                     del segment[key]
             for key, value in cue.meta.items():
-                if key not in segment or not _same(segment[key], value):
+                if key not in segment or not _same_field(key, segment[key], value):
                     segment[key] = value
         result.append(segment)
     # In time order, as the timeline keeps them; text order breaks ties.

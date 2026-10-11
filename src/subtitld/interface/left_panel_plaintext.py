@@ -31,6 +31,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import history
+from subtitld.modules import markup
 from subtitld.modules import plaintext
 
 APPLY_DELAY_MS = 400
@@ -233,17 +234,45 @@ class Highlighter(QSyntaxHighlighter):
                 self.setFormat(tag.start(1), len(tag.group(1)), self.formats['comment_key'])
                 self.setFormat(tag.end() - 1, 1, punctuation)
                 self.setFormat(tag.end(), len(text) - tag.end(), self.formats['translation'])
+                self._md_inline(text, tag.end(), self.formats['translation'])
                 self.setCurrentBlockState(self._MD_TRANSLATION)
                 return
             if previous == self._MD_TRANSLATION:
                 self.setFormat(0, 1, punctuation)
                 self.setFormat(1, len(text) - 1, self.formats['translation'])
+                self._md_inline(text, 1, self.formats['translation'])
                 self.setCurrentBlockState(self._MD_TRANSLATION)
                 return
-        if text.startswith('\\'):
+        start = 0
+        if text.startswith('\\') and plaintext._md_escape(text[1:]) != text[1:]:
+            # The backslash that keeps the line from reading as structure.
             self.setFormat(0, 1, punctuation)
+            start = 1
+        self._md_inline(text, start, self.formats['text'])
         # A blank line does not close the translations; only a timing does.
         self.setCurrentBlockState(self._MD_TRANSLATION if previous == self._MD_TRANSLATION else self._MD_TEXT)
+
+    def _md_inline(self, text, start, base):
+        """The text's Markdown formatting drawn as it reads (italic, bold,
+        underline, strikeout, its colour), the syntax around it dimmed."""
+        styled, marks = markup.markdown_layout(text[start:])
+        for first, last, style in styled:
+            if not style.any():
+                continue
+            fmt = QTextCharFormat(base)
+            if style.italic:
+                fmt.setFontItalic(True)
+            if style.bold:
+                fmt.setFontWeight(QFont.Bold)
+            if style.underline:
+                fmt.setFontUnderline(True)
+            if style.strike:
+                fmt.setFontStrikeOut(True)
+            if style.color:
+                fmt.setForeground(QColor(style.color))
+            self.setFormat(start + first, last - first, fmt)
+        for first, last in marks:
+            self.setFormat(start + first, last - first, self.formats['punctuation'])
 
     def _md_timing(self, text):
         close = text.find(']')

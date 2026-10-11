@@ -87,6 +87,37 @@ long_tags = '<font color="#ff0000"><i>' + 'x' * 30 + '</i></font>'
 check('tags are not characters per line', 'cpl' in quality_check.check_subtitle({'start': 0, 'end': 5, 'text': long_tags})[2], False)
 check('nor characters per second', 'cps' in quality_check.check_subtitle({'start': 0, 'end': 1.5, 'text': long_tags})[2], False)
 
+print('Markdown')
+MD_CASES = {
+    'Plain text': 'Plain text',
+    '<i>Italic</i> and <b>bold</b>': '*Italic* and **bold**',
+    '<i>outer <b>both</b> still</i> plain': '*outer **both** still* plain',
+    '<b><i>both</i></b>': '***both***',
+    '<i>Hello </i>world': '*Hello* world',
+    '<i>Hel</i><b>lo</b>': '*Hel***lo**',
+    '<u>under</u> <s>struck</s>': '[under]{.underline} ~~struck~~',
+    '<font color="#ffd700">Gold</font>\n<i>second</i>': '[Gold]{color=#ffd700}\n*second*',
+    '<font color="#ff0000"><u><i>all</i></u></font>': '[*all*]{.underline color=#ff0000}',
+    '<i>one\ntwo</i>': '*one\ntwo*',
+    '*sigh* 5 * 3 snake_case __init__ ~~not~~ [MUSIC] a]{b}': '\\*sigh\\* 5 \\* 3 snake_case \\_\\_init\\_\\_ \\~\\~not\\~\\~ [MUSIC] a\\]{b}',
+    'mid {\\fad(1,2)} code': 'mid {\\fad(1,2)} code',
+    '{\\an8}Top <i>x</i>': 'Top *x*',
+}
+for text, written in MD_CASES.items():
+    check(f'written {text!r}', markup.to_markdown(text), written)
+    check(f'  and read back the same', markup.key(markup.from_markdown(written)), markup.key(markup.split_lead(text)[1]))
+check('read: _x_ and __x__ too', markup.from_markdown('_it_ __bold__'), '<i>it</i> <b>bold</b>')
+check('read: not inside a word', markup.from_markdown('snake_case_name'), 'snake_case_name')
+check('read: a span with a style colour', markup.from_markdown('[x]{style="color: red"}'), '<font color="#ff0000">x</font>')
+check('read: a span it does not know is text', markup.from_markdown('[x]{.smallcaps}'), '[x]{.smallcaps}')
+check('read: unclosed is text', markup.from_markdown('**open *closed*'), '**open <i>closed</i>')
+check('the same, spelt otherwise', markup.key('<i>a </i>b') == markup.key('<i>a</i> b'), True)
+check('not the same', markup.key('<i>a</i>') == markup.key('a'), False)
+styled, marks = markup.markdown_layout('*you **freaked** out* [x]{.underline}')
+check('layout: where the styles are', [(a, b, ''.join(f for f, on in zip('ibus', st[:4]) if on)) for a, b, st in styled],
+      [(1, 5, 'i'), (7, 14, 'ib'), (16, 20, 'i'), (21, 22, ''), (23, 24, 'u')])
+check('layout: the syntax', marks, [(0, 1), (5, 7), (14, 16), (20, 21), (22, 23), (24, 37)])
+
 print('the preview draws them')
 
 
