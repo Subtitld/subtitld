@@ -1,7 +1,8 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, SUB); USF, USFX and JSON keep the project as it is.
+DFXP, TTML, SAMI, SCC, SBV, SUB); USF, USFX and JSON keep the project as it
+is.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -11,9 +12,9 @@ DFXP, TTML, SAMI, SCC, SUB); USF, USFX and JSON keep the project as it is.
     speakers     'none'; 'prefix': the speaker's name before the text; or
                  'voice', the format's own way: WebVTT's voice tags
                  (<v Name>), TTML's agents, SAMI's Source line, SCC's
-                 ">>" at each change of speaker
+                 ">>" at each change of speaker, SBV's ">> NAME: "
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
-                 them
+                 them (SBV has none to keep)
     offset       seconds to shift every subtitle by; one that ends up
                  before 0 is left out, one that starts before 0 starts at 0
 
@@ -31,7 +32,7 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'SUB')
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'SBV', 'SUB')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)

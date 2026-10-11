@@ -20,6 +20,7 @@ from subtitld.modules import export_options
 from subtitld.modules import markup
 from subtitld.modules import plaintext
 from subtitld.modules import sami
+from subtitld.modules import sbv
 from subtitld.modules import scc
 from subtitld.modules import srt
 from subtitld.modules import session
@@ -483,13 +484,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 if 'translations' in segment:
                     segment['translations'] = {codes[tag]: text for tag, text in segment['translations'].items()}
 
-        # elif subtitle_file.lower().endswith(('.sbv')):
-        #     subtitle_format = 'SBV'
-        #     with open(subtitle_file, encoding='utf-8') as sbv_file:
-        #         from captionstransformer.sbv import Reader
-        #         captions = Reader(sbv_file).read()
-        #         for caption in captions:
-        #             segments_list.append([(caption.start - datetime.datetime(1900, 1, 1)).total_seconds(), caption.duration.total_seconds(), caption.text.strip()])
+        elif subtitle_file.lower().endswith(('.sbv')):
+            # YouTube's SubViewer; ">> NAME: " begins a speaker's subtitle.
+            subtitle_format = 'SBV'
+            segments_list = sbv.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.ass', '.ssa')):
             subtitle_format = 'ASS'
@@ -1188,7 +1186,12 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
                      preview=session.CONFIG.get('videoplayer', {}))
 
-        elif subtitle_format in ['SBV', 'XML', 'SUB']:
+        elif subtitle_format == 'SBV':
+            # Plain text, as SBV has no formatting; speakers as YouTube asks
+            # them written when the export asks.
+            sbv.save(final_file, segments, speakers=options.get('speakers') == 'voice')
+
+        elif subtitle_format in ['XML', 'SUB']:
             if subtitle_format == 'SUB':
                 assfile = pysubs2.SSAFile()
                 for sub in segments:
@@ -1208,9 +1211,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 with open(final_file, 'w', encoding='utf-8') as sub_file:
                     sub_file.write(f'{{1}}{{1}}{fps:g}\n' + text)
             # else:
-            #     if subtitle_format == 'SBV':
-            #         from captionstransformer.sbv import Writer
-            #     elif subtitle_format == 'XML':
+            #     if subtitle_format == 'XML':
             #         from captionstransformer.transcript import Writer
             #     writer = Writer(open(final_file, mode='w', encoding='utf-8'))
             #     captions = []

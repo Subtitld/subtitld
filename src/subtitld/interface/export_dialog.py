@@ -170,7 +170,7 @@ class _SubtitlesPanel(QWidget):
     def _speaker_choices(self, fmt):
         """The speaker choices for `fmt`: leave out, before the text and the
         format's own way, if it has one: WebVTT's voice tags, TTML's agents,
-        SAMI's Source line, SCC's ">>".
+        SAMI's Source line, SCC's ">>", SBV's ">> NAME:".
         The one last chosen stays chosen when it is offered; the format's own
         way falls back to names before the text."""
         combo = self.speakers_combo.combobox
@@ -186,6 +186,8 @@ class _SubtitlesPanel(QWidget):
             combo.addItem(_('export_dialog.speaker_names_source'), 'voice')
         elif fmt == 'SCC':
             combo.addItem(_('export_dialog.speaker_names_chevrons'), 'voice')
+        elif fmt == 'SBV':
+            combo.addItem(_('export_dialog.speaker_names_youtube'), 'voice')
         if not _select(self.speakers_combo, self._speakers_wanted):
             _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
         combo.blockSignals(False)
@@ -205,6 +207,8 @@ class _SubtitlesPanel(QWidget):
                                   .format(language=names.get(language, language)))
         self.sub_options.setVisible(fmt == 'SUB')
         self.scc_options.setVisible(fmt == 'SCC')
+        # SBV has no formatting to keep.
+        self.formatting_combo.setVisible(fmt != 'SBV')
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
