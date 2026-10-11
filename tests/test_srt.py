@@ -157,7 +157,7 @@ dfxp = saved('DFXP', 'dfxp')
 check('DFXP: italic and colour as styles', ('tts:fontStyle="italic"' in dfxp, 'tts:color="#ff0000"' in dfxp), (True, True))
 check('DFXP: the line break kept', '<br/>' in dfxp, True)
 sami = saved('SAMI', 'smi')
-check('SAMI: italic', '<i>Italic</i>' in sami, True)
+check('SAMI: italic, in capitals as Windows Media Player wants', '<I>Italic</I>' in sami, True)
 ass = saved('ASS', 'ass')
 check('ASS: override codes, line break as \\N, two events in order',
       [line.split(',', 9)[-1] for line in ass.splitlines() if line.startswith('Dialogue:')],

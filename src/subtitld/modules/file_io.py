@@ -20,6 +20,7 @@ from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import markup
 from subtitld.modules import plaintext
+from subtitld.modules import sami
 from subtitld.modules import srt
 from subtitld.modules import session
 from subtitld.modules import ttml
@@ -471,18 +472,16 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = language
 
         elif subtitle_file.lower().endswith(('.smi', '.sami')):
+            # Every language the file holds: the first the subtitles', the
+            # others their translations.
             subtitle_format = 'SAMI'
-            with open(subtitle_file, encoding='utf-8') as sami_file:
-                sami_reader = pycaption.SAMIReader().read(sami_file.read())
-                languages = sami_reader.get_languages()
-                language = languages[0]
-                captions = sami_reader.get_captions(language)
-                for caption in captions:
-                    segments_list.append({
-                        'start': caption.start / 1000000,
-                        'end': caption.end / 1000000,
-                        'text': caption.get_text()
-                    })
+            segments_list, sami_languages = sami.read(subtitle_file)
+            codes = {tag: _known_language(tag) or tag.lower() for tag in sami_languages}
+            if sami_languages and _known_language(sami_languages[0]):
+                session.SUBTITLE['language'] = _known_language(sami_languages[0])
+            for segment in segments_list:
+                if 'translations' in segment:
+                    segment['translations'] = {codes[tag]: text for tag, text in segment['translations'].items()}
 
         # elif subtitle_file.lower().endswith(('.sbv')):
         #     subtitle_format = 'SBV'
@@ -1168,7 +1167,26 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
                       preview=session.CONFIG.get('videoplayer', {}))
 
-        elif subtitle_format in ['SAMI', 'SCC']:
+        elif subtitle_format == 'SAMI':
+            # A class for each language written: the original's, the
+            # translation's, or both, the translation a second language
+            # players offer (with only the subtitles it has).
+            names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+            translation = options.get('language') or ''
+            if options.get('text') == 'both' and translation:
+                translated = [segment for segment in export_options.prepare(SUBTITLE['segments'], dict(options, text='translation'))
+                              if str((segment.get('translations') or {}).get(translation) or '').strip()]
+                tracks = [(language, names.get(language, language),
+                           export_options.prepare(SUBTITLE['segments'], dict(options, text='original'))),
+                          (translation, names.get(translation, translation), translated)]
+            else:
+                written = translation if options.get('text') == 'translation' and translation else language
+                tracks = [(written, names.get(written, written), segments)]
+            sami.save(final_file, tracks, sources=options.get('speakers') == 'voice',
+                      encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                      line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'SCC':
             captions = pycaption.CaptionList()
             for sub in segments:
                 # The text's formatting tags as pycaption's styles, which each
@@ -1178,10 +1196,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 captions.append(caption)
             caption_set = pycaption.CaptionSet({language: captions})
 
-            if subtitle_format == 'SAMI':
-                open(final_file, mode='w', encoding='utf-8').write(pycaption.SAMIWriter().write(caption_set))
-            elif subtitle_format == 'SCC':
-                open(final_file, mode='w', encoding='utf-8').write(pycaption.SCCWriter().write(caption_set))
+            open(final_file, mode='w', encoding='utf-8').write(pycaption.SCCWriter().write(caption_set))
 
         elif subtitle_format == 'ASS':
             # Sized to the video, in the export's look; .ssa as SSA v4.

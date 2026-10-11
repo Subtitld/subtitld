@@ -47,7 +47,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from subtitld.modules import markup
+from subtitld.modules import export_options, markup
 from subtitld.modules.srt import decode
 
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
@@ -311,33 +311,6 @@ def _runs(element, styles, props, preserve, out, agent):
         text(child.tail)
 
 
-def _tidy(runs):
-    """Text with tags for [(text, Style)]: spaces single and none at the
-    ends of a line, no empty line."""
-    out = []
-    for text, style in runs:
-        for char in text:
-            if char in ' \t\r':
-                if out and out[-1][0] not in ' \n':
-                    out.append((' ', style))
-            elif char == '\n':
-                while out and out[-1][0] == ' ':
-                    out.pop()
-                if out and out[-1][0] != '\n':
-                    out.append(('\n', style))
-            else:
-                out.append((char, style))
-    while out and out[-1][0] in ' \n':
-        out.pop()
-    grouped = []
-    for char, style in out:
-        if grouped and grouped[-1][1] == style:
-            grouped[-1][0].append(char)
-        else:
-            grouped.append(([char], style))
-    return markup.from_spans([(''.join(chars), style) for chars, style in grouped])
-
-
 def _document(text):
     """(subtitles, language) in TTML text."""
     text = _ENTITY.sub(_entity, text.lstrip('﻿'))
@@ -361,7 +334,7 @@ def _document(text):
         p_props = styles.of(element, dict(region_props, **props))
         runs, agent = [], [None]
         _runs(element, styles, p_props, preserve, runs, agent)
-        body = _tidy(runs)
+        body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
         keypad = _keypad(p_props, frame)
@@ -489,12 +462,6 @@ def _styles(look, preview):
     return styles, 'box'
 
 
-def _language_tag(language):
-    """BCP 47's way of writing a language: 'pt-BR' for 'pt-br' or 'pt_BR'."""
-    parts = str(language or 'en').replace('_', '-').split('-')
-    return '-'.join([parts[0].lower()] + [part.upper() if len(part) == 2 else part for part in parts[1:]])
-
-
 def write(segments, language='en', agents=False, look='clean', preview=None):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
@@ -540,7 +507,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None):
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" '
         'xmlns:ttp="http://www.w3.org/ns/ttml#parameter" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" '
-        f'ttp:timeBase="media" xml:lang={quoteattr(_language_tag(language))}>',
+        f'ttp:timeBase="media" xml:lang={quoteattr(export_options.language_tag(language))}>',
         *head,
         '  <body style="text">',
         '    <div>',

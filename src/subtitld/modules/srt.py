@@ -3,7 +3,9 @@
 Reading forgives, because SRT files come from everywhere:
 
 - the encoding: a byte order mark (UTF-8, UTF-16, UTF-32) when there is
-  one, else UTF-8, else the detected one, else Windows-1252;
+  one, else UTF-8, else the detected one (or the Windows code page that
+  extends it: CP949 for EUC-KR, CP932 for Shift JIS ...), else
+  Windows-1252;
 - line ends of any kind;
 - subtitles are found by their timing lines, not by blank lines, so a
   missing blank line, a blank line inside the text, missing numbers and
@@ -39,6 +41,12 @@ _BOMS = (
     (b'\xfe\xff', 'utf-16-be'),
 )
 _DETECT_BYTES = 256 * 1024
+# The encodings Windows wrote these files in extend the ones chardet names
+# after their common characters: EUC-KR lacks syllables CP949 has, Shift
+# JIS the symbols CP932 has. Decoded by the narrower one, those characters
+# would fail the whole file.
+_SUPERSETS = {'euc-kr': 'cp949', 'shift_jis': 'cp932', 'gb2312': 'gb18030', 'gbk': 'gb18030',
+              'big5': 'big5hkscs', 'iso-8859-1': 'cp1252', 'windows-1252': 'cp1252'}
 
 
 def decode(data):
@@ -53,6 +61,7 @@ def decode(data):
             text = data.decode('utf-8')
         except UnicodeDecodeError:
             encoding = chardet.detect(data[:_DETECT_BYTES]).get('encoding')
+            encoding = _SUPERSETS.get((encoding or '').lower(), encoding)
             try:
                 text = data.decode(encoding) if encoding else None
             except (LookupError, UnicodeDecodeError):

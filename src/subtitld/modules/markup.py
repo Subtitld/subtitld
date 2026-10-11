@@ -299,6 +299,34 @@ def from_spans(runs):
     return ''.join(out)
 
 
+def tidy(runs, spaces=' \t\r'):
+    """Text with tags for [(text, Style)] runs read from a markup format
+    (TTML, SAMI): each of `spaces` a single space, none at the ends of a
+    line, no empty line, nothing before the first line or after the last."""
+    out = []
+    for text, style in runs:
+        for char in text:
+            if char in spaces:
+                if out and out[-1][0] not in ' \n':
+                    out.append((' ', style))
+            elif char == '\n':
+                while out and out[-1][0] == ' ':
+                    out.pop()
+                if out and out[-1][0] != '\n':
+                    out.append(('\n', style))
+            else:
+                out.append((char, style))
+    while out and out[-1][0] in ' \n':
+        out.pop()
+    grouped = []
+    for char, style in out:
+        if grouped and grouped[-1][1] == style:
+            grouped[-1][0].append(char)
+        else:
+            grouped.append(([char], style))
+    return from_spans([(''.join(chars), style) for chars, style in grouped])
+
+
 _LEAD = re.compile(r'(?:\s*\{\\[^{}]*\})+')
 
 

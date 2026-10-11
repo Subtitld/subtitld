@@ -5,10 +5,12 @@ DFXP, TTML, SAMI, SCC, SUB); USF, USFX and JSON keep the project as it is.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
-                 original, then the translation below it)
+                 original, then the translation below it; SAMI: each as a
+                 language of its own)
     language     the translation's language code
     speakers     'none'; 'prefix': the speaker's name before the text; or
-                 'voice', for WebVTT: a voice tag (<v Name>), its own way
+                 'voice', the format's own way: WebVTT's voice tags
+                 (<v Name>), TTML's agents, SAMI's Source line
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
                  them
     offset       seconds to shift every subtitle by; one that ends up
@@ -16,18 +18,19 @@ DFXP, TTML, SAMI, SCC, SUB); USF, USFX and JSON keep the project as it is.
 
 And for a format of its own:
 
-    encoding     SRT: 'utf-8', 'utf-8-sig' (with a byte order mark),
-                 'utf-16' or 'cp1252'
-    line_ends    SRT: 'lf' or 'crlf'
+    encoding     SRT and SAMI: 'utf-8', 'utf-8-sig' (with a byte order
+                 mark), 'utf-16', 'cp1252' or 'cp949' (Korean)
+    line_ends    SRT and SAMI: 'lf' or 'crlf'
     fps          SUB: the frame rate its frame numbers count in
-    look         ASS: its style 'clean' (white, a black outline) or as
-                 Subtitld's 'preview' draws (modules.ass)
+    look         ASS and TTML: their style 'clean' (white, a black
+                 outline) or as Subtitld's 'preview' draws (modules.ass,
+                 modules.ttml)
 """
 
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'SUB')
-ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252')
+ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
 
@@ -40,6 +43,13 @@ DEFAULTS = {
     'encoding': 'utf-8',
     'line_ends': 'lf',
 }
+
+
+def language_tag(language):
+    """BCP 47's way of writing a language, as files declare it: 'pt-BR' for
+    Subtitld's 'pt-br' (or 'pt_BR')."""
+    parts = str(language or 'en').replace('_', '-').split('-')
+    return '-'.join([parts[0].lower()] + [part.upper() if len(part) == 2 else part for part in parts[1:]])
 
 
 def translation_languages(segments):
