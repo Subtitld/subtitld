@@ -348,7 +348,8 @@ def usf_for_publishing(translation=None, title=''):
     }
     language = translation or session.SUBTITLE.get('language') or None
     metadata = {'title': title} if title else None
-    content = usf.USFWriter().write(segments, speakers=speakers, language=language, metadata=metadata)
+    content = usf.USFWriter().write(segments, speakers=speakers, language=language, metadata=metadata,
+                                    names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()})
     return content.encode('utf-8')
 
 

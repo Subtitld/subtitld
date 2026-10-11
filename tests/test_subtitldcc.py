@@ -83,7 +83,8 @@ check('original text, no dubbing or images', ('Hello' in original, 'Olá' in ori
 check('speaker colors kept', '#ff0000' in original, True)
 translated = service.usf_for_publishing('pt-BR').decode()
 check('the translation alone, empty lines left out', ('Olá' in translated, 'Hello' in translated,
-                                                      translated.count('<subtitle '), 'code="pt-BR"' in translated),
+                                                      translated.count('<subtitle '),
+                                                      '<language code="por">Portuguese (Brazil)</language>' in translated),
       (True, False, 1, True))
 check('texts on offer', service.text_languages(), [('en', False), ('pt-BR', True)])
 

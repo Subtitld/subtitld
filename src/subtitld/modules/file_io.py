@@ -434,8 +434,9 @@ class ThreadGenerateHashOfVideo(QThread):
 
 def _known_language(tag):
     """Subtitld's code ('pt-br') for a language a file names ('pt-BR',
-    'pt_BR', 'fr'), or '' when it names none Subtitld knows. A language
-    alone is its main country's ('fr-fr'), English the United States'."""
+    'pt_BR', 'fr', or ISO 639-2's 'fre'), or '' when it names none Subtitld
+    knows. A language alone is its main country's ('fr-fr'), English the
+    United States'."""
     tag = (tag or '').strip().lower().replace('_', '-')
     known = list(session.LANGUAGE_DICT_LIST.values())
     if not tag:
@@ -443,10 +444,21 @@ def _known_language(tag):
     if tag in known:
         return tag
     primary = tag.split('-')[0]
+    primary = usf.FROM_ISO639_2.get(primary, primary) if len(primary) == 3 else primary
     for candidate in ('en-us' if primary == 'en' else '', f'{primary}-{primary}'):
         if candidate in known:
             return candidate
     return next((code for code in known if code.split('-')[0] == primary), '')
+
+
+def _usf_language(code, name=''):
+    """Subtitld's code for a USF language: by the name the element holds
+    ("Portuguese (Brazil)"), else by its code, Subtitld's or ISO 639-2's;
+    else the code as written."""
+    by_name = session.LANGUAGE_DICT_LIST.get((name or '').strip())
+    if by_name:
+        return by_name
+    return _known_language(code) or (code or '').strip()
 
 
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
@@ -523,10 +535,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.usf')):
             subtitle_format = 'USF'
-            reader = usf.USFReader()
-            # USF is XML: UTF-8 unless it says otherwise (the platform default would garble accents on Windows).
-            with open(subtitle_file, encoding='utf-8-sig', errors='replace') as usf_file:
-                segments_list = reader.read(usf_file.read())
+            reader = usf.USFReader(language_of=_usf_language)
+            # USF is XML: in the encoding it declares, UTF-8 unless it says otherwise.
+            with open(subtitle_file, 'rb') as usf_file:
+                try:
+                    segments_list = reader.read(usf_file.read())
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
             if reader.language:
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
@@ -601,9 +616,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         inner_usf = os.path.join(extract_dir, fname)
                         break
 
-            reader = usf.USFReader()
-            with open(inner_usf, encoding='utf-8') as fh:
-                segments_list = reader.read(fh.read())
+            reader = usf.USFReader(language_of=_usf_language)
+            with open(inner_usf, 'rb') as fh:
+                try:
+                    segments_list = reader.read(fh.read())
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
 
             if reader.language:
                 session.SUBTITLE['language'] = reader.language
@@ -1245,12 +1263,16 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 if entry:
                     writer_speakers[name] = entry
 
+            # Languages by their ISO 639-2 codes and names, and a title, as USF
+            # specifies.
             open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(
                 SUBTITLE['segments'],
                 speakers=writer_speakers,
                 language=language,
+                metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0]},
                 embed_audio_clips=embed_audio_clips,
                 origin=SUBTITLE.get('origin'),
+                names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
             ))
 
         elif subtitle_format in ['USFX']:
@@ -1363,8 +1385,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 segments_copy,
                 speakers=writer_speakers,
                 language=language,
+                metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0]},
                 embed_audio_clips=False,
                 origin=SUBTITLE.get('origin'),
+                names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
             )
 
             def _mime_for(path_in_zip):
