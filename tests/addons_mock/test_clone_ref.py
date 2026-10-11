@@ -25,6 +25,11 @@ import sys
 import tempfile
 import wave
 
+# Scratch config and cache: importing session creates them.
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
+
 # Make src/ importable when running from repo root.
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -260,7 +265,11 @@ def case_extract_with_text():
          line; for the concat case it's the first two A subs joined.
       3. Whitespace is collapsed (multi-line / runs of spaces in the
          source text are normalized to single spaces).
-      4. None speaker returns (None, None) cleanly."""
+      4. None speaker returns (None, None) cleanly.
+      5. The text is in the language of the audio: with no project
+         language there is no ref_text (the path is still returned), and
+         after a translation is inverted it comes from
+         `translations[source_language]`, not the displayed text."""
     print('\n=== case 4: extract_speaker_reference_with_text ===')
     if shutil.which(session.FFMPEG_EXECUTABLE) is None:
         print(f'  SKIP — {session.FFMPEG_EXECUTABLE} not on PATH')
@@ -280,6 +289,7 @@ def case_extract_with_text():
         # In-band case: 5 s 'good ref' wins. Note the embedded newline
         # and double-space — the function must collapse them.
         session.SUBTITLE = {
+            'language': 'en',
             'segments': [
                 {'speaker': 'A', 'start': 0.0,  'end': 0.5,  'text': 'short'},
                 {'speaker': 'A', 'start': 6.0,  'end': 11.0, 'text': 'this is\na  good ref'},
@@ -294,6 +304,28 @@ def case_extract_with_text():
         assert path_via_shim == path, 'shim disagrees with source-of-truth'
         print(f'  PASS — in-band ref_text={text!r}')
 
+        # No project language: the audio's language is unknown, so no
+        # transcript is sent with it rather than one that may be wrong.
+        session.SUBTITLE = {'segments': session.SUBTITLE['segments']}
+        path_nolang, text_nolang = clone_ref.extract_speaker_reference_with_text('A')
+        assert path_nolang == path, 'no language should still give the reference audio'
+        assert text_nolang is None, f'expected no ref_text without a language, got {text_nolang!r}'
+        print('  PASS — no project language → ref_text None')
+
+        # Inverted translation: the displayed text is Portuguese, the audio
+        # (and its transcript in `translations`) English.
+        session.SUBTITLE = {
+            'language': 'pt-BR',
+            'source_language': 'en',
+            'segments': [
+                {'speaker': 'A', 'start': 6.0, 'end': 11.0, 'text': 'esta é uma boa referência',
+                 'translations': {'en': 'this is a good ref'}},
+            ],
+        }
+        _path_inv, text_inv = clone_ref.extract_speaker_reference_with_text('A')
+        assert text_inv == 'this is a good ref', f'inverted ref_text wrong: {text_inv!r}'
+        print(f'  PASS — inverted project ref_text={text_inv!r}')
+
         # Concat case: first two A subs join. Each text contributes;
         # both are kept verbatim with a single space separator.
         # Force re-extraction by pointing at a fresh cache dir so the
@@ -303,6 +335,7 @@ def case_extract_with_text():
         try:
             session.PATH_SUBTITLD_USER_CACHE = Path(workdir2)
             session.SUBTITLE = {
+                'language': 'en',
                 'segments': [
                     {'speaker': 'A', 'start': 1.0, 'end': 2.5,  'text': 'first line'},
                     {'speaker': 'A', 'start': 6.0, 'end': 7.5,  'text': 'second line'},

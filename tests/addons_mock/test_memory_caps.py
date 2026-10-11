@@ -55,6 +55,10 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, 'src'))
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+# Scratch config and cache: importing session creates them.
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 
 
 def _stub_module(name):
@@ -216,7 +220,12 @@ def case_waveform_int16_storage():
 def case_dub_cache_eviction():
     """SubtitleDubClip._loaded must hold only the currently-relevant
     dub. Without eviction, regenerating dubs N times leaks N old
-    arrays — easy gigabytes on a real project."""
+    arrays — easy gigabytes on a real project.
+
+    "Currently relevant" is the path just loaded plus every file of the
+    take being heard (`_current_dub()`): a take made of several files
+    must not evict its own segments, and a late load of another path
+    must not evict the take being heard."""
     print('\n=== dub cache evicts stale paths on preload ===')
     try:
         import sounddevice  # noqa: F401
@@ -231,21 +240,26 @@ def case_dub_cache_eviction():
         path_a = os.path.join(workdir, 'a.wav')
         path_b = os.path.join(workdir, 'b.wav')
         path_c = os.path.join(workdir, 'c.wav')
-        for p in (path_a, path_b, path_c):
+        path_d = os.path.join(workdir, 'd.wav')
+        path_e = os.path.join(workdir, 'e.wav')
+        for p in (path_a, path_b, path_c, path_d, path_e):
             _make_dub_wav(p, duration_sec=0.5)
 
-        sub = {
-            'speaker': 'X', 'start': 0.0, 'end': 1.0, 'text': 't',
-            'dubbing': [{'engine': 'edge-tts', 'voice': 'fake',
-                         'rate': 0, 'path': path_a, 'start': 0.0}],
-        }
+        sub = {'speaker': 'X', 'start': 0.0, 'end': 1.0, 'text': 't', 'dubbing': []}
         clip = audioengine.SubtitleDubClip(sub, samplerate=48000)
 
-        clip.preload(path_a)
+        def regenerate(path):
+            # As a TTS result lands (AddonTTSProvider._on_speech_ready): the
+            # new take goes in front, so it is the one heard, then loads.
+            sub['dubbing'].insert(0, {'engine': 'edge-tts', 'voice': 'fake',
+                                      'rate': 0, 'path': path, 'start': 0.0})
+            clip.preload(path)
+
+        regenerate(path_a)
         assert path_a in clip._loaded, 'first preload did not populate cache'
         assert len(clip._loaded) == 1
 
-        clip.preload(path_b)
+        regenerate(path_b)
         # The interesting invariant: path_a is evicted by path_b.
         assert path_b in clip._loaded, 'second preload not present'
         assert path_a not in clip._loaded, (
@@ -253,7 +267,7 @@ def case_dub_cache_eviction():
         assert len(clip._loaded) == 1, (
             f'cache should hold exactly 1 entry, has {len(clip._loaded)}')
 
-        clip.preload(path_c)
+        regenerate(path_c)
         assert list(clip._loaded.keys()) == [path_c], (
             f'after 3rd preload, _loaded should hold only path_c, '
             f'has {list(clip._loaded.keys())}')
@@ -267,6 +281,28 @@ def case_dub_cache_eviction():
             'no-op preload re-allocated the cached entry')
 
         print(f'  3 sequential preloads → _loaded size = 1 (path={os.path.basename(path_c)}) ✓')
+
+        # A late load of an older take (queued before the take changed)
+        # keeps the take being heard.
+        clip.preload(path_a)
+        assert set(clip._loaded) == {path_a, path_c}, (
+            f'late load evicted the heard take: {list(clip._loaded)}')
+        print('  late load of an older take keeps the heard one ✓')
+
+        # A take made of two files: loading the second keeps the first,
+        # and both evict everything else.
+        sub['dubbing'].insert(0, {
+            'engine': 'edge-tts', 'voice': 'fake', 'rate': 0, 'start': 0.0,
+            'segments': [
+                {'type': 'audio', 'path': path_d, 'start': 0.0, 'end': 0.5, 'offset': 0.0},
+                {'type': 'audio', 'path': path_e, 'start': 0.5, 'end': 1.0, 'offset': 0.0},
+            ],
+        })
+        clip.preload(path_d)
+        clip.preload(path_e)
+        assert set(clip._loaded) == {path_d, path_e}, (
+            f'two-file take should hold exactly its files, has {list(clip._loaded)}')
+        print('  two-file take keeps both files, evicts the rest ✓')
     finally:
         import shutil
         shutil.rmtree(workdir, ignore_errors=True)
