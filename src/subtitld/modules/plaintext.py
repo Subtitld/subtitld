@@ -45,8 +45,8 @@ JSON
     other field of a subtitle as a key of its segment. ``language`` is the
     project's; the top-level ``text`` is all the subtitles' text in one line,
     written for other tools and never read back (the segments hold the text).
-    Whisper's own output reads as it is, minus its decoder statistics
-    (``WHISPER_DECODER_KEYS``). It goes last, out of the way of the
+    Whisper's own output reads as it is, minus its decoder statistics and
+    word times (``WHISPER_DECODER_KEYS``, ``WHISPER_ALIGNMENT_KEYS``). It goes last, out of the way of the
     segments; key order means nothing to JSON.
 
 Every problem is an ``Issue`` with a 1-based line and column. Errors stop a
@@ -78,9 +78,12 @@ _META_ORDER = ('speaker', 'translations', 'dubbing')
 MD_KEPT = ('dubbing',)
 # What Whisper writes about its own decoding of a segment; not subtitle data.
 WHISPER_DECODER_KEYS = ('seek', 'tokens', 'temperature', 'avg_logprob', 'compression_ratio', 'no_speech_prob')
-# Read in a JSON segment but not stored as fields: the numbering, and the
-# decoder statistics.
-_JSON_SKIPPED = ('id',) + WHISPER_DECODER_KEYS
+# What Whisper's alignment adds to a segment: each word's times. Nothing in
+# Subtitld uses them, and a long transcript has thousands.
+WHISPER_ALIGNMENT_KEYS = ('words',)
+# Read in a JSON segment but not stored as fields: the numbering, the
+# decoder statistics and the word times.
+_JSON_SKIPPED = ('id',) + WHISPER_DECODER_KEYS + WHISPER_ALIGNMENT_KEYS
 
 _TIME = {
     SRT: re.compile(r'(\d{2,}):(\d{2}):(\d{2}),(\d{3})$'),

@@ -224,10 +224,10 @@ whisper = ('{"text": " Hello there. General Kenobi.", "segments": ['
            ' "words": [{"word": " General", "start": 2.0, "end": 2.6}]}], "language": "en"}')
 result = pt.parse(whisper, pt.JSON)
 check('no issues', result.issues, [])
-check('texts without the leading space, decoder statistics left out',
+check('texts without the leading space, decoder statistics and word times left out',
       [(c.start, c.end, c.text, c.meta) for c in result.cues],
       [(0.0, 2.0, 'Hello there.', {}),
-       (2.0, 4.5, 'General Kenobi.', {'speaker': 'SPEAKER_01', 'words': [{'word': ' General', 'start': 2.0, 'end': 2.6}]})])
+       (2.0, 4.5, 'General Kenobi.', {'speaker': 'SPEAKER_01'})])
 check('a bare list of segments reads too', len(pt.parse('[{"start": 1, "end": 2, "text": "a"}]', pt.JSON).cues), 1)
 
 print('JSON problems carry their line and column')

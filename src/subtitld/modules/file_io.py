@@ -1,5 +1,6 @@
 import os
 import copy
+import re
 import hashlib
 import shutil
 import threading
@@ -17,6 +18,7 @@ from subtitld.modules import ass
 from subtitld.modules import ebustl
 from subtitld.modules import timecode
 from subtitld.modules import export_options
+from subtitld.modules import json_subtitles
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import plaintext
@@ -453,6 +455,24 @@ def _known_language(tag):
     return next((code for code in known if code.split('-')[0] == primary), '')
 
 
+def _language_like_project(tag):
+    """Subtitld's code for a language a file names (a code, as "pt" or
+    "en_us", or a name, as Whisper keeps "English"), the project's own when
+    it is the same language ("pt" in a "pt-br" project), or '' for none."""
+    tag = str(tag or '').strip()
+    if not tag:
+        return ''
+    if not re.fullmatch(r'[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*', tag):
+        named = next((code for name, code in session.LANGUAGE_DICT_LIST.items()
+                      if name.split(' (')[0].lower() == tag.lower()), '')
+        tag = named.split('-')[0] if named else ''
+    code = _known_language(tag)
+    project = str(session.SUBTITLE.get('language') or '')
+    if code and project.split('-')[0] == code.split('-')[0] and '-' not in tag.replace('_', '-'):
+        return project
+    return code
+
+
 def _usf_language(code, name=''):
     """Subtitld's code for a USF language: by the name the element holds
     ("Portuguese (Brazil)"), else by its code, Subtitld's or ISO 639-2's;
@@ -790,23 +810,49 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['format'] = 'USFX'
             session.FORMAT['options'] = {}
 
-        elif subtitle_file.lower().endswith(('.json')):
-            # Whisper's format, read as the plain-text editor reads it: every
-            # field of a segment kept, Whisper's decoder statistics left out.
-            subtitle_format = 'JSON'
-
-            with open(subtitle_file, encoding='utf-8') as json_file:
-                result = plaintext.parse(json_file.read(), plaintext.JSON, session.LANGUAGE_DICT_LIST.values())
-            if not result.ok:
-                problem = result.errors[0]
-                raise CorruptedProjectFileError(f'Line {problem.line}, column {problem.column}: {problem.message}')
-            for cue in result.cues:
-                segment = {'start': cue.start, 'end': cue.end, 'text': cue.text}
-                segment.update(cue.meta)
-                segment.setdefault('speaker', 'A')
-                segments_list.append(segment)
-            if result.language:
-                session.SUBTITLE['language'] = result.language
+        elif subtitle_file.lower().endswith(('.json', '.json3', '.bcc')):
+            # Subtitld's own JSON (Whisper's shape) is read as the plain-text
+            # editor reads it, every field kept and every mistake placed; what
+            # other tools write (whisper.cpp, WhisperX, YouTube, Bilibili,
+            # speech-to-text services, Amara) by modules.json_subtitles.
+            subtitle_format = 'BCC' if subtitle_file.lower().endswith('.bcc') else 'JSON'
+            with open(subtitle_file, 'rb') as json_file:
+                text = srt.decode(json_file.read())
+            try:
+                data = json_subtitles.loads(text)
+            except ValueError as error:
+                raise CorruptedProjectFileError(f"Line {getattr(error, 'lineno', '?')}, column {getattr(error, 'colno', '?')}: "
+                                                f"{getattr(error, 'msg', error)}") from error
+            language = None
+            if json_subtitles.kind(data) is None and json_subtitles.is_subtitlds(data):
+                result = plaintext.parse(text, plaintext.JSON, session.LANGUAGE_DICT_LIST.values())
+                if not result.ok:
+                    problem = result.errors[0]
+                    raise CorruptedProjectFileError(f'Line {problem.line}, column {problem.column}: {problem.message}')
+                for cue in result.cues:
+                    segment = {'start': cue.start, 'end': cue.end, 'text': cue.text}
+                    segment.update(cue.meta)
+                    segment.setdefault('speaker', 'A')
+                    segments_list.append(segment)
+                language = data.get('language') if isinstance(data, dict) else None
+            else:
+                quality = session.CONFIG.get('quality_check') or {}
+                limits = {'characters': int(quality.get('maximum_characters_per_line') or 42),
+                          'lines': int(quality.get('maximum_lines') or 2),
+                          'seconds': float(quality.get('maximum_duration') or 7)}
+                try:
+                    segments_list, language, _tool = json_subtitles.read(data, limits)
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
+                for segment in segments_list:
+                    segment.setdefault('speaker', 'A')
+            # The language: the file's, else its name's ("video.en.json3").
+            if not language:
+                parts = os.path.basename(subtitle_file).split('.')
+                language = parts[-2] if len(parts) > 2 and re.fullmatch(r'[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*', parts[-2]) else None
+            code = _language_like_project(language)
+            if code:
+                session.SUBTITLE['language'] = code
 
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
@@ -1257,6 +1303,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                         else language,
                         title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'BCC':
+            # Bilibili's: plain text, the player's default look, no overlaps.
+            json_subtitles.save_bilibili(final_file, segments)
 
         elif subtitle_format == 'SBV':
             # Plain text, as SBV has no formatting; speakers as YouTube asks

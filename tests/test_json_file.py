@@ -72,7 +72,7 @@ session.SUBTITLE = {'language': 'pt-br', 'segments': []}
 segments, fmt = file_io.process_subtitles_file(str(whisper))
 check('one subtitle, speaker A as for other formats, no decoder statistics', segments,
       [{'start': 0.0, 'end': 2.0, 'text': 'Hello there.', 'speaker': 'A'}])
-check('"en" is not a Subtitld language: the project keeps its own', session.SUBTITLE['language'], 'pt-br')
+check('"en" is English: the project takes it, as Subtitld writes it', session.SUBTITLE['language'], 'en-us')
 
 print('a broken file says where')
 broken = folder / 'broken.json'

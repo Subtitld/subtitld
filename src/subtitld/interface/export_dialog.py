@@ -17,7 +17,7 @@ from subtitld.modules import mcc
 from subtitld.modules import session
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE']
@@ -269,8 +269,8 @@ class _SubtitlesPanel(QWidget):
         self.scc_options.setVisible(fmt == 'SCC')
         self.stl_options.setVisible(fmt == 'STL')
         self.mcc_options.setVisible(fmt == 'MCC')
-        # SBV has no formatting to keep.
-        self.formatting_combo.setVisible(fmt != 'SBV')
+        # SBV and BCC have no formatting to keep.
+        self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC'))
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'

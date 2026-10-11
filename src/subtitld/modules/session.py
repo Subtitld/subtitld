@@ -134,7 +134,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'XML': {'description': 'XML Subtitle format', 'extensions': ['xml']},
     'USF': {'description': 'Universal Subtitle Format', 'extensions': ['usf']},
     'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
-    'JSON': {'description': 'JSON format', 'extensions': ['json']},
+    'JSON': {'description': 'JSON format', 'extensions': ['json', 'json3']},
+    'BCC': {'description': 'Bilibili BCC Subtitle format', 'extensions': ['bcc']},
 }
 
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
