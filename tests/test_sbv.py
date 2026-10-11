@@ -108,7 +108,7 @@ panel._refresh_options()
 combo = panel.speakers_combo.combobox
 check("SBV: the text options, YouTube's >> NAME:, no formatting to choose", (
     panel.text_options.isHidden(), combo.itemText(combo.count() - 1), panel.formatting_combo.isHidden()),
-      (False, "As >> NAME:, YouTube's way", True))
+      (False, "As >> NAME: (YouTube's way)", True))
 panel.format_combo.setCurrentText('SRT')
 panel._refresh_options()
 check('SRT: formatting again', panel.formatting_combo.isHidden(), False)

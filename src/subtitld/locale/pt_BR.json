@@ -722,7 +722,7 @@
     "export_dialog.speaker_names_agent": "Como agentes (ttm:agent)",
     "export_dialog.speaker_names_source": "Como a linha Source (ID=Source)",
     "export_dialog.speaker_names_chevrons": "Como >> a cada troca de falante",
-    "export_dialog.speaker_names_youtube": "Como >> NOME:, como o YouTube pede",
+    "export_dialog.speaker_names_youtube": "Como >> NOME: (como o YouTube pede)",
     "export_dialog.formatting": "Formatação",
     "export_dialog.formatting_keep": "Manter (itálico, negrito, cores…)",
     "export_dialog.formatting_remove": "Remover",
