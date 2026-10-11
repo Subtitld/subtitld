@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
+from subtitld.modules import ebustl
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import microdvd
@@ -527,6 +528,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
                 if declared:
                     session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=declared)
+
+        elif subtitle_file.lower().endswith(('.stl')):
+            # EBU STL: its language for the project's, its frame rate, display
+            # and programme start kept to save it again as it was.
+            subtitle_format = 'STL'
+            try:
+                segments_list, stl_settings = ebustl.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(stl_settings['language']):
+                session.SUBTITLE['language'] = _known_language(stl_settings['language'])
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
+                                             display=stl_settings['display'], start=stl_settings['start'])
 
         elif subtitle_file.lower().endswith(('.scc')):
             # CEA-608 captions, decoded as a caption decoder shows them.
@@ -1212,6 +1226,19 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
                      preview=session.CONFIG.get('videoplayer', {}))
+
+        elif subtitle_format == 'STL':
+            # In the language of the text written; frames at the export's rate
+            # (the video's, else 25), for teletext or open subtitles, from the
+            # programme start it asks.
+            video_rate = float(VIDEO.get('framerate') or 25)
+            ebustl.save(final_file, segments,
+                        fps=int(options.get('stl_fps') or (30 if abs(video_rate - 30) < 0.1 or abs(video_rate - 60) < 0.1 else 25)),
+                        display=options.get('display') if options.get('display') in ebustl.DISPLAYS else 'teletext',
+                        start=options.get('start') if options.get('start') in ebustl.STARTS else ebustl.STARTS[0],
+                        language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                        else language,
+                        title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
         elif subtitle_format == 'SBV':
             # Plain text, as SBV has no formatting; speakers as YouTube asks

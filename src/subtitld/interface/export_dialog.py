@@ -16,7 +16,7 @@ from subtitld.modules import export_options
 from subtitld.modules import session
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'SBV', 'SUB', 'XML', 'USF', 'JSON']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE']
@@ -129,6 +129,28 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.timecode_combo, 1)
         self.layout().addWidget(self.scc_options)
 
+        # EBU STL: its frame rate, its display and the programme's start.
+        self.stl_options = QWidget()
+        stl_grid = QGridLayout(self.stl_options)
+        stl_grid.setContentsMargins(0, 0, 0, 0)
+        stl_grid.setSpacing(10)
+        self.stl_rate_combo = utils.LabeledComboBox()
+        self.stl_rate_combo.setLabel(_('export_dialog.frame_rate'))
+        self.stl_rate_combo.combobox.addItem(_('export_dialog.stl_fps_25'), 25)
+        self.stl_rate_combo.combobox.addItem(_('export_dialog.stl_fps_30'), 30)
+        stl_grid.addWidget(self.stl_rate_combo, 0, 0)
+        self.stl_display_combo = utils.LabeledComboBox()
+        self.stl_display_combo.setLabel(_('export_dialog.stl_display'))
+        self.stl_display_combo.combobox.addItem(_('export_dialog.stl_display_teletext'), 'teletext')
+        self.stl_display_combo.combobox.addItem(_('export_dialog.stl_display_open'), 'open')
+        stl_grid.addWidget(self.stl_display_combo, 0, 1)
+        self.stl_start_combo = utils.LabeledComboBox()
+        self.stl_start_combo.setLabel(_('export_dialog.stl_start'))
+        self.stl_start_combo.combobox.addItem('00:00:00:00', '00:00:00:00')
+        self.stl_start_combo.combobox.addItem(_('export_dialog.stl_start_ten'), '10:00:00:00')
+        stl_grid.addWidget(self.stl_start_combo, 1, 0)
+        self.layout().addWidget(self.stl_options)
+
         # ASS and TTML: the look of their one style.
         self.ass_options = QWidget()
         row = QHBoxLayout(self.ass_options)
@@ -163,6 +185,15 @@ class _SubtitlesPanel(QWidget):
             _select(self.fps_combo, 25.0)
         _select(self.look_combo, remembered.get('look', 'clean'))
         _select(self.timecode_combo, remembered.get('timecode', 'drop'))
+        # 30 (29.97) for a video at that rate or twice it; else the last used.
+        if video_fps and (abs(video_fps - 30) < 0.1 or abs(video_fps - 60) < 0.1):
+            _select(self.stl_rate_combo, 30)
+        elif video_fps:
+            _select(self.stl_rate_combo, 25)
+        else:
+            _select(self.stl_rate_combo, remembered.get('stl_fps', 25))
+        _select(self.stl_display_combo, remembered.get('display', 'teletext'))
+        _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         self._refresh_options()
@@ -207,6 +238,7 @@ class _SubtitlesPanel(QWidget):
                                   .format(language=names.get(language, language)))
         self.sub_options.setVisible(fmt == 'SUB')
         self.scc_options.setVisible(fmt == 'SCC')
+        self.stl_options.setVisible(fmt == 'STL')
         # SBV has no formatting to keep.
         self.formatting_combo.setVisible(fmt != 'SBV')
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
@@ -228,6 +260,9 @@ class _SubtitlesPanel(QWidget):
             'fps': self.fps_combo.combobox.currentData(),
             'look': self.look_combo.combobox.currentData(),
             'timecode': self.timecode_combo.combobox.currentData(),
+            'stl_fps': self.stl_rate_combo.combobox.currentData(),
+            'display': self.stl_display_combo.combobox.currentData(),
+            'start': self.stl_start_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
@@ -248,6 +283,8 @@ class _SubtitlesPanel(QWidget):
             options['look'] = choices['look']
         if fmt == 'SCC':
             options['timecode'] = choices['timecode']
+        if fmt == 'STL':
+            options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
