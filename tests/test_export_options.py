@@ -81,7 +81,7 @@ check('SRT: a character the encoding lacks becomes ?',
 session.SUBTITLE['segments'] = project()
 check('SRT: options left from another export do not apply', export('SRT', 'srt', {}).decode().count('Thom:'), 0)
 sub = export('SUB', 'sub', {'fps': 25.0}).decode()
-check('SUB counts in the frame rate, and says which', sub.splitlines()[:2], ['{1}{1}25.0', '{5}{15}Sign'])
+check('SUB counts in the frame rate, and says which', sub.splitlines()[:2], ['{1}{1}25', '{5}{15}Sign'])
 check('SUB: one second is 25 frames at 25 fps', '{25}{50}' in sub, True)
 check('SUB: at 50 fps, 50 frames', '{50}{100}' in export('SUB', 'sub', {'fps': 50.0}).decode(), True)
 ass = export('ASS', 'ass', {}).decode()

@@ -1203,7 +1203,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     # MicroDVD counts in frames: the export's frame rate, or
                     # the video's.
                     fps = float(options.get('fps') or VIDEO.get('framerate') or 25)
-                    assfile.save(final_file, format_='microdvd', fps=fps)
+                    # The first line says which: "{1}{1}25", as players read
+                    # it (pysubs2 before 1.9 wrote an unreadable {0}{0}).
+                    text = assfile.to_string(format_='microdvd', fps=fps, write_fps_declaration=False)
+                    with open(final_file, 'w', encoding='utf-8') as sub_file:
+                        sub_file.write(f'{{1}}{{1}}{fps:g}\n' + text)
                 else:
                     assfile.save(final_file, format_='ass')
             # else:
