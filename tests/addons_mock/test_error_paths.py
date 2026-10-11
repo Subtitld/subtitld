@@ -16,6 +16,11 @@ import tempfile
 import textwrap
 import time
 
+# Scratch config, cache and add-ons: the mock is installed into them.
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, 'src'))
@@ -29,11 +34,13 @@ from subtitld.modules.addons import get_manager
 from subtitld.modules.addons.process import AddonProcess
 from subtitld.modules.addons.protocol import ErrorCode
 from subtitld.modules import session
+import mock_tts_addon
 
 
 def case_bad_params():
     print('\n=== case 1: bad_params ===')
     app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+    mock_tts_addon.install(session.PATH_SUBTITLD_ADDONS)
     mgr = get_manager()
     mgr.discover()
     provider = mgr.get('mock-tts')
@@ -44,25 +51,31 @@ def case_bad_params():
     provider.speech_error.connect(lambda u, s, m: errored.append(m) or app.quit())
     provider.speech_ready.connect(lambda *a: ready.append(a) or app.quit())
 
+    # Pass an unwritable output_path by overriding the cache to a non-existent path.
+    # Easier: rely on mock's bad_params branch by forcing empty output_path.
+    # Our AddonTTSProvider always sets output_path, so we test from raw process.
+    #
+    # The process is held here, as a provider holds it, and the request's
+    # slots don't capture it: held only by them, it would be freed while its
+    # request is deleted (deleteLater on the terminal frame), and its
+    # destructor would delete that request a second time.
+    ap = AddonProcess({'id': 'mock-tts', 'startup_timeout_sec': 5},
+                      str(session.PATH_SUBTITLD_ADDONS / 'mock-tts/bin/mock-tts-addon'))
+
     def kick():
-        # Pass an unwritable output_path by overriding the cache to a non-existent path.
-        # Easier: rely on mock's bad_params branch by forcing empty output_path.
-        # Our AddonTTSProvider always sets output_path, so we test from raw process.
-        ap = AddonProcess({'id': 'mock-tts', 'startup_timeout_sec': 5},
-                          str(session.PATH_SUBTITLD_ADDONS / 'mock-tts/bin/mock-tts-addon'))
         ap.start()
         req = ap.request('tts.synthesize', {})
         req.error.connect(lambda code, msg: (
             print(f'  got error: {code} / {msg}'),
             errored.append((code, msg)),
-            ap.shutdown(),
             app.quit()
         ))
-        req.result.connect(lambda d: (ready.append(d), ap.shutdown(), app.quit()))
+        req.result.connect(lambda d: (ready.append(d), app.quit()))
 
     QTimer.singleShot(0, kick)
     QTimer.singleShot(10000, app.quit)
     app.exec()
+    ap.shutdown()
     assert errored, 'expected an error'
     assert errored[0][0] == 'bad_params', f'expected bad_params, got {errored[0][0]}'
     print('  PASS')

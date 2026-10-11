@@ -14,15 +14,55 @@ Run as:
 (then write JSON-line frames on stdin)
 
 The pyinstaller equivalent would be `pyinstaller --onedir mock_tts_addon.py`.
+
+Tests that go through discovery call `install(session.PATH_SUBTITLD_ADDONS)`
+first: it lays the add-on out as the installer does, a manifest and a
+`bin/mock-tts-addon` launcher that runs this file.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import os
+import shlex
 import struct
 import sys
 import wave
+from pathlib import Path
+
+ADDON_ID = 'mock-tts'
+VOICES = [
+    {'id': 'mock-female-en', 'language': 'en'},
+    {'id': 'mock-male-pt', 'language': 'pt-br'},
+]
+
+
+def install(addons_dir) -> Path:
+    """Install the mock under `addons_dir` as `mock-tts/`, with a launcher
+    that runs this file in the current interpreter. Returns the add-on's
+    directory. Only call it with a scratch addons directory."""
+    root = Path(addons_dir) / ADDON_ID
+    exe = root / 'bin' / 'mock-tts-addon'
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    (root / 'manifest.json').write_text(json.dumps({
+        'manifest_version': 1,
+        'id': ADDON_ID,
+        'version': '0.0.1',
+        'display_name': 'Mock TTS',
+        'executable': 'bin/mock-tts-addon',
+        'protocol': 1,
+        'startup_timeout_sec': 10,
+        'tasks': ['tts.synthesize'],
+        'languages': ['en', 'pt-br'],
+        'voices': VOICES,
+    }, indent=2), encoding='utf-8')
+    exe.write_text(
+        '#!/bin/sh\n'
+        f'exec {shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))} "$@"\n',
+        encoding='utf-8')
+    exe.chmod(0o755)
+    return root
 
 
 def _send(frame):
@@ -51,16 +91,13 @@ def main():
     _send({
         'type': 'hello',
         'protocol': 1,
-        'addon': 'mock-tts',
+        'addon': ADDON_ID,
         'version': '0.0.1',
         'capabilities': [
             {
                 'task': 'tts.synthesize',
                 'languages': ['en', 'pt-br'],
-                'voices': [
-                    {'id': 'mock-female-en', 'language': 'en'},
-                    {'id': 'mock-male-pt', 'language': 'pt-br'},
-                ],
+                'voices': VOICES,
             },
         ],
     })

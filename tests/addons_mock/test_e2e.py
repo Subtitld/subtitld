@@ -1,7 +1,8 @@
 """End-to-end test of the add-on plumbing.
 
-Runs the mock TTS add-on installed under PATH_SUBTITLD_ADDONS through the
-real `AddonManager` / `AddonTTSProvider` stack. Verifies:
+Installs the mock TTS add-on under PATH_SUBTITLD_ADDONS (scratch XDG
+directories, never the user's) and runs it through the real
+`AddonManager` / `AddonTTSProvider` stack. Verifies:
 
   1. discover() picks up the mock add-on
   2. generate_speeches → handshake → request → progress → result → speech_ready
@@ -13,7 +14,13 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
+
+# Scratch config, cache and add-ons: the mock is installed into them.
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 
 # Make src/ importable when running from repo root.
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +34,7 @@ from PySide6.QtCore import QCoreApplication, QTimer, QObject, Slot
 
 from subtitld.modules.addons import get_manager
 from subtitld.modules import session
+import mock_tts_addon
 
 
 class Recorder(QObject):
@@ -57,6 +65,7 @@ class Recorder(QObject):
 def main():
     app = QCoreApplication(sys.argv)
 
+    mock_tts_addon.install(session.PATH_SUBTITLD_ADDONS)
     mgr = get_manager()
     print(f'Discovering in {session.PATH_SUBTITLD_ADDONS} ...')
     new_ids = mgr.discover()

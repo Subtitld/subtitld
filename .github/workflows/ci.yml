@@ -40,7 +40,7 @@ jobs:
           # No sound card on the runner: a null ALSA device stands in for one.
           printf 'pcm.!default { type null }\nctl.!default { type hw card 0 }\n' > ~/.asoundrc
           failed=
-          for t in tests/test_*.py; do
+          for t in tests/test_*.py tests/addons_mock/test_*.py; do
             echo "::group::$t"
             timeout 300 python "$t" || { echo "::error file=$t::$t failed"; failed=1; }
             echo "::endgroup::"

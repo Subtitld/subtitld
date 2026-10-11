@@ -280,9 +280,10 @@ def extract_speaker_reference_with_text(
         media, no subtitles for this speaker, ffmpeg failure).
       * `ref_text` is the concatenation of the subtitle texts spoken in
         the picked spans, separated by single spaces, with whitespace
-        collapsed. Empty string if no subtitle text is available, even
-        when `wav_path` is set (e.g. silent placeholder subtitles). The
-        caller decides whether an empty `ref_text` should be forwarded.
+        collapsed. None if no subtitle text in the audio's language is
+        available, even when `wav_path` is set (e.g. silent placeholder
+        subtitles, or a project with no language). The caller decides
+        whether a missing `ref_text` should be forwarded.
 
     Why pair the wav with the transcript: clone-capable models
     (Qwen3-TTS, F5-TTS, XTTS) all support an "ICL" mode that takes both
