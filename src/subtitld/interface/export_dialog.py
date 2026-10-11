@@ -13,10 +13,11 @@ from PySide6.QtGui import QFontDatabase
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import export_options
+from subtitld.modules import mcc
 from subtitld.modules import session
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE']
@@ -129,6 +130,26 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.timecode_combo, 1)
         self.layout().addWidget(self.scc_options)
 
+        # MacCaption: its frame rate, the video's.
+        self.mcc_options = QWidget()
+        row = QHBoxLayout(self.mcc_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.mcc_rate_combo = utils.LabeledComboBox()
+        self.mcc_rate_combo.setLabel(_('export_dialog.frame_rate'))
+        for key in mcc.RATES:
+            if key == '29.97DF':
+                label = _('export_dialog.mcc_rate_drop').format(fps='29.97')
+            elif key == '29.97':
+                label = _('export_dialog.mcc_rate_non_drop').format(fps='29.97')
+            else:
+                label = f'{key} fps'
+            if key == mcc.rate_for(video_fps):
+                label = _('export_dialog.frame_rate_video').format(fps=label)
+            self.mcc_rate_combo.combobox.addItem(label, key)
+        row.addWidget(self.mcc_rate_combo)
+        row.addStretch()
+        self.layout().addWidget(self.mcc_options)
+
         # EBU STL: its frame rate, its display and the programme's start.
         self.stl_options = QWidget()
         stl_grid = QGridLayout(self.stl_options)
@@ -193,6 +214,9 @@ class _SubtitlesPanel(QWidget):
         else:
             _select(self.stl_rate_combo, remembered.get('stl_fps', 25))
         _select(self.stl_display_combo, remembered.get('display', 'teletext'))
+        # The video's rate when MCC has it (drop-frame at 29.97); else the last used.
+        if not _select(self.mcc_rate_combo, mcc.rate_for(video_fps)):
+            _select(self.mcc_rate_combo, remembered.get('mcc_rate', '29.97DF'))
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
@@ -215,7 +239,7 @@ class _SubtitlesPanel(QWidget):
             combo.addItem(_('export_dialog.speaker_names_agent'), 'voice')
         elif fmt == 'SAMI':
             combo.addItem(_('export_dialog.speaker_names_source'), 'voice')
-        elif fmt == 'SCC':
+        elif fmt in ('SCC', 'MCC'):
             combo.addItem(_('export_dialog.speaker_names_chevrons'), 'voice')
         elif fmt == 'SBV':
             combo.addItem(_('export_dialog.speaker_names_youtube'), 'voice')
@@ -239,6 +263,7 @@ class _SubtitlesPanel(QWidget):
         self.sub_options.setVisible(fmt == 'SUB')
         self.scc_options.setVisible(fmt == 'SCC')
         self.stl_options.setVisible(fmt == 'STL')
+        self.mcc_options.setVisible(fmt == 'MCC')
         # SBV has no formatting to keep.
         self.formatting_combo.setVisible(fmt != 'SBV')
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
@@ -261,6 +286,7 @@ class _SubtitlesPanel(QWidget):
             'look': self.look_combo.combobox.currentData(),
             'timecode': self.timecode_combo.combobox.currentData(),
             'stl_fps': self.stl_rate_combo.combobox.currentData(),
+            'mcc_rate': self.mcc_rate_combo.combobox.currentData(),
             'display': self.stl_display_combo.combobox.currentData(),
             'start': self.stl_start_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
@@ -285,6 +311,8 @@ class _SubtitlesPanel(QWidget):
             options['timecode'] = choices['timecode']
         if fmt == 'STL':
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
+        if fmt == 'MCC':
+            options['mcc_rate'] = choices['mcc_rate']
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])

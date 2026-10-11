@@ -125,6 +125,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SAMI': {'description': 'SAMI Subtitle format', 'extensions': ['smi', 'sami']},
     'SCC': {'description': 'SCC Subtitle format', 'extensions': ['scc']},
     'STL': {'description': 'EBU STL Subtitle format', 'extensions': ['stl']},
+    'MCC': {'description': 'MacCaption Subtitle format', 'extensions': ['mcc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},

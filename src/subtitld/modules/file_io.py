@@ -17,6 +17,7 @@ from subtitld.modules import ass
 from subtitld.modules import ebustl
 from subtitld.modules import timecode
 from subtitld.modules import export_options
+from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import plaintext
 from subtitld.modules import sami
@@ -541,6 +542,16 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = _known_language(stl_settings['language'])
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
                                              display=stl_settings['display'], start=stl_settings['start'])
+
+        elif subtitle_file.lower().endswith(('.mcc')):
+            # MacCaption: the CEA-608 captions of its packets, decoded as SCC's;
+            # its frame rate kept to save it again as it was.
+            subtitle_format = 'MCC'
+            try:
+                segments_list, mcc_rate = mcc.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mcc_rate=mcc_rate)
 
         elif subtitle_file.lower().endswith(('.scc')):
             # CEA-608 captions, decoded as a caption decoder shows them.
@@ -1226,6 +1237,12 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
                      preview=session.CONFIG.get('videoplayer', {}))
+
+        elif subtitle_format == 'MCC':
+            # Pop-on captions in CEA-608, a packet a frame, at the export's
+            # frame rate (the video's); speakers as captioners mark them.
+            rate = options.get('mcc_rate') if options.get('mcc_rate') in mcc.RATES else mcc.rate_for(VIDEO.get('framerate'))
+            mcc.save(final_file, segments, rate=rate or '29.97DF', speaker_changes=options.get('speakers') == 'voice')
 
         elif subtitle_format == 'STL':
             # In the language of the text written; frames at the export's rate

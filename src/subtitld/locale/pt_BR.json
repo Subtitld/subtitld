@@ -749,6 +749,8 @@
     "export_dialog.timecode": "Timecode",
     "export_dialog.timecode_drop": "Drop-frame (00:00:01;00), como na TV",
     "export_dialog.timecode_non_drop": "Non-drop-frame (00:00:01:00)",
+    "export_dialog.mcc_rate_drop": "{fps} fps, drop-frame (00:00:01;00)",
+    "export_dialog.mcc_rate_non_drop": "{fps} fps, non-drop-frame",
     "export_dialog.stl_fps_25": "25 (STL25.01)",
     "export_dialog.stl_fps_30": "30 (STL30.01, para vídeo a 29,97)",
     "export_dialog.stl_display": "Exibição",

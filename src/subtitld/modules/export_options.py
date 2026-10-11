@@ -1,8 +1,8 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, STL, SBV, SUB); USF, USFX and JSON keep the project
-as it is.
+DFXP, TTML, SAMI, SCC, MCC, STL, SBV, SUB); USF, USFX and JSON keep the
+project as it is.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -12,7 +12,7 @@ as it is.
     speakers     'none'; 'prefix': the speaker's name before the text; or
                  'voice', the format's own way: WebVTT's voice tags
                  (<v Name>), TTML's agents, SAMI's Source line, SCC's
-                 ">>" at each change of speaker, SBV's ">> NAME: "
+                 and MCC's ">>" at each change of speaker, SBV's ">> NAME: "
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
                  them (SBV has none to keep)
     offset       seconds to shift every subtitle by; one that ends up
@@ -27,6 +27,7 @@ And for a format of its own:
     line_ends    SRT, SAMI and SUB: 'lf' or 'crlf'
     fps          SUB: the frame rate its frame numbers count in
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
+    mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
     stl_fps      STL: 25 (STL25.01) or 30 (STL30.01, for 29.97 video)
     display      STL: 'teletext' (level 1) or 'open' subtitles
     start        STL: the programme's start, '00:00:00:00' or '10:00:00:00'
@@ -37,7 +38,7 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'STL', 'SBV', 'SUB')
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)

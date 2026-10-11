@@ -156,10 +156,12 @@ def _render(memory, rows=None):
 
 
 class _Decoder:
-    """A CEA-608 decoder for one channel, its captions as subtitles."""
+    """A CEA-608 decoder for one channel, its captions as subtitles, its
+    frames at `rate` a second."""
 
-    def __init__(self, channel):
+    def __init__(self, channel, rate=_RATE):
         self.channel = channel
+        self.rate = rate
         self.displayed, self.loading = _blank(), _blank()
         self.mode = 'pop'
         self.roll_rows = 2
@@ -172,10 +174,13 @@ class _Decoder:
         self.line = None                           # the roll-up line being written
         self.dirty = None                          # the frame paint-on first changed the screen
 
+    def _seconds(self, frame):
+        return round(frame / self.rate, 3)
+
     # What a caption shows becomes subtitles.
     def _close(self, frame):
         if self.current:
-            self.current['end'] = max(self.current['start'], _seconds(frame))
+            self.current['end'] = max(self.current['start'], self._seconds(frame))
             self.current = None
 
     def _show(self, frame, rows=None, extend=False):
@@ -191,7 +196,7 @@ class _Decoder:
             return
         self._close(frame)
         if text:
-            self.current = {'start': _seconds(frame), 'end': None, 'body': text, 'keypad': keypad}
+            self.current = {'start': self._seconds(frame), 'end': None, 'body': text, 'keypad': keypad}
             self.subtitles.append(self.current)
 
     def _end_line(self, frame, close=False):
@@ -207,7 +212,7 @@ class _Decoder:
         if close:
             for subtitle in self.subtitles:
                 if subtitle['end'] is None and subtitle is not self.current:
-                    subtitle['end'] = max(subtitle['start'], _seconds(frame))
+                    subtitle['end'] = max(subtitle['start'], self._seconds(frame))
         self.line = {'start': None, 'end': None}
 
     def batch_end(self):
@@ -231,7 +236,7 @@ class _Decoder:
         if self.mode == 'text':
             return
         if self.mode == 'roll' and self.line is not None and self.line['start'] is None and char.strip():
-            self.line['start'] = _seconds(frame)
+            self.line['start'] = self._seconds(frame)
             for subtitle in self.subtitles:
                 if subtitle['end'] is None and subtitle is not self.current:
                     subtitle['end'] = max(subtitle['start'], self.line['start'])
@@ -385,11 +390,17 @@ def _lines(text):
 
 def parse(text):
     """The subtitles in SCC text: [{'start', 'end', 'text'}], by start."""
-    lines = _lines(text)
+    return decode_pairs(_lines(text))
+
+
+def decode_pairs(batches, rate=_RATE):
+    """The subtitles in CEA-608 data: `batches` [(frame, [(byte, byte)])],
+    a pair a frame from the batch's, at `rate` frames a second; its first
+    channel's, else its second's."""
     for channel in (1, 2):
-        decoder = _Decoder(channel)
+        decoder = _Decoder(channel, rate)
         last = 0
-        for frame, words in lines:
+        for frame, words in batches:
             for offset, (first, second) in enumerate(words):
                 decoder.word(frame + offset, first, second)
             last = frame + len(words)
@@ -595,6 +606,24 @@ def write(segments, drop_frame=True, speaker_changes=False):
     """SCC text for `segments`, as pop-on captions in CC1. With
     `speaker_changes`, ">> " begins each subtitle a new speaker says, as
     captions mark them."""
+    frames, breaks = frame_words(segments, speaker_changes=speaker_changes)
+    lines = ['Scenarist_SCC V1.0']
+    group, group_start = [], 0
+    for frame in sorted(frames):
+        if group and (frame != group_start + len(group) or frame in breaks):
+            lines += ['', f'{timecode(group_start, drop_frame)}\t{" ".join(group)}']
+            group = []
+        if not group:
+            group_start = frame
+        group.append(frames[frame])
+    if group:
+        lines += ['', f'{timecode(group_start, drop_frame)}\t{" ".join(group)}']
+    return '\n'.join(lines) + '\n'
+
+
+def frame_words(segments, rate=_RATE, speaker_changes=False):
+    """({frame: word}, the frames an EOC or EDM is on) for `segments` as
+    pop-on captions in CC1, a word a frame at `rate` frames a second."""
     eoc, edm = _word(0x14, _EOC), _word(0x14, _EDM)
     captions = []
     speaker = ''
@@ -608,8 +637,8 @@ def write(segments, drop_frame=True, speaker_changes=False):
             speaker = said_by
         words = _load(text)
         if words:
-            start = round(float(segment.get('start', 0)) * _RATE)
-            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * _RATE)), words])
+            start = round(float(segment.get('start', 0)) * rate)
+            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words])
 
     frames, breaks = {}, set()                     # frame: word; the frames a line starts at
     loaded_from = 0                                # the first frame the next load may use
@@ -636,19 +665,7 @@ def write(segments, drop_frame=True, speaker_changes=False):
                 clear += 1
             frames[clear] = frames[clear + 1] = edm
             breaks.add(clear)
-
-    lines = ['Scenarist_SCC V1.0']
-    group, group_start = [], 0
-    for frame in sorted(frames):
-        if group and (frame != group_start + len(group) or frame in breaks):
-            lines += ['', f'{timecode(group_start, drop_frame)}\t{" ".join(group)}']
-            group = []
-        if not group:
-            group_start = frame
-        group.append(frames[frame])
-    if group:
-        lines += ['', f'{timecode(group_start, drop_frame)}\t{" ".join(group)}']
-    return '\n'.join(lines) + '\n'
+    return frames, breaks
 
 
 def save(path, segments, drop_frame=True, speaker_changes=False):
