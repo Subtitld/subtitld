@@ -2,29 +2,10 @@
 
 """
 
-import os
 import subprocess
 import json
 
-from subtitld.modules.session import STARTUPINFO, FFMPEG_EXECUTABLE, PATH_TEMP, FFPROBE_EXECUTABLE
-
-
-def ffmpeg_extract_subtitle(filepath, index):
-    """Function to extract subtitle from video using ffmpeg"""
-    command = [
-        FFMPEG_EXECUTABLE,
-        '-i',
-        filepath,
-        '-map',
-        '0:' + str(index),
-        os.path.join(PATH_TEMP, 'subtitle.vtt')]
-    subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        startupinfo=STARTUPINFO
-    ).wait()
-    return os.path.join(PATH_TEMP, 'subtitle.vtt')
+from subtitld.modules.session import STARTUPINFO, FFPROBE_EXECUTABLE
 
 
 def ffmpeg_load_metadata(filepath):

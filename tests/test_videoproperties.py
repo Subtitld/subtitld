@@ -128,16 +128,24 @@ vp.update(host)
 check('codec missing (older session) shows a dash', host.videoproperties_codec_card.value.text() == '—')
 
 print('[2] codec comes from the probe')
-real_probe = waveform.ffmpeg_load_metadata
+import subprocess
+real_probe, real_popen, real_run = waveform.ffmpeg_load_metadata, subprocess.Popen, subprocess.run
 waveform.ffmpeg_load_metadata = lambda path: {
     'format': {'duration': '10'},
-    'streams': [{'codec_type': 'video', 'codec_name': 'hevc', 'width': 3840,
-                 'height': 2160, 'r_frame_rate': '24000/1001'}]}
+    'streams': [{'index': 0, 'codec_type': 'video', 'codec_name': 'hevc', 'width': 3840,
+                 'height': 2160, 'r_frame_rate': '24000/1001'},
+                {'index': 1, 'codec_type': 'audio', 'codec_name': 'aac'},
+                {'index': 2, 'codec_type': 'subtitle', 'codec_name': 'subrip', 'tags': {'language': 'eng'}}]}
+launched = []
+subprocess.Popen = lambda *args, **kwargs: launched.append(args[0] if args else kwargs.get('args'))
+subprocess.run = subprocess.Popen
 try:
     meta = file_io.process_video_file(str(source))
 finally:
-    waveform.ffmpeg_load_metadata = real_probe
+    waveform.ffmpeg_load_metadata, subprocess.Popen, subprocess.run = real_probe, real_popen, real_run
 check('process_video_file records the codec', meta.get('codec') == 'hevc', meta.get('codec'))
+check('...and that it has audio', meta.get('audio_is_present') is True)
+check('a subtitle track runs nothing on open (no FFmpeg extraction)', launched == [], launched)
 
 print('[3] proxy: not generated')
 load_video()

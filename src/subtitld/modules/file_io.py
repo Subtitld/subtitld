@@ -828,9 +828,6 @@ def process_video_file(video_file=False):
             video_metadata['height'] = int(stream.get('height', 480))
             video_metadata['codec'] = str(stream.get('codec_name', '') or '')
             video_metadata['framerate'] = int(stream.get('r_frame_rate', '1/30').split('/', 1)[0]) / int(stream.get('r_frame_rate', '1/30').split('/', 1)[-1])
-        elif stream.get('codec_type', '') in ['subtitle'] and not video_metadata.get('subtitles', False):
-            video_metadata['subtitles'] = waveform.ffmpeg_extract_subtitle(video_file, stream.get('index', 2))
-            # TODO: select what language if multiple embedded subtitles
         elif stream.get('codec_type', '') in ['audio']:
             video_metadata['audio_is_present'] = True
     video_metadata['filepath'] = video_file
