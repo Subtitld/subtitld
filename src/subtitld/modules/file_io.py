@@ -30,6 +30,7 @@ from subtitld.modules import waveform
 from subtitld.modules import webvtt
 from subtitld.modules import usf
 from subtitld.modules import utils
+from subtitld.modules import video_subtitles
 
 
 class CorruptedProjectFileError(Exception):
@@ -830,6 +831,10 @@ def process_video_file(video_file=False):
             video_metadata['framerate'] = int(stream.get('r_frame_rate', '1/30').split('/', 1)[0]) / int(stream.get('r_frame_rate', '1/30').split('/', 1)[-1])
         elif stream.get('codec_type', '') in ['audio']:
             video_metadata['audio_is_present'] = True
+    # What the Import panel offers to read from the video's own subtitle
+    # tracks, from this same probe. Project files keep only the video's
+    # path and come here again on open, so older ones get it too.
+    video_metadata['subtitle_tracks'] = video_subtitles.tracks(json_result, language_of=_known_language)
     video_metadata['filepath'] = video_file
     video_metadata['scenes'] = []
 

@@ -27,9 +27,9 @@ TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
 
 # Engines in the transcription picker that bring subtitles in from elsewhere
-# (a file, the video's own closed captions) rather than transcribing audio:
-# never a default engine, nor one for recording.
-SOURCE_ENGINES = frozenset({'import', 'captions'})
+# (a file, the video's own closed captions or subtitle tracks) rather than
+# transcribing audio: never a default engine, nor one for recording.
+SOURCE_ENGINES = frozenset({'import', 'captions', 'subtitles'})
 TASK_VIDEO_LIPSYNC = 'video.lipsync'
 
 
