@@ -10,7 +10,8 @@ DFXP, TTML, SAMI, SCC, SUB); USF, USFX and JSON keep the project as it is.
     language     the translation's language code
     speakers     'none'; 'prefix': the speaker's name before the text; or
                  'voice', the format's own way: WebVTT's voice tags
-                 (<v Name>), TTML's agents, SAMI's Source line
+                 (<v Name>), TTML's agents, SAMI's Source line, SCC's
+                 ">>" at each change of speaker
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
                  them
     offset       seconds to shift every subtitle by; one that ends up
@@ -22,6 +23,7 @@ And for a format of its own:
                  mark), 'utf-16', 'cp1252' or 'cp949' (Korean)
     line_ends    SRT and SAMI: 'lf' or 'crlf'
     fps          SUB: the frame rate its frame numbers count in
+    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
     look         ASS and TTML: their style 'clean' (white, a black
                  outline) or as Subtitld's 'preview' draws (modules.ass,
                  modules.ttml)
@@ -33,6 +35,7 @@ TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'SUB')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
+TIMECODES = ('drop', 'non-drop')
 
 DEFAULTS = {
     'text': 'original',

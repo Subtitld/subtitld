@@ -6,7 +6,6 @@ import threading
 import zipfile
 import xml.etree.ElementTree as ET
 from docx import Document
-import pycaption
 import pysubs2
 import datetime
 from bs4 import BeautifulSoup
@@ -21,6 +20,7 @@ from subtitld.modules import export_options
 from subtitld.modules import markup
 from subtitld.modules import plaintext
 from subtitld.modules import sami
+from subtitld.modules import scc
 from subtitld.modules import srt
 from subtitld.modules import session
 from subtitld.modules import ttml
@@ -510,19 +510,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             segments_list = ass.segments_of(subfile)
 
         elif subtitle_file.lower().endswith(('.scc')):
+            # CEA-608 captions, decoded as a caption decoder shows them.
             subtitle_format = 'SCC'
-
-            with open(subtitle_file, encoding='utf-8') as scc_file:
-                scc_reader = pycaption.SCCReader().read(scc_file.read())
-                languages = scc_reader.get_languages()
-                language = languages[0]
-                captions = scc_reader.get_captions(language)
-                for caption in captions:
-                    segments_list.append({
-                        'start': caption.start / 1000000,
-                        'end': caption.end / 1000000,
-                        'text': caption.get_text()
-                    })
+            segments_list = scc.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.usf')):
             subtitle_format = 'USF'
@@ -1187,16 +1177,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
         elif subtitle_format == 'SCC':
-            captions = pycaption.CaptionList()
-            for sub in segments:
-                # The text's formatting tags as pycaption's styles, which each
-                # writer puts its own way (markup.caption_nodes).
-                nodes = markup.caption_nodes(sub['text']) or [pycaption.CaptionNode.create_text('')]
-                caption = pycaption.Caption(start=sub['start'] * 1000000, end=(sub['end']) * 1000000, nodes=nodes)
-                captions.append(caption)
-            caption_set = pycaption.CaptionSet({language: captions})
-
-            open(final_file, mode='w', encoding='utf-8').write(pycaption.SCCWriter().write(caption_set))
+            # Pop-on captions, in drop-frame timecode unless the export asks
+            # otherwise; speakers as captioners mark them when it asks.
+            scc.save(final_file, segments, drop_frame=options.get('timecode') != 'non-drop',
+                     speaker_changes=options.get('speakers') == 'voice')
 
         elif subtitle_format == 'ASS':
             # Sized to the video, in the export's look; .ssa as SSA v4.

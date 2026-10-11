@@ -118,6 +118,17 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.sub_options)
 
+        # SCC: drop-frame timecode, as broadcast uses, or not.
+        self.scc_options = QWidget()
+        row = QHBoxLayout(self.scc_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.timecode_combo = utils.LabeledComboBox()
+        self.timecode_combo.setLabel(_('export_dialog.timecode'))
+        self.timecode_combo.combobox.addItem(_('export_dialog.timecode_drop'), 'drop')
+        self.timecode_combo.combobox.addItem(_('export_dialog.timecode_non_drop'), 'non-drop')
+        row.addWidget(self.timecode_combo, 1)
+        self.layout().addWidget(self.scc_options)
+
         # ASS and TTML: the look of their one style.
         self.ass_options = QWidget()
         row = QHBoxLayout(self.ass_options)
@@ -151,6 +162,7 @@ class _SubtitlesPanel(QWidget):
         if not _select(self.fps_combo, video_rate) and not _select(self.fps_combo, remembered.get('fps')):
             _select(self.fps_combo, 25.0)
         _select(self.look_combo, remembered.get('look', 'clean'))
+        _select(self.timecode_combo, remembered.get('timecode', 'drop'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         self._refresh_options()
@@ -158,7 +170,7 @@ class _SubtitlesPanel(QWidget):
     def _speaker_choices(self, fmt):
         """The speaker choices for `fmt`: leave out, before the text and the
         format's own way, if it has one: WebVTT's voice tags, TTML's agents,
-        SAMI's Source line.
+        SAMI's Source line, SCC's ">>".
         The one last chosen stays chosen when it is offered; the format's own
         way falls back to names before the text."""
         combo = self.speakers_combo.combobox
@@ -172,6 +184,8 @@ class _SubtitlesPanel(QWidget):
             combo.addItem(_('export_dialog.speaker_names_agent'), 'voice')
         elif fmt == 'SAMI':
             combo.addItem(_('export_dialog.speaker_names_source'), 'voice')
+        elif fmt == 'SCC':
+            combo.addItem(_('export_dialog.speaker_names_chevrons'), 'voice')
         if not _select(self.speakers_combo, self._speakers_wanted):
             _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
         combo.blockSignals(False)
@@ -190,6 +204,7 @@ class _SubtitlesPanel(QWidget):
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt == 'SAMI' else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
         self.sub_options.setVisible(fmt == 'SUB')
+        self.scc_options.setVisible(fmt == 'SCC')
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
@@ -208,6 +223,7 @@ class _SubtitlesPanel(QWidget):
             'line_ends': self.line_ends_combo.combobox.currentData(),
             'fps': self.fps_combo.combobox.currentData(),
             'look': self.look_combo.combobox.currentData(),
+            'timecode': self.timecode_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
@@ -226,6 +242,8 @@ class _SubtitlesPanel(QWidget):
             options['fps'] = choices['fps']
         if fmt in ('ASS', 'DFXP', 'TTML'):
             options['look'] = choices['look']
+        if fmt == 'SCC':
+            options['timecode'] = choices['timecode']
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
