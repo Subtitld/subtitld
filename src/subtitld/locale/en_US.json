@@ -504,6 +504,7 @@
     "export_dialog.speaker_names": "Speaker names",
     "export_dialog.speaker_names_none": "Leave out",
     "export_dialog.speaker_names_prefix": "Before the text (Name: …)",
+    "export_dialog.speaker_names_voice": "As voice tags (<v Name>)",
     "export_dialog.formatting": "Formatting",
     "export_dialog.formatting_keep": "Keep (italic, bold, colours…)",
     "export_dialog.formatting_remove": "Remove",

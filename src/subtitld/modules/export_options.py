@@ -7,7 +7,8 @@ DFXP, TTML, SAMI, SCC, SUB); USF, USFX and JSON keep the project as it is.
                  the original where a subtitle has none) or 'both' (the
                  original, then the translation below it)
     language     the translation's language code
-    speakers     'none', or 'prefix': the speaker's name before the text
+    speakers     'none'; 'prefix': the speaker's name before the text; or
+                 'voice', for WebVTT: a voice tag (<v Name>), its own way
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
                  them
     offset       seconds to shift every subtitle by; one that ends up

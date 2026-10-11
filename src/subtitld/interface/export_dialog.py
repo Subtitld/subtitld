@@ -61,8 +61,10 @@ class _SubtitlesPanel(QWidget):
 
         self.speakers_combo = utils.LabeledComboBox()
         self.speakers_combo.setLabel(_('export_dialog.speaker_names'))
-        self.speakers_combo.combobox.addItem(_('export_dialog.speaker_names_none'), 'none')
-        self.speakers_combo.combobox.addItem(_('export_dialog.speaker_names_prefix'), 'prefix')
+        # A choice made (not the list rebuilt for another format, which
+        # blocks the signal) is the one wanted from then on.
+        self.speakers_combo.combobox.currentIndexChanged.connect(
+            lambda _index: setattr(self, '_speakers_wanted', self.speakers_combo.combobox.currentData()))
         grid.addWidget(self.speakers_combo, 1, 0)
 
         self.formatting_combo = utils.LabeledComboBox()
@@ -128,7 +130,7 @@ class _SubtitlesPanel(QWidget):
 
         self.format_combo.setCurrentText(remembered.get('format') if remembered.get('format') in SUBTITLE_FORMATS else 'SRT')
         _select(self.text_combo, (remembered.get('text', 'original'), remembered.get('language', '')))
-        _select(self.speakers_combo, remembered.get('speakers', 'none'))
+        self._speakers_wanted = remembered.get('speakers', 'none')
         _select(self.formatting_combo, remembered.get('formatting', 'keep'))
         _select(self.encoding_combo, remembered.get('encoding', 'utf-8'))
         _select(self.line_ends_combo, remembered.get('line_ends', 'lf'))
@@ -140,8 +142,24 @@ class _SubtitlesPanel(QWidget):
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         self._refresh_options()
 
+    def _speaker_choices(self, fmt):
+        """The speaker choices for `fmt`: leave out, before the text and,
+        for WebVTT, its voice tags. The one last chosen stays chosen when it
+        is offered; voice tags fall back to names before the text."""
+        combo = self.speakers_combo.combobox
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(_('export_dialog.speaker_names_none'), 'none')
+        combo.addItem(_('export_dialog.speaker_names_prefix'), 'prefix')
+        if fmt == 'VTT':
+            combo.addItem(_('export_dialog.speaker_names_voice'), 'voice')
+        if not _select(self.speakers_combo, self._speakers_wanted):
+            _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
+        combo.blockSignals(False)
+
     def _refresh_options(self):
         fmt = self.format_combo.currentText()
+        self._speaker_choices(fmt)
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
         self.srt_options.setVisible(fmt == 'SRT')
         self.sub_options.setVisible(fmt == 'SUB')
@@ -161,7 +179,9 @@ class _SubtitlesPanel(QWidget):
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
-        session.CONFIG['export_subtitles'] = dict(choices, format=fmt)
+        # The speaker choice as last made: voice tags stay wanted for WebVTT
+        # even when another format wrote names before the text.
+        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted)
 
         # Every export sets its options, so none is left over from the last.
         options = {}

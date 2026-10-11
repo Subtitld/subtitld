@@ -717,6 +717,7 @@
     "export_dialog.speaker_names": "Nomes dos falantes",
     "export_dialog.speaker_names_none": "Deixar de fora",
     "export_dialog.speaker_names_prefix": "Antes do texto (Nome: …)",
+    "export_dialog.speaker_names_voice": "Como tags de voz (<v Nome>)",
     "export_dialog.formatting": "Formatação",
     "export_dialog.formatting_keep": "Manter (itálico, negrito, cores…)",
     "export_dialog.formatting_remove": "Remover",

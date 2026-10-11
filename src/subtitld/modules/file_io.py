@@ -6,7 +6,6 @@ import threading
 import zipfile
 from docx import Document
 import pycaption
-from pycaption.exceptions import CaptionReadSyntaxError, CaptionReadNoCaptions
 import chardet
 import pysubs2
 import datetime
@@ -23,6 +22,7 @@ from subtitld.modules import plaintext
 from subtitld.modules import srt
 from subtitld.modules import session
 from subtitld.modules import waveform
+from subtitld.modules import webvtt
 from subtitld.modules import usf
 from subtitld.modules import utils
 
@@ -435,33 +435,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
-            with open(subtitle_file, encoding='utf-8') as vtt_file:
-                try:
-                    vtt_reader = pycaption.WebVTTReader().read(vtt_file.read())
-                    languages = vtt_reader.get_languages()
-                    language = languages[0]
-                    captions = vtt_reader.get_captions(language)
-                    for caption in captions:
-                        segments_list.append({
-                            'start': caption.start / 1000000,
-                            'end': caption.end / 1000000,
-                            'text': caption.get_text()
-                        })
-                except CaptionReadSyntaxError:
-                    with open(subtitle_file, encoding='utf-8') as fileobj:
-                        subfile = pysubs2.SSAFile.from_string(fileobj.read())
-
-                    for event in subfile.events:
-                        segments_list.append({
-                            'start': event.start / 1000.0,
-                            'end': (event.start / 1000.0) + (event.duration / 1000.0),
-                            'text': event.text
-                        })
-                except CaptionReadNoCaptions:
-                    pass
-
-                    # error_message = QMessageBox()
-                    # error_message.setWindowTitle('There is a problem with this file and can not be opened.')
+            segments_list = webvtt.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             if '<tt ' in open(subtitle_file).read():
@@ -1164,7 +1138,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                      encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                      line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
-        elif subtitle_format in ['DFXP', 'TTML', 'SAMI', 'SCC', 'VTT']:
+        elif subtitle_format == 'VTT':
+            # Speakers as voice tags when the export asks for them.
+            webvtt.save(final_file, segments, voices=options.get('speakers') == 'voice')
+
+        elif subtitle_format in ['DFXP', 'TTML', 'SAMI', 'SCC']:
             captions = pycaption.CaptionList()
             for sub in segments:
                 # The text's formatting tags as pycaption's styles, which each
@@ -1180,8 +1158,6 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.SAMIWriter().write(caption_set))
             elif subtitle_format == 'SCC':
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.SCCWriter().write(caption_set))
-            elif subtitle_format == 'VTT':
-                open(final_file, mode='w', encoding='utf-8').write(pycaption.WebVTTWriter().write(caption_set))
 
         elif subtitle_format in ['ASS', 'SBV', 'XML', 'SUB']:
             if subtitle_format in ['ASS', 'SUB']:
