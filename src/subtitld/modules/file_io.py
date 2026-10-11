@@ -6,7 +6,6 @@ import threading
 import zipfile
 from docx import Document
 import pycaption
-import chardet
 import pysubs2
 import datetime
 from bs4 import BeautifulSoup
@@ -15,6 +14,7 @@ from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
+from subtitld.modules import ass
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import markup
@@ -477,22 +477,23 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         #         for caption in captions:
         #             segments_list.append([(caption.start - datetime.datetime(1900, 1, 1)).total_seconds(), caption.duration.total_seconds(), caption.text.strip()])
 
-        elif subtitle_file.lower().endswith(('.ass', '.ssa', '.sub')):
-            if subtitle_file.lower().endswith(('.ass', '.ssa')):
-                subtitle_format = 'ASS'
-                with open(subtitle_file, encoding='utf-8') as fileobj:
-                    subfile = pysubs2.SSAFile.from_string(fileobj.read())
-            elif subtitle_file.lower().endswith(('.sub')):
-                subtitle_format = 'SUB'
-                enc = chardet.detect(open(subtitle_file, 'rb').read())['encoding']
-                subfile = pysubs2.SSAFile.from_string(open(subtitle_file, mode='rb').read().decode(enc, 'ignore'))
+        elif subtitle_file.lower().endswith(('.ass', '.ssa')):
+            subtitle_format = 'ASS'
+            segments_list = ass.read(subtitle_file)
 
-            for event in subfile.events:
-                segments_list.append({
-                    'start': event.start / 1000.0,
-                    'end': (event.start / 1000.0) + (event.duration / 1000.0),
-                    'text': event.plaintext
-                })
+        elif subtitle_file.lower().endswith(('.sub')):
+            # MicroDVD, through pysubs2, which gives its {y:i} and the like as
+            # ASS codes: read as ASS's are. It counts in frames: the rate it
+            # declares, else the video's, else 25.
+            subtitle_format = 'SUB'
+            with open(subtitle_file, 'rb') as sub_file:
+                sub_text = srt.decode(sub_file.read())
+            try:
+                subfile = pysubs2.SSAFile.from_string(sub_text, format_='microdvd')
+            except Exception:
+                subfile = pysubs2.SSAFile.from_string(sub_text, format_='microdvd',
+                                                     fps=float(session.VIDEO.get('framerate') or 25))
+            segments_list = ass.segments_of(subfile)
 
         elif subtitle_file.lower().endswith(('.scc')):
             subtitle_format = 'SCC'
@@ -1159,13 +1160,15 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             elif subtitle_format == 'SCC':
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.SCCWriter().write(caption_set))
 
-        elif subtitle_format in ['ASS', 'SBV', 'XML', 'SUB']:
-            if subtitle_format in ['ASS', 'SUB']:
+        elif subtitle_format == 'ASS':
+            # Sized to the video, in the export's look; .ssa as SSA v4.
+            ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
+                     look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
+                     preview=session.CONFIG.get('videoplayer', {}))
+
+        elif subtitle_format in ['SBV', 'XML', 'SUB']:
+            if subtitle_format == 'SUB':
                 assfile = pysubs2.SSAFile()
-                # Positions and sizes count in the video's pixels.
-                if VIDEO.get('width') and VIDEO.get('height'):
-                    assfile.info['PlayResX'] = str(int(VIDEO['width']))
-                    assfile.info['PlayResY'] = str(int(VIDEO['height']))
                 for sub in segments:
                     # The formatting tags as ASS override codes, line breaks as \N.
                     assfile.append(
@@ -1175,17 +1178,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                             text=markup.to_ass(sub['text'])
                         )
                     )
-                if subtitle_format == 'SUB':
-                    # MicroDVD counts in frames: the export's frame rate, or
-                    # the video's.
-                    fps = float(options.get('fps') or VIDEO.get('framerate') or 25)
-                    # The first line says which: "{1}{1}25", as players read
-                    # it (pysubs2 before 1.9 wrote an unreadable {0}{0}).
-                    text = assfile.to_string(format_='microdvd', fps=fps, write_fps_declaration=False)
-                    with open(final_file, 'w', encoding='utf-8') as sub_file:
-                        sub_file.write(f'{{1}}{{1}}{fps:g}\n' + text)
-                else:
-                    assfile.save(final_file, format_='ass')
+                # MicroDVD counts in frames: the export's frame rate, or the
+                # video's. The first line says which: "{1}{1}25", as players
+                # read it (pysubs2 before 1.9 wrote an unreadable {0}{0}).
+                fps = float(options.get('fps') or VIDEO.get('framerate') or 25)
+                text = assfile.to_string(format_='microdvd', fps=fps, write_fps_declaration=False)
+                with open(final_file, 'w', encoding='utf-8') as sub_file:
+                    sub_file.write(f'{{1}}{{1}}{fps:g}\n' + text)
             # else:
             #     if subtitle_format == 'SBV':
             #         from captionstransformer.sbv import Writer

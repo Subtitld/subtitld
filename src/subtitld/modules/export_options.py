@@ -20,6 +20,8 @@ And for a format of its own:
                  'utf-16' or 'cp1252'
     line_ends    SRT: 'lf' or 'crlf'
     fps          SUB: the frame rate its frame numbers count in
+    look         ASS: its style 'clean' (white, a black outline) or as
+                 Subtitld's 'preview' draws (modules.ass)
 """
 
 from subtitld.modules import markup

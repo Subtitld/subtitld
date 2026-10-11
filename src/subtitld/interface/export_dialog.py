@@ -117,6 +117,17 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.sub_options)
 
+        # ASS: the look of its one style.
+        self.ass_options = QWidget()
+        row = QHBoxLayout(self.ass_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.look_combo = utils.LabeledComboBox()
+        self.look_combo.setLabel(_('export_dialog.ass_look'))
+        self.look_combo.combobox.addItem(_('export_dialog.ass_look_clean'), 'clean')
+        self.look_combo.combobox.addItem(_('export_dialog.ass_look_preview'), 'preview')
+        row.addWidget(self.look_combo, 1)
+        self.layout().addWidget(self.ass_options)
+
         self.usf_options = QWidget()
         self.usf_options.setLayout(QVBoxLayout())
         self.usf_options.layout().setContentsMargins(0, 0, 0, 0)
@@ -138,6 +149,7 @@ class _SubtitlesPanel(QWidget):
         video_rate = next((rate for rate in rates if video_fps and abs(video_fps - rate) < 0.01), None)
         if not _select(self.fps_combo, video_rate) and not _select(self.fps_combo, remembered.get('fps')):
             _select(self.fps_combo, 25.0)
+        _select(self.look_combo, remembered.get('look', 'clean'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         self._refresh_options()
@@ -163,6 +175,7 @@ class _SubtitlesPanel(QWidget):
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
         self.srt_options.setVisible(fmt == 'SRT')
         self.sub_options.setVisible(fmt == 'SUB')
+        self.ass_options.setVisible(fmt == 'ASS')
         self.usf_options.setVisible(fmt == 'USF')
 
     def get_config(self):
@@ -176,6 +189,7 @@ class _SubtitlesPanel(QWidget):
             'encoding': self.encoding_combo.combobox.currentData(),
             'line_ends': self.line_ends_combo.combobox.currentData(),
             'fps': self.fps_combo.combobox.currentData(),
+            'look': self.look_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
@@ -192,6 +206,8 @@ class _SubtitlesPanel(QWidget):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
         if fmt == 'SUB':
             options['fps'] = choices['fps']
+        if fmt == 'ASS':
+            options['look'] = choices['look']
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
