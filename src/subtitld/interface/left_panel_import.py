@@ -418,6 +418,21 @@ def _track_language(track):
     return track.get('language_tag', '')
 
 
+def _track_project_language(track):
+    """Subtitld's code for a subtitle track's language, as the project takes
+    it: a language the track names without its country ("por") keeps the
+    country the project, or the transcription settings, already give it
+    ("pt-br"), rather than its main country's ("pt-pt"); '' for none."""
+    code = track.get('language') or ''
+    if not code or '-' in track.get('language_tag', '').replace('_', '-'):
+        return code
+    primary = code.split('-')[0]
+    for known in (session.SUBTITLE.get('language'), session.CONFIG.get('transcription', {}).get('language')):
+        if known and known.split('-')[0] == primary:
+            return known
+    return code
+
+
 def _track_label(track, number):
     """"2. Portuguese “Brasil” · ASS · default": a subtitle track's place
     among the video's, language, title, codec and flags; why it cannot be
@@ -443,11 +458,13 @@ class _SubtitleTracksPanel(_GenericASRPanel):
     drawn as pictures, and closed captions, are listed but cannot be
     chosen. Like a transcription the track replaces the subtitles, or those
     of the range or selection chosen; its times are the video's own, so
-    nothing is cut out or shifted."""
+    nothing is cut out or shifted. A track that replaces every subtitle
+    makes its language the project's."""
 
     def __init__(widget, provider, parent=None):
         super().__init__(provider, parent)
         widget._listed = None                        # (video, tracks) the combo shows
+        widget._reading = None                       # the track the run reads
         widget.track_combo = utils.LabeledComboBox()
         widget.track_combo.combobox.activated.connect(lambda _index: widget._remember())
         widget.layout().insertWidget(1, widget.track_combo)
@@ -538,6 +555,7 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         widget._scope_range = scope_range
         widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None) if scope_range else None
         widget._scope_target_parts = []
+        widget._reading = track
         widget.transcript_started.emit()
         widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'), {
             'track': track['index'], 'codec': track['codec'], 'duration': float(session.VIDEO.get('duration') or 0)})
@@ -551,7 +569,24 @@ class _SubtitleTracksPanel(_GenericASRPanel):
             widget._say(_('import_panel.no_subtitles_title'), _('import_panel.no_subtitles_in_track'))
             widget.transcript_finished.emit()
             return
+        if scope_range is None and widget._reading is not None:
+            widget._adopt_language(widget._reading)
         _GenericASRPanel._on_finished(widget, segments)
+
+    def _adopt_language(widget, track):
+        """Every subtitle is now the track's: the project's subtitles are in
+        its language, when it names one. What is spoken stays as declared
+        (source_language, frozen first if it never was), as a translation
+        inverted leaves it. A range or selection leaves the language alone:
+        the other subtitles are still in theirs."""
+        language = _track_project_language(track)
+        if not language or language == session.SUBTITLE.get('language'):
+            return
+        if not session.SUBTITLE.get('source_language') and session.SUBTITLE.get('language'):
+            session.SUBTITLE['source_language'] = session.SUBTITLE['language']
+        session.SUBTITLE['language'] = language
+        if hasattr(widget.window(), 'global_panel_import_language_combobox'):
+            _show_language(widget.window())
 
     def translate(widget):
         widget.info_label.setText(_('import_panel.subtitles_info'))
@@ -842,6 +877,16 @@ def show(self):
     update(self)
 
 
+def _show_language(self):
+    """The language combobox on the project's language."""
+    selected_language_name = 'English (United States)'
+    for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
+        if language_code == session.SUBTITLE['language']:
+            selected_language_name = language_name
+            break
+    self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
+
+
 def update(self):
     if not session.SUBTITLE.get('language', False):
         session.SUBTITLE['language'] = session.CONFIG.get('transcription', {}).get('language', 'en-us')
@@ -851,12 +896,7 @@ def update(self):
     # transcript as `voice_ref_text`. See clone_ref._resolve_source_language.
     if not session.SUBTITLE.get('source_language'):
         session.SUBTITLE['source_language'] = session.SUBTITLE['language']
-    selected_language_name = 'English (United States)'
-    for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
-        if language_code == session.SUBTITLE['language']:
-            selected_language_name = language_name
-            break
-    self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
+    _show_language(self)
 
     # Restore the previously saved engine selection. There is no
     # default built-in any more — when the user's saved engine isn't in

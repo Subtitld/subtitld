@@ -8,7 +8,8 @@ the video" engine: in a thread with progress, cancelled with FFmpeg
 stopped, a run replaced by the next; and its panel: the tracks of the
 video open, the one offered first, refreshed for another video, those
 that cannot be read, nothing cleared when there is nothing to read, the
-range chosen; its place among the engines and its Start button.
+range chosen, the track's language the project's when it replaces every
+subtitle; its place among the engines and its Start button.
 
 The videos are made in a temporary folder with FFmpeg (lavfi, and SRT,
 ASS and WebVTT written here): an MKV with English, Portuguese and Spanish
@@ -302,6 +303,8 @@ window.global_panel_import_start_transcription_progress = QProgressBar()
 window.timeline_widget = types.SimpleNamespace(update=lambda: None, update_size=lambda: None)
 window.transcription_scope = types.SimpleNamespace(current_range=lambda: scope['range'], scope='all',
                                                    selected_segment=lambda: None)
+window.global_panel_import_language_combobox = utils.LabeledComboBox()
+window.global_panel_import_language_combobox.addItems(list(lpi.LANGUAGE_DESCRIPTIONS))
 session.CONFIG = {'transcription': {}}
 session.VIDEO = mkv
 session.SUBTITLE = {'segments': [], 'language': 'en-us'}
@@ -405,6 +408,44 @@ check('a range the track has nothing in: says so, and changes nothing',
       (start((30.0, 45.0)), [s['text'] for s in session.SUBTITLE['segments']], shown),
       (True, ['Before', '{\\an8}At the top', 'After'],
        [(_('import_panel.no_subtitles_title'), [_('import_panel.no_subtitles_in_track')])]))
+
+print('the language it gives the project')
+language_combo = window.global_panel_import_language_combobox.combobox
+
+
+def read_track(index, language, range_=None, source=None, segments=()):
+    """Read track `index` into a project in `language` (what is spoken:
+    `source`): the project's language then, what is spoken, and the
+    language the panel shows."""
+    track_combo.setCurrentIndex(track_combo.findData(index))
+    session.SUBTITLE = {'segments': list(segments), 'language': language}
+    if source:
+        session.SUBTITLE['source_language'] = source
+    lpi._show_language(window)
+    start(range_)
+    return session.SUBTITLE.get('language'), session.SUBTITLE.get('source_language'), language_combo.currentText()
+
+
+check('the whole video from the Portuguese track: the subtitles are Portuguese, the audio still English, shown so',
+      read_track(3, 'en-us', source='en-us'), ('pt-pt', 'en-us', 'Portuguese (Portugal)'))
+check('what is spoken, never declared yet, kept as it was first', read_track(3, 'en-us'),
+      ('pt-pt', 'en-us', 'Portuguese (Portugal)'))
+check('"por" in a Brazilian project: still Brazilian', read_track(3, 'pt-br', source='en-us'),
+      ('pt-br', 'en-us', 'Portuguese (Brazil)'))
+session.CONFIG['transcription']['language'] = 'pt-br'
+check("nor Portugal's when the transcription settings say Brazil", read_track(3, 'en-us', source='en-us'),
+      ('pt-br', 'en-us', 'Portuguese (Brazil)'))
+session.CONFIG['transcription'].pop('language')
+check('a range: the other subtitles are still English, and so is the project',
+      read_track(4, 'en-us', (0.0, 10.0), source='en-us', segments=[{'start': 40.0, 'end': 41.0, 'text': 'English'}]),
+      ('en-us', 'en-us', 'English (United States)'))
+check('(the Spanish one did come in)', [s['text'] for s in session.SUBTITLE['segments']], ['{\\an8}Hola arriba', 'English'])
+session.VIDEO = dict(mkv, subtitle_tracks=[dict(t, language='', language_tag='') for t in mkv['subtitle_tracks']])
+panel.update_callback()
+check('a track that names no language: the project keeps its own', read_track(4, 'en-us', source='en-us'),
+      ('en-us', 'en-us', 'English (United States)'))
+session.VIDEO = mkv
+panel.update_callback()
 
 check('an engine that brings subtitles in, never the default transcription engine',
       ('subtitles' in SOURCE_ENGINES, manager.default_for_task(TASK_ASR_TRANSCRIBE)), (True, None))
