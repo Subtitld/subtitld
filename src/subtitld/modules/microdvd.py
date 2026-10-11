@@ -10,8 +10,8 @@ frame rate.
 
 Reading forgives:
 
-- the bytes are decoded as SRT's are (Polish files, the most of them, are
-  mostly Windows-1250);
+- the bytes are decoded as SRT's are (files from the DivX years are often
+  in their language's Windows code page, Windows-1250 in Central Europe);
 - the frame rate a "{1}{1}25" or "{0}{0}25" line declares, else the
   video's, else 25; the declaring line is no subtitle;
 - an empty end ("{100}{}") lasts until the next subtitle;
