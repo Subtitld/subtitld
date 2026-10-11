@@ -5,6 +5,7 @@ from PySide6.QtGui import QColor, QFontMetrics, QFont, QIcon, QPixmap
 from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
+from subtitld.interface import subtitle_text_editor
 from subtitld.interface.translation import _
 
 from subtitld.modules import session
@@ -259,6 +260,12 @@ def load(self):
     self.left_panel_subtitleslist_textedit.installEventFilter(_TextEditHistoryFilter(self, self.left_panel_subtitleslist_textedit))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
 
+    # Italic, bold, underline, strikeout, colour and position, under the text
+    # they format (subtitle_text_editor).
+    self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(self.left_panel_subtitleslist_textedit)
+    self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
+
     self.left_panel_subtitleslist_translation_textedit = QTextEdit()
     self.left_panel_subtitleslist_translation_textedit.setObjectName('left_panel_subtitleslist_translation_textedit')
     self.left_panel_subtitleslist_translation_textedit.setAcceptRichText(False)
@@ -470,7 +477,7 @@ def subtitles_panel_empty_state_button_clicked(self):
 
 def left_panel_subtitleslist_textedit_changed(self):
     if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
-        session.SUBTITLE['selected']['text'] = self.left_panel_subtitleslist_textedit.toPlainText()
+        session.SUBTITLE['selected']['text'] = subtitle_text_editor.text(self.left_panel_subtitleslist_textedit)
         session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
@@ -522,12 +529,13 @@ def update(self):
         # unsaved on a no-op refresh and (b) overwrite `selected['text']`
         # with the same value but at the wrong moment in flow.
         self.left_panel_subtitleslist_textedit.blockSignals(True)
-        self.left_panel_subtitleslist_textedit.setText(session.SUBTITLE['selected']['text'])
+        subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE['selected']['text'])
         self.left_panel_subtitleslist_textedit.blockSignals(False)
+        self.left_panel_subtitleslist_formatting_bar.refresh()
 
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(True)
-        self.left_panel_subtitleslist_translation_textedit.setText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+        self.left_panel_subtitleslist_translation_textedit.setPlainText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(False)
 
         # setAlignment edits the document, so it emits textChanged as well:
@@ -799,6 +807,7 @@ def translate(self):
     self.subtitles_panel_simplelist_properties_duration_timing_label.setText(_('left_panel_subtitleslist.duration'))
     self.subtitles_panel_simplelist_properties_ending_timing_label.setText(_('left_panel_subtitleslist.end'))
     self.left_panel_subtitleslist_speaker_selector.label.setText(_('left_panel_subtitleslist.speaker'))
+    self.left_panel_subtitleslist_formatting_bar.retranslate()
     self.left_panel_subtitleslist_regenerate_dub_button.setToolTip(_('left_panel_subtitleslist.regenerate_dub_tooltip'))
     self.subtitles_panel_empty_state_label.setText(_('left_panel_subtitleslist.empty_state_label'))
     self.subtitles_panel_empty_state_button.setToolTip(_('left_panel_subtitleslist.empty_state_button'))

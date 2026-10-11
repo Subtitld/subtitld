@@ -92,7 +92,9 @@ check('a timestamp too', utils.friendly_time(time.time() - 7200.5), '2 hours ago
 # The stand-in language: pt_BR, every text ⟦English⟧ but its own name.
 _pt_name = translation.get_available_language_names()['pt_BR']
 i18n.translations.container['pt_BR'] = {key: f'⟦{value}⟧' for key, value in EN.items()} | {'language_name': _pt_name}
-ENGLISH = set(EN.values()) | {value.upper() for value in EN.values()}
+# A single letter is no sign of English: the keyboard panel's keycaps and
+# the formatting bar's letters show them in every language.
+ENGLISH = {text for value in EN.values() for text in (value, value.upper()) if len(value) > 1}
 # Names, the same in every language: English in the language picker, the
 # plain-text editor's Subtitld theme, the subtitld.cc card's title.
 NAMES = {'English', 'Subtitld', 'subtitld.cc'}

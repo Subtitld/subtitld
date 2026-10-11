@@ -31,7 +31,7 @@ class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
         super().keyPressEvent(ev)
 
 import subtitld.modules.timecode as timecode
-from subtitld.interface import timeline, left_panel
+from subtitld.interface import timeline, left_panel, subtitle_text_editor
 from subtitld.interface.translation import _
 
 from subtitld.modules import subtitles
@@ -2631,8 +2631,7 @@ def slice_selected_subtitle_button_clicked(self):
     """Function to call when slice selected subtitle button is clicked"""
     if self.slice_selected_subtitle_button.isChecked() and session.SUBTITLE.get('selected', None) is not None and self.left_panel_subtitleslist_textedit.textCursor().position():
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-        last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos]
-        next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:]
+        last_text, next_text = subtitle_text_editor.halves(self.left_panel_subtitleslist_textedit, pos)
         session.SUBTITLE['selected'] = subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE['selected'], position=session.SUBTITLE.get('position', 0), next_text=next_text, last_text=last_text)
         timeline.update(self)
         left_panel.update(self)
@@ -3136,8 +3135,7 @@ def send_text_to_last_subtitle_button_clicked(self):
     if session.SUBTITLE.get('selected', None) is not None:
         if self.left_panel_subtitleslist_textedit.textCursor().position():
             pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-            last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
-            next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
+            last_text, next_text = (half.strip() for half in subtitle_text_editor.halves(self.left_panel_subtitleslist_textedit, pos))
             subtitles.send_text_to_last_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
         elif self.left_panel_subtitleslist_translation_textedit.textCursor().position():
             pos = self.left_panel_subtitleslist_translation_textedit.textCursor().position()
@@ -3155,8 +3153,7 @@ def send_text_to_next_subtitle_button_clicked(self):
     if session.SUBTITLE.get('selected', None) is not None:
         if self.left_panel_subtitleslist_textedit.textCursor().position():
             pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-            last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
-            next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
+            last_text, next_text = (half.strip() for half in subtitle_text_editor.halves(self.left_panel_subtitleslist_textedit, pos))
             subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
         elif self.left_panel_subtitleslist_translation_textedit.textCursor().position():
             pos = self.left_panel_subtitleslist_translation_textedit.textCursor().position()
@@ -3173,8 +3170,7 @@ def send_text_to_last_subtitle_and_slice_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
     if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-        last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
-        next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
+        last_text, next_text = (half.strip() for half in subtitle_text_editor.halves(self.left_panel_subtitleslist_textedit, pos))
         subtitles.send_text_to_last_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
         subtitles.subtitle_start_to_current_position(position=session.SUBTITLE.get('position', 0))
         subtitles.last_end_to_current_position(position=session.SUBTITLE.get('position', 0) - .001)
@@ -3189,8 +3185,7 @@ def send_text_to_next_subtitle_and_slice_button_clicked(self):
     """Function to call when send text to last subtitle is clicked"""
     if session.SUBTITLE.get('selected', None) is not None:
         pos = self.left_panel_subtitleslist_textedit.textCursor().position()
-        last_text = self.left_panel_subtitleslist_textedit.toPlainText()[:pos].strip()
-        next_text = self.left_panel_subtitleslist_textedit.toPlainText()[pos:].strip()
+        last_text, next_text = (half.strip() for half in subtitle_text_editor.halves(self.left_panel_subtitleslist_textedit, pos))
         subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['selected'], last_text=last_text, next_text=next_text)
         subtitles.subtitle_end_to_current_position(position=session.SUBTITLE.get('position', 0))
         subtitles.next_start_to_current_position(position=session.SUBTITLE.get('position', 0))

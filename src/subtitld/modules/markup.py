@@ -262,6 +262,72 @@ def caption_nodes(text):
     return nodes
 
 
+TAG_ORDER = ('font', 'i', 'b', 'u', 's')      # outermost first, when opened together
+
+
+def tags_for(style):
+    """The tags a run in `style` sits in: [(name, value)]."""
+    wanted = [('font', style.color)] if style.color else []
+    return wanted + [(name, True) for name in ('i', 'b', 'u', 's') if getattr(style, _FLAGS[name])]
+
+
+def _open_tag(name, value):
+    return f'<font color="{value}">' if name == 'font' else f'<{name}>'
+
+
+def from_spans(runs):
+    """Text with tags for [(text, Style)] runs: well nested, a tag opened
+    once for as long as its style lasts."""
+    out = []
+    stack = []                                  # [(name, value)], outermost first
+    for run, style in runs:
+        if not run:
+            continue
+        wanted = tags_for(style)
+        keep = 0
+        while keep < len(stack) and stack[keep] in wanted:
+            keep += 1
+        for name, _value in reversed(stack[keep:]):
+            out.append(f'</{name}>')
+        del stack[keep:]
+        for item in sorted((item for item in wanted if item not in stack), key=lambda item: TAG_ORDER.index(item[0])):
+            out.append(_open_tag(*item))
+            stack.append(item)
+        out.append(run)
+    for name, _value in reversed(stack):
+        out.append(f'</{name}>')
+    return ''.join(out)
+
+
+_LEAD = re.compile(r'(?:\s*\{\\[^{}]*\})+')
+
+
+def split_lead(text):
+    """(codes, rest): the override codes a text starts with ("{\\an8}"),
+    which are not text to edit, and the text after them."""
+    match = _LEAD.match(text or '')
+    if not match:
+        return '', text or ''
+    return match.group(0).strip(), (text or '')[match.end():]
+
+
+def with_alignment(lead, keypad):
+    """`lead` (override codes) placing the text at `keypad` (7 8 9 top, 4 5 6
+    middle, 1 2 3 bottom): its \\an code set, or gone for 2, the default."""
+    codes = ''.join(re.findall(r'\{(\\[^{}]*)\}', lead or ''))
+    codes = _ALIGN.sub('', codes)
+    if keypad and keypad != 2:
+        codes = f'\\an{keypad}' + codes
+    return '{' + codes + '}' if codes else ''
+
+
+# USF writes a position as a name (its "alignment" attribute).
+KEYPAD_NAMES = {
+    7: 'TopLeft', 8: 'TopCenter', 9: 'TopRight',
+    4: 'MiddleLeft', 5: 'MiddleCenter', 6: 'MiddleRight',
+    1: 'BottomLeft', 2: 'BottomCenter', 3: 'BottomRight',
+}
+
 _LEGACY_ALIGN = {1: 1, 2: 2, 3: 3, 5: 7, 6: 8, 7: 9, 9: 4, 10: 5, 11: 6}
 
 
@@ -298,3 +364,4 @@ def rebalance(left, right):
     opening = ''.join(written for _name, _color, _style, written in reader.open)
     prefix = '{' + alignment + '}' if alignment and not right.lstrip().startswith('{' + alignment) else ''
     return left + closing, prefix + opening + right
+

@@ -1406,6 +1406,101 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     padding: 8px;
     font-size: 14px;
     font-weight: 500;
+    /* As the subtitle list draws it, whatever the system's palette (a
+       light one used to give black text here). */
+    color: #ffffff;
+}
+
+/* The formatting bar under the subtitle's text: letters that look like what
+   they do, a colour swatch and the position on the screen. */
+#subtitle_formatting_bar {
+    background: transparent;
+}
+
+QPushButton[class="subtitle_formatting_button"] {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 22px;
+    max-height: 22px;
+    padding: 0;
+    font-family: 'Montserrat';
+    font-size: 12px;
+    font-weight: 600;
+    color: #b8cee0;
+}
+
+QPushButton[class="subtitle_formatting_button"]:hover {
+    background-color: #3e5363;
+}
+
+QPushButton[class="subtitle_formatting_button"]:checked {
+    background-color: #304251;
+    color: #ffffff;
+}
+
+QPushButton[class="subtitle_formatting_button"]::menu-indicator {
+    image: none;
+    width: 0;
+}
+
+#subtitle_formatting_italic {
+    font-style: italic;
+}
+
+#subtitle_formatting_bold {
+    font-weight: 800;
+}
+
+#subtitle_formatting_underline {
+    text-decoration: underline;
+}
+
+#subtitle_formatting_strike {
+    text-decoration: line-through;
+}
+
+QPushButton[class="subtitle_formatting_swatch"] {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 3px;
+}
+
+QPushButton[class="subtitle_formatting_swatch"]:hover {
+    background-color: #3e5363;
+}
+
+QPushButton[class="subtitle_formatting_swatch"]:checked {
+    border-color: #b8cee0;
+}
+
+QMenu#subtitle_formatting_menu {
+    background-color: #1a232b;
+    border: 1px solid #304251;
+    border-radius: 3px;
+    padding: 2px;
+    color: #b8cee0;
+    font-family: 'Montserrat';
+    font-size: 12px;
+}
+
+QMenu#subtitle_formatting_menu::item {
+    padding: 6px 12px;
+    border-radius: 2px;
+}
+
+QMenu#subtitle_formatting_menu::item:selected {
+    background-color: #3e5363;
+    color: #ffffff;
+}
+
+QMenu#subtitle_formatting_menu::separator {
+    height: 1px;
+    background: #304251;
+    margin: 4px 6px;
 }
 
 #subtitles_panel_empty_state_label,
