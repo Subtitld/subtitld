@@ -56,60 +56,6 @@
             ]
         },
         {
-            "name": "python3-pycaption",
-            "buildsystem": "simple",
-            "build-commands": [
-                "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"pycaption\" --no-build-isolation"
-            ],
-            "sources": [
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl",
-                    "sha256": "d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/db/4d/e80f926abb83cff88710b275667173fe8407a093bc42369739c37535cb90/chardet-6.0.0-py3-none-any.whl",
-                    "sha256": "502eee44c943b21e178cb537980b1331b42abf99505085e8ae881e27245083bb"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/01/bf/5669e08a6f53e0d4b4648a989e77163ad36d4718195319c8c5af08ded654/cssutils-2.15.0-py3-none-any.whl",
-                    "sha256": "207faa466810a1aef109261673f2458356d0839ddedaebc0ee553376290fb6a9"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/28/cb/27d1c167d7b6607316c0c4ec5869b256104eb2c9607f76ef2ffa10806d3e/encutils-1.0.0-py3-none-any.whl",
-                    "sha256": "605297da19a23d1b2da7d3b9bd75513acc979e9facf03aa7ec7ba04b5f567a79"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz",
-                    "sha256": "45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/e8/3d/1087453384dbde46a8c7f9356eead2c58be8a7bf156bca40243377c85715/more_itertools-11.1.0-py3-none-any.whl",
-                    "sha256": "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd542125a192"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/03/e0/4a4b49f436c80a2e9515d258d6c72057f52b4855f53023ee42d2959b164f/pycaption-2.3.13-py3-none-any.whl",
-                    "sha256": "9eafd5166e266d3859e293fac4c15e3b4cae6342130ec39c1e06a284bf5da386"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/66/87/5ed59e1d0290564e2027ed066c52b059892c4637741337fc0967183c8d4d/soupsieve-2.10-py3-none-any.whl",
-                    "sha256": "8596eb8967d744174820280fa62b4542a2e955bfaccca73ed8a13c6eb8e9b502"
-                },
-                {
-                    "type": "file",
-                    "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
-                    "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
-                }
-            ]
-        },
-        {
             "name": "python3-beautifulsoup4",
             "buildsystem": "simple",
             "build-commands": [
@@ -130,6 +76,20 @@
                     "type": "file",
                     "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
                     "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+                }
+            ]
+        },
+        {
+            "name": "python3-lxml",
+            "buildsystem": "simple",
+            "build-commands": [
+                "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"lxml\" --no-build-isolation"
+            ],
+            "sources": [
+                {
+                    "type": "file",
+                    "url": "https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz",
+                    "sha256": "45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21"
                 }
             ]
         },

@@ -14,9 +14,9 @@ text. Tags may nest and may be left open (they run to the end); a closing
 tag with nothing to close is dropped.
 
 The text is read here for each use: `plain` to count, speak and translate
-it; `spans` and `to_html` to draw it; `to_ass` and `caption_nodes` for the
-formats that write formatting their own way; and `rebalance`, so both
-halves of a text cut in two stay well formed.
+it; `spans` and `to_html` to draw it; `to_ass` for ASS, which writes
+formatting its own way; and `rebalance`, so both halves of a text cut in
+two stay well formed.
 """
 
 import html
@@ -232,34 +232,6 @@ def to_ass(text):
             reader.step(token)
             out.append(_ass_changes(before, reader.style))
     return ''.join(out)
-
-
-def caption_nodes(text):
-    """The text as pycaption nodes, for the formats pycaption writes:
-    italic, bold, underline and colour as its styles, line breaks as
-    breaks. Strikeout has no pycaption style and is left out."""
-    from pycaption import CaptionNode
-    nodes = []
-    for run, style in spans(text):
-        styles = {}
-        if style.italic:
-            styles['italics'] = True
-        if style.bold:
-            styles['bold'] = True
-        if style.underline:
-            styles['underline'] = True
-        if style.color:
-            styles['color'] = style.color
-        if styles:
-            nodes.append(CaptionNode.create_style(True, dict(styles)))
-        for index, line in enumerate(run.split('\n')):
-            if index:
-                nodes.append(CaptionNode.create_break())
-            if line:
-                nodes.append(CaptionNode.create_text(line))
-        if styles:
-            nodes.append(CaptionNode.create_style(False, dict(styles)))
-    return nodes
 
 
 TAG_ORDER = ('font', 'i', 'b', 'u', 's')      # outermost first, when opened together

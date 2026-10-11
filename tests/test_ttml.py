@@ -16,8 +16,6 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-import warnings
-import pycaption
 from subtitld.modules import file_io, markup, session, ttml
 
 fails = []
@@ -155,13 +153,32 @@ ITT = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?><tt xmlns="http://
        '<body region="bottom"><div><p begin="00:00:01:00" end="00:00:02:12">Apple iTT</p>'
        '<p begin="00:00:03:00" end="00:00:04:00" region="top">At the top</p></div></body></tt>')
 check("Apple's iTT", cues(ITT), [(1.0, 2.48, 'Apple iTT'), (3.0, 4.0, '{\\an8}At the top')])
-warnings.simplefilter('ignore')
-caps = pycaption.CaptionList()
-for start, end, text in ((1, 2, 'Plain <i>italic</i>\nsecond'), (3, 4, 'Top <b>bold</b>')):
-    caps.append(pycaption.Caption(start=start * 1e6, end=end * 1e6, nodes=markup.caption_nodes(text)))
-written_before = pycaption.DFXPWriter().write(pycaption.CaptionSet({'en': caps}))
+# As pycaption 2.3's DFXPWriter wrote it, byte for byte: a region with
+# textAlign="start" on every paragraph.
+PYCAPTION = ('<?xml version="1.0" encoding="utf-8"?>\n'
+             '<tt xml:lang="en" xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling">\n'
+             ' <head>\n'
+             '  <styling>\n'
+             '   <style tts:color="white" tts:fontFamily="monospace" tts:fontSize="1c" xml:id="default"/>\n'
+             '  </styling>\n'
+             '  <layout>\n'
+             '   <region tts:displayAlign="after" tts:textAlign="start" xml:id="bottom"/>\n'
+             '  </layout>\n'
+             ' </head>\n'
+             ' <body>\n'
+             '  <div region="bottom" xml:lang="en">\n'
+             '   <p begin="00:00:01.000" end="00:00:02.000" region="bottom" style="default">\n'
+             '    Plain <span tts:fontStyle="italic">italic</span><br/>\n'
+             '    second\n'
+             '   </p>\n'
+             '   <p begin="00:00:03.000" end="00:00:04.000" region="bottom" style="default">\n'
+             '    Top <span tts:fontWeight="bold">bold</span>\n'
+             '   </p>\n'
+             '  </div>\n'
+             ' </body>\n'
+             '</tt>\n')
 check('what pycaption wrote (and Subtitld with it): centred, not at the left',
-      cues(written_before), [(1.0, 2.0, 'Plain <i>italic</i>\nsecond'), (3.0, 4.0, 'Top <b>bold</b>')])
+      cues(PYCAPTION), [(1.0, 2.0, 'Plain <i>italic</i>\nsecond'), (3.0, 4.0, 'Top <b>bold</b>')])
 try:
     ttml.parse('<usf><subtitle/></usf>')
     check('not TTML: refused', False, True)

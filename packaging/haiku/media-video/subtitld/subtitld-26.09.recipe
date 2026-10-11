@@ -40,7 +40,6 @@ REQUIRES="
 	numpy_python310
 	opencv_python3.10
 	platformdirs_python310
-	pycaption_python310
 	pysubs2_python310
 	python_docx_python310
 	python_i18n_python310

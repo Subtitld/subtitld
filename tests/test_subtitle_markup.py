@@ -60,10 +60,6 @@ check('HTML for Qt', markup.to_html('<i>a & b</i>\n<font color="red">c</font>'),
 check('HTML without colours (a shadow)', markup.to_html('<font color="red">c</font>', colors=False), 'c')
 check('ASS', markup.to_ass('{\\an8}<i>a <b>b</b></i>\n<font color="#ff8000">c</font>'),
       '{\\an8}{\\i1}a {\\b1}b{\\b0}{\\i0}\\N{\\c&H0080FF&}c{\\c}')
-nodes = markup.caption_nodes('<i>a</i>\nb')
-check('pycaption nodes: style, text, end, break, text',
-      [(n.type_, n.content if n.type_ == 1 else n.start if n.type_ == 2 else None) for n in nodes],
-      [(2, True), (1, 'a'), (2, False), (3, None), (1, 'b')])
 
 print('cut in two, both halves well formed')
 session.CONFIG.setdefault('quality_check', {}).update({'reading_speed_cps': 21, 'maximum_characters_per_line': 42})

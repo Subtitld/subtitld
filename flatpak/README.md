@@ -25,7 +25,7 @@ BaseApp has it.
     flatpak-pip-generator --runtime org.kde.Sdk//6.11 \
         --prefer-wheels scipy,opencv-python-headless,numpy --wheel-arches x86_64 \
         -o flatpak/python-modules \
-        PySideSix-Frameless-Window python-i18n python-docx pycaption beautifulsoup4 \
+        PySideSix-Frameless-Window python-i18n python-docx beautifulsoup4 lxml \
         chardet==6.0.0 pysubs2 platformdirs certifi \
         sounddevice soundfile edge-tts gTTS scipy opencv-python-headless
 

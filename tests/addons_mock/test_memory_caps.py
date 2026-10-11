@@ -85,14 +85,13 @@ def _stub_heavy_imports():
 
 def _stub_file_io_deps():
     """file_io.py imports a small ecosystem of file-format parsers
-    (python-docx, pycaption, chardet, pysubs2, beautifulsoup4) at
+    (python-docx, chardet, pysubs2, beautifulsoup4) at
     top of module. None of them are touched by the speaker-image
     helpers we test — but a missing one trips the import. Stub the
     optional ones; if any actually IS installed, the real module
     stays."""
     import types
-    for name in ('docx', 'pycaption', 'pycaption.exceptions',
-                 'chardet', 'pysubs2', 'bs4'):
+    for name in ('docx', 'chardet', 'pysubs2', 'bs4'):
         try:
             __import__(name)
         except ImportError:
@@ -101,12 +100,7 @@ def _stub_file_io_deps():
     sys.modules.setdefault('docx', types.ModuleType('docx'))
     if not hasattr(sys.modules['docx'], 'Document'):
         sys.modules['docx'].Document = object
-    pyc_exc = sys.modules.setdefault(
-        'pycaption.exceptions', types.ModuleType('pycaption.exceptions'))
-    for sym in ('CaptionReadSyntaxError', 'CaptionReadNoCaptions'):
-        if not hasattr(pyc_exc, sym):
-            setattr(pyc_exc, sym, type(sym, (Exception,), {}))
-    bs4 = sys.modules.setdefault('bs4', types.ModuleType('bs4'))
+    bs4 =sys.modules.setdefault('bs4', types.ModuleType('bs4'))
     if not hasattr(bs4, 'BeautifulSoup'):
         bs4.BeautifulSoup = object
 

@@ -10,14 +10,9 @@ import hashlib, io, json, os, re, tarfile, urllib.request, zipfile
 
 # pypi name -> (version, haiku package name, extra REQUIRES lines)
 PKGS = [
-    ("cssutils",        "2.15.0", "cssutils",        []),
     ("edge-tts",        "7.2.8",  "edge_tts",        ["aiohttp_$pythonPackage", "certifi_$pythonPackage", "tabulate_$pythonPackage"]),
-    ("encutils",        "1.0.0",  "encutils",        []),
     ("gTTS",            "2.5.4",  "gtts",            ["requests_$pythonPackage", "click_$pythonPackage"]),
-    ("more-itertools",  "11.1.0", "more_itertools",  []),
     ("platformdirs",    "4.11.8", "platformdirs",    []),
-    ("pycaption",       "2.3.9",  "pycaption",       ["beautifulsoup4_$pythonPackage", "lxml_$pythonPackage",
-                                                      "cssutils_$pythonPackage", "python_i18n_$pythonPackage"]),
     ("pysubs2",         "1.8.1",  "pysubs2",         []),
     ("python-docx",     "1.2.0",  "python_docx",     ["lxml_$pythonPackage", "typing_extensions_$pythonPackage"]),
     ("python-i18n",     "0.3.9",  "python_i18n",     []),
@@ -39,8 +34,6 @@ BUILD_EXTRA = {
 
 # SPDX-ish -> haikuports licenses/ names
 LICENSE_OVERRIDE = {
-    "cssutils": "GNU LGPL v3", "encutils": "GNU LGPL v3",
-    "more_itertools": "MIT",
     "sounddevice": "MIT", "tabulate": "MIT",
     "edge_tts": "GNU GPL v3",
 }
@@ -60,20 +53,12 @@ LICENSE_MAP = {
 # Curated text: scraped PyPI long-descriptions are full of badges and code
 # blocks, and haikuports requires DESCRIPTION to differ from SUMMARY.
 META = {
- "cssutils": ("A CSS Cascading Style Sheets library for Python",
-   "Parses CSS into a DOM-like object model that can be inspected and modified, then serialised back out to CSS text. It follows the W3C CSSOM specifications."),
  "edge_tts": ("Use Microsoft Edge's online text-to-speech service from Python",
    "Lets Python code synthesise speech through Microsoft Edge's online text-to-speech service, without installing the browser or holding an API key. Audio can be written to a file or streamed."),
- "encutils": ("Detect the character encoding of HTTP, XML and HTML content",
-   "Determines the character encoding of text retrieved over HTTP or contained in XML and HTML documents, following the encoding rules those specifications define."),
  "gtts": ("Python interface to Google Translate's text-to-speech API",
    "Provides a library and command line tool that turn text into spoken audio using Google Translate's text-to-speech service, writing the result to a file or stream."),
- "more_itertools": ("Additional building blocks for working with Python iterables",
-   "A collection of routines for working with iterables that complements the standard library itertools module, covering grouping, windowing, chunking and related operations."),
  "platformdirs": ("Determine platform-specific directories for app data and config",
    "Works out the correct per-platform locations for application data, configuration, cache, state and log directories, so applications do not have to encode those conventions themselves."),
- "pycaption": ("Read, write and convert caption and subtitle formats",
-   "Reads and writes caption and subtitle formats including SRT, WebVTT, DFXP/TTML and SAMI, and converts between them while preserving timing and styling where the formats allow."),
  "pysubs2": ("Load, edit and save subtitle files in several formats",
    "A library and command line tool for loading, editing and saving subtitle files in the SubStation Alpha, SubRip, WebVTT and MicroDVD formats, including retiming and format conversion."),
  "python_docx": ("Create and update Microsoft Word .docx files from Python",

@@ -37,10 +37,12 @@ dependencies = [
     "opencv-python",
     "python-i18n",
     "python-docx",
-    "pycaption",
     # Imported directly by file_io and usf; it used to arrive only through
     # pycaption.
     "beautifulsoup4",
+    # BeautifulSoup's XML parser ('lxml-xml'), which file_io and usf ask for
+    # by name: theirs to list, not left to pycaption (gone) or python-docx.
+    "lxml",
     "chardet==6.0.0",
     "pysubs2",
     "platformdirs",
