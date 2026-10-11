@@ -25,6 +25,7 @@ import edge_tts
 from PySide6.QtCore import QObject, QThread, Signal
 
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules.addons import languages as _languages
 from subtitld.modules.addons.provider import TTSProvider
 
@@ -104,7 +105,7 @@ class _EdgeTTSSpeechThread(QThread):
         speaker = session.SPEAKERS.get(subtitle['speaker'], {}).get('dubbing', {})
         voice = subtitle.get('voice') or speaker.get('voice', '')
         communicate = edge_tts.Communicate(
-            text=subtitle['text'],
+            text=markup.plain(subtitle['text']),
             voice=voice,
             rate=f'{subtitle.get("rate", 0):+d}%',
             pitch=f'{subtitle.get("pitch", 0):+d}Hz',

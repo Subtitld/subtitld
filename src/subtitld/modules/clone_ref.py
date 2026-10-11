@@ -41,6 +41,7 @@ import subprocess
 from pathlib import Path
 
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules import utils as modules_utils
 from subtitld.modules.addons import registry as addons_registry
 
@@ -110,10 +111,10 @@ def _segment_text_for_source_language(seg: dict, source_lang: str | None) -> str
     """
     current = (session.SUBTITLE.get('language') or '').strip()
     if source_lang and current and source_lang == current:
-        return (seg.get('text') or '').strip()
+        return markup.plain(seg.get('text') or '').strip()
     translations = seg.get('translations') if isinstance(seg.get('translations'), dict) else None
     if translations and source_lang:
-        return (translations.get(source_lang) or '').strip()
+        return markup.plain(translations.get(source_lang) or '').strip()
     # No safe text available — fall back to the empty string. Caller
     # joins texts and the empty strings drop out of the join.
     return ''

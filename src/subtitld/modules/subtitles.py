@@ -5,7 +5,7 @@
 import os
 import secrets
 from bisect import bisect
-from subtitld.modules import history, session
+from subtitld.modules import history, markup, session
 
 
 def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
@@ -57,11 +57,14 @@ def slice_subtitle(selected_subtitle=False, position=0.0, last_text='', next_tex
         new_duration = session.SUBTITLE['segments'][index]['end'] - position_to_cut
 
         session.SUBTITLE['segments'][index]['end'] = position_to_cut - 0.001
-        session.SUBTITLE['segments'][index]['text'] = last_text
 
         if strip_text:
-            session.SUBTITLE['segments'][index]['text'] = session.SUBTITLE['segments'][index]['text'].strip()
+            last_text = last_text.strip()
             next_text = next_text.strip()
+        # Formatting tags open where the text was cut close on this side and
+        # open again on the other.
+        last_text, next_text = markup.rebalance(last_text, next_text)
+        session.SUBTITLE['segments'][index]['text'] = last_text
 
         add_subtitle(position=position_to_cut, duration=new_duration, text=next_text)
 
@@ -388,6 +391,7 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
     if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle) + 1 < len(session.SUBTITLE['segments']):
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
+        last_text, next_text = markup.rebalance(last_text, next_text)
         session.SUBTITLE['segments'][index]['text'] = last_text
 
         next_text = next_text.strip() + ' ' + session.SUBTITLE['segments'][index + 1]['text']
@@ -411,6 +415,7 @@ def send_translated_text_to_next_subtitle(selected_subtitle=False, last_text='',
     if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
+        last_text, next_text = markup.rebalance(last_text, next_text)
         session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
 
         next_text = next_text.strip() + ' ' + session.SUBTITLE['segments'][index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')]
@@ -435,6 +440,7 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
     if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
+        last_text, next_text = markup.rebalance(last_text, next_text)
         session.SUBTITLE['segments'][index]['text'] = next_text
 
         last_text = session.SUBTITLE['segments'][index - 1]['text'] + ' ' + last_text
@@ -460,6 +466,7 @@ def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='',
     if selected_subtitle and session.SUBTITLE['segments'].index(selected_subtitle):
         history.history_append(session.SUBTITLE['segments'])
         index = session.SUBTITLE['segments'].index(selected_subtitle)
+        last_text, next_text = markup.rebalance(last_text, next_text)
         session.SUBTITLE['segments'][index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
 
         last_text = session.SUBTITLE['segments'][index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] + ' ' + last_text

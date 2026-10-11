@@ -858,6 +858,7 @@ QComboBox::drop-down:disabled {
 } */
 
 LabeledComboBox,
+LabeledDoubleSpinBox,
 LabeledLineEdit {
     background-color: #304251; 
     border-radius: 2px;
@@ -865,6 +866,7 @@ LabeledLineEdit {
 
 LabeledComboBox QComboBox,
 LabeledComboBox QSpinBox,
+LabeledDoubleSpinBox QDoubleSpinBox,
 LabeledLineEdit QLineEdit {
     background-color: #304251; 
     border: 0;
@@ -879,6 +881,7 @@ LabeledLineEdit QLineEdit {
 
 LabeledComboBox QComboBox::hover,
 LabeledComboBox QSpinBox::hover,
+LabeledDoubleSpinBox QDoubleSpinBox::hover,
 LabeledLineEdit QLineEdit::hover {
     background-color: #3e5363; 
 }
@@ -894,6 +897,7 @@ LabeledComboBox QComboBox::drop-down {
 }
 
 LabeledComboBox QLabel,
+LabeledDoubleSpinBox QLabel,
 LabeledLabel #top_label,
 LabeledLineEdit #top_label {
     font-family: 'Montserrat';

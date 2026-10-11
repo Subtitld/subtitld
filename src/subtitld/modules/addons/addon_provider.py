@@ -23,6 +23,7 @@ from collections import deque
 from PySide6.QtCore import QObject, Qt, QTimer
 
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules.addons import languages as _languages
 from subtitld.modules.addons import schema as _schema
 from subtitld.modules.addons import protocol
@@ -357,7 +358,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             output_path = str(cache_dir / f'{uid}.wav')
 
             params = {
-                'text': subtitle.get('text', ''),
+                'text': markup.plain(subtitle.get('text', '')),
                 'voice': subtitle.get('voice', ''),
                 'language': subtitle.get('language', ''),
                 'rate': subtitle.get('rate', 0),

@@ -12,6 +12,7 @@ from PySide6.QtGui import QFontDatabase
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.modules import export_options
 from subtitld.modules import session
 
 
@@ -22,10 +23,17 @@ DOCUMENT_FORMATS = ['TXT', 'KDENLIVE']
 
 
 class _SubtitlesPanel(QWidget):
+    """The subtitles tab: the format, and the options it takes. The formats
+    of timed text share what text is written and how (export_options); SRT,
+    SUB and USF have options of their own. The choices are remembered
+    (CONFIG['export_subtitles']), except the shift, which is for one export."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_subtitles') or {}
 
         self.format_combo = utils.LabeledComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
@@ -33,43 +41,152 @@ class _SubtitlesPanel(QWidget):
         self.format_combo.activated.connect(self._refresh_options)
         self.layout().addWidget(self.format_combo)
 
-        self.options_stack = QStackedWidget()
-        self.layout().addWidget(self.options_stack)
+        # What the timed-text formats write.
+        self.text_options = QWidget()
+        grid = QGridLayout(self.text_options)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(10)
 
-        usf_panel = QWidget()
-        usf_panel.setLayout(QVBoxLayout())
-        usf_panel.layout().setContentsMargins(0, 8, 0, 0)
+        self.text_combo = utils.LabeledComboBox()
+        self.text_combo.setLabel(_('export_dialog.text'))
+        self.text_combo.combobox.addItem(_('export_dialog.text_original'), ('original', ''))
+        names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+        for language in export_options.translation_languages(session.SUBTITLE.get('segments')):
+            name = names.get(language, language)
+            self.text_combo.combobox.addItem(_('export_dialog.text_translation').format(language=name), ('translation', language))
+            self.text_combo.combobox.addItem(_('export_dialog.text_both').format(language=name), ('both', language))
+        # Only offered when there is a translation to choose.
+        self.text_combo.setVisible(self.text_combo.combobox.count() > 1)
+        grid.addWidget(self.text_combo, 0, 0, 1, 2)
+
+        self.speakers_combo = utils.LabeledComboBox()
+        self.speakers_combo.setLabel(_('export_dialog.speaker_names'))
+        self.speakers_combo.combobox.addItem(_('export_dialog.speaker_names_none'), 'none')
+        self.speakers_combo.combobox.addItem(_('export_dialog.speaker_names_prefix'), 'prefix')
+        grid.addWidget(self.speakers_combo, 1, 0)
+
+        self.formatting_combo = utils.LabeledComboBox()
+        self.formatting_combo.setLabel(_('export_dialog.formatting'))
+        self.formatting_combo.combobox.addItem(_('export_dialog.formatting_keep'), 'keep')
+        self.formatting_combo.combobox.addItem(_('export_dialog.formatting_remove'), 'remove')
+        grid.addWidget(self.formatting_combo, 1, 1)
+
+        self.offset_spin = utils.LabeledDoubleSpinBox()
+        self.offset_spin.setLabel(_('export_dialog.shift_times'))
+        self.offset_spin.setRange(-3600, 3600)
+        self.offset_spin.setDecimals(3)
+        self.offset_spin.setSingleStep(0.1)
+        grid.addWidget(self.offset_spin, 2, 0)
+        self.layout().addWidget(self.text_options)
+
+        # SRT: for players that need an older encoding or Windows line ends.
+        self.srt_options = QWidget()
+        row = QHBoxLayout(self.srt_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self.encoding_combo = utils.LabeledComboBox()
+        self.encoding_combo.setLabel(_('export_dialog.encoding'))
+        for encoding, key in zip(export_options.ENCODINGS, ('utf8', 'utf8_bom', 'utf16', 'cp1252')):
+            self.encoding_combo.combobox.addItem(_(f'export_dialog.encoding_{key}'), encoding)
+        row.addWidget(self.encoding_combo, 1)
+        self.line_ends_combo = utils.LabeledComboBox()
+        self.line_ends_combo.setLabel(_('export_dialog.line_ends'))
+        self.line_ends_combo.combobox.addItem(_('export_dialog.line_ends_lf'), 'lf')
+        self.line_ends_combo.combobox.addItem(_('export_dialog.line_ends_crlf'), 'crlf')
+        row.addWidget(self.line_ends_combo, 1)
+        self.layout().addWidget(self.srt_options)
+
+        # SUB (MicroDVD) counts in frames.
+        self.sub_options = QWidget()
+        row = QHBoxLayout(self.sub_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.fps_combo = utils.LabeledComboBox()
+        self.fps_combo.setLabel(_('export_dialog.frame_rate'))
+        video_fps = float(session.VIDEO.get('framerate') or 0)
+        rates = list(export_options.FRAME_RATES)
+        if video_fps and not any(abs(video_fps - rate) < 0.01 for rate in rates):
+            rates = sorted(rates + [round(video_fps, 3)])
+        for rate in rates:
+            label = f'{rate:g} fps'
+            if video_fps and abs(video_fps - rate) < 0.01:
+                label = _('export_dialog.frame_rate_video').format(fps=label)
+            self.fps_combo.combobox.addItem(label, rate)
+        row.addWidget(self.fps_combo)
+        row.addStretch()
+        self.layout().addWidget(self.sub_options)
+
+        self.usf_options = QWidget()
+        self.usf_options.setLayout(QVBoxLayout())
+        self.usf_options.layout().setContentsMargins(0, 0, 0, 0)
         self.usf_embed_images = QCheckBox(_('export_usf_dialog.embed_speaker_images'))
-        usf_panel.layout().addWidget(self.usf_embed_images)
+        self.usf_options.layout().addWidget(self.usf_embed_images)
         self.usf_embed_dubs = QCheckBox(_('export_usf_dialog.embed_audio_clips'))
-        usf_panel.layout().addWidget(self.usf_embed_dubs)
-        usf_panel.layout().addStretch()
-        self.options_stack.addWidget(usf_panel)
-
-        self._empty_panel = QWidget()
-        self._empty_panel.setLayout(QVBoxLayout())
-        self._empty_panel.layout().addStretch()
-        self.options_stack.addWidget(self._empty_panel)
+        self.usf_options.layout().addWidget(self.usf_embed_dubs)
+        self.layout().addWidget(self.usf_options)
 
         self.layout().addStretch()
+
+        self.format_combo.setCurrentText(remembered.get('format') if remembered.get('format') in SUBTITLE_FORMATS else 'SRT')
+        _select(self.text_combo, (remembered.get('text', 'original'), remembered.get('language', '')))
+        _select(self.speakers_combo, remembered.get('speakers', 'none'))
+        _select(self.formatting_combo, remembered.get('formatting', 'keep'))
+        _select(self.encoding_combo, remembered.get('encoding', 'utf-8'))
+        _select(self.line_ends_combo, remembered.get('line_ends', 'lf'))
+        # The video's frame rate when there is a video; else the last one used.
+        video_rate = next((rate for rate in rates if video_fps and abs(video_fps - rate) < 0.01), None)
+        if not _select(self.fps_combo, video_rate) and not _select(self.fps_combo, remembered.get('fps')):
+            _select(self.fps_combo, 25.0)
+        self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
+        self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         self._refresh_options()
 
     def _refresh_options(self):
         fmt = self.format_combo.currentText()
-        if fmt == 'USF':
-            self.options_stack.setCurrentIndex(0)
-        else:
-            self.options_stack.setCurrentIndex(1)
+        self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
+        self.srt_options.setVisible(fmt == 'SRT')
+        self.sub_options.setVisible(fmt == 'SUB')
+        self.usf_options.setVisible(fmt == 'USF')
 
     def get_config(self):
         fmt = self.format_combo.currentText()
-        config = {'category': 'subtitles', 'format': fmt}
+        text, language = self.text_combo.combobox.currentData() or ('original', '')
+        choices = {
+            'text': text,
+            'language': language,
+            'speakers': self.speakers_combo.combobox.currentData(),
+            'formatting': self.formatting_combo.combobox.currentData(),
+            'encoding': self.encoding_combo.combobox.currentData(),
+            'line_ends': self.line_ends_combo.combobox.currentData(),
+            'fps': self.fps_combo.combobox.currentData(),
+            'embed_speaker_images': self.usf_embed_images.isChecked(),
+            'embed_audio_clips': self.usf_embed_dubs.isChecked(),
+        }
+        session.CONFIG['export_subtitles'] = dict(choices, format=fmt)
+
+        # Every export sets its options, so none is left over from the last.
+        options = {}
+        if fmt in export_options.TEXT_FORMATS:
+            options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting')})
+            options['offset'] = self.offset_spin.value()
+        if fmt == 'SRT':
+            options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
+        if fmt == 'SUB':
+            options['fps'] = choices['fps']
         if fmt == 'USF':
-            config['options'] = {
-                'embed_speaker_images': self.usf_embed_images.isChecked(),
-                'embed_audio_clips': self.usf_embed_dubs.isChecked(),
-            }
-        return config
+            options.update(embed_speaker_images=choices['embed_speaker_images'],
+                           embed_audio_clips=choices['embed_audio_clips'])
+        return {'category': 'subtitles', 'format': fmt, 'options': options}
+
+
+def _select(labeled_combo, data):
+    """Select the item of `labeled_combo` holding `data`; whether there was one."""
+    if data is None:
+        return False
+    for index in range(labeled_combo.combobox.count()):
+        if labeled_combo.combobox.itemData(index) == data:
+            labeled_combo.combobox.setCurrentIndex(index)
+            return True
+    return False
 
 
 class _AudioPanel(QWidget):

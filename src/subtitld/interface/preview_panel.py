@@ -6,6 +6,7 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaMetaData
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 
+from subtitld.interface import subtitle_painter
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
@@ -115,26 +116,8 @@ class PlayerWidget(QWidget):
                 )
 
                 if session.SUBTITLE.get('current', False):
-
-                    if session.CONFIG.get('videoplayer', {}).get('backgroundbox_enabled', True):
-                        text_rect = painter.boundingRect(title_safe_margin_qrect, Qt.AlignBottom | Qt.AlignHCenter | Qt.TextWordWrap, session.SUBTITLE['current']['text'])
-
-                        painter.setPen(Qt.NoPen)
-                        painter.setBrush(QBrush(QColor(session.CONFIG.get('videoplayer', {}).get('backgroundbox_color', '#55000000'))))
-
-                        if session.CONFIG.get('videoplayer', {}).get('backgroundbox_border_radius', 5):
-                            painter.drawRoundedRect(text_rect.marginsAdded(QMargins(session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10), session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10), session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10), session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10))), session.CONFIG.get('videoplayer', {}).get('backgroundbox_border_radius', 5), session.CONFIG.get('videoplayer', {}).get('backgroundbox_border_radius', 5))
-                        else:
-                            painter.drawRect(text_rect.marginsAdded(QMargins(session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10), session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10), session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10), session.CONFIG.get('videoplayer', {}).get('backgroundbox_padding', 10))))
-
-                        painter.setBrush(Qt.NoBrush)
-
-                    if session.CONFIG.get('videoplayer', {}).get('shadow_enabled', True):
-                        painter.setPen(QPen(session.CONFIG.get('videoplayer', {}).get('shadow_color', '#ff000000')))
-                        painter.drawText(title_safe_margin_qrect - QMarginsF(session.CONFIG.get('videoplayer', {}).get('shadow_x', 2), session.CONFIG.get('videoplayer', {}).get('shadow_y', 2), -session.CONFIG.get('videoplayer', {}).get('shadow_x', 2), -session.CONFIG.get('videoplayer', {}).get('shadow_y', 2)), Qt.AlignHCenter | Qt.AlignBottom | Qt.TextWordWrap, session.SUBTITLE['current']['text'])
-
-                    painter.setPen(QPen(session.CONFIG.get('videoplayer', {}).get('color', '#ffffffff')))
-                    painter.drawText(title_safe_margin_qrect, Qt.AlignHCenter | Qt.AlignBottom | Qt.TextWordWrap, session.SUBTITLE['current']['text'])
+                    subtitle_painter.paint(painter, title_safe_margin_qrect, session.SUBTITLE['current']['text'],
+                                           session.CONFIG.get('videoplayer', {}))
 
                 if session.CONFIG.get('videoplayer', {}).get('safe_margin_action_enabled', False):
                     action_safe_margin_qrect = video_rect - QMarginsF(

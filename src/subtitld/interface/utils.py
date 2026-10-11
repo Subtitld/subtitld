@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent
 
@@ -474,6 +474,45 @@ class LabeledComboBox(QWidget):
     def currentText(widget):
         return widget.combobox.currentText()
     
+
+class LabeledDoubleSpinBox(QWidget):
+    """A number with its label above it, in the labelled combo boxes' look."""
+    valueChanged = Signal(float)
+
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+        widget.setAttribute(Qt.WA_StyledBackground)
+        widget.setLayout(QVBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.layout().setSpacing(0)
+        widget.label = QLabel()
+        widget.layout().addWidget(widget.label, 1)
+        widget.spinbox = QDoubleSpinBox()
+        widget.layout().addWidget(widget.spinbox)
+        widget.spinbox.valueChanged.connect(widget.valueChanged)
+
+    def setLabel(widget, label):
+        widget.label.setText(label)
+
+    def setRange(widget, minimum, maximum):
+        widget.spinbox.setRange(minimum, maximum)
+
+    def setDecimals(widget, decimals):
+        widget.spinbox.setDecimals(decimals)
+
+    def setSingleStep(widget, step):
+        widget.spinbox.setSingleStep(step)
+
+    def setSuffix(widget, suffix):
+        widget.spinbox.setSuffix(suffix)
+
+    def setValue(widget, value):
+        widget.spinbox.setValue(value)
+
+    def value(widget):
+        return widget.spinbox.value()
+
 
 class LabeledLabel(QWidget):
     def __init__(widget, parent=None):

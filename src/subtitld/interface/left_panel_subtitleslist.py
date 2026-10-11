@@ -8,6 +8,7 @@ from subtitld.interface import preview_panel
 from subtitld.interface.translation import _
 
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules import subtitles
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
@@ -88,10 +89,10 @@ class subtitles_panel_qlistwidget(QListView):
                 return number_width
 
             def get_text_height(self, option, index):
-                row_text = index.data(Qt.DisplayRole)['text']
+                row_text = markup.plain(index.data(Qt.DisplayRole)['text'])
                 width = option.rect.width()
                 if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
-                    translated_text = index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
+                    translated_text = markup.plain(index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
                     height_o = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(0, 0, (width/2) - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, row_text).height()
                     height_t = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(width/2, 0, (width/2) - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, translated_text).height()
                     height = max(height_o, height_t)
@@ -101,7 +102,7 @@ class subtitles_panel_qlistwidget(QListView):
 
             def paint(self, painter, option, index):
                 segment = index.data(Qt.DisplayRole)
-                row_text = segment['text']
+                row_text = markup.plain(segment['text'])
                 number_width = self.get_number_width(index)
                 
 
@@ -150,7 +151,7 @@ class subtitles_panel_qlistwidget(QListView):
                     painter.drawLine(translated_rect.topLeft(), translated_rect.bottomLeft())
                     painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
                     translated_rect = translated_rect.marginsRemoved(QMargins(10, 10, 10, 10))
-                    translated_text = segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
+                    translated_text = markup.plain(segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
                     painter.drawText(translated_rect, qalignment | Qt.AlignTop | Qt.TextWordWrap, translated_text)   
                 else:
                     original_rect = text_rect.marginsRemoved(QMargins(10, 10, 10, 10))
@@ -564,16 +565,18 @@ def update(self):
         if show_statistics:
             sel = session.SUBTITLE['selected']
             duration = sel['end'] - sel['start']
-            n_words = len(sel['text'].replace('\n', ' ').split(' '))
-            n_char = len(sel['text'].replace('\n', '').replace(' ', ''))
+            # Counted as the text reads, without its formatting tags.
+            sel_text = markup.plain(sel['text'])
+            n_words = len(sel_text.replace('\n', ' ').split(' '))
+            n_char = len(sel_text.replace('\n', '').replace(' ', ''))
 
             self.properties_information_word_counter.setText(str(n_words))
             self.properties_information_wpm.setText(str(int(n_words / (duration / 60))) if duration > 0 else '0')
             self.properties_information_character_counter.setText(str(n_char))
             self.properties_information_cps.setText(str(int(n_char / duration)) if duration > 0 else '0')
             self.properties_information_sub_duration.setText(str(round(duration, 3)))
-            self.properties_information_number_of_lines.setText(str(int(len(sel['text'].split('\n')))))
-            self.properties_information_cpl.setText(str(int(n_char / len(sel['text'].split('\n')))) if len(sel['text'].split('\n')) > 0 else '0')
+            self.properties_information_number_of_lines.setText(str(int(len(sel_text.split('\n')))))
+            self.properties_information_cpl.setText(str(int(n_char / len(sel_text.split('\n')))) if len(sel_text.split('\n')) > 0 else '0')
 
             stat_badges = (
                 self.properties_information_word_counter,

@@ -41,6 +41,7 @@ from gtts import gTTS
 from PySide6.QtCore import QObject, QThread, Signal
 
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules.addons.provider import TTSProvider
 
 
@@ -200,7 +201,7 @@ class _GTTSSpeechThread(QThread):
         lang, tld = _parse_voice_id(voice)
         # Negative rate flags slow speech; gTTS has no continuous rate.
         slow = int(subtitle.get('rate', 0) or 0) < 0
-        tts = gTTS(text=subtitle['text'], lang=lang, tld=tld, slow=slow)
+        tts = gTTS(text=markup.plain(subtitle['text']), lang=lang, tld=tld, slow=slow)
         # gTTS emits MP3 only — same problem as edge-tts. Save MP3 to a
         # temp file then transcode to PCM WAV; libsndfile can't decode
         # MP3, so playback would be silent without this step.

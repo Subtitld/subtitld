@@ -17,7 +17,10 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import timecode
+from subtitld.modules import export_options
+from subtitld.modules import markup
 from subtitld.modules import plaintext
+from subtitld.modules import srt
 from subtitld.modules import session
 from subtitld.modules import waveform
 from subtitld.modules import usf
@@ -428,23 +431,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
     if subtitle_file and os.path.isfile(subtitle_file):
         if subtitle_file.lower().endswith(('.srt')):
-            enc = chardet.detect(open(subtitle_file, 'rb').read())['encoding']
-            with open(subtitle_file, mode='rb') as srt_file:
-                srt_content = srt_file.read().decode(enc, 'ignore')
-
-                if ' -> ' in srt_content:
-                    srt_content = srt_content.replace(' -> ', ' --> ')
-
-                srt_reader = pycaption.SRTReader().read(srt_content)
-                languages = srt_reader.get_languages()
-                language = languages[0]
-                captions = srt_reader.get_captions(language)
-                for caption in captions:
-                    segments_list.append({
-                        'start': caption.start / 1000000,
-                        'end': caption.end / 1000000,
-                        'text': caption.get_text()
-                    })
+            segments_list = srt.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
@@ -1165,18 +1152,29 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             if FORMAT is not session.FORMAT:
                 session.FORMAT['format'] = subtitle_format
 
-        if subtitle_format in ['SRT', 'DFXP', 'TTML', 'SAMI', 'SCC', 'VTT']:
+        # The formats of timed text only write the text and times the
+        # export's options ask for (export_options): a translation, the
+        # speakers' names, without formatting, shifted.
+        options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
+        if subtitle_format in export_options.TEXT_FORMATS:
+            segments = export_options.prepare(SUBTITLE['segments'], options)
+
+        if subtitle_format == 'SRT':
+            srt.save(final_file, segments,
+                     encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format in ['DFXP', 'TTML', 'SAMI', 'SCC', 'VTT']:
             captions = pycaption.CaptionList()
-            for sub in SUBTITLE['segments']:
-                # skip extra blank lines
-                nodes = [pycaption.CaptionNode.create_text(sub['text'])]
+            for sub in segments:
+                # The text's formatting tags as pycaption's styles, which each
+                # writer puts its own way (markup.caption_nodes).
+                nodes = markup.caption_nodes(sub['text']) or [pycaption.CaptionNode.create_text('')]
                 caption = pycaption.Caption(start=sub['start'] * 1000000, end=(sub['end']) * 1000000, nodes=nodes)
                 captions.append(caption)
             caption_set = pycaption.CaptionSet({language: captions})
 
-            if subtitle_format == 'SRT':
-                open(final_file, mode='w', encoding='utf-8').write(pycaption.SRTWriter().write(caption_set))
-            elif subtitle_format in ['DFXP', 'TTML']:
+            if subtitle_format in ['DFXP', 'TTML']:
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.DFXPWriter().write(caption_set))
             elif subtitle_format == 'SAMI':
                 open(final_file, mode='w', encoding='utf-8').write(pycaption.SAMIWriter().write(caption_set))
@@ -1188,20 +1186,26 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format in ['ASS', 'SBV', 'XML', 'SUB']:
             if subtitle_format in ['ASS', 'SUB']:
                 assfile = pysubs2.SSAFile()
-                index = 0
-                for sub in reversed(sorted(SUBTITLE['segments'])):
-                    assfile.insert(
-                        index,
+                # Positions and sizes count in the video's pixels.
+                if VIDEO.get('width') and VIDEO.get('height'):
+                    assfile.info['PlayResX'] = str(int(VIDEO['width']))
+                    assfile.info['PlayResY'] = str(int(VIDEO['height']))
+                for sub in segments:
+                    # The formatting tags as ASS override codes, line breaks as \N.
+                    assfile.append(
                         pysubs2.SSAEvent(
-                            start=int(sub['start'] * 1000),
-                            end=int(sub['end'] * 1000),
-                            text=sub['text'].replace('\n', ' ')
+                            start=int(round(sub['start'] * 1000)),
+                            end=int(round(sub['end'] * 1000)),
+                            text=markup.to_ass(sub['text'])
                         )
                     )
                 if subtitle_format == 'SUB':
-                    assfile.save(final_file, subtitle_format='microdvd')
+                    # MicroDVD counts in frames: the export's frame rate, or
+                    # the video's.
+                    fps = float(options.get('fps') or VIDEO.get('framerate') or 25)
+                    assfile.save(final_file, format_='microdvd', fps=fps)
                 else:
-                    assfile.save(final_file)
+                    assfile.save(final_file, format_='ass')
             # else:
             #     if subtitle_format == 'SBV':
             #         from captionstransformer.sbv import Writer

@@ -10,6 +10,7 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGr
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules import utils
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
@@ -1751,8 +1752,8 @@ class Timeline(QWidget):
                         if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
                             left_side = widget.is_smart_splicing['left']
                             right_side = widget.is_smart_splicing['right']
-                            painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
-                            painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
+                            painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, markup.plain(left_side[1]))
+                            painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, markup.plain(right_side[1]))
                             painter.setPen(smart_splice_divider_color)
                             painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
                         if widget.is_smart_splicing['mode'] == 'split':
@@ -1760,7 +1761,7 @@ class Timeline(QWidget):
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
                         # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
-                        painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle['text'])
+                        painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, markup.plain(subtitle['text']))
 
                     translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
 
@@ -1769,7 +1770,7 @@ class Timeline(QWidget):
                     else:
                         painter.setPen(text_color_unselected)
 
-                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, subtitle.get('translations', {}).get(translation_target_lang, ''))
+                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, markup.plain(subtitle.get('translations', {}).get(translation_target_lang, '')))
 
                     painter.setPen(translation_separator_color)
                     painter.setBrush(Qt.NoBrush)
@@ -1781,8 +1782,8 @@ class Timeline(QWidget):
                         if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
                             left_side = widget.is_smart_splicing['left']
                             right_side = widget.is_smart_splicing['right']
-                            painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, left_side[1])
-                            painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, right_side[1])
+                            painter.drawText(original_subtitle_rect - QMarginsF(0, 0, (left_side[0] * original_subtitle_rect.width()) + 5, 0), Qt.AlignRight | Qt.AlignTop | Qt.TextWordWrap, markup.plain(left_side[1]))
+                            painter.drawText(original_subtitle_rect - QMarginsF((right_side[0] * original_subtitle_rect.width()) + 5, 0, 0, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, markup.plain(right_side[1]))
                             painter.setPen(smart_splice_divider_color)
                             painter.drawLine(original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.top(), original_subtitle_rect.x() + ((1 - left_side[0]) * original_subtitle_rect.width()), subtitle_rect.bottom())
                         if widget.is_smart_splicing['mode'] == 'split':
@@ -1790,7 +1791,7 @@ class Timeline(QWidget):
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
                         painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap,
-                                         subtitle['text'] or ('…' if rec_pending else ''))
+                                         markup.plain(subtitle['text']) or ('…' if rec_pending else ''))
 
                 if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                     track_height = widget.subtitle_height / subtitle_track[1]
@@ -2721,13 +2722,13 @@ class Timeline(QWidget):
                     cursor_position_in_subtitle = (event.pos().x() - (widget.subtitle_under_the_cursor['start'] * widget.width_proportion))
                     subtitle_width = ((widget.subtitle_under_the_cursor['end'] - widget.subtitle_under_the_cursor['start']) * widget.width_proportion)
                     
-                    number_of_characters = len(widget.subtitle_under_the_cursor['text'].replace(' ', ''))
+                    number_of_characters = len(markup.plain(widget.subtitle_under_the_cursor['text']).replace(' ', '')) or 1
                     if isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'words':
                         character_width = subtitle_width / number_of_characters
                         left_words = ''
                         right_words = ''
                         for word in widget.subtitle_under_the_cursor['text'].split():
-                            if len((left_words + word).replace(' ', '')) * character_width > cursor_position_in_subtitle:
+                            if len(markup.plain(left_words + word).replace(' ', '')) * character_width > cursor_position_in_subtitle:
                                 break
                             left_words += ' ' + word
                 

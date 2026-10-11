@@ -25,7 +25,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
-from subtitld.modules import quality_check, session, subtitles, utils
+from subtitld.modules import markup, quality_check, session, subtitles, utils
 
 
 TOP = 10                # px above 0 s, so its label is not cut
@@ -692,15 +692,15 @@ class VerticalTimeline(QWidget):
                 flags = alignment | Qt.AlignTop | Qt.TextWordWrap
                 if show_translations:
                     half = inner.height() / 2
-                    painter.drawText(QRectF(inner.left(), inner.top(), inner.width(), half), flags, subtitle.get('text', ''))
+                    painter.drawText(QRectF(inner.left(), inner.top(), inner.width(), half), flags, markup.plain(subtitle.get('text', '')))
                     lower = QRectF(inner.left(), inner.top() + half, inner.width(), half)
                     painter.setPen(separator)
                     painter.drawLine(QPointF(lower.left(), lower.top()), QPointF(lower.right(), lower.top()))
                     painter.setPen(selected_text_color if is_selected else text_color)
                     painter.drawText(lower - QMarginsF(0, 5, 0, 0), flags,
-                                     (subtitle.get('translations') or {}).get(target_language, ''))
+                                     markup.plain((subtitle.get('translations') or {}).get(target_language, '')))
                 else:
-                    painter.drawText(inner, flags, subtitle.get('text', ''))
+                    painter.drawText(inner, flags, markup.plain(subtitle.get('text', '')))
                 painter.restore()
 
             if not locked:

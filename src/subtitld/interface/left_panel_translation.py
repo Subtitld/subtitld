@@ -10,6 +10,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.interface.scope_selector import ScopeFooter
 from subtitld.modules import session
+from subtitld.modules import markup
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import addons
@@ -116,7 +117,7 @@ class AddonTranslatorPanel(QWidget):
         widget._reqmap[request_id] = seg
         source = session.SUBTITLE.get('language', 'en-us')
         try:
-            widget.provider.translate(request_id, seg['text'], source, widget._target_language)
+            widget.provider.translate(request_id, markup.plain(seg['text']), source, widget._target_language)
         except Exception as exc:
             widget._reqmap.pop(request_id, None)
             widget._stopped = True
