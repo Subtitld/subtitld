@@ -81,15 +81,15 @@ class _SubtitlesPanel(QWidget):
         grid.addWidget(self.offset_spin, 2, 0)
         self.layout().addWidget(self.text_options)
 
-        # SRT and SAMI: for players that need an older encoding or Windows
-        # line ends.
+        # SRT, SAMI and SUB: for players that need an older encoding or
+        # Windows line ends.
         self.srt_options = QWidget()
         row = QHBoxLayout(self.srt_options)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(10)
         self.encoding_combo = utils.LabeledComboBox()
         self.encoding_combo.setLabel(_('export_dialog.encoding'))
-        for encoding, key in zip(export_options.ENCODINGS, ('utf8', 'utf8_bom', 'utf16', 'cp1252', 'cp949')):
+        for encoding, key in zip(export_options.ENCODINGS, ('utf8', 'utf8_bom', 'utf16', 'cp1252', 'cp1250', 'cp1251', 'cp949')):
             self.encoding_combo.combobox.addItem(_(f'export_dialog.encoding_{key}'), encoding)
         row.addWidget(self.encoding_combo, 1)
         self.line_ends_combo = utils.LabeledComboBox()
@@ -196,7 +196,7 @@ class _SubtitlesPanel(QWidget):
         fmt = self.format_combo.currentText()
         self._speaker_choices(fmt)
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
-        self.srt_options.setVisible(fmt in ('SRT', 'SAMI'))
+        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB'))
         # SAMI writes the original and the translation as two languages.
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
         combo = self.text_combo.combobox
@@ -240,7 +240,7 @@ class _SubtitlesPanel(QWidget):
         if fmt in export_options.TEXT_FORMATS:
             options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting')})
             options['offset'] = self.offset_spin.value()
-        if fmt in ('SRT', 'SAMI'):
+        if fmt in ('SRT', 'SAMI', 'SUB'):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
         if fmt == 'SUB':
             options['fps'] = choices['fps']

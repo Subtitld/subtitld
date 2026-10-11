@@ -20,9 +20,11 @@ is.
 
 And for a format of its own:
 
-    encoding     SRT and SAMI: 'utf-8', 'utf-8-sig' (with a byte order
-                 mark), 'utf-16', 'cp1252' or 'cp949' (Korean)
-    line_ends    SRT and SAMI: 'lf' or 'crlf'
+    encoding     SRT, SAMI and SUB: 'utf-8', 'utf-8-sig' (with a byte
+                 order mark), 'utf-16', 'cp1252' (Western European),
+                 'cp1250' (Central European), 'cp1251' (Cyrillic) or
+                 'cp949' (Korean)
+    line_ends    SRT, SAMI and SUB: 'lf' or 'crlf'
     fps          SUB: the frame rate its frame numbers count in
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
     look         ASS and TTML: their style 'clean' (white, a black
@@ -33,7 +35,7 @@ And for a format of its own:
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'SBV', 'SUB')
-ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp949')
+ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
 TIMECODES = ('drop', 'non-drop')

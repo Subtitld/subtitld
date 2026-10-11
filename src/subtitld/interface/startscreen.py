@@ -32,20 +32,24 @@ for exttype in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS:
         list_of_supported_video_extensions.append(ext)
 
 
-def _show_corrupted_project_dialog(window, filepath, detail):
+def _show_corrupted_project_dialog(window, filepath, detail, pictures=False):
     """Friendly error dialog for a corrupted USFX. Used by the open
     flow when `file_io.process_subtitles_file` raises
     `CorruptedProjectFileError` — covers the Bad CRC / truncated /
     not-a-zip cases. Also drops the file from the recent-files list
-    so the user doesn't keep clicking it and re-hitting the error."""
+    so the user doesn't keep clicking it and re-hitting the error.
+    With `pictures`, the file is sound but its subtitles are pictures
+    (VobSub), and the dialog says that instead."""
     try:
         recent = session.CONFIG.get('recent_files') if isinstance(session.CONFIG, dict) else None
         if isinstance(recent, dict) and str(filepath) in recent:
             del recent[str(filepath)]
     except Exception:
         pass
-    dialog = utils.SimpleDialog(window, title=_('startscreen.corrupted_project_title'))
-    msg = QLabel(_('startscreen.corrupted_project_message').format(filepath=filepath))
+    dialog = utils.SimpleDialog(window, title=_('startscreen.picture_subtitles_title' if pictures
+                                                else 'startscreen.corrupted_project_title'))
+    msg = QLabel(_('startscreen.picture_subtitles_message' if pictures
+                   else 'startscreen.corrupted_project_message').format(filepath=filepath))
     msg.setWordWrap(True)
     dialog.content.layout().addWidget(msg)
     if detail:
@@ -235,7 +239,8 @@ def load_productionscreen(self):
             # try to render against half-loaded data. Clear the project
             # paths so the start screen is what the user sees next, and
             # show a dialog explaining why we couldn't open the file.
-            _show_corrupted_project_dialog(self, session.SUBTITLE['filepath'], str(exc))
+            _show_corrupted_project_dialog(self, session.SUBTITLE['filepath'], str(exc),
+                                           pictures=isinstance(exc, file_io.PictureSubtitlesError))
             session.SUBTITLE['filepath'] = ''
             session.SUBTITLE['segments'] = []
             session.VIDEO = {}

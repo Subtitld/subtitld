@@ -6,7 +6,6 @@ import threading
 import zipfile
 import xml.etree.ElementTree as ET
 from docx import Document
-import pysubs2
 import datetime
 from bs4 import BeautifulSoup
 
@@ -17,7 +16,7 @@ from PySide6.QtGui import QImage
 from subtitld.modules import ass
 from subtitld.modules import timecode
 from subtitld.modules import export_options
-from subtitld.modules import markup
+from subtitld.modules import microdvd
 from subtitld.modules import plaintext
 from subtitld.modules import sami
 from subtitld.modules import sbv
@@ -35,6 +34,12 @@ class CorruptedProjectFileError(Exception):
     """Raised by `process_subtitles_file` when the USFX zip on disk is
     structurally damaged (Bad CRC, truncated, missing required members).
     The UI catches this to show a friendly dialog instead of crashing."""
+
+
+class PictureSubtitlesError(CorruptedProjectFileError):
+    """Raised by `process_subtitles_file` for a file whose subtitles are
+    pictures (VobSub's .sub), not text: nothing is wrong with it, but
+    there is nothing in it to edit."""
 # `signals.SIGNALS` MUST be imported at module-load time, NOT lazily
 # from inside the background extractor's `run()`. SIGNALS is a QObject
 # singleton; its thread affinity is whichever thread imports the module
@@ -494,18 +499,22 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             segments_list = ass.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.sub')):
-            # MicroDVD, through pysubs2, which gives its {y:i} and the like as
-            # ASS codes: read as ASS's are. It counts in frames: the rate it
-            # declares, else the video's, else 25.
-            subtitle_format = 'SUB'
+            # MicroDVD, counted in frames: the rate it declares, else the
+            # video's, else 25. A .sub can also be SubViewer 2's text, read as
+            # SBV, or VobSub's pictures, which are no text to edit.
             with open(subtitle_file, 'rb') as sub_file:
-                sub_text = srt.decode(sub_file.read())
-            try:
-                subfile = pysubs2.SSAFile.from_string(sub_text, format_='microdvd')
-            except Exception:
-                subfile = pysubs2.SSAFile.from_string(sub_text, format_='microdvd',
-                                                     fps=float(session.VIDEO.get('framerate') or 25))
-            segments_list = ass.segments_of(subfile)
+                data = sub_file.read()
+            sub_kind = microdvd.kind(data)
+            if sub_kind == 'vobsub':
+                raise PictureSubtitlesError(subtitle_file)
+            if sub_kind == 'subviewer':
+                subtitle_format = 'SBV'
+                segments_list = sbv.parse(srt.decode(data))
+            else:
+                subtitle_format = 'SUB'
+                segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
+                if declared:
+                    session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=declared)
 
         elif subtitle_file.lower().endswith(('.scc')):
             # CEA-608 captions, decoded as a caption decoder shows them.
@@ -1191,38 +1200,18 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # them written when the export asks.
             sbv.save(final_file, segments, speakers=options.get('speakers') == 'voice')
 
-        elif subtitle_format in ['XML', 'SUB']:
-            if subtitle_format == 'SUB':
-                assfile = pysubs2.SSAFile()
-                for sub in segments:
-                    # The formatting tags as ASS override codes, line breaks as \N.
-                    assfile.append(
-                        pysubs2.SSAEvent(
-                            start=int(round(sub['start'] * 1000)),
-                            end=int(round(sub['end'] * 1000)),
-                            text=markup.to_ass(sub['text'])
-                        )
-                    )
-                # MicroDVD counts in frames: the export's frame rate, or the
-                # video's. The first line says which: "{1}{1}25", as players
-                # read it (pysubs2 before 1.9 wrote an unreadable {0}{0}).
-                fps = float(options.get('fps') or VIDEO.get('framerate') or 25)
-                text = assfile.to_string(format_='microdvd', fps=fps, write_fps_declaration=False)
-                with open(final_file, 'w', encoding='utf-8') as sub_file:
-                    sub_file.write(f'{{1}}{{1}}{fps:g}\n' + text)
-            # else:
-            #     if subtitle_format == 'XML':
-            #         from captionstransformer.transcript import Writer
-            #     writer = Writer(open(final_file, mode='w', encoding='utf-8'))
-            #     captions = []
-            #     for cap in session.SUBTITLE['segments']:
-            #         caption = captionstransformer.core.Caption()
-            #         caption.start = captionstransformer.core.get_date(second=int(cap[0] // 1), millisecond=int((cap[0] % 1) * 1000))
-            #         caption.duration = captionstransformer.core.get_date(second=int(cap[1] // 1), millisecond=int((cap[1] % 1) * 1000)) - captionstransformer.core.get_date()
-            #         caption.text = cap[2]
-            #         captions.append(caption)
-            #     writer.set_captions(captions)
-            #     writer.write()
+        elif subtitle_format == 'SUB':
+            # MicroDVD counts in frames: the export's frame rate, or the
+            # video's, which its first line declares; in the export's encoding
+            # and line ends.
+            microdvd.save(final_file, segments, float(options.get('fps') or VIDEO.get('framerate') or 25),
+                          encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                          line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format in ['XML']:
+            # YouTube's timed-text XML was written through captionstransformer,
+            # which is gone; nothing writes it yet.
+            pass
 
         elif subtitle_format in ['JSON']:
             # Whisper's format, as the plain-text editor writes it. Runtime

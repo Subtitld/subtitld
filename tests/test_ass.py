@@ -139,8 +139,8 @@ opened, fmt = file_io.process_subtitles_file(str(source))
 check('opens', (len(opened), fmt, opened[0].get('speaker')), (11, 'ASS', 'Thom'))
 sub = folder / 'in.sub'
 sub.write_text('{1}{1}25\n{25}{50}{y:i}Italic line|second\n{75}{100}Plain\n', encoding='utf-8')
-check('MicroDVD keeps its italics', [(s['start'], s['text']) for s in file_io.process_subtitles_file(str(sub))[0]],
-      [(1.0, '<i>Italic line\nsecond</i>'), (3.0, 'Plain')])
+check('MicroDVD keeps its italics, {y:i} to the end of its line', [(s['start'], s['text']) for s in file_io.process_subtitles_file(str(sub))[0]],
+      [(1.0, '<i>Italic line</i>\nsecond'), (3.0, 'Plain')])
 session.SUBTITLE['segments'] = segments
 session.SUBTITLE['language'] = 'en'
 session.VIDEO = {'width': 1280, 'height': 720}
