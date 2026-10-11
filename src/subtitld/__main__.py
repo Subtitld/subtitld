@@ -293,15 +293,18 @@ class confirm_exit_dialog(utils.SimpleDialog):
 
 def main():
     if args.file:
-        for filepath in args.file:
-            filepath = pathlib.Path(filepath.name)            
-            if filepath.suffix[1:].upper() in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.keys():
-                session.SUBTITLE['filepath'] = str(filepath)
-                break 
-        
+        # By extension, not by format name: a .smi is SAMI, a .ssa ASS.
+        subtitle_extensions = {ext for entry in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.values() for ext in entry['extensions']}
+        video_extensions = {ext for entry in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS.values() for ext in entry['extensions']}
         for filepath in args.file:
             filepath = pathlib.Path(filepath.name)
-            if filepath.suffix[1:].upper() in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS.keys():
+            if filepath.suffix[1:].lower() in subtitle_extensions:
+                session.SUBTITLE['filepath'] = str(filepath)
+                break
+
+        for filepath in args.file:
+            filepath = pathlib.Path(filepath.name)
+            if filepath.suffix[1:].lower() in video_extensions:
                 session.VIDEO['filepath'] = str(filepath)
                 break
         

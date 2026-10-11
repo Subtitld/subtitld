@@ -160,13 +160,14 @@ def start_screen_open_button_clicked(self):
     selected_subtitle_filepath = False
     selected_video_filepath = False
     
+    # By extension, not by format name: a .smi is SAMI, a .ssa ASS.
     for filepath in selected_files:
-        if filepath.rsplit('.', 1)[-1].upper() in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.keys():
+        if filepath.rsplit('.', 1)[-1].lower() in list_of_supported_subtitle_extensions:
             selected_subtitle_filepath = filepath
-            break 
-    
+            break
+
     for filepath in selected_files:
-        if filepath.rsplit('.', 1)[-1].upper() in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS.keys():
+        if filepath.rsplit('.', 1)[-1].lower() in list_of_supported_video_extensions:
             selected_video_filepath = filepath
             break
 
