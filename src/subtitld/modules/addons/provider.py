@@ -25,6 +25,11 @@ TASK_ASR_TRANSCRIBE = 'asr.transcribe'
 TASK_ASR_STREAM = 'asr.stream'
 TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
+
+# Engines in the transcription picker that bring subtitles in from elsewhere
+# (a file, the video's own closed captions) rather than transcribing audio:
+# never a default engine, nor one for recording.
+SOURCE_ENGINES = frozenset({'import', 'captions'})
 TASK_VIDEO_LIPSYNC = 'video.lipsync'
 
 

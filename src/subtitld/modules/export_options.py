@@ -28,6 +28,7 @@ And for a format of its own:
     fps          SUB: the frame rate its frame numbers count in
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
+    mcc_captions MCC: 'both' (CEA-608 and CEA-708) or '608' (CEA-608 alone)
     stl_fps      STL: 25 (STL25.01) or 30 (STL30.01, for 29.97 video)
     display      STL: 'teletext' (level 1) or 'open' subtitles
     start        STL: the programme's start, '00:00:00:00' or '10:00:00:00'

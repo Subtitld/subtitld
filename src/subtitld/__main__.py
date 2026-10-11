@@ -49,6 +49,7 @@ from subtitld.modules import file_io
 from subtitld.modules import shortcuts
 from subtitld.modules import addons
 from subtitld.modules.addons import registry as addons_registry
+from subtitld.modules.addons.builtin import captions_provider as _captions_provider
 from subtitld.modules.addons.builtin import edge_tts_provider as _edge_tts_provider
 from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg_separator_provider
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
@@ -376,6 +377,7 @@ def main():
     addon_manager.register_builtin(_ffmpeg_separator_provider.get_provider())
     addon_manager.register_builtin(_gtts_provider.get_provider())
     addon_manager.register_builtin(_import_provider.get_provider())
+    addon_manager.register_builtin(_captions_provider.get_provider())
     try:
         discovered = addon_manager.discover()
         if discovered:

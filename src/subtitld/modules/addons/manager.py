@@ -38,6 +38,7 @@ from subtitld.modules.addons.provider import (
     ASRProvider,
     AudioSeparatorProvider,
     Provider,
+    SOURCE_ENGINES,
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
     TASK_TRANSLATE,
@@ -155,9 +156,9 @@ class AddonManager(QObject):
             provider = self.get(configured)
             if provider is not None and task in provider.tasks and registry.is_enabled(provider.id):
                 return provider
-        # Fall back to first built-in, then first add-on. Never the Import
-        # pseudo-engine: its transcribe() does nothing.
-        candidates = [p for p in self.providers_for_task(task) if p.id != 'import']
+        # Fall back to first built-in, then first add-on. Never an engine
+        # that brings subtitles from elsewhere (import, captions).
+        candidates = [p for p in self.providers_for_task(task) if p.id not in SOURCE_ENGINES]
         if not candidates:
             return None
         candidates.sort(key=lambda p: (not p.is_builtin, p.id))

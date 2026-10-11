@@ -30,7 +30,7 @@ from subtitld.modules import live_peaks
 from subtitld.modules import session
 from subtitld.modules import recorder as recorder_mod
 from subtitld.modules import live_transcribe
-from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
+from subtitld.modules.addons.provider import SOURCE_ENGINES, TASK_ASR_TRANSCRIBE
 
 
 log = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ def asr_providers():
         from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
         out = []
         for p in addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE):
-            if getattr(p, 'id', '') == 'import':
+            if getattr(p, 'id', '') in SOURCE_ENGINES:
                 continue
             try:
                 if not p.is_available():
@@ -1574,7 +1574,7 @@ class RecordController(QObject):
                 from subtitld.modules import addons
                 provider = addons.get_manager().get(chosen)
                 if provider is not None and TASK_ASR_TRANSCRIBE in getattr(provider, 'tasks', []) \
-                        and getattr(provider, 'id', '') != 'import' \
+                        and getattr(provider, 'id', '') not in SOURCE_ENGINES \
                         and self._provider_available(provider):
                     return provider
                 # The saved engine is not usable (its add-on is not installed,
@@ -1590,7 +1590,7 @@ class RecordController(QObject):
             current = self._host.global_panel_import_tabwidget.currentWidget()
             provider = getattr(current, 'provider', None)
             if provider is not None and TASK_ASR_TRANSCRIBE in getattr(provider, 'tasks', []) \
-                    and getattr(provider, 'id', '') != 'import' \
+                    and getattr(provider, 'id', '') not in SOURCE_ENGINES \
                     and self._provider_available(provider):
                 return provider
         except Exception:
@@ -1599,7 +1599,7 @@ class RecordController(QObject):
         try:
             from subtitld.modules import addons
             for provider in addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE):
-                if getattr(provider, 'id', '') != 'import' and self._provider_available(provider):
+                if getattr(provider, 'id', '') not in SOURCE_ENGINES and self._provider_available(provider):
                     return provider
         except Exception:
             pass

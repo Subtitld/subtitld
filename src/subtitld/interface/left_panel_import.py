@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.interface import utils
+from subtitld.modules import closed_captions
 from subtitld.modules import session
 from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
@@ -333,6 +334,71 @@ class _ImportASRPanel(QWidget):
         widget.import_button.setText(_('import_panel.import'))
 
 
+class _CaptionsPanel(_GenericASRPanel):
+    """Panel for the built-in ``captions`` engine: which of the closed
+    captions the video carries to read. Like a transcription they replace
+    the subtitles, or those of the range or selection chosen; their times
+    are the video's own, so nothing is cut out or shifted."""
+
+    def __init__(widget, provider, parent=None):
+        super().__init__(provider, parent)
+        widget.track_combo = utils.LabeledComboBox()
+        for track in closed_captions.TRACKS:
+            widget.track_combo.combobox.addItem('', track)
+        remembered = session.CONFIG.get('transcription', {}).get('captions_track', 'auto')
+        index = widget.track_combo.combobox.findData(remembered)
+        widget.track_combo.combobox.setCurrentIndex(max(index, 0))
+        widget.track_combo.combobox.activated.connect(lambda _index: widget._remember())
+        widget.layout().insertWidget(1, widget.track_combo)
+        widget.translate()
+
+    def _remember(widget):
+        session.CONFIG.setdefault('transcription', {})['captions_track'] = widget.track_combo.combobox.currentData()
+
+    def transcript(widget):
+        video = session.VIDEO.get('filepath')
+        if not video:
+            return
+        scope_range = getattr(widget.window(), '_transcription_scope_range', None)
+        widget._scope_offset = 0.0
+        widget._scope_range = scope_range
+        widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None) if scope_range else None
+        widget._scope_target_parts = []
+        widget.transcript_started.emit()
+        widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'),
+                                   {'track': widget.track_combo.combobox.currentData()})
+
+    def _on_finished(widget, segments):
+        scope_range = getattr(widget, '_scope_range', None)
+        if scope_range is not None:
+            first, last = scope_range
+            segments = [segment for segment in segments if first - 1e-6 <= float(segment['start']) < last]
+        if not segments:
+            dialog = utils.SimpleDialog(widget, title=_('import_panel.no_captions_title'))
+            label = QLabel(_('import_panel.no_captions'))
+            label.setWordWrap(True)
+            dialog.content.layout().addWidget(label)
+            dialog.reject_button.setVisible(False)
+            dialog.exec()
+            widget.transcript_finished.emit()
+            return
+        _GenericASRPanel._on_finished(widget, segments)
+
+    def translate(widget):
+        widget.info_label.setText(_('import_panel.captions_info'))
+        widget.track_combo.setLabel(_('import_panel.captions_track'))
+        combo = widget.track_combo.combobox
+        for index in range(combo.count()):
+            track = combo.itemData(index)
+            if track == 'auto':
+                text = _('import_panel.captions_auto')
+            elif track.startswith('708-'):
+                text = _('import_panel.captions_service').format(number=track[4:])
+            else:
+                text = _('import_panel.captions_channel').format(channel=track.upper())
+            combo.setItemText(index, text)
+
+
 # Built-in transcription provider IDs whose panels are constructed once
 # at load() time (because they own expensive state we can't afford to
 # discard on `providers_changed`). Empty today: every registered ASR
@@ -484,15 +550,18 @@ def _populate_asr_addons(self):
             stack.removeWidget(widget)
             widget.deleteLater()
 
-        # "import" (file import) first, then the real ASR engines by id —
-        # import is the most basic way to get subtitles in.
+        # "import" (file import) first, then the video's own closed captions,
+        # then the real ASR engines by id — the most basic ways to get
+        # subtitles in first.
         providers = addons.get_manager().providers_for_task(TASK_ASR_TRANSCRIBE)
-        providers.sort(key=lambda p: (p.id != 'import', p.id))
+        providers.sort(key=lambda p: ({'import': 0, 'captions': 1}.get(p.id, 2), p.id))
         for provider in providers:
             if provider.id in _BUILTIN_ASR_IDS:
                 continue
             if provider.id == 'import':
                 panel = _ImportASRPanel(provider)
+            elif provider.id == 'captions':
+                panel = _CaptionsPanel(provider)
             else:
                 panel = _GenericASRPanel(provider)
             panel.transcript_started.connect(lambda: global_panel_import_start_transcription_progress_start(self))
@@ -780,8 +849,18 @@ def _start_transcription(self, scope_range):
     global_panel_import_start_transcription_progress_start(self)
 
 
+def _label_start_button(self):
+    """The Start button says what the engine does: read the video's
+    captions, or transcribe."""
+    button = getattr(self, 'global_panel_import_start_transcription_button', None)
+    if button is not None:
+        captions = self.global_panel_import_engine_combobox.currentText() == 'captions'
+        button.setText(_('import_panel.read_captions') if captions else _('transcription_panel.start_transcription'))
+
+
 def global_panel_import_tabwidget_update(self):
     current_engine = self.global_panel_import_engine_combobox.currentText()
+    _label_start_button(self)
     is_import = (current_engine == 'import')
     # The "import" engine drives its action from its own panel button, so
     # the whole bottom footer (scope selector + Start button) is hidden.
@@ -816,7 +895,7 @@ def _import_subtitles_from_file(self):
 
 def translate(self):
     self.global_panel_import_language_combobox.setLabel(_('transcription_panel.language'))
-    self.global_panel_import_start_transcription_button.setText(_('transcription_panel.start_transcription'))
+    _label_start_button(self)
     self.global_panel_import_engine_combobox.setLabel(_('transcription_panel.engine'))
     if hasattr(self, 'transcription_scope'):
         self.transcription_scope.retranslate()

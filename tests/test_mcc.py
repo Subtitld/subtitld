@@ -1,9 +1,9 @@
-"""MacCaption (.mcc): reading the CEA-608 captions of its packets, built here
-packet by packet (caption distribution packets with one pair a frame or
-several, the second field when the first is empty, SMPTE 334's 608 packets,
-MCC's letters, the header's rate, a file with only CEA-708), writing what
-MacCaption writes (the header whole, a packet a frame, checksums, each
-rate's cc_data count) and the export's options.
+"""MacCaption (.mcc): reading the captions of its packets, built here packet
+by packet (CEA-608 with one pair a frame or several, the second field when
+the first is empty, SMPTE 334's 608 packets; CEA-708 first, or alone;
+MCC's letters, the header's rate), writing what MacCaption writes (the
+header whole, a packet a frame, checksums, each rate's cc_data count,
+CEA-608 and CEA-708 or CEA-608 alone) and the export's options.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -18,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, mcc, scc, session
+from subtitld.modules import cea708, file_io, mcc, scc, session
 
 fails = []
 
@@ -63,10 +63,13 @@ def cues(text):
 
 
 def anc(pairs, field=1, rate_code=4, count=20, extra=b''):
-    """An ANC packet: a CDP with `pairs` for `field`, padded to `count`."""
+    """An ANC packet: a CDP with `pairs` for `field` (and the caption data
+    `extra`), padded to `count`."""
     cc = b''.join(bytes([0xFC if field == 1 else 0xFD, *pair]) for pair in pairs)
     if field == 2:
         cc = b'\xfc\x80\x80' * len(pairs) + cc
+    cc += extra
+    extra = b''
     cc += b'\xfa\x00\x00' * (count - len(cc) // 3)
     body = bytes([0x72, 0xE0 | count]) + cc + extra + b'\x74\x00\x00'
     cdp = bytes([0x96, 0x69, 7 + len(body) + 1, rate_code << 4 | 0x0F, 0x43, 0, 0]) + body
@@ -106,13 +109,25 @@ check('a line in letters, as MacCaption writes it', cues(
     + '\n'.join(f'00:00:00;{8 + i:02d}\tT49S494F43ZZ72F4FC{word}ROO74ZZ0BAB' for i, word in enumerate(
         ('9452', '9452', 'c8e5', 'ecec', 'ef80', '942f', '942f'))) + '\n'), [(0.434, 4.434, '{\\an1}Hello')])
 AT_25 = to_mcc(SCC, rate='25', timecode=at_25, rate_code=3, count=24)
-check('at 25: the header says so, and the packets', (cues(AT_25)[0][:2], mcc.parse(AT_25)[1]), ((1.2, 3.0), '25'))
-check('the rate the export offers, by the header and the packets', [mcc.parse(to_mcc(SCC, rate=label, rate_code=code))[1]
+check('at 25: the header says so, and the packets', (cues(AT_25)[0][:2], mcc.parse(AT_25)[1]),
+      ((1.2, 3.0), {'rate': '25', 'captions': '608'}))
+check('the rate the export offers, by the header and the packets', [mcc.parse(to_mcc(SCC, rate=label, rate_code=code))[1]['rate']
       for label, code in (('30DF', 4), ('30', 4), ('30', 5), ('24', 1), ('24', 2), ('60', 8))],
       ['29.97DF', '29.97', '30', '23.976', '24', None])
-DTVCC = 'File Format=MacCaption_MCC V1.0\nTime Code Rate=30DF\n' + '\n'.join(
-    f'00:00:0{second};00\t' + anc([], extra=b'').hex().replace('fa0000', 'ff0141', 1) for second in range(3))
-for name, text, start in (('CEA-708 only: says so', DTVCC, 'This MacCaption file holds no CEA-608'),
+# CEA-708 as the cea708 module writes it: in a file with CEA-608 too, it is read first; alone, it is read.
+DTVCC_DATA = cea708.frame_data([('{\\an8}<font color="#ffd700">Only in 708</font>', 30, 60)], 18)
+CEA608_TOO = to_mcc(SCC.split('\n\n00:00:01;20')[0])
+ONLY_708 = 'File Format=MacCaption_MCC V1.0\nTime Code Rate=30DF\n' + '\n'.join(
+    f'{scc.timecode(frame, True)}\t' + anc([], extra=b''.join(bytes([0xFF if t == 3 else 0xFE, a, b]) for t, a, b in data)).hex()
+    for frame, data in sorted(DTVCC_DATA.items()))
+BOTH = 'File Format=MacCaption_MCC V1.0\nTime Code Rate=30DF\n' + '\n'.join(
+    line for line in sorted(CEA608_TOO.split('\n')[3:] + ONLY_708.split('\n')[2:]) if line)
+check('CEA-708 alone: read; with CEA-608 too, read first; the file says it has both',
+      (cues(ONLY_708), cues(BOTH), mcc.parse(BOTH)[1]['captions']),
+      ([(1.001, 2.002, '{\\an8}<font color="#ffff00">Only in 708</font>')],
+       [(1.001, 2.002, '{\\an8}<font color="#ffff00">Only in 708</font>')], 'both'))
+for name, text, start in (('no captions at all: says so', 'File Format=MacCaption_MCC V1.0\n00:00:01;00\t' + anc([]).hex(),
+                           'This MacCaption file holds no captions'),
                           ('not MCC: refused', 'Scenarist_SCC V1.0\n', 'Not a MacCaption file')):
     try:
         mcc.parse(text)
@@ -133,25 +148,33 @@ check('the header whole, then the file\'s own', (written.startswith(mcc.HEADER),
     'Creation Program=Subtitld', 'Creation Date=Sunday, October 11, 2026', 'Creation Time=9:05:07', 'Time Code Rate=30DF', '']))
 data_lines = [line.split('\t') for line in written.split('\n') if '\t' in line]
 check('the first packet, as MacCaption writes it', '\t'.join(data_lines[0]), '00:00:00;06\tT49S494F43ZZ72F4FC9420ROO74ZZ0BAB')
+check('CEA-608 alone: no CEA-708 in any packet', all(
+    b'\xfe' not in cdp[9:-4:3] and b'\xff' not in cdp[9:-4:3] for cdp in (mcc._expand(data)[3:-1] for _tc, data in (
+        line.split('\t') for line in mcc.write(segments, captions='608').split('\n') if '\t' in line))), True)
 for rate, (label, nominal, fps, drop, rate_code, count) in mcc.RATES.items():
     text = mcc.write(segments, rate)
     lines = [line.split('\t') for line in text.split('\n') if '\t' in line]
     packets = [mcc._expand(data) for _tc, data in lines]
     cdps = [packet[3:-1] for packet in packets]
-    check(f'{rate}: packets DID 61h SDID 01h, their checksums, the rate, {count} cc_data, the pair then field 2\'s nothing', (
+    markers = [[cdp[9 + 3 * i] for i in range(count)] for cdp in cdps]
+    check(f'{rate}: packets DID 61h SDID 01h, their checksums, the rate, {count} cc_data: field 1, field 2, CEA-708, padding', (
         f'Time Code Rate={label}\n' in text,
         all(packet[:2] == b'\x61\x01' and packet[2] == len(packet) - 4 and sum(packet[:-1]) & 0xFF == packet[-1]
             for packet in packets),
         all(sum(cdp) & 0xFF == 0 and cdp[2] == len(cdp) and cdp[3] == rate_code << 4 | 0x0F and cdp[7:9] == bytes([0x72, 0xE0 | count])
-            and cdp[9] == 0xFC and cdp[12:15] == b'\xfd\x80\x80' and cdp[15:9 + 3 * count] == b'\xfa\x00\x00' * (count - 2)
-            for cdp in cdps),
+            and cdp[12:15] == b'\xfd\x80\x80' for cdp in cdps),
+        all(m[0] == 0xFC and m[1] == 0xFD and all(x in (0xFE, 0xFF) for x in m[2:len(m) - m.count(0xFA)])
+            and all(x == 0xFA for x in m[len(m) - m.count(0xFA):]) for m in markers),
+        any(0xFF in m for m in markers),
         [int.from_bytes(cdp[5:7], 'big') for cdp in cdps] == list(range(len(cdps)))),
-          (True, True, True, True))
-    check(f'{rate}: read back, the times to the frame', [
+          (True, True, True, True, True, True))
+    check(f'{rate}: read back through CEA-708, the times to the frame', [
         (s['text'], abs(s['start'] - want['start']) <= 1 / fps, abs(s['end'] - want['end']) <= 1 / fps)
         for s, want in zip(mcc.parse(text)[0], segments)], [
-            ("You're a <i>jerk,</i>\nCelia.", True, True), ('{\\an8}<font color="#ffff00">Gold at the top</font>', True, True),
+            ("You're a <i>jerk</i>,\nCelia.", True, True), ('{\\an8}<font color="#ffff00">Gold at the top</font>', True, True),
             ('A minute on', True, True)])
+check('CEA-608 alone, read back as SCC reads it', [s['text'] for s in mcc.parse(mcc.write(segments, captions='608'))[0]][:1],
+      ["You're a <i>jerk,</i>\nCelia."])
 shown_at = [{tc: mcc._expand(data)[13:15].hex() for tc, data in (line.split('\t') for line in mcc.write(segments[2:], rate).split('\n')
                                                                  if '\t' in line)} for rate in ('29.97DF', '29.97')]
 check('timecodes: drop-frame skips, non-drop does not (shown at 61 s: frame 1828)',
@@ -164,14 +187,16 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.mcc').write_text(AT_25, encoding='ascii')
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.mcc'))
-check('opens; its rate kept to save it again', (fmt, len(opened), session.FORMAT['options'].get('mcc_rate')), ('MCC', 3, '25'))
+check('opens; its rate, and what it carries, kept to save it again', (
+    fmt, len(opened), session.FORMAT['options'].get('mcc_rate'), session.FORMAT['options'].get('mcc_captions')),
+      ('MCC', 3, '25', '608'))
 session.SUBTITLE['segments'] = segments
 session.SUBTITLE['language'] = 'en-us'
 session.VIDEO = {'framerate': 25.0}
 for name, options, framerate, want in (
         ('saved at the rate asked; >> marks; Windows line ends', {'mcc_rate': '23.976', 'speakers': 'voice'}, 25.0,
          ('Time Code Rate=24', 1, '>> ', True)),
-        ("else the video's", {}, 25.0, ('Time Code Rate=25', 3, "You", True)),
+        ("else the video's; CEA-608 alone when asked", {'mcc_captions': '608'}, 25.0, ('Time Code Rate=25', 3, "You", True)),
         ('else 29.97 drop-frame', {}, 50.0, ('Time Code Rate=30DF', 4, "You", True))):
     session.FORMAT = {'options': options}
     session.VIDEO = {'framerate': framerate}
@@ -200,13 +225,19 @@ check("MCC: its rate, the video's, drop-frame at 29.97; >> for speakers", (
     panel.mcc_options.isHidden(), panel.text_options.isHidden(), panel.get_config()['options'].get('mcc_rate'),
     rates.currentText(), combo.itemText(combo.count() - 1)),
       (False, False, '29.97DF', "29.97 fps, drop-frame (00:00:01;00) (the video's)", 'As >> at each change of speaker'))
+check('CEA-608 and CEA-708 unless asked', (panel.mcc_captions_combo.combobox.currentText(),
+                                            panel.get_config()['options'].get('mcc_captions')), ('CEA-608 and CEA-708', 'both'))
 rates.setCurrentIndex(rates.findData('25'))
-check('chosen', panel.get_config()['options'].get('mcc_rate'), '25')
+panel.mcc_captions_combo.combobox.setCurrentIndex(panel.mcc_captions_combo.combobox.findData('608'))
+check('chosen', {key: panel.get_config()['options'].get(key) for key in ('mcc_rate', 'mcc_captions')},
+      {'mcc_rate': '25', 'mcc_captions': '608'})
 session.VIDEO = {}
-check('remembered, without a video', _SubtitlesPanel().mcc_rate_combo.combobox.currentData(), '25')
+check('remembered, without a video', (_SubtitlesPanel().mcc_rate_combo.combobox.currentData(),
+                                      _SubtitlesPanel().mcc_captions_combo.combobox.currentData()), ('25', '608'))
 panel.format_combo.setCurrentText('SCC')
 panel._refresh_options()
-check('not for SCC', (panel.mcc_options.isHidden(), 'mcc_rate' in panel.get_config()['options']), (True, False))
+check('not for SCC', (panel.mcc_options.isHidden(), 'mcc_rate' in panel.get_config()['options'],
+                      'mcc_captions' in panel.get_config()['options']), (True, False, False))
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

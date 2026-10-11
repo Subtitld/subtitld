@@ -393,11 +393,12 @@ def parse(text):
     return decode_pairs(_lines(text))
 
 
-def decode_pairs(batches, rate=_RATE):
+def decode_pairs(batches, rate=_RATE, channel=None):
     """The subtitles in CEA-608 data: `batches` [(frame, [(byte, byte)])],
-    a pair a frame from the batch's, at `rate` frames a second; its first
-    channel's, else its second's."""
-    for channel in (1, 2):
+    a pair a frame from the batch's, at `rate` frames a second; its
+    `channel`'s (1 or 2), else its first channel's, else its second's."""
+    subtitles = []
+    for channel in ((channel,) if channel else (1, 2)):
         decoder = _Decoder(channel, rate)
         last = 0
         for frame, words in batches:
@@ -606,7 +607,7 @@ def write(segments, drop_frame=True, speaker_changes=False):
     """SCC text for `segments`, as pop-on captions in CC1. With
     `speaker_changes`, ">> " begins each subtitle a new speaker says, as
     captions mark them."""
-    frames, breaks = frame_words(segments, speaker_changes=speaker_changes)
+    frames, breaks, _shows = frame_words(segments, speaker_changes=speaker_changes)
     lines = ['Scenarist_SCC V1.0']
     group, group_start = [], 0
     for frame in sorted(frames):
@@ -622,7 +623,8 @@ def write(segments, drop_frame=True, speaker_changes=False):
 
 
 def frame_words(segments, rate=_RATE, speaker_changes=False):
-    """({frame: word}, the frames an EOC or EDM is on) for `segments` as
+    """({frame: word}, the frames an EOC or EDM is on, [(text, frame shown,
+    frame cleared or None when the next replaces it)]) for `segments` as
     pop-on captions in CC1, a word a frame at `rate` frames a second."""
     eoc, edm = _word(0x14, _EOC), _word(0x14, _EDM)
     captions = []
@@ -638,11 +640,11 @@ def frame_words(segments, rate=_RATE, speaker_changes=False):
         words = _load(text)
         if words:
             start = round(float(segment.get('start', 0)) * rate)
-            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words])
+            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words, text])
 
-    frames, breaks = {}, set()                     # frame: word; the frames a line starts at
+    frames, breaks, shows = {}, set(), []          # frame: word; the frames a line starts at
     loaded_from = 0                                # the first frame the next load may use
-    for index, (start, end, words) in enumerate(captions):
+    for index, (start, end, words, text) in enumerate(captions):
         # Loaded after the last one was shown (until then the memory it
         # loads into holds that one), shown on its frame, or as soon after
         # as there is time to load it.
@@ -665,7 +667,10 @@ def frame_words(segments, rate=_RATE, speaker_changes=False):
                 clear += 1
             frames[clear] = frames[clear + 1] = edm
             breaks.add(clear)
-    return frames, breaks
+        else:
+            clear = None
+        shows.append((text, shown, clear))
+    return frames, breaks, shows
 
 
 def save(path, segments, drop_frame=True, speaker_changes=False):

@@ -130,7 +130,7 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.timecode_combo, 1)
         self.layout().addWidget(self.scc_options)
 
-        # MacCaption: its frame rate, the video's.
+        # MacCaption: its frame rate, the video's; CEA-708 beside CEA-608, or not.
         self.mcc_options = QWidget()
         row = QHBoxLayout(self.mcc_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -147,6 +147,11 @@ class _SubtitlesPanel(QWidget):
                 label = _('export_dialog.frame_rate_video').format(fps=label)
             self.mcc_rate_combo.combobox.addItem(label, key)
         row.addWidget(self.mcc_rate_combo, 1)
+        self.mcc_captions_combo = utils.LabeledComboBox()
+        self.mcc_captions_combo.setLabel(_('export_dialog.mcc_captions'))
+        self.mcc_captions_combo.combobox.addItem(_('export_dialog.mcc_captions_both'), 'both')
+        self.mcc_captions_combo.combobox.addItem(_('export_dialog.mcc_captions_608'), '608')
+        row.addWidget(self.mcc_captions_combo, 1)
         self.layout().addWidget(self.mcc_options)
 
         # EBU STL: its frame rate, its display and the programme's start.
@@ -216,6 +221,7 @@ class _SubtitlesPanel(QWidget):
         # The video's rate when MCC has it (drop-frame at 29.97); else the last used.
         if not _select(self.mcc_rate_combo, mcc.rate_for(video_fps)):
             _select(self.mcc_rate_combo, remembered.get('mcc_rate', '29.97DF'))
+        _select(self.mcc_captions_combo, remembered.get('mcc_captions', 'both'))
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
@@ -286,6 +292,7 @@ class _SubtitlesPanel(QWidget):
             'timecode': self.timecode_combo.combobox.currentData(),
             'stl_fps': self.stl_rate_combo.combobox.currentData(),
             'mcc_rate': self.mcc_rate_combo.combobox.currentData(),
+            'mcc_captions': self.mcc_captions_combo.combobox.currentData(),
             'display': self.stl_display_combo.combobox.currentData(),
             'start': self.stl_start_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
@@ -311,7 +318,7 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'STL':
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
         if fmt == 'MCC':
-            options['mcc_rate'] = choices['mcc_rate']
+            options.update(mcc_rate=choices['mcc_rate'], mcc_captions=choices['mcc_captions'])
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
