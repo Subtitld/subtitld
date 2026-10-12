@@ -16,12 +16,17 @@ during the migration. The inner UI widget classes (`dubbingPanel`,
 from __future__ import annotations
 
 import asyncio
+import email.utils
 import logging
 import os
 import socket
 import subprocess
 
+import aiohttp
 import edge_tts
+from edge_tts import communicate as _edge_communicate
+from edge_tts import drm as _edge_drm
+from edge_tts.constants import TRUSTED_CLIENT_TOKEN
 from PySide6.QtCore import QObject, QThread, Signal
 
 from subtitld.modules import session
@@ -63,6 +68,36 @@ _EDGE_TTS_LANGUAGES = (
 log = logging.getLogger(__name__)
 
 
+# edge-tts reads the date the server sends with strptime, whose day and month
+# names follow the locale, which Qt sets to the system's: in Portuguese
+# "Mon" and "Oct" are not read, and edge-tts fails with "Failed to parse
+# server date" instead of correcting the clock. Read it as e-mail dates are,
+# in any locale. Fixed upstream by rany2/edge-tts#491: this goes once a
+# release has it.
+def _server_date(date):
+    try:
+        return email.utils.parsedate_to_datetime(date).timestamp()
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+_edge_drm.DRM.parse_rfc2616_date = staticmethod(_server_date)
+
+# Microsoft is moving Edge's voices to another host: since October 2026 the
+# old one refuses (403) in many countries, and the new one answers in some
+# of them (edge-tts issue #490). The old one first; after a 403, the other,
+# and whichever answers is kept for the session.
+_HOSTS = [_edge_communicate.WSS_URL,
+          'wss://api.msedgeservices.com/tts/cognitiveservices/edge/v1?TrustedClientToken=' + TRUSTED_CLIENT_TOKEN]
+_REFUSED = ("Microsoft's Edge speech service refused the request (403). It is changing how its voices are reached, "
+            "and in some countries they do not answer yet; until edge-tts follows, try again later or use another "
+            "dubbing engine.")
+
+
+def _refused(error):
+    return isinstance(error, aiohttp.ClientResponseError) and error.status == 403
+
+
 # ---------------------------------------------------------------------------
 # Thread workers (verbatim from old left_panel_dubbing.py with names cleaned up)
 # ---------------------------------------------------------------------------
@@ -97,26 +132,38 @@ class _EdgeTTSSpeechThread(QThread):
                     continue
                 self.speech_ready.emit(subtitle['uid'], subtitle, output_file)
             except Exception as e:
-                self.speech_error.emit(subtitle['uid'], subtitle, str(e))
+                self.speech_error.emit(subtitle['uid'], subtitle, _REFUSED if _refused(e) else str(e))
 
         loop.close()
 
     async def _generate(self, subtitle, final_file):
         speaker = session.SPEAKERS.get(subtitle['speaker'], {}).get('dubbing', {})
         voice = subtitle.get('voice') or speaker.get('voice', '')
-        communicate = edge_tts.Communicate(
-            text=markup.plain(subtitle['text']),
-            voice=voice,
-            rate=f'{subtitle.get("rate", 0):+d}%',
-            pitch=f'{subtitle.get("pitch", 0):+d}Hz',
-        )
         # edge-tts emits MP3 bytes regardless of the destination filename
         # extension. The audio engine reads dubs through libsndfile (via
         # `soundfile`), which can't decode MP3 — playback would be silent
         # for those clips. Save MP3 to a temp file first, then transcode
         # to a real PCM WAV at the requested filename.
         mp3_temp = final_file + '.mp3'
-        await communicate.save(mp3_temp)
+        for attempt, host in enumerate(list(_HOSTS)):
+            _edge_communicate.WSS_URL = host
+            communicate = edge_tts.Communicate(
+                text=markup.plain(subtitle['text']),
+                voice=voice,
+                rate=f'{subtitle.get("rate", 0):+d}%',
+                pitch=f'{subtitle.get("pitch", 0):+d}Hz',
+            )
+            try:
+                await communicate.save(mp3_temp)
+            except aiohttp.ClientResponseError as error:
+                if not _refused(error) or attempt == len(_HOSTS) - 1:
+                    raise
+                log.info('edge-tts: %s refused the request; trying %s', host.split('/')[2], _HOSTS[attempt + 1].split('/')[2])
+                continue
+            # This host answers: it goes first from now on.
+            _HOSTS.remove(host)
+            _HOSTS.insert(0, host)
+            break
         if not os.path.isfile(mp3_temp) or os.path.getsize(mp3_temp) <= 0:
             return
         try:
