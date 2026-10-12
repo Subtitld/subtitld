@@ -369,8 +369,11 @@ QPushButton#scope_range_capture_button:pressed {
 /* The primary action in a scope footer — Start transcription, Start
    translation, Generate all speeches. One class, so the three panels end
    with the same button: square on top, rounded at the bottom, where it
-   rises out of the footer band and sits on the panel's edge. */
-QPushButton[class~="scope_action"] {
+   rises out of the footer band and sits on the panel's edge. Named again
+   inside a speaker's card, whose rule for its icon buttons (transparent)
+   would otherwise win and leave the button looking disabled. */
+QPushButton[class~="scope_action"],
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action"] {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
     color: #3e5363;
     border: 0;
@@ -416,14 +419,17 @@ QPushButton[class~="scope_action_quiet"]:disabled {
 }
 
 /* Nothing to act on — scope "selection" with nothing selected. */
-QPushButton[class~="scope_action"]:disabled {
+QPushButton[class~="scope_action"]:disabled,
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action"]:disabled {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #66c8dbe9, stop:1 #66b8cee0);
     color: #803e5363;
 }
-QPushButton[class~="scope_action"]:hover {
+QPushButton[class~="scope_action"]:hover,
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action"]:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
 }
-QPushButton[class~="scope_action"]:pressed {
+QPushButton[class~="scope_action"]:pressed,
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action"]:pressed {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #b8cee0, stop:1 #a9c1d4);
 }
 
@@ -1193,7 +1199,8 @@ QGroupBox::title {
     border-width: 0 1 1 36;
     border-image: url(graphics:titleBar_right_version_background.svg) 0 1 1 36 stretch stretch;
     color: white;
-    padding: 0 10px;
+    /* The slanted edge is gap enough before the mark. */
+    padding: 0 10px 0 0;
     color: #26ffffff;
     font-size: 12px;
     font-family: Montserrat;
