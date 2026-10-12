@@ -26,6 +26,7 @@ import aiohttp
 import edge_tts
 from edge_tts import communicate as _edge_communicate
 from edge_tts import drm as _edge_drm
+from edge_tts import voices as _edge_voices
 from edge_tts.constants import TRUSTED_CLIENT_TOKEN
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -84,11 +85,17 @@ def _server_date(date):
 _edge_drm.DRM.parse_rfc2616_date = staticmethod(_server_date)
 
 # Microsoft is moving Edge's voices to another host: since October 2026 the
-# old one refuses (403) in many countries, and the new one answers in some
-# of them (edge-tts issue #490). The old one first; after a 403, the other,
-# and whichever answers is kept for the session.
-_HOSTS = [_edge_communicate.WSS_URL,
-          'wss://api.msedgeservices.com/tts/cognitiveservices/edge/v1?TrustedClientToken=' + TRUSTED_CLIENT_TOKEN]
+# old one refuses speech (403) in many countries, from 12 October in the
+# United States too, while api.msedgeservices.com answers, with the same
+# token given as Ocp-Apim-Subscription-Key (rany2/edge-tts issue #490). The
+# new host first; after a 403, the other; whichever answers is kept for the
+# session. The voice list still comes from the old host, the new one after a
+# refusal.
+_NEW_HOST = 'api.msedgeservices.com/tts/cognitiveservices'
+_HOSTS = [f'wss://{_NEW_HOST}/websocket/v1?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}',
+          _edge_communicate.WSS_URL]
+_VOICE_LISTS = [_edge_voices.VOICE_LIST,
+                f'https://{_NEW_HOST}/voices/list?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}']
 _REFUSED = ("Microsoft's Edge speech service refused the request (403). It is changing how its voices are reached, "
             "and in some countries they do not answer yet; until edge-tts follows, try again later or use another "
             "dubbing engine.")
@@ -117,7 +124,13 @@ class _EdgeTTSSpeechThread(QThread):
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
 
+        # Refused at every host: the rest of this run would be too, so they
+        # fail at once instead of asking Microsoft again. A later run tries.
+        refused = False
         for subtitle in self.text_list:
+            if refused:
+                self.speech_error.emit(subtitle['uid'], subtitle, _REFUSED)
+                continue
             output_file = os.path.join(cache_dir, f'{subtitle["uid"]}.wav')
             try:
                 loop.run_until_complete(self._generate(subtitle, output_file))
@@ -132,7 +145,8 @@ class _EdgeTTSSpeechThread(QThread):
                     continue
                 self.speech_ready.emit(subtitle['uid'], subtitle, output_file)
             except Exception as e:
-                self.speech_error.emit(subtitle['uid'], subtitle, _REFUSED if _refused(e) else str(e))
+                refused = _refused(e)
+                self.speech_error.emit(subtitle['uid'], subtitle, _REFUSED if refused else str(e))
 
         loop.close()
 
@@ -194,7 +208,17 @@ class _EdgeTTSVoicesThread(QThread):
     voice_received = Signal(dict)
 
     def run(self):
-        voices = asyncio.run(edge_tts.list_voices())
+        for attempt, address in enumerate(list(_VOICE_LISTS)):
+            _edge_voices.VOICE_LIST = address
+            try:
+                voices = asyncio.run(edge_tts.list_voices())
+            except aiohttp.ClientResponseError as error:
+                if not _refused(error) or attempt == len(_VOICE_LISTS) - 1:
+                    raise
+                continue
+            _VOICE_LISTS.remove(address)
+            _VOICE_LISTS.insert(0, address)
+            break
         for v in voices:
             self.voice_received.emit(v)
 
