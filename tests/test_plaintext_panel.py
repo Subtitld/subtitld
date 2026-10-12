@@ -336,6 +336,18 @@ app.processEvents()
 check('closed again', (panel.options.isVisible(), panel.options_chip.isChecked(),
                        session.CONFIG['plaintext_panel']['options_open']), (False, False, False))
 
+print('opening in the format last used')
+for remembered in ('md', 'json'):
+    session.CONFIG['plaintext_panel']['format'] = remembered
+    try:
+        reopened = ptp.PlainTextPanel(host)
+        check(f'{remembered}: no edit to check, nothing pending', (reopened.fmt, reopened.pending, reopened.apply_timer.isActive()),
+              (remembered, False, False))
+        reopened.deleteLater()
+    except AttributeError as error:
+        check(f'{remembered}: opens', str(error), None)
+session.CONFIG['plaintext_panel']['format'] = panel.fmt
+
 print('while another tab is shown, the text catches up when it comes back')
 show_tab(other_tab)
 session.SUBTITLE['segments'][0]['text'] = 'Changed in the list'

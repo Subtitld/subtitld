@@ -543,7 +543,14 @@ class PlainTextPanel(QWidget):
         self.editor.textChanged.connect(self._text_changed)
         self.editor.cursorPositionChanged.connect(self._cursor_moved)
         self.editor.marker_clicked.connect(self._marker_clicked)
-        self.editor.highlighter.set_format(self.fmt)
+        # Highlighting in another format than SRT re-highlights the text,
+        # which Qt reports as a change of it: none to check (and the timer
+        # that would check it does not exist yet).
+        self._setting_text = True
+        try:
+            self.editor.highlighter.set_format(self.fmt)
+        finally:
+            self._setting_text = False
         self.layout().addWidget(self.editor, 1)
 
         footer = QWidget(objectName='plaintext_panel_footer')
