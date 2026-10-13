@@ -253,6 +253,20 @@ p.end()
 painted = any(img.pixelColor(x, y).alpha() for x in range(0, 500, 3) for y in range(60))
 check('B13 no take-wide box in silence', not painted)
 
+# B14: an audio take paints its band and leading edge without raising.
+img = QImage(500, 60, QImage.Format_ARGB32); img.fill(0)
+p = QPainter(img)
+try:
+    timeline._paint_live_take(w, p, {'mode': 'audio', 'base': 10.0, 'end': 40.0,
+                                     'subtitle': None, 'cue_start': None, 'cue_end': None,
+                                     'buffer': None, 'peak': 0.0}, None)
+    raised = None
+except Exception as e:
+    raised = e
+p.end()
+band_painted = any(img.pixelColor(x, 45).alpha() for x in range(110, 390, 3))
+check('B14 audio take paints its band', raised is None and band_painted, raised)
+
 # --------------------------------------------------------------------------
 # Streaming engine driven by hand.
 class FakeStream(QObject):

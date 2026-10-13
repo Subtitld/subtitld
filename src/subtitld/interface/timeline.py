@@ -3674,6 +3674,9 @@ def update_subtitles_panel_subtitle_selected(self):
     left_panel.update(self)
 
 
+_LIVE_BAND_RATIO = 0.25          # same band as a committed dub in _paint_body
+
+
 def _live_colors():
     """Border/fill for an in-progress cue: the ordinary subtitle palette, faded.
 
