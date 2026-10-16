@@ -54,13 +54,20 @@
       </uap:VisualElements>
       <Extensions>
         <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="usfx">
+            <uap:DisplayName>Subtitld project</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.usfx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="subtitleformats">
             <uap:SupportedFileTypes>
               <uap:FileType>.srt</uap:FileType>
               <uap:FileType>.vtt</uap:FileType>
               <uap:FileType>.ass</uap:FileType>
               <uap:FileType>.ssa</uap:FileType>
-              <uap:FileType>.subtitld</uap:FileType>
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>
