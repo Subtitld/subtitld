@@ -1,7 +1,6 @@
 import sys
 import os
 import argparse
-import pathlib
 import inspect
 
 # Before anything loads PortAudio through ctypes (sounddevice): find the
@@ -62,8 +61,17 @@ from subtitld.modules.addons.builtin import import_provider as _import_provider
 from subtitld.modules.addons.builtin import subtitles_provider as _subtitles_provider
 
 
+def _existing_file(value):
+    """A path on the command line, checked but not opened: argparse's
+    FileType kept every file open, and Windows will not replace an open
+    file, which is how a project is saved over itself."""
+    if not os.path.isfile(value):
+        raise argparse.ArgumentTypeError(f"can't open '{value}'")
+    return os.path.abspath(value)
+
+
 parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
-parser.add_argument('file', type=argparse.FileType('r'), help='The path for video or subtitle file', nargs='*', default=False)
+parser.add_argument('file', type=_existing_file, help='The path for video or subtitle file', nargs='*', default=False)
 parser.add_argument('--version', help='Prints the actual version of Subtitld.', action='store_true')
 args = parser.parse_args()
 
@@ -162,16 +170,22 @@ class Window(_MainWindowBase):
         _set_class_icon(self)
         self.showMaximized()
 
-        if session.SUBTITLE.get('filepath', False) and session.VIDEO.get('filepath', False):
-            # `load_productionscreen` itself runs `process_subtitles_file`
-            # + `process_video_file` + `sync_subtitle_dubs`. Don't run them
-            # here first — doing so would double the Phase 1 zip extract,
-            # ffprobe, and USF parse on the main thread before the screen
-            # transition. See the matching note in
-            # `start_screen_recent_listwidget_item_clicked`.
-            startscreen.load_productionscreen(self)
-        else:
+        # The files on the command line, which is how a file association
+        # passes the one file double-clicked: opened as the Open button opens
+        # them. A subtitle and its video, a video, or a .usfx (it names its
+        # video) open at once; a subtitle alone asks for its video once the
+        # start screen is up.
+        # `load_productionscreen` itself runs `process_subtitles_file`
+        # + `process_video_file` + `sync_subtitle_dubs`. Don't run them
+        # here first — doing so would double the Phase 1 zip extract,
+        # ffprobe, and USF parse on the main thread before the screen
+        # transition. See the matching note in
+        # `start_screen_recent_listwidget_item_clicked`.
+        files = list(args.file) if args.file else []
+        if not (files and startscreen.open_files(self, files, ask=False)):
             startscreen.show(self)
+            if files:
+                QTimer.singleShot(0, lambda: startscreen.open_files(self, files))
 
         # self.action_manager.register("open", "open_file", "Ctrl+O", self.open_file)
         # self.action_manager.register("save", "save_file", "Ctrl+S", self.save_file)
@@ -329,22 +343,6 @@ class confirm_exit_dialog(utils.SimpleDialog):
 
 
 def main():
-    if args.file:
-        # By extension, not by format name: a .smi is SAMI, a .ssa ASS.
-        subtitle_extensions = {ext for entry in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.values() for ext in entry['extensions']}
-        video_extensions = {ext for entry in session.LIST_OF_SUPPORTED_VIDEO_EXTENSIONS.values() for ext in entry['extensions']}
-        for filepath in args.file:
-            filepath = pathlib.Path(filepath.name)
-            if filepath.suffix[1:].lower() in subtitle_extensions:
-                session.SUBTITLE['filepath'] = str(filepath)
-                break
-
-        for filepath in args.file:
-            filepath = pathlib.Path(filepath.name)
-            if filepath.suffix[1:].lower() in video_extensions:
-                session.VIDEO['filepath'] = str(filepath)
-                break
-        
     app = QApplication(sys.argv)
 
     # ---- Paint-conflict guard -----------------------------------------

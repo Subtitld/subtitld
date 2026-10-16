@@ -161,16 +161,25 @@ def start_screen_open_button_clicked(self):
         filter=all_supported_subtitle_files
     )[0]
 
+    open_files(self, selected_files)
+
+
+def open_files(self, filepaths, ask=True):
+    """Open the first subtitle and the first video among `filepaths`: what
+    the Open button picked, or what the command line passed (a file
+    association passes the one file). A .usfx names its own video; a
+    subtitle without one asks for it, unless `ask` is False. True if the
+    project opened."""
     selected_subtitle_filepath = False
     selected_video_filepath = False
-    
+
     # By extension, not by format name: a .smi is SAMI, a .ssa ASS.
-    for filepath in selected_files:
+    for filepath in filepaths:
         if filepath.rsplit('.', 1)[-1].lower() in list_of_supported_subtitle_extensions:
             selected_subtitle_filepath = filepath
             break
 
-    for filepath in selected_files:
+    for filepath in filepaths:
         if filepath.rsplit('.', 1)[-1].lower() in list_of_supported_video_extensions:
             selected_video_filepath = filepath
             break
@@ -180,23 +189,23 @@ def start_screen_open_button_clicked(self):
         if peeked:
             selected_video_filepath = peeked
 
-    if not selected_video_filepath:
+    if not selected_video_filepath and selected_subtitle_filepath and ask:
         supported_video_files = _('file_io.video_files') + ' ({})'.format(" ".join(["*.{}".format(fo) for fo in list_of_supported_video_extensions]))
         selected_video_filepath = QFileDialog.getOpenFileName(
             parent=self,
             caption=_('file_io.all_supported_files'),
-            dir=str(session.PATH_HOME),
+            dir=str(pathlib.Path(selected_subtitle_filepath).parent),
             filter=supported_video_files
         )[0]
-        
-    if selected_video_filepath:
-        session.VIDEO['filepath'] = selected_video_filepath
-        if selected_subtitle_filepath:
-            session.SUBTITLE['filepath'] = selected_subtitle_filepath
-            
 
-        load_productionscreen(self)
-        
+    if not selected_video_filepath:
+        return False
+    session.VIDEO['filepath'] = selected_video_filepath
+    if selected_subtitle_filepath:
+        session.SUBTITLE['filepath'] = selected_subtitle_filepath
+    load_productionscreen(self)
+    return True
+
 
 def load_productionscreen(self):
     # Fresh project means a fresh undo stack — otherwise Ctrl+Z could
