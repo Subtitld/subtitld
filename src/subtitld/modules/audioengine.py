@@ -1009,6 +1009,11 @@ class SoundDeviceAudioEngine:
         # so a torn read can't make the callback render the wrong block.
         self._playhead_lock = threading.Lock()
         self._playhead = 0.0
+        # Where the last play() or seek() put the sound, and how long the
+        # output device holds audio before it is heard (the stream's own
+        # latency, once open). See `heard_position`.
+        self._anchor = 0.0
+        self.output_latency = 0.0
 
         self.buffer_pool = BufferPool(max_size=30)
 
@@ -1165,6 +1170,7 @@ class SoundDeviceAudioEngine:
                 prime_output_buffers_using_stream_callback=True,
                 callback=self._callback,
             )
+            self.output_latency = float(getattr(self.stream, 'latency', 0.0) or 0.0)
         except sd.PortAudioError as exc:
             self.stream = None
             if not self._no_output_logged:
@@ -1182,6 +1188,20 @@ class SoundDeviceAudioEngine:
     def playhead(self, value):
         with self._playhead_lock:
             self._playhead = value
+
+    @property
+    def heard_position(self):
+        """The position being heard. The playhead is what has been handed to
+        the device, which plays it `output_latency` later (85 ms on Linux,
+        several hundred on Windows' MME): following the playhead, the
+        picture ran that far ahead of the sound. Never before the last
+        play() or seek(): until its first audio comes out, that is where
+        the sound starts."""
+        with self._playhead_lock:
+            playhead = self._playhead
+        if not self.playing:
+            return playhead
+        return max(self._anchor, playhead - self.output_latency * self.speed)
 
     def load_audio(self, filepath):
         """Load audio source (streams from disk, not RAM)"""
@@ -1421,6 +1441,7 @@ class SoundDeviceAudioEngine:
             self._gc_was_enabled = gc.isenabled()
             gc.disable()
             self.playhead = position
+            self._anchor = position
             for track in self.tracks:
                 for clip in track.clips:
                     clip.clear_cache()
@@ -1459,6 +1480,7 @@ class SoundDeviceAudioEngine:
 
     def seek(self, seconds):
         self.playhead = seconds
+        self._anchor = seconds
         # Re-anchor the mixer to the new position. If we're playing,
         # this also clears the ring so the listener doesn't hear ~200 ms
         # of stale pre-roll from the old position before the new audio

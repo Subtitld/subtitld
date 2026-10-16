@@ -31,6 +31,12 @@ class PlayerWidget(QWidget):
         
         widget._audio_device = audioengine.SoundDeviceAudioEngine()
 
+        # play() starts the picture this much after the sound: the
+        # device's output latency, so both begin at the same moment.
+        widget._video_start_timer = QTimer(widget)
+        widget._video_start_timer.setSingleShot(True)
+        widget._video_start_timer.timeout.connect(widget._media_player.play)
+
         # Bridge USFX Phase 2 per-member completion to the engine: when a
         # deferred dub WAV lands on disk, ask the engine to preload it
         # right away instead of waiting for an audio-callback miss.
@@ -193,6 +199,7 @@ class PlayerWidget(QWidget):
                 except (TypeError, ValueError):
                     safety_ms = 80
                 if position >= duration_ms - safety_ms:
+                    widget._video_start_timer.stop()
                     widget._media_player.pause()
                     widget._audio_device.pause()
                     window = widget.window()
@@ -238,6 +245,7 @@ class PlayerWidget(QWidget):
             return
         if status != QMediaPlayer.EndOfMedia:
             return
+        widget._video_start_timer.stop()
         widget._media_player.pause()
         widget._audio_device.pause()
         duration_ms = widget._media_player.duration()
@@ -320,26 +328,36 @@ class PlayerWidget(QWidget):
         
     def stop(widget):
         """Function to stop playback (fake stop, it is pause + position 0)"""
+        widget._video_start_timer.stop()
         widget._media_player.pause()
         widget._audio_device.stop()
         widget.seek(0)
 
     def pause(widget):
         """Function to pause playback (fake pause, it just changes actual playback status)"""
+        widget._video_start_timer.stop()
         widget._media_player.pause()
         widget._audio_device.pause()
 
     def play(widget):
-        """Function to play (fake play, it just changes actual playback status)"""
-        widget._media_player.play()
+        """Play: the sound first, the picture once the sound comes out of
+        the device (its output latency later), so they start together
+        rather than the picture leading."""
         widget._audio_device.play(session.SUBTITLE.get('position', 0))
+        delay_ms = int(round(widget._audio_device.output_latency * 1000)) if widget._audio_device.playing else 0
+        if delay_ms > 0:
+            widget._video_start_timer.start(delay_ms)
+        else:
+            widget._media_player.play()
 
     def mute(widget):
         """Function to mute"""
         None
 
     def is_paused(widget):
-        return widget._media_player.playbackState() == QMediaPlayer.PausedState
+        # Between play() and the picture starting, it is already playing.
+        return (widget._media_player.playbackState() == QMediaPlayer.PausedState
+                and not widget._video_start_timer.isActive())
 
     def volume(widget, vol: int):
         """Function to change volume"""

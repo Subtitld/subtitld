@@ -1374,7 +1374,7 @@ def load(self):
         engine = _audio_engine()
         if engine is None:
             return float(session.SUBTITLE.get('position', 0) or 0)
-        ae_pos = engine.playhead
+        ae_pos = engine.heard_position
         if not _is_playing():
             # Paused — engine playhead is canonical, don't extrapolate.
             self._pos_anchor_sec = ae_pos
@@ -1489,7 +1489,9 @@ def load(self):
         mp = self.preview_panel_player._media_player
         if mp.playbackState() != QMediaPlayer.PlayingState:
             return
-        audio_pos = engine.playhead          # seconds
+        # Where the sound is heard, not what has been handed to the device:
+        # snapping to that left the picture `output_latency` ahead.
+        audio_pos = engine.heard_position    # seconds
         video_pos_ms = mp.position()         # ms
         drift_ms = video_pos_ms - audio_pos * 1000.0
         if abs(drift_ms) > _AV_SYNC_THRESHOLD_MS:

@@ -72,6 +72,14 @@ class MediaPlayer(QObject):
         return self.state
 
 
+class Engine:
+    playhead = 0.0
+
+    @property
+    def heard_position(self):
+        return self.playhead
+
+
 class Player(QObject):
     position_changed_signal = Signal()
 
@@ -79,8 +87,9 @@ class Player(QObject):
         super().__init__()
         self._media_player = MediaPlayer()
         # The audio engine, as far as the cursor asks it: its playhead, which
-        # each callback moves on by a block.
-        self._audio_device = types.SimpleNamespace(playhead=0.0)
+        # each callback moves on by a block, and the position heard, the
+        # same here, with no output latency.
+        self._audio_device = Engine()
 
     def seek(self, position):
         pass
