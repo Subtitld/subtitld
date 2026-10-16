@@ -3,6 +3,11 @@ from pathlib import Path
 
 from subtitld.modules.session import PATH_SUBTITLD_USER_CONFIG_FILE
 
+# The timeline's zoom, in pixels a second: the wheel, the buttons and the
+# keys all stay within it.
+TIMELINE_ZOOM_MIN = 10.0
+TIMELINE_ZOOM_MAX = 490.0
+
 
 class Config(dict):
     def __init__(self, filepath=PATH_SUBTITLD_USER_CONFIG_FILE):
@@ -20,6 +25,14 @@ class Config(dict):
         self.load_defaults()
 
         super().__init__(data)
+
+        # A zoom out of range draws the timeline too narrow to see (0 makes
+        # it vanish), and it was saved: the keys used to go past the limits.
+        zoom = self.get('timeline_zoom')
+        if not isinstance(zoom, (int, float)) or isinstance(zoom, bool) or zoom <= 0:
+            self['timeline_zoom'] = 100.0
+        else:
+            self['timeline_zoom'] = min(TIMELINE_ZOOM_MAX, max(TIMELINE_ZOOM_MIN, float(zoom)))
         
     def __getitem__(self, key):
         return super().get(key, False)  # returns False if not found

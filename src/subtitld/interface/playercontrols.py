@@ -35,6 +35,7 @@ from subtitld.interface import timeline, left_panel, subtitle_text_editor
 from subtitld.interface.translation import _
 
 from subtitld.modules import subtitles
+from subtitld.modules import config
 from subtitld.modules import session
 from subtitld.modules import utils
 from subtitld.modules import history
@@ -2295,7 +2296,7 @@ def zoomin_button_clicked(self):
     # timeline — pivot on the playhead (clear any mouse pivot left by a
     # prior wheel-zoom).
     self._zoom_mouse_pivot_x = None
-    session.CONFIG['timeline_zoom'] += 10.0
+    session.CONFIG['timeline_zoom'] = min(config.TIMELINE_ZOOM_MAX, session.CONFIG['timeline_zoom'] + 10.0)
     zoom_buttons_update(self)
 
 
@@ -2303,7 +2304,8 @@ def zoomin_button_clicked(self):
 def zoomout_button_clicked(self):
     """Function to call when zoonout button is clicked"""
     self._zoom_mouse_pivot_x = None
-    session.CONFIG['timeline_zoom'] -= 10.0
+    # The key works when the button is greyed out: it must stop there too.
+    session.CONFIG['timeline_zoom'] = max(config.TIMELINE_ZOOM_MIN, session.CONFIG['timeline_zoom'] - 10.0)
     zoom_buttons_update(self)
 
 
@@ -2314,8 +2316,8 @@ def zoom_buttons_update(self):
     schedules a single follow-up apply for the remaining gap. Earlier
     versions debounced via timer.start() on every call, but that meant the
     geometry never applied while the user kept scrolling — felt stuck."""
-    self.zoomout_button.setEnabled(True if session.CONFIG['timeline_zoom'] - 10.0 > 0.0 else False)
-    self.zoomin_button.setEnabled(True if session.CONFIG['timeline_zoom'] + 10.0 < 500.0 else False)
+    self.zoomout_button.setEnabled(session.CONFIG['timeline_zoom'] > config.TIMELINE_ZOOM_MIN)
+    self.zoomin_button.setEnabled(session.CONFIG['timeline_zoom'] < config.TIMELINE_ZOOM_MAX)
 
     if not hasattr(self, '_zoom_apply_timer') or self._zoom_apply_timer is None:
         self._zoom_apply_timer = QTimer(self)

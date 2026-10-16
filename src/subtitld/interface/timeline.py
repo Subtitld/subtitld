@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
+from subtitld.modules import config
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import utils
@@ -58,7 +59,7 @@ class TimelineScroll(QScrollArea):
                 notches = delta / 120.0
                 current = session.CONFIG.get('timeline_zoom', 100.0)
                 new_zoom = current * (1.12 ** notches)
-                new_zoom = max(10.0, min(490.0, new_zoom))
+                new_zoom = max(config.TIMELINE_ZOOM_MIN, min(config.TIMELINE_ZOOM_MAX, new_zoom))
                 if abs(new_zoom - current) >= 0.5:
                     session.CONFIG['timeline_zoom'] = new_zoom
                     playercontrols.zoom_buttons_update(widget.window())
