@@ -53,7 +53,7 @@ dependencies = [
     "numpy",
     "sounddevice",
     "soundfile",
-    "edge-tts",
+    "edge-tts>=7.3.1",
     "gTTS",
     "scipy"
 ]
@@ -67,11 +67,11 @@ dependencies = [
 # extras.
 [project.optional-dependencies]
 vision = ["mediapipe>=0.10.33,<0.11", "opencv-python"]
-dub = ["edge-tts", "gTTS"]
+dub = ["edge-tts>=7.3.1", "gTTS"]
 all = [
     "mediapipe>=0.10.33,<0.11",
     "opencv-python",
-    "edge-tts",
+    "edge-tts>=7.3.1",
     "gTTS",
 ]
 

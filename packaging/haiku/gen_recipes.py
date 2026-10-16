@@ -10,7 +10,7 @@ import hashlib, io, json, os, re, tarfile, urllib.request, zipfile
 
 # pypi name -> (version, haiku package name, extra REQUIRES lines)
 PKGS = [
-    ("edge-tts",        "7.2.8",  "edge_tts",        ["aiohttp_$pythonPackage", "certifi_$pythonPackage", "tabulate_$pythonPackage"]),
+    ("edge-tts",        "7.3.1",  "edge_tts",        ["aiohttp_$pythonPackage", "certifi_$pythonPackage", "tabulate_$pythonPackage"]),
     ("gTTS",            "2.5.4",  "gtts",            ["requests_$pythonPackage", "click_$pythonPackage"]),
     ("platformdirs",    "4.11.8", "platformdirs",    []),
     ("pysubs2",         "1.8.1",  "pysubs2",         []),

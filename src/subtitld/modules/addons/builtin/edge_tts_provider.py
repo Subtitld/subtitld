@@ -16,7 +16,6 @@ during the migration. The inner UI widget classes (`dubbingPanel`,
 from __future__ import annotations
 
 import asyncio
-import email.utils
 import logging
 import os
 import socket
@@ -24,10 +23,6 @@ import subprocess
 
 import aiohttp
 import edge_tts
-from edge_tts import communicate as _edge_communicate
-from edge_tts import drm as _edge_drm
-from edge_tts import voices as _edge_voices
-from edge_tts.constants import TRUSTED_CLIENT_TOKEN
 from PySide6.QtCore import QObject, QThread, Signal
 
 from subtitld.modules import session
@@ -69,33 +64,9 @@ _EDGE_TTS_LANGUAGES = (
 log = logging.getLogger(__name__)
 
 
-# edge-tts reads the date the server sends with strptime, whose day and month
-# names follow the locale, which Qt sets to the system's: in Portuguese
-# "Mon" and "Oct" are not read, and edge-tts fails with "Failed to parse
-# server date" instead of correcting the clock. Read it as e-mail dates are,
-# in any locale. Fixed upstream by rany2/edge-tts#491: this goes once a
-# release has it.
-def _server_date(date):
-    try:
-        return email.utils.parsedate_to_datetime(date).timestamp()
-    except (TypeError, ValueError, IndexError):
-        return None
-
-
-_edge_drm.DRM.parse_rfc2616_date = staticmethod(_server_date)
-
-# Microsoft is moving Edge's voices to another host: since October 2026 the
-# old one refuses speech (403) in many countries, from 12 October in the
-# United States too, while api.msedgeservices.com answers, with the same
-# token given as Ocp-Apim-Subscription-Key (rany2/edge-tts issue #490). The
-# new host first; after a 403, the other; whichever answers is kept for the
-# session. The voice list still comes from the old host, the new one after a
-# refusal.
-_NEW_HOST = 'api.msedgeservices.com/tts/cognitiveservices'
-_HOSTS = [f'wss://{_NEW_HOST}/websocket/v1?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}',
-          _edge_communicate.WSS_URL]
-_VOICE_LISTS = [_edge_voices.VOICE_LIST,
-                f'https://{_NEW_HOST}/voices/list?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}']
+# Microsoft refuses Edge's voices (403) where edge-tts is out of date with
+# how they are reached, as from October 2026 until edge-tts 7.3.1
+# (rany2/edge-tts issue #490).
 _REFUSED = ("Microsoft's Edge speech service refused the request (403). It is changing how its voices are reached, "
             "and in some countries they do not answer yet; until edge-tts follows, try again later or use another "
             "dubbing engine.")
@@ -159,25 +130,13 @@ class _EdgeTTSSpeechThread(QThread):
         # for those clips. Save MP3 to a temp file first, then transcode
         # to a real PCM WAV at the requested filename.
         mp3_temp = final_file + '.mp3'
-        for attempt, host in enumerate(list(_HOSTS)):
-            _edge_communicate.WSS_URL = host
-            communicate = edge_tts.Communicate(
-                text=markup.plain(subtitle['text']),
-                voice=voice,
-                rate=f'{subtitle.get("rate", 0):+d}%',
-                pitch=f'{subtitle.get("pitch", 0):+d}Hz',
-            )
-            try:
-                await communicate.save(mp3_temp)
-            except aiohttp.ClientResponseError as error:
-                if not _refused(error) or attempt == len(_HOSTS) - 1:
-                    raise
-                log.info('edge-tts: %s refused the request; trying %s', host.split('/')[2], _HOSTS[attempt + 1].split('/')[2])
-                continue
-            # This host answers: it goes first from now on.
-            _HOSTS.remove(host)
-            _HOSTS.insert(0, host)
-            break
+        communicate = edge_tts.Communicate(
+            text=markup.plain(subtitle['text']),
+            voice=voice,
+            rate=f'{subtitle.get("rate", 0):+d}%',
+            pitch=f'{subtitle.get("pitch", 0):+d}Hz',
+        )
+        await communicate.save(mp3_temp)
         if not os.path.isfile(mp3_temp) or os.path.getsize(mp3_temp) <= 0:
             return
         try:
@@ -208,17 +167,7 @@ class _EdgeTTSVoicesThread(QThread):
     voice_received = Signal(dict)
 
     def run(self):
-        for attempt, address in enumerate(list(_VOICE_LISTS)):
-            _edge_voices.VOICE_LIST = address
-            try:
-                voices = asyncio.run(edge_tts.list_voices())
-            except aiohttp.ClientResponseError as error:
-                if not _refused(error) or attempt == len(_VOICE_LISTS) - 1:
-                    raise
-                continue
-            _VOICE_LISTS.remove(address)
-            _VOICE_LISTS.insert(0, address)
-            break
+        voices = asyncio.run(edge_tts.list_voices())
         for v in voices:
             self.voice_received.emit(v)
 
