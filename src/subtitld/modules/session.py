@@ -131,7 +131,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
-    'XML': {'description': 'XML Subtitle format', 'extensions': ['xml']},
+    'XML': {'description': 'YouTube Timed Text format', 'extensions': ['srv3', 'ytt', 'srv1']},
     'USF': {'description': 'Universal Subtitle Format', 'extensions': ['usf']},
     'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
     'JSON': {'description': 'JSON format', 'extensions': ['json', 'json3']},

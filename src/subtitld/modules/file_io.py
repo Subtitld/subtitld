@@ -30,6 +30,7 @@ from subtitld.modules import session
 from subtitld.modules import ttml
 from subtitld.modules import waveform
 from subtitld.modules import webvtt
+from subtitld.modules import youtube_timedtext
 from subtitld.modules import usf
 from subtitld.modules import utils
 from subtitld.modules import video_subtitles
@@ -456,6 +457,16 @@ def _known_language(tag):
     return next((code for code in known if code.split('-')[0] == primary), '')
 
 
+def _youtube_xml(path):
+    """Whether the XML file at `path` is YouTube's timed text, by its root."""
+    try:
+        for _event, element in ET.iterparse(path, events=('start',)):
+            return youtube_timedtext.kind(element) is not None
+    except ET.ParseError:
+        return False
+    return False
+
+
 def _language_like_project(tag):
     """Subtitld's code for a language a file names (a code, as "pt" or
     "en_us", or a name, as Whisper keeps "English"), the project's own when
@@ -497,6 +508,18 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
             segments_list = webvtt.read(subtitle_file)
+
+        elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
+                subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
+            # YouTube's timed text: srv3 (styles and places), or srv1.
+            subtitle_format = 'XML'
+            try:
+                segments_list = youtube_timedtext.read(subtitle_file)
+            except ET.ParseError as error:
+                line, column = error.position
+                raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
@@ -1327,9 +1350,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                           line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
         elif subtitle_format in ['XML']:
-            # YouTube's timed-text XML was written through captionstransformer,
-            # which is gone; nothing writes it yet.
-            pass
+            # YouTube's timed text, srv3: pens for the formatting, window
+            # positions for the places.
+            youtube_timedtext.save(final_file, segments)
 
         elif subtitle_format in ['JSON']:
             # Whisper's format, as the plain-text editor writes it. Runtime

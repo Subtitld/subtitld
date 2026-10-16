@@ -1,8 +1,8 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, SBV, SUB, BCC); USF, USFX and JSON keep
-the project as it is.
+DFXP, TTML, SAMI, SCC, MCC, STL, SBV, SUB, BCC, XML); USF, USFX and JSON
+keep the project as it is.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -39,7 +39,7 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'BCC')
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'BCC', 'XML')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
