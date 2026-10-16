@@ -2,28 +2,29 @@ name: Release
 
 # Builds everything (build.yml), then publishes it.
 #
-#   channel=stable  →  a tag push (refs/tags/v*)
-#   channel=beta    →  a push whose commit subject ends with "(build)"
-#   channel=<input> →  run by hand with a channel chosen
+#   channel=stable  →  a release published on GitHub (Releases, Draft a new
+#                      release, its tag created with it); its title and
+#                      notes are kept, the builds attached to it
+#   channel=beta    →  a push whose commit subject ends with "(build)", or
+#                      a run by hand
 #
 # Any other push stops at the first, few-seconds job. To build without
 # publishing, run build.yml instead.
 
 on:
+  release:
+    types: [published]
   push:
-    tags:
-      - 'v*'
     branches:
       - '**'
   workflow_dispatch:
     inputs:
       channel:
-        description: Publish channel
+        description: Publish channel (stable comes from publishing a release)
         required: true
         type: choice
         options:
           - beta
-          - stable
 
 permissions:
   contents: write
@@ -46,10 +47,10 @@ jobs:
           HEAD_MSG: ${{ github.event.head_commit.message }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
         run: |
-          if [ -n "$DISPATCH_CHANNEL" ]; then
-            channel="$DISPATCH_CHANNEL"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
             channel=stable
+          elif [ -n "$DISPATCH_CHANNEL" ]; then
+            channel="$DISPATCH_CHANNEL"
           elif printf '%s' "$HEAD_MSG" | head -n 1 | grep -qE '\(build\)[[:space:]]*$'; then
             channel=beta
           else
@@ -62,27 +63,6 @@ jobs:
     needs: channel
     if: needs.channel.outputs.channel != ''
     uses: ./.github/workflows/build.yml
-
-  # ──────────────────────────────────────────────────────────────
-  # builds.subtitld.org: AppImage and Windows installer, both channels
-  # ──────────────────────────────────────────────────────────────
-  publish-server:
-    needs: [channel, build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: '{appimage,windows-installer}'
-          merge-multiple: true
-      - name: Upload to builds.subtitld.org
-        env:
-          SSHPASS: ${{ secrets.USER_PASS }}
-        run: |
-          sudo apt-get install -y sshpass
-          sshpass -e scp -o stricthostkeychecking=no *.AppImage \
-            subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/appimage/
-          sshpass -e scp -o stricthostkeychecking=no *-Setup.exe \
-            subtitld-builds@62.72.63.228:/home/subtitld-builds/htdocs/builds.subtitld.org/windows/
 
   # ──────────────────────────────────────────────────────────────
   # Snap Store: the beta or stable channel
@@ -150,7 +130,6 @@ jobs:
     needs: [channel, build]
     if: needs.channel.outputs.channel == 'stable'
     runs-on: ubuntu-latest
-    continue-on-error: true  # remove once AUR_SSH_PRIVATE_KEY is configured
     env:
       VERSION: ${{ needs.build.outputs.version }}
       TAG: ${{ github.ref_name }}
@@ -200,13 +179,13 @@ jobs:
           # One file for the release: the ports, to unpack into haikuports.
           tar -C artifacts/haikuports -czf "artifacts/subtitld-$VERSION-haikuports.tar.gz" dev-python media-video
           rm -r artifacts/haikuports
+      # The release published: its title and notes stay, the build
+      # version (the date; the tag is a free-form label) follows them,
+      # and every package is attached.
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          # The tag is a free-form label; the build version is the date.
-          name: Subtitld ${{ github.ref_name }}
           body: |
             Build version: `${{ env.VERSION }}`
           append_body: true
           files: artifacts/*
-          generate_release_notes: true

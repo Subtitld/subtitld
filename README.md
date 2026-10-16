@@ -85,8 +85,8 @@ You can also search, rate and open subtitles there, and publish your own, all fr
 
 | | |
 |---|---|
-| **Linux** | <a href="https://snapcraft.io/subtitld"><img alt="Get it from the Snap Store" src="https://snapcraft.io/static/images/badges/en/snap-store-black.svg" height="48"></a> <a href="https://flathub.org/apps/org.subtitld.Subtitld"><img alt="Get it on Flathub" src="https://flathub.org/api/badge?locale=en" height="48"></a><br>Arch Linux: [`subtitld`](https://aur.archlinux.org/packages/subtitld) on the AUR · Any distribution: the AppImage from [builds.subtitld.org](https://builds.subtitld.org) |
-| **Windows** | <a href="https://apps.microsoft.com/detail/9MXLZSL8JPQH"><img alt="Get it from Microsoft" src="https://get.microsoft.com/images/en-us%20dark.svg" height="48"></a><br>Or the installer, or the portable version, from [builds.subtitld.org](https://builds.subtitld.org) |
+| **Linux** | <a href="https://snapcraft.io/subtitld"><img alt="Get it from the Snap Store" src="https://snapcraft.io/static/images/badges/en/snap-store-black.svg" height="48"></a> <a href="https://flathub.org/apps/org.subtitld.Subtitld"><img alt="Get it on Flathub" src="https://flathub.org/api/badge?locale=en" height="48"></a><br>Arch Linux: [`subtitld`](https://aur.archlinux.org/packages/subtitld) on the AUR · Any distribution: the AppImage from the [latest release](https://github.com/Subtitld/subtitld/releases/latest) |
+| **Windows** | <a href="https://apps.microsoft.com/detail/9MXLZSL8JPQH"><img alt="Get it from Microsoft" src="https://get.microsoft.com/images/en-us%20dark.svg" height="48"></a><br>Or the installer, or the portable version, from the [latest release](https://github.com/Subtitld/subtitld/releases/latest) |
 | **macOS** | With Python, [from PyPI](#from-pypi) |
 | **Haiku** | Coming to HaikuPorts; the recipes are in [`packaging/haiku`](packaging/haiku) |
 
