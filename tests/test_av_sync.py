@@ -1,6 +1,7 @@
 """Sound and picture together: the engine's heard position (the playhead less
 the device's output latency, never before the last play or seek), play()
-starting the picture that latency after the sound, and the timeline zoom kept
+starting the picture that latency after the sound, WASAPI first on Windows
+(MME understates what it holds), and the timeline zoom kept
 in range (a zoom of 0, which the keys could reach, hid the timeline for good).
 
 Standalone script, like the other suites here. It puts this checkout's src/
@@ -52,6 +53,24 @@ engine._playhead = 10.2
 check('the latency not yet out: where play started', engine.heard_position, 10.0)
 engine.speed, engine._playhead = 2.0, 12.0
 check('at twice the speed, twice the content in the buffer', round(engine.heard_position, 6), 11.2)
+
+print('the output: WASAPI first on Windows')
+real_platform, real_hostapis = audioengine.sys.platform, audioengine.sd.query_hostapis
+audioengine.sd.query_hostapis = lambda: ({'name': 'MME', 'default_output_device': 3},
+                                         {'name': 'Windows DirectSound', 'default_output_device': 5},
+                                         {'name': 'Windows WASAPI', 'default_output_device': 7})
+try:
+    audioengine.sys.platform = 'win32'
+    choices = audioengine.SoundDeviceAudioEngine._output_choices()
+    check('Windows: WASAPI\'s default output, converting, then the default',
+          [(device, type(extra).__name__) for device, extra in choices], [(7, 'WasapiSettings'), (None, 'NoneType')])
+    audioengine.sd.query_hostapis = lambda: ({'name': 'MME', 'default_output_device': 3},
+                                             {'name': 'Windows WASAPI', 'default_output_device': -1})
+    check('Windows, no WASAPI output: the default', audioengine.SoundDeviceAudioEngine._output_choices(), [(None, None)])
+    audioengine.sys.platform = 'linux'
+    check('elsewhere: the default', audioengine.SoundDeviceAudioEngine._output_choices(), [(None, None)])
+finally:
+    audioengine.sys.platform, audioengine.sd.query_hostapis = real_platform, real_hostapis
 
 print('play: the picture after the sound')
 from subtitld.interface.preview_panel import PlayerWidget

@@ -1160,24 +1160,58 @@ class SoundDeviceAudioEngine:
         raises; that must not stop the app from starting. Log it once,
         leave ``self.stream`` None, and let ``play()`` try again: the
         engine still mixes and renders, playback is just silent."""
-        try:
-            self.stream = sd.OutputStream(
-                samplerate=self.samplerate,
-                blocksize=self.blocksize,
-                channels=2,
-                dtype='float32',
-                latency='high',
-                prime_output_buffers_using_stream_callback=True,
-                callback=self._callback,
-            )
+        error = None
+        for device, extra_settings in self._output_choices():
+            try:
+                self.stream = sd.OutputStream(
+                    samplerate=self.samplerate,
+                    blocksize=self.blocksize,
+                    channels=2,
+                    dtype='float32',
+                    latency='high',
+                    prime_output_buffers_using_stream_callback=True,
+                    callback=self._callback,
+                    device=device,
+                    extra_settings=extra_settings,
+                )
+            except sd.PortAudioError as exc:
+                self.stream, error = None, exc
+                continue
             self.output_latency = float(getattr(self.stream, 'latency', 0.0) or 0.0)
-        except sd.PortAudioError as exc:
-            self.stream = None
-            if not self._no_output_logged:
-                self._no_output_logged = True
-                sys.stderr.write(f'[audioengine] WARNING: no audio output device, playback is silent ({exc})\n')
-                sys.stderr.flush()
-        return self.stream is not None
+            try:
+                info = sd.query_devices(self.stream.device)
+                where = f"{sd.query_hostapis(info['hostapi'])['name']}, {info['name']}"
+            except Exception:
+                where = 'default output'
+            sys.stderr.write(f'[audioengine] output: {where}, latency {self.output_latency * 1000:.0f} ms\n')
+            sys.stderr.flush()
+            return True
+        if not self._no_output_logged:
+            self._no_output_logged = True
+            sys.stderr.write(f'[audioengine] WARNING: no audio output device, playback is silent ({error})\n')
+            sys.stderr.flush()
+        return False
+
+    @staticmethod
+    def _output_choices():
+        """The outputs to try, in turn: (device, extra_settings). On Windows,
+        WASAPI's default output first, in shared mode converting to the
+        device's rate. PortAudio's own default there is MME, which holds
+        some 430 ms of audio and reports about 175: the picture, lined up
+        with what it reports, still ran a quarter of a second ahead of the
+        sound. WASAPI reports what it holds, and holds less. Then the
+        default, everywhere."""
+        choices = []
+        if sys.platform == 'win32':
+            try:
+                for hostapi in sd.query_hostapis():
+                    if 'WASAPI' in hostapi['name'] and hostapi['default_output_device'] >= 0:
+                        choices.append((hostapi['default_output_device'], sd.WasapiSettings(auto_convert=True)))
+                        break
+            except Exception:
+                pass
+        choices.append((None, None))
+        return choices
 
     @property
     def playhead(self):
