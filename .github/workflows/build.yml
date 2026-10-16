@@ -150,6 +150,17 @@ jobs:
       - run: python3 .github/scripts/inject-version.py "$VERSION"
       - uses: snapcore/action-build@v1
         id: snapcraft
+      - name: Start it on a clean Ubuntu
+        # In a fresh LXD container: the runner has libraries of its own (a
+        # strict snap reads the host's /etc), which would hide one the snap
+        # fails to find.
+        run: |
+          sudo snap install lxd 2>/dev/null || sudo snap refresh lxd 2>/dev/null || true
+          sudo lxd waitready
+          sudo lxd init --auto 2>/dev/null || true
+          # Docker's firewall drops the containers' traffic otherwise.
+          sudo iptables -P FORWARD ACCEPT
+          sudo bash .github/scripts/smoke-snap.sh "${{ steps.snapcraft.outputs.snap }}" < /dev/null
       - uses: actions/upload-artifact@v7
         with:
           name: snap
@@ -176,6 +187,8 @@ jobs:
           manifest-path: flatpak/org.subtitld.Subtitld.yml
           cache-key: flatpak-builder-${{ hashFiles('flatpak/**') }}
           upload-artifact: false
+      - name: Start it
+        run: bash .github/scripts/smoke-flatpak.sh "Subtitld-$VERSION.flatpak"
       - uses: actions/upload-artifact@v7
         with:
           name: flatpak
