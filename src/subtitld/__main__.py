@@ -4,6 +4,11 @@ import argparse
 import pathlib
 import inspect
 
+# Before anything loads PortAudio through ctypes (sounddevice): find the
+# copy a snap or another bundle carries on LD_LIBRARY_PATH.
+from subtitld.modules import library_path
+library_path.install()
+
 # MediaPipe (used by the Speakers face detection) must be imported before
 # PySide6/Qt when it is a release with the legacy `solutions` API (0.10.21
 # and older, built on protobuf; 0.10.33 and newer do not care). Importing

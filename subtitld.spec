@@ -53,7 +53,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='subtitld',
-    debug=True,
+    debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
