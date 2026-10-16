@@ -68,6 +68,35 @@ parser.add_argument('--version', help='Prints the actual version of Subtitld.', 
 args = parser.parse_args()
 
 
+def _set_class_icon(window):
+    """Windows: Subtitld's icon on the window's class too, not only on the
+    window. The taskbar asks the window for its icon as the button appears;
+    started with a file, the app is busy opening it right then, the taskbar
+    gives up waiting and takes the class's icon instead: Windows' generic
+    one, as Qt looks for an IDI_ICON1 resource the PyInstaller build does
+    not have. Before the window is shown, so the button never sees another."""
+    if sys.platform != 'win32':
+        return
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    user32.LoadImageW.restype = wintypes.HANDLE
+    user32.LoadImageW.argtypes = (wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int,
+                                  wintypes.UINT)
+    user32.SetClassLongPtrW.restype = ctypes.c_void_p
+    user32.SetClassLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int, ctypes.c_void_p)
+    IMAGE_ICON, LR_LOADFROMFILE = 1, 0x10
+    SM_CXICON, SM_CYICON, SM_CXSMICON, SM_CYSMICON = 11, 12, 49, 50
+    GCLP_HICON, GCLP_HICONSM = -14, -34
+    path = os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld.ico')
+    hwnd = int(window.winId())
+    for index, width, height in ((GCLP_HICON, SM_CXICON, SM_CYICON), (GCLP_HICONSM, SM_CXSMICON, SM_CYSMICON)):
+        icon = user32.LoadImageW(None, path, IMAGE_ICON, user32.GetSystemMetrics(width),
+                                 user32.GetSystemMetrics(height), LR_LOADFROMFILE)
+        if icon:
+            user32.SetClassLongPtrW(hwnd, index, icon)
+
+
 class Window(_MainWindowBase):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -130,6 +159,7 @@ class Window(_MainWindowBase):
         shortcuts.load(self, session.CONFIG['shortcuts'])
 
         self.titleBar.raise_()
+        _set_class_icon(self)
         self.showMaximized()
 
         if session.SUBTITLE.get('filepath', False) and session.VIDEO.get('filepath', False):
