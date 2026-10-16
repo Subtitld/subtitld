@@ -9,6 +9,11 @@
 ; unless /AllUsers is given; /LANG=1046 picks a language (testing).
 ;
 ; The pictures and icons are rendered by packaging/branding/render-icons.py.
+;
+; File types, for the user or for everyone as Subtitld is installed: .usfx,
+; Subtitld's own, opens in Subtitld; .srt, .vtt, .ass and .ssa get Subtitld
+; in "Open with" and in Settings > Default apps, without taking them over.
+; The same types as the MSIX package's.
 
 Unicode True
 ManifestDPIAware true
@@ -20,6 +25,10 @@ ManifestDPIAware true
 !define PUBLISHER "Subtitld"
 !define WEBSITE "https://subtitld.org"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
+!define CLASSES "Software\Classes"
+!define CAPABILITIES "Software\${APPNAME}\Capabilities"
+!define PROGID_PROJECT "Subtitld.usfx"
+!define PROGID_SUBTITLE "Subtitld.subtitle"
 
 Name "${APPNAME}"
 OutFile "Subtitld-Setup.exe"
@@ -76,6 +85,12 @@ Page custom UsersPage UsersPageLeave
 
 LangString DESKTOP_SHORTCUT ${LANG_ENGLISH} "Create a desktop shortcut"
 LangString DESKTOP_SHORTCUT ${LANG_PORTUGUESEBR} "Criar um atalho na área de trabalho"
+LangString TYPE_PROJECT ${LANG_ENGLISH} "Subtitld project"
+LangString TYPE_PROJECT ${LANG_PORTUGUESEBR} "Projeto do Subtitld"
+LangString TYPE_SUBTITLE ${LANG_ENGLISH} "Subtitles"
+LangString TYPE_SUBTITLE ${LANG_PORTUGUESEBR} "Legendas"
+LangString APP_DESCRIPTION ${LANG_ENGLISH} "Create, edit, transcribe, translate and dub subtitles"
+LangString APP_DESCRIPTION ${LANG_PORTUGUESEBR} "Crie, edite, transcreva, traduza e duble legendas"
 
 VIProductVersion "${VERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "${APPNAME}"
@@ -236,6 +251,74 @@ Function UsersPageLeave
 FunctionEnd
 
 
+; ── File types ─────────────────────────────────────────────────────────────
+
+; A type Subtitld opens: Subtitld under "Open with" for it, among the types
+; Settings > Default apps offers for Subtitld, and in Subtitld.exe's own list.
+!macro OpenWith EXT PROGID
+  WriteRegStr SHCTX "${CLASSES}\${EXT}\OpenWithProgids" "${PROGID}" ""
+  WriteRegStr SHCTX "${CAPABILITIES}\FileAssociations" "${EXT}" "${PROGID}"
+  WriteRegStr SHCTX "${CLASSES}\Applications\Subtitld.exe\SupportedTypes" "${EXT}" ""
+!macroend
+
+!macro ForgetOpenWith EXT PROGID
+  DeleteRegValue SHCTX "${CLASSES}\${EXT}\OpenWithProgids" "${PROGID}"
+  DeleteRegKey /ifempty SHCTX "${CLASSES}\${EXT}\OpenWithProgids"
+  DeleteRegKey /ifempty SHCTX "${CLASSES}\${EXT}"
+!macroend
+
+!macro ProgId PROGID NAME
+  WriteRegStr SHCTX "${CLASSES}\${PROGID}" "" "${NAME}"
+  WriteRegStr SHCTX "${CLASSES}\${PROGID}\DefaultIcon" "" '"$INSTDIR\Subtitld.exe",0'
+  WriteRegStr SHCTX "${CLASSES}\${PROGID}\shell\open\command" "" '"$INSTDIR\Subtitld.exe" "%1"'
+!macroend
+
+Function RegisterFileTypes
+  !insertmacro ProgId "${PROGID_PROJECT}" "$(TYPE_PROJECT)"
+  !insertmacro ProgId "${PROGID_SUBTITLE}" "$(TYPE_SUBTITLE)"
+
+  WriteRegStr SHCTX "${CLASSES}\Applications\Subtitld.exe" "FriendlyAppName" "${APPNAME}"
+  WriteRegStr SHCTX "${CLASSES}\Applications\Subtitld.exe\shell\open\command" "" '"$INSTDIR\Subtitld.exe" "%1"'
+  WriteRegStr SHCTX "${CAPABILITIES}" "ApplicationName" "${APPNAME}"
+  WriteRegStr SHCTX "${CAPABILITIES}" "ApplicationDescription" "$(APP_DESCRIPTION)"
+  WriteRegStr SHCTX "Software\RegisteredApplications" "${APPNAME}" "${CAPABILITIES}"
+
+  ; .usfx is Subtitld's own: it opens in Subtitld.
+  !insertmacro OpenWith ".usfx" "${PROGID_PROJECT}"
+  WriteRegStr SHCTX "${CLASSES}\.usfx" "" "${PROGID_PROJECT}"
+  ; The subtitle formats keep whatever opens them now.
+  !insertmacro OpenWith ".srt" "${PROGID_SUBTITLE}"
+  !insertmacro OpenWith ".vtt" "${PROGID_SUBTITLE}"
+  !insertmacro OpenWith ".ass" "${PROGID_SUBTITLE}"
+  !insertmacro OpenWith ".ssa" "${PROGID_SUBTITLE}"
+
+  ; Tell Explorer, so the icons and "Open with" change now, not at the next sign-in.
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+FunctionEnd
+
+Function un.UnregisterFileTypes
+  ; .usfx's default, unless something else has taken it since.
+  ReadRegStr $0 SHCTX "${CLASSES}\.usfx" ""
+  ${If} $0 == "${PROGID_PROJECT}"
+    DeleteRegValue SHCTX "${CLASSES}\.usfx" ""
+  ${EndIf}
+  !insertmacro ForgetOpenWith ".usfx" "${PROGID_PROJECT}"
+  !insertmacro ForgetOpenWith ".srt" "${PROGID_SUBTITLE}"
+  !insertmacro ForgetOpenWith ".vtt" "${PROGID_SUBTITLE}"
+  !insertmacro ForgetOpenWith ".ass" "${PROGID_SUBTITLE}"
+  !insertmacro ForgetOpenWith ".ssa" "${PROGID_SUBTITLE}"
+
+  DeleteRegKey SHCTX "${CLASSES}\${PROGID_PROJECT}"
+  DeleteRegKey SHCTX "${CLASSES}\${PROGID_SUBTITLE}"
+  DeleteRegKey SHCTX "${CLASSES}\Applications\Subtitld.exe"
+  DeleteRegValue SHCTX "Software\RegisteredApplications" "${APPNAME}"
+  DeleteRegKey SHCTX "${CAPABILITIES}"
+  DeleteRegKey /ifempty SHCTX "Software\${APPNAME}"
+
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+FunctionEnd
+
+
 ; ── Install ────────────────────────────────────────────────────────────────
 
 Section "Install"
@@ -244,6 +327,7 @@ Section "Install"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   CreateShortcut "$SMPROGRAMS\${APPNAME}.lnk" "$INSTDIR\Subtitld.exe"
+  Call RegisterFileTypes
 
   WriteRegStr SHCTX "${UNINSTALL_KEY}" "DisplayName" "${APPNAME}"
   WriteRegStr SHCTX "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
@@ -329,4 +413,5 @@ Section "Uninstall"
     RMDir "$INSTDIR"
   ${EndIf}
   DeleteRegKey SHCTX "${UNINSTALL_KEY}"
+  Call un.UnregisterFileTypes
 SectionEnd
