@@ -30,6 +30,11 @@ Writes:
     .github/readme/banner.png                 the top of the README: the
                                               mark, the name and a line
                                               on the slate glow
+    packaging/msix/store-listing/tile-icon.png
+    packaging/msix/store-listing/hero.png
+                                              the Microsoft Store listing's
+                                              app tile icon and hero art,
+                                              uploaded in Partner Center
     packaging/haiku/media-video/subtitld/additional-files/
         subtitld.hvif                         the Haiku icon (HVIF, Haiku's
                                               vector format), for HaikuDepot
@@ -321,6 +326,99 @@ def write_installer_images(defs: str, mark: str, flat: str, box: tuple[float, fl
     print('packaging/nsis/header.bmp')
 
 
+def write_store_listing(defs: str, mark: str, box: tuple[float, float, float, float]) -> None:
+    """The pictures for the Microsoft Store listing, uploaded in Partner
+    Center rather than packaged:
+
+    tile-icon.png, 300 x 300: the 1:1 app tile icon, which the Store shows
+    in place of the package's StoreLogo. The Store tiles' slate glow, the
+    mark a little bigger than on the big tiles.
+
+    hero.png, 3840 x 2160: the 16:9 super hero art, at the top of the
+    listing and in promotions. The Store wants no text and no screenshots
+    of the app in it, its key image in the centre (some layouts crop) and
+    nothing that matters in the bottom third (a gradient may cover it). The
+    mark, large, over a waveform and subtitle blocks in the timeline's
+    speaker colours drifting across it, faint behind the mark."""
+    import math
+    import random
+
+    x, y, width, height = box
+    out = MSIX / 'store-listing'
+    out.mkdir(exist_ok=True)
+
+    def render(name: str, w: int, h: int, body: str) -> None:
+        source = HERE / f'.{name}.svg'
+        source.write_text(
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<defs>{defs}</defs>{body}</svg>\n')
+        try:
+            inkscape_png(source, out / f'{name}.png', w)
+        finally:
+            source.unlink()
+        print((out / f'{name}.png').relative_to(ROOT))
+
+    def place(size: float, centre_x: float, centre_y: float) -> str:
+        scale = size / width
+        tx = centre_x - 0.0835 * size - (x + width / 2) * scale     # a little left: it points right
+        ty = centre_y - (y + height / 2) * scale
+        return f'<g transform="translate({tx:.3f},{ty:.3f}) scale({scale:.5f})">{mark}</g>'
+
+    glow = ('<radialGradient id="{id}" cx="{cx}" cy="{cy}" r="{r}" gradientUnits="objectBoundingBox">'
+            '<stop offset="0" stop-color="#566f84"/><stop offset="1" stop-color="#1a232b"/></radialGradient>')
+
+    w = h = 300
+    render('tile-icon', w, h,
+           glow.format(id='tileIconGlow', cx=0.5, cy=0.42, r=0.79)
+           + f'<rect width="{w}" height="{h}" fill="url(#tileIconGlow)"/>{place(0.5 * w, w / 2, h / 2)}')
+
+    # The hero: everything that matters on a band at 40% of the height.
+    w, h = 3840, 2160
+    band = 0.40 * h
+    rng = random.Random(26)                    # the same picture every run
+    layers = []
+
+    # The waveform: a mirrored envelope of a few sines and some grain,
+    # fading out to the sides.
+    steps = 480
+    tops = []
+    for k in range(steps + 1):
+        t = k / steps
+        fade = math.sin(math.pi * t) ** 0.6
+        level = (0.55 + 0.25 * math.sin(t * 23.0) + 0.20 * math.sin(t * 61.0 + 1.3)) * (0.6 + 0.4 * rng.random())
+        tops.append((t * w, band - fade * level * 0.17 * h))
+    outline = ' '.join(f'{px:.1f},{py:.1f}' for px, py in tops)
+    mirrored = ' '.join(f'{px:.1f},{2 * band - py:.1f}' for px, py in reversed(tops))
+    layers.append(f'<polygon points="{outline} {mirrored}" fill="#8fb0c9" fill-opacity="0.16"/>')
+
+    # Subtitle blocks along it, as the timeline draws them: pale, with the
+    # speaker's colour along the top, further ones fainter.
+    colours = ('#ef6c95', '#4e9cf0', '#ef6c95', '#55d43f', '#4e9cf0', '#f0b94e', '#4e9cf0', '#ef6c95')
+    cursor = 0.03 * w
+    for k, colour in enumerate(colours):
+        block_w = rng.uniform(0.07, 0.14) * w
+        block_h = 0.15 * h
+        top = band - block_h / 2 + rng.uniform(-0.05, 0.05) * h
+        # Faint behind the mark and at the edges, clearest between.
+        distance = abs((cursor + block_w / 2) / w - 0.5) * 2            # 0 in the middle, 1 at the sides
+        opacity = 0.06 + 0.34 * math.sin(math.pi * min(1.0, distance * 1.15))
+        layers.append(
+            f'<g opacity="{opacity:.3f}"><rect x="{cursor:.1f}" y="{top:.1f}" width="{block_w:.1f}" '
+            f'height="{block_h:.1f}" rx="10" fill="#b8cee0"/>'
+            f'<rect x="{cursor:.1f}" y="{top:.1f}" width="{block_w:.1f}" height="12" rx="4" fill="{colour}"/></g>')
+        cursor += block_w + rng.uniform(0.012, 0.05) * w
+        if cursor > 0.97 * w:
+            break
+
+    # A playhead on the left, and the mark over it all.
+    layers.append(f'<rect x="{0.29 * w:.1f}" y="{band - 0.2 * h:.1f}" width="6" height="{0.4 * h:.1f}" '
+                  'fill="#ef5b5b" fill-opacity="0.5"/>')
+    render('hero', w, h,
+           glow.format(id='heroGlow', cx=0.5, cy=0.40, r=0.75)
+           + f'<rect width="{w}" height="{h}" fill="url(#heroGlow)"/>' + ''.join(layers)
+           + place(0.34 * h, w / 2, band))
+
+
 def write_readme_banner(defs: str, mark: str, box: tuple[float, float, float, float]) -> None:
     """The banner at the top of the README: the installer's picture laid out
     wide. The mark on the slate glow, the name beside it in Montserrat Light,
@@ -598,6 +696,7 @@ def main() -> int:
     write_installer_icons(defs, mark, flat, box)
     write_installer_images(defs, mark, flat, box)
     write_readme_banner(defs, mark, box)
+    write_store_listing(defs, mark, box)
     write_haiku_icon(text)
     tiles = write_tiles(defs, mark, box)
     print(tiles.relative_to(ROOT))
