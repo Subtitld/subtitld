@@ -81,6 +81,7 @@ Issues = "https://gitlab.com/jonata/subtitld/issues"
 
 [project.scripts]
 subtitld = "subtitld.__main__:main"
+subtitld-thumbnailer = "subtitld.thumbnailer:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "subtitld.__version__"}

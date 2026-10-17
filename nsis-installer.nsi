@@ -11,9 +11,10 @@
 ; The pictures and icons are rendered by packaging/branding/render-icons.py.
 ;
 ; File types, for the user or for everyone as Subtitld is installed: .usfx,
-; Subtitld's own, opens in Subtitld; .srt, .vtt, .ass and .ssa get Subtitld
-; in "Open with" and in Settings > Default apps, without taking them over.
-; The same types as the MSIX package's.
+; Subtitld's own, opens in Subtitld, with its own icon and, in Explorer, the
+; picture it carries (UsfxThumbnail.dll); .srt, .vtt, .ass and .ssa get
+; Subtitld in "Open with" and in Settings > Default apps, without taking
+; them over. The same types as the MSIX package's.
 
 Unicode True
 ManifestDPIAware true
@@ -29,6 +30,10 @@ ManifestDPIAware true
 !define CAPABILITIES "Software\${APPNAME}\Capabilities"
 !define PROGID_PROJECT "Subtitld.usfx"
 !define PROGID_SUBTITLE "Subtitld.subtitle"
+; The thumbnail provider (packaging/windows/thumbnail), and Windows' key for
+; a type's thumbnail handler.
+!define THUMBNAIL_CLSID "{59A8C040-1202-4033-8DB5-F5E7A7709527}"
+!define THUMBNAIL_HANDLER "{e357fccd-a995-4576-b01f-234630154e96}"
 
 Name "${APPNAME}"
 OutFile "Subtitld-Setup.exe"
@@ -287,6 +292,13 @@ Function RegisterFileTypes
   ; .usfx is Subtitld's own: it opens in Subtitld.
   !insertmacro OpenWith ".usfx" "${PROGID_PROJECT}"
   WriteRegStr SHCTX "${CLASSES}\.usfx" "" "${PROGID_PROJECT}"
+  ; and Explorer shows the picture it carries.
+  ${If} ${FileExists} "$INSTDIR\UsfxThumbnail.dll"
+    WriteRegStr SHCTX "${CLASSES}\CLSID\${THUMBNAIL_CLSID}" "" "Subtitld project thumbnail"
+    WriteRegStr SHCTX "${CLASSES}\CLSID\${THUMBNAIL_CLSID}\InprocServer32" "" "$INSTDIR\UsfxThumbnail.dll"
+    WriteRegStr SHCTX "${CLASSES}\CLSID\${THUMBNAIL_CLSID}\InprocServer32" "ThreadingModel" "Apartment"
+    WriteRegStr SHCTX "${CLASSES}\.usfx\ShellEx\${THUMBNAIL_HANDLER}" "" "${THUMBNAIL_CLSID}"
+  ${EndIf}
   ; The subtitle formats keep whatever opens them now.
   !insertmacro OpenWith ".srt" "${PROGID_SUBTITLE}"
   !insertmacro OpenWith ".vtt" "${PROGID_SUBTITLE}"
@@ -298,6 +310,13 @@ Function RegisterFileTypes
 FunctionEnd
 
 Function un.UnregisterFileTypes
+  ; The thumbnail handler, if it is still ours.
+  ReadRegStr $0 SHCTX "${CLASSES}\.usfx\ShellEx\${THUMBNAIL_HANDLER}" ""
+  ${If} $0 == "${THUMBNAIL_CLSID}"
+    DeleteRegKey SHCTX "${CLASSES}\.usfx\ShellEx\${THUMBNAIL_HANDLER}"
+    DeleteRegKey /ifempty SHCTX "${CLASSES}\.usfx\ShellEx"
+  ${EndIf}
+  DeleteRegKey SHCTX "${CLASSES}\CLSID\${THUMBNAIL_CLSID}"
   ; .usfx's default, unless something else has taken it since.
   ReadRegStr $0 SHCTX "${CLASSES}\.usfx" ""
   ${If} $0 == "${PROGID_PROJECT}"
@@ -324,6 +343,13 @@ FunctionEnd
 
 Section "Install"
   SetOutPath $INSTDIR
+  ; Explorer may hold the thumbnail extension open: a loaded DLL cannot be
+  ; replaced, but it can be moved out of the way.
+  ${If} ${FileExists} "$INSTDIR\UsfxThumbnail.dll"
+    Delete "$INSTDIR\UsfxThumbnail.old"
+    Rename "$INSTDIR\UsfxThumbnail.dll" "$INSTDIR\UsfxThumbnail.old"
+    Delete /REBOOTOK "$INSTDIR\UsfxThumbnail.old"
+  ${EndIf}
   File /r "dist\Subtitld\*.*"
   File "packaging\nsis\usfx.ico"
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -409,7 +435,7 @@ Section "Uninstall"
   Delete "$DESKTOP\${APPNAME}.lnk"
   ; Only a folder that is Subtitld's: the directory page lets people pick any.
   ${If} ${FileExists} "$INSTDIR\Subtitld.exe"
-    RMDir /r "$INSTDIR"
+    RMDir /r /REBOOTOK "$INSTDIR"         ; the thumbnail DLL, if Explorer holds it
   ${Else}
     Delete "$INSTDIR\uninstall.exe"
     RMDir "$INSTDIR"

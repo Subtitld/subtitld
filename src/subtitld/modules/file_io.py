@@ -1228,11 +1228,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         SPEAKERS = snap['SPEAKERS']
         VIDEO = snap['VIDEO']
         FORMAT = snap['FORMAT']
+        thumbnail = snap.get('THUMBNAIL')
     else:
         SUBTITLE = session.SUBTITLE
         SPEAKERS = session.SPEAKERS
         VIDEO = session.VIDEO
         FORMAT = session.FORMAT
+        thumbnail = None
     document_language = (SUBTITLE.get('language') or '').strip()
     if document_language:
         language = document_language
@@ -1530,7 +1532,19 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     'npy': 'application/octet-stream',
                 }.get(ext, 'application/octet-stream')
 
+            if thumbnail is None and snap is None and subtitle_format == 'USFX':
+                thumbnail = _thumbnail_png()
+            if not thumbnail and os.path.isfile(final_file):
+                # No picture now (the video not loaded, or missing): keep the
+                # one the file had.
+                try:
+                    with zipfile.ZipFile(final_file) as old_bundle:
+                        thumbnail = old_bundle.read('thumbnail.png')
+                except (KeyError, OSError, zipfile.BadZipFile):
+                    thumbnail = None
             manifest_entries = [('subtitles.usf', 'application/x-usf+xml')]
+            if thumbnail:
+                manifest_entries.append(('thumbnail.png', 'image/png'))
             for name in speaker_image_bytes:
                 manifest_entries.append((f'assets/speakers/{_safe_asset_name(name)}.png', 'image/png'))
             for arc in dub_files_to_include.values():
@@ -1562,6 +1576,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                     zf.writestr('subtitles.usf', xml_content)
                     zf.writestr('manifest.xml', manifest_xml)
+                    if thumbnail:
+                        # Already compressed: stored as is.
+                        zf.writestr('thumbnail.png', thumbnail, compress_type=zipfile.ZIP_STORED)
                     for source, arc in dub_files_to_include.items():
                         zf.write(source, arc)
                     for name, img_bytes in speaker_image_bytes.items():
@@ -1679,6 +1696,21 @@ def _prune_backups(stem):
 #      snapshot single-writer.
 _save_lock = threading.Lock()
 _active_save_snapshot = None
+
+# Set by the preview: a function returning the picture as it is (the
+# video's frame with its subtitle) as PNG bytes, or None. Saved in a .usfx
+# as thumbnail.png, what file managers show of it.
+thumbnail_provider = None
+
+
+def _thumbnail_png():
+    """Main thread only: the preview's picture for a .usfx, or None."""
+    if thumbnail_provider is None or threading.current_thread() is not threading.main_thread():
+        return None
+    try:
+        return thumbnail_provider()
+    except Exception:
+        return None
 _save_in_progress = False
 
 
@@ -1689,6 +1721,7 @@ def _snapshot_for_save():
     callers (especially autosave) can use that to retry later."""
     try:
         return {
+            'THUMBNAIL': _thumbnail_png(),
             'SUBTITLE': copy.deepcopy(session.SUBTITLE),
             'SPEAKERS': copy.deepcopy(session.SPEAKERS),
             'VIDEO': copy.deepcopy(session.VIDEO),

@@ -12,7 +12,9 @@
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
     xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-    IgnorableNamespaces="uap rescap">
+    xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+    xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+    IgnorableNamespaces="uap rescap com desktop2">
 
   <Identity
       Name="PLACEHOLDER_PUBLISHER_ID"
@@ -60,8 +62,17 @@
             <uap:SupportedFileTypes>
               <uap:FileType>.usfx</uap:FileType>
             </uap:SupportedFileTypes>
+            <!-- Its thumbnail in Explorer: UsfxThumbnail.dll, below. -->
+            <desktop2:ThumbnailHandler Clsid="59A8C040-1202-4033-8DB5-F5E7A7709527" />
           </uap:FileTypeAssociation>
         </uap:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:SurrogateServer DisplayName="Subtitld project thumbnails">
+              <com:Class Id="59A8C040-1202-4033-8DB5-F5E7A7709527" Path="UsfxThumbnail.dll" ThreadingModel="STA" />
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="subtitleformats">
             <uap:SupportedFileTypes>

@@ -119,6 +119,28 @@ if (-not $MakeAppx) {
 }
 
 Write-Host "Using makeappx: $MakeAppx"
+
+# The resource index (resources.pri): without it Windows cannot choose among
+# an asset's variants (scale-200, targetsize-48, altform-unplated) and takes
+# the plain file, so tiles and file type icons come out small or soft.
+$MakePri = Join-Path (Split-Path $MakeAppx) 'makepri.exe'
+if (-not (Test-Path $MakePri)) {
+    throw "makepri.exe not found next to $MakeAppx"
+}
+# Only the assets and the manifest, laid out as in the package: indexing the
+# whole app (thousands of files) is slow and none of them has variants.
+$PriRoot = Join-Path $env:TEMP 'subtitld-pri'
+Remove-Item $PriRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $PriRoot | Out-Null
+Copy-Item -Path $AssetsDst -Destination (Join-Path $PriRoot 'Assets') -Recurse
+Copy-Item -Path (Join-Path $StagingDir 'AppxManifest.xml') -Destination $PriRoot
+$PriConfig = Join-Path $env:TEMP 'subtitld-priconfig.xml'      # outside: not a resource
+& $MakePri createconfig /cf $PriConfig /dq en-US /pv 10.0.0 /o
+if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed with exit code $LASTEXITCODE" }
+& $MakePri new /pr $PriRoot /cf $PriConfig /mn (Join-Path $PriRoot 'AppxManifest.xml') /of (Join-Path $StagingDir 'resources.pri') /o
+if ($LASTEXITCODE -ne 0) { throw "makepri new failed with exit code $LASTEXITCODE" }
+Remove-Item $PriRoot -Recurse -Force
+
 Write-Host "Packaging $StagingDir -> $OutputMsix"
 
 & $MakeAppx pack /v /d $StagingDir /p $OutputMsix /o

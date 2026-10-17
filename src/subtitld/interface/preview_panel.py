@@ -2,8 +2,8 @@ import os
 import time
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QVBoxLayout, QGraphicsScene, QGraphicsView, QFrame, QGraphicsOpacityEffect, QSizePolicy, QRubberBand
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QRectF, QPoint, QSize, QMargins, QMarginsF, Signal, QTimer, QEvent
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QRectF, QPoint, QSize, QMargins, QMarginsF, Signal, QTimer, QEvent, QByteArray, QBuffer, QIODevice
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush, QImage
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaMetaData
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 
@@ -442,6 +442,28 @@ class PlayerWidget(QWidget):
         if frame.isValid():
             widget._last_video_frame = frame
 
+    def thumbnail_png(widget):
+        """The picture a .usfx carries, as PNG bytes: a card with the video's
+        frame where the project is, its subtitle, and the timeline there
+        (see project_thumbnail). None for a project with neither a video
+        nor subtitles."""
+        from subtitld.interface import project_thumbnail
+        frame = widget._last_video_frame
+        image = frame.toImage() if frame is not None and frame.isValid() else None
+        segments = session.SUBTITLE.get('segments') or []
+        if (image is None or image.isNull()) and not segments:
+            return None
+        manager = getattr(getattr(widget.window(), 'timeline_widget', None), 'waveform_manager', None)
+        card = project_thumbnail.render(
+            image, segments, session.SUBTITLE.get('position', 0.0), speakers=session.SPEAKERS,
+            duration=session.VIDEO.get('duration'), samples=getattr(manager, 'samples', None))
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.WriteOnly)
+        card.save(buffer, 'PNG')
+        buffer.close()
+        return bytes(data)
+
     def _video_rect_in_viewport(widget):
         frame = widget._last_video_frame
         if frame is None or not frame.isValid():
@@ -583,6 +605,9 @@ def load(self):
 
     self.preview_panel_player = PlayerWidget()
     self.preview_panel_player.setObjectName('preview_panel_player')
+    # What a saved .usfx carries as its thumbnail.
+    from subtitld.modules import file_io
+    file_io.thumbnail_provider = self.preview_panel_player.thumbnail_png
     self.preview_panel.layout().addWidget(self.preview_panel_player)
 
     self.preview_panel_container.layout().addWidget(self.preview_panel)

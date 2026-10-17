@@ -1,0 +1,4 @@
+[Thumbnailer Entry]
+TryExec=subtitld-thumbnailer
+Exec=subtitld-thumbnailer %i %o %s
+MimeType=application/x-usfx;

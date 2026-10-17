@@ -263,6 +263,14 @@ jobs:
           pip install pyinstaller .
           pyinstaller subtitld-windows.spec --clean --noconfirm
           & dist\Subtitld\ffmpeg.exe -hide_banner -version | Select-Object -First 1
+      - name: Thumbnail provider (.usfx in Explorer)
+        # Into the app's folder, so the portable build, the installer and the
+        # MSIX package all carry it.
+        run: |
+          cmake -S packaging/windows/thumbnail -B build/thumbnail -A x64
+          cmake --build build/thumbnail --config Release
+          Copy-Item build/thumbnail/Release/UsfxThumbnail.dll dist/Subtitld/
+          Get-Item dist/Subtitld/UsfxThumbnail.dll | Format-Table Name, Length
       - name: Start it
         # A windowed app that fails shows an error dialog and stays up, so
         # look at its window as well as whether it is still running.

@@ -71,6 +71,9 @@ package() {
         "$pkgdir/usr/share/metainfo/org.subtitld.Subtitld.metainfo.xml"
     install -Dm644 flatpak/org.subtitld.Subtitld.mime.xml \
         "$pkgdir/usr/share/mime/packages/org.subtitld.Subtitld.xml"
+    # Projects' thumbnails in file managers (subtitld-thumbnailer)
+    install -Dm644 flatpak/org.subtitld.Subtitld.thumbnailer \
+        "$pkgdir/usr/share/thumbnailers/org.subtitld.Subtitld.thumbnailer"
     for icon in flatpak/icons/hicolor/*/mimetypes/*; do
         install -Dm644 "$icon" "$pkgdir/usr/share/${icon#flatpak/}"
     done
