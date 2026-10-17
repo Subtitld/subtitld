@@ -23,16 +23,16 @@ exec "$APPDIR/usr/bin/subtitld/subtitld" "$@"
 EOF
 chmod +x $APP_DIR/usr/bin/subtitld-wrapper
 
-# Copy desktop file and icon
+# Copy desktop file, icon and file types (for AppImage integration tools)
 cp snap/gui/subtitld.desktop $APP_DIR/usr/share/applications/
 cp snap/gui/subtitld.desktop $APP_DIR/
 cp snap/gui/icon.png $APP_DIR/usr/share/icons/hicolor/256x256/apps/subtitld.png
 cp snap/gui/icon.png $APP_DIR/subtitld.png
 sed -i 's|Icon=.*|Icon=subtitld|' $APP_DIR/usr/share/applications/subtitld.desktop
 sed -i 's|Icon=.*|Icon=subtitld|' $APP_DIR/subtitld.desktop
-sed -i '/^Encoding=/d' $APP_DIR/subtitld.desktop
-sed -i 's/^Info=/X-Info=/' $APP_DIR/subtitld.desktop
-sed -i 's/Categories=Application;Multimedia/Categories=AudioVideo;/' $APP_DIR/subtitld.desktop
+mkdir -p $APP_DIR/usr/share/mime/packages
+cp flatpak/org.subtitld.Subtitld.mime.xml $APP_DIR/usr/share/mime/packages/org.subtitld.Subtitld.xml
+cp -r flatpak/icons/hicolor $APP_DIR/usr/share/icons/
 
 # Create AppRun
 # QT_XCB_GL_INTEGRATION=none avoids bundled libGLX/libstdc++ clashing

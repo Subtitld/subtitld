@@ -26,6 +26,8 @@ a = Analysis(
         ('src/subtitld/locale', 'subtitld/locale'),
         ('src/subtitld/ftfy', 'subtitld/ftfy'),
         ('src/subtitld/models', 'subtitld/models'),
+        # Contents/Resources/usfx.icns: the .usfx document type's icon.
+        ('packaging/macos/usfx.icns', '.'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -94,13 +96,33 @@ app = BUNDLE(
         'CFBundleShortVersionString': '26.03.0.0',
         'CFBundleVersion': '26.03.0.0',
         'LSApplicationCategoryType': 'public.app-category.video',
+        # Subtitld's projects are its own; subtitles open in it too, without
+        # taking them from the app that opens them now.
         'CFBundleDocumentTypes': [
             {
-                'CFBundleTypeExtensions': ['srt', 'vtt', 'ass', 'ssa', 'subtitld'],
-                'CFBundleTypeName': 'Subtitle',
+                'CFBundleTypeName': 'Subtitld project',
                 'CFBundleTypeRole': 'Editor',
+                'CFBundleTypeIconFile': 'usfx.icns',
+                'LSItemContentTypes': ['org.subtitld.usfx'],
                 'LSHandlerRank': 'Owner',
-            }
+            },
+            {
+                'CFBundleTypeExtensions': ['srt', 'vtt', 'webvtt', 'ass', 'ssa', 'smi', 'sami', 'sub', 'sbv', 'ttml',
+                                           'dfxp', 'scc', 'mcc', 'usf'],
+                'CFBundleTypeName': 'Subtitles',
+                'CFBundleTypeRole': 'Editor',
+                'LSHandlerRank': 'Alternate',
+            },
+        ],
+        'UTExportedTypeDeclarations': [
+            {
+                'UTTypeIdentifier': 'org.subtitld.usfx',
+                'UTTypeDescription': 'Subtitld project',
+                'UTTypeConformsTo': ['public.zip-archive', 'public.data'],
+                'UTTypeIconFile': 'usfx.icns',
+                'UTTypeTagSpecification': {'public.filename-extension': ['usfx'],
+                                           'public.mime-type': ['application/x-usfx']},
+            },
         ],
     },
 )

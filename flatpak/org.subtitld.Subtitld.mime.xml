@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The file types Subtitld opens that freedesktop.org's shared-mime-info
+     does not know: its own project (.usfx) and the subtitle and caption
+     formats without a type of their own. SubRip, WebVTT, SSA/ASS, SAMI and
+     the .sub formats are shared-mime-info's already; the desktop files list
+     those too. Installed as share/mime/packages/org.subtitld.Subtitld.xml
+     (Flatpak, AUR, AppImage), with the .usfx icon from flatpak/icons. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-usfx">
+    <comment>Subtitld project</comment>
+    <comment xml:lang="pt_BR">Projeto do Subtitld</comment>
+    <sub-class-of type="application/zip"/>
+    <icon name="org.subtitld.Subtitld.usfx"/>
+    <generic-icon name="text-x-generic"/>
+    <glob pattern="*.usfx" weight="60"/>
+  </mime-type>
+  <mime-type type="application/x-usf">
+    <comment>Universal Subtitle Format subtitles</comment>
+    <comment xml:lang="pt_BR">Legendas Universal Subtitle Format</comment>
+    <sub-class-of type="application/xml"/>
+    <glob pattern="*.usf"/>
+    <root-XML namespaceURI="" localName="USFSubtitles"/>
+  </mime-type>
+  <mime-type type="application/ttml+xml">
+    <comment>TTML subtitles</comment>
+    <comment xml:lang="pt_BR">Legendas TTML</comment>
+    <acronym>TTML</acronym>
+    <expanded-acronym>Timed Text Markup Language</expanded-acronym>
+    <sub-class-of type="application/xml"/>
+    <glob pattern="*.ttml"/>
+    <glob pattern="*.dfxp"/>
+    <glob pattern="*.itt"/>
+    <root-XML namespaceURI="http://www.w3.org/ns/ttml" localName="tt"/>
+  </mime-type>
+  <mime-type type="text/x-sbv">
+    <comment>YouTube SubViewer subtitles</comment>
+    <comment xml:lang="pt_BR">Legendas SubViewer do YouTube</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.sbv"/>
+  </mime-type>
+  <mime-type type="text/x-scc">
+    <comment>Scenarist closed captions</comment>
+    <comment xml:lang="pt_BR">Closed captions Scenarist</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.scc"/>
+    <magic>
+      <match type="string" offset="0" value="Scenarist_SCC V1.0"/>
+    </magic>
+  </mime-type>
+  <mime-type type="text/x-mcc">
+    <comment>MacCaption closed captions</comment>
+    <comment xml:lang="pt_BR">Closed captions MacCaption</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.mcc"/>
+    <magic>
+      <match type="string" offset="0" value="File Format=MacCaption_MCC"/>
+    </magic>
+  </mime-type>
+</mime-info>

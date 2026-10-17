@@ -1,14 +1,14 @@
 [Desktop Entry]
-Encoding=UTF-8
-Name=Subtitld
-Exec=subtitld
-Icon=${SNAP}/meta/gui/icon.png
-Info=Subtitld
-Categories=Application;Multimedia
-Comment=Create and edit subtitles
-Terminal=false
 Type=Application
-StartupNotify=true
-MimeType=image/srt;image/subtitld
+Name=Subtitld
 Name[pt_BR]=Subtitld
+GenericName=Subtitle Editor
+Comment=Create and edit subtitles
 Comment[pt_BR]=Crie e edite legendas
+Exec=subtitld %f
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;
+StartupNotify=true
+MimeType=application/x-usfx;application/x-subrip;text/vtt;text/x-ssa;application/x-sami;text/x-microdvd;text/x-mpsub;text/x-subviewer;application/x-usf;application/ttml+xml;text/x-sbv;text/x-scc;text/x-mcc;
+Keywords=subtitle;caption;srt;vtt;transcription;dubbing;

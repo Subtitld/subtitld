@@ -267,15 +267,16 @@ FunctionEnd
   DeleteRegKey /ifempty SHCTX "${CLASSES}\${EXT}"
 !macroend
 
-!macro ProgId PROGID NAME
+!macro ProgId PROGID NAME ICON
   WriteRegStr SHCTX "${CLASSES}\${PROGID}" "" "${NAME}"
-  WriteRegStr SHCTX "${CLASSES}\${PROGID}\DefaultIcon" "" '"$INSTDIR\Subtitld.exe",0'
+  WriteRegStr SHCTX "${CLASSES}\${PROGID}\DefaultIcon" "" '${ICON}'
   WriteRegStr SHCTX "${CLASSES}\${PROGID}\shell\open\command" "" '"$INSTDIR\Subtitld.exe" "%1"'
 !macroend
 
 Function RegisterFileTypes
-  !insertmacro ProgId "${PROGID_PROJECT}" "$(TYPE_PROJECT)"
-  !insertmacro ProgId "${PROGID_SUBTITLE}" "$(TYPE_SUBTITLE)"
+  ; Projects have their own icon; subtitles, Subtitld's.
+  !insertmacro ProgId "${PROGID_PROJECT}" "$(TYPE_PROJECT)" '"$INSTDIR\usfx.ico",0'
+  !insertmacro ProgId "${PROGID_SUBTITLE}" "$(TYPE_SUBTITLE)" '"$INSTDIR\Subtitld.exe",0'
 
   WriteRegStr SHCTX "${CLASSES}\Applications\Subtitld.exe" "FriendlyAppName" "${APPNAME}"
   WriteRegStr SHCTX "${CLASSES}\Applications\Subtitld.exe\shell\open\command" "" '"$INSTDIR\Subtitld.exe" "%1"'
@@ -324,6 +325,7 @@ FunctionEnd
 Section "Install"
   SetOutPath $INSTDIR
   File /r "dist\Subtitld\*.*"
+  File "packaging\nsis\usfx.ico"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   CreateShortcut "$SMPROGRAMS\${APPNAME}.lnk" "$INSTDIR\Subtitld.exe"

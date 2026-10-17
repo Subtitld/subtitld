@@ -69,6 +69,11 @@ package() {
         "$pkgdir/usr/share/applications/org.subtitld.Subtitld.desktop"
     install -Dm644 flatpak/org.subtitld.Subtitld.appdata.xml \
         "$pkgdir/usr/share/metainfo/org.subtitld.Subtitld.metainfo.xml"
+    install -Dm644 flatpak/org.subtitld.Subtitld.mime.xml \
+        "$pkgdir/usr/share/mime/packages/org.subtitld.Subtitld.xml"
+    for icon in flatpak/icons/hicolor/*/mimetypes/*; do
+        install -Dm644 "$icon" "$pkgdir/usr/share/${icon#flatpak/}"
+    done
     install -Dm644 src/subtitld/graphics/subtitld.svg \
         "$pkgdir/usr/share/icons/hicolor/scalable/apps/org.subtitld.Subtitld.svg"
     install -Dm644 src/subtitld/graphics/subtitld.png \

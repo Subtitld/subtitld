@@ -3,7 +3,7 @@ import datetime
 
 from PySide6.QtWidgets import QPushButton, QLabel, QListWidget, QVBoxLayout, QWidget, QHBoxLayout, QSizePolicy, QFileDialog, QListWidgetItem, QAbstractItemView, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, Qt, QEasingCurve, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 
 from subtitld.modules import file_io
 from subtitld.modules import session
@@ -382,13 +382,18 @@ def update_recent_files_list(self):
                     item_widget.layout().setContentsMargins(5, 5, 5, 5)
                                     
                     item_icon = QLabel()
-                    item_icon.opacity = QGraphicsOpacityEffect()
-                    item_icon.opacity.setOpacity(0.5)
-                    item_icon.setGraphicsEffect(item_icon.opacity)
                     item_icon.setFixedSize(24, 24)
                     item_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
                     item_icon.setAlignment(Qt.AlignCenter)
-                    item_icon.setPixmap(QPixmap(session.PATH_SUBTITLD_GRAPHICS / 'file.svg').scaled(16, 16, Qt.KeepAspectRatioByExpanding))
+                    if subtitle_path.suffix.lower() == '.usfx':
+                        # A project: its own icon, as the file manager shows it
+                        # (the @2x one beside it on a high-DPI screen).
+                        item_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'usfx_file.png')).pixmap(16, 16))
+                    else:
+                        item_icon.opacity = QGraphicsOpacityEffect()
+                        item_icon.opacity.setOpacity(0.5)
+                        item_icon.setGraphicsEffect(item_icon.opacity)
+                        item_icon.setPixmap(QPixmap(session.PATH_SUBTITLD_GRAPHICS / 'file.svg').scaled(16, 16, Qt.KeepAspectRatioByExpanding))
                     item_widget.layout().addWidget(item_icon, 0, Qt.AlignTop)
 
                     item_widget_title_line = QLabel()
