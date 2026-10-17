@@ -61,6 +61,29 @@ check('a subtitle alone: its video asked for, from its folder', open_([srt]),
       (True, [(str(srt), str(video))], [str(folder)]))
 check('nothing', open_([]), (False, [], []))
 
+print('opened by the system (Finder, Tracker)')
+import types
+from PySide6.QtCore import QEvent
+from PySide6.QtGui import QFileOpenEvent
+sys.argv = sys.argv[:1]
+from subtitld.__main__ import FileOpenFilter
+start, project = object(), object()
+fake = types.SimpleNamespace(start_screen=start, current=start, raised=[])
+fake.central_widget = types.SimpleNamespace(layout=lambda: types.SimpleNamespace(currentWidget=lambda: fake.current))
+fake.raise_ = lambda: fake.raised.append(True)
+fake.activateWindow = lambda: None
+opened = []
+startscreen.open_files = lambda window, paths, ask=True: opened.append(paths)
+file_filter = FileOpenFilter.__new__(FileOpenFilter)
+file_filter.window = fake
+check('a file-open event is taken', file_filter.eventFilter(None, QFileOpenEvent(str(usfx))), True)
+check('other events pass', file_filter.eventFilter(None, QEvent(QEvent.KeyPress)), False)
+file_filter.open(str(usfx))
+check('on the start screen: opened', opened, [[str(usfx)]])
+fake.current = project
+file_filter.open(str(srt))
+check('with a project open: not replaced, the window raised', (opened, fake.raised), ([[str(usfx)]], [True]))
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -45,7 +45,7 @@ except Exception:
 
 from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog
 from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence, QIcon
-from PySide6.QtCore import QDir, QTimer
+from PySide6.QtCore import QDir, QEvent, QObject, QTimer
 # Haiku draws every window with its own native decorator (the yellow tab),
 # which already provides minimise/zoom/close. Using the frameless window
 # there would either hide that decorator or duplicate its buttons, so fall
@@ -109,6 +109,33 @@ def _set_class_icon(window):
                                  user32.GetSystemMetrics(height), LR_LOADFROMFILE)
         if icon:
             user32.SetClassLongPtrW(hwnd, index, icon)
+
+
+class FileOpenFilter(QObject):
+    """macOS (Finder) and Haiku (Tracker) open a file with an event, not on
+    the command line. On the start screen it opens as the Open button opens
+    it; with a project open, the window comes to the front instead, so the
+    project is not replaced unasked."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+
+    def eventFilter(self, watched, event):
+        if event.type() != QEvent.FileOpen:
+            return False
+        path = event.file()
+        if path and os.path.isfile(path):
+            QTimer.singleShot(0, lambda: self.open(path))
+        return True
+
+    def open(self, path):
+        window = self.window
+        if window.central_widget.layout().currentWidget() is window.start_screen:
+            startscreen.open_files(window, [path])
+        else:
+            window.raise_()
+            window.activateWindow()
 
 
 class Window(_MainWindowBase):
@@ -441,6 +468,7 @@ def main():
 
     main_window = Window()
     main_window.show()
+    app.installEventFilter(FileOpenFilter(main_window))
 
     sys.exit(app.exec())
 

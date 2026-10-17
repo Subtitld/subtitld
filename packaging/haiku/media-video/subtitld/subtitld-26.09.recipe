@@ -13,7 +13,10 @@ SOURCE_DIR="subtitld-$portVersion"
 ADDITIONAL_FILES="
 	launcher.c
 	subtitld.rdef.in
+	subtitld-filetypes.sh
 	"
+# Subtitld's projects (.usfx) as a file type, with their icon, once installed.
+POST_INSTALL_SCRIPTS="$relativePostInstallDir/subtitld-filetypes.sh"
 
 # pyside6 is x86_64-only on Haiku, so the app follows it.
 ARCHITECTURES="x86_64"
@@ -99,6 +102,11 @@ INSTALL()
 	addResourcesToBinaries subtitld.rdef $appsDir/Subtitld
 
 	addAppDeskbarSymlink $appsDir/Subtitld
+
+	# Adds the .usfx type to the MIME database (setmime), with its icon.
+	mkdir -p $postInstallDir
+	cp $portDir/additional-files/subtitld-filetypes.sh $postInstallDir/
+	chmod 755 $postInstallDir/subtitld-filetypes.sh
 }
 
 TEST()
