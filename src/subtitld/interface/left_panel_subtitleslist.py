@@ -687,7 +687,7 @@ def regenerate_dub_for_selected(self):
     from subtitld.modules import addons
     from subtitld.modules import clone_ref
     from subtitld.modules.addons.provider import TASK_TTS_SYNTHESIZE
-    from subtitld.interface.left_panel_dubbing import _project_tts_language, _voices_clone_first
+    from subtitld.interface.left_panel_dubbing import _project_tts_language, _stable_seed_for_speaker, _voices_clone_first
 
     speaker_name = selected.get('speaker', 'A')
     speaker_dubbing = session.SPEAKERS.get(speaker_name, {}).get('dubbing', {})
@@ -766,6 +766,9 @@ def regenerate_dub_for_selected(self):
         'language': _project_tts_language(),
         'rate': rate,
         'pitch': pitch,
+        # The speaker's seed, as the dubbing panel sends it: regenerating a
+        # line here must not change the speaker's voice.
+        'seed': _stable_seed_for_speaker(speaker_name),
     }
     # Clone voices (xtts-clone, qwen3-clone, f5-clone) need a reference
     # WAV — auto-extract from the speaker's source audio. Mirrors the
