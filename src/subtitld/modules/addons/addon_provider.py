@@ -365,8 +365,10 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
                 'pitch': subtitle.get('pitch', 0),
                 'output_path': output_path,
             }
-            # Per-add-on extras — voice cloning reference audio for XTTS, etc.
-            for key in ('voice_ref_audio', 'speaker_emb', 'emotion'):
+            # Per-add-on extras — the voice cloning reference and its
+            # transcript, the per-speaker sampler seed, etc. Add-ons that
+            # don't know a key ignore it.
+            for key in ('voice_ref_audio', 'voice_ref_text', 'seed', 'speaker_emb', 'emotion'):
                 if key in subtitle:
                     params[key] = subtitle[key]
 

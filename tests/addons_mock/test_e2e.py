@@ -12,6 +12,7 @@ directories, never the user's) and runs it through the real
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -80,7 +81,8 @@ def main():
         {'uid': 'aaa', 'text': 'hello world', 'speaker': 'A',
          'start': 0.0, 'end': 1.0, 'voice': 'mock-female-en', 'rate': 0, 'pitch': 0},
         {'uid': 'bbb', 'text': 'olá mundo', 'speaker': 'A',
-         'start': 1.0, 'end': 2.0, 'voice': 'mock-male-pt', 'rate': 0, 'pitch': 0},
+         'start': 1.0, 'end': 2.0, 'voice': 'mock-male-pt', 'rate': 0, 'pitch': 0,
+         'voice_ref_audio': '/ref/a.wav', 'voice_ref_text': 'olá', 'seed': 1234},
     ]
 
     recorder = Recorder(app, expected=len(text_list))
@@ -106,6 +108,15 @@ def main():
     if len(recorder.ready) != len(text_list):
         print('  TIMEOUT: did not receive all expected results')
         return 2
+    # The clone reference, its transcript and the seed reach the add-on.
+    for uid, _sub, path in recorder.ready:
+        with open(path + '.params.json', encoding='utf-8') as f:
+            received = json.load(f)
+        sent = next(item for item in text_list if item['uid'] == uid)
+        for key in ('voice_ref_audio', 'voice_ref_text', 'seed'):
+            if received.get(key) != sent.get(key):
+                print(f'  {uid}: {key} sent {sent.get(key)!r}, add-on got {received.get(key)!r}')
+                return 3
     return 0
 
 

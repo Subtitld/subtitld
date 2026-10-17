@@ -142,6 +142,10 @@ def main():
 
             try:
                 _write_sine_wav(output_path)
+                # The params as received, so tests can check what the host
+                # forwarded.
+                Path(output_path + '.params.json').write_text(
+                    json.dumps(params), encoding='utf-8')
             except OSError as exc:
                 _send({
                     'id': req_id, 'type': 'error',
