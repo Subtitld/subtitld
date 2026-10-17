@@ -3,6 +3,27 @@ import os
 import argparse
 import inspect
 
+from subtitld import __version__
+
+
+def _existing_file(value):
+    """A path on the command line, checked but not opened: argparse's
+    FileType kept every file open, and Windows will not replace an open
+    file, which is how a project is saved over itself."""
+    if not os.path.isfile(value):
+        raise argparse.ArgumentTypeError(f"can't open '{value}'")
+    return os.path.abspath(value)
+
+
+# Before the heavy imports below (MediaPipe, Qt): --version and --help
+# answer at once, and exit without starting the app.
+parser = argparse.ArgumentParser(prog='subtitld',
+                                 description='Subtitld is a software to create, edit and transcribe subtitles')
+parser.add_argument('file', type=_existing_file, help='The path for video or subtitle file', nargs='*', default=False)
+parser.add_argument('--version', action='version', version=f'Subtitld {__version__}',
+                    help='Prints the version of Subtitld and exits.')
+args = parser.parse_args()
+
 # Before anything loads PortAudio through ctypes (sounddevice): find the
 # copy a snap or another bundle carries on LD_LIBRARY_PATH.
 from subtitld.modules import library_path
@@ -59,21 +80,6 @@ from subtitld.modules.addons.builtin import ffmpeg_separator_provider as _ffmpeg
 from subtitld.modules.addons.builtin import gtts_provider as _gtts_provider
 from subtitld.modules.addons.builtin import import_provider as _import_provider
 from subtitld.modules.addons.builtin import subtitles_provider as _subtitles_provider
-
-
-def _existing_file(value):
-    """A path on the command line, checked but not opened: argparse's
-    FileType kept every file open, and Windows will not replace an open
-    file, which is how a project is saved over itself."""
-    if not os.path.isfile(value):
-        raise argparse.ArgumentTypeError(f"can't open '{value}'")
-    return os.path.abspath(value)
-
-
-parser = argparse.ArgumentParser(description='Subtitld is a software to create, edit and transcribe subtitles')
-parser.add_argument('file', type=_existing_file, help='The path for video or subtitle file', nargs='*', default=False)
-parser.add_argument('--version', help='Prints the actual version of Subtitld.', action='store_true')
-args = parser.parse_args()
 
 
 def _set_class_icon(window):
