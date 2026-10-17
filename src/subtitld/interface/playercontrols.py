@@ -1490,7 +1490,7 @@ def load(self):
         if mp.playbackState() != QMediaPlayer.PlayingState:
             return
         # Where the sound is heard, not what has been handed to the device:
-        # snapping to that left the picture `output_latency` ahead.
+        # snapping to that left the picture the device's latency ahead.
         audio_pos = engine.heard_position    # seconds
         video_pos_ms = mp.position()         # ms
         drift_ms = video_pos_ms - audio_pos * 1000.0

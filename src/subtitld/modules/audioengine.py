@@ -1009,11 +1009,14 @@ class SoundDeviceAudioEngine:
         # so a torn read can't make the callback render the wrong block.
         self._playhead_lock = threading.Lock()
         self._playhead = 0.0
-        # Where the last play() or seek() put the sound, and how long the
-        # output device holds audio before it is heard (the stream's own
-        # latency, once open). See `heard_position`.
+        # Where the last play() or seek() put the sound; the stream's own
+        # latency, once open; and, from the last callback, the position of
+        # the block it handed over and when PortAudio says that block's
+        # first sample reaches the speaker (in perf_counter's clock). See
+        # `heard_position`.
         self._anchor = 0.0
         self.output_latency = 0.0
+        self._dac_anchor = None
 
         self.buffer_pool = BufferPool(max_size=30)
 
@@ -1226,16 +1229,41 @@ class SoundDeviceAudioEngine:
     @property
     def heard_position(self):
         """The position being heard. The playhead is what has been handed to
-        the device, which plays it `output_latency` later (85 ms on Linux,
-        several hundred on Windows' MME): following the playhead, the
-        picture ran that far ahead of the sound. Never before the last
-        play() or seek(): until its first audio comes out, that is where
-        the sound starts."""
+        the device, a block (85 ms) at a time; the device plays it later,
+        and between callbacks the playhead stands still. Each callback
+        PortAudio tells when its block's first sample will reach the
+        speaker: from the last one, the sound heard now is that block's
+        position plus the time since (at the playback speed), continuous
+        and on the device's own clock. The picture follows it. Without
+        those times (a host API that does not give them), the playhead less
+        the stream's latency. Never before the last play() or seek(): until
+        its first audio comes out, that is where the sound starts."""
         with self._playhead_lock:
-            playhead = self._playhead
+            playhead, anchor = self._playhead, self._dac_anchor
         if not self.playing:
             return playhead
+        if anchor is not None:
+            position, heard_at = anchor
+            heard = position + (time.perf_counter() - heard_at) * self.speed
+            return min(playhead, max(self._anchor, heard))
         return max(self._anchor, playhead - self.output_latency * self.speed)
+
+    def has_device_times(self):
+        """Whether a callback since the last play() or seek() has said when
+        its sound will be heard."""
+        with self._playhead_lock:
+            return self._dac_anchor is not None
+
+    def seconds_until_heard(self):
+        """How long until the sound that play() started is heard: when the
+        picture should start. From the device's times once a callback has
+        run, else the stream's latency."""
+        with self._playhead_lock:
+            anchor = self._dac_anchor
+        if anchor is not None:
+            position, heard_at = anchor
+            return max(0.0, heard_at + (self._anchor - position) / max(self.speed, 1e-6) - time.perf_counter())
+        return self.output_latency
 
     def load_audio(self, filepath):
         """Load audio source (streams from disk, not RAM)"""
@@ -1276,7 +1304,16 @@ class SoundDeviceAudioEngine:
         # crash) and the consumer keeps draining smoothly afterwards.
         frames_from_ring = self._ring.pop_into(outdata, frames)
 
+        dac = getattr(_time_info, 'outputBufferDacTime', 0.0) or 0.0
+        now = getattr(_time_info, 'currentTime', 0.0) or 0.0
         with self._playhead_lock:
+            # When this block's first sample will be heard, as PortAudio
+            # reckons it from the device, moved onto perf_counter's clock:
+            # PortAudio's own clock differs by host API (and on ALSA,
+            # Pa_GetStreamTime lags the callbacks'). Not when a host API
+            # leaves the times at 0, or says something absurd.
+            if dac > 0.0 and now > 0.0 and 0.0 <= dac - now < 2.0:
+                self._dac_anchor = (self._playhead, time.perf_counter() + (dac - now))
             self._playhead += (frames / self.samplerate) * self.speed
 
         if DEBUG_AUDIO:
@@ -1476,6 +1513,7 @@ class SoundDeviceAudioEngine:
             gc.disable()
             self.playhead = position
             self._anchor = position
+            self._dac_anchor = None
             for track in self.tracks:
                 for clip in track.clips:
                     clip.clear_cache()
@@ -1515,6 +1553,7 @@ class SoundDeviceAudioEngine:
     def seek(self, seconds):
         self.playhead = seconds
         self._anchor = seconds
+        self._dac_anchor = None
         # Re-anchor the mixer to the new position. If we're playing,
         # this also clears the ring so the listener doesn't hear ~200 ms
         # of stale pre-roll from the old position before the new audio

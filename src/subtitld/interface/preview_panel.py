@@ -1,4 +1,5 @@
 import os
+import time
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QVBoxLayout, QGraphicsScene, QGraphicsView, QFrame, QGraphicsOpacityEffect, QSizePolicy, QRubberBand
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QRectF, QPoint, QSize, QMargins, QMarginsF, Signal, QTimer, QEvent
@@ -31,11 +32,13 @@ class PlayerWidget(QWidget):
         
         widget._audio_device = audioengine.SoundDeviceAudioEngine()
 
-        # play() starts the picture this much after the sound: the
-        # device's output latency, so both begin at the same moment.
+        # play() starts the picture when the sound starts being heard; this
+        # timer waits for that moment (see `_start_picture`).
         widget._video_start_timer = QTimer(widget)
         widget._video_start_timer.setSingleShot(True)
-        widget._video_start_timer.timeout.connect(widget._media_player.play)
+        widget._video_start_timer.timeout.connect(widget._start_picture)
+        widget._picture_at = None
+        widget._picture_polls = 0
 
         # Bridge USFX Phase 2 per-member completion to the engine: when a
         # deferred dub WAV lands on disk, ask the engine to preload it
@@ -341,14 +344,33 @@ class PlayerWidget(QWidget):
 
     def play(widget):
         """Play: the sound first, the picture once the sound comes out of
-        the device (its output latency later), so they start together
-        rather than the picture leading."""
+        the device, so they start together rather than the picture leading."""
         widget._audio_device.play(session.SUBTITLE.get('position', 0))
-        delay_ms = int(round(widget._audio_device.output_latency * 1000)) if widget._audio_device.playing else 0
-        if delay_ms > 0:
-            widget._video_start_timer.start(delay_ms)
-        else:
+        widget._picture_at = None
+        widget._picture_polls = 0
+        widget._start_picture()
+
+    def _start_picture(widget):
+        """Start the picture at the moment the sound starts being heard. The
+        device says when in its first callbacks, which may come a little
+        after play(): wait for them (10 ms at a time, up to 300 ms), then
+        for that moment. A host API that never says: the stream's latency.
+        No sound device: at once."""
+        engine = widget._audio_device
+        if not engine.playing:
             widget._media_player.play()
+            return
+        if widget._picture_at is None:
+            if not engine.has_device_times() and widget._picture_polls < 30:
+                widget._picture_polls += 1
+                widget._video_start_timer.start(10)
+                return
+            widget._picture_at = time.perf_counter() + engine.seconds_until_heard()
+        remaining_ms = (widget._picture_at - time.perf_counter()) * 1000.0
+        if remaining_ms >= 2.0:
+            widget._video_start_timer.start(int(remaining_ms))
+            return
+        widget._media_player.play()
 
     def mute(widget):
         """Function to mute"""
