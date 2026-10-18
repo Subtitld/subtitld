@@ -1,11 +1,52 @@
 name: subtitld
 base: core22
 adopt-info: subtitld
-summary: Create and edit subtitles
+summary: Create, edit, transcribe, translate and dub subtitles
+# The store's listing: a paragraph a line, as the store keeps line breaks;
+# "-" lists, but no headings or Markdown links.
 description: |
-  Subtitld is a professional subtitle editor and dubbing application with
-  support for transcription, translation, waveform visualization, and
-  multi-speaker dubbing.
+  Subtitld is a free and open source subtitle editor. Time subtitles on the waveform, transcribe and translate them with engines that can run on your own machine, and dub them with synthetic voices.
+
+  Timing on the waveform
+  - A timeline with the audio's waveform: drag a subtitle to move it, drag its edges to retime it
+  - Snapping to the neighbouring subtitles and to a grid of frames or seconds, with zoom for fine work
+  - A vertical timeline beside the list, for working down the subtitles
+  - A quality check for reading speed, duration, line count and line length
+
+  Video and audio
+  - The video with the current subtitle drawn over it, as it will be seen, with safe-area guides
+  - Playback speed, looping and frame stepping
+  - A mixer for the video's sound and the dubs, with EQ, compressor and gate per track
+  - 4K and 8K videos get a lighter proxy to edit with
+
+  Speakers
+  - Name the speakers and give each one a face from the video, a colour and, if you like, a track of their own on the timeline
+
+  Transcription, translation and dubbing
+  - Transcribe the video's speech into timed subtitles, or speak into the microphone and watch it become subtitles
+  - Translate the subtitles, keeping each translation beside the original
+  - Dub every subtitle with a synthetic voice, one voice per speaker, fitted to its duration, or record your own
+  - Export the dub as WAV, FLAC or MP3: the whole mix, a track per speaker, or the voices or the background alone
+
+  Speech recognition (whisper.cpp, Vosk), offline translation, more voices (Piper, Kokoro, and voice cloning with Qwen3-TTS, Coqui XTTS and F5-TTS) and voice separation come as add-ons, installed from inside Subtitld, many of them fully offline. Two online voices come built in.
+
+  Editing
+  - Undo, find and replace with regular expressions, autosave and backups
+  - A plain-text view to edit all the subtitles as one document
+  - Keyboard shortcuts you can change
+  - Projects (.usfx) keep the subtitles with the speakers, their faces and the dubs
+
+  Formats: opens and saves SubRip (SRT), WebVTT, TTML, DFXP, SAMI, Scenarist (SCC), JSON and USF; opens SubStation Alpha, MicroDVD and iTunes Timed Text. Videos in MP4, MKV, MOV, WebM and more, through FFmpeg.
+
+  subtitld.cc, Subtitld's community hub: find subtitles made for the video you open, rate them, and publish your own, from inside the app.
+
+  To open files on external drives: sudo snap connect subtitld:removable-media
+
+  Website: https://subtitld.org
+
+  Source and issues: https://github.com/Subtitld/subtitld
+
+  Screenshots: Tears of Steel, (CC) Blender Foundation, https://mango.blender.org
 grade: stable
 confinement: strict
 compression: lzo

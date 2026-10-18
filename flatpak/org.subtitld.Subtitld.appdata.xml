@@ -2,19 +2,35 @@
 <component type="desktop-application">
   <id>org.subtitld.Subtitld</id>
   <name>Subtitld</name>
-  <summary>Create and edit subtitles</summary>
+  <summary>Create, translate and dub subtitles</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>
-      Subtitld is a professional subtitle editor and dubbing application.
-      It supports transcription, translation, waveform visualization and
-      multi-speaker dubbing workflows.
+      Subtitld times subtitles on the audio's waveform and shows them over the
+      video as they will be seen. It transcribes speech into timed subtitles,
+      translates them, and dubs them with synthetic voices, one for each speaker.
+    </p>
+    <ul>
+      <li>Move and retime subtitles on the waveform, snapping to their neighbours or to a grid of frames</li>
+      <li>Work down the subtitles on a vertical timeline beside the list</li>
+      <li>Give each speaker a face, a colour and a track of their own</li>
+      <li>Check reading speed, duration and line length as you go</li>
+      <li>Keep translations beside the original, in the list and on the timeline</li>
+      <li>Mix the video's sound and the dubs, with EQ, compressor and gate per track</li>
+      <li>Export the dub as WAV, FLAC or MP3, mixed or a track per speaker</li>
+      <li>Open and save SRT, WebVTT, TTML, SAMI, SCC and more</li>
+    </ul>
+    <p>
+      Speech recognition, offline translation and more voices, voice cloning
+      among them, come as add-ons installed from inside Subtitld. Many of them
+      run fully offline.
     </p>
   </description>
   <launchable type="desktop-id">org.subtitld.Subtitld.desktop</launchable>
   <url type="homepage">https://subtitld.org</url>
   <url type="bugtracker">https://github.com/Subtitld/subtitld/issues</url>
+  <url type="vcs-browser">https://github.com/Subtitld/subtitld</url>
   <developer id="org.subtitld">
     <name>Jonatã Bolzan Loss</name>
   </developer>
