@@ -3,7 +3,7 @@
 A haikuports recipe tree for Subtitld and the Python packages it needs that
 Haiku does not package yet.
 
-    media-video/subtitld/subtitld-26.09.recipe   the application
+    media-video/subtitld/subtitld-26.10.recipe   the application
     media-video/subtitld/additional-files/       its launcher, resources and icon
     dev-python/<name>/<name>-<version>.recipe    9 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
@@ -26,8 +26,10 @@ Subtitld is Python, but on Haiku it looks and behaves like a native app:
   mark's two shapes in their colours over a darker outline, and its shadow,
   flat (HVIF has no blur).
 
-No file types are declared yet: Subtitld does not open files given to it at
-launch, so "Open with Subtitld" would open it empty.
+Projects (`.usfx`) are a file type of their own, with their icon
+(`usfx.hvif`): `subtitld-filetypes.sh`, run once on install
+(`POST_INSTALL_SCRIPTS`), adds the type and a sniffer rule so Tracker tells a
+project from any other zip. Opened from Tracker, a project opens in Subtitld.
 
 ## Built by CI
 
@@ -44,8 +46,9 @@ releases, a qcow2 for QEMU; log in over SSH as `user`, no password).
 
 On a stable release, `release.yml` attaches
 `subtitld-<version>-haikuports.tar.gz` to the GitHub release: this tree's
-ports, with the app's recipe pointed at the tag with its checksum. Unpack it
-into a haikuports checkout (`tar -xzf ... -C haikuports`).
+ports, with the app's recipe named after the tag (`subtitld-26.10.recipe` for
+`v26.10`) and the tag archive's checksum. Unpack it into a haikuports checkout
+(`tar -xzf ... -C haikuports`).
 
 ## Dependencies
 
@@ -67,22 +70,17 @@ Dropped on Haiku:
 * `pywhispercpp` — not built for Haiku yet. Already guarded upstream. whisper.cpp
   is portable C++, so this one is a plausible future port.
 
-## Two INSTALL templates
+## How the dependencies are built
 
-Five dependencies ship no `setup.py` (PEP 517-only) and their build backends
-(hatchling, flit) are not packaged for Haiku. Those recipes fetch the
-`py3-none-any` wheel and install its unpacked contents, which keeps the
-`.dist-info` that `importlib.metadata` reads. They set `SOURCE_DIR=""`, because a
-wheel has no single top-level directory and haikuporter otherwise looks for
-`<port>-<version>/`.
+As haikuports builds its own Python packages: from PyPI's source archive with
+`build` and `installer` (like its requests and beautifulsoup4), for eight of
+the nine. `platformdirs` takes its version from git through hatch-vcs, which
+Haiku does not package, so its recipe installs the pure-Python wheel with
+`installer` instead (`#noarchive`), as haikuports' typing_extensions does.
 
-The other four use the house `setup.py build install` idiom. Two of them
-(`soundfile`, `sounddevice`) declare `setup_requires`, so `cffi` is listed in
-`BUILD_REQUIRES`; otherwise setuptools tries to pip-fetch it, and pip does not
-exist inside the chroot.
-
-A reviewer may prefer sdists over wheels. Building the five from source means
-packaging hatchling and flit_core for Haiku first.
+`gen_recipes.py` writes them: each archive's checksum comes from PyPI and is
+checked against the download, and each recipe's copyright and license lines
+come from the project's own LICENSE file. Check those again on a version bump.
 
 ## Building it yourself
 
@@ -101,8 +99,11 @@ up.
 ## Submitting
 
 haikuports takes contributions as pull requests against
-<https://github.com/haikuports/haikuports>. Each package is its own commit
-(`dev-python/foo: new recipe`). Run `haikuporter --lint` before opening the PR.
+<https://github.com/haikuports/haikuports>, from a branch of your fork. Each
+package is its own commit, as in `tabulate, new recipe`. Run
+`haikuporter --lint` before opening the PR. Its template asks you to confirm
+that you built the recipes on your own Haiku machine and that their license
+and copyright lines are right.
 The dependency recipes are independently useful and can go first; several
 (`platformdirs`, `tabulate`, `soundfile`, `sounddevice`) are common enough
 that other ports will want them.

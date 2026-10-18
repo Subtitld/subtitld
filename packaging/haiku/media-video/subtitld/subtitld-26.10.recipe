@@ -1,15 +1,16 @@
-SUMMARY="A subtitle editor"
-DESCRIPTION="Subtitld is a free and open source software to create, edit, \
-transcribe and translate subtitles. It offers a timeline with an audio \
-waveform, a video preview, speaker management, automatic transcription and \
-translation, and import/export for the common subtitle formats."
+SUMMARY="A subtitle and caption editor"
+DESCRIPTION="Subtitld creates, edits, transcribes, translates and dubs \
+subtitles and captions. It has a timeline with the sound's waveform, a video \
+preview, speakers with their own colours, and synthetic voices to dub with. It \
+reads and writes the common subtitle formats: SRT, WebVTT, ASS and SSA, TTML, \
+SAMI, SCC and more. Projects (.usfx) keep the video, the subtitles and the \
+place you left them."
 HOMEPAGE="https://subtitld.org"
 COPYRIGHT="2020-2026 Jonatã Bolzan Loss"
 LICENSE="GNU GPL v3"
 REVISION="1"
-SOURCE_URI="https://github.com/Subtitld/subtitld/archive/refs/tags/$portVersion.tar.gz"
-CHECKSUM_SHA256="0000000000000000000000000000000000000000000000000000000000000000"
-SOURCE_DIR="subtitld-$portVersion"
+SOURCE_URI="https://github.com/Subtitld/subtitld/archive/refs/tags/v$portVersion.tar.gz"
+CHECKSUM_SHA256="282f49d3cca716a20b79a928dec13f7b2c520406a8c5e40ae29503638f10aac9"
 ADDITIONAL_FILES="
 	launcher.c
 	subtitld.rdef.in
@@ -28,13 +29,6 @@ PROVIDES="
 	"
 REQUIRES="
 	haiku
-	pyside6
-	# Optional for pyside6 on Haiku, but the preview panel needs it.
-	lib:libQt6Multimedia
-	lib:libQt6MultimediaWidgets
-	cmd:python3.10
-	cmd:ffmpeg
-	# Python dependencies
 	beautifulsoup4_python310
 	chardet_python310
 	edge_tts_python310
@@ -43,6 +37,7 @@ REQUIRES="
 	numpy_python310
 	opencv_python3.10
 	platformdirs_python310
+	pyside6
 	pysubs2_python310
 	python_docx_python310
 	python_i18n_python310
@@ -50,12 +45,20 @@ REQUIRES="
 	scipy_python310
 	sounddevice_python310
 	soundfile_python310
+	# Optional for pyside6 on Haiku, but the preview panel needs it.
+	lib:libQt6Multimedia
+	lib:libQt6MultimediaWidgets
+	cmd:ffmpeg
+	cmd:python3.10
 	"
 
 BUILD_REQUIRES="
 	haiku_devel
+	build_python310
 	devel:libpython3.10
+	installer_python310
 	setuptools_python310
+	wheel_python310
 	"
 BUILD_PREREQUIRES="
 	cmd:gcc
@@ -68,11 +71,7 @@ BUILD()
 	# The tag's sources carry a placeholder version; the package's is this one.
 	sed -i "s/^__version__ = .*/__version__ = '$portVersion'/" src/subtitld/__init__.py
 
-	# Upstream ships only a pyproject.toml. Its build backend is setuptools,
-	# which is packaged, so a shim setup.py avoids needing pip here.
-	if [ ! -f setup.py ]; then
-		echo "from setuptools import setup; setup()" > setup.py
-	fi
+	python3.10 -m build --wheel --no-isolation
 
 	# The application itself: a native program that runs Subtitld inside the
 	# system's Python, so Deskbar shows Subtitld, not Python (launcher.c).
@@ -83,20 +82,16 @@ BUILD()
 
 INSTALL()
 {
-	python=python3.10
-	installLocation=$prefix/lib/$python/vendor-packages
-	export PYTHONPATH=$installLocation:$PYTHONPATH
-	mkdir -p $installLocation
-
-	$python setup.py build install --root=/ --prefix=$prefix
+	python3.10 -m installer -p $prefix dist/*.whl
 
 	# The application, in the apps directory: the launcher, with its
 	# signature, version and icon as resources (subtitld.rdef.in).
 	mkdir -p $appsDir
 	cp subtitld-launcher $appsDir/Subtitld
-	local major=$((10#$(echo $portVersion | cut -d. -f1)))
-	local middle=$((10#$(echo $portVersion | cut -d. -f2)))
-	local minor=$((10#$(echo $portVersion | cut -d. -f3)))
+	# A release is "26.10"; a build, "26.10.18.0446".
+	local major middle minor
+	IFS=. read -r major middle minor _ <<< "$portVersion"
+	major=$((10#$major)) middle=$((10#${middle:-0})) minor=$((10#${minor:-0}))
 	sed -e "s|@MAJOR@|$major|" -e "s|@MIDDLE@|$middle|" -e "s|@MINOR@|$minor|" \
 		$portDir/additional-files/subtitld.rdef.in > subtitld.rdef
 	addResourcesToBinaries subtitld.rdef $appsDir/Subtitld

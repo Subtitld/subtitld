@@ -89,14 +89,14 @@ QT_QPA_PLATFORM=offscreen bash "$SRC/.github/scripts/smoke.sh" 25 "$app"
 mkdir -p "$OUT"
 cp "$TREE"/packages/*.hpkg "$OUT/"
 # For haikuports: what goes into its tree, as it would be submitted. The app's
-# recipe points at the GitHub tag; its checksum is only known once the tag
-# exists (release.yml fills it in).
+# recipe points at the GitHub tag v$portVersion; release.yml names it after
+# the tag and fills in the tag archive's checksum.
 ports=$OUT/haikuports
 rm -rf "$ports"
 mkdir -p "$ports/media-video/subtitld"
 cp -r "$SRC/packaging/haiku/dev-python" "$ports/"
 cp -r "$SRC/packaging/haiku/media-video/subtitld/additional-files" "$ports/media-video/subtitld/"
-sed -e "s|^SOURCE_URI=.*|SOURCE_URI=\"https://github.com/Subtitld/subtitld/archive/refs/tags/\$portVersion.tar.gz\"|" \
-    -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$(printf '0%.0s' $(seq 64))\"|" \
-    "$recipe" > "$ports/media-video/subtitld/subtitld-$VERSION.recipe"
+sed -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$(printf '0%.0s' $(seq 64))\"|" \
+    "$SRC"/packaging/haiku/media-video/subtitld/subtitld-*.recipe \
+    > "$ports/media-video/subtitld/subtitld-$VERSION.recipe"
 ls -la "$OUT"

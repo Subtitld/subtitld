@@ -170,12 +170,13 @@ jobs:
           merge-multiple: true
       - name: Point the Haiku recipe at the tag
         run: |
+          # The recipe fetches tag v$portVersion: named after the tag, it is
+          # the recipe for that release, as haikuports takes it.
           curl -fsSL -o tag.tar.gz "https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz"
           sum=$(sha256sum tag.tar.gz | cut -d' ' -f1)
-          sed -i -e "s|^SOURCE_URI=.*|SOURCE_URI=\"https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz\"|" \
-            -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$sum\"|" \
-            -e "s|^SOURCE_DIR=.*|SOURCE_DIR=\"subtitld-${TAG#v}\"|" \
-            "artifacts/haikuports/media-video/subtitld/subtitld-$VERSION.recipe"
+          dir=artifacts/haikuports/media-video/subtitld
+          mv "$dir/subtitld-$VERSION.recipe" "$dir/subtitld-${TAG#v}.recipe"
+          sed -i "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$sum\"|" "$dir/subtitld-${TAG#v}.recipe"
           # One file for the release: the ports, to unpack into haikuports.
           tar -C artifacts/haikuports -czf "artifacts/subtitld-$VERSION-haikuports.tar.gz" dev-python media-video
           rm -r artifacts/haikuports
