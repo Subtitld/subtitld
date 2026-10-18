@@ -35,6 +35,11 @@ Writes:
                                               the Microsoft Store listing's
                                               app tile icon and hero art,
                                               uploaded in Partner Center
+    packaging/snap/store-listing/icon.png
+    packaging/snap/store-listing/banner.png
+                                              the Snap Store listing's icon
+                                              and featured banner, uploaded
+                                              at snapcraft.io
     flatpak/icons/hicolor/...                 the .usfx project file's icon, for
     packaging/nsis/usfx.ico                   Linux, Windows (installer and
     packaging/msix/assets/UsfxFile*.png       MSIX), macOS and the app's own
@@ -72,6 +77,11 @@ ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 # The line under the name on the README's banner.
 README_TAGLINE = 'Create, edit, transcribe, translate and dub subtitles'
+
+# The height, as a share of the Microsoft Store's hero art, of the band its
+# waveform, subtitles and mark run along; the Snap Store's banner is cut
+# about it.
+HERO_BAND = 0.40
 
 # The Store tiles: (generate-assets.py name, width, height, mark width as a
 # share of the tile's shorter side). logo.svg sets the mark at 41% of its
@@ -382,7 +392,7 @@ def write_store_listing(defs: str, mark: str, box: tuple[float, float, float, fl
 
     # The hero: everything that matters on a band at 40% of the height.
     w, h = 3840, 2160
-    band = 0.40 * h
+    band = HERO_BAND * h
     rng = random.Random(26)                    # the same picture every run
     layers = []
 
@@ -425,6 +435,54 @@ def write_store_listing(defs: str, mark: str, box: tuple[float, float, float, fl
            glow.format(id='heroGlow', cx=0.5, cy=0.40, r=0.75)
            + f'<rect width="{w}" height="{h}" fill="url(#heroGlow)"/>' + ''.join(layers)
            + place(0.34 * h, w / 2, band))
+
+
+def write_snap_listing(defs: str, mark: str, box: tuple[float, float, float, float]) -> None:
+    """The pictures for the Snap Store listing, uploaded on the snap's
+    Listing page at snapcraft.io rather than packaged:
+
+    icon.png, 512 x 512: the store's icon, on snapcraft.io and in Ubuntu's
+    App Center. The desktop's icon (snap/gui/icon.png) is the mark alone,
+    whose pale bar fades on the store's white pages: here the mark is on the
+    Store tiles' slate glow, a rounded square.
+
+    banner.png, 3840 x 1280: the featured banner, 3:1. The Microsoft
+    Store's hero art, which write_store_listing draws first, cut about its
+    band: the mark over the waveform and the subtitle blocks, centred."""
+    from PIL import Image
+
+    x, y, width, height = box
+    out = ROOT / 'packaging' / 'snap' / 'store-listing'
+    out.mkdir(parents=True, exist_ok=True)
+
+    # The icon: as the Microsoft Store's tile icon, on a rounded square.
+    w = h = 512
+    inset, radius = 8, 104
+    size = 0.5 * (w - 2 * inset)
+    scale = size / width
+    tx = w / 2 - 0.0835 * size - (x + width / 2) * scale     # a little left: it points right
+    ty = h / 2 - (y + height / 2) * scale
+    source = HERE / '.snap-icon.svg'
+    source.write_text(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+        f'<defs>{defs}<radialGradient id="snapIconGlow" cx="0.5" cy="0.42" r="0.79" '
+        'gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#566f84"/>'
+        '<stop offset="1" stop-color="#1a232b"/></radialGradient></defs>'
+        f'<rect x="{inset}" y="{inset}" width="{w - 2 * inset}" height="{h - 2 * inset}" rx="{radius}" '
+        'fill="url(#snapIconGlow)"/>'
+        f'<g transform="translate({tx:.3f},{ty:.3f}) scale({scale:.5f})">{mark}</g></svg>\n')
+    try:
+        inkscape_png(source, out / 'icon.png', w)
+    finally:
+        source.unlink()
+    print((out / 'icon.png').relative_to(ROOT))
+
+    # The banner.
+    hero = Image.open(MSIX / 'store-listing' / 'hero.png').convert('RGB')
+    w, h = hero.width, hero.width // 3
+    band = round(HERO_BAND * hero.height)
+    hero.crop((0, band - h // 2, w, band + h // 2)).save(out / 'banner.png', optimize=True)
+    print((out / 'banner.png').relative_to(ROOT))
 
 
 def text_outline(text: str, font_file: Path, height: float, tracking: float) -> tuple[str, float]:
@@ -910,6 +968,7 @@ def main() -> int:
     write_installer_images(defs, mark, flat, box)
     write_readme_banner(defs, mark, box)
     write_store_listing(defs, mark, box)
+    write_snap_listing(defs, mark, box)
     write_haiku_icon(text)
     tiles = write_tiles(defs, mark, box)
     print(tiles.relative_to(ROOT))
