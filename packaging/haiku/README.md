@@ -7,6 +7,7 @@ Haiku does not package yet.
     media-video/subtitld/additional-files/       its launcher, resources and icon
     dev-python/<name>/<name>-<version>.recipe    9 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
+    haikudepot/                                  HaikuDepot's listing: screenshots, texts
 
 ## A native application
 
