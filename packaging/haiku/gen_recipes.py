@@ -1,163 +1,115 @@
 #!/usr/bin/env python3
-"""Generate haikuports recipes for Subtitld's Python dependencies.
+"""Write the haikuports recipes for the Python packages Subtitld needs and
+Haiku does not package yet (dev-python/).
 
-Versions are pinned to what was verified working inside the Haiku VM.
-For each package we fetch the PyPI sdist, take its real SHA256, and inspect
-it to see whether it ships a setup.py (haikuports' house INSTALL idiom) or is
-PEP 517-only (which needs a wheel-based INSTALL instead).
+    python3 gen_recipes.py        (from packaging/haiku)
+
+They follow haikuports' own: built from PyPI's source archive with build and
+installer (as requests and beautifulsoup4 are), or, where the build backend
+is not packaged for Haiku, installed from the pure-Python wheel with installer
+(as typing_extensions is). Each archive's checksum is taken from PyPI and
+checked against the download. Copyright lines and licenses come from each
+project's own LICENSE file; check them again on a version bump.
 """
-import hashlib, io, json, os, re, tarfile, urllib.request, zipfile
+import hashlib
+import json
+import os
+import urllib.request
 
-# pypi name -> (version, haiku package name, extra REQUIRES lines)
 PKGS = [
-    ("edge-tts",        "7.3.1",  "edge_tts",        ["aiohttp_$pythonPackage", "certifi_$pythonPackage", "tabulate_$pythonPackage"]),
-    ("gTTS",            "2.5.4",  "gtts",            ["requests_$pythonPackage", "click_$pythonPackage"]),
-    ("platformdirs",    "4.11.8", "platformdirs",    []),
-    ("pysubs2",         "1.8.1",  "pysubs2",         []),
-    ("python-docx",     "1.2.0",  "python_docx",     ["lxml_$pythonPackage", "typing_extensions_$pythonPackage"]),
-    ("python-i18n",     "0.3.9",  "python_i18n",     []),
-    ("sounddevice",     "0.5.6",  "sounddevice",     ["cffi_$pythonPackage", "lib:libportaudio"]),
-    ("soundfile",       "0.14.0", "soundfile",       ["cffi_$pythonPackage", "lib:libsndfile"]),
-    ("tabulate",        "0.10.0", "tabulate",        []),
+    dict(port="edge_tts", pypi="edge-tts", version="7.3.1",
+         summary="Use Microsoft Edge's online text-to-speech service from Python",
+         description="Lets Python code synthesise speech through Microsoft Edge's online "
+                     "text-to-speech service, without installing the browser or holding an API "
+                     "key. Audio can be written to a file or streamed, with subtitles for it.",
+         homepage="https://github.com/rany2/edge-tts",
+         # LGPLv3, except src/edge_tts/srt_composer.py: MIT.
+         copyright=["2014-2023 Christopher Down", "2025 rany"],
+         license=["GNU LGPL v3", "MIT"],
+         build=["setuptools"],
+         requires=["aiohttp", "certifi", "tabulate", "typing_extensions"]),
+    dict(port="gtts", pypi="gTTS", version="2.5.4",
+         summary="Python interface to Google Translate's text-to-speech API",
+         description="Provides a library and command line tool that turn text into spoken "
+                     "audio using Google Translate's text-to-speech service, writing the result "
+                     "to a file or stream.",
+         homepage="https://github.com/pndurette/gTTS",
+         copyright=["2014-2024 Pierre Nicolas Durette"],
+         license=["MIT"],
+         build=["setuptools", "wheel"],
+         requires=["click", "requests"]),
+    # hatch-vcs is not packaged for Haiku: the wheel instead.
+    dict(port="platformdirs", pypi="platformdirs", version="4.11.8", wheel=True,
+         summary="Determine platform-specific directories for app data and config",
+         description="Works out the correct per-platform locations for application data, "
+                     "configuration, cache, state and log directories, so applications do not "
+                     "have to encode those conventions themselves.",
+         homepage="https://github.com/tox-dev/platformdirs",
+         copyright=["2010-202x The platformdirs developers"],
+         license=["MIT"],
+         requires=[]),
+    dict(port="pysubs2", pypi="pysubs2", version="1.8.1",
+         summary="Load, edit and save subtitle files in several formats",
+         description="A library and command line tool for loading, editing and saving subtitle "
+                     "files in the SubStation Alpha, SubRip, WebVTT and MicroDVD formats, "
+                     "including retiming and format conversion.",
+         homepage="https://github.com/tkarabela/pysubs2",
+         copyright=["2014-2026 Tomas Karabela"],
+         license=["MIT"],
+         build=["hatchling"],
+         requires=[]),
+    dict(port="python_docx", pypi="python-docx", version="1.2.0",
+         summary="Create and update Microsoft Word .docx files from Python",
+         description="Creates, reads and modifies Microsoft Word .docx documents, giving "
+                     "programmatic access to paragraphs, runs, styles, tables and inline images.",
+         homepage="https://github.com/python-openxml/python-docx",
+         copyright=["2013 Steve Canny"],
+         license=["MIT"],
+         build=["setuptools"],
+         requires=["lxml", "typing_extensions"]),
+    # The sdist has no LICENSE file; the repository's says this.
+    dict(port="python_i18n", pypi="python-i18n", version="0.3.9",
+         summary="Lightweight internationalisation library using YAML or JSON",
+         description="A small internationalisation and localisation library that loads "
+                     "translations from YAML or JSON files and resolves them by locale, with "
+                     "placeholder interpolation and pluralisation.",
+         homepage="https://github.com/tuvistavie/python-i18n",
+         copyright=["2012 Daniel Perez"],
+         license=["MIT"],
+         build=["setuptools"],
+         requires=[]),
+    dict(port="sounddevice", pypi="sounddevice", version="0.5.6",
+         summary="Play and record sound using PortAudio and NumPy arrays",
+         description="Binds the PortAudio library so that sound can be played and recorded "
+                     "directly from NumPy arrays, with both blocking and callback-driven "
+                     "streaming interfaces.",
+         homepage="https://github.com/spatialaudio/python-sounddevice",
+         copyright=["2015-2025 Matthias Geier"],
+         license=["MIT"],
+         build=["cffi", "setuptools", "setuptools_scm"],
+         requires=["cffi", "lib:libportaudio"]),
+    dict(port="soundfile", pypi="soundfile", version="0.14.0",
+         summary="Read and write sound files through libsndfile",
+         description="Reads and writes sound files in the many formats libsndfile supports, "
+                     "returning and accepting audio as NumPy arrays, with support for seeking "
+                     "and block-wise processing.",
+         homepage="https://github.com/bastibe/python-soundfile",
+         copyright=["2013 Bastian Bechtold"],
+         license=["BSD (3-clause)"],
+         build=["cffi", "setuptools"],
+         requires=["cffi", "numpy", "typing_extensions", "lib:libsndfile"]),
+    dict(port="tabulate", pypi="tabulate", version="0.10.0",
+         summary="Format tabular data as plain-text tables",
+         description="Renders lists, dictionaries and NumPy arrays as readable plain-text tables "
+                     "in a range of styles, including grid, pipe, rst and HTML output.",
+         homepage="https://github.com/astanin/python-tabulate",
+         copyright=["2011-2020 Sergey Astanin and contributors"],
+         license=["MIT"],
+         build=["setuptools", "setuptools_scm"],
+         requires=[]),
 ]
 
-# Packages whose setup.py declares setup_requires: without these in
-# BUILD_REQUIRES setuptools tries to pip-fetch them, and pip is not available
-# inside the haikuporter chroot.
-# Optional BUILD() bodies for sources that need a nudge before setup.py runs.
-BUILD_BODY = {}
-
-BUILD_EXTRA = {
-    "soundfile":   ["cffi_$pythonPackage"],
-    "sounddevice": ["cffi_$pythonPackage"],
-}
-
-# SPDX-ish -> haikuports licenses/ names
-LICENSE_OVERRIDE = {
-    "sounddevice": "MIT", "tabulate": "MIT",
-    "edge_tts": "GNU GPL v3",
-}
-LICENSE_MAP = {
-    "MIT": "MIT", "MIT License": "MIT",
-    "BSD": "BSD (3-clause)", "BSD License": "BSD (3-clause)",
-    "BSD-3-Clause": "BSD (3-clause)", "BSD-2-Clause": "BSD (2-clause)",
-    "Apache 2.0": "Apache v2", "Apache-2.0": "Apache v2",
-    "Apache Software License": "Apache v2",
-    "LGPL": "GNU LGPL v3", "GPL": "GNU GPL v3",
-    "GNU Lesser General Public License v3 (LGPLv3)": "GNU LGPL v3",
-    "MPL-2.0": "MPL v2.0", "MPL 2.0": "MPL v2.0",
-}
-
-
-
-# Curated text: scraped PyPI long-descriptions are full of badges and code
-# blocks, and haikuports requires DESCRIPTION to differ from SUMMARY.
-META = {
- "edge_tts": ("Use Microsoft Edge's online text-to-speech service from Python",
-   "Lets Python code synthesise speech through Microsoft Edge's online text-to-speech service, without installing the browser or holding an API key. Audio can be written to a file or streamed."),
- "gtts": ("Python interface to Google Translate's text-to-speech API",
-   "Provides a library and command line tool that turn text into spoken audio using Google Translate's text-to-speech service, writing the result to a file or stream."),
- "platformdirs": ("Determine platform-specific directories for app data and config",
-   "Works out the correct per-platform locations for application data, configuration, cache, state and log directories, so applications do not have to encode those conventions themselves."),
- "pysubs2": ("Load, edit and save subtitle files in several formats",
-   "A library and command line tool for loading, editing and saving subtitle files in the SubStation Alpha, SubRip, WebVTT and MicroDVD formats, including retiming and format conversion."),
- "python_docx": ("Create and update Microsoft Word .docx files from Python",
-   "Creates, reads and modifies Microsoft Word .docx documents, giving programmatic access to paragraphs, runs, styles, tables and inline images."),
- "python_i18n": ("Lightweight internationalisation library using YAML or JSON",
-   "A small internationalisation and localisation library that loads translations from YAML or JSON files and resolves them by locale, with placeholder interpolation and pluralisation."),
- "sounddevice": ("Play and record sound using PortAudio and NumPy arrays",
-   "Binds the PortAudio library so that sound can be played and recorded directly from NumPy arrays, with both blocking and callback-driven streaming interfaces."),
- "soundfile": ("Read and write sound files through libsndfile",
-   "Reads and writes sound files in the many formats libsndfile supports, returning and accepting audio as NumPy arrays, with support for seeking and block-wise processing."),
- "tabulate": ("Format tabular data as plain-text tables",
-   "Renders lists, dictionaries and NumPy arrays as readable plain-text tables in a range of styles, including grid, pipe, rst and HTML output."),
-}
-
-
-def author_of(info):
-    """PyPI puts the author in `author`, or as "Name <mail>" in `author_email`."""
-    for key in ("author", "maintainer"):
-        v = (info.get(key) or "").strip()
-        if v and "@" not in v:
-            return v
-    for key in ("author_email", "maintainer_email"):
-        v = (info.get(key) or "").strip()
-        if "<" in v:
-            name = v.split("<", 1)[0].strip().strip('"')
-            if name:
-                return name
-        elif v and "@" not in v:
-            return v
-    return "FIXME-check-upstream-LICENSE"
-
-def clean(t):
-    """Strip characters that bash would interpret inside a double-quoted string."""
-    t = (t or "").replace("`", "'").replace('"', "'").replace("\\", "/").replace("$", "")
-    return re.sub(r"\s+", " ", t).strip()
-
-def make_summary(raw, hname):
-    t = clean(raw).rstrip(".")
-    # haikuports policy: must not begin with the port name
-    if t.lower().startswith(hname.lower()):
-        t = t[len(hname):].lstrip(" :-,")
-        t = t[0].upper() + t[1:] if t else t
-    if not t:
-        t = "Python module"
-    if len(t) > 80:                      # policy: 80 chars max
-        t = t[:77].rsplit(" ", 1)[0] + "..."
-    return t
-
-def make_description(long_desc, summary, homepage, pypi_name):
-    """DESCRIPTION must differ from SUMMARY, so build a real paragraph."""
-    body = clean(long_desc)
-    body = re.sub(r"^[=#*\-_]{3,}", " ", body)
-    body = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", body)   # images
-    body = re.sub(r"https?://\S+", "", body)              # badge urls
-    body = re.sub(r"\s+", " ", body).strip()
-    sentences = re.split(r"(?<=[.!?]) ", body)
-    picked = " ".join(sentences[:4]).strip()
-    if len(picked) < 40 or picked.lower().rstrip(".") == summary.lower().rstrip("."):
-        picked = (f"{summary}. This port packages the {pypi_name} module for "
-                  f"Python on Haiku.")
-    if len(picked) > 600:
-        picked = picked[:597].rsplit(" ", 1)[0] + "..."
-    return picked
-
-def pypi(name, version):
-    url = f"https://pypi.org/pypi/{name}/{version}/json"
-    with urllib.request.urlopen(url, timeout=40) as r:
-        return json.load(r)
-
-def sdist_of(meta):
-    for u in meta["urls"]:
-        if u["packagetype"] == "sdist":
-            return u
-    return None
-
-def has_setup_py(blob, filename):
-    bio = io.BytesIO(blob)
-    try:
-        if filename.endswith(".zip"):
-            with zipfile.ZipFile(bio) as z:
-                names = z.namelist()
-        else:
-            with tarfile.open(fileobj=bio) as t:
-                names = t.getnames()
-    except Exception:
-        return None
-    return any(n.count("/") == 1 and n.endswith("/setup.py") for n in names)
-
-def wrap(text, width=78):
-    out, line = [], ""
-    for w in (text or "").split():
-        if len(line) + len(w) + 1 > width:
-            out.append(line); line = w
-        else:
-            line = (line + " " + w).strip()
-    if line: out.append(line)
-    return " \\\n".join(out) if out else "See the project homepage."
-
-TEMPLATE = """SUMMARY="{summary}"
+HEADER = """SUMMARY="{summary}"
 DESCRIPTION="{description}"
 HOMEPAGE="{homepage}"
 COPYRIGHT="{copyright}"
@@ -165,7 +117,7 @@ LICENSE="{license}"
 REVISION="1"
 SOURCE_URI="{source_uri}"
 CHECKSUM_SHA256="{sha256}"
-{source_dir_line}
+{source_dir}
 ARCHITECTURES="any"
 
 PROVIDES="
@@ -185,115 +137,119 @@ for pythonVersion in ${{PYTHON_VERSIONS[@]}}; do
 \tpythonPackage=python${{pythonVersion//.}}
 
 \teval "PROVIDES_$pythonPackage=\\"
-\t\t{hname}_$pythonPackage = $portVersion
+\t\t${{portName}}_$pythonPackage = $portVersion
 \t\t\\""
 \teval "REQUIRES_$pythonPackage=\\"
 \t\thaiku
-\t\tcmd:python$pythonVersion
-{extra_requires}\t\t\\""
-
+{requires}\t\tcmd:python$pythonVersion
+\t\t\\""
 \tBUILD_REQUIRES+="
-\t\tsetuptools_$pythonPackage
-{build_extra}\t\t"
+{build_requires}\t\t"
 \tBUILD_PREREQUIRES+="
 \t\tcmd:python$pythonVersion
 \t\t"
 done
 
-{build_section}INSTALL()
+INSTALL()
 {{
 \tfor pythonVersion in ${{PYTHON_VERSIONS[@]}}; do
 \t\tpythonPackage=python${{pythonVersion//.}}
 
 \t\tpython=python$pythonVersion
-\t\tinstallLocation=$prefix/lib/$python/vendor-packages/
-\t\texport PYTHONPATH=$installLocation:$PYTHONPATH
 
-\t\tmkdir -p $installLocation
-\t\trm -rf build
-
-{install_body}
+{install}
 \t\tpackageEntries $pythonPackage \\
 \t\t\t$prefix/lib/python*
 \tdone
 }}
 """
 
-SETUPPY_BODY = """\t\t$python setup.py build install \\
-\t\t\t--root=/ --prefix=$prefix
+SDIST_INSTALL = """\t\t$python -m build --wheel --no-isolation
+\t\t$python -m installer -p $prefix dist/*.whl
 """
 
-# PEP 517-only: build a wheel with the declared backend, then unpack it.
-PEP517_BODY = """\t\t# Upstream ships no setup.py (PEP 517-only) and its build backend
-\t\t# (hatchling/flit) is not packaged for Haiku yet. This is a pure-Python
-\t\t# wheel, which haikuporter has already unpacked, so install its contents
-\t\t# directly - they include the .dist-info that importlib.metadata reads.
-\t\tcp -R ./* $installLocation/
+WHEEL_INSTALL = """\t\t$python -m installer -p $prefix {wheel}
 """
+
+
+def pypi_file(name, version, kind):
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=40) as r:
+        meta = json.load(r)
+    if kind == "sdist":
+        return next(u for u in meta["urls"] if u["packagetype"] == "sdist")
+    return next(u for u in meta["urls"] if u["packagetype"] == "bdist_wheel"
+                and u["filename"].endswith("-none-any.whl"))
+
+
+def checked_sha256(url, expected):
+    with urllib.request.urlopen(url, timeout=120) as r:
+        sha = hashlib.sha256(r.read()).hexdigest()
+    assert sha == expected, f"{url}: {sha} is not PyPI's {expected}"
+    return sha
+
+
+def wrap(text, width=76):
+    lines, line = [], ""
+    for word in text.split():
+        if line and len(line) + 1 + len(word) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    return " \\\n".join(lines + [line])
+
+
+def recipe(p):
+    wheel = p.get("wheel", False)
+    f = pypi_file(p["pypi"], p["version"], "wheel" if wheel else "sdist")
+    filename = f["filename"].replace(p["version"], "$portVersion")
+    # PyPI's stable paths: /packages/source/<initial>/<project>/<file> for
+    # sources, /packages/<python tag>/<initial>/<project>/<file> for wheels.
+    if wheel:
+        tag = f["filename"].split("-")[-3]
+        uri = f"https://files.pythonhosted.org/packages/{tag}/{p['pypi'][0]}/{p['pypi']}/{filename}#noarchive"
+    else:
+        uri = f"https://files.pythonhosted.org/packages/source/{p['pypi'][0]}/{p['pypi']}/{filename}"
+    sha = checked_sha256(uri.split("#")[0].replace("$portVersion", p["version"]), f["digests"]["sha256"])
+    top = f["filename"][: -len(".tar.gz")] if f["filename"].endswith(".tar.gz") else None
+    source_dir = ""
+    if top and top != f"{p['port']}-{p['version']}":
+        source_dir = f'SOURCE_DIR="{top.replace(p["version"], "$portVersion")}"\n'
+
+    python_deps = sorted(r for r in p["requires"] if ":" not in r)
+    other_deps = sorted(r for r in p["requires"] if ":" in r)
+    requires = "".join(f"\t\t{r}_$pythonPackage\n" for r in python_deps)
+    requires += "".join(f"\t\t{r}\n" for r in other_deps)
+    build = ["installer"] if wheel else sorted(set(["build", "installer"] + p["build"]))
+    build_requires = "".join(f"\t\t{b}_$pythonPackage\n" for b in build)
+    install = (WHEEL_INSTALL.format(wheel=filename.split("#")[0]) if wheel else SDIST_INSTALL)
+    return HEADER.format(
+        summary=p["summary"],
+        description=wrap(p["description"]),
+        homepage=p["homepage"],
+        copyright="\n\t".join(p["copyright"]),
+        license="\n\t".join(p["license"]),
+        source_uri=uri,
+        sha256=sha,
+        source_dir=source_dir,
+        requires=requires,
+        build_requires=build_requires,
+        install=install,
+    )
+
 
 def main():
-    rows = []
-    for pypi_name, version, hname, extra in PKGS:
-        meta = pypi(pypi_name, version)
-        info, sd = meta["info"], sdist_of(meta)
-        if sd is None:
-            rows.append((hname, version, "NO SDIST", "-")); continue
-        blob = urllib.request.urlopen(sd["url"], timeout=90).read()
-        sha = hashlib.sha256(blob).hexdigest()
-        assert sha == sd["digests"]["sha256"], f"{pypi_name}: checksum mismatch vs PyPI"
-        setuppy = has_setup_py(blob, sd["filename"])
-        if not setuppy:
-            whl = next((u for u in meta["urls"]
-                        if u["packagetype"] == "bdist_wheel"
-                        and u["filename"].endswith("py3-none-any.whl")), None)
-            if whl is None:
-                rows.append((hname, version, "NO PURE WHEEL", "-")); continue
-            sd = whl
-            sha = whl["digests"]["sha256"]
-        lic = info.get("license") or ""
-        classifiers = [c for c in info.get("classifiers", []) if c.startswith("License ::")]
-        if classifiers:
-            lic = classifiers[-1].split("::")[-1].strip()
-        hlic = LICENSE_OVERRIDE.get(hname) or LICENSE_MAP.get(lic.strip(), lic.strip() or "FIXME")
-        if sd["filename"].endswith(".whl"):
-            src_dir = None         # no single top-level dir inside a wheel
-        else:
-            src_dir = sd["filename"]
-            for suf in (".tar.gz", ".zip", ".tar.bz2"):
-                if src_dir.endswith(suf): src_dir = src_dir[:-len(suf)]
-        extra_lines = "".join(f"\t\t{e}\n" for e in extra)
-        body = SETUPPY_BODY if setuppy else PEP517_BODY
-        curated = META.get(hname)
-        summary = make_summary(curated[0] if curated else (info.get("summary") or hname), hname)
-        text = TEMPLATE.format(
-            summary=summary,
-            description=wrap(curated[1] if curated
-                             else make_description(info.get("description"), summary,
-                                                   info.get("home_page") or "", pypi_name)),
-            homepage=info.get("home_page") or info.get("project_url") or f"https://pypi.org/project/{pypi_name}/",
-            copyright=clean(f"{(sd.get('upload_time') or '2026')[:4]} {author_of(info)}"),
-            license=hlic,
-            source_uri=sd["url"],
-            sha256=sha,
-            # An empty SOURCE_DIR tells haikuporter the archive has no single
-            # top-level directory to descend into (true for wheels).
-            source_dir_line=('SOURCE_DIR=""\n' if src_dir is None
-                             else f'SOURCE_DIR="{src_dir}"\n'),
-            hname=hname,
-            extra_requires=extra_lines,
-            install_body=body,
-            build_section=("BUILD()\n{\n" + BUILD_BODY[hname] + "}\n\n"
-                           if hname in BUILD_BODY else ""),
-            build_extra="".join(f"\t\t{b}\n" for b in BUILD_EXTRA.get(hname, [])),
-        )
-        d = os.path.join("dev-python", hname)
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in PKGS:
+        d = os.path.join(here, "dev-python", p["port"])
         os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, f"{hname}-{version}.recipe"), "w") as f:
-            f.write(text)
-        rows.append((hname, version, "setup.py" if setuppy else "PEP517-only", hlic))
-    print(f"{'package':20s} {'version':10s} {'build':14s} license")
-    print("-" * 62)
-    for r in rows:
-        print(f"{r[0]:20s} {r[1]:10s} {r[2]:14s} {r[3]}")
+        for old in os.listdir(d):
+            if old.endswith(".recipe"):
+                os.remove(os.path.join(d, old))
+        with open(os.path.join(d, f"{p['port']}-{p['version']}.recipe"), "w") as f:
+            f.write(recipe(p))
+        print(f"{p['port']:14s} {p['version']:9s} {'wheel' if p.get('wheel') else 'sdist':6s} "
+              f"{', '.join(p['license'])}")
+
 
 main()

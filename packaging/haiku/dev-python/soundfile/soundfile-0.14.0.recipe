@@ -3,12 +3,11 @@ DESCRIPTION="Reads and writes sound files in the many formats libsndfile support
 returning and accepting audio as NumPy arrays, with support for seeking and \
 block-wise processing."
 HOMEPAGE="https://github.com/bastibe/python-soundfile"
-COPYRIGHT="2026 Bastian Bechtold"
+COPYRIGHT="2013 Bastian Bechtold"
 LICENSE="BSD (3-clause)"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/d2/db/949331952a6fb1c5b12e9de80fd08747966c2039d1a61db4764fbd3981c2/soundfile-0.14.0.tar.gz"
+SOURCE_URI="https://files.pythonhosted.org/packages/source/s/soundfile/soundfile-$portVersion.tar.gz"
 CHECKSUM_SHA256="ba1c1a2d618bca5c406647c83b89f07cc8810fa506a50622a6993ba130c1de11"
-SOURCE_DIR="soundfile-0.14.0"
 
 ARCHITECTURES="any"
 
@@ -29,18 +28,21 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 	pythonPackage=python${pythonVersion//.}
 
 	eval "PROVIDES_$pythonPackage=\"
-		soundfile_$pythonPackage = $portVersion
+		${portName}_$pythonPackage = $portVersion
 		\""
 	eval "REQUIRES_$pythonPackage=\"
 		haiku
-		cmd:python$pythonVersion
 		cffi_$pythonPackage
+		numpy_$pythonPackage
+		typing_extensions_$pythonPackage
 		lib:libsndfile
+		cmd:python$pythonVersion
 		\""
-
 	BUILD_REQUIRES+="
-		setuptools_$pythonPackage
+		build_$pythonPackage
 		cffi_$pythonPackage
+		installer_$pythonPackage
+		setuptools_$pythonPackage
 		"
 	BUILD_PREREQUIRES+="
 		cmd:python$pythonVersion
@@ -53,14 +55,9 @@ INSTALL()
 		pythonPackage=python${pythonVersion//.}
 
 		python=python$pythonVersion
-		installLocation=$prefix/lib/$python/vendor-packages/
-		export PYTHONPATH=$installLocation:$PYTHONPATH
 
-		mkdir -p $installLocation
-		rm -rf build
-
-		$python setup.py build install \
-			--root=/ --prefix=$prefix
+		$python -m build --wheel --no-isolation
+		$python -m installer -p $prefix dist/*.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

@@ -1,14 +1,13 @@
 SUMMARY="Play and record sound using PortAudio and NumPy arrays"
-DESCRIPTION="Binds the PortAudio library so that sound can be played and recorded directly \
-from NumPy arrays, with both blocking and callback-driven streaming \
+DESCRIPTION="Binds the PortAudio library so that sound can be played and recorded \
+directly from NumPy arrays, with both blocking and callback-driven streaming \
 interfaces."
-HOMEPAGE="https://pypi.org/project/sounddevice/"
-COPYRIGHT="2026 Matthias Geier"
+HOMEPAGE="https://github.com/spatialaudio/python-sounddevice"
+COPYRIGHT="2015-2025 Matthias Geier"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/ec/db/0c890e2d9aab9ba284021efc02e1d3aebfecab1b611762d7434602209bcf/sounddevice-0.5.6.tar.gz"
+SOURCE_URI="https://files.pythonhosted.org/packages/source/s/sounddevice/sounddevice-$portVersion.tar.gz"
 CHECKSUM_SHA256="8ec9fbfde2e32f020b167e348f3ab3bac6625a5f15af524d790108ac7147a410"
-SOURCE_DIR="sounddevice-0.5.6"
 
 ARCHITECTURES="any"
 
@@ -29,18 +28,20 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 	pythonPackage=python${pythonVersion//.}
 
 	eval "PROVIDES_$pythonPackage=\"
-		sounddevice_$pythonPackage = $portVersion
+		${portName}_$pythonPackage = $portVersion
 		\""
 	eval "REQUIRES_$pythonPackage=\"
 		haiku
-		cmd:python$pythonVersion
 		cffi_$pythonPackage
 		lib:libportaudio
+		cmd:python$pythonVersion
 		\""
-
 	BUILD_REQUIRES+="
-		setuptools_$pythonPackage
+		build_$pythonPackage
 		cffi_$pythonPackage
+		installer_$pythonPackage
+		setuptools_$pythonPackage
+		setuptools_scm_$pythonPackage
 		"
 	BUILD_PREREQUIRES+="
 		cmd:python$pythonVersion
@@ -53,14 +54,9 @@ INSTALL()
 		pythonPackage=python${pythonVersion//.}
 
 		python=python$pythonVersion
-		installLocation=$prefix/lib/$python/vendor-packages/
-		export PYTHONPATH=$installLocation:$PYTHONPATH
 
-		mkdir -p $installLocation
-		rm -rf build
-
-		$python setup.py build install \
-			--root=/ --prefix=$prefix
+		$python -m build --wheel --no-isolation
+		$python -m installer -p $prefix dist/*.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*
