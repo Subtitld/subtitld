@@ -955,6 +955,17 @@ class Track:
         return out
 
 
+def _haiku_sound_card():
+    """Whether Haiku has a sound card to play to. Its media server mixes
+    into a "Default Output" with or without one, and PortAudio lists it
+    either way; opened with no card behind it, it crashes the process
+    rather than raising. Sound drivers publish their devices under
+    /dev/audio (/dev/audio/hmulti/hda/0 for HD Audio); with no card,
+    nothing is there. Checked again on each play(), so a USB card plugged
+    in later is found."""
+    return any(files for _, _, files in os.walk('/dev/audio'))
+
+
 class SoundDeviceAudioEngine:
     def __init__(self, samplerate=48000, blocksize=4096):
         # ARCHITECTURE
@@ -1191,7 +1202,8 @@ class SoundDeviceAudioEngine:
             return True
         if not self._no_output_logged:
             self._no_output_logged = True
-            sys.stderr.write(f'[audioengine] WARNING: no audio output device, playback is silent ({error})\n')
+            reason = error if error is not None else 'no sound card'
+            sys.stderr.write(f'[audioengine] WARNING: no audio output device, playback is silent ({reason})\n')
             sys.stderr.flush()
         return False
 
@@ -1203,7 +1215,10 @@ class SoundDeviceAudioEngine:
         some 430 ms of audio and reports about 175: the picture, lined up
         with what it reports, still ran a quarter of a second ahead of the
         sound. WASAPI reports what it holds, and holds less. Then the
-        default, everywhere."""
+        default, everywhere; except on Haiku without a sound card, where
+        there is nothing to try (see _haiku_sound_card)."""
+        if sys.platform.startswith('haiku') and not _haiku_sound_card():
+            return []
         choices = []
         if sys.platform == 'win32':
             try:

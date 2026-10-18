@@ -1,6 +1,8 @@
 """No audio output device (no sound card, PipeWire/PulseAudio not running, a
 headless box): the audio engine, the preview panel and the main window still
-build, playback is silent, and play() tries the device again. A window that
+build, playback is silent, and play() tries the device again. On Haiku with
+no sound card no stream is tried at all: its media server's default output
+is listed regardless, and opening it crashes the process. A window that
 fails half-way through being built stops the add-ons catalog fetch it started
 instead of letting Qt abort the process over the running QThread.
 
@@ -87,6 +89,40 @@ check('stream opened and started', (type(engine.stream).__name__, engine.stream.
       ('FakeStream', ['start'], True))
 engine.shutdown()
 check('pause and close on shutdown', engine.stream.calls, ['start', 'stop', 'close'])
+audioengine.sd.OutputStream = no_device
+
+print('Haiku without a sound card: no stream is even tried')
+NO_CARD = [('/dev/audio', ['hmulti'], []), ('/dev/audio/hmulti', [], [])]
+HDA = [('/dev/audio', ['hmulti'], []), ('/dev/audio/hmulti', ['hda'], []), ('/dev/audio/hmulti/hda', [], ['0'])]
+tried = []
+
+
+def must_not_open(**kwargs):
+    tried.append(kwargs)
+    raise AssertionError('a stream was opened with no sound card')
+
+
+platform, walk = sys.platform, audioengine.os.walk
+audioengine.sd.OutputStream = must_not_open
+stderr, sys.stderr = sys.stderr, io.StringIO()
+try:
+    sys.platform = 'haiku1'
+    audioengine.os.walk = lambda top: iter(NO_CARD)
+    check('no card found', audioengine._haiku_sound_card(), False)
+    engine = audioengine.SoundDeviceAudioEngine()
+    engine.play(0.5)
+    log = sys.stderr.getvalue()
+    # A USB card plugged in afterwards.
+    audioengine.os.walk = lambda top: iter(HDA)
+    check('a card found', audioengine._haiku_sound_card(), True)
+    audioengine.sd.OutputStream = FakeStream
+    engine.play(0.5)
+finally:
+    sys.platform, audioengine.os.walk, sys.stderr = platform, walk, stderr
+check('no stream tried', tried, [])
+check('one warning: no sound card', (log.count('WARNING'), 'no sound card' in log), (1, True))
+check('the card is used by the next play()', (type(engine.stream).__name__, engine.playing), ('FakeStream', True))
+engine.shutdown()
 audioengine.sd.OutputStream = no_device
 
 print('shutdown with no device')
