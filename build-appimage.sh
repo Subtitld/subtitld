@@ -47,9 +47,20 @@ exec "$APPDIR/usr/bin/subtitld/subtitld" "$@"
 EOF
 chmod +x $APP_DIR/AppRun
 
-# Download appimagetool
-wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+# appimagetool and the runtime it puts in front of the AppImage, pinned. The
+# runtime is static: the AppImage runs without libfuse2, which Ubuntu (since
+# 22.04) and other current distributions no longer install. AppImageKit's
+# appimagetool, used before, made AppImages that need it.
+wget -q -O appimagetool-x86_64.AppImage \
+    https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+wget -q -O runtime-x86_64 \
+    https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+sha256sum -c - <<'SUMS'
+ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage
+2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64
+SUMS
 chmod +x appimagetool-x86_64.AppImage
 
 # Build AppImage
-ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run $APP_DIR Subtitld-$VERSION-x86_64.AppImage
+ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run --runtime-file runtime-x86_64 \
+    $APP_DIR Subtitld-$VERSION-x86_64.AppImage

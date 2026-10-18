@@ -27,6 +27,7 @@ __pycache__
 *.egg
 *.egg-info
 *.AppImage
+/runtime-x86_64
 dist/
 build/
 eggs/
