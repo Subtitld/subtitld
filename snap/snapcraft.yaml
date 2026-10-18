@@ -157,6 +157,16 @@ parts:
       cat > "$CRAFT_PART_INSTALL/bin/subtitld-launcher" <<'LAUNCHER'
       #!/bin/bash
       export LD_LIBRARY_PATH="$SNAP/lib/python3.10/site-packages/PySide6/Qt/lib:$LD_LIBRARY_PATH"
+      # The extension also points QT_PLUGIN_PATH at its own Qt's plugins,
+      # which Qt searches before PySide6's. Its Wayland ones (xdg-shell,
+      # wayland-egl) fail to load against PySide6's Qt, Qt falls back to
+      # wl-shell, which GNOME does not offer, and no window appears. Only
+      # PySide6's plugins, then; and X11 if Wayland still fails.
+      export QT_PLUGIN_PATH="$SNAP/lib/python3.10/site-packages/PySide6/Qt/plugins"
+      unset QML2_IMPORT_PATH
+      if [ -n "$WAYLAND_DISPLAY" ]; then
+        export QT_QPA_PLATFORM="wayland;xcb"
+      fi
       # Force ALSA to read our self-contained minimal conf (built in
       # override-build) and to find pulse + rate plugins under the
       # staged plugin dir. The minimal conf defines only `default`
