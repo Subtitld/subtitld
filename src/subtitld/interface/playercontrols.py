@@ -1374,6 +1374,11 @@ def load(self):
         engine = _audio_engine()
         if engine is None:
             return float(session.SUBTITLE.get('position', 0) or 0)
+        if engine.stream is None:
+            # No sound device: the engine stands still, and the picture
+            # plays on its own (preview_panel._start_picture). The
+            # picture is the clock, playing or paused.
+            return self.preview_panel_player._media_player.position() / 1000.0
         ae_pos = engine.heard_position
         if not _is_playing():
             # Paused — engine playhead is canonical, don't extrapolate.
@@ -1488,6 +1493,10 @@ def load(self):
             return
         mp = self.preview_panel_player._media_player
         if mp.playbackState() != QMediaPlayer.PlayingState:
+            return
+        if not engine.playing:
+            # No sound device, so no sound to follow: snapping the picture
+            # to the engine's standing playhead held it on one frame.
             return
         # Where the sound is heard, not what has been handed to the device:
         # snapping to that left the picture the device's latency ahead.

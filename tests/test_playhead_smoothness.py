@@ -7,7 +7,9 @@ moves its playhead once a callback: every 85 ms, at 4096 samples a block and
 jump. So _smoothed_position_sec anchors on the engine's playhead each time it
 moves, and in between runs the cursor on by the wall clock times the playback
 speed: a quarter second at most, should the engine stall, and not at all while
-paused, when the wall clock runs on but the audio does not.
+paused, when the wall clock runs on but the audio does not. With no sound
+device the engine never moves, and the picture is the clock: the cursor
+follows it, and the video-sync watchdog leaves it be.
 
 This runs the real playercontrols.load on a stand-in window, with a stand-in
 media player and audio engine, and fires the cursor timer by hand under a fake
@@ -61,19 +63,29 @@ sys.excepthook = _note_error
 
 
 class MediaPlayer(QObject):
-    """QMediaPlayer, as far as the cursor asks it: playing or not."""
+    """QMediaPlayer, as far as the cursor asks it: playing or not, and where
+    the picture is."""
     playbackStateChanged = Signal(object)
 
     def __init__(self):
         super().__init__()
         self.state = QMediaPlayer.StoppedState
+        self.position_ms = 0
 
     def playbackState(self):
         return self.state
 
+    def position(self):
+        return self.position_ms
+
+    def setPosition(self, ms):
+        self.position_ms = ms
+
 
 class Engine:
     playhead = 0.0
+    stream = 'an output stream'     # None: no sound device
+    playing = True
 
     @property
     def heard_position(self):
@@ -262,6 +274,28 @@ check('  playing starts the cursor timer again', timer.isActive(), True)
 check('  the first tick draws 42 s', near(tick(TICK)), 42.0)
 check('  the next a tick on', near(tick(TICK)), near(42.0 + TICK))
 set_state(QMediaPlayer.PausedState)
+
+print('the video-sync watchdog, with a sound device')
+watchdog = host._av_sync_timer
+engine.playhead, media.position_ms = 5.0, 20_000
+set_state(QMediaPlayer.PlayingState)
+watchdog.timeout.emit()
+check('  a picture 15 s off is put back where the sound is', media.position_ms, 5000)
+set_state(QMediaPlayer.PausedState)
+
+print('no sound device: the picture is the clock')
+# The engine never started, so its playhead stands where play() left it.
+engine.stream, engine.playing, engine.playhead = None, False, 0.04
+media.position_ms = 12_000
+set_state(QMediaPlayer.PlayingState)
+watchdog.timeout.emit()
+check('  the watchdog leaves the picture where it is', media.position_ms, 12_000)
+check('  the cursor follows the picture', near(tick(TICK)), 12.0)
+media.position_ms = 12_500
+check('  and moves on with it', near(tick(TICK)), 12.5)
+set_state(QMediaPlayer.PausedState)
+check('  paused, it stays where the picture stopped', near(tick(0.5)), 12.5)
+engine.stream, engine.playing = 'an output stream', True
 
 check('no slot raised', errors, [])
 
