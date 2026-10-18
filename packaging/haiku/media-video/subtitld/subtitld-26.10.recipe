@@ -1,7 +1,7 @@
 SUMMARY="A subtitle and caption editor"
-DESCRIPTION="Subtitld creates, edits, transcribes, translates and dubs \
-subtitles and captions. It has a timeline with the sound's waveform, a video \
-preview, speakers with their own colours, and synthetic voices to dub with. It \
+DESCRIPTION="Subtitld creates and edits subtitles and captions. It has a \
+timeline with the sound's waveform, a video preview, speakers with their own \
+colours, and online synthetic voices (Microsoft Edge, Google) to dub with. It \
 reads and writes the common subtitle formats: SRT, WebVTT, ASS and SSA, TTML, \
 SAMI, SCC and more. Projects (.usfx) keep the video, the subtitles and the \
 place you left them."
