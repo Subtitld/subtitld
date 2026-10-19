@@ -1,5 +1,6 @@
 #!/bin/bash
-# Inside the snap (snap run --shell subtitld -c 'bash snap-video-check.sh'):
+# Inside the snap, from its own folder (snap run --shell subtitld -c
+# 'bash $SNAP_USER_COMMON/snap-video-check.sh'):
 # a few seconds of AV1, the format of most YouTube downloads, and of H.264,
 # made with the snap's own ffmpeg, played with its Qt (snap-video-check.py).
 set -euo pipefail

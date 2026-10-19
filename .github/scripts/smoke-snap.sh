@@ -20,7 +20,7 @@ lxc exec "$name" -- cloud-init status --wait >/dev/null || true
 lxc exec "$name" -- snap wait system seed.loaded
 lxc file push -q "$snap_file" "$name/root/subtitld.snap"
 lxc file push -q "$here/smoke.sh" "$name/root/smoke.sh"
-lxc file push -q "$here/snap-video-check.sh" "$here/snap-video-check.py" "$name/home/ubuntu/"
+lxc file push -q "$here/snap-video-check.sh" "$here/snap-video-check.py" "$name/root/"
 lxc exec "$name" -- bash -c '
     set -e
     snap install kf6-core22 gtk-common-themes >/dev/null
@@ -36,9 +36,14 @@ lxc exec "$name" -- bash -c '
 lxc exec "$name" -- su - ubuntu -c \
     'QT_QPA_PLATFORM=offscreen SMOKE_LOG=$HOME/smoke.log smoke.sh 30 subtitld-piped'
 # The preview's picture: AV1 (most YouTube downloads, which PySide6's own
-# FFmpeg could not show) and H.264, played with the snap's Qt.
+# FFmpeg could not show) and H.264, played with the snap's Qt. The check
+# goes in the snap's own folder, the user's: confined, the app reads only
+# files its user owns.
+lxc exec "$name" -- su - ubuntu -c 'mkdir -p ~/snap/subtitld/common'
+lxc exec "$name" -- install -o ubuntu -g ubuntu -m 644 /root/snap-video-check.sh /root/snap-video-check.py \
+    /home/ubuntu/snap/subtitld/common/
 lxc exec "$name" -- su - ubuntu -c \
-    'set -o pipefail; snap run --shell subtitld -c "bash /home/ubuntu/snap-video-check.sh" 2>&1 | cat'
+    'set -o pipefail; snap run --shell subtitld -c "bash \$SNAP_USER_COMMON/snap-video-check.sh" 2>&1 | cat'
 # And on Wayland, with weston as a headless desktop: the session most Linux
 # desktops start now. Off-screen, Qt loads none of its Wayland plugins; a
 # window it cannot make there leaves the app running, so its output is

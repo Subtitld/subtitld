@@ -78,12 +78,13 @@ parts:
   # PySide6's FFmpeg decodes AV1, the format of most YouTube downloads, only
   # with a GPU's help (VAAPI), which the snap cannot reach, and has no
   # software AV1 decoder: the picture of an AV1 video never showed. The same
-  # FFmpeg, 7.1.1, built with dav1d (VideoLAN's AV1 decoder), takes its place
-  # in the PySide6 tree (the subtitld part copies it there).
+  # FFmpeg, 7.1.5 (PySide6 6.11.2's), built with dav1d (VideoLAN's AV1
+  # decoder), takes its place in the PySide6 tree (the subtitld part copies
+  # it there).
   qt-ffmpeg:
     plugin: nil
-    source: https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
-    source-checksum: sha256/733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
+    source: https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz
+    source-checksum: sha256/de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
     build-packages:
       - nasm
       - pkg-config
