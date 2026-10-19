@@ -16,6 +16,7 @@
   <a href="https://pypi.org/project/subtitld/"><img alt="PyPI" src="https://img.shields.io/pypi/v/subtitld?logo=pypi&logoColor=white&label=PyPI"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
   <a href="https://discord.gg/XjZ9AJAgU"><img alt="Discord" src="https://img.shields.io/badge/Discord-join%20us-5865F2?logo=discord&logoColor=white"></a>
+  <a href="https://www.reddit.com/r/Subtitld/"><img alt="Reddit" src="https://img.shields.io/badge/Reddit-r%2FSubtitld-FF4500?logo=reddit&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -25,7 +26,8 @@
   <a href="#formats">Formats</a> ·
   <a href="#run-from-source">Run from source</a> ·
   <a href="https://subtitld.org">Website</a> ·
-  <a href="https://discord.gg/XjZ9AJAgU">Discord</a>
+  <a href="https://discord.gg/XjZ9AJAgU">Discord</a> ·
+  <a href="https://www.reddit.com/r/Subtitld/">Reddit</a>
 </p>
 
 ![Subtitld editing the subtitles of Tears of Steel: the list of subtitles, the video with the current one over it, and the timeline with the waveform](flatpak/screenshots/editor.png)
@@ -172,7 +174,7 @@ The icons, installer pictures and this page's banner are drawn from two SVGs by
 
 Bugs and ideas go in the [issues](https://github.com/Subtitld/subtitld/issues); pull requests are
 welcome. For questions, help, or just to talk subtitles, join us on
-[Discord](https://discord.gg/XjZ9AJAgU). If Subtitld is useful to you, you can also [support its development](https://subtitld.org).
+[Discord](https://discord.gg/XjZ9AJAgU) or [r/Subtitld](https://www.reddit.com/r/Subtitld/). If Subtitld is useful to you, you can also [support its development](https://subtitld.org).
 
 ## License
 
