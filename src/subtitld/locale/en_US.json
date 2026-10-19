@@ -459,6 +459,8 @@
     "videoproperties_panel.no_video": "No video loaded",
     "videoproperties_panel.proxy_title": "Proxy",
     "videoproperties_panel.proxy_help": "Create a smaller stand-in video for smoother editing of large (4K/8K) files. The proxy is used only for the preview picture — audio, waveform and timing stay on the original.",
+    "videoproperties_panel.picture_unavailable_title": "This video's picture can't be shown",
+    "videoproperties_panel.picture_unavailable_text": "Subtitld can't decode this video's picture ({codec}) on this computer. It can make a proxy: a stand-in copy of the picture to edit with, while the audio, the waveform and the timing stay on the original. For a long video it takes a few minutes.",
     "videoproperties_panel.reencode_only": "Full resolution, re-encoded for smooth seeking",
     "videoproperties_panel.encoder_auto": "H.264 all-intra (hardware if available)",
     "videoproperties_panel.create_proxy": "Create proxy",

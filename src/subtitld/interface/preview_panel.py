@@ -18,6 +18,10 @@ from subtitld.modules import audioengine #AudaspaceAudioDevice
 
 class PlayerWidget(QWidget):
     position_changed_signal = Signal()
+    # The player reached the end of a video without showing a single frame:
+    # it cannot decode the picture here (AV1 with no GPU to decode it, say).
+    # Once per video loaded.
+    picture_unavailable_signal = Signal()
     def __init__(widget, parent=None):
         super().__init__(parent)
         widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
@@ -178,6 +182,8 @@ class PlayerWidget(QWidget):
         widget._media_player.mediaStatusChanged.connect(widget._on_media_status_changed)
 
         widget._last_video_frame = None
+        widget._picture_seen = False
+        widget._picture_unavailable_sent = False
         widget._graphics_video_item.videoSink().videoFrameChanged.connect(widget._on_video_frame)
 
         widget.layout().addWidget(widget._graphics_view, 1)
@@ -251,6 +257,22 @@ class PlayerWidget(QWidget):
         widget._video_start_timer.stop()
         widget._media_player.pause()
         widget._audio_device.pause()
+        if not widget._picture_seen and widget._media_player.hasVideo():
+            # At the end without a frame shown: the picture cannot be decoded
+            # here, and stepping back from the end would only leave the cursor
+            # there. Back to the start, and say so (the proxy is offered).
+            widget._audio_device.seek(0.0)
+            session.SUBTITLE['position'] = 0.0
+            widget.update_subtitle_layer()
+            widget.position_changed_signal.emit()
+            window = widget.window()
+            if hasattr(window, 'playercontrols_playpause_button'):
+                from subtitld.interface import playercontrols
+                playercontrols.update_playercontrols_playpause_button(window)
+            if not widget._picture_unavailable_sent:
+                widget._picture_unavailable_sent = True
+                widget.picture_unavailable_signal.emit()
+            return
         duration_ms = widget._media_player.duration()
         if duration_ms > 0:
             fps = widget._media_player.metaData().value(QMediaMetaData.VideoFrameRate) or 25
@@ -292,6 +314,8 @@ class PlayerWidget(QWidget):
     def loadfile(widget, filepath):
         if os.path.isfile(filepath):
             from PySide6.QtCore import QUrl
+            widget._picture_seen = False
+            widget._picture_unavailable_sent = False
             widget._media_player.setSource(QUrl.fromLocalFile(str(filepath)))
             # widget._audio_device.load(filepath)
             widget.play()
@@ -441,6 +465,7 @@ class PlayerWidget(QWidget):
     def _on_video_frame(widget, frame):
         if frame.isValid():
             widget._last_video_frame = frame
+            widget._picture_seen = True
 
     def thumbnail_png(widget):
         """The picture a .usfx carries, as PNG bytes: a card with the video's

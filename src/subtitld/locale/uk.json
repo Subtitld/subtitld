@@ -360,6 +360,8 @@
     "videoproperties_panel.no_video": "Відео не завантажено",
     "videoproperties_panel.proxy_title": "Проксі",
     "videoproperties_panel.proxy_help": "Створіть менший відеофайл-замінник, щоб плавніше редагувати великі файли (4K/8K). Проксі використовується лише для картинки перегляду — аудіо, форма хвилі та хронометраж беруться з оригіналу.",
+    "videoproperties_panel.picture_unavailable_title": "Зображення цього відео не вдається показати",
+    "videoproperties_panel.picture_unavailable_text": "Subtitld не може декодувати зображення цього відео ({codec}) на цьому комп'ютері. Він може створити проксі — замінну копію картинки для роботи, а аудіо, форма хвилі та хронометраж беруться з оригіналу. Для довгого відео це займе кілька хвилин.",
     "videoproperties_panel.reencode_only": "Повна роздільність, перекодовано для плавної навігації",
     "videoproperties_panel.encoder_auto": "H.264 all-intra (апаратно, якщо доступно)",
     "videoproperties_panel.create_proxy": "Створити проксі",

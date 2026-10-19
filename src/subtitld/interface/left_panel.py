@@ -52,17 +52,24 @@ class navigation_button(QPushButton):
         self.setToolTip(_(f'left_panel.tab_{tab_name}'))
     
     def mousePressEvent(self, e):
-        stacked_tabs = self.window().findChild(QStackedWidget, 'left_panel_stackedwidgets')
-        if stacked_tabs:
-            tab = stacked_tabs.findChild(QWidget, f'left_panel_{self.tab_name}')
-            if tab:
-                stacked_tabs.setCurrentWidget(tab)
-        for button in self.window().findChildren(navigation_button):
-            if button == self:
-                continue
-            button.setChecked(False)
-        update(self.window())
+        show_panel(self.window(), self.tab_name, clicked=self)
         return super().mousePressEvent(e)
+
+
+def show_panel(window, tab_name, clicked=None):
+    """Bring the left panel `tab_name` up, as its navigation button does.
+    `clicked`, the button being pressed, checks itself; any other way in,
+    the panel's button is checked here."""
+    stacked_tabs = window.findChild(QStackedWidget, 'left_panel_stackedwidgets')
+    if stacked_tabs:
+        tab = stacked_tabs.findChild(QWidget, f'left_panel_{tab_name}')
+        if tab:
+            stacked_tabs.setCurrentWidget(tab)
+    for button in window.findChildren(navigation_button):
+        if button is clicked:
+            continue
+        button.setChecked(clicked is None and button.tab_name == tab_name)
+    update(window)
 
 
 def load(self):

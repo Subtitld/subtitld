@@ -360,6 +360,8 @@
     "videoproperties_panel.no_video": "Není načteno žádné video",
     "videoproperties_panel.proxy_title": "Proxy",
     "videoproperties_panel.proxy_help": "Vytvoří menší zástupné video pro plynulejší práci s velkými soubory (4K/8K). Proxy se použije jen pro obraz náhledu — zvuk, zvuková křivka a časování zůstávají z originálu.",
+    "videoproperties_panel.picture_unavailable_title": "Obraz tohoto videa nelze zobrazit",
+    "videoproperties_panel.picture_unavailable_text": "Subtitld nedokáže na tomto počítači dekódovat obraz tohoto videa ({codec}). Může vytvořit proxy: zástupnou kopii obrazu pro úpravy, zatímco zvuk, zvuková křivka a časování zůstávají z originálu. U dlouhého videa to trvá několik minut.",
     "videoproperties_panel.reencode_only": "Plné rozlišení, překódováno pro plynulé posouvání",
     "videoproperties_panel.encoder_auto": "H.264 all-intra (hardwarově, je-li k dispozici)",
     "videoproperties_panel.create_proxy": "Vytvořit proxy",

@@ -360,6 +360,8 @@
     "videoproperties_panel.no_video": "Chưa nạp video",
     "videoproperties_panel.proxy_title": "Proxy",
     "videoproperties_panel.proxy_help": "Tạo một video thay thế nhỏ hơn để biên tập các tệp lớn (4K/8K) mượt hơn. Proxy chỉ dùng cho hình ảnh xem trước — âm thanh, dạng sóng và căn thời gian vẫn lấy từ bản gốc.",
+    "videoproperties_panel.picture_unavailable_title": "Không thể hiển thị hình ảnh của video này",
+    "videoproperties_panel.picture_unavailable_text": "Subtitld không thể giải mã hình ảnh của video này ({codec}) trên máy tính này. Ứng dụng có thể tạo proxy: một bản thay thế cho phần hình ảnh để biên tập, còn âm thanh, dạng sóng và căn thời gian vẫn lấy từ bản gốc. Với video dài, việc này mất vài phút.",
     "videoproperties_panel.reencode_only": "Độ phân giải đầy đủ, mã hóa lại để tìm vị trí mượt hơn",
     "videoproperties_panel.encoder_auto": "H.264 all-intra (dùng phần cứng nếu có)",
     "videoproperties_panel.create_proxy": "Tạo proxy",

@@ -360,6 +360,8 @@
     "videoproperties_panel.no_video": "불러온 동영상이 없습니다",
     "videoproperties_panel.proxy_title": "프록시",
     "videoproperties_panel.proxy_help": "용량이 큰(4K/8K) 파일을 더 부드럽게 편집하도록 작은 대체 동영상을 만듭니다. 프록시는 미리보기 화면에만 쓰입니다 — 오디오와 파형, 타이밍은 원본을 그대로 사용합니다.",
+    "videoproperties_panel.picture_unavailable_title": "이 동영상의 화면을 표시할 수 없습니다",
+    "videoproperties_panel.picture_unavailable_text": "이 컴퓨터에서는 이 동영상의 화면({codec})을 디코딩할 수 없습니다. Subtitld는 편집용으로 화면을 대신하는 사본인 프록시를 만들 수 있으며, 오디오와 파형, 타이밍은 원본을 그대로 사용합니다. 긴 동영상은 몇 분 정도 걸립니다.",
     "videoproperties_panel.reencode_only": "원본 해상도, 부드러운 탐색을 위해 재인코딩",
     "videoproperties_panel.encoder_auto": "H.264 all-intra(가능하면 하드웨어 사용)",
     "videoproperties_panel.create_proxy": "프록시 만들기",

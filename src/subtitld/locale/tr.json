@@ -360,6 +360,8 @@
     "videoproperties_panel.no_video": "Video yüklenmedi",
     "videoproperties_panel.proxy_title": "Proxy",
     "videoproperties_panel.proxy_help": "Büyük (4K/8K) dosyaları daha akıcı düzenlemek için yerine geçecek daha küçük bir video oluşturun. Proxy yalnızca ön izleme görüntüsü için kullanılır — ses, dalga formu ve zamanlama özgün dosyada kalır.",
+    "videoproperties_panel.picture_unavailable_title": "Bu videonun görüntüsü gösterilemiyor",
+    "videoproperties_panel.picture_unavailable_text": "Subtitld bu bilgisayarda bu videonun görüntüsünü ({codec}) çözemiyor. Bir proxy oluşturabilir: üzerinde çalışmak için görüntünün yerine geçen bir kopya; ses, dalga formu ve zamanlama ise özgün dosyada kalır. Uzun bir videoda bu birkaç dakika sürer.",
     "videoproperties_panel.reencode_only": "Tam çözünürlük, akıcı gezinme için yeniden kodlanmış",
     "videoproperties_panel.encoder_auto": "H.264 all-intra (varsa donanımla)",
     "videoproperties_panel.create_proxy": "Proxy oluştur",

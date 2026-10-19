@@ -360,6 +360,8 @@
     "videoproperties_panel.no_video": "Nie wczytano wideo",
     "videoproperties_panel.proxy_title": "Proxy",
     "videoproperties_panel.proxy_help": "Utwórz mniejsze wideo zastępcze, aby płynniej edytować duże pliki (4K/8K). Proxy służy tylko do obrazu w podglądzie — audio, przebieg fali i czasy pozostają na oryginale.",
+    "videoproperties_panel.picture_unavailable_title": "Nie można wyświetlić obrazu tego wideo",
+    "videoproperties_panel.picture_unavailable_text": "Subtitld nie może zdekodować obrazu tego wideo ({codec}) na tym komputerze. Może utworzyć proxy: zastępczą kopię obrazu do edycji, podczas gdy audio, przebieg fali i czasy pozostają na oryginale. Przy długim wideo zajmuje to kilka minut.",
     "videoproperties_panel.reencode_only": "Pełna rozdzielczość, przekodowane dla płynnego przewijania",
     "videoproperties_panel.encoder_auto": "H.264 all-intra (sprzętowo, jeśli dostępne)",
     "videoproperties_panel.create_proxy": "Utwórz proxy",

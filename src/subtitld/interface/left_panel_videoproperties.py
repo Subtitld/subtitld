@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, QRect, QRectF, QSize, QPoint, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
 
 from subtitld.interface import left_panel
+from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import proxy
@@ -518,6 +519,35 @@ def _primary_clicked(self):
     if existing:
         _activate(self, existing)
         return
+    _start_encode(self, original, scale)
+
+
+def offer_proxy(self):
+    """The preview cannot decode this video's picture (AV1 with no GPU that
+    decodes it, say): offer the proxy, which ffmpeg makes from whatever it
+    reads, and the preview then plays. One already made for the video is
+    used straight away."""
+    video = session.VIDEO or {}
+    original = video.get('filepath')
+    if (not original or not os.path.isfile(original) or video.get('proxy_filepath')
+            or self._videoproperties_encode_thread is not None):
+        return
+    scale = _selected_scale(self)
+    existing = proxy.existing_proxy(original, scale)
+    if existing:
+        _activate(self, existing)
+        return
+    dialog = utils.SimpleDialog(self, title=_('videoproperties_panel.picture_unavailable_title'))
+    text = QLabel(_('videoproperties_panel.picture_unavailable_text').format(
+        codec=str(video.get('codec') or '?').upper()))
+    text.setWordWrap(True)
+    dialog.content.layout().addWidget(text)
+    dialog.accept_button.setText(_('videoproperties_panel.create_proxy'))
+    if dialog.exec() != 1:
+        return
+    # Where the proxy's progress shows.
+    left_panel.show_panel(self, 'videoproperties')
+    self.left_panel_videoproperties_tabwidget.setCurrentIndex(_TAB_PROXY)
     _start_encode(self, original, scale)
 
 

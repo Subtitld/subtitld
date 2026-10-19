@@ -31,6 +31,11 @@ def load(self):
     left_panel.load(self)
     
     preview_panel.load(self)
+    # A video whose picture cannot be decoded here: offer the proxy (outside
+    # the player's own signal, since it asks with a dialog).
+    from subtitld.interface import left_panel_videoproperties
+    self.preview_panel_player.picture_unavailable_signal.connect(
+        lambda: QTimer.singleShot(0, lambda: left_panel_videoproperties.offer_proxy(self)))
     
     self.main_horizontal_splitter.setSizes(session.CONFIG['interface_splitters'].get('main_horizontal', [25, 75]))
 
