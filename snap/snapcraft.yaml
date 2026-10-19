@@ -75,7 +75,35 @@ apps:
       - x11
 
 parts:
+  # PySide6's FFmpeg decodes AV1, the format of most YouTube downloads, only
+  # with a GPU's help (VAAPI), which the snap cannot reach, and has no
+  # software AV1 decoder: the picture of an AV1 video never showed. The same
+  # FFmpeg, 7.1.1, built with dav1d (VideoLAN's AV1 decoder), takes its place
+  # in the PySide6 tree (the subtitld part copies it there).
+  qt-ffmpeg:
+    plugin: nil
+    source: https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
+    source-checksum: sha256/733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
+    build-packages:
+      - nasm
+      - pkg-config
+      - libdav1d-dev
+      - zlib1g-dev
+      - libbz2-dev
+    override-build: |
+      # The libraries Qt's FFmpeg plugin links, and only what they need:
+      # no VAAPI or TLS, which the snap has no library for either.
+      ./configure --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu --enable-shared --disable-static \
+        --disable-programs --disable-doc --disable-avdevice --disable-avfilter --disable-postproc \
+        --disable-autodetect --enable-zlib --enable-bzlib --enable-libdav1d
+      make -j"$CRAFT_PARALLEL_BUILD_COUNT"
+      make install DESTDIR="$CRAFT_PART_INSTALL/qt-ffmpeg"
+    prime:
+      # In the snap as PySide6's own, not here.
+      - -qt-ffmpeg
+
   subtitld:
+    after: [qt-ffmpeg]
     plugin: python
     source: .
     build-packages:
@@ -83,6 +111,8 @@ parts:
       - build-essential
     stage-packages:
       - ffmpeg
+      # dav1d, for the FFmpeg that replaces PySide6's (qt-ffmpeg part).
+      - libdav1d5
       - libpulse0
       - libportaudio2
       - libsndfile1
@@ -139,6 +169,13 @@ parts:
         "$QT"/plugins/imageformats/libqpdf.so
       for module in WebEngine Pdf 3D Quick3D Designer WebView Graphs DataVisualization; do
         rm -f "$QT"/lib/libQt6"$module"*.so* "$SITE"/PySide6/Qt"$module"*
+      done
+      # PySide6's FFmpeg out, the one built with dav1d in (qt-ffmpeg part).
+      # The wheel holds three copies of each library (no symlinks); the
+      # build's soname links take their place.
+      for lib in libavcodec.so libavformat.so libavutil.so libswresample.so libswscale.so; do
+        rm -f "$QT"/lib/$lib*
+        cp -a "$CRAFT_STAGE"/qt-ffmpeg/usr/lib/x86_64-linux-gnu/$lib.* "$QT"/lib/
       done
       # Ship a minimal self-contained alsa.conf that routes the
       # default PCM through PulseAudio. The stock alsa.conf in
