@@ -22,7 +22,7 @@ without limit.
 import contextlib
 import logging
 
-from subtitld.modules import cue_ids, docops, journal, session
+from subtitld.modules import collab_state, cue_ids, docops, journal, session
 
 log = logging.getLogger(__name__)
 
@@ -222,4 +222,6 @@ def history_clear():
     ALL_HISTORY.clear()
     REDO_HISTORY.clear()
     _target = None
+    # A new project: nothing read for an earlier open is its.
+    collab_state.forget_opening()
     session.document_loaded()

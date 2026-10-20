@@ -7,7 +7,7 @@ import subprocess
 import datetime
 import subtitld
 import platformdirs
-from subtitld.modules import cue_ids, journal
+from subtitld.modules import collab_state, cue_ids, journal
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
@@ -361,9 +361,11 @@ def capture_changes():
 
 def document_loaded():
     """A project was opened or started: the journal starts from it, so that
-    opening it is not recorded as an edit."""
+    opening it is not recorded as an edit, and it is shared for co-editing
+    if its file says so (modules.collab_state)."""
     cue_ids.ensure_ids(SUBTITLE.get('segments'))
     journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+    collab_state.opened()
 
 
 def set_unsaved(value=True):

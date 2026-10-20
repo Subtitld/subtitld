@@ -221,8 +221,11 @@ This work is useful even without co-editing.
      it back.
    - This replaces the full-document copies in `history.py`. It also makes undo
      cheaper and keeps working with other people's edits in between.
-4. **Local change queue.** Changes are stored and saved with the project. This
-   is the base for offline editing.
+4. **Local change queue** (done: `modules/collab_state.py`). While a project
+   is shared, every recorded batch is queued with an ID and the server change
+   number it was made on top of. The shared document's ID, that number and
+   the queue are saved in the `.usfx` (`collab.json`, `pending.jsonl`) and
+   come back when it is opened. This is the base for offline editing.
 
 ### Co-editing client
 
@@ -323,5 +326,9 @@ This work is useful even without co-editing.
   versions, not copies.
 - **Copyright and confidentiality.** Sharing is opt-in, limited to project
   members and encrypted. Each received copy is recorded on the server.
+- **Copies of a shared project.** "Save as" and autosave backups carry the
+  shared document's ID and queue. Opening two copies could send the same
+  changes twice (the server drops repeated batch IDs) or diverging ones.
+  Decide in M9/M10 whether a copy stays linked.
 - **Server load.** One uvicorn process should handle many projects. Measure on
   draft before production.
