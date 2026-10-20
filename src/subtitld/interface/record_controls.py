@@ -21,11 +21,13 @@ import os
 import re
 import time
 import bisect
+import contextlib
 import logging
 import secrets
 
 from PySide6.QtCore import QObject, Qt, QTimer
 
+from subtitld.modules import cue_ids
 from subtitld.modules import live_peaks
 from subtitld.modules import session
 from subtitld.modules import recorder as recorder_mod
@@ -160,7 +162,7 @@ class RecordController(QObject):
         self._status = 'idle'
         # Transcript placeholders (see "placeholders" below).
         self._take_token = None       # prefixes placeholder keys of the current take
-        self._take_history = None     # undo snapshot the current run of edits belongs to
+        self._take_history = None     # undo step the current run of edits belongs to
         self._ph = {}                 # key -> placeholder record
         self._ph_seq = 0
         self._uid_rec = {}            # batch utterance uid -> placeholder record
@@ -500,9 +502,9 @@ class RecordController(QObject):
     def _history_step(self):
         """One undo step per uninterrupted run of recorder edits.
 
-        history.py only has whole-document snapshots (no grouping), so the
-        run is delimited by identity: if the newest snapshot is still the one
-        we pushed, nothing else happened since and this edit belongs to it.
+        history.py has no grouping of its own, so the run is delimited by
+        identity: if the newest undo step is still the one we started,
+        nothing else happened since and this edit belongs to it.
         """
         from subtitld.modules import history
         top = history.top_snapshot()
@@ -532,48 +534,28 @@ class RecordController(QObject):
                 and abs(float(seg.get('end', 0.0)) - rec['end']) < 1e-6
                 and (seg.get('text') or '').strip() == (rec['written'] or rec['orig']))
 
-    def _amend(self, rec, fn):
-        """Apply `fn(segments, index)` to every stored undo/redo snapshot that
-        holds `rec`'s subtitle.
+    @staticmethod
+    def _completing(rec):
+        """Changes made in this block COMPLETE the recorder's own creation
+        (text arriving, a split, a merge, noise removed): they go into the
+        undo step that created `rec`'s subtitle, so undoing an unrelated
+        later edit does not roll them back and undoing the take takes them
+        along. Adopted subtitles are not amended — replacing their text is
+        an edit of its own, with its own undo step."""
+        if rec['kind'] != 'new':
+            return contextlib.nullcontext()
+        from subtitld.modules import history
+        return history.amending(rec.get('born'))
 
-        For changes that COMPLETE the recorder's own creation (text arriving,
-        a split, a merge, noise removed): undoing an unrelated later edit
-        must not roll them back, and redoing the take brings them along.
-        Adopted subtitles are not amended — replacing their text is an edit
-        of its own, with its own undo step.
-        """
+    def _amend(self, rec, fn):
+        """Apply `fn(subtitle)` to the stored undo/redo copies of `rec`'s
+        subtitle — for a completion arriving while the subtitle is not live
+        (deleted, or its take undone), so that bringing it back brings the
+        completion too. `fn` returns False to leave a copy out instead."""
         if rec['kind'] != 'new':
             return
         from subtitld.modules import history
-        key = rec['key']
-
-        def update(segs):
-            for i, s in enumerate(segs):
-                if isinstance(s, dict) and s.get('_rec') == key:
-                    fn(segs, i)
-                    return True
-            return False
-        history.amend_snapshots(update, stop_at=rec.get('born'))
-
-    @staticmethod
-    def _stamp_snapshots(target, key):
-        """An adopted subtitle's key has to survive undo/redo, or its answer
-        has nowhere to go: stamp the stored copies of it too."""
-        from subtitld.modules import history
-        start = float(target.get('start', 0.0))
-        end = float(target.get('end', 0.0))
-        text = target.get('text') or ''
-
-        def update(segs):
-            for s in segs:
-                if (isinstance(s, dict)
-                        and abs(float(s.get('start', 0.0)) - start) < 1e-6
-                        and abs(float(s.get('end', 0.0)) - end) < 1e-6
-                        and (s.get('text') or '') == text):
-                    s['_rec'] = key
-                    return True
-            return False
-        history.amend_snapshots(update)
+        history.amend_stored(rec.get('id'), fn, stop_at=rec.get('born'))
 
     def _create_placeholder(self, start, end, speaker='A', pending=True,
                             token=None, adopt=True):
@@ -604,8 +586,7 @@ class RecordController(QObject):
                 # and its timing is left alone (the historic behaviour).
                 key = self._new_key(token)
                 target['_rec'] = key
-                self._stamp_snapshots(target, key)
-                rec = {'key': key, 'kind': 'retarget', 'take': token,
+                rec = {'key': key, 'kind': 'retarget', 'take': token, 'id': target.setdefault('id', cue_ids.new_id()),
                        'orig': (target.get('text') or '').strip(), 'written': None,
                        'start': float(target.get('start', 0.0)),
                        'end': float(target.get('end', 0.0)),
@@ -617,14 +598,15 @@ class RecordController(QObject):
             if end - start < _MIN_PLACEHOLDER:
                 return None
             key = self._new_key(token)
+            cue_id = cue_ids.new_id()
             self._history_step()
-            self._insert_segment({'start': start, 'end': end, 'text': '',
+            self._insert_segment({'id': cue_id, 'start': start, 'end': end, 'text': '',
                                   'speaker': speaker, '_rec': key})
             if speaker not in session.SPEAKERS:
                 session.SPEAKERS[speaker] = {'image': None}
-            # `born` is the snapshot taken just before this insert: stored
-            # snapshots older than it cannot hold this subtitle.
-            rec = {'key': key, 'kind': 'new', 'take': token,
+            # `born` is the undo step this insert goes into: completions go
+            # there too, and older steps cannot hold this subtitle.
+            rec = {'key': key, 'kind': 'new', 'take': token, 'id': cue_id,
                    'orig': '', 'written': None, 'start': start, 'end': end,
                    'outstanding': 0, 'claimed': False, 'born': self._take_history,
                    'superseded': False}
@@ -674,13 +656,14 @@ class RecordController(QObject):
             else:
                 if rec['kind'] == 'retarget' and written is None:
                     self._history_step()   # replacing existing text is a real edit
-                seg['text'] = new_text
+                with self._completing(rec):
+                    seg['text'] = new_text
                 session.set_unsaved()
 
-        def _apply(segs, i):
-            nt = self._next_text(written, orig, (segs[i].get('text') or '').strip(), text)
+        def _apply(cue):
+            nt = self._next_text(written, orig, (cue.get('text') or '').strip(), text)
             if nt is not None:
-                segs[i]['text'] = nt
+                cue['text'] = nt
         self._amend(rec, _apply)
         if new_text is not None:
             rec['written'] = new_text
@@ -698,12 +681,13 @@ class RecordController(QObject):
             return
         seg = self._find_by_key(rec['key'])
         if seg is not None and self._untouched(seg, rec):
-            self._remove_segment(seg)
+            with self._completing(rec):
+                self._remove_segment(seg)
             session.set_unsaved()
 
-            def _drop(segs, i):
-                if self._untouched(segs[i], rec):
-                    del segs[i]
+            def _drop(cue):
+                if self._untouched(cue, rec):
+                    return False
             self._amend(rec, _drop)
 
     # -- batch path (LiveTranscriber) --------------------------------------
@@ -758,17 +742,12 @@ class RecordController(QObject):
                   'text': str(piece['text']).strip(), 'speaker': speaker}
                  for i, piece in enumerate(pieces[1:], start=1)]
 
-        # The split completes the creation too: stored copies get it as well.
-        def _split(segs, i):
-            if not self._untouched(segs[i], rec):
-                return
-            segs[i]['end'] = cuts[1]
-            segs[i + 1:i + 1] = [dict(t) for t in tails]
-        self._amend(rec, _split)
-        seg['end'] = rec['end'] = cuts[1]
-        self._fill(rec, str(pieces[0]['text']).strip())
-        for tail in tails:
-            self._insert_segment(tail)
+        # The split completes the creation too: undoing the take undoes it.
+        with self._completing(rec):
+            seg['end'] = rec['end'] = cuts[1]
+            self._fill(rec, str(pieces[0]['text']).strip())
+            for tail in tails:
+                self._insert_segment(tail)
         return True
 
     # -- live streaming (asr.stream) --------------------------------------
@@ -1092,25 +1071,28 @@ class RecordController(QObject):
             return
         old_start, old_end = head['start'], head['end']
 
-        def _stretch(segs, i):
-            if (abs(float(segs[i].get('start', 0.0)) - old_start) < 1e-6
-                    and abs(float(segs[i].get('end', 0.0)) - old_end) < 1e-6):
-                segs[i]['start'], segs[i]['end'] = start, end
+        def _stretch(cue):
+            if (abs(float(cue.get('start', 0.0)) - old_start) < 1e-6
+                    and abs(float(cue.get('end', 0.0)) - old_end) < 1e-6):
+                cue['start'], cue['end'] = start, end
         self._amend(head, _stretch)
+        # Each cue's part goes into the undo step of the take that made it.
         for rec in group:
             if rec is head:
                 continue
             seg = self._find_by_key(rec['key'])
 
-            def _drop(segs, i, rec=rec):
-                if self._untouched(segs[i], rec):
-                    del segs[i]
+            def _drop(cue, rec=rec):
+                if self._untouched(cue, rec):
+                    return False
             self._amend(rec, _drop)
             if seg is not None:
-                self._remove_segment(seg)
+                with self._completing(rec):
+                    self._remove_segment(seg)
         head_seg = self._find_by_key(head['key'])
         if head_seg is not None:
-            head_seg['start'], head_seg['end'] = start, end
+            with self._completing(head):
+                head_seg['start'], head_seg['end'] = start, end
         head['start'], head['end'] = start, end
         session.set_unsaved()
 

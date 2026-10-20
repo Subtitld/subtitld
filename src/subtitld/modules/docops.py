@@ -57,7 +57,9 @@ def plain(value):
 
 
 def plain_speaker(speaker):
-    return {key: value for key, value in plain(speaker or {}).items() if key not in SPEAKER_RUNTIME}
+    if not isinstance(speaker, dict):
+        return {}
+    return {key: value for key, value in plain(speaker).items() if key not in SPEAKER_RUNTIME}
 
 
 def snapshot(segments, speakers, meta):
@@ -261,7 +263,8 @@ def diff(old, segments, speakers, meta):
         if before is None:
             ops.append({'op': 'speaker.insert', 'name': name, 'speaker': plain_speaker(speaker)})
         else:
-            ops.extend(_diff_fields('speaker', {'name': name}, before, speaker, SPEAKER_RUNTIME))
+            ops.extend(_diff_fields('speaker', {'name': name}, before,
+                                    speaker if isinstance(speaker, dict) else {}, SPEAKER_RUNTIME))
     for name in old['speakers']:
         if name not in speakers:
             ops.append({'op': 'speaker.delete', 'name': name})

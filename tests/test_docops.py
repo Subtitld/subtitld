@@ -134,7 +134,7 @@ recorded = []
 replica = docops.snapshot(session.SUBTITLE['segments'], session.SPEAKERS, session.SUBTITLE)
 
 
-def on_changes(ops):
+def on_changes(ops, _undo):
     recorded.append(ops)
     before = copy.deepcopy(replica)
     undo = docops.apply(replica, ops)

@@ -209,9 +209,16 @@ This work is useful even without co-editing.
    - Opening a project is not an edit: the open flows call
      `session.document_loaded()`.
    - Explicit commands can still be added later where the intent matters.
-3. **Change-based undo.**
+3. **Change-based undo** (done: `modules/history.py`).
    - Each batch of changes comes with its inverse. Undo applies the inverse as
      a new change.
+   - A step changes only what it changed: edits made since by anything else
+     stay. The recorder's late transcripts go into the step that created
+     their line (`history.amending()`), or into the stored copies when the
+     line isn't live (`history.amend_stored()`).
+   - Runtime data (the recorder's `_rec`, speaker pictures) is not part of the
+     document; the journal keeps the latest per line and speaker, and undo puts
+     it back.
    - This replaces the full-document copies in `history.py`. It also makes undo
      cheaper and keeps working with other people's edits in between.
 4. **Local change queue.** Changes are stored and saved with the project. This
