@@ -59,13 +59,18 @@ def clear():
     STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': []})
 
 
-def _on_changes(ops, _undo):
+def queue(ops):
+    """Queue a batch of changes made here, to be sent."""
     global _counter
-    if _muted or not shared():
-        return
     _counter += 1
     STATE['pending'].append({'client_op_id': f'{_RUN}-{_counter}', 'base_seq': STATE['seq'],
                              'ops': copy.deepcopy(ops)})
+
+
+def _on_changes(ops, _undo):
+    if _muted or not shared():
+        return
+    queue(ops)
 
 
 journal.add_listener(_on_changes)

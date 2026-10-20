@@ -2,6 +2,8 @@
 
 - **Account**: connect (the browser opens subtitld.cc; or a code typed at subtitld.cc/device) and
   disconnect. Finding and opening public subtitles works without it.
+- **Live co-editing** (interface/subtitldcc_live.py): share the project to edit it with others at the same
+  time, or open one shared with you.
 - **For this video**: when a video opens, subtitles that match it (by fingerprint, never by name).
 - **Search** subtitld.cc by title.
 - **Open** a subtitle in the editor. The editor then remembers where it came from (USF ``origin``), so
@@ -21,9 +23,10 @@ from PySide6.QtWidgets import (
 )
 
 from subtitld.interface import left_panel
+from subtitld.interface.subtitldcc_live import LiveCard
 from subtitld.interface.subtitldcc_publish import PublishFlow
 from subtitld.interface.translation import _
-from subtitld.modules import session
+from subtitld.modules import collab_service, session
 from subtitld.modules import subtitldcc_service as service
 
 TAB = 'subtitldcc'
@@ -261,6 +264,8 @@ class SubtitldccPanel(QWidget):
         scroll.setWidget(inner)
 
         self._build_account()
+        self.live_card = LiveCard(self)
+        self.cards.addWidget(self.live_card)
         self._build_origin()
         self._build_video()
         self._build_search()
@@ -354,6 +359,7 @@ class SubtitldccPanel(QWidget):
         self._render_account()
         self.show_message(_('subtitldcc.connected').format(handle=me.get('handle', '')))
         self.refresh()
+        self.live_card.signed_in()
         if self._video:  # shared subtitles may match too now
             self._run_lookup()
 
@@ -377,6 +383,7 @@ class SubtitldccPanel(QWidget):
         def done(_result=None):
             self.disconnect_button.setEnabled(True)
             self._origin_info = None
+            collab_service.connect()  # no one signed in: a shared project disconnects
             self.refresh()
 
         service.call(service.sign_out, done, done)
@@ -867,6 +874,7 @@ class SubtitldccPanel(QWidget):
     def shutdown(self):
         """Subtitld is closing: stop waiting for a sign-in and let running calls end."""
         self._cancel_sign_in = True
+        collab_service.shutdown()
         service.wait_for_calls()
 
     def _failed(self, error):
@@ -898,6 +906,7 @@ class SubtitldccPanel(QWidget):
             if connected and not service.account():
                 service.call(lambda: service.client().me(), self._account_loaded, self._account_failed)
         self._render_account(waiting=self._sign_in_call is not None)
+        self.live_card.refresh(load=self.isVisible())
         self._load_origin()
         self._render_video()
         self._render_publish()
@@ -939,4 +948,5 @@ class SubtitldccPanel(QWidget):
         self.publish_new_button.setText(_('subtitldcc.publish_new'))
         for confirm in self.findChildren(Confirm):
             confirm.retranslate()
+        self.live_card.retranslate()
         self.refresh()

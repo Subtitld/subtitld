@@ -352,6 +352,8 @@ _save_success_callbacks = []
 # Called on every set_unsaved() — after any edit, not just when the
 # unsaved state flips — for views that mirror the whole document.
 _document_change_callbacks = []
+# Called once a project is opened or started (document_loaded): a shared one connects (modules.collab_service).
+_document_loaded_callbacks = []
 def capture_changes():
     """Record what the document's last edit changed (modules.journal)."""
     # Whatever the edit made, every subtitle leaves it with its own ID.
@@ -366,6 +368,8 @@ def document_loaded():
     cue_ids.ensure_ids(SUBTITLE.get('segments'))
     journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
     collab_state.opened()
+    for callback in list(_document_loaded_callbacks):
+        callback()
 
 
 def set_unsaved(value=True):

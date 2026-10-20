@@ -302,6 +302,24 @@ Done in M9 (`modules/collab_sync.py`, `modules/collab_client.py`):
   local uvicorn with the real session: edits both ways, undo, a dropped
   connection with an edit made offline.
 
+Done in M10 (`modules/collab_service.py`, `interface/subtitldcc_live.py`, a
+"Live co-editing" card in the subtitld.cc panel; client package 1.2.0 with
+`projects`, `share_project`, `add_member`, `remove_member`, `close_project`):
+
+- Share the open project as yourself or a group you publish as; edits made
+  while subtitld.cc was taking it are queued as the first changes.
+- Open a project shared with you: it takes the editor's place (like opening
+  a subtitld.cc subtitle), fills in as the connection catches up, and saving
+  asks where to put it. Each person keeps their own video open.
+- A shared project connects when it is opened (`session.document_loaded`
+  callbacks) and disconnects when another one is, or on signing out.
+- Shared: connected / connecting / offline with how many changes wait, who
+  is here, the members (the owner adds and removes them), conflicts, and
+  "Sign in again" for a token from before co-editing. Leave, or stop sharing
+  (owner); either way the project stays here as one's own. A project no
+  longer shared with you (4404) becomes your own too.
+- English texts only for now, like other recent features.
+
 - Websocket connection on a QThread, or with `QWebSocket` from QtWebSockets.
   Check that QtWebSockets is included in every package format.
 - Reconnect with backoff. Catch up from `last_seq`, then send the queued
