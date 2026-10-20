@@ -220,6 +220,16 @@ yet when a project is shared with you; the app's shared projects list shows it.
 "Publish" turns the current state into a normal immutable `Version`. Credits
 are drawn from the change authors (`DraftContribution` in `PLAN.md`).
 
+### Deploy
+
+Prepared in M8 (`DEPLOY.md` → Live co-editing): `ops/subtitldcc-{draft,prod}-collab.service` (uvicorn,
+one process, ports 8123 and 8124, pings every 20 s, no access log), `ops/nginx-collab.conf` (the `/ws/`
+location), sudoers lines, and CI writing `CHANNELS_REDIS_URL` (Redis database 8), restarting the service
+and checking the websocket upgrade. Reproduced locally with nginx + TLS in front of gunicorn and uvicorn
+under production settings: that caught redis-py 8's 5 s socket timeout cutting channels_redis's 5 s
+blocking reads (every quiet connection crashed), now raised to 30 s and covered by a test on a real Redis
+in CI. The one-time server setup is still to do.
+
 ### TURN relay
 
 Optional. Either coturn on the VPS with a bandwidth cap, or a hosted TURN
