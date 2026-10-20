@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
+from subtitld.modules import cue_ids
 from subtitld.modules import ebustl
 from subtitld.modules import timecode
 from subtitld.modules import export_options
@@ -881,6 +882,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
 
+    cue_ids.ensure_ids(segments_list)
     return segments_list, subtitle_format
 
 

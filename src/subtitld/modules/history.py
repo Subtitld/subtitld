@@ -20,7 +20,7 @@ without limit.
 
 import copy
 
-from subtitld.modules import session
+from subtitld.modules import cue_ids, session
 
 
 MAX_HISTORY = 100
@@ -60,6 +60,7 @@ def _snapshot():
             selected_index = None
     return {
         'segments': copy.deepcopy(segments),
+        'selected_id': selected.get('id') if isinstance(selected, dict) else None,
         'selected_index': selected_index,
         'speakers': _copy_speakers(session.SPEAKERS),
         'language': session.SUBTITLE.get('language'),
@@ -80,8 +81,12 @@ def _restore(snapshot):
     if snapshot.get('translations') is not None:
         session.SUBTITLE['translations'] = copy.deepcopy(snapshot['translations'])
 
+    # The selected subtitle by its ID; by its place only for one without.
+    selected = cue_ids.find(segments, snapshot.get('selected_id'))
     selected_index = snapshot.get('selected_index')
-    if selected_index is not None and 0 <= selected_index < len(segments):
+    if selected is not None:
+        session.SUBTITLE['selected'] = selected
+    elif selected_index is not None and 0 <= selected_index < len(segments):
         session.SUBTITLE['selected'] = segments[selected_index]
     else:
         session.SUBTITLE['selected'] = False

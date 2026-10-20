@@ -7,6 +7,7 @@ import subprocess
 import datetime
 import subtitld
 import platformdirs
+from subtitld.modules import cue_ids
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
@@ -357,6 +358,8 @@ def set_unsaved(value=True):
     UNSAVED = value
     if value:
         AUTOSAVE_BACKUP_DIRTY = True
+    # Whatever the edit made, every subtitle leaves it with its own ID.
+    cue_ids.ensure_ids(SUBTITLE.get('segments'))
     if old_value != value:
         for callback in _unsaved_change_callbacks:
             callback()
