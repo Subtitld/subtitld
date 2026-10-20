@@ -218,6 +218,28 @@ def _reconcile_generate_button(widget):
     button.setEnabled(selector.is_ready())
 
 
+def _release_lines_following_speaker(speaker_name, previous_voice):
+    """Let `speaker_name`'s lines follow the speaker's new voice.
+
+    The speaker batch pins the voice it used on every line it generates
+    (`dubbing_options.voice`, for crash recovery and regenerate), and a
+    line's own voice beats the speaker's on the next batch. So when the
+    speaker's voice changes, drop the pin from the lines that carry the
+    previous speaker voice: those were only following the speaker. A line
+    whose voice was picked by hand in the per-subtitle panel holds another
+    voice and keeps it. `voice_speaker` names a speaker inside that voice's
+    model, so it goes with the voice."""
+    if not previous_voice:
+        return
+    for subtitle in session.SUBTITLE.get('segments', []) or []:
+        if subtitle.get('speaker', 'A') != speaker_name:
+            continue
+        overrides = subtitle.get('dubbing_options')
+        if isinstance(overrides, dict) and overrides.get('voice') == previous_voice:
+            overrides.pop('voice', None)
+            overrides.pop('voice_speaker', None)
+
+
 def _speaker_scoped_segments(widget, speaker_name):
     """This speaker's subtitles, narrowed to the panel's SCOPE.
 
@@ -328,7 +350,10 @@ class _EdgeTTSSpeakerPanel(QWidget):
         value = widget.voice_combobox.currentText()
         speaker_name = widget.property('speaker')
         if speaker_name and speaker_name in session.SPEAKERS:
-            session.SPEAKERS[speaker_name]['dubbing']['voice'] = value
+            dubbing = session.SPEAKERS[speaker_name]['dubbing']
+            if dubbing.get('voice') != value:
+                _release_lines_following_speaker(speaker_name, dubbing.get('voice'))
+            dubbing['voice'] = value
             session.set_unsaved(True)
 
     def voice_rate_changed(widget):
@@ -845,7 +870,10 @@ class _GenericTTSSpeakerPanel(QWidget):
         speaker_name = widget.property('speaker')
         voice_id = widget.voice_combobox.combobox.currentData()
         if speaker_name and speaker_name in session.SPEAKERS and voice_id is not None:
-            session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = voice_id
+            dubbing = session.SPEAKERS[speaker_name].setdefault('dubbing', {})
+            if dubbing.get('voice') != voice_id:
+                _release_lines_following_speaker(speaker_name, dubbing.get('voice'))
+            dubbing['voice'] = voice_id
             session.set_unsaved(True)
 
     def _slow_speech_changed(widget, checked):
