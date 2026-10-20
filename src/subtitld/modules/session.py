@@ -7,7 +7,7 @@ import subprocess
 import datetime
 import subtitld
 import platformdirs
-from subtitld.modules import cue_ids
+from subtitld.modules import cue_ids, journal
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
@@ -352,14 +352,27 @@ _save_success_callbacks = []
 # Called on every set_unsaved() — after any edit, not just when the
 # unsaved state flips — for views that mirror the whole document.
 _document_change_callbacks = []
+def capture_changes():
+    """Record what the document's last edit changed (modules.journal)."""
+    # Whatever the edit made, every subtitle leaves it with its own ID.
+    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    return journal.capture(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+
+
+def document_loaded():
+    """A project was opened or started: the journal starts from it, so that
+    opening it is not recorded as an edit."""
+    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+
+
 def set_unsaved(value=True):
     global UNSAVED, AUTOSAVE_BACKUP_DIRTY
     old_value = UNSAVED
     UNSAVED = value
     if value:
         AUTOSAVE_BACKUP_DIRTY = True
-    # Whatever the edit made, every subtitle leaves it with its own ID.
-    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    capture_changes()
     if old_value != value:
         for callback in _unsaved_change_callbacks:
             callback()

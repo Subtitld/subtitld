@@ -97,6 +97,8 @@ def history_append(_segments=None):
     The optional `_segments` argument is ignored — kept for backward
     compatibility with the dozens of `history_append(session.SUBTITLE['segments'])`
     call sites scattered through `subtitles.py` and the interface modules."""
+    # An edit is starting: what came before it is its own change.
+    session.capture_changes()
     ALL_HISTORY.append(_snapshot())
     if len(ALL_HISTORY) > MAX_HISTORY:
         ALL_HISTORY.pop(0)
@@ -159,3 +161,4 @@ def history_clear():
     can't 'undo' into the previously-loaded document."""
     ALL_HISTORY.clear()
     REDO_HISTORY.clear()
+    session.document_loaded()

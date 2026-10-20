@@ -288,6 +288,7 @@ def open_in_editor(window, data):
     session.CONFIG['format_to_save'] = 'USFX'
     for name in {segment.get('speaker', 'A') for segment in segments}:
         session.SPEAKERS.setdefault(name, {})
+    session.document_loaded()
     session.set_unsaved(False)
 
     if hasattr(window, 'preview_panel_player') and hasattr(window.preview_panel_player, '_audio_device'):

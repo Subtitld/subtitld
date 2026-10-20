@@ -191,20 +191,27 @@ may use it.
 
 This work is useful even without co-editing.
 
-1. **Stable line IDs.**
+1. **Stable line IDs** (done: `modules/cue_ids.py`).
    - Add `id` to every segment dict and save it in USF.
    - Assign IDs when opening files that don't have them.
    - Use the ID for selection everywhere, instead of object identity or
-     position.
-2. **One place for all edits.**
-   - A command layer that every edit goes through, producing the changes listed
-     under "Document model".
-   - Route the direct edits in interface code through it, including the ones
-     in `subtitle_text_editor.py`, `left_panel_plaintext.py` and the speakers
-     and dubbing panels.
-   - `set_unsaved()` becomes a side effect of applying a command.
+     position. Undo does this now; the rest of the app moves over as it is
+     touched.
+2. **Every edit recorded as changes** (done: `modules/docops.py`,
+   `modules/journal.py`).
+   - Instead of routing roughly 100 edit sites through a command layer, a
+     journal keeps a clean copy of the document. At every `set_unsaved()` and
+     `history_append()` it compares the live state with that copy and turns the
+     difference into the changes listed under "Document model". That covers
+     every edit path, including ones nobody would remember to port.
+   - `docops` is pure Python: `apply` (which returns the undoing changes),
+     `diff` and `snapshot`. The server will use the same module.
+   - Opening a project is not an edit: the open flows call
+     `session.document_loaded()`.
+   - Explicit commands can still be added later where the intent matters.
 3. **Change-based undo.**
-   - Each command records its inverse. Undo applies the inverse as a new change.
+   - Each batch of changes comes with its inverse. Undo applies the inverse as
+     a new change.
    - This replaces the full-document copies in `history.py`. It also makes undo
      cheaper and keeps working with other people's edits in between.
 4. **Local change queue.** Changes are stored and saved with the project. This
@@ -289,7 +296,7 @@ This work is useful even without co-editing.
 
 | Phase | Repo | Scope |
 |---|---|---|
-| 0 | app | Stable line IDs, command layer, change-based undo, saved change queue. Ships on its own. |
+| 0 | app | Stable line IDs, changes recorded by the journal, change-based undo, saved change queue. Ships on its own. |
 | 1 | server | ASGI/Channels service, `CollabDoc`/`CollabOp`/`CollabSnapshot`/`CollabMedia`, `collab` scope, nginx and systemd on draft, media connection setup, TURN decision |
 | 2 | app + server | First working version: line, timing, speaker and translation changes, presence, soft locks, offline merge with the conflict list, peer-to-peer transfer of originals, waveform, stems and dubs, fingerprint check, publish to a Version, audit of media copies |
 | 3 | app + server | Proxy option, playhead-first fetching, comments on lines, change history and credits view, CRDT text if conflicts are common |

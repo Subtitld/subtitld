@@ -256,6 +256,7 @@ def load_productionscreen(self):
             return
         for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
             session.SPEAKERS.setdefault(name, {})
+    session.document_loaded()
 
     # Show the production screen NOW — data the widgets need for first
     # paint is on hand. Previous code scheduled the show on a 200 ms
