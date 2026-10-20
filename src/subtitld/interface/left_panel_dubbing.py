@@ -145,6 +145,65 @@ def _voices_clone_first(voices):
     return clones + fixed
 
 
+# --- Speakers inside a voice -------------------------------------------------
+# One model can hold many speakers: Piper's `en_GB-vctk-medium` has 109, its
+# `en_US-libritts_r-medium` 904. A manifest voice lists them as
+# `speakers: [{id, display_name?}, ...]`, first one the model's default. The
+# choice is a second combobox ("Voice speaker") shown only for such voices,
+# stored next to the voice as `voice_speaker` (speaker defaults, per-subtitle
+# overrides, and each take), and sent to the add-on under that key.
+def _voice_speakers(provider, voice_id):
+    """The speakers `voice_id` declares in `provider`'s voice list."""
+    if not voice_id:
+        return []
+    for voice in provider.list_voices() or []:
+        if voice.get('id') == voice_id:
+            return [s for s in (voice.get('speakers') or [])
+                    if isinstance(s, dict) and s.get('id')]
+    return []
+
+
+def _resolve_voice_speaker(provider, voice_id, *sources):
+    """The `voice_speaker` to send with `voice_id`: from the first source dict
+    (a take, a per-subtitle override, a speaker default) that chose it for
+    this same voice. '' when the voice has no speakers or nothing chose one,
+    which leaves the add-on on the model's default speaker. A speaker chosen
+    for another voice never carries over: speaker names are per model."""
+    ids = {s['id'] for s in _voice_speakers(provider, voice_id)}
+    for source in sources:
+        if not isinstance(source, dict) or source.get('voice') != voice_id:
+            continue
+        speaker = source.get('voice_speaker')
+        if speaker in ids:
+            return speaker
+    return ''
+
+
+def _install_voice_speaker_combobox(widget, on_changed):
+    """Add the hidden "Voice speaker" combobox right after the voice one."""
+    combobox = utils.LabeledComboBox()
+    combobox.setVisible(False)
+    combobox.activated.connect(on_changed)
+    widget.voice_speaker_combobox = combobox
+    widget.layout().addWidget(combobox)
+
+
+def _populate_voice_speakers(widget, voice_id, current=''):
+    """Fill the "Voice speaker" combobox for `voice_id`, select `current`
+    (or the default speaker, the first), and show it only when there is a
+    choice to make."""
+    combobox = widget.voice_speaker_combobox.combobox
+    speakers = _voice_speakers(widget.provider, voice_id)
+    combobox.blockSignals(True)
+    combobox.clear()
+    for speaker in speakers:
+        combobox.addItem(speaker.get('display_name') or speaker['id'], speaker['id'])
+    idx = combobox.findData(current) if current else -1
+    combobox.setCurrentIndex(idx if idx >= 0 else 0)
+    combobox.blockSignals(False)
+    widget.voice_speaker_combobox.setVisible(len(speakers) > 1)
+
+
 # --- Shared "fit dub to subtitle duration" toggle --------------------------
 # Available on every TTS speaker panel. When on, a freshly generated clip is
 # time-stretched to the subtitle's duration right after synthesis (see
@@ -588,9 +647,10 @@ class _GenericTTSDubbingPanel(QWidget):
         widget.setProperty('class', 'transparent_panel')
 
         widget.voice_combobox = utils.LabeledComboBox()
-        widget._populate_voices()
         widget.voice_combobox.activated.connect(lambda: widget.voice_combobox_changed())
         widget.layout().addWidget(widget.voice_combobox)
+        _install_voice_speaker_combobox(widget, lambda: widget.voice_speaker_changed())
+        widget._populate_voices()
 
         # Rate / pitch sliders are intentionally Edge-only. None of the
         # neural add-on engines (Kokoro, Coqui XTTS, Qwen3-TTS, F5-TTS,
@@ -633,6 +693,8 @@ class _GenericTTSDubbingPanel(QWidget):
             idx = widget.voice_combobox.combobox.findData(current_id)
             if idx >= 0:
                 widget.voice_combobox.combobox.setCurrentIndex(idx)
+        _populate_voice_speakers(widget, widget.voice_combobox.combobox.currentData(),
+                                 widget.voice_speaker_combobox.combobox.currentData() or '')
 
     def voice_combobox_changed(widget):
         selected = session.SUBTITLE.get('selected')
@@ -642,7 +704,23 @@ class _GenericTTSDubbingPanel(QWidget):
         voice_id = widget.voice_combobox.combobox.currentData()
         if voice_id is None:
             return
-        selected.setdefault('dubbing_options', {})['voice'] = voice_id
+        overrides = selected.setdefault('dubbing_options', {})
+        overrides['voice'] = voice_id
+        # Speaker names belong to one model; a new voice starts on its default.
+        overrides.pop('voice_speaker', None)
+        _populate_voice_speakers(widget, voice_id)
+        session.set_unsaved()
+
+    def voice_speaker_changed(widget):
+        selected = session.SUBTITLE.get('selected')
+        voice_id = widget.voice_combobox.combobox.currentData()
+        speaker = widget.voice_speaker_combobox.combobox.currentData()
+        if selected is None or not voice_id or speaker is None:
+            return
+        # Pin the voice too: the speaker only means something with it.
+        overrides = selected.setdefault('dubbing_options', {})
+        overrides['voice'] = voice_id
+        overrides['voice_speaker'] = speaker
         session.set_unsaved()
 
     def generate_speech_button_clicked(widget):
@@ -679,6 +757,7 @@ class _GenericTTSDubbingPanel(QWidget):
                 if speaker_name in session.SPEAKERS:
                     session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = voice_id
                 session.set_unsaved(True)
+        voice_speaker = _resolve_voice_speaker(widget.provider, voice_id, overrides, speaker_dubbing)
         selected['locked'] = True
         request = {
             'uid': secrets.token_hex(4),
@@ -703,6 +782,8 @@ class _GenericTTSDubbingPanel(QWidget):
             # `_stable_seed_for_speaker` for rationale.
             'seed': _stable_seed_for_speaker(speaker_name),
         }
+        if voice_speaker:
+            request['voice_speaker'] = voice_speaker
         # If the selected voice declares it needs `voice_ref_audio`
         # (manifest `requires: ['voice_ref_audio']` or `clone: true`),
         # auto-attach the speaker's source audio as the reference. This
@@ -761,8 +842,13 @@ class _GenericTTSDubbingPanel(QWidget):
             widget.voice_combobox.combobox.setCurrentIndex(0)
         widget.voice_combobox.combobox.blockSignals(False)
 
+        voice_id = widget.voice_combobox.combobox.currentData()
+        _populate_voice_speakers(widget, voice_id, _resolve_voice_speaker(
+            widget.provider, voice_id, last_dub, overrides, speaker_dubbing))
+
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
+        widget.voice_speaker_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice_speaker'))
         widget.generate_speech_button.setText(_('subtitles_panel_widget_dubbing.generate_speech'))
 
 
@@ -783,9 +869,10 @@ class _GenericTTSSpeakerPanel(QWidget):
         widget.setProperty('class', 'transparent_panel')
 
         widget.voice_combobox = utils.LabeledComboBox()
-        widget._populate_voices()
         widget.voice_combobox.activated.connect(lambda: widget.voice_combobox_changed())
         widget.layout().addWidget(widget.voice_combobox)
+        _install_voice_speaker_combobox(widget, lambda: widget.voice_speaker_changed())
+        widget._populate_voices()
 
         # No manual voice-clone toggle: when the user picks a voice that
         # the manifest flags as `requires: ['voice_ref_audio']` (e.g.
@@ -840,13 +927,31 @@ class _GenericTTSSpeakerPanel(QWidget):
             idx = widget.voice_combobox.combobox.findData(current_id)
             if idx >= 0:
                 widget.voice_combobox.combobox.setCurrentIndex(idx)
+        _populate_voice_speakers(widget, widget.voice_combobox.combobox.currentData(),
+                                 widget.voice_speaker_combobox.combobox.currentData() or '')
 
     def voice_combobox_changed(widget):
         speaker_name = widget.property('speaker')
         voice_id = widget.voice_combobox.combobox.currentData()
         if speaker_name and speaker_name in session.SPEAKERS and voice_id is not None:
-            session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = voice_id
+            dubbing = session.SPEAKERS[speaker_name].setdefault('dubbing', {})
+            dubbing['voice'] = voice_id
+            # Speaker names belong to one model; a new voice starts on its default.
+            dubbing.pop('voice_speaker', None)
             session.set_unsaved(True)
+        _populate_voice_speakers(widget, voice_id)
+
+    def voice_speaker_changed(widget):
+        speaker_name = widget.property('speaker')
+        voice_id = widget.voice_combobox.combobox.currentData()
+        speaker = widget.voice_speaker_combobox.combobox.currentData()
+        if not (speaker_name and speaker_name in session.SPEAKERS) or not voice_id or speaker is None:
+            return
+        # Pin the voice too: the speaker only means something with it.
+        dubbing = session.SPEAKERS[speaker_name].setdefault('dubbing', {})
+        dubbing['voice'] = voice_id
+        dubbing['voice_speaker'] = speaker
+        session.set_unsaved(True)
 
     def _slow_speech_changed(widget, checked):
         """Persist the slow-speech toggle onto the speaker's dubbing
@@ -948,6 +1053,16 @@ class _GenericTTSSpeakerPanel(QWidget):
             # once each item succeeds.
             overrides['engine'] = widget.provider.id
             overrides['voice'] = voice_id
+            # The batch applies the panel's speaker, like rate and pitch below;
+            # a line whose own voice differs keeps the speaker chosen for it.
+            voice_speaker = _resolve_voice_speaker(
+                widget.provider, voice_id,
+                {'voice': speaker_voice, 'voice_speaker': speaker_dubbing.get('voice_speaker')},
+                overrides)
+            if voice_speaker:
+                overrides['voice_speaker'] = voice_speaker
+            else:
+                overrides.pop('voice_speaker', None)
             # The speaker batch applies the panel's CURRENT rate/pitch to every
             # targeted subtitle. Overwrite (not setdefault) so re-running after
             # changing the rate — or toggling gTTS "slow speech" back off (rate
@@ -978,6 +1093,8 @@ class _GenericTTSSpeakerPanel(QWidget):
                 # place rather than scattering setup above the loop.
                 'seed': _stable_seed_for_speaker(speaker_name),
             }
+            if voice_speaker:
+                entry['voice_speaker'] = voice_speaker
             # Auto-attach clone reference whenever the resolved voice
             # requires it. See `_GenericTTSDubbingPanel.generate_speech_button_clicked`
             # for the rationale — same policy applied across batch and
@@ -1013,11 +1130,16 @@ class _GenericTTSSpeakerPanel(QWidget):
             widget.voice_combobox.combobox.setCurrentIndex(0)
         widget.voice_combobox.combobox.blockSignals(False)
 
+        voice_id = widget.voice_combobox.combobox.currentData()
+        _populate_voice_speakers(widget, voice_id,
+                                 _resolve_voice_speaker(widget.provider, voice_id, dubbing))
+
         _sync_fit_checkbox(widget)
         _sync_scope_selector(widget)
 
     def translate(widget):
         widget.voice_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice'))
+        widget.voice_speaker_combobox.setLabel(_('subtitles_panel_widget_dubbing.voice_speaker'))
         widget.generate_all_speeches_button.setText(_('subtitles_panel_widget_dubbing.generate_all_speeches'))
         widget.fit_to_subtitle_checkbox.setText(_('subtitles_panel_widget_dubbing.fit_to_subtitle'))
         widget.scope_selector.retranslate()

@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Vui lòng chọn ít nhất một phần để nhập.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Công cụ lồng tiếng",
     "subtitles_panel_widget_dubbing.voice": "Giọng nói",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Người nói trong giọng này",
     "subtitles_panel_widget_dubbing.rate": "Tốc độ:",
     "subtitles_panel_widget_dubbing.pitch": "Cao độ:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Tạo tất cả giọng nói",

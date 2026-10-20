@@ -623,6 +623,7 @@
     "global_panel.select_at_least_one": "Please select at least one section to import.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Dubbing engine",
     "subtitles_panel_widget_dubbing.voice": "Voice",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Speaker in this voice",
     "subtitles_panel_widget_dubbing.rate": "Rate:",
     "subtitles_panel_widget_dubbing.pitch": "Pitch:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Generate all speeches",

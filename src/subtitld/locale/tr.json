@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Lütfen içe aktarmak için en az bir bölüm seçin.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Dublaj motoru",
     "subtitles_panel_widget_dubbing.voice": "Ses",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Bu sesteki konuşmacı",
     "subtitles_panel_widget_dubbing.rate": "Hız:",
     "subtitles_panel_widget_dubbing.pitch": "Perde:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Tüm konuşmaları oluştur",

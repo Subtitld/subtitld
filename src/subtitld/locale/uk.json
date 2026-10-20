@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Виберіть хоча б один розділ для імпорту.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Рушій дублювання",
     "subtitles_panel_widget_dubbing.voice": "Голос",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Диктор цього голосу",
     "subtitles_panel_widget_dubbing.rate": "Темп:",
     "subtitles_panel_widget_dubbing.pitch": "Висота:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Згенерувати всі озвучення",

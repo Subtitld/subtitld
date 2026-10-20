@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Selecciona al menos una sección para importar.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Motor de doblaje",
     "subtitles_panel_widget_dubbing.voice": "Voz",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Hablante de esta voz",
     "subtitles_panel_widget_dubbing.rate": "Velocidad:",
     "subtitles_panel_widget_dubbing.pitch": "Tono:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Generar todas las voces",

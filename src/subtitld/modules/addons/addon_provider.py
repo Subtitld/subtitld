@@ -368,7 +368,8 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             # Per-add-on extras — the voice cloning reference and its
             # transcript, the per-speaker sampler seed, etc. Add-ons that
             # don't know a key ignore it.
-            for key in ('voice_ref_audio', 'voice_ref_text', 'seed', 'speaker_emb', 'emotion'):
+            for key in ('voice_ref_audio', 'voice_ref_text', 'seed', 'speaker_emb', 'emotion',
+                        'voice_speaker'):
                 if key in subtitle:
                     params[key] = subtitle[key]
 
@@ -495,6 +496,10 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
                     # explicitly off so saved projects don't carry a stale value.
                     'pitch': 0,
                 })
+                # Which speaker of a multi-speaker voice, so a regenerate
+                # and the dubbing panel both reflect this take.
+                if original_subtitle.get('voice_speaker'):
+                    dubs[0]['voice_speaker'] = original_subtitle['voice_speaker']
                 subtitle['locked'] = False
                 # Auto-fit to the subtitle duration if the speaker opted in;
                 # keeps the un-stretched original in the dub list. Skipped when
