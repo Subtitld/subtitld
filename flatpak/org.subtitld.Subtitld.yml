@@ -14,9 +14,6 @@ finish-args:
   - --socket=pulseaudio
   - --device=all
   - --filesystem=home
-  - --filesystem=xdg-videos
-  - --filesystem=xdg-music
-  - --filesystem=xdg-download
   - --env=QT_QPA_PLATFORMTHEME=gtk3
 
 cleanup-commands:
