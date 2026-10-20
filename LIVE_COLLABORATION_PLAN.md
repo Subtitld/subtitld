@@ -220,6 +220,18 @@ yet when a project is shared with you; the app's shared projects list shows it.
 "Publish" turns the current state into a normal immutable `Version`. Credits
 are drawn from the change authors (`DraftContribution` in `PLAN.md`).
 
+Done in M12: publishing uses Subtitld's Publish card as before (the shared
+project's document is in the editor). After publishing from a shared project
+the app calls `POST /collab/projects/{doc_id}/published`: the project then
+publishes to that subtitle (`CollabDoc.asset`; another one is refused,
+`different_subtitle`), and `CollabPublication` credits everyone whose changes
+the project had. The subtitle's versions show "with @…", and the API's
+versions carry `coeditors`. Project details include the `subtitle` it
+publishes to; each collaborator's editor takes it as its origin, so the
+Publish card offers its next version to those who may edit it (membership
+in the project does not grant that). Client package 1.3.0
+(`project_published`).
+
 ### Deploy
 
 Prepared in M8 (`DEPLOY.md` → Live co-editing): `ops/subtitldcc-{draft,prod}-collab.service` (uvicorn,

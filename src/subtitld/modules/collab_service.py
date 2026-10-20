@@ -300,6 +300,27 @@ def project(on_success, on_failure):
     return service.call(lambda: service.client().project(doc_id), on_success, on_failure)
 
 
+def report_published(share_id, version, on_success, on_failure):
+    """This person published version `version` of `share_id` from the open shared project: subtitld.cc
+    links the project to that subtitle and credits everyone who co-edited it."""
+    doc_id = collab_state.STATE.get('doc')
+    return service.call(lambda: service.client().project_published(doc_id, share_id, version), on_success, on_failure)
+
+
+def follow_subtitle(project):
+    """The subtitle the shared project publishes to (its `subtitle`) is the editor's origin, at its latest
+    version: publishing from here offers its next version to those who may. True when that changed."""
+    subtitle = (project or {}).get('subtitle')
+    if not subtitle or not collab_state.shared():
+        return False
+    origin = service.origin() or {}
+    if origin.get('share_id') == subtitle['share_id'] and (origin.get('version') or 0) >= (subtitle.get('version') or 0):
+        return False
+    service.set_origin(subtitle['share_id'], subtitle.get('version'))
+    session.set_unsaved(True)
+    return True
+
+
 def add_member(handle, on_success, on_failure):
     doc_id = collab_state.STATE.get('doc')
     return service.call(lambda: service.client().add_member(doc_id, handle.strip().lstrip('@')), on_success, on_failure)

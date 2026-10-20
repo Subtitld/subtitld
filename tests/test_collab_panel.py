@@ -80,6 +80,16 @@ class FakeClient:
     def close_project(self, doc_id):
         calls.append(('close', doc_id))
 
+    def project_published(self, doc_id, share_id, version):
+        calls.append(('published', doc_id, share_id, version))
+        PROJECT['subtitle'] = {'share_id': share_id, 'title': 'Sintel <2010>', 'version': version, 'can_edit': True}
+        return dict(PROJECT, coeditors=['joao', 'marina'])
+
+    def asset(self, share_id):
+        return {'share_id': share_id, 'title': 'Sintel', 'version': 2, 'language': 'en', 'owner': 'marina',
+                'permissions': {'can_edit': True, 'can_share': True, 'can_rate': False, 'can_delete': True},
+                'my_rating': None, 'rating': None, 'downloads': 0}
+
 
 class FakeStore:
     account = 'subtitld.cc'
@@ -228,6 +238,20 @@ check('theirs, as an edit here (undoable)', (first['text'], len(history.ALL_HIST
 buttons('OK')[0].click() if wait(lambda: buttons('OK')) else None
 check('settled', collab_service.conflicts(), [])
 session.SUBTITLE['selected'] = None
+
+print('publishing from the project')
+card.published('Xk3pQ9aZ2bT', 2)
+check('subtitld.cc hears of it', wait(lambda: ('published', 'Dk3pQ9aZ2bT', 'Xk3pQ9aZ2bT', 2) in calls), True)
+check('and the others are credited', wait(lambda: panel.message.text() == 'Published, crediting @joao.'), True)
+check('the editor holds that subtitle now', service.origin(), {'share_id': 'Xk3pQ9aZ2bT', 'version': 2})
+check('the card says where it publishes, the title as text', wait(lambda: card.publishes_to.isVisible()
+                                                                and '“Sintel &lt;2010&gt;”' in card.publishes_to.text()), True)
+PROJECT['subtitle'] = dict(PROJECT['subtitle'], version=3)
+card._project = None
+card.refresh()
+check('a newer version, published by someone else: the editor follows', wait(lambda: (service.origin() or {}).get('version') == 3), True)
+PROJECT.pop('subtitle')
+card._project = None
 
 print('offline')
 connection.engine.state = 'offline'

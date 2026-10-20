@@ -296,6 +296,15 @@ class Client:
         """Share it with a person or a group, by handle (the owner). Returns the project."""
         return self.request("POST", f"/collab/projects/{doc_id}/members", json_body={"handle": handle})
 
+    def project_published(self, doc_id: str, share_id: str, version: int) -> dict:
+        """You published this version from the project: it publishes to that subtitle from now on, and the
+        version credits everyone whose changes it had. Returns the project, with its ``coeditors``."""
+        return self.request(
+            "POST",
+            f"/collab/projects/{doc_id}/published",
+            json_body={"share_id": share_id, "version": version},
+        )
+
     def remove_member(self, doc_id: str, handle: str) -> None:
         """Stop sharing it with someone (the owner), or leave it (your own handle)."""
         self.request("DELETE", f"/collab/projects/{doc_id}/members/{handle.lstrip('@')}")

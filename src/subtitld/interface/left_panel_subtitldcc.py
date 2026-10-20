@@ -26,7 +26,7 @@ from subtitld.interface import left_panel
 from subtitld.interface.subtitldcc_live import LiveCard
 from subtitld.interface.subtitldcc_publish import PublishFlow
 from subtitld.interface.translation import _
-from subtitld.modules import collab_service, session
+from subtitld.modules import collab_service, collab_state, session
 from subtitld.modules import subtitldcc_service as service
 
 TAB = 'subtitldcc'
@@ -857,10 +857,18 @@ class SubtitldccPanel(QWidget):
         share_id, version = published
         service.set_origin(share_id, version)
         session.set_unsaved(True)  # the origin is new: saving keeps it with the project
+        if collab_state.shared():
+            self.live_card.published(share_id, version)
         self._origin_info = None
         self._load_origin()
         if self._video and session.VIDEO.get('filepath'):
             self._run_lookup()  # it may be among the matches now, or a version newer
+
+    def origin_changed(self):
+        """The subtitle the editor holds changed (a shared project's, interface/subtitldcc_live.py)."""
+        self._origin_info = None
+        self._load_origin()
+        self._render_publish()
 
     def _publish_finished(self, _published):
         flow, self._flow = self._flow, None

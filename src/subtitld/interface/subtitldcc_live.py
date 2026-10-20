@@ -112,6 +112,8 @@ class LiveCard(QWidget):
         shared.setSpacing(6)
         self.here = _text()
         shared.addWidget(self.here)
+        self.publishes_to = _text()
+        shared.addWidget(self.publishes_to)
         self.conflicts = _text()
         shared.addWidget(self.conflicts)
         self.conflicts_box = QVBoxLayout()
@@ -261,6 +263,11 @@ class LiveCard(QWidget):
                     widgets.append(remove)
                 self.members_box.addWidget(_row(*widgets))
         self.members_title.setVisible(bool(project))
+        subtitle = project.get('subtitle')
+        self.publishes_to.setVisible(bool(subtitle))
+        if subtitle:
+            self.publishes_to.setText(_('collab.publishes_to').format(
+                title=html.escape(subtitle.get('title') or ''), version=subtitle.get('version') or 0))
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.stop_button.setVisible(bool(project))
@@ -345,7 +352,20 @@ class LiveCard(QWidget):
     def _project_loaded(self, project):
         self._busy = False
         self._project = project
+        if collab_service.follow_subtitle(project):
+            self.panel.origin_changed()
         self.refresh(load=False)
+
+    def published(self, share_id, version):
+        """Published from the shared project (the subtitld.cc panel's Publish): tell subtitld.cc, which
+        credits everyone who co-edited it."""
+        def reported(project):
+            self._project_loaded(project)
+            others = [f'@{h}' for h in project.get('coeditors') or [] if h != (service.account() or {}).get('handle')]
+            if others:
+                self.panel.show_message(_('collab.published_with').format(people=', '.join(others)))
+
+        collab_service.report_published(share_id, version, reported, self._call_failed)
 
     def add_member(self):
         handle = self.member_field.text().strip()

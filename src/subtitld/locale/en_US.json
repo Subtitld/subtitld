@@ -1023,6 +1023,8 @@
     "collab.conflict_theirs": "Use theirs",
     "collab.refused_text": "A change of yours could not be applied: the subtitle it was for had been removed.",
     "collab.dismiss": "OK",
+    "collab.publishes_to": "Publishes to “{title}” (version {version} is the latest). Those who can edit it publish its next version from the Publish card.",
+    "collab.published_with": "Published, crediting {people}.",
     "formatting.italic": "Italic (Ctrl+I)",
     "formatting.italic_letter": "I",
     "formatting.bold": "Bold (Ctrl+B)",
