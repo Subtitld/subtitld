@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "请至少选择一个要导入的部分。",
     "subtitles_panel_widget_dubbing.dubbing_engine": "配音引擎",
     "subtitles_panel_widget_dubbing.voice": "音色",
+    "subtitles_panel_widget_dubbing.voice_speaker": "此音色中的说话人",
     "subtitles_panel_widget_dubbing.rate": "速率：",
     "subtitles_panel_widget_dubbing.pitch": "音调：",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "生成全部语音",

@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "가져올 섹션을 하나 이상 선택하세요.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "더빙 엔진",
     "subtitles_panel_widget_dubbing.voice": "음성",
+    "subtitles_panel_widget_dubbing.voice_speaker": "이 음성의 화자",
     "subtitles_panel_widget_dubbing.rate": "속도:",
     "subtitles_panel_widget_dubbing.pitch": "음높이:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "전체 음성 생성",

@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Vyberte prosím alespoň jednu sekci k importu.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Modul dabingu",
     "subtitles_panel_widget_dubbing.voice": "Hlas",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Mluvčí v tomto hlasu",
     "subtitles_panel_widget_dubbing.rate": "Tempo:",
     "subtitles_panel_widget_dubbing.pitch": "Výška:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Vytvořit všechny řeči",

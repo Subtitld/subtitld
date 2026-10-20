@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Выберите хотя бы один раздел для импорта.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Движок дублирования",
     "subtitles_panel_widget_dubbing.voice": "Голос",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Диктор этого голоса",
     "subtitles_panel_widget_dubbing.rate": "Темп:",
     "subtitles_panel_widget_dubbing.pitch": "Высота тона:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Синтезировать всю речь",

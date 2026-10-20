@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "インポートするセクションを 1 つ以上選択してください。",
     "subtitles_panel_widget_dubbing.dubbing_engine": "吹き替えエンジン",
     "subtitles_panel_widget_dubbing.voice": "ボイス",
+    "subtitles_panel_widget_dubbing.voice_speaker": "このボイスの話者",
     "subtitles_panel_widget_dubbing.rate": "速度：",
     "subtitles_panel_widget_dubbing.pitch": "ピッチ：",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "すべての音声を生成",

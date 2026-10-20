@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Pilih setidaknya satu bagian untuk diimpor.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Mesin dubbing",
     "subtitles_panel_widget_dubbing.voice": "Suara",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Penutur dalam suara ini",
     "subtitles_panel_widget_dubbing.rate": "Kecepatan:",
     "subtitles_panel_widget_dubbing.pitch": "Nada:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Buat semua suara",

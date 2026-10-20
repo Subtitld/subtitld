@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Selecteer ten minste één sectie om te importeren.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Nasynchronisatie-engine",
     "subtitles_panel_widget_dubbing.voice": "Stem",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Spreker in deze stem",
     "subtitles_panel_widget_dubbing.rate": "Snelheid:",
     "subtitles_panel_widget_dubbing.pitch": "Toonhoogte:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Alle spraak genereren",

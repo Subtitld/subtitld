@@ -475,6 +475,7 @@
     "global_panel.select_at_least_one": "Bitte wählen Sie mindestens einen Abschnitt zum Importieren aus.",
     "subtitles_panel_widget_dubbing.dubbing_engine": "Synchronisations-Engine",
     "subtitles_panel_widget_dubbing.voice": "Stimme",
+    "subtitles_panel_widget_dubbing.voice_speaker": "Sprecher in dieser Stimme",
     "subtitles_panel_widget_dubbing.rate": "Tempo:",
     "subtitles_panel_widget_dubbing.pitch": "Tonhöhe:",
     "subtitles_panel_widget_dubbing.generate_all_speeches": "Alle Sprachausgaben erzeugen",
