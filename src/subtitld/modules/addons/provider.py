@@ -80,6 +80,18 @@ class Provider(QObject):
         return []
 
     @property
+    def compute(self) -> str | None:
+        """What it runs on, as a manifest's `compute` field says it (see
+        `addons.compute`): 'cpu', 'gpu_preferred', 'gpu_required' or
+        'remote'. None says nothing, and the add-ons panel shows nothing."""
+        return None
+
+    @property
+    def accelerators(self) -> list[str]:
+        """The graphics cards it can use, as a manifest's `accelerators`."""
+        return []
+
+    @property
     def config_schema(self) -> dict | None:
         """Optional declarative schema describing per-instance settings (voice
         defaults, API keys, model selection). When present, the AddonsDialog

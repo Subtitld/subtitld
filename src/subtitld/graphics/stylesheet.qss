@@ -622,6 +622,31 @@ QLabel[class='addon_card_badge_update'] {
     padding: 2px 6px;
 }
 
+/* What the add-on runs on, here: CPU, Cloud, "Uses your NVIDIA GPU"... Quieter
+   than the state badge, an outline; the warning one says it needs a card this
+   computer was found not to have. */
+QLabel[class='addon_card_compute'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #b8cee0;
+    background: transparent;
+    border: 1px solid rgba(184, 206, 224, 0.35);
+    border-radius: 3px;
+    padding: 1px 6px;
+}
+
+QLabel[class='addon_card_compute_warning'] {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 600;
+    color: #f0c060;
+    background: transparent;
+    border: 1px solid rgba(240, 192, 96, 0.6);
+    border-radius: 3px;
+    padding: 1px 6px;
+}
+
 QLabel[class='addon_card_summary'] {
     font-family: 'Montserrat';
     font-size: 11px;

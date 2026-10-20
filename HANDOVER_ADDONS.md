@@ -25,7 +25,7 @@ Code lives at `/home/jonata/Projetos/subtitld`. Key dirs:
 
 **Tasks v0:** `tts.synthesize`, `asr.transcribe`. `translation.translate` declared but not implemented.
 
-**Manifest** (`manifest.json` inside each add-on zip): `id`, `version`, `executable`, `protocol`, `platforms`, `tasks[]`, `voices[]`/`languages[]`, `models[]` (url + sha256 + bundled/download), `config_schema` (renders Configure UI declaratively).
+**Manifest** (`manifest.json` inside each add-on zip): `id`, `version`, `executable`, `protocol`, `platforms`, `tasks[]`, `voices[]`/`languages[]`, `models[]` (url + sha256 + bundled/download), `config_schema` (renders Configure UI declaratively), `compute` (`cpu` | `gpu_preferred` | `gpu_required` | `remote`) + `accelerators[]` (`cuda`, `mps`): what it runs on, for the panel's hardware chip and "Runs on this computer" filter; the host checks this computer's cards in `modules/hardware.py`, and the catalog entry carries the same two fields for add-ons not installed yet (see `modules/addons/compute.py`).
 
 **Catalog.** `https://subtitld.org/addons/catalog.json` — `addons[].releases[].downloads[]` by platform with sha256. Hosted via the `addons-catalog` repo with an `addons.yml` source-of-truth; CI assembles the JSON.
 
