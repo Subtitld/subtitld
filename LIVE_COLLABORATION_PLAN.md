@@ -195,6 +195,26 @@ Done in M5: the `collab` app (`collab/models.py`, `collab/access.py`,
 - Media connection-setup messages only pass between members of the same
   `CollabDoc` who are online.
 
+### REST endpoints
+
+Done in M7 (`api/routers/collab.py`, `collab/sharing.py`), under
+`/api/v1/collab/projects`, with the `collab` scope:
+
+| Endpoint | What |
+|---|---|
+| `POST /collab/projects` | Share a project: title, owner (yourself or a group you may publish as), the document. Idempotency-Key. |
+| `GET /collab/projects` | The ones you co-edit, most recently changed first (cursor pages). |
+| `GET /collab/projects/{doc_id}` | One, with its members, websocket address and whether you manage it. |
+| `PATCH /collab/projects/{doc_id}` | Rename (owner). |
+| `DELETE /collab/projects/{doc_id}` | Close (owner). |
+| `POST /collab/projects/{doc_id}/members` | Share with a person or group by handle (owner). |
+| `DELETE /collab/projects/{doc_id}/members/{handle}` | Remove someone (owner), or leave (your own handle). |
+
+Removing someone or closing the project tells its open connections to check
+access again, so whoever lost it is disconnected at once (needs the gunicorn
+processes on the same Redis channel layer as uvicorn). No inbox notification
+yet when a project is shared with you; the app's shared projects list shows it.
+
 ### Publishing
 
 "Publish" turns the current state into a normal immutable `Version`. Credits
