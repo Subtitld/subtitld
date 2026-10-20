@@ -157,18 +157,29 @@ updates go to the others but aren't saved.
 
 ### Data
 
+Done in M5: the `collab` app (`collab/models.py`, `collab/access.py`,
+`collab/documents.py`) and the shared package `packages/collab`
+(`subtitld-collab`), the home of `docops`; Subtitld bundles a copy made with
+`packages/collab/copy_into_subtitld.py`.
+
 | Model | Purpose |
 |---|---|
-| `CollabDoc` | The shared project. Links to an `Asset`, or to the Release 3 `Draft`. Has the current `seq`. |
-| `CollabOp` | `seq`, author, device, `client_op_id`, payload, created_at |
+| `CollabDoc` | The shared project: owner (user or group), title, status, the current `seq`, and the `Asset` it publishes to. Not an `Asset` itself: one with no version would show in libraries and search as an empty subtitle. |
+| `CollabMember` | A user or group the owner shared it with. |
+| `CollabOp` | `seq`, author, `client_op_id` (unique per project: a batch sent twice is accepted once), `base_seq`, the changes |
 | `CollabSnapshot` | Full state every N changes, so joining doesn't replay the whole log |
 | `CollabMedia` | Media list entry: hash, kind, size, chunk hashes, fingerprint. **Metadata only.** |
 | `CollabMediaCopy` | Who received which media file, and when. Audit for studios. |
 
 ### Permissions
 
-- Edit grant (`Grant`) means "can co-edit". Inviting people uses the existing
-  groups and invitations.
+- Co-editing follows `assets.access.can_edit`: the owner, the owning group's
+  members and the `CollabMember` grantees, with an active account. Sharing
+  and closing: the owner, or an owner of the owning group.
+- Accepting a batch locks the project's row, gives it the next `seq` and
+  refuses it whole when its changes no longer fit (`documents.accept`).
+- Deleting an account deletes the shared projects it owns; what it wrote in
+  other people's projects stays.
 - New token scope `collab`. The app asks for it once, through the existing
   sign-in flow.
 - Media connection-setup messages only pass between members of the same
