@@ -184,6 +184,38 @@ def amend_stored(cue_id, update, stop_at=None):
         visit(step)
 
 
+def _field_of(op):
+    """(kind, key, field) an undo change sets, or (kind, key, None) for a whole subtitle or speaker."""
+    kind = (op.get('op') or '').partition('.')[0]
+    key = op.get('id') if kind == 'cue' else op.get('name') if kind == 'speaker' else None
+    if op.get('op') == 'cue.insert':
+        key = op['cue'].get('id')
+    field = op.get('field')
+    return kind, key, field
+
+
+def forget(ops):
+    """Changes from elsewhere (`ops`, from the server) replaced what they set: undo and redo here leave those
+    fields alone from now on, rather than putting back what the person had before someone else's change.
+    A field a change sets as a whole ('translations') also covers its parts ('translations.pt')."""
+    touched = set()
+    for op in ops:
+        kind, key, field = _field_of(op)
+        if field:
+            touched.add((kind, key, field))
+
+    def covered(op):
+        kind, key, field = _field_of(op)
+        if not field:
+            return False
+        return (kind, key, field) in touched or (kind, key, field.partition('.')[0]) in touched
+
+    if not touched:
+        return
+    for step in ALL_HISTORY + REDO_HISTORY:
+        step.undo = [[op for op in batch if not covered(op)] for batch in step.undo]
+
+
 def history_undo():
     """Undo the newest step, making its redo step. Returns True if the undo
     happened, False if there was nothing to undo."""

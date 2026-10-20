@@ -27,7 +27,7 @@ from subtitld.modules import subtitldcc as api
 from subtitld.modules.subtitldcc import ApiError, SignInError
 
 DEFAULT_BASE_URL = 'https://subtitld.cc'
-SCOPES = ('read', 'publish', 'rate')
+SCOPES = ('read', 'publish', 'rate', 'collab')
 
 
 # --- Settings and connection -----------------------------------------------------------------------------

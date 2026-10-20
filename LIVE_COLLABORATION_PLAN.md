@@ -280,6 +280,28 @@ This work is useful even without co-editing.
 
 ### Co-editing client
 
+Done in M9 (`modules/collab_sync.py`, `modules/collab_client.py`):
+
+- The app keeps the document as of the last change number it has (`base`,
+  saved in the `.usfx` as `collab-base.json`) and its unconfirmed batches.
+  What the person sees is the base with those batches on top. A
+  collaborator's batch goes into the base; the screen is rebuilt from it,
+  and only what differs is changed, as changes from the server (not
+  undoable, not sent back). Batches apply in number order; a lasting gap
+  means saying hello again.
+- A batch the server refuses leaves the screen and is listed. Words both
+  sides changed while this app's change was waiting are listed as conflicts;
+  this app's text stays (it reaches the server later).
+- Undo here no longer reverts a field a collaborator changed since
+  (`history.forget`).
+- `Connection` (QWebSocket): reconnects with growing waits up to a minute,
+  pings every 25 s, stops for good on 4400/4401/4403/4404. The app now asks
+  for the `collab` scope when signing in.
+- Tested with a simulated server and three collaborators whose messages
+  arrive late, out of order or not at all (300 runs converge), and against a
+  local uvicorn with the real session: edits both ways, undo, a dropped
+  connection with an edit made offline.
+
 - Websocket connection on a QThread, or with `QWebSocket` from QtWebSockets.
   Check that QtWebSockets is included in every package format.
 - Reconnect with backoff. Catch up from `last_seq`, then send the queued

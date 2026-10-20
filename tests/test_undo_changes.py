@@ -74,6 +74,20 @@ elsewhere(lambda: session.SUBTITLE['segments'].remove(one))
 check('undo still happens', history.history_undo(), True)
 check('the other step undoes', history.history_undo() and texts(), ['two'])
 
+print('a collaborator\'s change is not undone here')
+one, two = project('one', 'two')
+edit(lambda: one.update(text='mine'))
+edit(lambda: two.update(text='mine too'))
+theirs = [{'op': 'cue.set', 'id': one['id'], 'field': 'text', 'value': 'theirs'}]
+history.forget(theirs)
+elsewhere(lambda: one.update(text='theirs'))
+history.history_undo()
+history.history_undo()
+check('undo leaves what they replaced, and undoes the rest', texts(), ['theirs', 'two'])
+history.history_redo()
+history.history_redo()
+check('redo too', texts(), ['theirs', 'mine too'])
+
 print('runtime data comes back')
 one, two = project('one', 'two')
 one['_rec'] = 'take-1'

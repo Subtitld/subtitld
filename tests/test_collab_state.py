@@ -17,7 +17,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import collab_state, file_io, history, session
+from subtitld.modules import collab_state, docops, file_io, history, session
 
 fails = []
 
@@ -71,7 +71,8 @@ check('nothing saved', members(plain_path), [])
 
 print('shared')
 one, two = new_project('one', 'two')
-collab_state.start('doc123', 'https://draft.subtitld.cc', seq=7)
+collab_state.start('doc123', 'https://draft.subtitld.cc', seq=7,
+                   base=docops.snapshot(session.SUBTITLE['segments'], session.SPEAKERS, session.SUBTITLE))
 edit(lambda: one.update(text='ONE'))
 edit(lambda: two.update(text='TWO'))
 history.history_undo()
@@ -89,7 +90,7 @@ check('a confirmed batch leaves the queue', (len(collab_state.STATE['pending']),
 print('saved and opened')
 shared_path = os.path.join(folder, 'shared.usfx')
 file_io.save_file(shared_path, 'USFX')
-check('saved in the project', members(shared_path), ['collab.json', 'pending.jsonl'])
+check('saved in the project', members(shared_path), ['collab-base.json', 'collab.json', 'pending.jsonl'])
 saved = {key: (list(value) if isinstance(value, list) else value) for key, value in collab_state.STATE.items()}
 new_project('something else')
 check('another project is not shared', collab_state.shared(), False)
@@ -122,9 +123,12 @@ open_project(srt_path)
 check('opening one is not shared', collab_state.shared(), False)
 
 print('reading')
+base = b'{"segments": [], "speakers": {}, "meta": {}}'
 state = collab_state.read(b'{"version": 1, "doc": "d", "seq": 3}',
-                          b'{"client_op_id": "a-1", "base_seq": 3, "ops": []}\n{"client_op_id": "a-2", "ba')
+                          b'{"client_op_id": "a-1", "base_seq": 3, "ops": []}\n{"client_op_id": "a-2", "ba', base)
 check('a line cut short ends the queue', (state['seq'], [b['client_op_id'] for b in state['pending']]), (3, ['a-1']))
+check('without its base, the server sends the whole document again',
+      collab_state.read(b'{"version": 1, "doc": "d", "seq": 3}', b'', b'not json')[('seq')], 0)
 check('another version is not read', collab_state.read(b'{"version": 2, "doc": "d"}'), None)
 check('nor something else', collab_state.read(b'not json'), None)
 

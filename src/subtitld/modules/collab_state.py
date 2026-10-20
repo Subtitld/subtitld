@@ -5,6 +5,8 @@ A project shared through subtitld.cc for live co-editing remembers, in its
 
     collab.json     which shared document it is (`doc`, on `server`) and the
                     server's change number its copy is up to (`seq`)
+    collab-base.json  the document as of that change, as the server has it
+                    (`base`): what the server's later changes are applied to
     pending.jsonl   the changes made here that the server has not yet
                     confirmed, one batch per line, oldest first
 
@@ -27,12 +29,13 @@ from subtitld.modules import journal
 
 VERSION = 1
 STATE_MEMBER = 'collab.json'
+BASE_MEMBER = 'collab-base.json'
 PENDING_MEMBER = 'pending.jsonl'
 
 # Names the batches made in this run of the app: with a counter, unique.
 _RUN = secrets.token_hex(6)
 
-STATE = {'doc': None, 'server': None, 'seq': 0, 'pending': []}
+STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': []}
 _counter = 0
 _muted = 0
 # What the project file being opened holds, until its open is done.
@@ -44,15 +47,16 @@ def shared():
     return bool(STATE.get('doc'))
 
 
-def start(doc, server, seq=0):
+def start(doc, server, seq=0, base=None):
     """The open project is now shared document `doc` on `server`, as of the
-    server's change `seq`."""
-    STATE.update({'doc': doc, 'server': server, 'seq': int(seq), 'pending': []})
+    server's change `seq`, when its document was `base` (a docops document;
+    None until the server sends it)."""
+    STATE.update({'doc': doc, 'server': server, 'seq': int(seq), 'base': copy.deepcopy(base), 'pending': []})
 
 
 def clear():
     """The open project is not shared (any more)."""
-    STATE.update({'doc': None, 'server': None, 'seq': 0, 'pending': []})
+    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': []})
 
 
 def _on_changes(ops, _undo):
@@ -96,14 +100,18 @@ def export():
         return {}
     head = {'version': VERSION, 'doc': STATE['doc'], 'server': STATE['server'], 'seq': STATE['seq']}
     lines = ''.join(json.dumps(batch, ensure_ascii=False) + '\n' for batch in STATE['pending'])
-    return {STATE_MEMBER: json.dumps(head, ensure_ascii=False, indent=2).encode('utf-8'),
-            PENDING_MEMBER: lines.encode('utf-8')}
+    members = {STATE_MEMBER: json.dumps(head, ensure_ascii=False, indent=2).encode('utf-8'),
+               PENDING_MEMBER: lines.encode('utf-8')}
+    if STATE.get('base') is not None:
+        members[BASE_MEMBER] = json.dumps(STATE['base'], ensure_ascii=False).encode('utf-8')
+    return members
 
 
-def read(state_bytes, pending_bytes=b''):
+def read(state_bytes, pending_bytes=b'', base_bytes=None):
     """The state in a project file's members, or None when they do not hold
     one this version understands. A pending line that does not read (a write
-    cut short) ends the queue there."""
+    cut short) ends the queue there. A base that does not read is none: the
+    server sends the whole document again."""
     try:
         head = json.loads(state_bytes.decode('utf-8'))
     except (ValueError, UnicodeDecodeError, AttributeError):
@@ -121,8 +129,16 @@ def read(state_bytes, pending_bytes=b''):
         if not isinstance(batch, dict) or not isinstance(batch.get('ops'), list) or not batch.get('client_op_id'):
             break
         pending.append(batch)
-    return {'doc': head['doc'], 'server': head.get('server'), 'seq': int(head.get('seq') or 0),
-            'pending': pending}
+    base = None
+    if base_bytes:
+        try:
+            base = json.loads(base_bytes.decode('utf-8'))
+        except (ValueError, UnicodeDecodeError):
+            base = None
+        if not (isinstance(base, dict) and isinstance(base.get('segments'), list)):
+            base = None
+    return {'doc': head['doc'], 'server': head.get('server'), 'seq': int(head.get('seq') or 0) if base else 0,
+            'base': base, 'pending': pending}
 
 
 def opening(state):
