@@ -5,14 +5,30 @@ The calls to subtitld.cc run in the background (subtitldcc_service.call); everyt
 work on the open project.
 """
 
+import hashlib
 import logging
+import time
 
-from subtitld.modules import collab_state, docops, history, session
+from subtitld.modules import collab_state, cue_ids, docops, history, session
 from subtitld.modules import subtitldcc_service as service
 
 log = logging.getLogger(__name__)
 
+# What this person is doing goes to the others at most this often, when it changes.
+PRESENCE_MS = 500
+# A text lock is asked for again this often while typing (the server lets it go after 15 s), and given up
+# after this long without a keystroke.
+LOCK_RENEW_SECONDS = 5
+TYPING_IDLE_SECONDS = 10
+# Collaborators' colours on the timeline: picked by handle, so each person keeps theirs everywhere.
+COLORS = ('#ff9f43', '#2ed573', '#1e90ff', '#ff6b81', '#eccc68', '#a29bfe', '#7bed9f', '#70a1ff', '#ffa502', '#fd79a8')
+
 _connection = None
+_presence_timer = None
+_last_presence = None
+_editing = None          # the subtitle ID this person is typing in
+_last_typed = 0.0
+_last_lock = 0.0
 # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
 # project became shared or stopped being), 'failed' (the connection gave up: see failure()).
 listeners = []
@@ -49,7 +65,10 @@ def state():
 
 
 def _stop():
-    global _connection
+    global _connection, _editing, _last_presence
+    _editing, _last_presence = None, None
+    if _presence_timer is not None:
+        _presence_timer.stop()
     if _connection is not None:
         _connection.stop()
         _connection.deleteLater()
@@ -72,6 +91,7 @@ def connect():
     _connection.changed.connect(_tell)
     _connection.failed.connect(_failed)
     _connection.start()
+    _start_presence()
     _tell('state')
 
 
@@ -101,6 +121,115 @@ session._document_loaded_callbacks.append(_project_loaded)
 def shutdown():
     """Quitting: close the connection (what is queued stays in the project file)."""
     _stop()
+
+
+# --- Presence, text locks, conflicts -----------------------------------------------------------------------
+
+
+def _start_presence():
+    global _presence_timer
+    from PySide6.QtCore import QTimer
+
+    if _presence_timer is None:
+        _presence_timer = QTimer()
+        _presence_timer.setInterval(PRESENCE_MS)
+        _presence_timer.timeout.connect(_presence_tick)
+    _presence_timer.start()
+
+
+def _presence_tick():
+    """Say what changed in what this person is doing; let go of a text they stopped typing in."""
+    global _last_presence
+    if _connection is None:
+        return
+    selected = session.SUBTITLE.get('selected')
+    selected_id = selected.get('id') if isinstance(selected, dict) else None
+    if _editing and (selected_id != _editing or time.monotonic() - _last_typed > TYPING_IDLE_SECONDS):
+        stopped_typing()
+    position = session.SUBTITLE.get('position')
+    state = {'selected': selected_id, 'playhead': round(float(position), 2) if position is not None else None,
+             'editing': _editing}
+    if state != _last_presence:
+        _last_presence = state
+        _connection.engine.presence(state)
+
+
+def typing(cue_id):
+    """This person is typing in subtitle `cue_id`'s text: hold its lock, so the others leave it be."""
+    global _editing, _last_typed, _last_lock
+    if _connection is None or not cue_id:
+        return
+    now = time.monotonic()
+    _last_typed = now
+    if cue_id != _editing:
+        if _editing:
+            _connection.engine.unlock(_editing)
+        _editing = cue_id
+        _last_lock = 0.0
+    if now - _last_lock >= LOCK_RENEW_SECONDS:
+        _last_lock = now
+        _connection.engine.lock(cue_id)
+
+
+def stopped_typing():
+    global _editing
+    if _connection is not None and _editing:
+        _connection.engine.unlock(_editing)
+    _editing = None
+
+
+def locked_by(cue_id):
+    """The collaborator typing in subtitle `cue_id` right now ({'handle', 'name'}), or None."""
+    if _connection is None or not cue_id:
+        return None
+    return _connection.engine.locked_by(cue_id)
+
+
+def color_for(handle):
+    digest = hashlib.sha1((handle or '').encode()).digest()
+    return COLORS[digest[0] % len(COLORS)]
+
+
+def collaborators():
+    """The others in the project now: [{'peer', 'handle', 'name', 'color', 'selected', 'playhead',
+    'editing'}]."""
+    if _connection is None:
+        return []
+    people = []
+    for peer, info in _connection.engine.peers.items():
+        user = info.get('user') or {}
+        state = info.get('state') or {}
+        handle = user.get('handle') or ''
+        people.append({'peer': peer, 'handle': handle, 'name': user.get('name') or handle,
+                       'color': color_for(handle), 'selected': state.get('selected'),
+                       'playhead': state.get('playhead'), 'editing': state.get('editing')})
+    return sorted(people, key=lambda person: person['handle'])
+
+
+def conflicts():
+    """What crossed someone else's changes (collab_sync.Engine.conflicts)."""
+    return list(_connection.engine.conflicts) if _connection is not None else []
+
+
+def resolve(conflict, keep):
+    """Settle a conflict: 'mine' keeps what is there (this person's text won), 'theirs' puts back the other
+    person's, as an edit of this person's (undoable, sent to everyone). A refused batch is only dismissed."""
+    if _connection is None:
+        return
+    engine = _connection.engine
+    if conflict in engine.conflicts:
+        engine.conflicts.remove(conflict)
+    if keep == 'theirs' and conflict.get('cue_id'):
+        segment = cue_ids.find(session.SUBTITLE.get('segments'), conflict['cue_id'])
+        if segment is not None:
+            history.history_append()
+            head, _dot, key = conflict['field'].partition('.')
+            if key:
+                segment.setdefault(head, {})[key] = conflict['theirs']
+            else:
+                segment[head] = conflict['theirs']
+            session.set_unsaved()
+    _tell('conflicts')
 
 
 # --- Sharing and joining ------------------------------------------------------------------------------------

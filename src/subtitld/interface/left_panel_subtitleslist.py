@@ -8,6 +8,7 @@ from subtitld.interface import preview_panel
 from subtitld.interface import subtitle_text_editor
 from subtitld.interface.translation import _
 
+from subtitld.modules import collab_service
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import subtitles
@@ -253,6 +254,13 @@ def load(self):
     # brings it back the moment there is a selection.
     self.left_panel_subtitleslist_bottom_panel.setVisible(False)
 
+    # In a shared project, someone else typing in the selected subtitle (refresh_lock).
+    self.left_panel_subtitleslist_locked_notice = QLabel()
+    self.left_panel_subtitleslist_locked_notice.setObjectName('left_panel_subtitleslist_locked_notice')
+    self.left_panel_subtitleslist_locked_notice.setWordWrap(True)
+    self.left_panel_subtitleslist_locked_notice.setVisible(False)
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_locked_notice)
+
     self.left_panel_subtitleslist_textedit = QTextEdit()
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
     self.left_panel_subtitleslist_textedit.setAcceptRichText(False)
@@ -478,9 +486,22 @@ def subtitles_panel_empty_state_button_clicked(self):
 def left_panel_subtitleslist_textedit_changed(self):
     if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
         session.SUBTITLE['selected']['text'] = subtitle_text_editor.text(self.left_panel_subtitleslist_textedit)
+        # In a shared project, the others leave this text be while it is typed in.
+        collab_service.typing(session.SUBTITLE['selected'].get('id'))
         session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
+
+
+def refresh_lock(self):
+    """In a shared project, a subtitle someone else is typing in can't be typed in here until they stop."""
+    selected = session.SUBTITLE.get('selected')
+    holder = collab_service.locked_by(selected.get('id')) if isinstance(selected, dict) else None
+    self.left_panel_subtitleslist_textedit.setReadOnly(bool(holder))
+    self.left_panel_subtitleslist_formatting_bar.setEnabled(not holder)
+    self.left_panel_subtitleslist_locked_notice.setVisible(bool(holder))
+    if holder:
+        self.left_panel_subtitleslist_locked_notice.setText(_('collab.typing_here').format(handle=holder.get('handle', '')))
 
 
 def left_panel_subtitleslist_translation_textedit_changed(self):
@@ -650,6 +671,7 @@ def update(self):
     if hasattr(self, 'left_panel_speakers_list'):
         from subtitld.interface import left_panel_speakers
         left_panel_speakers.highlight_speaker_for_selection(self)
+    refresh_lock(self)
 
 
 def show(self):

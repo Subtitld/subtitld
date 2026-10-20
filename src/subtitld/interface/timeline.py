@@ -761,6 +761,65 @@ class Timeline(QWidget):
             painter.end()
         event.accept()
 
+    def _paint_collaborators(widget, painter):
+        """The others in a shared project (modules.collab_service), each in their colour: the subtitle they
+        selected, outlined; a tag on the one they type in; their playhead, a thin line with their handle.
+        Never in the way of the timeline: a failure here only loses this overlay."""
+        try:
+            from subtitld.modules import collab_service, cue_ids
+            people = collab_service.collaborators()
+            if not people:
+                return
+            wpp = widget.width_proportion or 1.0
+            segments = session.SUBTITLE.get('segments') or []
+        except Exception:
+            return
+        painter.save()
+        try:
+            font = QFont('Ubuntu', 7)
+            font.setBold(True)
+            painter.setFont(font)
+            metrics = QFontMetrics(font)
+            for person in people:
+                color = QColor(person['color'])
+                label = f"@{person['handle']}"
+                for cue_id, typing in ((person.get('selected'), False), (person.get('editing'), True)):
+                    cue = cue_ids.find(segments, cue_id)
+                    if cue is None:
+                        continue
+                    rect = QRectF(cue['start'] * wpp, widget.subtitle_y - 2,
+                                  max(2.0, (cue['end'] - cue['start']) * wpp), widget.subtitle_height + 4)
+                    if typing:
+                        text = f'✎ {label}'
+                        tag = QRectF(rect.left(), rect.top() - 13, metrics.horizontalAdvance(text) + 8, 12)
+                        painter.setPen(Qt.NoPen)
+                        painter.setBrush(color)
+                        painter.drawRoundedRect(tag, 2.0, 2.0)
+                        painter.setPen(QColor('#10171d'))
+                        painter.drawText(tag, Qt.AlignCenter, text)
+                    else:
+                        painter.setBrush(Qt.NoBrush)
+                        painter.setPen(QPen(color, 2, Qt.DashLine))
+                        painter.drawRoundedRect(rect, 3.0, 3.0, Qt.AbsoluteSize)
+                playhead = person.get('playhead')
+                if playhead is not None:
+                    x = float(playhead) * wpp
+                    line = QColor(color)
+                    line.setAlpha(170)
+                    painter.setPen(QPen(line, 1, Qt.SolidLine))
+                    painter.drawLine(QLineF(x, 12.0, x, float(widget.height())))
+                    tag = QRectF(x, 0, metrics.horizontalAdvance(label) + 6, 12)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(line)
+                    painter.drawRect(tag)
+                    painter.setPen(QColor('#10171d'))
+                    painter.drawText(tag, Qt.AlignCenter, label)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('timeline: could not draw the collaborators')
+        finally:
+            painter.restore()
+
     def _paint_body(widget, painter, event):
         # Live record take (painted after the segment loop). Hoisted OUT of the
         # `if segments:` block below: a new project has no segments but a
@@ -1888,6 +1947,9 @@ class Timeline(QWidget):
                 painter.drawLine(xpos, int(widget.subtitle_y + 8 + y_tug_pos), int(xpos + 8), int(widget.subtitle_y + 8 + y_tug_pos))
                 # painter.drawLine(xpos, widget.subtitle_y + 8 + y_tug_pos, xpos + 8, widget.subtitle_y + widget.subtitle_height - 8)
                 y_tug_pos += (widget.subtitle_height - 8) / 6
+
+        # Collaborators in a shared project: their selection, the text they type in and their playhead.
+        widget._paint_collaborators(painter)
 
         if session.SUBTITLE.get('position', 0) is not None:
             painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000')), 2, Qt.SolidLine))

@@ -320,6 +320,25 @@ Done in M10 (`modules/collab_service.py`, `interface/subtitldcc_live.py`, a
   longer shared with you (4404) becomes your own too.
 - English texts only for now, like other recent features.
 
+Done in M11:
+
+- Presence: every 0.5 s, when it changed, the app says which subtitle is
+  selected, where the playhead is and which text is being typed in; it says
+  it again after reconnecting. Each collaborator has a colour picked by
+  handle. The timeline shows their selection (dashed outline), the subtitle
+  they type in (a "✎ @handle" tag) and their playhead (`Timeline._paint_collaborators`).
+- Text locks: typing in the subtitle list's editor holds the subtitle's lock
+  (asked again every 5 s, given up after 10 s without a keystroke or when
+  another subtitle is selected). A subtitle someone else is typing in is
+  read-only in the editor, with a note saying who.
+- Batches never sent go as one, so typing a word is one change to send. Only
+  never-sent batches merge: one that may have reached the server keeps its
+  ID (the convergence test caught the case).
+- Conflicts in the card: "Keep mine" or "Use theirs" (an undoable edit,
+  sent like any other); a refused batch is shown and dismissed.
+- Collaborators' changes refresh the timeline and the panels (at most every
+  150 ms).
+
 - Websocket connection on a QThread, or with `QWebSocket` from QtWebSockets.
   Check that QtWebSockets is included in every package format.
 - Reconnect with backoff. Catch up from `last_seq`, then send the queued

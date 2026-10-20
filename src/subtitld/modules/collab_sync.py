@@ -67,11 +67,16 @@ class Engine:
         self.peer = None
         self.you = None
         self.in_flight = set()
+        # Batches that may have reached the server (sent on this or an earlier connection, or queued when
+        # this app started): never merged into another, since the server may know them by their ID.
+        self.ever_sent = {batch['client_op_id'] for batch in self.store.get('pending') or []}
         self.early = {}          # seq -> batch that arrived before the ones it follows
         self.peers = {}          # peer -> {'user', 'state'}
         self.locks = {}          # cue ID -> peer holding it
         self.conflicts = []      # {'cue_id', 'field', 'mine', 'theirs', 'author'} or {'client_op_id', 'reason', ...}
         self.needs_resync = False
+        self.presence_state = None  # what this app last said it is doing (sent again after reconnecting)
+        self.held = set()           # cue IDs this app holds the text lock of
         self.listeners = []      # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts', 'lock'
 
     # --- Connection ------------------------------------------------------------------------------
@@ -116,11 +121,50 @@ class Engine:
             self._send_pending()
 
     def _send_pending(self):
+        self._coalesce()
         for batch in self.store['pending']:
             if batch['client_op_id'] not in self.in_flight:
                 self.in_flight.add(batch['client_op_id'])
+                self.ever_sent.add(batch['client_op_id'])
                 self.send({'type': 'op', 'client_op_id': batch['client_op_id'], 'base_seq': batch['base_seq'],
                            'ops': batch['ops']})
+
+    def _coalesce(self):
+        """Batches never sent go as one: typing a word is a batch per keystroke here, one change to send."""
+        merged = []
+        for batch in self.store['pending']:
+            previous = merged[-1] if merged else None
+            if (previous is not None and previous['client_op_id'] not in self.ever_sent
+                    and batch['client_op_id'] not in self.ever_sent):
+                previous['ops'] = previous['ops'] + batch['ops']
+            else:
+                merged.append(batch)
+        self.store['pending'][:] = merged
+
+    def presence(self, state):
+        """Tell the others what this person is doing ({'selected', 'playhead', 'editing'})."""
+        self.presence_state = state
+        if self.state == self.LIVE:
+            self.send({'type': 'presence', 'state': state})
+
+    def lock(self, cue_id):
+        """About to type in a subtitle's text (and again to keep it): the others see it and leave it be."""
+        self.held.add(cue_id)
+        if self.state == self.LIVE:
+            self.send({'type': 'lock', 'cue_id': cue_id})
+
+    def unlock(self, cue_id):
+        if cue_id in self.held:
+            self.held.discard(cue_id)
+            if self.state == self.LIVE:
+                self.send({'type': 'unlock', 'cue_id': cue_id})
+
+    def locked_by(self, cue_id):
+        """Who else is typing in subtitle `cue_id`: their {'handle', 'name'}, or None."""
+        peer = self.locks.get(cue_id)
+        if peer is None or peer == self.peer:
+            return None
+        return (self.peers.get(peer) or {}).get('user') or {'handle': '', 'name': ''}
 
     # --- From the server ---------------------------------------------------------------------------
 
@@ -154,6 +198,11 @@ class Engine:
     def _go_live(self):
         if self.state != self.LIVE:
             self._set_state(self.LIVE)
+            # A new connection: what this person is doing and typing in, again.
+            if self.presence_state is not None:
+                self.send({'type': 'presence', 'state': self.presence_state})
+            for cue_id in self.held:
+                self.send({'type': 'lock', 'cue_id': cue_id})
         self._send_pending()
 
     def _on_batch(self, message):
@@ -207,7 +256,9 @@ class Engine:
             self._tell('locks')
 
     def _on_lock(self, message):
-        """The answer to this app's own lock request."""
+        """The answer to this app's own lock request: refused, someone else is typing there."""
+        if not message.get('granted'):
+            self.held.discard(message.get('cue_id'))
         self._tell('lock', message.get('cue_id'), bool(message.get('granted')), message.get('holder'))
 
     def _on_pong(self, message):

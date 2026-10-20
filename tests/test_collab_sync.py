@@ -160,6 +160,44 @@ check('and gone with them', (engine.peers, engine.locks), ({}, {}))
 check('the screen was told', {'peers', 'locks'} <= set(seen), True)
 
 
+print('what this person is doing, and typing in')
+live, engine, sent = client('a', document('one', 'two'))
+engine.presence({'selected': 'c0', 'playhead': 1.5, 'editing': None})
+engine.lock('c0')
+check('nothing goes before the connection is live', sent, [])
+engine.connected()
+engine.on_message({'type': 'welcome', 'peer': 'me', 'you': {'handle': 'ana'}, 'seq': 0})
+engine.on_message({'type': 'changes', 'batches': []})
+check('then presence and the lock go', [m['type'] for m in sent], ['hello', 'presence', 'lock'])
+engine.on_message({'type': 'lock', 'cue_id': 'c1', 'granted': False, 'holder': 'p2'})
+engine.lock('c1')
+engine.on_message({'type': 'lock', 'cue_id': 'c1', 'granted': False, 'holder': 'p2'})
+check('a refused lock is not held', engine.held, {'c0'})
+engine.on_message({'type': 'locked', 'cue_id': 'c1', 'peer': 'p2', 'user': {'handle': 'bob'}})
+check('someone else typing', (engine.locked_by('c1'), engine.locked_by('c0')), ({'handle': 'bob'}, None))
+engine.unlock('c0')
+check('letting go', (sent[-1], engine.held), ({'type': 'unlock', 'cue_id': 'c0'}, set()))
+engine.disconnected()
+del sent[:]
+engine.connected()
+engine.on_message({'type': 'changes', 'batches': []})
+check('after reconnecting, presence again', [m['type'] for m in sent], ['hello', 'presence'])
+
+print('typing a word is one batch to send')
+live, engine, sent = client('a', document('one'))
+for text in ('o', 'on', 'one!'):
+    live.edit(set_text('c0', text))
+engine.connected()
+engine.on_message({'type': 'changes', 'batches': []})
+ops = [m for m in sent if m['type'] == 'op']
+check('one batch, every change in it', (len(ops), [op['value'] for op in ops[0]['ops']]), (1, ['o', 'on', 'one!']))
+check('one waiting', len(live.store['pending']), 1)
+live.edit(set_text('c0', 'one!!'))
+engine.local_changed()
+check('one sent but unconfirmed stays as it is: the next goes on its own',
+      [len(m['ops']) for m in sent if m['type'] == 'op'], [3, 1])
+
+
 # --- Everyone ends with the server's document --------------------------------------------------------
 
 

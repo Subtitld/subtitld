@@ -8,9 +8,10 @@ Either way the project stays in the editor as it is.
 Questions are asked in place; calls to subtitld.cc run in the background (modules/collab_service.py).
 """
 
+import html
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from subtitld.interface.translation import _
@@ -113,6 +114,8 @@ class LiveCard(QWidget):
         shared.addWidget(self.here)
         self.conflicts = _text()
         shared.addWidget(self.conflicts)
+        self.conflicts_box = QVBoxLayout()
+        shared.addLayout(self.conflicts_box)
         self.members_title = _text('subtitldcc_kicker')
         shared.addWidget(self.members_title)
         self.members_box = QVBoxLayout()
@@ -147,12 +150,37 @@ class LiveCard(QWidget):
         self.confirm.hide()
         layout.addWidget(self.confirm)
 
+        # Collaborators' changes: the editor follows (at most every 150 ms while they stream in).
+        self._editor_refresh = QTimer(self)
+        self._editor_refresh.setSingleShot(True)
+        self._editor_refresh.setInterval(150)
+        self._editor_refresh.timeout.connect(self._refresh_editor)
         collab_service.listeners.append(self._news)
         self.retranslate()
 
     # --- What it shows -----------------------------------------------------------------------------------
 
+    def _refresh_editor(self):
+        from subtitld.interface import left_panel, left_panel_subtitleslist
+
+        window = self.panel.window_
+        if hasattr(window, 'timeline_widget'):
+            window.timeline_widget.update_size()
+            window.timeline_widget.update()
+        if hasattr(window, 'left_panel_stackedwidgets'):
+            left_panel.update(window)
+        if hasattr(window, 'left_panel_subtitleslist_textedit'):
+            left_panel_subtitleslist.refresh_lock(window)
+
     def _news(self, kind):
+        window = self.panel.window_
+        if kind in ('peers', 'locks') and hasattr(window, 'timeline_widget'):
+            window.timeline_widget.update()
+        if kind == 'locks' and hasattr(window, 'left_panel_subtitleslist_textedit'):
+            from subtitld.interface import left_panel_subtitleslist
+            left_panel_subtitleslist.refresh_lock(window)
+        if kind == 'document' and not self._editor_refresh.isActive():
+            self._editor_refresh.start()
         if kind in ('shared', 'failed'):
             self._project = None
             self._projects = None if kind == 'shared' else self._projects
@@ -208,9 +236,12 @@ class LiveCard(QWidget):
         engine = connection.engine if connection is not None else None
         others = sorted({f"@{(p.get('user') or {}).get('handle', '')}" for p in (engine.peers.values() if engine else [])})
         self.here.setText(_('collab.here').format(people=', '.join(others)) if others else _('collab.here_nobody'))
-        count = len(engine.conflicts) if engine else 0
-        self.conflicts.setVisible(bool(count))
-        self.conflicts.setText(_('collab.conflicts').format(count=count))
+        found = collab_service.conflicts()
+        self.conflicts.setVisible(bool(found))
+        self.conflicts.setText(_('collab.conflicts').format(count=len(found)))
+        _clear(self.conflicts_box)
+        for conflict in found[:10]:
+            self.conflicts_box.addWidget(self._conflict_row(conflict))
 
         project = self._project or {}
         manage = bool((project.get('permissions') or {}).get('can_manage'))
@@ -233,6 +264,34 @@ class LiveCard(QWidget):
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.stop_button.setVisible(bool(project))
+
+    def _conflict_row(self, conflict):
+        box = QWidget()
+        box.setObjectName('subtitldcc_problem')
+        box.setProperty('severity', 'warn')
+        box.setAttribute(Qt.WA_StyledBackground, True)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(8, 6, 8, 6)
+        text = _text()
+        buttons = []
+        if conflict.get('cue_id'):
+            text.setText(_('collab.conflict_text').format(author=conflict.get('author') or '')
+                         + f"<br><i>{html.escape(str(conflict.get('theirs') or ''))}</i>")
+            mine, theirs = _button(), _button()
+            mine.setText(_('collab.conflict_mine'))
+            theirs.setText(_('collab.conflict_theirs'))
+            mine.clicked.connect(lambda: collab_service.resolve(conflict, 'mine'))
+            theirs.clicked.connect(lambda: collab_service.resolve(conflict, 'theirs'))
+            buttons = [mine, theirs]
+        else:
+            text.setText(_('collab.refused_text'))
+            ok = _button()
+            ok.setText(_('collab.dismiss'))
+            ok.clicked.connect(lambda: collab_service.resolve(conflict, 'mine'))
+            buttons = [ok]
+        layout.addWidget(text)
+        layout.addWidget(_row(*buttons))
+        return box
 
     # --- Not shared --------------------------------------------------------------------------------------
 
@@ -265,7 +324,7 @@ class LiveCard(QWidget):
             self.projects_box.addWidget(empty)
         for project in self._projects:
             label = _text()
-            label.setText(f"<b>{project['title']}</b><br>@{(project.get('owner') or {}).get('handle', '')}")
+            label.setText(f"<b>{html.escape(project['title'])}</b><br>@{html.escape((project.get('owner') or {}).get('handle', ''))}")
             open_button = _button()
             open_button.setText(_('collab.open'))
             open_button.clicked.connect(lambda _c=False, p=project: self.ask_join(p))

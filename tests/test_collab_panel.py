@@ -14,7 +14,7 @@ _xdg = tempfile.mkdtemp()
 for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
     os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QEvent, QObject, Signal
 from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget, QVBoxLayout, QWidget
 app = QApplication([])
 from subtitld.interface import left_panel, left_panel_subtitldcc as panel_module, top_bar
@@ -35,6 +35,8 @@ def wait(condition, seconds=5):
     deadline = time.time() + seconds
     while time.time() < deadline:
         app.processEvents()
+        # Rows rebuilt go with deleteLater, which the event loop does and processEvents() doesn't.
+        app.sendPostedEvents(None, QEvent.DeferredDelete)
         if condition():
             return True
         time.sleep(0.01)
@@ -147,6 +149,10 @@ panel = host.subtitldcc_panel
 card = panel.live_card
 panel.refresh()
 
+def buttons(text):
+    return [b for b in card.findChildren(type(card.add_button)) if b.text() == text and b.isVisible()]
+
+
 print('signed in, not shared')
 check('the card shows', card.isVisible(), True)
 check('the share form, named after the video', (card.share_box.isVisible(), card.title_field.text()), (True, 'Sintel.2010'))
@@ -169,15 +175,67 @@ connection = collab_service.connection()
 connection.engine.peers['p1'] = {'user': {'handle': 'joao'}, 'state': {}}
 connection.changed.emit('peers')
 check('someone joined', card.here.text(), 'Here now: @joao')
-connection.engine.conflicts.append({'cue_id': 'x', 'field': 'text'})
+connection.engine.conflicts.append({'cue_id': 'x', 'field': 'text', 'theirs': 'x', 'author': 'joao'})
 connection.changed.emit('conflicts')
 check('a change crossed', (card.conflicts.isVisible(), card.conflicts.text()), (True, '1 of your changes crossed someone else’s.'))
+connection.engine.conflicts.clear()
+
+print('collaborators in the editor')
+from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtWidgets import QTextEdit
+from subtitld.interface import left_panel_subtitleslist, timeline
+first = session.SUBTITLE['segments'][0]
+connection.engine.peers['p1']['state'] = {'selected': first['id'], 'playhead': 3.5, 'editing': first['id']}
+check('each with a colour of their own, the same everywhere',
+      (collab_service.collaborators()[0]['color'], collab_service.color_for('joao')) ,
+      (collab_service.color_for('joao'), collab_service.color_for('joao')))
+canvas = QImage(800, 120, QImage.Format_ARGB32)
+canvas.fill(QColor('#000000'))
+stub = types.SimpleNamespace(width_proportion=100.0, subtitle_y=40, subtitle_height=40, height=lambda: 120)
+painter = QPainter(canvas)
+timeline.Timeline._paint_collaborators(stub, painter)
+painter.end()
+mine = QColor(collab_service.color_for('joao'))
+drawn = {canvas.pixelColor(x, y).name() for x in range(800) for y in range(120)}
+check('the timeline draws them in their colour', mine.name() in drawn or any(
+    abs(QColor(c).red() - mine.red()) < 30 and abs(QColor(c).green() - mine.green()) < 30 and abs(QColor(c).blue() - mine.blue()) < 30
+    for c in drawn if c != '#000000'), True)
+
+connection.engine.locks = {first['id']: 'p1'}
+connection.engine.locked_by = lambda cue: {'handle': 'joao'} if connection.engine.locks.get(cue) == 'p1' else None
+editor = types.SimpleNamespace(left_panel_subtitleslist_textedit=QTextEdit(),
+                               left_panel_subtitleslist_formatting_bar=QWidget(),
+                               left_panel_subtitleslist_locked_notice=QLabel())
+session.SUBTITLE['selected'] = first
+left_panel_subtitleslist.refresh_lock(editor)
+check('someone typing: the text can\'t be typed in here, and says who',
+      (editor.left_panel_subtitleslist_textedit.isReadOnly(), editor.left_panel_subtitleslist_locked_notice.text()),
+      (True, '@joao is typing in this subtitle. You can type in it once they stop.'))
+connection.engine.locks = {}
+left_panel_subtitleslist.refresh_lock(editor)
+check('and can be once they stop', editor.left_panel_subtitleslist_textedit.isReadOnly(), False)
+
+print('conflicts')
+connection.engine.conflicts[:] = [{'cue_id': first['id'], 'field': 'text', 'mine': first['text'], 'theirs': 'Olá <b>', 'author': 'joao'},
+                                  {'client_op_id': 'x-1', 'reason': 'conflict', 'detail': '', 'ops': []}]
+connection.changed.emit('conflicts')
+wait(lambda: False, 0.2)
+check('both listed', wait(lambda: len(buttons('Use theirs')) == 1 and buttons('OK')), True)
+check('their text shown as text', any('Olá &lt;b&gt;' in w.text() for w in card.findChildren(QLabel)), True)
+undo_steps = len(history.ALL_HISTORY)
+buttons('Use theirs')[0].click()
+check('theirs, as an edit here (undoable)', (first['text'], len(history.ALL_HISTORY)), ('Olá <b>', undo_steps + 1))
+buttons('OK')[0].click() if wait(lambda: buttons('OK')) else None
+check('settled', collab_service.conflicts(), [])
+session.SUBTITLE['selected'] = None
 
 print('offline')
 connection.engine.state = 'offline'
 collab_state.queue([{'op': 'meta.set', 'field': 'language', 'value': 'pt'}])
 connection.changed.emit('state')
-check('changes wait', card.status.text(), 'Offline. Your changes are kept (1 waiting) and sent when the connection is back.')
+waiting = len(collab_state.STATE['pending'])
+check('changes wait (the one above, and using their text)', (waiting, card.status.text()),
+      (2, f'Offline. Your changes are kept ({waiting} waiting) and sent when the connection is back.'))
 
 print('a sign-in from before co-editing')
 connection.failed.emit('missing_scope')
@@ -188,10 +246,6 @@ card.member_field.setText('@joao')
 card.add_button.click()
 check('added', wait(lambda: ('add', 'joao') in calls), True)
 check('listed', wait(lambda: '@joao' in [w.text() for w in card.findChildren(QLabel)]), True)
-def buttons(text):
-    return [b for b in card.findChildren(type(card.add_button)) if b.text() == text and b.isVisible()]
-
-
 check('with a Remove button for the owner', wait(lambda: buttons('Remove')), True)
 buttons('Remove')[0].click()
 check('removing asks first', card.confirm.isVisible(), True)
