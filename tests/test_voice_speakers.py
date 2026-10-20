@@ -114,12 +114,10 @@ print('another voice starts on its own default speaker')
 pick(panel.voice_combobox, 'de_DE-thorsten_emotional-medium')
 check('the old speaker is dropped', 'voice_speaker' in session.SPEAKERS['A']['dubbing'], False)
 check('the list is the new voice\'s', panel.voice_speaker_combobox.combobox.currentData(), 'amused')
-# The first batch pinned VCTK on each line, and a pinned line voice still
-# beats the speaker's new one; start these lines clean.
-for line in (line_one, line_two):
-    line['dubbing_options'] = {}
 provider.requests.clear()
 panel.generate_all_speeches_button_clicked()
+check('the lines follow to the new voice', [r['voice'] for r in provider.requests],
+      ['de_DE-thorsten_emotional-medium'] * 2)
 check('no speaker is sent: the add-on uses the default',
       ['voice_speaker' in r for r in provider.requests], [False, False])
 check('nor left on the lines', ['voice_speaker' in s['dubbing_options'] for s in (line_one, line_two)],

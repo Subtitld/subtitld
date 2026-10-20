@@ -204,6 +204,31 @@ def _populate_voice_speakers(widget, voice_id, current=''):
     widget.voice_speaker_combobox.setVisible(len(speakers) > 1)
 
 
+def _release_lines_following(speaker_name, voice, voice_speaker=None):
+    """Let a speaker's lines follow its new voice (or speaker in a voice).
+
+    "Generate all speeches" copies the speaker's voice onto each line's
+    `dubbing_options`, and a line's own voice wins over the speaker's, so
+    without this a later change of the speaker's voice never reached the
+    lines a batch had already run on. Lines still holding the speaker's
+    previous choice drop it: `voice` given alone means the voice changed
+    (its `voice_speaker` goes too, being a name in the old model); with
+    `voice_speaker`, only the speaker inside `voice` changed. A line set to
+    anything else was set in the per-subtitle panel and keeps it."""
+    if not voice:
+        return
+    for subtitle in session.SUBTITLE.get('segments', []) or []:
+        overrides = subtitle.get('dubbing_options')
+        if (subtitle.get('speaker', 'A') != speaker_name or not overrides
+                or overrides.get('voice') != voice):
+            continue
+        if voice_speaker is None:
+            overrides.pop('voice', None)
+            overrides.pop('voice_speaker', None)
+        elif overrides.get('voice_speaker', '') == voice_speaker:
+            overrides.pop('voice_speaker', None)
+
+
 # --- Shared "fit dub to subtitle duration" toggle --------------------------
 # Available on every TTS speaker panel. When on, a freshly generated clip is
 # time-stretched to the subtitle's duration right after synthesis (see
@@ -387,7 +412,10 @@ class _EdgeTTSSpeakerPanel(QWidget):
         value = widget.voice_combobox.currentText()
         speaker_name = widget.property('speaker')
         if speaker_name and speaker_name in session.SPEAKERS:
-            session.SPEAKERS[speaker_name]['dubbing']['voice'] = value
+            dubbing = session.SPEAKERS[speaker_name]['dubbing']
+            if dubbing.get('voice') != value:
+                _release_lines_following(speaker_name, dubbing.get('voice'))
+            dubbing['voice'] = value
             session.set_unsaved(True)
 
     def voice_rate_changed(widget):
@@ -935,6 +963,8 @@ class _GenericTTSSpeakerPanel(QWidget):
         voice_id = widget.voice_combobox.combobox.currentData()
         if speaker_name and speaker_name in session.SPEAKERS and voice_id is not None:
             dubbing = session.SPEAKERS[speaker_name].setdefault('dubbing', {})
+            if dubbing.get('voice') != voice_id:
+                _release_lines_following(speaker_name, dubbing.get('voice'))
             dubbing['voice'] = voice_id
             # Speaker names belong to one model; a new voice starts on its default.
             dubbing.pop('voice_speaker', None)
@@ -949,6 +979,9 @@ class _GenericTTSSpeakerPanel(QWidget):
             return
         # Pin the voice too: the speaker only means something with it.
         dubbing = session.SPEAKERS[speaker_name].setdefault('dubbing', {})
+        previous = dubbing.get('voice_speaker', '') if dubbing.get('voice') == voice_id else ''
+        if previous != speaker:
+            _release_lines_following(speaker_name, voice_id, previous)
         dubbing['voice'] = voice_id
         dubbing['voice_speaker'] = speaker
         session.set_unsaved(True)
@@ -1004,6 +1037,12 @@ class _GenericTTSSpeakerPanel(QWidget):
             if speaker_name in session.SPEAKERS:
                 session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = speaker_voice
                 session.set_unsaved(True)
+        # A voice taken from the combobox becomes the speaker's: the batch is
+        # about to copy it onto every line, and a later change of voice must
+        # know which lines were only following it (`_release_lines_following`).
+        if speaker_voice and speaker_name in session.SPEAKERS and not speaker_dubbing.get('voice'):
+            session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = speaker_voice
+            session.set_unsaved(True)
         # Resolve the clone reference once for the whole batch — extraction
         # is cached on the speaker_slug, so doing it here vs. per-subtitle
         # is equivalent but skips the cache hash check on every iteration.
@@ -1053,12 +1092,11 @@ class _GenericTTSSpeakerPanel(QWidget):
             # once each item succeeds.
             overrides['engine'] = widget.provider.id
             overrides['voice'] = voice_id
-            # The batch applies the panel's speaker, like rate and pitch below;
-            # a line whose own voice differs keeps the speaker chosen for it.
+            # Like the voice: a speaker set on the line itself wins, and lines
+            # only following the panel were released when it changed.
             voice_speaker = _resolve_voice_speaker(
-                widget.provider, voice_id,
-                {'voice': speaker_voice, 'voice_speaker': speaker_dubbing.get('voice_speaker')},
-                overrides)
+                widget.provider, voice_id, overrides,
+                {'voice': speaker_voice, 'voice_speaker': speaker_dubbing.get('voice_speaker')})
             if voice_speaker:
                 overrides['voice_speaker'] = voice_speaker
             else:
