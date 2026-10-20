@@ -132,6 +132,16 @@ updates go to the others but aren't saved.
 
 ### Protocol (JSON over websocket)
 
+Done in M6 (`collab/consumers.py`, at `/ws/collab/<doc_id>`): `hello`, `welcome`,
+`snapshot`/`changes`, `op`, `ack`/`reject`, `batch`, `presence`, `left`,
+`lock`/`locked`/`unlocked`, `ping`/`pong`, `error`. The connection needs the
+`Subtitld/` user agent and a bearer token with the `collab` scope; a browser
+(any `Origin` header) is refused at the handshake. Refusals close with 4400
+(user agent), 4401 (sign in), 4403 (scope) or 4404 (no such project, or not
+yours). A lock lasts 15 s unless asked for again. Batches and acks can
+overtake each other: the app applies them by `seq`. `rtc`, `have` and `want`
+come with the media work (M13).
+
 | Direction | Message | Purpose |
 |---|---|---|
 | app → server | `hello {doc, last_seq, device}` | Join, or rejoin after a disconnect |
