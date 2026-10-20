@@ -155,6 +155,10 @@ class FfmpegSeparatorProvider(AudioSeparatorProvider):
     def is_builtin(self) -> bool:
         return True
 
+    @property
+    def compute(self) -> str:
+        return 'cpu'
+
     def separate(self, input_path: str, output_dir: str,
                  options: dict | None = None) -> None:
         # Honor the historical filename layout under

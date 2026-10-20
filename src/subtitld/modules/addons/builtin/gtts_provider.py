@@ -282,6 +282,10 @@ class GTTSProvider(TTSProvider):
         return True
 
     @property
+    def compute(self) -> str:
+        return 'remote'
+
+    @property
     def languages(self) -> list[str]:
         # De-duplicate the language column from _GTTS_VOICES.
         return sorted({lang for lang, _tld, _label in _GTTS_VOICES})

@@ -216,6 +216,10 @@ class EdgeTTSProvider(TTSProvider):
         return True
 
     @property
+    def compute(self) -> str:
+        return 'remote'
+
+    @property
     def languages(self) -> list[str]:
         return list(_EDGE_TTS_LANGUAGES)
 

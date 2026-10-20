@@ -40,7 +40,8 @@ from PySide6.QtWidgets import (
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
-from subtitld.modules import addons, session
+from subtitld.modules import addons, hardware as _hardware, session
+from subtitld.modules.addons import compute as _compute
 from subtitld.modules.addons import installer, languages as _languages, registry
 from subtitld.modules.addons import schema as addon_schema
 from subtitld.modules.addons.provider import (
@@ -100,6 +101,16 @@ class _InstallThread(QThread):
             self.done.emit(self._entry.get('id', ''), _short_error(exc))
 
 
+class _HardwareThread(QThread):
+    """Checks for graphics cards off the GUI thread: the NVIDIA driver can
+    take a second to start."""
+
+    finished_with = Signal(object)  # hardware.Hardware
+
+    def run(self):
+        self.finished_with.emit(_hardware.detect())
+
+
 def _short_error(exc: BaseException) -> str:
     """Stringify a network/HTTP error in a UI-friendly way. urllib's
     HTTPError carries the URL plus a status; we keep just `<status>:
@@ -135,6 +146,9 @@ class _Row:
     license: str
     tasks: list[str] = field(default_factory=list)
     languages: list[str] = field(default_factory=list)
+    # What it runs on: see `addons.compute`. None when it doesn't say.
+    compute: str | None = None
+    accelerators: list[str] = field(default_factory=list)
     installed_manifest: dict | None = None
     catalog_entry: dict | None = None
     is_builtin: bool = False
@@ -240,6 +254,57 @@ def _humanize_tasks(tasks: list[str]) -> str:
     return ', '.join(_humanize_task(t) for t in tasks if t)
 
 
+def _accelerator_name(accelerator: str) -> str:
+    key = f'addons_dialog.accelerator.{accelerator}'
+    translated = _(key)
+    return translated if translated and translated != key else accelerator.upper()
+
+
+def _accelerators_phrase(accelerators) -> str:
+    """'NVIDIA GPU', 'NVIDIA GPU / Apple GPU', or just 'GPU' when the
+    add-on names none."""
+    if not accelerators:
+        return _('addons_dialog.accelerator.any')
+    return ' / '.join(_accelerator_name(acc) for acc in accelerators)
+
+
+def _device_text(device: _hardware.Device) -> str:
+    if device.memory_bytes:
+        return _('addons_dialog.hardware.device_memory').format(
+            name=device.name, memory=round(device.memory_bytes / 1024 ** 3))
+    return device.name
+
+
+def _compute_texts(verdict: _compute.Verdict,
+                   hardware: _hardware.Hardware | None) -> tuple[str, str]:
+    """(chip, tooltip) for what an add-on will run on here."""
+    kind = verdict.kind
+    if kind == _compute.UNCHECKED:
+        kind = verdict.compute  # gpu_preferred / gpu_required: what it asks for
+    if kind == _compute.USES_GPU:
+        accelerator = _accelerator_name(verdict.accelerator)
+        devices = (hardware.devices.get(verdict.accelerator) if hardware else ()) or ()
+        device = _device_text(devices[0]) if devices else accelerator
+        return (_('addons_dialog.compute.gpu').format(accelerator=accelerator),
+                _('addons_dialog.compute.tooltip.gpu').format(device=device))
+    accelerator = _accelerators_phrase(verdict.accelerators)
+    return (_(f'addons_dialog.compute.{kind}').format(accelerator=accelerator),
+            _(f'addons_dialog.compute.tooltip.{kind}').format(accelerator=accelerator))
+
+
+def _hardware_text(hardware: _hardware.Hardware | None) -> str:
+    """The panel's line on this computer's graphics cards."""
+    if hardware is None:
+        return _('addons_dialog.hardware.checking')
+    found = hardware.found_devices()
+    if found:
+        return _('addons_dialog.hardware.found').format(
+            devices=', '.join(_device_text(device) for _acc, device in found))
+    if all(hardware.available(acc) is False for acc in _hardware.ACCELERATORS):
+        return _('addons_dialog.hardware.none')
+    return _('addons_dialog.hardware.unknown')
+
+
 def _languages_from_manifest(manifest: dict) -> list[str]:
     """Resolve an installed manifest's languages, with fallback to the
     `voices[].language` / `models[].language` arrays.
@@ -295,6 +360,10 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
             languages=_normalize_lang_list(getattr(provider, 'languages', []) or []),
             is_builtin=True,
         )
+        by_id[pid].compute, by_id[pid].accelerators = _compute.read({
+            'compute': getattr(provider, 'compute', None),
+            'accelerators': getattr(provider, 'accelerators', None),
+        })
 
     for manifest in installed_manifests:
         addon_id = manifest.get('id') or ''
@@ -312,6 +381,7 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
             languages=_languages_from_manifest(manifest),
             installed_manifest=manifest,
         )
+        by_id[addon_id].compute, by_id[addon_id].accelerators = _compute.read(manifest)
 
     if catalog:
         for entry in catalog.get('addons') or []:
@@ -329,6 +399,7 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
                     languages=_normalize_lang_list(entry.get('languages')),
                     catalog_entry=entry,
                 )
+                by_id[addon_id].compute, by_id[addon_id].accelerators = _compute.read(entry)
             else:
                 existing.catalog_entry = entry
                 # Catalog summary tends to be richer than manifest's; prefer it.
@@ -338,6 +409,10 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
                 # didn't declare any (built-ins always have their own).
                 if not existing.languages and not existing.is_builtin:
                     existing.languages = _normalize_lang_list(entry.get('languages'))
+                # Same for what it runs on: an add-on released before the
+                # field existed still gets the catalog's word for it.
+                if existing.compute is None and not existing.is_builtin:
+                    existing.compute, existing.accelerators = _compute.read(entry)
 
     builtin_rows = sorted(
         (r for r in by_id.values() if r.is_builtin),
@@ -394,6 +469,7 @@ class _AddonCard(QFrame):
         self,
         row: _Row,
         install_target_id: str | None = None,
+        hardware: _hardware.Hardware | None = None,
         parent=None,
     ):
         """`install_target_id` is whichever add-on the panel is currently
@@ -404,6 +480,8 @@ class _AddonCard(QFrame):
           - if it equals our row's id, we surface our inline `progress_bar`
             so the user sees download progress directly on the card they
             clicked rather than a faraway bar at the bottom of the panel.
+        `hardware` is what this computer was found to have (None until
+        checked), for the chip on what the add-on runs on here.
         """
         super().__init__(parent)
         self.row = row
@@ -466,6 +544,23 @@ class _AddonCard(QFrame):
             summary.setWordWrap(True)
             summary.setProperty('class', 'addon_card_summary')
             outer.addWidget(summary)
+
+        # --- What it runs on, here ---------------------------------------
+        verdict = _compute.assess(row.compute, row.accelerators, hardware)
+        if verdict is not None:
+            chip_text, chip_tooltip = _compute_texts(verdict, hardware)
+            chip = QLabel(chip_text)
+            chip.setToolTip(chip_tooltip)
+            chip.setProperty(
+                'class',
+                'addon_card_compute_warning' if verdict.kind == _compute.MISSING
+                else 'addon_card_compute',
+            )
+            chip.setAttribute(Qt.WA_StyledBackground)
+            chip_row = QHBoxLayout()
+            chip_row.addWidget(chip)
+            chip_row.addStretch()
+            outer.addLayout(chip_row)
 
         # --- Meta line: license + tasks ---------------------------------
         meta_parts: list[str] = []
@@ -1146,6 +1241,10 @@ class AddonsPanel(QWidget):
     # combobox stores the BCP-47 tag in `userData`).
     _LANG_ANY = ''
 
+    # Hardware filter values
+    _HARDWARE_ANY = 'any'
+    _HARDWARE_HERE = 'here'
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setProperty('class', 'transparent_panel')
@@ -1157,6 +1256,7 @@ class AddonsPanel(QWidget):
         self._state_filter = self._STATE_ALL
         self._task_filter = self._TASK_ANY
         self._language_filter = self._LANG_ANY
+        self._hardware_filter = self._HARDWARE_ANY
 
         # The initial setChecked() below fires `toggled`, which triggers
         # _render_list() — but the inner scroll layout doesn't exist yet at
@@ -1215,6 +1315,28 @@ class AddonsPanel(QWidget):
         lang_row.addWidget(self._language_combo, 1)
         lang_row.addStretch()
         self.layout().addLayout(lang_row)
+
+        # --- Hardware filter combobox + what this computer has -----------
+        # "Runs on this computer" hides only the add-ons that need a
+        # graphics card this computer was found not to have.
+        hardware_row = QHBoxLayout()
+        hardware_row.setSpacing(4)
+        self._hardware_label = QLabel('')  # text set in retranslate()
+        self._hardware_combo = QComboBox()
+        self._hardware_combo.setProperty('class', 'filter_pill')
+        self._hardware_combo.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self._hardware_combo.addItem('', self._HARDWARE_ANY)
+        self._hardware_combo.addItem('', self._HARDWARE_HERE)
+        self._hardware_combo.currentIndexChanged.connect(self._on_hardware_changed)
+        hardware_row.addWidget(self._hardware_label)
+        hardware_row.addWidget(self._hardware_combo, 1)
+        hardware_row.addStretch()
+        self.layout().addLayout(hardware_row)
+
+        self._hardware_info = QLabel('')
+        self._hardware_info.setWordWrap(True)
+        self._hardware_info.setProperty('class', 'addon_card_meta')
+        self.layout().addWidget(self._hardware_info)
 
         # --- Scrollable card list + empty-state placeholder --------------
         # The list and the placeholder share the same slot in the layout
@@ -1297,10 +1419,20 @@ class AddonsPanel(QWidget):
         self._install_thread: _InstallThread | None = None
         self._install_target_id: str | None = None
         self._cards_by_id: dict[str, _AddonCard] = {}
+        # This computer's graphics cards: checked once per run, in the
+        # background the first time the panel is built.
+        self._hardware: _hardware.Hardware | None = _hardware.cached()
+        self._hardware_thread: _HardwareThread | None = None
 
         self.retranslate()
         self._refresh_local_only()  # immediate render of installed items
         self._refresh_catalog(force=False)
+        if self._hardware is None:
+            thread = _HardwareThread()
+            thread.finished_with.connect(self._on_hardware)
+            thread.finished.connect(lambda: self._release_thread('_hardware_thread'))
+            self._hardware_thread = thread
+            thread.start()
 
     # -- Filter handlers ---------------------------------------------------
     def _on_state_toggled(self, value: str, checked: bool):
@@ -1319,6 +1451,16 @@ class AddonsPanel(QWidget):
         # Combobox stores normalized BCP-47 tags as userData; '' means "any".
         data = self._language_combo.currentData()
         self._language_filter = data if isinstance(data, str) else self._LANG_ANY
+        self._render_list()
+
+    def _on_hardware_changed(self, _index: int):
+        data = self._hardware_combo.currentData()
+        self._hardware_filter = data if isinstance(data, str) else self._HARDWARE_ANY
+        self._render_list()
+
+    def _on_hardware(self, hardware):
+        self._hardware = hardware
+        self._hardware_info.setText(_hardware_text(hardware))
         self._render_list()
 
     def _repopulate_language_combo(self):
@@ -1436,6 +1578,10 @@ class AddonsPanel(QWidget):
         if self._language_filter:
             if not _languages.any_match(self._language_filter, row.languages):
                 return False
+        if self._hardware_filter == self._HARDWARE_HERE:
+            verdict = _compute.assess(row.compute, row.accelerators, self._hardware)
+            if not _compute.runs_here(verdict):
+                return False
         return True
 
     def _clear_cards(self):
@@ -1472,7 +1618,8 @@ class AddonsPanel(QWidget):
         for row in self._rows:
             if not self._filter_pass(row):
                 continue
-            card = _AddonCard(row, install_target_id=self._install_target_id)
+            card = _AddonCard(row, install_target_id=self._install_target_id,
+                              hardware=self._hardware)
             card.install_clicked.connect(self._install_row)
             card.update_clicked.connect(self._install_row)  # same code path
             card.toggle_clicked.connect(self._toggle_row)
@@ -1500,6 +1647,7 @@ class AddonsPanel(QWidget):
         any_filter_active = (
             self._state_filter != self._STATE_ALL
             or self._task_filter is not None
+            or self._hardware_filter != self._HARDWARE_ANY
         )
         if self._fetch_state == 'loading' and not any_rows_total:
             return _('addons_dialog.empty.loading')
@@ -1669,6 +1817,11 @@ class AddonsPanel(QWidget):
         self._language_label.setText(_('addons_dialog.filter.lang.label'))
         self._repopulate_language_combo()
 
+        self._hardware_label.setText(_('addons_dialog.filter.hardware.label'))
+        for index, key in enumerate(('any', 'this_computer')):
+            self._hardware_combo.setItemText(index, _(f'addons_dialog.filter.hardware.{key}'))
+        self._hardware_info.setText(_hardware_text(self._hardware))
+
         self.install_from_file_button.setText(_('addons_dialog.actions.from_file'))
         self.refresh_button.setText(_('addons_dialog.actions.refresh'))
 
@@ -1693,7 +1846,7 @@ class AddonsPanel(QWidget):
         aboutToQuit (see `left_panel_global.load`), and called when the
         window fails half-way through being built, so we don't leave a
         dangling QThread behind."""
-        for attr in ('_fetch_thread', '_install_thread'):
+        for attr in ('_fetch_thread', '_install_thread', '_hardware_thread'):
             thread = getattr(self, attr, None)
             if thread is None:
                 continue
