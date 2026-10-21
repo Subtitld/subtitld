@@ -305,6 +305,23 @@ class Client:
             json_body={"share_id": share_id, "version": version},
         )
 
+    def project_media(self, doc_id: str) -> list[dict]:
+        """The project's media files, described (hash, kind, size, name…; never their bytes)."""
+        return self.request("GET", f"/collab/projects/{doc_id}/media")["results"]
+
+    def project_media_file(self, doc_id: str, hash: str) -> dict:
+        """One media file, with the hash of each chunk."""
+        return self.request("GET", f"/collab/projects/{doc_id}/media/{hash}")
+
+    def add_project_media(self, doc_id: str, **description) -> dict:
+        """Describe a file of the project: hash, kind, size, chunk_size, chunks, fingerprint, name."""
+        return self.request("POST", f"/collab/projects/{doc_id}/media", json_body=description)
+
+    def media_received(self, doc_id: str, hash: str, sender: str = "", device_name: str = "") -> None:
+        """You received the file from ``sender`` (a handle)."""
+        body = {"sender": sender, "device_name": device_name}
+        self.request("POST", f"/collab/projects/{doc_id}/media/{hash}/received", json_body=body)
+
     def remove_member(self, doc_id: str, handle: str) -> None:
         """Stop sharing it with someone (the owner), or leave it (your own handle)."""
         self.request("DELETE", f"/collab/projects/{doc_id}/members/{handle.lstrip('@')}")

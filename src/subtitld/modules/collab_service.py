@@ -29,6 +29,8 @@ _last_presence = None
 _editing = None          # the subtitle ID this person is typing in
 _last_typed = 0.0
 _last_lock = 0.0
+_media_files = []        # the open project's media here, described (collab_media.scan)
+_media_scan = None       # the background scan running, if one is
 # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
 # project became shared or stopped being), 'failed' (the connection gave up: see failure()).
 listeners = []
@@ -65,8 +67,8 @@ def state():
 
 
 def _stop():
-    global _connection, _editing, _last_presence
-    _editing, _last_presence = None, None
+    global _connection, _editing, _last_presence, _media_files
+    _editing, _last_presence, _media_files = None, None, []
     if _presence_timer is not None:
         _presence_timer.stop()
     if _connection is not None:
@@ -88,11 +90,17 @@ def connect():
         return
     url = collab_client.websocket_url(collab_state.STATE.get('server') or service.base_url(), collab_state.STATE['doc'])
     _connection = collab_client.Connection(url, token, service.client(token=token).user_agent)
-    _connection.changed.connect(_tell)
+    _connection.changed.connect(_connection_news)
     _connection.failed.connect(_failed)
     _connection.start()
     _start_presence()
     _tell('state')
+
+
+def _connection_news(kind):
+    if kind == 'state' and _connection is not None and _connection.state == 'live':
+        share_media()
+    _tell(kind)
 
 
 def _failed(reason):
@@ -121,6 +129,56 @@ session._document_loaded_callbacks.append(_project_loaded)
 def shutdown():
     """Quitting: close the connection (what is queued stays in the project file)."""
     _stop()
+
+
+# --- Media: described on subtitld.cc, sent between collaborators ---------------------------------------------
+
+
+def share_media():
+    """Describe the open project's media here (in the background, hashing only what is new), put on the
+    project's media list what is not on it yet, and tell the others what this app can send."""
+    global _media_scan
+    if _connection is None or not collab_state.shared():
+        return
+    if _media_scan is not None and _media_scan.isRunning():
+        return
+    from subtitld.modules import collab_media
+
+    doc_id = collab_state.STATE['doc']
+
+    def work():
+        files = collab_media.scan()
+        client = service.client()
+        listed = {entry['hash']: entry for entry in client.project_media(doc_id)}
+        for item in files:
+            if item['hash'] not in listed:
+                description = {key: item[key] for key in ('hash', 'kind', 'size', 'chunk_size', 'chunks', 'fingerprint', 'name')}
+                listed[item['hash']] = client.add_project_media(doc_id, **description)
+        return files, listed
+
+    def done(result):
+        global _media_files
+        files, listed = result
+        _media_files = files
+        if _connection is not None and collab_state.STATE.get('doc') == doc_id:
+            _connection.engine.media.update(listed)
+            _connection.engine.have([item['hash'] for item in files])
+        _tell('media')
+
+    def failed(error):
+        log.warning('collab: could not share the media list: %s', error)
+
+    _media_scan = service.call(work, done, failed)
+
+
+def media_files():
+    """The open project's media here, described: [{'kind', 'name', 'path', 'hash', ...}]."""
+    return list(_media_files)
+
+
+def media_list():
+    """The project's media list (what subtitld.cc describes), by hash."""
+    return dict(_connection.engine.media) if _connection is not None else {}
 
 
 # --- Presence, text locks, conflicts -----------------------------------------------------------------------

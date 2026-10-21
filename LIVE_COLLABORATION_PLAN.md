@@ -390,6 +390,20 @@ Done in M11:
 - Same-network connections are found automatically and go at full local
   network speed.
 
+**Done in M13 (the media list):** the list is not in the document (a 10 GB
+original's chunk hashes alone are ~160 KB of JSON, in every snapshot): it is
+`CollabMedia` on the server, registered over REST
+(`/collab/projects/{doc_id}/media`, idempotent by hash; names are file names,
+never paths; a stem's name is its role) and announced to everyone connected
+(`media`). On the websocket, `have {hashes}` says what an app can send (told
+to everyone, and to whoever joins) and `rtc {to, payload}` carries set-up for
+a direct link to one connection only. In the app, `modules/collab_media.py`
+describes files (SHA-256 whole and per 4 MiB chunk) in the background, once
+(an index by path, size and modification time), finds the project's video,
+waveform and stems, and knows where a received waveform or stem goes (under
+the key of the video open here). Once live, a shared project registers what
+is missing from the list and sends `have`. Client package 1.4.0.
+
 **Transfer:**
 
 - The content hash covers the whole file, with chunk hashes for chunks of

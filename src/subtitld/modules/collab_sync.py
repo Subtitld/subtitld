@@ -77,6 +77,9 @@ class Engine:
         self.needs_resync = False
         self.presence_state = None  # what this app last said it is doing (sent again after reconnecting)
         self.held = set()           # cue IDs this app holds the text lock of
+        self.have_hashes = None     # the media files this app can send (sent again after reconnecting)
+        self.peers_have = {}        # peer -> set of media hashes they can send
+        self.media = {}             # hash -> the project's media list entry, as it is announced
         self.listeners = []      # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts', 'lock'
 
     # --- Connection ------------------------------------------------------------------------------
@@ -110,6 +113,7 @@ class Engine:
         once). Everyone else's presence is unknown until then."""
         self.in_flight.clear()
         self.peers.clear()
+        self.peers_have.clear()
         self.locks.clear()
         self._set_state(self.OFFLINE)
         self._tell('peers')
@@ -159,6 +163,21 @@ class Engine:
             if self.state == self.LIVE:
                 self.send({'type': 'unlock', 'cue_id': cue_id})
 
+    def have(self, hashes):
+        """Tell the others which media files (by hash) this app can send them."""
+        self.have_hashes = sorted(set(hashes))
+        if self.state == self.LIVE:
+            self.send({'type': 'have', 'hashes': self.have_hashes})
+
+    def holders(self, file_hash):
+        """The peers who can send the file with this hash."""
+        return sorted(peer for peer, hashes in self.peers_have.items() if file_hash in hashes)
+
+    def rtc(self, peer, payload):
+        """Set-up for a direct link with one other connection (modules.collab_transfer)."""
+        if self.state == self.LIVE:
+            self.send({'type': 'rtc', 'to': peer, 'payload': payload})
+
     def locked_by(self, cue_id):
         """Who else is typing in subtitle `cue_id`: their {'handle', 'name'}, or None."""
         peer = self.locks.get(cue_id)
@@ -203,6 +222,8 @@ class Engine:
                 self.send({'type': 'presence', 'state': self.presence_state})
             for cue_id in self.held:
                 self.send({'type': 'lock', 'cue_id': cue_id})
+            if self.have_hashes:
+                self.send({'type': 'have', 'hashes': self.have_hashes})
         self._send_pending()
 
     def _on_batch(self, message):
@@ -238,8 +259,23 @@ class Engine:
         self.peers[message['peer']] = {'user': message.get('user'), 'state': message.get('state') or {}}
         self._tell('peers')
 
+    def _on_have(self, message):
+        self.peers_have[message['peer']] = set(message.get('hashes') or [])
+        self.peers.setdefault(message['peer'], {'user': message.get('user'), 'state': {}})
+        self._tell('media')
+
+    def _on_media(self, message):
+        entry = message.get('media') or {}
+        if entry.get('hash'):
+            self.media[entry['hash']] = entry
+            self._tell('media')
+
+    def _on_rtc(self, message):
+        self._tell('rtc', message.get('from'), message.get('payload') or {})
+
     def _on_left(self, message):
         self.peers.pop(message.get('peer'), None)
+        self.peers_have.pop(message.get('peer'), None)
         for cue_id in [c for c, p in self.locks.items() if p == message.get('peer')]:
             del self.locks[cue_id]
         self._tell('peers')
