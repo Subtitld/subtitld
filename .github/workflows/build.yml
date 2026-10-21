@@ -276,7 +276,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller .
           pyinstaller subtitld-windows.spec --clean --noconfirm
-          if (-not (Test-Path dist\Subtitld\_internal\datachannel.dll)) { throw 'libdatachannel is not in the bundle' }
+          if (-not (Test-Path dist\Subtitld\datachannel.dll)) { throw 'libdatachannel is not in the bundle' }
           & dist\Subtitld\ffmpeg.exe -hide_banner -version | Select-Object -First 1
       - name: Thumbnail provider (.usfx in Explorer)
         # Into the app's folder, so the portable build, the installer and the

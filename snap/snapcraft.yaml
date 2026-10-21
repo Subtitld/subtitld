@@ -132,9 +132,9 @@ parts:
     override-build: |
       craftctl default
       mkdir -p "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel"
-      cp LICENSE "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/"
-      cp deps/libjuice/LICENSE "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/LICENSE.libjuice"
-      cp deps/usrsctp/LICENSE.md "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/LICENSE.usrsctp"
+      cp "$CRAFT_PART_SRC/LICENSE" "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/"
+      cp "$CRAFT_PART_SRC/deps/libjuice/LICENSE" "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/LICENSE.libjuice"
+      cp "$CRAFT_PART_SRC/deps/usrsctp/LICENSE.md" "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/LICENSE.usrsctp"
     prime:
       - usr/lib/libdatachannel.so*
       - usr/lib/*/libssl.so*
