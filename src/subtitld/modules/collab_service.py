@@ -31,6 +31,8 @@ _last_typed = 0.0
 _last_lock = 0.0
 _media_files = []        # the open project's media here, described (collab_media.scan)
 _media_scan = None       # the background scan running, if one is
+_transfers = None        # collab_transfer.Manager, while connected (where libdatachannel is)
+_transfer_timer = None
 # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
 # project became shared or stopped being), 'failed' (the connection gave up: see failure()).
 listeners = []
@@ -67,8 +69,13 @@ def state():
 
 
 def _stop():
-    global _connection, _editing, _last_presence, _media_files
+    global _connection, _editing, _last_presence, _media_files, _transfers
     _editing, _last_presence, _media_files = None, None, []
+    if _transfer_timer is not None:
+        _transfer_timer.stop()
+    if _transfers is not None:
+        _transfers.close()
+        _transfers = None
     if _presence_timer is not None:
         _presence_timer.stop()
     if _connection is not None:
@@ -94,12 +101,13 @@ def connect():
     _connection.failed.connect(_failed)
     _connection.start()
     _start_presence()
+    _start_transfers()
     _tell('state')
 
 
 def _connection_news(kind):
     if kind == 'state' and _connection is not None and _connection.state == 'live':
-        share_media()
+        list_media()
     _tell(kind)
 
 
@@ -134,7 +142,141 @@ def shutdown():
 # --- Media: described on subtitld.cc, sent between collaborators ---------------------------------------------
 
 
-def share_media():
+def _start_transfers():
+    """Direct links for media, where this Subtitld has libdatachannel (modules/rtc.py)."""
+    global _transfers, _transfer_timer
+    from subtitld.modules import collab_transfer, rtc
+    from PySide6.QtCore import QTimer
+
+    if _connection is None or not rtc.available():
+        return
+    engine = _connection.engine
+    _transfers = collab_transfer.Manager(lambda peer, payload: engine.rtc(peer, payload), _shareable,
+                                         engine.holders)
+    _transfers.bridge.finished.connect(_received)
+    _transfers.bridge.failed.connect(lambda file_hash, reason: _tell('media'))
+    _transfers.bridge.news.connect(lambda file_hash: _tell('media'))
+    engine.listeners.append(lambda kind, *args: kind == 'rtc' and _transfers is not None and _transfers.on_rtc(*args))
+    if _transfer_timer is None:
+        _transfer_timer = QTimer()
+        _transfer_timer.setInterval(2000)
+        _transfer_timer.timeout.connect(lambda: _transfers is not None and _transfers.tick())
+    _transfer_timer.start()
+
+
+def transfers_available():
+    from subtitld.modules import rtc
+    return rtc.available()
+
+
+def sharing_media():
+    """Whether collaborators may get this project's media from this computer."""
+    return bool(collab_state.STATE.get('share_media'))
+
+
+def set_sharing_media(on):
+    """The person's choice for this project (saved with it). Off, nothing is announced nor sent."""
+    collab_state.STATE['share_media'] = bool(on)
+    session.set_unsaved(True)
+    _announce()
+    _tell('media')
+
+
+def _announce():
+    if _connection is not None:
+        _connection.engine.have([item['hash'] for item in _media_files] if sharing_media() else [])
+
+
+def _shareable(file_hash):
+    """The local path of a file this app announced and may send (libdatachannel's thread)."""
+    from subtitld.modules import collab_media
+    if not sharing_media() or _connection is None or file_hash not in (_connection.engine.have_hashes or []):
+        return None
+    return collab_media.index().path_for(file_hash)
+
+
+def _received(file_hash, path):
+    """A file came whole and checked: it is known here, this app can pass it on, and subtitld.cc notes the
+    copy (from whoever sent most of it)."""
+    from subtitld.modules import collab_media
+    global _media_files
+    download = _transfers.downloads.get(file_hash) if _transfers is not None else None
+    entry = media_list().get(file_hash) or {}
+    if download is not None:
+        description = {'hash': file_hash, 'size': download.size, 'chunk_size': download.chunk_size,
+                       'chunks': download.chunks}
+        collab_media.index().remember(path, description)
+        if entry.get('kind') != 'video':
+            _media_files = [f for f in _media_files if f['hash'] != file_hash] + [
+                dict(description, kind=entry.get('kind'), name=entry.get('name'), path=path, fingerprint='')]
+        _announce()
+        sender = max(download.sources, key=download.sources.get) if download.sources else None
+        handle = ((_connection.engine.peers.get(sender) or {}).get('user') or {}).get('handle', '') if _connection else ''
+        doc_id = collab_state.STATE.get('doc')
+        service.call(lambda: service.client().media_received(doc_id, file_hash, handle), None,
+                     lambda error: log.warning('collab: could not note the copy: %s', error))
+    _tell('media')
+
+
+def download_media(file_hash, destination, on_failure):
+    """Get a file of the project's media list from the collaborators who have it, to `destination`."""
+    if _transfers is None:
+        on_failure(RuntimeError('no direct links here'))
+        return None
+    doc_id = collab_state.STATE.get('doc')
+
+    def start(media):
+        try:
+            _transfers.download(media, destination)
+        except OSError as error:
+            on_failure(error)
+        _tell('media')
+
+    return service.call(lambda: service.client().project_media_file(doc_id, file_hash), start, on_failure)
+
+
+def cancel_download(file_hash):
+    if _transfers is not None:
+        _transfers.cancel(file_hash)
+    _tell('media')
+
+
+def media_status():
+    """The project's media list as the person sees it: [{'hash', 'kind', 'name', 'size', 'state', 'fraction',
+    'holders', 'path'}]. state: 'here', 'downloading', 'checking', 'failed', 'available' (someone online has
+    it), 'unavailable'."""
+    from subtitld.modules import collab_media
+    here = {item['hash']: item['path'] for item in _media_files}
+    rows = []
+    for file_hash, entry in media_list().items():
+        download = _transfers.downloads.get(file_hash) if _transfers is not None else None
+        holders = _connection.engine.holders(file_hash) if _connection is not None else []
+        path = here.get(file_hash) or collab_media.index().path_for(file_hash)
+        if path:
+            state, fraction = 'here', 1.0
+        elif download is not None and download.state in ('downloading', 'waiting', 'checking', 'failed'):
+            state, fraction = ('downloading' if download.state == 'waiting' else download.state), download.fraction()
+        else:
+            state, fraction = ('available' if holders else 'unavailable'), 0.0
+        rows.append({'hash': file_hash, 'kind': entry.get('kind'), 'name': entry.get('name') or '',
+                     'size': entry.get('size') or 0, 'state': state, 'fraction': fraction, 'holders': len(holders),
+                     'path': path, 'fingerprint': entry.get('fingerprint') or ''})
+    order = {'video': 0, 'waveform': 1, 'stem': 2}
+    return sorted(rows, key=lambda row: (order.get(row['kind'], 9), row['name']))
+
+
+def video_matches_project():
+    """Whether the video open here is the project's (by its lookup fingerprint): then its waveform and
+    separated audio fit it."""
+    from subtitld.modules import collab_media
+    video = next((item for item in _media_files if item['kind'] == 'video'), None)
+    project = next((row for row in media_list().values() if row.get('kind') == 'video'), None)
+    if video is None or project is None:
+        return False
+    return video['hash'] == project['hash'] or (bool(video.get('fingerprint')) and video['fingerprint'] == project.get('fingerprint'))
+
+
+def list_media():
     """Describe the open project's media here (in the background, hashing only what is new), put on the
     project's media list what is not on it yet, and tell the others what this app can send."""
     global _media_scan
@@ -162,7 +304,7 @@ def share_media():
         _media_files = files
         if _connection is not None and collab_state.STATE.get('doc') == doc_id:
             _connection.engine.media.update(listed)
-            _connection.engine.have([item['hash'] for item in files])
+            _announce()
         _tell('media')
 
     def failed(error):

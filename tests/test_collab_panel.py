@@ -44,6 +44,7 @@ def wait(condition, seconds=5):
 
 
 calls = []
+HELD = set()
 PROJECT = {'doc_id': 'Dk3pQ9aZ2bT', 'title': 'Sintel', 'seq': 0, 'owner': {'handle': 'marina', 'name': 'Marina', 'kind': 'user'},
            'members': [], 'websocket': 'wss://subtitld.cc/ws/collab/Dk3pQ9aZ2bT', 'permissions': {'can_manage': True}}
 
@@ -112,7 +113,10 @@ class FakeConnection(QObject):
     def __init__(self, url, token, user_agent):
         super().__init__()
         calls.append(('connect', url))
-        self.engine = types.SimpleNamespace(peers={}, conflicts=[], state='live')
+        self.engine = types.SimpleNamespace(peers={}, conflicts=[], state='live', media={}, have_hashes=[],
+                                            listeners=[], holders=lambda file_hash: ['p1'] if file_hash in HELD else [],
+                                            have=lambda hashes: calls.append(('have', list(hashes))),
+                                            rtc=lambda peer, payload: None)
 
     @property
     def state(self):
@@ -252,6 +256,18 @@ card.refresh()
 check('a newer version, published by someone else: the editor follows', wait(lambda: (service.origin() or {}).get('version') == 3), True)
 PROJECT.pop('subtitle')
 card._project = None
+
+print('media')
+connection.engine.media['c' * 64] = {'hash': 'c' * 64, 'kind': 'video', 'name': 'Sintel.2010.mkv', 'size': 3 * 1024 ** 3}
+HELD.add('c' * 64)
+connection.changed.emit('media')
+check('the project\'s video, from whoever has it', wait(lambda: any('Sintel.2010.mkv · 3.0 GB · from 1 online' in w.text()
+                                                                 for w in card.findChildren(QLabel))), True)
+check('sharing mine is off until I say so', (card.share_media.isChecked(), collab_service.sharing_media()), (False, False))
+card.share_media.setChecked(True)
+check('then on, and saved with the project', (collab_service.sharing_media(), collab_state.STATE['share_media']), (True, True))
+check('a Get button', wait(lambda: buttons('Get')), True)
+card.share_media.setChecked(False)
 
 print('offline')
 connection.engine.state = 'offline'

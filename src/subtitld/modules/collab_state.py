@@ -35,7 +35,8 @@ PENDING_MEMBER = 'pending.jsonl'
 # Names the batches made in this run of the app: with a counter, unique.
 _RUN = secrets.token_hex(6)
 
-STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': []}
+# share_media: the person lets collaborators get this project's media from this computer (off by default).
+STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False}
 _counter = 0
 _muted = 0
 # What the project file being opened holds, until its open is done.
@@ -51,12 +52,13 @@ def start(doc, server, seq=0, base=None):
     """The open project is now shared document `doc` on `server`, as of the
     server's change `seq`, when its document was `base` (a docops document;
     None until the server sends it)."""
-    STATE.update({'doc': doc, 'server': server, 'seq': int(seq), 'base': copy.deepcopy(base), 'pending': []})
+    STATE.update({'doc': doc, 'server': server, 'seq': int(seq), 'base': copy.deepcopy(base), 'pending': [],
+                  'share_media': False})
 
 
 def clear():
     """The open project is not shared (any more)."""
-    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': []})
+    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False})
 
 
 def queue(ops):
@@ -103,7 +105,8 @@ def export():
     thread."""
     if not shared():
         return {}
-    head = {'version': VERSION, 'doc': STATE['doc'], 'server': STATE['server'], 'seq': STATE['seq']}
+    head = {'version': VERSION, 'doc': STATE['doc'], 'server': STATE['server'], 'seq': STATE['seq'],
+            'share_media': bool(STATE.get('share_media'))}
     lines = ''.join(json.dumps(batch, ensure_ascii=False) + '\n' for batch in STATE['pending'])
     members = {STATE_MEMBER: json.dumps(head, ensure_ascii=False, indent=2).encode('utf-8'),
                PENDING_MEMBER: lines.encode('utf-8')}
@@ -143,7 +146,7 @@ def read(state_bytes, pending_bytes=b'', base_bytes=None):
         if not (isinstance(base, dict) and isinstance(base.get('segments'), list)):
             base = None
     return {'doc': head['doc'], 'server': head.get('server'), 'seq': int(head.get('seq') or 0) if base else 0,
-            'base': base, 'pending': pending}
+            'base': base, 'pending': pending, 'share_media': bool(head.get('share_media'))}
 
 
 def opening(state):

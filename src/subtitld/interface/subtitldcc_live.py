@@ -12,7 +12,9 @@ import html
 import os
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+)
 
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
@@ -54,6 +56,31 @@ def _clear(layout):
         item = layout.takeAt(0)
         if item.widget() is not None:
             item.widget().deleteLater()
+
+
+def _size(count):
+    for unit, factor in (('GB', 1024 ** 3), ('MB', 1024 ** 2), ('KB', 1024)):
+        if count >= factor:
+            return f'{count / factor:.1f} {unit}'
+    return f'{count} B'
+
+
+def use_video(window, path):
+    """Open `path` as the project's video here, in place of the one open (a received original)."""
+    from subtitld.interface import left_panel, left_panel_subtitldcc, top_bar
+    from subtitld.modules import file_io
+
+    window.preview_panel_player.loadfile(path)
+    session.VIDEO = file_io.process_video_file(path)
+    if hasattr(window, 'timeline_widget'):
+        window.timeline_widget.update_size()
+        window.timeline_widget.load_waveform()
+        window.timeline_widget.update()
+    session.set_unsaved(True)  # the project points at this video now
+    left_panel.update(window)
+    top_bar.update(window)
+    left_panel_subtitldcc.video_opened(window)
+    collab_service.list_media()
 
 
 def default_title():
@@ -128,6 +155,16 @@ class LiveCard(QWidget):
         self.member_field.returnPressed.connect(self.add_member)
         self.add_row = _row(self.member_field, self.add_button, stretch=False)
         shared.addWidget(self.add_row)
+        # Media: the project's files, sent between collaborators (modules/collab_transfer.py).
+        self.media_title = _text('subtitldcc_kicker')
+        shared.addWidget(self.media_title)
+        self.share_media = QCheckBox()
+        self.share_media.toggled.connect(collab_service.set_sharing_media)
+        shared.addWidget(self.share_media)
+        self.media_note = _text()
+        shared.addWidget(self.media_note)
+        self.media_box = QVBoxLayout()
+        shared.addLayout(self.media_box)
         self.sign_in_button = _button(primary=True)
         self.sign_in_button.clicked.connect(self.sign_in_again)
         self.stop_button = _button(danger=True)
@@ -186,7 +223,7 @@ class LiveCard(QWidget):
         if kind in ('shared', 'failed'):
             self._project = None
             self._projects = None if kind == 'shared' else self._projects
-        if kind in ('state', 'peers', 'shared', 'failed', 'conflicts') and not self.isHidden():
+        if kind in ('state', 'peers', 'shared', 'failed', 'conflicts', 'media') and not self.isHidden():
             self.refresh(load=kind == 'shared')
 
     def refresh(self, load=True):
@@ -271,6 +308,77 @@ class LiveCard(QWidget):
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.stop_button.setVisible(bool(project))
+        self._render_media()
+
+    # --- Media -------------------------------------------------------------------------------------------
+
+    def _render_media(self):
+        rows = collab_service.media_status()
+        available = collab_service.transfers_available()
+        self.share_media.blockSignals(True)
+        self.share_media.setChecked(collab_service.sharing_media())
+        self.share_media.blockSignals(False)
+        self.share_media.setEnabled(available)
+        self.media_note.setVisible(not available)
+        self.media_note.setText(_('collab.media_no_links'))
+        self.media_title.setVisible(bool(rows) or available)
+        _clear(self.media_box)
+        matches = collab_service.video_matches_project()
+        current = (session.VIDEO or {}).get('filepath')
+        for row in rows:
+            label = _text()
+            label.setText(f"{html.escape(row['name'])} · {_size(row['size'])} · {self._media_state(row)}")
+            widgets = [label]
+            if row['state'] == 'available' and available:
+                get = _button()
+                get.setText(_('collab.media_get'))
+                derived = row['kind'] in ('waveform', 'stem')
+                get.setEnabled(not derived or matches)
+                if derived and not matches:
+                    get.setToolTip(_('collab.media_needs_video'))
+                get.clicked.connect(lambda _c=False, r=row: self.get_media(r))
+                widgets.append(get)
+            elif row['state'] in ('downloading', 'checking'):
+                cancel = _button()
+                cancel.setText(_('subtitldcc.cancel'))
+                cancel.clicked.connect(lambda _c=False, h=row['hash']: collab_service.cancel_download(h))
+                widgets.append(cancel)
+            elif row['state'] == 'here' and row['kind'] == 'video' and row['path'] and row['path'] != current:
+                use = _button()
+                use.setText(_('collab.media_use_video'))
+                use.clicked.connect(lambda _c=False, path=row['path']: use_video(self.panel.window_, path))
+                widgets.append(use)
+            self.media_box.addWidget(_row(*widgets))
+
+    def _media_state(self, row):
+        state = row['state']
+        if state == 'downloading':
+            return _('collab.media_downloading').format(percent=int(row['fraction'] * 100))
+        if state == 'available':
+            return _('collab.media_available').format(count=row['holders'])
+        return _(f'collab.media_{state}')
+
+    def get_media(self, row):
+        """Get a file from the collaborators who have it: an original into a folder the person picks, the
+        waveform and separated audio where Subtitld keeps them for the video open here."""
+        from subtitld.modules import collab_media
+        if row['kind'] == 'video':
+            start = os.path.dirname(session.SUBTITLE.get('filepath') or (session.VIDEO or {}).get('filepath') or '') or os.path.expanduser('~')
+            folder = QFileDialog.getExistingDirectory(self, _('collab.media_where'), start)
+            if not folder:
+                return
+            destination = os.path.join(folder, row['name'])
+        else:
+            destination = collab_media.destination(row['kind'], row['name'])
+            if destination is None:
+                return
+        collab_service.download_media(row['hash'], destination, self._media_failed)
+
+    def _media_failed(self, error):
+        if isinstance(error, OSError) and str(error) == 'not enough room':
+            self.panel.show_message(_('collab.media_no_room'), error=True)
+            return
+        self._call_failed(error)
 
     def _conflict_row(self, conflict):
         box = QWidget()
@@ -444,5 +552,8 @@ class LiveCard(QWidget):
         self.member_field.setPlaceholderText(_('collab.member_placeholder'))
         self.add_button.setText(_('collab.add'))
         self.sign_in_button.setText(_('collab.sign_in_again'))
+        self.media_title.setText(_('collab.media'))
+        self.share_media.setText(_('collab.media_share'))
+        self.share_media.setToolTip(_('collab.media_share_tip'))
         self.confirm_no.setText(_('subtitldcc.cancel'))
         self.refresh(load=False)

@@ -446,6 +446,38 @@ collaborator on lossy links). It needs a native build in every package; if
 Haiku can't build it, an aiortc-based fallback (vendored data-channel parts,
 no PyAV) can still talk to it.
 
+**Done in M14 (the transfer engine):**
+
+- `packaging/libdatachannel/build-linux.sh` builds libdatachannel v0.23.2 in
+  manylinux_2_28 (glibc 2.25 at most), data channels only, with Mbed TLS
+  3.6.4 linked in (DTLS-SRTP turned on; its x509 and crypto archives added
+  to the link line), so it needs no OpenSSL. 64.7 MB/s on loopback.
+- `modules/rtc.py`: ctypes bindings, one callback of each kind dispatching
+  by ID; messages that arrive before a handler is set are kept for it. SCTP
+  keeps only "no delayed acknowledgements" from the spike (2.6 MB/s at
+  0.05% loss): 8 MB buffers or a short retransmission timeout each stalled
+  links now and then once several shared a process.
+- `modules/collab_transfer.py`: set-up through `rtc` messages (candidates
+  that arrive before their description wait for it); JSON requests and
+  binary chunk frames; chunks from everyone who has the file, three at a
+  time each, checked against the media list's hashes, written into a
+  `.part` file with a progress record for resuming; the whole file checked
+  at the end; zlib for compressible kinds. Nothing calls libdatachannel from
+  inside its callbacks (a send from a message callback could stop a link).
+  A refusal is remembered for 60 s.
+- Sharing is opt-in per project ("Share my media with collaborators",
+  saved in `collab.json`): off, nothing is announced nor sent. Received files
+  join the index and are passed on; subtitld.cc notes the copy and who sent
+  most of it. The waveform and stems are offered when the video open here is
+  the project's (fingerprint), and go where Subtitld looks for them; an
+  original goes to a folder the person picks, then "Use this video".
+- Tested: two managers in one process over real links (one source, two at
+  once, compressed, refused, resumed; 20 runs clean), and two Subtitld
+  processes against a local server (40 MB in 2.1 s, identical, copy noted;
+  with sharing off the video stays unavailable).
+- Not done: a bandwidth limit and pause, a TURN relay, a router-to-router
+  test, builds for Windows, macOS and Haiku.
+
 **Transfer:**
 
 - The content hash covers the whole file, with chunk hashes for chunks of
