@@ -354,11 +354,24 @@ _save_success_callbacks = []
 _document_change_callbacks = []
 # Called once a project is opened or started (document_loaded): a shared one connects (modules.collab_service).
 _document_loaded_callbacks = []
+# Called before each change is recorded, and when a project opens: what the document holds is brought up to
+# date, such as each dub file's hash (modules.collab_media).
+_before_capture_callbacks = []
 def capture_changes():
     """Record what the document's last edit changed (modules.journal)."""
     # Whatever the edit made, every subtitle leaves it with its own ID.
     cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    _before_capture()
     return journal.capture(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+
+
+def _before_capture():
+    for callback in list(_before_capture_callbacks):
+        try:
+            callback()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('session: a before-capture step failed')
 
 
 def document_loaded():
@@ -366,6 +379,7 @@ def document_loaded():
     opening it is not recorded as an edit, and it is shared for co-editing
     if its file says so (modules.collab_state)."""
     cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    _before_capture()
     journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
     collab_state.opened()
     for callback in list(_document_loaded_callbacks):

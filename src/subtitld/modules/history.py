@@ -22,7 +22,7 @@ without limit.
 import contextlib
 import logging
 
-from subtitld.modules import collab_state, cue_ids, docops, journal, session
+from subtitld.modules import collab_media, collab_state, cue_ids, docops, journal, session
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +112,8 @@ def _replay(step):
     try:
         for batch in reversed(step.undo):
             reverse.undo.append(_apply(document, batch))
+        # The document names dub files by content: each finds its copy here again.
+        collab_media.resolve_dubs(document['segments'])
         # The journal takes note of them, for anyone else listening.
         session.capture_changes()
     finally:

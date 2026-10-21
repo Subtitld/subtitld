@@ -165,6 +165,8 @@ class LiveCard(QWidget):
         shared.addWidget(self.media_note)
         self.media_box = QVBoxLayout()
         shared.addLayout(self.media_box)
+        self.dubs = _text()
+        shared.addWidget(self.dubs)
         self.sign_in_button = _button(primary=True)
         self.sign_in_button.clicked.connect(self.sign_in_again)
         self.stop_button = _button(danger=True)
@@ -210,6 +212,12 @@ class LiveCard(QWidget):
             left_panel.update(window)
         if hasattr(window, 'left_panel_subtitleslist_textedit'):
             left_panel_subtitleslist.refresh_lock(window)
+        player = getattr(window, 'preview_panel_player', None)
+        if player is not None and hasattr(player, '_audio_device'):
+            # Dubs that changed, or whose files just came, play as they are now.
+            player._audio_device.sync_subtitle_dubs(session.SUBTITLE.get('segments') or [])
+        if not self.isHidden():
+            self.refresh(load=False)
 
     def _news(self, kind):
         window = self.panel.window_
@@ -218,7 +226,7 @@ class LiveCard(QWidget):
         if kind == 'locks' and hasattr(window, 'left_panel_subtitleslist_textedit'):
             from subtitld.interface import left_panel_subtitleslist
             left_panel_subtitleslist.refresh_lock(window)
-        if kind == 'document' and not self._editor_refresh.isActive():
+        if kind in ('document', 'dubs') and not self._editor_refresh.isActive():
             self._editor_refresh.start()
         if kind in ('shared', 'failed'):
             self._project = None
@@ -349,6 +357,11 @@ class LiveCard(QWidget):
                 use.clicked.connect(lambda _c=False, path=row['path']: use_video(self.panel.window_, path))
                 widgets.append(use)
             self.media_box.addWidget(_row(*widgets))
+        dubs = collab_service.dubs_status()
+        self.dubs.setVisible(bool(dubs['missing']))
+        if dubs['missing']:
+            key = 'collab.dubs_coming' if dubs['coming'] else 'collab.dubs_waiting'
+            self.dubs.setText(_(key).format(count=dubs['missing']))
 
     def _media_state(self, row):
         state = row['state']

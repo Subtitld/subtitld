@@ -110,6 +110,27 @@ check('undo puts a speaker\'s picture back', session.SPEAKERS['A']['image'], 'ol
 history.history_redo()
 check('redo the new one', session.SPEAKERS['A']['image'], 'new picture')
 
+print('dubs keep their files through undo')
+from subtitld.modules import collab_media  # noqa: E402 (the stamping it adds runs on every change)
+dub_folder = tempfile.mkdtemp(dir=os.environ.get('TMPDIR'))
+take_one, take_two = os.path.join(dub_folder, 'one.wav'), os.path.join(dub_folder, 'two.wav')
+for path, data in ((take_one, b'RIFF first take'), (take_two, b'RIFF second take')):
+    with open(path, 'wb') as handle:
+        handle.write(data)
+one, two = project('one', 'two')
+one['dubbing'] = [{'uid': 'u1', 'path': take_one, 'start': 0.0, 'segments': [{'path': take_one, 'start': 0.0}]}]
+session.document_loaded()
+check('each dub file named by its content', bool(one['dubbing'][0].get('hash')) and bool(one['dubbing'][0]['segments'][0].get('hash')), True)
+edit(lambda: one.update(dubbing=[{'uid': 'u2', 'path': take_two, 'start': 0.0}]))
+history.history_undo()
+check('undoing a new take brings the old one back, with its file here', session.SUBTITLE['segments'][0]['dubbing'][0].get('path'), take_one)
+check('and its subclip\'s', session.SUBTITLE['segments'][0]['dubbing'][0]['segments'][0].get('path'), take_one)
+history.history_redo()
+check('redo, the new one', session.SUBTITLE['segments'][0]['dubbing'][0].get('path'), take_two)
+edit(lambda: session.SUBTITLE['segments'].remove(session.SUBTITLE['segments'][0]))
+history.history_undo()
+check('a deleted subtitle comes back with its dub\'s file', session.SUBTITLE['segments'][0]['dubbing'][0].get('path'), take_two)
+
 print('selection')
 one, two = project('one', 'two')
 session.SUBTITLE['selected'] = two

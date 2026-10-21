@@ -478,6 +478,30 @@ no PyAV) can still talk to it.
 - Not done: a bandwidth limit and pause, a TURN relay, a router-to-router
   test, builds for Windows, macOS and Haiku.
 
+**Done in M15 (dub clips):**
+
+- A dub's files are this computer's: the shared document leaves out `path`
+  and `raw_path` at any depth (`docops.LOCAL_KEYS`) and names each file by
+  the SHA-256 of its bytes (`hash`, `raw_hash`), for the dub and each of its
+  subclips. `collab_media.stamp_dubs()` runs before every recorded change and
+  on load (`session._before_capture_callbacks`); the index remembers each
+  hash, so a file is hashed once.
+- `collab_media.resolve_dubs()` finds the local copy of each hash (the index,
+  or `cache/dubbing/<hash>.<ext>`) after a collaborator's changes and after
+  undo or redo, and drops the path of those not here.
+- Dub clips go to every collaborator whatever "Share my media" says (they
+  are project content, not someone's original): each Subtitld lists its
+  clips as media of kind `dub`, and fetches the missing ones, four at a
+  time, into the dubbing cache. The panel says "Receiving N dub clips" or
+  "N dub clips waiting for a collaborator"; audio export warns when some
+  are missing, and the player picks received clips up at once.
+- Tested: undo and redo keep dub files (new take, subclips, a deleted line
+  coming back); two Subtitld processes against a local server, with sharing
+  off: the second received the three clips 3.2 s after joining, identical,
+  subclips resolved, paths local.
+- Not done: speakers' pictures, "Generate locally" for a waiting clip, FLAC
+  for WAV clips on the way.
+
 **Transfer:**
 
 - The content hash covers the whole file, with chunk hashes for chunks of

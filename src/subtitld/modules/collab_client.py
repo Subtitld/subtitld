@@ -16,7 +16,7 @@ from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QAbstractSocket, QNetworkRequest
 from PySide6.QtWebSockets import QWebSocket
 
-from subtitld.modules import collab_state, cue_ids, docops, history, journal, session
+from subtitld.modules import collab_media, collab_state, cue_ids, docops, history, journal, session
 from subtitld.modules.collab_sync import Engine, Live
 
 log = logging.getLogger(__name__)
@@ -54,6 +54,8 @@ class SessionLive(Live):
                     segment = cue_ids.find(document['segments'], op['cue'].get('id'))
                     if segment is not None:
                         segment.update(journal.runtime('cue', segment['id']))
+            # A collaborator's dubs name their files by content: the copies here, where there are some.
+            collab_media.resolve_dubs(document['segments'])
             selected = session.SUBTITLE.get('selected')
             if isinstance(selected, dict) and not any(s is selected for s in document['segments']):
                 session.SUBTITLE['selected'] = False

@@ -26,7 +26,10 @@ together, and `apply` returns the list that undoes it.
 
 What a document holds is only what collaborators share: keys starting with
 '_' (at any depth) are the app's runtime data, and so are a speaker's
-picture and its bytes (SPEAKER_RUNTIME), which travel as media.
+picture and its bytes (SPEAKER_RUNTIME), which travel as media. A file's
+place on someone's computer (LOCAL_KEYS: a dub's "path" and "raw_path", at
+any depth) is theirs alone: a dub names its files by content ("hash",
+"raw_hash"), and each app finds or fetches its own copy.
 
 Pure Python, standard library only: the subtitld.cc server and Subtitld apply
 the same changes with this same module. Its home is the subtitld.cc
@@ -39,6 +42,7 @@ from bisect import bisect
 
 META_FIELDS = ("language", "source_language", "translations")
 SPEAKER_RUNTIME = ("image", "image_bytes")
+LOCAL_KEYS = ("path", "raw_path")
 # A subtitle's fields changed one key at a time, as 'field.key'.
 SPLIT_FIELDS = ("translations",)
 
@@ -49,12 +53,12 @@ class OpError(ValueError):
 
 
 def plain(value):
-    """`value` as a document holds it: a deep copy without runtime keys."""
+    """`value` as a document holds it: a deep copy without runtime keys or local paths."""
     if isinstance(value, dict):
         return {
             key: plain(item)
             for key, item in value.items()
-            if not (isinstance(key, str) and key.startswith("_"))
+            if not (isinstance(key, str) and (key.startswith("_") or key in LOCAL_KEYS))
         }
     if isinstance(value, (list, tuple)):
         return [plain(item) for item in value]

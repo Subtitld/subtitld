@@ -7,6 +7,7 @@ work on the open project.
 
 import hashlib
 import logging
+import os
 import time
 
 from subtitld.modules import collab_state, cue_ids, docops, history, session
@@ -33,6 +34,9 @@ _media_files = []        # the open project's media here, described (collab_medi
 _media_scan = None       # the background scan running, if one is
 _transfers = None        # collab_transfer.Manager, while connected (where libdatachannel is)
 _transfer_timer = None
+_dub_registering = None  # the background call putting dub files on the media list
+_dub_asked = set()       # dub files asked for in this connection
+DUB_DOWNLOADS = 4        # dub files coming in at once
 # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
 # project became shared or stopped being), 'failed' (the connection gave up: see failure()).
 listeners = []
@@ -71,6 +75,7 @@ def state():
 def _stop():
     global _connection, _editing, _last_presence, _media_files, _transfers
     _editing, _last_presence, _media_files = None, None, []
+    _dub_asked.clear()
     if _transfer_timer is not None:
         _transfer_timer.stop()
     if _transfers is not None:
@@ -160,8 +165,78 @@ def _start_transfers():
     if _transfer_timer is None:
         _transfer_timer = QTimer()
         _transfer_timer.setInterval(2000)
-        _transfer_timer.timeout.connect(lambda: _transfers is not None and _transfers.tick())
+        _transfer_timer.timeout.connect(_transfer_tick)
     _transfer_timer.start()
+
+
+def _transfer_tick():
+    if _transfers is not None:
+        _transfers.tick()
+        sync_dubs()
+
+
+# --- Dub clips: shared by everyone in the project, fetched by themselves --------------------------------------
+
+
+def _dub_hashes_here():
+    from subtitld.modules import collab_media
+    return collab_media.dub_files(session.SUBTITLE.get('segments'))
+
+
+def sync_dubs():
+    """Dub files are the project's own (made by its members), so they go to everyone in it, whatever the
+    media choice: those here not on the media list go on it, everyone hears this app has them, and those
+    missing here come from whoever has them, a few at a time."""
+    global _dub_registering
+    from subtitld.modules import collab_media
+    if _connection is None or _transfers is None or not collab_state.shared():
+        return
+    engine = _connection.engine
+    here = _dub_hashes_here()
+    unlisted = {h: p for h, p in here.items() if h not in engine.media}
+    if unlisted and (_dub_registering is None or not _dub_registering.isRunning()):
+        doc_id = collab_state.STATE['doc']
+
+        def work():
+            client = service.client()
+            listed = {}
+            for file_hash, path in unlisted.items():
+                description = collab_media.index().known(path) or collab_media.describe(path)
+                listed[file_hash] = client.add_project_media(
+                    doc_id, hash=file_hash, kind='dub', size=description['size'],
+                    chunk_size=description['chunk_size'], chunks=description['chunks'],
+                    fingerprint='', name=os.path.basename(path))
+            return listed
+
+        def done(listed):
+            if _connection is not None:
+                _connection.engine.media.update(listed)
+                _announce()
+
+        _dub_registering = service.call(work, done, lambda error: log.warning('collab: dub files not listed: %s', error))
+    _announce()
+    # The missing ones, from whoever has them.
+    missing = collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
+    coming = sum(1 for d in _transfers.downloads.values() if d.kind == 'dub' and d.state in ('waiting', 'downloading', 'checking'))
+    for file_hash in dict.fromkeys(missing):
+        if coming >= DUB_DOWNLOADS:
+            break
+        if file_hash in _dub_asked or not engine.holders(file_hash):
+            continue
+        _dub_asked.add(file_hash)
+        coming += 1
+        name = (engine.media.get(file_hash) or {}).get('name') or 'dub.wav'
+        download_media(file_hash, collab_media.dub_destination(file_hash, name),
+                       lambda error, h=file_hash: (_dub_asked.discard(h), log.warning('collab: dub file %s: %s', h[:12], error)))
+
+
+def dubs_status():
+    """{'missing', 'coming'}: dub files of the project not here yet, and how many of those are coming in."""
+    from subtitld.modules import collab_media
+    missing = set(collab_media.resolve_dubs(session.SUBTITLE.get('segments'))) if collab_state.shared() else set()
+    coming = {h for h, d in (_transfers.downloads.items() if _transfers is not None else [])
+              if d.kind == 'dub' and d.state in ('waiting', 'downloading', 'checking')}
+    return {'missing': len(missing), 'coming': len(missing & coming)}
 
 
 def transfers_available():
@@ -183,14 +258,17 @@ def set_sharing_media(on):
 
 
 def _announce():
+    """What this app can send: the project's dub files here, and its other media when the person shares them."""
     if _connection is not None:
-        _connection.engine.have([item['hash'] for item in _media_files] if sharing_media() else [])
+        media = [item['hash'] for item in _media_files] if sharing_media() else []
+        _connection.engine.have(sorted(set(media) | set(_dub_hashes_here())))
 
 
 def _shareable(file_hash):
-    """The local path of a file this app announced and may send (libdatachannel's thread)."""
+    """The local path of a file this app announced and may send (libdatachannel's thread): a dub file of the
+    project always, other media when the person shares them."""
     from subtitld.modules import collab_media
-    if not sharing_media() or _connection is None or file_hash not in (_connection.engine.have_hashes or []):
+    if _connection is None or file_hash not in (_connection.engine.have_hashes or []):
         return None
     return collab_media.index().path_for(file_hash)
 
@@ -209,6 +287,10 @@ def _received(file_hash, path):
         if entry.get('kind') != 'video':
             _media_files = [f for f in _media_files if f['hash'] != file_hash] + [
                 dict(description, kind=entry.get('kind'), name=entry.get('name'), path=path, fingerprint='')]
+        if entry.get('kind') == 'dub' or download.kind == 'dub':
+            # A dub file came: the subtitles that name it play it now.
+            collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
+            _tell('dubs')
         _announce()
         sender = max(download.sources, key=download.sources.get) if download.sources else None
         handle = ((_connection.engine.peers.get(sender) or {}).get('user') or {}).get('handle', '') if _connection else ''
@@ -261,6 +343,7 @@ def media_status():
         rows.append({'hash': file_hash, 'kind': entry.get('kind'), 'name': entry.get('name') or '',
                      'size': entry.get('size') or 0, 'state': state, 'fraction': fraction, 'holders': len(holders),
                      'path': path, 'fingerprint': entry.get('fingerprint') or ''})
+    rows = [row for row in rows if row['kind'] != 'dub']  # dub files come by themselves (dubs_status)
     order = {'video': 0, 'waveform': 1, 'stem': 2}
     return sorted(rows, key=lambda row: (order.get(row['kind'], 9), row['name']))
 
