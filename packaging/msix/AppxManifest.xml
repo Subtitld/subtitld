@@ -83,6 +83,13 @@
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>
+        <!-- Live co-editing: collaborators send each other media directly (WebRTC data channels, over UDP).
+             Without the rule, Windows asks the first time, and a "Cancel" blocks links on the local network. -->
+        <desktop2:Extension Category="windows.firewallRules">
+          <desktop2:FirewallRules Executable="Subtitld.exe">
+            <desktop2:Rule Direction="in" IPProtocol="UDP" Profile="all" />
+          </desktop2:FirewallRules>
+        </desktop2:Extension>
       </Extensions>
     </Application>
   </Applications>

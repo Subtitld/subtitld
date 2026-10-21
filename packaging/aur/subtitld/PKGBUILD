@@ -12,6 +12,8 @@ url="https://subtitld.org"
 license=('GPL-3.0-or-later')
 depends=(
     'ffmpeg'
+    # Live co-editing: media sent directly between collaborators.
+    'libdatachannel'
     'portaudio'
     'pyside6'
     'python'
@@ -34,6 +36,7 @@ depends=(
     # Optional for pyside6 on Arch, but the app needs them.
     'qt6-multimedia'
     'qt6-svg'
+    'qt6-websockets'
     'hicolor-icon-theme'
 )
 optdepends=(

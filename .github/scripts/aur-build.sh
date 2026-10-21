@@ -99,6 +99,12 @@ if [ "$code" != 124 ]; then
     exit 1
 fi
 
+# Live co-editing's libraries (Arch's libdatachannel and Qt websockets), with
+# the installed package.
+echo "== live co-editing"
+cp "$SRC/.github/scripts/collab-check.py" /tmp/collab-check.py
+sudo -u builder env HOME=/tmp/smoke QT_QPA_PLATFORM=offscreen python /tmp/collab-check.py
+
 for p in "$WORK"/local/*; do
     name=$(basename "$p")
     mkdir -p "$OUT/$name"

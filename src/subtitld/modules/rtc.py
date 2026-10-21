@@ -59,6 +59,9 @@ _CHANNEL = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_int, ctypes.c_void_p)
 _OPEN = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_void_p)
 _MESSAGE = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p)
 
+# Versions whose C API (what this module uses of it) is the one here.
+SYSTEM_VERSIONS = ('0.24', '0.23')
+
 _lib = None
 _load_lock = threading.Lock()
 _peers = {}      # pc id -> PeerConnection
@@ -88,6 +91,11 @@ def _candidates():
     found = ctypes.util.find_library('datachannel')
     if found:
         yield found
+    # A system's library under its versioned name only, without the development package's link (Haiku, Debian):
+    # the loader finds it by name.
+    if not sys.platform.startswith('win') and sys.platform != 'darwin':
+        for version in SYSTEM_VERSIONS:
+            yield f'libdatachannel.so.{version}'
     # A checkout: the build of packaging/libdatachannel.
     checkout = os.path.normpath(os.path.join(here, '..', '..', '..', 'packaging', 'libdatachannel', 'dist'))
     if os.path.isdir(checkout):
@@ -229,6 +237,10 @@ class PeerConnection:
         config.iceServers = array
         config.iceServersCount = len(servers)
         config.maxMessageSize = MAX_MESSAGE_SIZE
+        if sys.platform.startswith('haiku'):
+            # libjuice's dual-stack socket sends to IPv4 peers as IPv4-mapped IPv6 addresses, which Haiku's
+            # network stack refuses (ENETUNREACH): an IPv4 socket there.
+            config.bindAddress = b'0.0.0.0'
         self.id = lib.rtcCreatePeerConnection(ctypes.byref(config))
         if self.id < 0:
             raise RuntimeError(f'rtcCreatePeerConnection failed ({self.id})')

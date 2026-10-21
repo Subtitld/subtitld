@@ -502,6 +502,53 @@ no PyAV) can still talk to it.
 - Not done: speakers' pictures, "Generate locally" for a waiting clip, FLAC
   for WAV clips on the way.
 
+**M16 (packaging), in progress:**
+
+- libdatachannel v0.23.2, data channels only, in every package:
+  - AppImage and the PyInstaller builds: `packaging/libdatachannel/build-linux.sh`
+    (Docker, manylinux_2_28, Mbed TLS), `build-windows.ps1` (MSVC, Mbed TLS,
+    static C runtime), `build-macos.sh` (arm64, Mbed TLS); the specs bundle
+    the library next to the app with its licences, and CI caches each build
+    by its script.
+  - snap: a `libdatachannel` part (CMake, the base's OpenSSL), found through
+    `SUBTITLDCC_LIBDATACHANNEL`.
+  - Flatpak: a `libdatachannel` module (CMake, the runtime's OpenSSL);
+    `find_library` finds it in /app/lib.
+  - AUR: Arch's `libdatachannel` (0.24.5; its C API is the same for what
+    rtc.py uses) and `qt6-websockets`.
+  - Haiku: HaikuPorts' libdatachannel (0.24.5) cannot open a link there: it
+    uses libnice, which cannot list the network interfaces (SIOCGIFCONF
+    fails), and the system usrsctp is built with the Linux `sockaddr_conn`
+    while Haiku's sockaddr starts with `sa_len` (bind fails: EAFNOSUPPORT,
+    then EADDRNOTAVAIL). The Subtitld recipe builds its own, with libjuice
+    and the bundled usrsctp (`usrsctp-haiku.patch`: HaikuPorts'
+    libtorrent fixes plus the BSD layout, `HAVE_SCONN_LEN`), into
+    `subtitld/lib`, where rtc.py looks. libjuice's dual-stack socket sends
+    to IPv4 peers as v4-mapped addresses, which Haiku refuses (ENETUNREACH):
+    rtc.py binds IPv4 there. test_rtc (32 MB) passes in the VM.
+  - pip: no library; the panel says media can't be sent ("media_no_links").
+  - rtc.py also tries `libdatachannel.so.0.24` / `.0.23` by name (a system
+    library without the development package's link).
+- libjuice draws ICE credentials from the system's random source only on
+  Linux and Windows; elsewhere from `random()`/`rand()` seeded with the
+  clock. `libjuice-urandom.patch` reads /dev/urandom (macOS, Haiku builds).
+  Worth sending upstream.
+- QtWebSockets: in the PyInstaller hidden imports; the AppImage smoke test
+  checks it and libdatachannel are in and resolve on a bare system.
+- `.github/scripts/collab-check.py`: Qt websockets plus 4 MB across a link,
+  with a package's own Python; run by the snap, Flatpak, AUR and Haiku
+  checks.
+- MSIX: a firewall rule for inbound UDP, so Windows doesn't ask (and a
+  "Cancel" doesn't block links on the local network).
+- Tested locally: AppImage (clean Ubuntu 24.04 and Fedora, and opened on a
+  real Wayland session), AUR (Arch's library, 4 MB intact), Flatpak
+  (installed bundle: window on a real Wayland session, check passes),
+  Haiku (haiku-build.sh in the VM: packages built and installed, check
+  passes with the bundled library, window on Haiku's desktop). Not run:
+  snap (LXD containers have no network here), Windows and macOS (CI only).
+- Left: CI runs for Windows, macOS and snap, a real-session test with two
+  collaborators, beta on draft.
+
 **Transfer:**
 
 - The content hash covers the whole file, with chunk hashes for chunks of

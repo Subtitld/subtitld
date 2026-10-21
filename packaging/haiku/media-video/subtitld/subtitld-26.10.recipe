@@ -7,14 +7,42 @@ SAMI, SCC and more. Projects (.usfx) keep the video, the subtitles and the \
 place you left them."
 HOMEPAGE="https://subtitld.org"
 COPYRIGHT="2020-2026 Jonatã Bolzan Loss"
-LICENSE="GNU GPL v3"
+LICENSE="GNU GPL v3
+	MPL v2.0
+	BSD (3-clause)
+	MIT"
 REVISION="1"
 SOURCE_URI="https://github.com/Subtitld/subtitld/archive/refs/tags/v$portVersion.tar.gz"
 CHECKSUM_SHA256="282f49d3cca716a20b79a928dec13f7b2c520406a8c5e40ae29503638f10aac9"
+# libdatachannel, for live co-editing's direct links between collaborators, built
+# into Subtitld's own folder: HaikuPorts' (libnice, and usrsctp's Linux
+# sockaddr_conn) cannot open a link on Haiku. GitHub's archive of a tag has no
+# submodules: libjuice, usrsctp and plog come at the commits the tag points to.
+SOURCE_URI_2="https://github.com/paullouisageneau/libdatachannel/archive/refs/tags/v0.23.2.tar.gz"
+CHECKSUM_SHA256_2="b9606efc5b2b173f2d22d0be3f6ba4f12af78c00ca02cde5932f3ff902980eb9"
+SOURCE_FILENAME_2="libdatachannel-0.23.2.tar.gz"
+SOURCE_DIR_2="libdatachannel-0.23.2"
+srcGitRev_3="b509b6c1f90e4a1d4753e6bde62ffbeb4d10c6bb"
+SOURCE_URI_3="https://github.com/paullouisageneau/libjuice/archive/$srcGitRev_3.tar.gz"
+CHECKSUM_SHA256_3="770eb342b98e029b74de95a3078499184093a1e382e8cba12eaab3cbc91a85bd"
+SOURCE_FILENAME_3="libjuice-$srcGitRev_3.tar.gz"
+SOURCE_DIR_3="libjuice-$srcGitRev_3"
+srcGitRev_4="fec583d54493f879d2ae44a743423bf8a04371ab"
+SOURCE_URI_4="https://github.com/paullouisageneau/usrsctp/archive/$srcGitRev_4.tar.gz"
+CHECKSUM_SHA256_4="e5c114afe73c9a0ec419fab5f5b3f63f3ce57b09b90d06ea85e63dca8aed3e7c"
+SOURCE_FILENAME_4="usrsctp-$srcGitRev_4.tar.gz"
+SOURCE_DIR_4="usrsctp-$srcGitRev_4"
+srcGitRev_5="94899e0b926ac1b0f4750bfbd495167b4a6ae9ef"
+SOURCE_URI_5="https://github.com/SergiusTheBest/plog/archive/$srcGitRev_5.tar.gz"
+CHECKSUM_SHA256_5="92a08bce559b5f28aa88d3fd9071567414b9f43a83fe2a05a6dd14f1da536072"
+SOURCE_FILENAME_5="plog-$srcGitRev_5.tar.gz"
+SOURCE_DIR_5="plog-$srcGitRev_5"
 ADDITIONAL_FILES="
 	launcher.c
 	subtitld.rdef.in
 	subtitld-filetypes.sh
+	libjuice-urandom.patch
+	usrsctp-haiku.patch
 	"
 # Subtitld's projects (.usfx) as a file type, with their icon, once installed.
 POST_INSTALL_SCRIPTS="$relativePostInstallDir/subtitld-filetypes.sh"
@@ -48,6 +76,10 @@ REQUIRES="
 	# Optional for pyside6 on Haiku, but the preview panel needs it.
 	lib:libQt6Multimedia
 	lib:libQt6MultimediaWidgets
+	# Live co-editing: the link to subtitld.cc, and libdatachannel's TLS.
+	lib:libQt6WebSockets
+	lib:libssl
+	lib:libcrypto
 	cmd:ffmpeg
 	cmd:python3.10
 	"
@@ -59,8 +91,14 @@ BUILD_REQUIRES="
 	installer_python310
 	setuptools_python310
 	wheel_python310
+	devel:libssl
+	devel:libcrypto
 	"
 BUILD_PREREQUIRES="
+	cmd:cmake
+	cmd:ninja
+	cmd:patch
+	cmd:g++
 	cmd:gcc
 	cmd:python3.10
 	cmd:python3.10_config
@@ -68,6 +106,18 @@ BUILD_PREREQUIRES="
 
 BUILD()
 {
+	# libdatachannel's submodules, and its patches ($portDir is set here, not
+	# in PATCH).
+	local deps=$sourceDir2/deps
+	rmdir $deps/libjuice $deps/usrsctp $deps/plog
+	ln -s $sourceDir3 $deps/libjuice
+	ln -s $sourceDir4 $deps/usrsctp
+	ln -s $sourceDir5 $deps/plog
+	# libjuice's ICE credentials from /dev/urandom rather than rand(); usrsctp
+	# built for Haiku, with the sockaddr layout Haiku has (sa_len first).
+	patch -d $sourceDir3 -p1 < $portDir/additional-files/libjuice-urandom.patch
+	patch -d $sourceDir4 -p1 < $portDir/additional-files/usrsctp-haiku.patch
+
 	# The tag's sources carry a placeholder version; the package's is this one.
 	sed -i "s/^__version__ = .*/__version__ = '$portVersion'/" src/subtitld/__init__.py
 
@@ -78,11 +128,28 @@ BUILD()
 	gcc -O2 -o subtitld-launcher $portDir/additional-files/launcher.c \
 		$(python3.10-config --includes) -lpython3.10 \
 		-DPYTHON="\"$prefix/bin/python3.10\""
+
+	# libdatachannel: data channels only. usrsctp has sconn_len here, and
+	# libdatachannel's own code has to know it too.
+	cmake -S $sourceDir2 -B libdatachannel-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+		-DNO_MEDIA=ON -DNO_WEBSOCKET=ON -DNO_EXAMPLES=ON -DNO_TESTS=ON \
+		-DCMAKE_CXX_FLAGS=-DHAVE_SCONN_LEN
+	ninja -C libdatachannel-build $jobArgs
 }
 
 INSTALL()
 {
 	python3.10 -m installer -p $prefix dist/*.whl
+
+	# libdatachannel where Subtitld looks first (modules/rtc.py: subtitld/lib),
+	# with its licences.
+	local package=$(echo $prefix/lib/python3.10/*-packages/subtitld)
+	mkdir -p $package/lib $docDir/libdatachannel
+	cp libdatachannel-build/libdatachannel.so.0.23.2 $package/lib/libdatachannel.so
+	cp $sourceDir2/LICENSE $docDir/libdatachannel/LICENSE
+	cp $sourceDir3/LICENSE $docDir/libdatachannel/LICENSE.libjuice
+	cp $sourceDir4/LICENSE.md $docDir/libdatachannel/LICENSE.usrsctp
+	cp $sourceDir5/LICENSE $docDir/libdatachannel/LICENSE.plog
 
 	# The application, in the apps directory: the launcher, with its
 	# signature, version and icon as resources (subtitld.rdef.in).

@@ -38,6 +38,17 @@ mkdir -p "$HOME"
 
 # No FUSE in a container either: run it extracted.
 cd /tmp && "$appimage" --appimage-extract > /dev/null
+
+# Live co-editing's libraries load only once a project is shared, after this test: check here that they are in
+# and find what they need on a bare system.
+for lib in libdatachannel.so PySide6/Qt/lib/libQt6WebSockets.so.6; do
+    path=/tmp/squashfs-root/usr/bin/subtitld/_internal/$lib
+    [ -f "$path" ] || { echo "::error::$lib is not in the AppImage"; exit 1; }
+    if LD_LIBRARY_PATH=/tmp/squashfs-root/usr/bin/subtitld/_internal/PySide6/Qt/lib ldd "$path" | grep 'not found'; then
+        echo "::error::$lib needs libraries a bare system lacks"
+        exit 1
+    fi
+done
 SMOKE_LOG=/tmp/smoke.log bash "$here/smoke.sh" 25 xvfb-run -a /tmp/squashfs-root/AppRun
 
 # And on Wayland, with weston as a headless desktop. A window Qt cannot make

@@ -42,6 +42,10 @@ lxc exec "$name" -- su - ubuntu -c \
 lxc exec "$name" -- su - ubuntu -c 'mkdir -p ~/snap/subtitld/common'
 lxc exec "$name" -- install -o ubuntu -g ubuntu -m 644 /root/snap-video-check.sh /root/snap-video-check.py \
     /home/ubuntu/snap/subtitld/common/
+# Live co-editing's libraries, with the snap's Python (collab-check.py).
+lxc file push -q "$here/collab-check.py" "$name/home/ubuntu/snap/subtitld/common/collab-check.py"
+lxc exec "$name" -- su - ubuntu -c \
+    'set -o pipefail; snap run --shell subtitld -c "LD_LIBRARY_PATH=\$SNAP/lib/python3.10/site-packages/PySide6/Qt/lib:\$LD_LIBRARY_PATH QT_QPA_PLATFORM=offscreen python3 \$SNAP_USER_COMMON/collab-check.py" 2>&1 | cat'
 lxc exec "$name" -- su - ubuntu -c \
     'set -o pipefail; snap run --shell subtitld -c "bash \$SNAP_USER_COMMON/snap-video-check.sh" 2>&1 | cat'
 # And on Wayland, with weston as a headless desktop: the session most Linux

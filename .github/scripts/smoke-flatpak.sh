@@ -23,3 +23,7 @@ flatpak --user install -y --noninteractive "$bundle"
 SMOKE_LOG=/tmp/smoke-flatpak.log bash "$here/smoke.sh" 30 \
     dbus-run-session -- flatpak run --env=QT_QPA_PLATFORM=offscreen --env=QT_QPA_PLATFORMTHEME= \
     org.subtitld.Subtitld
+
+# Live co-editing's libraries, with the bundle's Python (collab-check.py).
+dbus-run-session -- flatpak run --env=QT_QPA_PLATFORM=offscreen --env=QT_QPA_PLATFORMTHEME= \
+    --filesystem="$here":ro --command=python3 org.subtitld.Subtitld "$here/collab-check.py"

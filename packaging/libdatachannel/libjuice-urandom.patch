@@ -1,0 +1,41 @@
+libjuice reads random bytes from the system only on Linux and Windows: elsewhere (macOS, the BSDs,
+Haiku) its ICE credentials and transaction IDs came from random()/rand() seeded with the clock.
+Read /dev/urandom there.
+
+--- a/src/random.c	2026-10-21 11:10:49.714521646 -0300
++++ b/src/random.c	2026-10-21 11:10:49.715814004 -0300
+@@ -49,6 +49,34 @@
+ 	return !status ? 0 : -1;
+ }
+ 
++#elif defined(__unix__) || defined(__APPLE__) || defined(__HAIKU__)
++
++#include <errno.h>
++#include <fcntl.h>
++#include <unistd.h>
++
++static int random_bytes(void *buf, size_t size) {
++	int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
++	if (fd < 0) {
++		JLOG_WARN("Opening /dev/urandom failed, errno=%d", errno);
++		return -1;
++	}
++	size_t done = 0;
++	while (done < size) {
++		ssize_t ret = read(fd, (char *)buf + done, size - done);
++		if (ret < 0 && errno == EINTR)
++			continue;
++		if (ret <= 0) {
++			JLOG_WARN("Reading /dev/urandom failed, errno=%d", errno);
++			close(fd);
++			return -1;
++		}
++		done += (size_t)ret;
++	}
++	close(fd);
++	return 0;
++}
++
+ #else
+ static int random_bytes(void *buf, size_t size) {
+ 	(void)buf;

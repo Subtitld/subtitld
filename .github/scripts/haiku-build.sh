@@ -34,6 +34,8 @@ pkgman install -y haikuporter > /dev/null
 rm -rf "$TREE" 2>/dev/null || mv "$TREE" "$TREE.stale.$(date +%s)"
 mkdir -p "$TREE/licenses" "$TREE/files"
 cp -r "$SRC"/packaging/haiku/dev-python "$SRC"/packaging/haiku/media-video "$TREE/"
+# libdatachannel's patches, kept with its other builds (packaging/libdatachannel).
+cp "$SRC"/packaging/libdatachannel/*.patch "$TREE/media-video/subtitld/additional-files/"
 printf 'RecipeFormatVersion=1\nRepositoryFormatVersion=2\n' > "$TREE/FormatVersions"
 cat > "$TREE/haikuports.conf" <<EOF
 PACKAGER="Subtitld CI <subtitld@subtitld.org>"
@@ -76,6 +78,9 @@ from subtitld.interface import startscreen, productionscreen, top_bar
 from subtitld.modules import audioengine, file_io
 print('subtitld imports OK')
 "
+# Live co-editing's libraries: Qt's websockets, and the bundled libdatachannel
+# carrying data across a link.
+QT_QPA_PLATFORM=offscreen python3.10 "$SRC/.github/scripts/collab-check.py"
 command -v subtitld
 # The application: the native launcher, with Subtitld's signature (and so
 # its icon) as Deskbar and Tracker see it.
@@ -96,6 +101,7 @@ rm -rf "$ports"
 mkdir -p "$ports/media-video/subtitld"
 cp -r "$SRC/packaging/haiku/dev-python" "$ports/"
 cp -r "$SRC/packaging/haiku/media-video/subtitld/additional-files" "$ports/media-video/subtitld/"
+cp "$SRC"/packaging/libdatachannel/*.patch "$ports/media-video/subtitld/additional-files/"
 sed -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$(printf '0%.0s' $(seq 64))\"|" \
     "$SRC"/packaging/haiku/media-video/subtitld/subtitld-*.recipe \
     > "$ports/media-video/subtitld/subtitld-$VERSION.recipe"
