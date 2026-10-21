@@ -725,7 +725,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     raw = dub.pop('_embedded_bytes', None)
                     fmt = dub.pop('_embedded_format', 'wav')
                     if raw and dub.get('uid'):
-                        target = os.path.join(dub_cache_dir, f'{dub["uid"]}.{fmt}')
+                        # Both come from the file: cleaned like the USFX
+                        # arcnames, so a uid of `../../somewhere/x` with a
+                        # format of its choosing can't create a file
+                        # outside the cache. Real uids are hex, unchanged.
+                        target = os.path.join(dub_cache_dir, f'{_safe_asset_name(dub["uid"])}.{_safe_asset_name(fmt)}')
                         if not os.path.exists(target):
                             try:
                                 with open(target, 'wb') as wf:
