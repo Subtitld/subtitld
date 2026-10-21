@@ -544,10 +544,16 @@ no PyAV) can still talk to it.
   real Wayland session), AUR (Arch's library, 4 MB intact), Flatpak
   (installed bundle: window on a real Wayland session, check passes),
   Haiku (haiku-build.sh in the VM: packages built and installed, check
-  passes with the bundled library, window on Haiku's desktop). Not run:
-  snap (LXD containers have no network here), Windows and macOS (CI only).
-- Left: CI runs for Windows, macOS and snap, a real-session test with two
-  collaborators, beta on draft.
+  passes with the bundled library, window on Haiku's desktop). In CI
+  (2026-10-21): Windows (DLL in the flat bundle, window, zip, installer,
+  MSIX with the firewall rule as a package extension), macOS (dylib in
+  the bundle, nothing from Homebrew), snap (check passes on a clean
+  Ubuntu: library at $SNAP/usr/lib, 4 MB intact).
+- subtitld.cc's deploy restarts the co-editing service only when its unit
+  is enabled (`systemctl is-enabled`: the unit file is unreadable to the
+  deploy user, so `systemctl cat` never found it). Draft runs M9-M16.
+- Left: a real-session test with two collaborators on draft (two people,
+  two accounts), then the beta.
 
 **Transfer:**
 
