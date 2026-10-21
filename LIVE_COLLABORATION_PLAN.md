@@ -404,6 +404,48 @@ waveform and stems, and knows where a received waveform or stem goes (under
 the key of the video open here). Once live, a shared project registers what
 is missing from the list and sends `have`. Client package 1.4.0.
 
+**Transport spike (2026-10-20).** Two processes on one machine, 256 MB
+(loopback) or 32 MB (40 ms round trip and loss, `tc netem` inside a
+container). Single runs, so allow some noise:
+
+| | Loopback | 40 ms | 40 ms, 0.05% loss | 40 ms, 0.5% loss |
+|---|---|---|---|---|
+| libdatachannel via ctypes, tuned | 85–111 MB/s | 14–62 MB/s | 3.0 MB/s | 0.4 MB/s |
+| aioice + aioquic, CUBIC | 25–27 MB/s | 13–19 MB/s | 2.0–3.3 MB/s | 0.5 MB/s |
+| aiortc data channel (needs PyAV) | 28 MB/s | 11 MB/s | 4.8 MB/s | 2.4 MB/s |
+
+- On a local network, libdatachannel is 3–4 times faster: the Python
+  options are CPU-bound at about 25–30 MB/s.
+- Over the internet, loss and congestion control decide the speed, not the
+  library. aiortc's higher numbers there most likely mean its congestion
+  control backs off less than the standard says it should.
+- libdatachannel's defaults are poor with loss. Tuned: default congestion
+  control, 8 MB buffers, 100 ms minimum retransmission timeout, delayed
+  acknowledgements off (0.6 → 2.5–3.0 MB/s at 0.05% loss). H-TCP is broken
+  under loss (0.1–0.2 MB/s).
+- Parallel connections fix loss-limited links: four libdatachannel
+  connections moved 32 MB at about 24 MB/s together at 0.05% loss, against
+  3.0 for one (short transfers, so somewhat flattering). Downloading chunks
+  from several collaborators at once gives this anyway.
+- `pylibdatachannel` (Linux wheels only) and `datachannel` (abandoned) are
+  not usable; libdatachannel would need our own ctypes bindings to its C
+  API. It is MPL-2.0 and 3.2 MB built without media or websocket, and
+  needs OpenSSL.
+- aiortc imports PyAV unconditionally. libdatachannel and aiortc both speak
+  standard WebRTC, so they can talk to each other; aioquic cannot talk to
+  either.
+- Not tested: a real router-to-router connection (needs a second network),
+  and packaging on Windows, macOS and Haiku.
+
+Scripts: `~/.cache/collab-spike/bench_*.py`.
+
+**Decision (2026-10-21): libdatachannel**, through our own ctypes bindings to
+its C API, with the tuned SCTP settings above and several connections at
+once (chunks from several collaborators, and more than one connection per
+collaborator on lossy links). It needs a native build in every package; if
+Haiku can't build it, an aiortc-based fallback (vendored data-channel parts,
+no PyAV) can still talk to it.
+
 **Transfer:**
 
 - The content hash covers the whole file, with chunk hashes for chunks of
