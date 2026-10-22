@@ -199,7 +199,7 @@ _running = set()
 
 
 def call(function, on_success=None, on_failure=None):
-    """Start ``function`` in the background. Returns the Call (keep it to ask ``isRunning()``)."""
+    """Start ``function`` in the background. Returns the Call (keep it to ask ``running()``)."""
     worker = Call(function)
     if on_success is not None:
         worker.succeeded.connect(on_success)
@@ -214,6 +214,17 @@ def call(function, on_success=None, on_failure=None):
     worker.finished.connect(finished)
     worker.start()
     return worker
+
+
+def running(worker):
+    """Whether a Call from call() is still at work. Once it ends Qt deletes it, so a Call kept from an earlier
+    run is finished, not an error."""
+    if worker is None:
+        return False
+    try:
+        return worker.isRunning()
+    except RuntimeError:  # its C++ object is gone: it finished
+        return False
 
 
 def wait_for_calls(milliseconds=3000):

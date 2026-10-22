@@ -39,6 +39,15 @@ def wait(condition, seconds=5):
     return False
 
 
+print('a background call kept after it ended reads as finished, not as an error')
+from PySide6.QtCore import QCoreApplication, QEvent
+worker = service.call(lambda: 1)
+check('running while it works, or done', service.running(worker) in (True, False), True)
+wait(lambda: not worker.isRunning())
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)  # Qt deletes it once it has ended
+check('deleted by Qt: finished', service.running(worker), False)
+check('none: finished', service.running(None), False)
+
 print('USF times are exact milliseconds; the old 23:59:59.999 start reads as 0')
 check('written', [usf.format_time(s) for s in (0.0, 1.5, 2.002, 3599.999, 7322.5)],
       ['00:00:00.000', '00:00:01.500', '00:00:02.002', '00:59:59.999', '02:02:02.500'])

@@ -194,7 +194,7 @@ def sync_dubs():
     engine = _connection.engine
     here = _dub_hashes_here()
     unlisted = {h: p for h, p in here.items() if h not in engine.media}
-    if unlisted and (_dub_registering is None or not _dub_registering.isRunning()):
+    if unlisted and not service.running(_dub_registering):
         doc_id = collab_state.STATE['doc']
 
         def work():
@@ -365,7 +365,7 @@ def list_media():
     global _media_scan
     if _connection is None or not collab_state.shared():
         return
-    if _media_scan is not None and _media_scan.isRunning():
+    if service.running(_media_scan):
         return
     from subtitld.modules import collab_media
 
