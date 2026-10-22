@@ -58,6 +58,37 @@ Take the painted frame's time from `videoFrameChanged`, not from
 `videoSink().videoFrame()`: the sink is updated from the decoder thread and can
 be a frame ahead of what the item paints.
 
+## Live fallback (in `cached_player.py`)
+
+The live overlay from `spike.py` keeps running (with `--lead`) and covers frames
+the cache does not have yet:
+
+- The source is chosen when a frame arrives and applied by moving the live view
+  into the video rect or parking it outside. Parking, not hiding, keeps
+  Chromium drawing, so the view is current the moment it comes back; Qt applies
+  the move in the same repaint as the frame.
+- The item can paint a frame before `videoFrameChanged` reaches us, so while
+  playing the choice covers the next frame too: the live view comes in if this
+  frame or the next is not cached. When it is in, the cache draws nothing, so
+  the two never overlap.
+- Seeks decide for the target frame at once, move the live page there and
+  point the renderers at it, without waiting for the decoder's first frame.
+- The live page reports the frame it has drawn (3 animation frames later, as
+  with offscreen captures). Until that is near the frame on screen, nothing is
+  drawn: right after a seek the live view would otherwise show the old
+  position.
+
+Seeking 3 s every 3 s with an empty cache: cache frames exact, live frames
+within 2 frames of the video, no stale or doubled content in snapshots, about
+5 blank frames (200 ms) after each seek while the live view catches up.
+
+    .venv/bin/python spikes/html_overlay/cached_player.py --autoplay --no-preroll --seek-every 3
+
+`--no-live` turns the fallback off; `--seek-by -1000` seeks backwards. The
+stats line also counts the source per decoded frame (`decoded:`), which
+holds when the window is not being repainted (covered or on another
+workspace); the per-paint counts do not.
+
 ## CPU and memory (`measure.py`)
 
 Whole process tree (app + QtWebEngineProcess children), steady playback of the

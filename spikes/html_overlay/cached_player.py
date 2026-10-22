@@ -2,11 +2,14 @@
 
 Hidden QWebEngineViews render overlay frames ahead of the playhead; the video
 item draws the cached overlay for exactly the frame it is painting, so there is
-no lead to tune. A frame that is not cached yet draws nothing and counts as a
-miss (no live fallback in this test).
+no lead to tune. A frame that is not cached yet falls back to the live overlay
+(the transparent view from spike.py, drawing --lead ms ahead). The source is
+chosen when a frame arrives and applied by moving the live view in or out of
+the video rect, which Qt shows in the same repaint as the frame.
 
     .venv/bin/python spikes/html_overlay/cached_player.py [video] [--views 4] [--render-size 960x540]
-                                                          [--ahead 4] [--snap DIR] [--quit-after S]
+                                                          [--ahead 4] [--no-live] [--lead 80]
+                                                          [--snap DIR] [--quit-after S]
 
 Keys: space play/pause · ←/→ seek 1 s · ,/. step one frame · 1/2/3 rate 0.5/1/2
       e edit the cue under the playhead · c clear the cache · q quit
@@ -117,7 +120,8 @@ class FrameCache(QObject):
         self.frames = {}          # frame -> [(QRectF normalised, QImage)]
         self.generation = {}      # cue index -> edit count
         self.renderers = [Renderer(self, size) for _ in range(args.views)]
-        self.stats = {'rendered': 0, 'wrong': 0, 'stale': 0, 'hits': 0, 'misses': 0, 'render_ms': []}
+        self.stats = {'rendered': 0, 'wrong': 0, 'stale': 0, 'hits': 0, 'live': 0, 'waits': 0, 'misses': 0,
+                      'render_ms': []}
 
     @staticmethod
     def cue_of(frame):
@@ -154,23 +158,25 @@ class FrameCache(QObject):
             self.frames[frame] = crops
             self.stats['rendered'] += 1
             self.stats['render_ms'].append(seconds * 1000)
-            if frame == self.pw.shown_frame:
-                self.pw.video_item.update()    # paused on a frame that just arrived
+            if frame == self.pw.on_screen_frame():
+                self.pw.decide(frame)          # paused or seeking to a frame that just arrived
         self.schedule()
 
     def edit_cue(self, cue, text):
         self.generation[cue] = self.generation.get(cue, 0) + 1
         for r in self.renderers:
             r.js(f'editCue({cue}, {json.dumps(text)})')
+        if self.pw.live:
+            self.pw.live.page().runJavaScript(f'editCue({cue}, {json.dumps(text)})')
         start, end = int(cue * 2500 / FRAME_MS), int((cue + 1) * 2500 / FRAME_MS)
         for f in [f for f in self.frames if start <= f < end]:
             del self.frames[f]
-        self.pw.video_item.update()
+        self.pw.decide(self.pw.shown_frame)
         self.schedule()
 
     def clear(self):
         self.frames.clear()
-        self.pw.video_item.update()
+        self.pw.decide(self.pw.shown_frame)
         self.schedule()
 
     def ahead_count(self, head):
@@ -201,26 +207,34 @@ class VideoItem(QGraphicsVideoItem):
         pw.shown_frame = frame
         rect = self.video_rect()
 
-        crops = pw.cache.frames.get(frame)
+        # The item can paint a new frame before on_video_frame has run for it,
+        # so decide() looks a frame ahead and this only checks which source is
+        # in place: the live view covers the frame, or the cache draws it.
+        crops = None if pw.live_visible else pw.cache.frames.get(frame)
         if crops is not None:
             painter.setRenderHint(painter.RenderHint.SmoothPixmapTransform)
             for norm, img in crops:
                 target = QRectF(rect.x() + norm.x() * rect.width(), rect.y() + norm.y() * rect.height(),
                                 norm.width() * rect.width(), norm.height() * rect.height())
                 painter.drawImage(target, img)
+        source = ('CACHE' if crops is not None else 'LIVE' if pw.live_visible
+                  else 'WAIT' if pw.live_ready else 'MISS')
         if frame != pw.last_counted:
             pw.last_counted = frame
-            pw.cache.stats['hits' if crops is not None else 'misses'] += 1
+            pw.cache.stats[{'CACHE': 'hits', 'LIVE': 'live', 'WAIT': 'waits', 'MISS': 'misses'}[source]] += 1
+            if source == 'WAIT':
+                print(f'wait: frame {frame} (live drew {pw.live_drawn})', flush=True)
 
         # Status, drawn by the host (not part of the overlay).
         head = pw.playhead_frame()
-        status = (f'frame {frame}  {"HIT" if crops is not None else "MISS"}  '
-                  f'cached ahead {pw.cache.ahead_count(head)}  '
-                  f'hits {pw.cache.stats["hits"]}  misses {pw.cache.stats["misses"]}')
+        s = pw.cache.stats
+        status = (f'frame {frame}  {source:<5}  ahead {pw.cache.ahead_count(head)}  '
+                  f'cache {s["hits"]}  live {s["live"]}  wait {s["waits"]}')
         painter.setFont(QFont('DejaVu Sans Mono', 11))
         box = QRectF(rect.right() - 560, rect.bottom() - 32, 552, 24)
         painter.fillRect(box, QColor(0, 0, 0, 170))
-        painter.setPen(QColor('#7f7') if crops is not None else QColor('#f55'))
+        painter.setPen({'CACHE': QColor('#7f7'), 'LIVE': QColor('#fd5'), 'WAIT': QColor('#f95'),
+                        'MISS': QColor('#f55')}[source])
         painter.drawText(box.adjusted(8, 0, 0, 0), Qt.AlignVCenter, status)
 
 
@@ -266,6 +280,29 @@ class PlayerWidget(QWidget):
 
         self.cache = FrameCache(self, args)
 
+        # Live fallback: always rendering; parked outside the view when the
+        # cache has the frame. Parking keeps Chromium drawing (the widget stays
+        # visible), so it is current the moment it is moved back.
+        self.decided_for = -1
+        self.seek_target = None   # frame a seek is heading to, until the decoder gets there
+        self.decoded = {'cache': 0, 'live': 0, 'blank': 0}
+        self.live_drawn = -1
+        self.live_visible = False
+        self.live_ready = False
+        self.live_rect = QRect()
+        self.live = None
+        if not args.no_live:
+            self.live = QWebEngineView(self.view)
+            self.live.setPage(ConsolePage(self.on_live_console, self.live))
+            self.live.page().setBackgroundColor(Qt.transparent)
+            self.live.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self.live.setFocusPolicy(Qt.NoFocus)
+            self.live.loadFinished.connect(self.on_live_loaded)
+            url = QUrl.fromLocalFile(str(HERE / 'overlay.html'))
+            url.setQuery(f'lead={args.lead}&report=1')
+            self.live.load(url)
+            self.player.playbackStateChanged.connect(lambda _s: self.push_live())
+
         keys = {
             'Space': self.toggle_play, 'Left': lambda: self.seek(-1000), 'Right': lambda: self.seek(1000),
             ',': lambda: self.step(-1), '.': lambda: self.step(1),
@@ -291,15 +328,92 @@ class PlayerWidget(QWidget):
             t = QTimer(self, interval=int(args.snap_every * 1000))
             t.timeout.connect(self.snap)
             t.start()
+        if args.seek_every:
+            t = QTimer(self, interval=int(args.seek_every * 1000))
+            t.timeout.connect(lambda: self.seek(args.seek_by))
+            t.start()
         if args.edit_at:
             QTimer.singleShot(int(args.edit_at * 1000), self.edit)
         if args.quit_after:
             QTimer.singleShot(int(args.quit_after * 1000), self.close)
 
+    # --- live fallback -----------------------------------------------------
+    def on_live_loaded(self, ok):
+        # As in spike.py: the view's internal quick widget only shows what is
+        # under it with WA_AlwaysStackOnTop.
+        for child in self.live.findChildren(QWidget):
+            child.setAttribute(Qt.WA_AlwaysStackOnTop)
+            child.setAttribute(Qt.WA_TranslucentBackground)
+            child.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.live_ready = True
+        self.place_live()
+        self.push_live()
+        self.decide(self.shown_frame)
+
+    def on_live_console(self, message):
+        if message.startswith('DREW '):
+            self.live_drawn = int(message[5:])
+            # Waiting for the live view to catch up (after a seek or an edit)?
+            f = self.on_screen_frame()
+            if not self.live_visible and f not in self.cache.frames:
+                self.decide(f)
+            return
+        if message.startswith('STATS'):
+            print(f'[live] {message} {"shown" if self.live_visible else "parked"}', flush=True)
+
+    def push_live(self, ms=None):
+        if not self.live_ready:
+            return
+        if ms is None:
+            ms = self.signal_frame * FRAME_MS if self.signal_frame >= 0 else float(self.player.position())
+        playing = self.player.playbackState() == QMediaPlayer.PlayingState
+        self.live.page().runJavaScript(
+            f'sync({ms:.3f}, {str(playing).lower()}, {self.player.playbackRate()}, {time.time() * 1000:.3f})')
+
+    def place_live(self):
+        if not self.live_ready:
+            return
+        self.live_rect = self.view.mapFromScene(self.video_item.video_rect()).boundingRect()
+        if self.live_visible:
+            self.live.setGeometry(self.live_rect)
+        else:
+            self.live.setGeometry(self.live_rect.translated(-20000, 0))
+        self.live.raise_()
+
+    def live_current(self, frame):
+        """Has the live page drawn something near `frame`? Right after a seek it
+        still shows the old position for a few frames; show nothing until then."""
+        if self.player.playbackState() == QMediaPlayer.PlayingState:
+            lead = round(self.args.lead * self.player.playbackRate() / FRAME_MS)
+            return frame - 3 <= self.live_drawn <= frame + lead + 3
+        return self.live_drawn == frame
+
+    def decide(self, frame):
+        """Put the right overlay source in place for `frame` and, while playing,
+        the frame after it: the item may paint that one before we hear of it."""
+        self.decided_for = frame
+        frames = [frame]
+        if self.player.playbackState() == QMediaPlayer.PlayingState:
+            frames.append(frame + 1)
+        want_live = self.live_ready and any(f not in self.cache.frames for f in frames) and self.live_current(frame)
+        if want_live != self.live_visible:
+            self.live_visible = want_live
+            self.place_live()
+        self.video_item.update()
+
     # --- time --------------------------------------------------------------
     def on_video_frame(self, frame):
         if frame.isValid() and frame.startTime() >= 0:
             self.signal_frame = round(frame.startTime() / 1000 / FRAME_MS)
+            if self.seek_target is not None and abs(self.signal_frame - self.seek_target) <= 2:
+                self.seek_target = None
+        self.push_live()
+        f = self.current_video_frame()
+        self.decide(f)
+        # Counted per decoded frame, so it holds even when the window is not
+        # being repainted (covered, other workspace).
+        src = 'cache' if not self.live_visible and f in self.cache.frames else 'live' if self.live_visible else 'blank'
+        self.decoded[src] += 1
         self.cache.schedule()
 
     def current_video_frame(self):
@@ -307,13 +421,19 @@ class PlayerWidget(QWidget):
             return self.signal_frame
         return round(self.player.position() / FRAME_MS)
 
+    def on_screen_frame(self):
+        """The frame the overlay is for: the seek target while seeking."""
+        return self.seek_target if self.seek_target is not None else self.shown_frame
+
     def playhead_frame(self):
+        if self.seek_target is not None:
+            return self.seek_target
         return max(self.shown_frame, 0) if self.shown_frame >= 0 else round(self.player.position() / FRAME_MS)
 
     def wait_preroll(self):
         # Start once the first second is cached, like an editor's preroll.
-        if not self.cache.renderers or self.cache.ahead_count(0) >= 25:
-            print('preroll done, playing', flush=True)
+        if self.args.no_preroll or not self.cache.renderers or self.cache.ahead_count(0) >= 25:
+            print('playing' if self.args.no_preroll else 'preroll done, playing', flush=True)
             self.player.play()
         else:
             QTimer.singleShot(50, self.wait_preroll)
@@ -326,11 +446,22 @@ class PlayerWidget(QWidget):
             self.player.play()
 
     def seek(self, delta):
-        self.player.setPosition(max(0, self.player.position() + delta))
+        self.seek_to(max(0, self.player.position() + delta))
 
     def step(self, n):
         self.player.pause()
-        self.player.setPosition(max(0, int((self.playhead_frame() + n) * FRAME_MS)))
+        self.seek_to(max(0, int((self.playhead_frame() + n) * FRAME_MS)))
+
+    def seek_to(self, ms):
+        # A seek jumps past the one-frame lookahead: decide for the target now,
+        # and move the live page there while the decoder is still seeking.
+        # Point the renderers there too: the first frames at the target are
+        # often cached before the decoder delivers it.
+        self.seek_target = round(ms / FRAME_MS)
+        self.push_live(ms)
+        self.decide(self.seek_target)
+        self.player.setPosition(int(ms))
+        self.cache.schedule()
 
     def edit(self):
         cue = self.cache.cue_of(self.playhead_frame())
@@ -346,8 +477,9 @@ class PlayerWidget(QWidget):
         self.last_rendered = s['rendered']
         ms = sorted(s['render_ms'][-200:]) or [0]
         print(f'renders/s {new / 2:.1f}  ahead {self.cache.ahead_count(self.playhead_frame())}  '
-              f'hits {s["hits"]} misses {s["misses"]}  wrong {s["wrong"]} stale {s["stale"]}  '
-              f'render ms p50 {ms[len(ms) // 2]:.0f}  cached {len(self.cache.frames)}', flush=True)
+              f'cache {s["hits"]} live {s["live"]} wait {s["waits"]} miss {s["misses"]}  wrong {s["wrong"]} stale {s["stale"]}  '
+              f'render ms p50 {ms[len(ms) // 2]:.0f}  cached {len(self.cache.frames)}  '
+              f'decoded: cache {self.decoded["cache"]} live {self.decoded["live"]} blank {self.decoded["blank"]}', flush=True)
 
     def snap(self):
         path = self.snap_dir / f'cached_{self.snap_n:03d}.png'
@@ -363,6 +495,7 @@ class PlayerWidget(QWidget):
         size = self.view.viewport().size()
         self.scene.setSceneRect(0, 0, size.width(), size.height())
         self.video_item.setSize(QSizeF(size))
+        self.place_live()
 
 
 def main():
@@ -372,6 +505,11 @@ def main():
     parser.add_argument('--render-size', default='960x540')
     parser.add_argument('--ahead', type=float, default=4.0, help='seconds to keep rendered ahead of the playhead')
     parser.add_argument('--autoplay', action='store_true')
+    parser.add_argument('--no-preroll', action='store_true', help='start playing without waiting for the cache')
+    parser.add_argument('--no-live', action='store_true', help='no live fallback: uncached frames draw nothing')
+    parser.add_argument('--lead', type=float, default=80, help='ms the live overlay draws ahead while playing')
+    parser.add_argument('--seek-every', type=float, help='seek by --seek-by ms every S seconds')
+    parser.add_argument('--seek-by', type=int, default=3000, help='ms per automatic seek; negative goes back')
     parser.add_argument('--snap', metavar='DIR')
     parser.add_argument('--snap-every', type=float, default=1.3)
     parser.add_argument('--edit-at', type=float, help='edit the cue under the playhead after S seconds')

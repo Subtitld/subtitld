@@ -212,8 +212,23 @@ function draw(t) {
   [...code.children].forEach((b, k) => b.classList.toggle('on', (f >> k) & 1));
 }
 
+// With ?report=1 the page tells the host which frame it has drawn, so the host
+// can tell when the live overlay has caught up after a seek.
+const report = new URLSearchParams(location.search).get('report') === '1';
+let lastDrawn = -1;
+
 function tick() {
-  if (offline === null) draw(now());
+  if (offline === null) {
+    const t = now();
+    draw(t);
+    const f = frameOf(t);
+    if (report && f !== lastDrawn) {
+      lastDrawn = f;
+      // Qt shows Chromium's output a tick or two after the draw; like the
+      // offscreen captures, wait 3 animation frames before calling it shown.
+      requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => console.log('DREW ' + f))));
+    }
+  }
 
   frames++;
   const p = performance.now();
