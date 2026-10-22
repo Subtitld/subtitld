@@ -84,6 +84,21 @@ ana = manager('ana')
 done = []
 ana.bridge.finished.connect(lambda file_hash, path: done.append((file_hash, path)))
 
+print("subtitld.cc's TURN relay, as libdatachannel takes it")
+relays = [{'urls': ['turn:turn.example.org:3478?transport=udp', 'turns:turn.example.org:5349', 'turn:t.example.org?transport=tcp'],
+           'username': '1003600:7', 'credential': 'ab/c+d=='}]
+check('UDP only, credentials in the URL, encoded', collab_transfer.relay_urls(relays),
+      ('turn:1003600%3A7:ab%2Fc%2Bd%3D%3D@turn.example.org:3478?transport=udp',))
+check('nothing offered: nothing', collab_transfer.relay_urls([]), ())
+offered = []
+relaying = collab_transfer.Manager(lambda peer, payload: None, lambda h: None, lambda h: [], relays=lambda: offered)
+check("STUN alone without a relay", relaying.ice_servers, collab_transfer.ICE_SERVERS)
+offered[:] = relays
+check("then the relay too", len(relaying.ice_servers), 2)
+link = rtc.PeerConnection(relaying.ice_servers)
+check('libdatachannel takes it', link.id >= 0, True)
+link.close()
+
 print('a file from one collaborator')
 started = time.time()
 target = os.path.join(folder, 'received', 'original.mkv')

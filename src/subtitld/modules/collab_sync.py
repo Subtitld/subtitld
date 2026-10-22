@@ -66,6 +66,7 @@ class Engine:
         self.state = self.OFFLINE
         self.peer = None
         self.you = None
+        self.ice = []          # the TURN relay subtitld.cc offers ({urls, username, credential}), if any
         self.in_flight = set()
         # Batches that may have reached the server (sent on this or an earlier connection, or queued when
         # this app started): never merged into another, since the server may know them by their ID.
@@ -197,6 +198,7 @@ class Engine:
 
     def _on_welcome(self, message):
         self.peer, self.you = message.get('peer'), message.get('you')
+        self.ice = [relay for relay in message.get('ice') or [] if isinstance(relay, dict)]
 
     def _on_snapshot(self, message):
         """The whole document as of `seq`: the base starts again from it."""

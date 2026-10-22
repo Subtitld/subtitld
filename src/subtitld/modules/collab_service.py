@@ -157,7 +157,7 @@ def _start_transfers():
         return
     engine = _connection.engine
     _transfers = collab_transfer.Manager(lambda peer, payload: engine.rtc(peer, payload), _shareable,
-                                         engine.holders)
+                                         engine.holders, relays=lambda: engine.ice)
     _transfers.bridge.finished.connect(_received)
     _transfers.bridge.failed.connect(lambda file_hash, reason: _tell('media'))
     _transfers.bridge.news.connect(lambda file_hash: _tell('media'))

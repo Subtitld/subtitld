@@ -79,6 +79,30 @@ check('the other side sees it close', closed.wait(10), True)
 answerer.close()
 check('nothing left registered', (rtc._peers, rtc._channels), ({}, {}))
 
+print('a process that used a link still ends')
+import subprocess, textwrap
+script = textwrap.dedent(f"""
+    import sys
+    sys.path.insert(0, {str(Path(__file__).resolve().parents[1] / 'src')!r})
+    from subtitld.modules import rtc
+    a, b = rtc.PeerConnection(), rtc.PeerConnection()
+    a.on_description = lambda sdp, kind: b.set_remote_description(sdp, kind)
+    b.on_description = lambda sdp, kind: a.set_remote_description(sdp, kind)
+    a.on_candidate = lambda c, m: b.add_remote_candidate(c, m)
+    b.on_candidate = lambda c, m: a.add_remote_candidate(c, m)
+    b.on_channel = lambda channel: None
+    channel = a.create_channel('x')
+    assert channel.opened.wait(10)
+    channel.send(b'x' * 100000)
+    a.close()
+    b.close()
+""")
+try:
+    ended = subprocess.run([sys.executable, '-c', script], timeout=30).returncode == 0
+except subprocess.TimeoutExpired:
+    ended = False
+check('it exits on its own', ended, True)
+
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL PASS')
 sys.exit(1 if fails else 0)

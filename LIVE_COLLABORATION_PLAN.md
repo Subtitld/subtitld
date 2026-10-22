@@ -248,6 +248,37 @@ Optional. Either coturn on the VPS with a bandwidth cap, or a hosted TURN
 service. It's off by default for original media; small files (dubs, waveform)
 may use it.
 
+**Prepared (2026-10-22), not deployed.** The decision waits on tests across
+real networks.
+
+- subtitld.cc: `COLLAB_TURN_SECRET`, `COLLAB_TURN_URLS` (comma-separated)
+  and `COLLAB_TURN_TTL` (24 h). `collab.turn` makes coturn's shared-secret
+  credentials (`use-auth-secret`): the username is `<expiry>:<principal id>`,
+  the password a base64 HMAC-SHA1 of it with the secret. Nothing is stored.
+  The websocket's `welcome` carries them as `ice` (`[]` without a relay).
+- Subtitld keeps `ice` from the welcome (`collab_sync`). The transfer manager
+  adds the relays to its STUN server, credentials percent-encoded into the
+  URL (`turn:user:pass@host:port`), which libdatachannel decodes. ICE uses
+  the relay only when a direct link fails.
+- **UDP only.** libjuice, which every build uses, relays over UDP: no TURN
+  over TCP or TLS, so a network that blocks all UDP still gets no media.
+  `turns:` and `transport=tcp` URLs are skipped.
+- Tested with coturn 4.6.3 in Docker (`use-auth-secret`): credentials from
+  `collab.turn` accepted, a relay-only link (its only candidate `relay`)
+  carried 4 MB intact.
+- On the VPS it would be: coturn on UDP 3478, a small relay port range, a
+  bandwidth cap, and the secret in both coturn's config and `app.env`.
+
+**Found while testing:** a process that had used a link never ended.
+libdatachannel's cleanup ran while Python finalized, holding the GIL a last
+callback waited for. `rtc.py` now cleans up at exit (`atexit`, before
+finalization); test_rtc checks a process ends.
+
+**This network's NAT (2026-10-22):** endpoint-independent mapping (one local
+port reached two STUN servers as the same outside address and port), so
+links from here need only STUN. The hard case left to test is a symmetric
+NAT (mobile data, many corporate networks) on the other side.
+
 ## Desktop app
 
 ### Phase 0 groundwork

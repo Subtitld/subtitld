@@ -30,6 +30,7 @@ import shutil
 import struct
 import threading
 import time
+import urllib.parse
 import zlib
 
 from PySide6.QtCore import QObject, Signal
@@ -48,6 +49,22 @@ REFUSAL_SECONDS = 60
 # Links set up through a public STUN server, which only tells each side its own public address.
 ICE_SERVERS = ('stun:stun.cloudflare.com:3478',)
 COMPRESSIBLE = ('waveform', 'stem', 'dub', 'speaker_image')
+
+
+def relay_urls(relays):
+    """subtitld.cc's TURN relays ([{urls, username, credential}]) as libdatachannel takes them, credentials
+    in the URL (it decodes them). UDP only: libjuice relays nothing else."""
+    found = []
+    for relay in relays or []:
+        user = urllib.parse.quote(str(relay.get('username') or ''), safe='')
+        password = urllib.parse.quote(str(relay.get('credential') or ''), safe='')
+        urls = relay.get('urls') or []
+        for url in [urls] if isinstance(urls, str) else urls:
+            scheme, _, rest = str(url).partition(':')
+            if scheme.lower() != 'turn' or not rest or 'transport=tcp' in rest or 'transport=tls' in rest:
+                continue
+            found.append(f'turn:{user}:{password}@{rest}')
+    return tuple(found)
 
 
 class Bridge(QObject):
@@ -254,18 +271,24 @@ class Manager(QObject):
     `signal(peer, payload)` sends an `rtc` message (the engine's); `shareable(hash)` gives the local path of
     a file this app may send, or None; `holders(hash)` the peers who say they have one."""
 
-    def __init__(self, send_rtc, shareable, holders, parent=None):
+    def __init__(self, send_rtc, shareable, holders, relays=lambda: (), parent=None):
         super().__init__(parent)
         self.bridge = Bridge()
         self.bridge.outgoing.connect(send_rtc)
-        self._shareable, self._holders = shareable, holders
-        self.ice_servers = ICE_SERVERS
+        self._shareable, self._holders, self._relays = shareable, holders, relays
+        self.stun_servers = ICE_SERVERS
         self.links = {}        # session -> Link
         self.refusals = {}     # (peer, hash) -> when they refused
         self.early = {}        # session -> set-up messages that came before its offer
         self.downloads = {}    # hash -> Download
         self.lock = threading.RLock()
         self.bytes_sent = 0
+
+    @property
+    def ice_servers(self):
+        """STUN, and subtitld.cc's TURN relay when it offers one (a link goes through it only when a direct
+        one can't be made)."""
+        return tuple(self.stun_servers) + relay_urls(self._relays())
 
     # --- Signalling ----------------------------------------------------------------------------------
 

@@ -18,6 +18,7 @@ now and then once several shared the process. SUBTITLDCC_RTC_SCTP (buffers,rto,s
 look into that.
 """
 
+import atexit
 import ctypes
 import ctypes.util
 import logging
@@ -120,10 +121,20 @@ def library():
                 continue
             _setup(lib)
             _lib = lib
+            # Its threads stop when it is cleaned up, which otherwise happens while Python finalizes, holding
+            # the GIL a last callback waits for: the process never ends. Cleaned up before that instead (a
+            # ctypes call lets the GIL go).
+            atexit.register(_cleanup)
             log.info('rtc: libdatachannel from %s', path)
             return lib
         _lib = False
         return None
+
+
+def _cleanup():
+    if _lib:
+        _lib.rtcCleanup.restype = None
+        _lib.rtcCleanup()
 
 
 def available():
