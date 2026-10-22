@@ -3,6 +3,7 @@ import copy
 import re
 import hashlib
 import shutil
+import sys
 import threading
 import zipfile
 import xml.etree.ElementTree as ET
@@ -89,6 +90,72 @@ def _usfx_extract_dir(usfx_path):
     path = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'usfx', project_hash)
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _path_inside(base, relative):
+    """`relative` joined onto `base` and normalised, or None when the
+    result would land outside `base`. Paths in a project (dub and subclip
+    paths in subtitles.usf, member names in the zip) come from the file,
+    so a crafted one could say `../../somewhere/file.wav` and have the
+    audio engine read, or the extractor write, anywhere.
+
+    The check compares realpaths, so `..`, a drive letter and a symlink
+    are all resolved first; the path returned keeps `base` as given, not
+    its realpath, because the audio engine matches a dub's path to the
+    one the background extractor announces by plain string equality, and
+    both are built here."""
+    joined = os.path.normpath(os.path.join(base, relative))
+    root = os.path.realpath(base)
+    try:
+        if os.path.commonpath([root, os.path.realpath(joined)]) == root:
+            return joined
+    except ValueError:
+        # Another drive on Windows: certainly not inside.
+        pass
+    return None
+
+
+def _fsync(fd):
+    """Push what was written to `fd` past the OS cache onto the disk.
+    On macOS fsync() stops at the drive's own cache; F_FULLFSYNC goes all
+    the way, and falls back to fsync() where the filesystem refuses it."""
+    if sys.platform == 'darwin':
+        try:
+            import fcntl
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+            return
+        except (ImportError, AttributeError, OSError):
+            pass
+    os.fsync(fd)
+
+
+def _fsync_file(path):
+    """Flush `path`'s bytes to disk before it is renamed over a project:
+    without it a power loss right after the rename can leave a zero-length
+    or truncated file on some filesystems. Opened for writing because
+    Windows only flushes handles that can write."""
+    with open(path, 'r+b') as fh:
+        _fsync(fh.fileno())
+
+
+def _fsync_dir(path):
+    """Flush the directory entry a rename just changed, so the new name
+    survives a power loss too. POSIX only: Windows can't open a directory
+    with os.open. Best-effort — by now
+    the file is in place, and a filesystem that can't sync a directory
+    (some network mounts) shouldn't turn a good save into a failed one."""
+    if os.name == 'nt':
+        return
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        _fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _is_phase1_usfx_member(name):
@@ -238,6 +305,12 @@ class _USFXBackgroundExtractor(QThread):
                     dst.write(chunk)
                     self._extracted_bytes += len(chunk)
                     self._emit_progress()
+            # No fsync here, unlike `save_file`: this is a cache of the
+            # .usfx, and a file a power loss leaves empty or short fails
+            # the size check above on the next open and is extracted
+            # again. A sync per dub cost ~8 ms each on NVMe (2.3 s for
+            # 300 dubs, against 0.03 s without), all of it before the
+            # Save button unlocks.
             os.replace(tmp, target_path)
         except Exception:
             if os.path.exists(tmp):
@@ -270,9 +343,13 @@ class _USFXBackgroundExtractor(QThread):
                     continue
                 # Map directly: arcname `assets/dubs/uid.wav` lands at
                 # `<extract_dir>/assets/dubs/uid.wav` — same path the
-                # main-thread USFX parse stored in `dub['path']`.
-                target = os.path.join(self._extract_dir, name.replace('/', os.sep))
-                yield name, target
+                # main-thread USFX parse stored in `dub['path']`, built
+                # by the same helper. Member names come from the file,
+                # and unlike `zf.extract` this write doesn't clean them:
+                # one that climbs out of the extract dir is skipped.
+                target = _path_inside(self._extract_dir, name)
+                if target:
+                    yield name, target
         if 'assets/waveform.npy' in names:
             target = os.path.join(
                 session.PATH_SUBTITLD_USER_CACHE, 'waveform',
@@ -648,7 +725,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     raw = dub.pop('_embedded_bytes', None)
                     fmt = dub.pop('_embedded_format', 'wav')
                     if raw and dub.get('uid'):
-                        target = os.path.join(dub_cache_dir, f'{dub["uid"]}.{fmt}')
+                        # Both come from the file: cleaned like the USFX
+                        # arcnames, so a uid of `../../somewhere/x` with a
+                        # format of its choosing can't create a file
+                        # outside the cache. Real uids are hex, unchanged.
+                        target = os.path.join(dub_cache_dir, f'{_safe_asset_name(dub["uid"])}.{_safe_asset_name(fmt)}')
                         if not os.path.exists(target):
                             try:
                                 with open(target, 'wb') as wf:
@@ -730,11 +811,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         image_jobs.append((speaker_name, None, fallback))
             _start_speaker_image_loader(image_jobs)
 
+            # Relative paths are arcnames under the extract dir. One that
+            # climbs out of it (`../../somewhere/file.wav`) only comes
+            # from a crafted project: it's dropped, and the dub plays as
+            # silence, as it does when its file is missing.
             for segment in segments_list:
                 for dub in segment.get('dubbing', []) or []:
                     path = dub.get('path', '')
                     if path and not os.path.isabs(path):
-                        dub['path'] = os.path.join(extract_dir, path)
+                        inside = _path_inside(extract_dir, path)
+                        if inside:
+                            dub['path'] = inside
+                        else:
+                            dub.pop('path')
                     # Mirror the rewrite for subclip paths: the saver
                     # bundled each unique source under `assets/dubs/`
                     # and stored the arcname; map back to the extracted
@@ -745,7 +834,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         for key in ('path', 'raw_path'):
                             p = seg.get(key, '')
                             if p and not os.path.isabs(p):
-                                seg[key] = os.path.join(extract_dir, p)
+                                inside = _path_inside(extract_dir, p)
+                                if inside:
+                                    seg[key] = inside
+                                else:
+                                    seg.pop(key)
 
             # Resolve the project's source video. Priority: bundled video file →
             # original-path entry recorded in the manifest → same-folder match
@@ -1161,21 +1254,30 @@ def _ensure_dub_files_present(segments, existing_usfx_path):
         return
 
     missing = []  # list of (absolute_path, expected_arcname)
+    extract_root = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'usfx')
 
     def _consider(p):
         if not p or not isinstance(p, str):
             return
         if os.path.isfile(p):
             return
+        # Only ever rewrite files in an extract dir. An absolute path
+        # kept from the project as it was read (a legacy project, or a
+        # crafted one) can name any folder, and the bytes written come
+        # from the zip.
+        if not os.path.isabs(p) or not _path_inside(extract_root, p):
+            return
         # Derive the arcname by finding the `assets/dubs/...` substring
         # of the absolute path. `process_subtitles_file` builds the
         # session's dub paths as `<extract_dir>/assets/dubs/<file>`,
-        # so the suffix is stable across machines.
+        # so the suffix is stable across machines. Searched with `/`
+        # separators, so a Windows path matches too.
         marker = '/assets/dubs/'
-        idx = p.find(marker)
+        posix = p.replace(os.sep, '/')
+        idx = posix.find(marker)
         if idx < 0:
             return
-        arcname = p[idx + 1:].replace(os.sep, '/')
+        arcname = posix[idx + 1:]
         missing.append((p, arcname))
 
     for segment in segments:
@@ -1597,6 +1699,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         raise zipfile.BadZipFile(
                             f'CRC mismatch on member {bad!r} — refusing to overwrite destination',
                         )
+                # The bytes on disk, not just in the OS cache, before the
+                # rename: otherwise a power loss right after it can leave
+                # the project zero-length or truncated, the previous
+                # version already gone.
+                _fsync_file(tmp_path)
                 os.replace(tmp_path, final_file)
             except Exception:
                 if os.path.exists(tmp_path):
@@ -1605,6 +1712,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     except Exception:
                         pass
                 raise
+            # And the rename itself, recorded in the folder.
+            _fsync_dir(os.path.dirname(os.path.abspath(final_file)))
 
 
 def peek_usfx_video(usfx_path):
@@ -1618,11 +1727,15 @@ def peek_usfx_video(usfx_path):
         with zipfile.ZipFile(usfx_path, 'r') as zf:
             usfx_dir = os.path.dirname(os.path.abspath(usfx_path))
 
-            # Bundled video first.
+            # Bundled video first. `zf.extract` cleans the member name
+            # but the path checked and returned here is built from it as
+            # is, so a `..` in it could hand back any file as the video.
             for name in zf.namelist():
                 if name.startswith('assets/video/') and not name.endswith('/'):
                     extract_dir = _usfx_extract_dir(usfx_path)
-                    target = os.path.join(extract_dir, name)
+                    target = _path_inside(extract_dir, name)
+                    if not target:
+                        continue
                     if not os.path.isfile(target):
                         zf.extract(name, extract_dir)
                     if os.path.isfile(target):
