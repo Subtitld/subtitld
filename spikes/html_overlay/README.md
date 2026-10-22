@@ -57,3 +57,24 @@ editing the cue under the playhead; renderers hold 4 s ahead at 25 renders/s.
 Take the painted frame's time from `videoFrameChanged`, not from
 `videoSink().videoFrame()`: the sink is updated from the decoder thread and can
 be a frame ahead of what the item paints.
+
+## CPU and memory (`measure.py`)
+
+Whole process tree (app + QtWebEngineProcess children), steady playback of the
+25 fps test video after load and preroll. CPU is % of one core; memory is PSS.
+i7-13700T, Intel UHD 770, Wayland. QtWebEngine runs its GPU work in the main
+process, so "main" includes Chromium's compositing and the grabs.
+
+| scenario | CPU | PSS | vs. baseline |
+|---|---|---|---|
+| player only, no overlay | 21% | 272 MB | – |
+| live overlay (`spike.py`) | 38% | 480 MB | +17%, +208 MB |
+| cached, 4 views 540p, paused, cache full | 5% | 484 MB | idle |
+| cached, 1 view 540p, playing (can't keep up) | 35% | 504 MB | +14%, +232 MB |
+| cached, 2 views 540p, playing | 46% | 612 MB | +25%, +340 MB |
+| cached, 4 views 540p, playing | 50% | 646 MB | +29%, +374 MB |
+| cached, 8 views 540p, playing | 55% | 717 MB | +34%, +445 MB |
+| cached, 4 views 1080p, playing | 61% | 1048 MB | +40%, +776 MB |
+
+    .venv/bin/python spikes/html_overlay/measure.py --warmup 8 --duration 14 -- \
+        .venv/bin/python spikes/html_overlay/cached_player.py --autoplay --views 4

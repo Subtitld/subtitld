@@ -312,7 +312,7 @@ class PlayerWidget(QWidget):
 
     def wait_preroll(self):
         # Start once the first second is cached, like an editor's preroll.
-        if self.cache.ahead_count(0) >= 25:
+        if not self.cache.renderers or self.cache.ahead_count(0) >= 25:
             print('preroll done, playing', flush=True)
             self.player.play()
         else:
