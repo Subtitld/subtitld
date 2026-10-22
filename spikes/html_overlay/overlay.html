@@ -1,0 +1,236 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+
+  /* Everything is laid out on a 1920x1080 stage and scaled to the video rect,
+     so a style looks the same at any player size. */
+  #stage {
+    position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+    transform-origin: 0 0; font-family: "Montserrat", "DejaVu Sans", sans-serif;
+  }
+
+  #hud {
+    position: absolute; left: 30px; top: 140px; padding: 18px 20px;
+    background: rgba(160, 0, 90, .75); color: #fff;
+    font: 64px "DejaVu Sans Mono", monospace; white-space: pre;
+  }
+  #hud small { display: block; font-size: 26px; opacity: .85; }
+
+  /* Frame number in binary, 16 bits, white = 1, so a renderer test can read
+     back which frame an image actually holds. */
+  #code { position: absolute; left: 30px; top: 1040px; display: flex; }
+  #code i { width: 20px; height: 20px; background: #000; outline: 2px solid #f0f; }
+  #code i.on { background: #fff; }
+
+  .cue { position: absolute; left: 0; right: 0; text-align: center; }
+  .cue .ruler {
+    display: block; font: 24px "DejaVu Sans Mono", monospace; color: #ff0;
+    text-shadow: 0 0 4px #000; margin-top: 8px;
+  }
+
+  /* Styles below are what a shared style would contain. Keyframes are scrubbed
+     to media time, so percentages are fractions of the cue's duration. */
+
+  .classic { bottom: 90px; font-size: 64px; font-weight: 700; color: #fff;
+    -webkit-text-stroke: 8px #000; paint-order: stroke fill;
+    text-shadow: 0 6px 12px rgba(0,0,0,.6);
+    animation: fade var(--dur) linear both; }
+  @keyframes fade { 0% { opacity: 0 } 8% { opacity: 1 } 92% { opacity: 1 } 100% { opacity: 0 } }
+
+  .pop { bottom: 110px; font-size: 80px; font-weight: 900; color: #ffd400;
+    -webkit-text-stroke: 10px #1a1a1a; paint-order: stroke fill;
+    animation: pop var(--dur) cubic-bezier(.2,.9,.3,1.4) both; }
+  @keyframes pop { 0% { transform: scale(.2) rotate(-8deg); opacity: 0 }
+                   15% { transform: scale(1) rotate(0); opacity: 1 }
+                   88% { transform: scale(1); opacity: 1 }
+                   100% { transform: scale(.6); opacity: 0 } }
+
+  .karaoke { bottom: 90px; font-size: 68px; font-weight: 800; }
+  .karaoke .w { display: inline-block; margin: 0 .18em;
+    color: transparent; -webkit-background-clip: text; background-clip: text;
+    background-image: linear-gradient(90deg, #39f 50%, #fff 50%);
+    background-size: 200% 100%; background-position: 100% 0;
+    filter: drop-shadow(0 0 3px #000) drop-shadow(0 0 3px #000);
+    animation: wipe var(--wd) linear var(--wdelay) both; }
+  @keyframes wipe { to { background-position: 0 0 } }
+
+  .lower-third { left: 120px; right: auto; bottom: 150px; text-align: left;
+    color: #fff; overflow: hidden; }
+  .lower-third .bar { background: linear-gradient(90deg, #e3165b, #ff7a00);
+    padding: 18px 40px; font-size: 58px; font-weight: 800;
+    animation: slide var(--dur) cubic-bezier(.7,0,.2,1) both; }
+  .lower-third .role { background: rgba(20,20,20,.85); padding: 10px 40px;
+    font-size: 34px; letter-spacing: .12em; text-transform: uppercase;
+    animation: slide var(--dur) cubic-bezier(.7,0,.2,1) both; animation-delay: 150ms; }
+  @keyframes slide { 0% { transform: translateX(-110%) } 12% { transform: translateX(0) }
+                     88% { transform: translateX(0) } 100% { transform: translateX(-110%) } }
+
+  .cinema { top: 420px; font-size: 96px; font-weight: 300; color: #fff;
+    letter-spacing: .5em; text-shadow: 0 0 30px rgba(255,255,255,.5);
+    animation: track var(--dur) ease-out both; }
+  @keyframes track { 0% { letter-spacing: 1.2em; opacity: 0; filter: blur(12px) }
+                     30% { letter-spacing: .5em; opacity: 1; filter: blur(0) }
+                     85% { opacity: 1 } 100% { opacity: 0 } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="hud"></div>
+  <div id="code"></div>
+</div>
+<script>
+const FPS = 25, FRAME_MS = 1000 / FPS;
+const stage = document.getElementById('stage');
+const hud = document.getElementById('hud');
+const code = document.getElementById('code');
+code.innerHTML = '<i></i>'.repeat(16);
+
+// 2.5 s cues back to back, cycling through the styles. Boundaries fall on
+// frame 0, 62.5 -> each cue's first and last frame are printed under it so an
+// early or late swap shows against the burned-in frame number.
+const STYLES = ['classic', 'pop', 'karaoke', 'lower-third', 'cinema'];
+const CUES = [];
+for (let i = 0; i < 12; i++) {
+  const start = i * 2500, end = start + 2500;
+  CUES.push({ i, start, end, style: STYLES[i % STYLES.length] });
+}
+
+function frameOf(ms) { return Math.floor(ms / FRAME_MS + 1e-6); }
+
+function buildCue(c) {
+  const el = document.createElement('div');
+  el.className = 'cue ' + c.style;
+  el.style.setProperty('--dur', (c.end - c.start) + 'ms');
+  const ruler = `<span class="ruler">cue ${c.i} · frames ${frameOf(c.start)}–${frameOf(c.end - 1)}</span>`;
+  if (c.style === 'karaoke') {
+    const words = (c.text || 'every word lights up on time').split(' ');
+    const wd = (c.end - c.start - 400) / words.length;
+    el.innerHTML = words.map((w, k) =>
+      `<span class="w" style="--wd:${wd}ms;--wdelay:${200 + k * wd}ms">${w}</span>`).join('') + ruler;
+  } else if (c.style === 'lower-third') {
+    el.innerHTML = `<div class="bar">${c.text || 'Speaker Name'}</div><div class="role">Subtitld · lower third</div>${ruler}`;
+  } else if (c.style === 'cinema') {
+    el.innerHTML = `${c.text || 'CHAPTER ' + c.i}${ruler}`;
+  } else {
+    el.innerHTML = `${c.text || `Subtitle number ${c.i} in the “${c.style}” style`}${ruler}`;
+  }
+  return el;
+}
+
+// --- clock -----------------------------------------------------------------
+// The host calls sync() with the start time of every frame the video sink
+// shows. In "frame" mode the overlay shows exactly that time; in "extrap"
+// mode it runs its own clock from the last anchor between frames.
+let anchor = { media: 0, perf: performance.now(), playing: false, rate: 1 };
+let mode = 'frame';
+// The overlay reaches the screen a fixed time after the video frame it was
+// synced to. While playing, draw that far ahead to land on the same frame.
+let lead = Number(new URLSearchParams(location.search).get('lead') || 0);
+const lat = [];
+
+window.sync = function (mediaMs, playing, rate, sentAtWallMs) {
+  anchor = { media: mediaMs, perf: performance.now(), playing, rate };
+  lat.push(Date.now() - sentAtWallMs);
+};
+window.cueAt = function (t) { const c = CUES.find(c => t >= c.start && t < c.end); return c ? c.i : -1; };
+window.editCue = function (i, text) {
+  CUES[i].text = text;
+  const el = live.get(i);
+  if (el) { el.remove(); live.delete(i); }
+};
+window.toggleMode = function () { mode = mode === 'frame' ? 'extrap' : 'frame'; };
+window.nudgeLead = function (ms) { lead = Math.max(0, lead + ms); };
+
+// Offline rendering: the host sets the time itself and waits for the frame.
+let offline = null;
+window.renderAtAsync = function (t) {
+  offline = t;
+  draw(t);
+  return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(frameOf(t)))));
+};
+// Same, waiting `rafs` animation frames before reporting the frame as drawn.
+window.renderAt = function (t, id, rafs = 2) {
+  offline = t;
+  draw(t);
+  const wait = n => n ? requestAnimationFrame(() => wait(n - 1)) : console.log('RENDERED ' + id + ' ' + JSON.stringify(rects()));
+  wait(rafs);
+};
+
+function rects() {
+  const pad = 70 * innerWidth / 1920;   // strokes, shadows, glow
+  const els = [hud, code, ...live.values()];
+  return els.map(e => {
+    const r = e.getBoundingClientRect();
+    const x = Math.max(0, Math.floor(r.left - pad)), y = Math.max(0, Math.floor(r.top - pad));
+    return [x, y, Math.min(innerWidth, Math.ceil(r.right + pad)) - x, Math.min(innerHeight, Math.ceil(r.bottom + pad)) - y];
+  }).filter(r => r[2] > 0 && r[3] > 0);
+}
+
+function now() {
+  if (offline !== null) return offline;
+  if (!anchor.playing) return anchor.media;
+  if (mode === 'frame') return anchor.media + lead * anchor.rate;
+  const dt = (performance.now() - anchor.perf) * anchor.rate;
+  return anchor.media + lead * anchor.rate + Math.min(dt, 200);   // don't run away if frames stall
+}
+
+// --- render loop -----------------------------------------------------------
+const live = new Map();   // cue index -> element
+let frames = 0, lastReport = performance.now();
+
+function fmt(ms) {
+  const f = frameOf(ms), s = Math.floor(ms / 1000);
+  const p = (n, w = 2) => String(n).padStart(w, '0');
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}.${p(f % FPS)}`;
+}
+
+function draw(t) {
+  for (const c of CUES) {
+    const on = t >= c.start && t < c.end;
+    let el = live.get(c.i);
+    if (on && !el) {
+      el = buildCue(c);
+      stage.appendChild(el);
+      live.set(c.i, el);
+      el.getAnimations({ subtree: true }).forEach(a => a.pause());
+    } else if (!on && el) {
+      el.remove();
+      live.delete(c.i);
+      el = null;
+    }
+    // Scrub every animation in the cue to media time: pause, seek and frame
+    // step then behave like the video does.
+    if (el) el.getAnimations({ subtree: true }).forEach(a => { a.currentTime = t - c.start; });
+  }
+
+  hud.innerHTML = `HTML  ${String(frameOf(t)).padStart(5, '0')}  ${fmt(t)}` +
+                  `<small>mode ${offline !== null ? 'offline' : mode} · lead ${lead} ms · ${anchor.playing ? 'playing' : 'paused'} · rate ${anchor.rate}</small>`;
+  const f = frameOf(t);
+  [...code.children].forEach((b, k) => b.classList.toggle('on', (f >> k) & 1));
+}
+
+function tick() {
+  if (offline === null) draw(now());
+
+  frames++;
+  const p = performance.now();
+  if (p - lastReport >= 5000) {
+    const sorted = lat.splice(0).sort((a, b) => a - b);
+    const q = k => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(k * sorted.length))].toFixed(1) : '-';
+    console.log(`STATS raf_fps=${(frames * 1000 / (p - lastReport)).toFixed(1)} syncs=${sorted.length} ` +
+                `ipc_ms p50=${q(.5)} p95=${q(.95)} max=${q(1)}`);
+    frames = 0; lastReport = p;
+  }
+  requestAnimationFrame(tick);
+}
+
+function fit() { stage.style.transform = `scale(${innerWidth / 1920}, ${innerHeight / 1080})`; }
+addEventListener('resize', fit);
+fit();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
