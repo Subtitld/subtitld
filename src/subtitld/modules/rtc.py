@@ -46,6 +46,16 @@ class _Configuration(ctypes.Structure):
                 ('mtu', ctypes.c_int), ('maxMessageSize', ctypes.c_int)]
 
 
+class _Reliability(ctypes.Structure):
+    _fields_ = [('unordered', ctypes.c_bool), ('unreliable', ctypes.c_bool),
+                ('maxPacketLifeTime', ctypes.c_uint), ('maxRetransmits', ctypes.c_uint)]
+
+
+class _DataChannelInit(ctypes.Structure):
+    _fields_ = [('reliability', _Reliability), ('protocol', ctypes.c_char_p), ('negotiated', ctypes.c_bool),
+                ('manualStream', ctypes.c_bool), ('stream', ctypes.c_uint16)]
+
+
 class _SctpSettings(ctypes.Structure):
     _fields_ = [(name, ctypes.c_int) for name in (
         'recvBufferSize', 'sendBufferSize', 'maxChunksOnQueue', 'initialCongestionWindow', 'maxBurst',
@@ -146,6 +156,7 @@ def _setup(lib):
     lib.rtcSetRemoteDescription.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p]
     lib.rtcAddRemoteCandidate.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p]
     lib.rtcCreateDataChannel.argtypes = [ctypes.c_int, ctypes.c_char_p]
+    lib.rtcCreateDataChannelEx.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(_DataChannelInit)]
     settings = _SctpSettings()
     tuned = os.environ.get('SUBTITLDCC_RTC_SCTP', 'sack').split(',')
     if 'buffers' in tuned:
@@ -268,8 +279,17 @@ class PeerConnection:
     def add_remote_candidate(self, candidate, mid=''):
         return self.lib.rtcAddRemoteCandidate(self.id, candidate.encode(), mid.encode() if mid else None)
 
-    def create_channel(self, label):
-        dc = self.lib.rtcCreateDataChannel(self.id, label.encode())
+    def create_channel(self, label, unreliable=False):
+        """A channel to the other side. `unreliable`: unordered and never sent again, for what is late once
+        lost (voice): a message that doesn't arrive is gone, and none waits for another."""
+        if unreliable:
+            init = _DataChannelInit()
+            init.reliability.unordered = True
+            init.reliability.unreliable = True
+            init.reliability.maxRetransmits = 0
+            dc = self.lib.rtcCreateDataChannelEx(self.id, label.encode(), ctypes.byref(init))
+        else:
+            dc = self.lib.rtcCreateDataChannel(self.id, label.encode())
         if dc < 0:
             raise RuntimeError(f'rtcCreateDataChannel failed ({dc})')
         return DataChannel(dc, self)

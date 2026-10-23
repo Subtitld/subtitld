@@ -133,6 +133,11 @@ check('another version is not read', collab_state.read(b'{"version": 2, "doc": "
 check('nor something else', collab_state.read(b'not json'), None)
 
 collab_state.clear()
+# The projects opened above start background extractors (file_io): a QThread still running when the app
+# object goes aborts the process.
+for thread in (session.USFX_BACKGROUND_LOAD, session.SPEAKER_IMAGE_LOAD):
+    if thread is not None:
+        thread.wait(10000)
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL PASS')
 sys.exit(1 if fails else 0)

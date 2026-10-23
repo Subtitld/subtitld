@@ -5,7 +5,7 @@ Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import faulthandler, hashlib, os, sys, threading, time
+import ctypes, faulthandler, hashlib, os, sys, threading, time
 from pathlib import Path
 # A link that never settles shows where every thread is waiting, instead of hanging the suite.
 faulthandler.dump_traceback_later(50, exit=True)
@@ -71,6 +71,29 @@ elapsed = time.time() - started
 print(f'  32 MB in {elapsed:.2f} s ({32 / elapsed:.0f} MB/s, one process)')
 check('text as text, in order', received['text'], ['hello', 'end'])
 check('the bytes intact', (received['bytes'], received['hash'].hexdigest()), (len(blob), hashlib.sha256(blob).hexdigest()))
+
+print('an unreliable channel, for voice')
+voice_got = []
+voice_done = threading.Event()
+
+
+def voice_arrived(channel):
+    def message(data):
+        voice_got.append(data)
+        if len(voice_got) == 50:
+            voice_done.set()
+    channel.on_message = message
+
+
+answerer.on_channel = voice_arrived
+voice_channel = offerer.create_channel('voice', unreliable=True)
+check('it opens', voice_channel.opened.wait(10), True)
+reliability = rtc._Reliability()
+offerer.lib.rtcGetDataChannelReliability(voice_channel.id, ctypes.byref(reliability))
+check('unordered, never sent again', (reliability.unordered, reliability.unreliable, reliability.maxRetransmits), (True, True, 0))
+for i in range(50):
+    voice_channel.send(bytes([i]) * 100)
+check('on a good link, all of it arrives', (voice_done.wait(10), sorted(d[0] for d in voice_got)), (True, list(range(50))))
 
 print('closing')
 closed = remote['channel'].closed

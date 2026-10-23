@@ -706,6 +706,35 @@ Planned 2026-10-22. Decisions by the user:
 - Every person links to every other: with many in a call (past about six), a
   subtle note that links may suffer. No limit.
 
+**Voice spike (2026-10-22):**
+
+- `modules/opus.py`: libopus 1.6 through ctypes (48 kHz mono, 20 ms
+  frames, 32 kbit/s cap, speech, in-band FEC, DTX). `modules/voice.py`: a
+  3-byte header (version, 16-bit sequence) and the jitter buffer: 60 ms in
+  hand, a lost frame rebuilt from the next one's FEC, concealment otherwise,
+  quiet when the talker stops, at most 300 ms held. `rtc.create_channel(...,
+  unreliable=True)`: unordered, no retransmissions.
+- Two peers in one process, real pace, 10 s of speech-like audio:
+
+  | Loss | Rebuilt (FEC) | Concealed | Send → playback |
+  |---|---|---|---|
+  | 0% | 0 | 1 (the end) | 59 ms |
+  | 5% | all 25 | 2 | 59 ms |
+  | 15% | 65 of 77 | 13 | 79 ms |
+
+  19.6 kbit/s of Opus; encoding and decoding about 1 ms a frame each.
+- **Voice needs a link of its own.** With a bulk transfer on the same
+  connection, voice took 480 ms and 448 of 500 frames came too late or not
+  at all; on a separate connection, beside 92 MB/s of bulk, it stayed at 60
+  ms with every frame played.
+- libopus in the packages: the KDE Flatpak runtime has it; AUR `opus`; snap
+  `libopus0` from the base; Haiku `opus`; AppImage, Windows and macOS build
+  it with libdatachannel's scripts. Risk: `opus_encoder_ctl` is variadic,
+  which ctypes may pass wrongly on Apple Silicon: check in the macOS CI job
+  before voice ships there.
+- Not done yet: microphone and speakers (sounddevice), push-to-talk, the
+  voice link set-up, a test across two real networks.
+
 ### Why push-to-talk
 
 Subtitle editors play the video all the time (an open mic on speakers picks
