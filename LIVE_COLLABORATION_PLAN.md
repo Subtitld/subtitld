@@ -620,6 +620,84 @@ no PyAV) can still talk to it.
 **Cache:** files that arrive go into the existing cache under the same names
 (`get_cache_key`), so the rest of the app treats them as local results.
 
+## Editors' chat (text and voice)
+
+Planned 2026-10-22. Decisions by the user:
+
+- **No chat history on subtitld.cc.** The server passes messages on and keeps
+  none. Each Subtitld keeps the conversation; whoever wants to can save it in
+  the project (`.usfx`, `chat.json`), an option per project.
+- **Push-to-talk is the default** for voice; open mic is an option.
+- **No limit on people in a voice call**, but a subtle note when there are
+  many (each person links directly to every other).
+
+### Text
+
+- A `chat` websocket message: `{id, text, cue_id?, at_ms?, mentions?}` from
+  the app; the server adds the author and time and passes it to the others in
+  the project, stores nothing, and checks only length (2000 characters) and
+  rate.
+- **Catching up without a server copy.** Someone who joins (or comes back
+  online) asks the others for what they missed: a `chat_history` request goes
+  to one collaborator who is online, who answers that person directly
+  (relayed like `rtc`). Messages are kept by `id`, so copies from two people
+  merge. When no one who was there is online, what was said while you were
+  away is not there to get; the panel says so.
+- Messages written offline wait like edits and go out on reconnect.
+- A message can point at a line or a time: clicking it selects the line and
+  moves the playhead there. `@mentions`, an unread badge on the panel's
+  button, edits and deletions of your own messages (as messages, so everyone
+  applies them).
+- Saving in the project: off by default; when on, `chat.json` in the `.usfx`
+  holds the conversation as this person has it, and opening the project brings
+  it back.
+- Moderation: nothing stored means nothing to report on the server; a
+  "Remove from the project" for the owner stays as it is.
+
+### Voice
+
+- **Opus over a data channel**, not libdatachannel's media layer (which would
+  mean building SRTP in every package): a second, unreliable and unordered
+  channel ("voice", no retransmissions) on a link of its own, so a large media
+  transfer never delays it. Encrypted by DTLS like the rest; the server sees
+  nothing; TURN only when a direct link fails.
+- 48 kHz mono, 20 ms frames, Opus at 24–32 kbit/s with its in-band error
+  correction; a small jitter buffer (40–80 ms) and Opus's loss concealment for
+  missing frames.
+- Capture through sounddevice/PortAudio, as `recorder.py` does already;
+  playback on an output stream of its own. libopus through ctypes, bundled in
+  each package like libdatachannel (Haiku: a spike first).
+- **Push-to-talk (default):** a key you hold, configurable (Space plays the
+  video, so not that one: a function key, a mouse side button, or the
+  on-screen button), and a latch (click to stay on, click again to stop).
+  Only while Subtitld has the focus: Wayland allows no global key grabs.
+- **Open mic (option, "with headphones"):** voice-activity detection and noise
+  suppression, so typing and silence aren't sent. Echo cancellation only if
+  people ask for open mic on speakers; it would take Subtitld's own playback
+  as its reference, since Subtitld mixes it.
+- The video's sound ducks while someone speaks, in both modes.
+- Who is in the call and who is speaking show with the collaborators already
+  shown (panel, timeline colours).
+- Every person links to every other: with many in a call (past about six), a
+  subtle note that links may suffer. No limit.
+
+### Why push-to-talk
+
+Subtitle editors play the video all the time (an open mic on speakers picks
+up the film and the others' voices: echo) and type all the time (keyboard
+noise). Push-to-talk sends only what the person means to say, needs no echo
+cancellation, and uses no bandwidth in silence.
+
+### Order
+
+1. Text chat (server relay, catching up from collaborators, saving in the
+   project).
+2. Voice spike: libopus in the packages, Opus over an unreliable channel, a
+   jitter buffer; tested across two networks.
+3. Push-to-talk voice: who's in the call and speaking, devices, ducking.
+4. Open mic for headphones: voice detection, noise suppression.
+5. Echo cancellation, only if needed.
+
 ## Phases
 
 | Phase | Repo | Scope |
