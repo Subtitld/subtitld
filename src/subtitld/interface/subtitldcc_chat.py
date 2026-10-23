@@ -1,22 +1,50 @@
-"""The editors' chat of a shared project, in the subtitld.cc panel (modules.collab_service, collab_chat)
+"""The editors' chat of a shared project, in the subtitld.cc panel (modules.collab_service, collab_chat,
+collab_voice)
 
 Messages go through subtitld.cc and stay on the computers of the people in the project: this card shows the
 conversation as this Subtitld has it, sends what is typed (it waits while offline), and can point a message at
 the selected subtitle and the playhead, which a click on it goes back to. One's own messages can be edited and
 deleted. Keeping the conversation in the project file is a choice per project.
+
+The voice call is push-to-talk: a key held (F8 unless the person chose another; only while Subtitld has the
+focus), the Talk button held, or "stay on the air". The project's sound goes down while someone speaks.
 """
 
 import datetime
 import html
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QCheckBox, QLineEdit, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtGui import QKeySequence
+from PySide6.QtWidgets import (QApplication, QCheckBox, QKeySequenceEdit, QLineEdit, QScrollArea, QSizePolicy,
+                               QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitldcc_live import _button, _clear, _row, _text
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
 
 SHOWN = 200  # the latest messages shown (the rest stays kept)
+PTT_KEY = 'F8'
+DUCKED = 0.3  # the project's sound while a collaborator speaks
+
+
+def ptt_key():
+    return (session.CONFIG.get('collab') or {}).get('ptt_key') or PTT_KEY
+
+
+class _PushToTalk(QObject):
+    """The push-to-talk key, application-wide while in a call: held, talking; let go (or Subtitld loses the
+    focus), not."""
+
+    def eventFilter(self, _watched, event):
+        kind = event.type()
+        if kind in (QEvent.KeyPress, QEvent.KeyRelease) and not event.isAutoRepeat():
+            pressed = QKeySequence(event.keyCombination()).toString()
+            if pressed == ptt_key():
+                collab_service.voice_talk(kind == QEvent.KeyPress)
+                return True
+        elif kind == QEvent.ApplicationDeactivate:
+            collab_service.voice_talk(False)
+        return False
 
 
 def _clock(milliseconds):
@@ -75,6 +103,33 @@ class ChatCard(QWidget):
         self.keep.toggled.connect(collab_service.set_chat_saved)
         layout.addWidget(self.keep)
 
+        # Voice: push-to-talk.
+        self.voice_title = _text('subtitldcc_kicker')
+        layout.addWidget(self.voice_title)
+        self.voice_note = _text()
+        layout.addWidget(self.voice_note)
+        self.voice_people = _text()
+        self.voice_people.setTextFormat(Qt.RichText)
+        layout.addWidget(self.voice_people)
+        self.join_button = _button(primary=True)
+        self.join_button.clicked.connect(self.toggle_call)
+        self.talk_button = _button()
+        self.talk_button.pressed.connect(lambda: collab_service.voice_talk(True))
+        self.talk_button.released.connect(lambda: collab_service.voice_talk(False))
+        layout.addWidget(_row(self.join_button, self.talk_button))
+        self.latch = QCheckBox()
+        self.latch.toggled.connect(collab_service.voice_latch)
+        layout.addWidget(self.latch)
+        self.key_label = _text()
+        self.key_edit = QKeySequenceEdit()
+        self.key_edit.setMaximumSequenceLength(1)
+        self.key_edit.editingFinished.connect(self._key_chosen)
+        layout.addWidget(_row(self.key_label, self.key_edit, stretch=False))
+        self._ptt = _PushToTalk(self)
+        self._voice_timer = QTimer(self)
+        self._voice_timer.setInterval(150)
+        self._voice_timer.timeout.connect(self._voice_tick)
+
         self._redraw = QTimer(self)
         self._redraw.setSingleShot(True)
         self._redraw.setInterval(100)
@@ -89,11 +144,19 @@ class ChatCard(QWidget):
         self.attach.setToolTip(_('collab.chat_attach_tip'))
         self.keep.setText(_('collab.chat_keep'))
         self.keep.setToolTip(_('collab.chat_keep_tip'))
+        self.voice_title.setText(_('collab.voice_title'))
+        self.talk_button.setText(_('collab.voice_talk'))
+        self.talk_button.setToolTip(_('collab.voice_talk_tip'))
+        self.latch.setText(_('collab.voice_latch'))
+        self.key_label.setText(_('collab.voice_key'))
+        self.key_edit.setKeySequence(QKeySequence(ptt_key()))
         self.refresh()
 
     def _news(self, kind):
-        if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'document'):
+        if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'document', 'voice'):
             self._redraw.start()
+        if kind == 'voice':
+            self._voice_changed()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -119,6 +182,8 @@ class ChatCard(QWidget):
         self.keep.blockSignals(False)
         self.send_button.setText(_('collab.chat_save') if self._editing else _('collab.chat_send'))
         self.cancel_button.setVisible(bool(self._editing))
+
+        self._render_voice()
 
         bar = self.scroll.verticalScrollBar()
         at_end = bar.value() >= bar.maximum() - 4
@@ -168,6 +233,64 @@ class ChatCard(QWidget):
         if message.get('at_ms') is not None:
             parts.append(_timecode(message['at_ms']))
         return html.escape(' · '.join(parts))
+
+    def _render_voice(self):
+        available = collab_service.voice_available()
+        state = collab_service.voice_state()
+        on = state['on']
+        self.voice_note.setVisible(not available or state['many'])
+        self.voice_note.setText(_('collab.voice_unavailable') if not available else _('collab.voice_many'))
+        self.join_button.setEnabled(available)
+        self.join_button.setText(_('collab.voice_leave') if on else _('collab.voice_join'))
+        for widget in (self.talk_button, self.latch, self.key_label, self.key_edit):
+            widget.setVisible(on)
+        self.latch.blockSignals(True)
+        self.latch.setChecked(state['latched'])
+        self.latch.blockSignals(False)
+        people = []
+        for person in state['people']:
+            name = html.escape(person['name'] or person['handle'])
+            if person['me']:
+                name = _('collab.voice_you').format(name=name)
+            people.append(f'<b>● {name}</b>' if person['speaking'] else name)
+        self.voice_people.setVisible(bool(people))
+        self.voice_people.setText(_('collab.voice_people').format(people=', '.join(people)))
+        self.talk_button.setProperty('class', 'primary' if state['talking'] else '')
+        self.talk_button.style().unpolish(self.talk_button)
+        self.talk_button.style().polish(self.talk_button)
+
+    def toggle_call(self):
+        if collab_service.in_call():
+            collab_service.voice_leave()
+        elif not collab_service.voice_join():
+            self.panel.show_message(_('collab.voice_failed'), error=True)
+
+    def _voice_changed(self):
+        app = QApplication.instance()
+        if collab_service.in_call():
+            if not self._voice_timer.isActive():
+                app.installEventFilter(self._ptt)
+                self._voice_timer.start()
+        else:
+            app.removeEventFilter(self._ptt)
+            self._voice_timer.stop()
+            self._duck(1.0)
+
+    def _voice_tick(self):
+        """Who is speaking, shown; the project's sound down while someone is."""
+        state = collab_service.voice_state()
+        self._duck(DUCKED if state['someone_speaking'] else 1.0)
+        self._render_voice()
+
+    def _duck(self, level):
+        device = getattr(getattr(self.panel.window_, 'preview_panel_player', None), '_audio_device', None)
+        if device is not None and hasattr(device, 'duck'):
+            device.duck = level
+
+    def _key_chosen(self):
+        sequence = self.key_edit.keySequence().toString()
+        if sequence:
+            session.CONFIG.setdefault('collab', {})['ptt_key'] = sequence
 
     # --- Acting -------------------------------------------------------------------------------------
 

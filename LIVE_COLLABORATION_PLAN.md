@@ -735,6 +735,30 @@ Planned 2026-10-22. Decisions by the user:
 - Not done yet: microphone and speakers (sounddevice), push-to-talk, the
   voice link set-up, a test across two real networks.
 
+**Push-to-talk voice (2026-10-23), built, not yet tried with real
+microphones:**
+
+- `modules/collab_voice.py`: a Call with a Link (its own PeerConnection,
+  one unreliable channel) to each collaborator in it; the lower connection
+  ID offers; set-up as `rtc` messages marked `voice` (collab_service routes
+  them, media set-up goes to the transfers). The microphone (the recording
+  device chosen in the audio panel) and the speakers are sounddevice
+  streams, 48 kHz mono, 20 ms blocks; frames go out only while talking.
+- Who is in the call: presence carries `voice`; the call follows it, links
+  come and go with it. Who is speaking: frames heard in the last 300 ms.
+- The card (under the chat): Join/Leave, Hold to talk (the button), F8
+  (configurable, while Subtitld has the focus, through an application-wide
+  key filter that is on only during a call; losing the focus stops
+  talking), "Stay on the air", the people in the call with who speaks, the
+  note past six. The project's sound ducks to 30% while someone speaks
+  (audioengine's output callback, eased across the block).
+- Tested: two calls in one process over real links (push-to-talk gates the
+  frames, latch, who speaks, leaving), and the card (join, presence, key,
+  button, latch, speaking and ducking, the note, leaving).
+- Left: a try with real microphones and speakers; libopus in the AppImage,
+  Windows and macOS builds and in the snap, AUR and Haiku packages; the
+  macOS check of `opus_encoder_ctl` through ctypes.
+
 ### Why push-to-talk
 
 Subtitle editors play the video all the time (an open mic on speakers picks

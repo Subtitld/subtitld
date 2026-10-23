@@ -37,6 +37,7 @@ _transfer_timer = None
 _dub_registering = None  # the background call putting dub files on the media list
 _dub_asked = set()       # dub files asked for in this connection
 _chat_asked = set()      # collaborators asked for the chat so far, in this connection
+_call = None             # the voice call, while this person is in it (modules.collab_voice)
 CHAT_HISTORY_SENT = 500  # messages sent to someone who asks for the conversation
 DUB_DOWNLOADS = 4        # dub files coming in at once
 # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
@@ -79,6 +80,7 @@ def _stop():
     _editing, _last_presence, _media_files = None, None, []
     _dub_asked.clear()
     _chat_asked.clear()
+    voice_leave()
     if _transfer_timer is not None:
         _transfer_timer.stop()
     if _transfers is not None:
@@ -165,12 +167,24 @@ def _start_transfers():
     _transfers.bridge.finished.connect(_received)
     _transfers.bridge.failed.connect(lambda file_hash, reason: _tell('media'))
     _transfers.bridge.news.connect(lambda file_hash: _tell('media'))
-    engine.listeners.append(lambda kind, *args: kind == 'rtc' and _transfers is not None and _transfers.on_rtc(*args))
+    engine.listeners.append(_route_rtc)
     if _transfer_timer is None:
         _transfer_timer = QTimer()
         _transfer_timer.setInterval(2000)
         _transfer_timer.timeout.connect(_transfer_tick)
     _transfer_timer.start()
+
+
+def _route_rtc(kind, *args):
+    """Direct-link set-up: the voice call's (marked `voice`) or the media transfers'."""
+    if kind != 'rtc':
+        return
+    peer, payload = args
+    if payload.get('voice'):
+        if _call is not None:
+            _call.on_rtc(peer, payload)
+    elif _transfers is not None:
+        _transfers.on_rtc(peer, payload)
 
 
 def _transfer_tick():
@@ -435,7 +449,7 @@ def _presence_tick():
         stopped_typing()
     position = session.SUBTITLE.get('position')
     state = {'selected': selected_id, 'playhead': round(float(position), 2) if position is not None else None,
-             'editing': _editing}
+             'editing': _editing, 'voice': in_call()}
     if state != _last_presence:
         _last_presence = state
         _connection.engine.presence(state)
@@ -661,7 +675,9 @@ def _chat_news(kind, *args):
             _chat_changed()
     elif kind == 'state' and engine.state == engine.LIVE:
         _send_chat()
-    elif kind == 'peers' and engine.state == engine.LIVE and not _chat_asked and engine.peers:
+    if kind in ('peers', 'state'):
+        _voice_sync()
+    if kind == 'peers' and engine.state == engine.LIVE and not _chat_asked and engine.peers:
         # Someone else is here: ask one of them for what was said while this app was away.
         peer = sorted(engine.peers)[0]
         _chat_asked.add(peer)
@@ -747,3 +763,97 @@ def set_chat_saved(on):
         collab_state.STATE['save_chat'] = bool(on)
         session.set_unsaved(True)
         _tell('chat')
+
+
+# --- Editors' voice call (modules.collab_voice): push-to-talk, a link of its own with each person in it -------
+
+def voice_available():
+    """Whether this Subtitld can be in a call: libdatachannel, libopus and an audio library."""
+    from subtitld.modules import opus, rtc
+    try:
+        import sounddevice  # noqa: F401
+    except (ImportError, OSError):
+        return False
+    return rtc.available() and opus.available()
+
+
+def in_call():
+    return _call is not None and _call.on
+
+
+def voice_join():
+    """Join the project's call: the microphone and speakers open; links come as the others are found."""
+    global _call
+    from subtitld.modules import collab_transfer, collab_voice
+
+    if in_call() or _connection is None or not voice_available():
+        return False
+    engine = _connection.engine
+    _call = collab_voice.Call(lambda peer, payload: engine.rtc(peer, payload),
+                              relays=lambda: collab_transfer.relay_urls(engine.ice))
+    try:
+        _call.start(input_device=(session.CONFIG.get('record') or {}).get('device'))
+    except Exception as error:  # a device that won't open
+        log.warning('collab: could not open the audio devices for the call: %s', error)
+        _call.stop()
+        _call = None
+        return False
+    _presence_tick()
+    _voice_sync()
+    _tell('voice')
+    return True
+
+
+def voice_leave():
+    global _call
+    if _call is None:
+        return
+    call, _call = _call, None
+    call.stop()
+    if _connection is not None:
+        _presence_tick()
+    _tell('voice')
+
+
+def voice_talk(held):
+    """The push-to-talk key or button went down (True) or up."""
+    if in_call() and _call.held != bool(held):
+        _call.held = bool(held)
+        _tell('voice')
+
+
+def voice_latch(on):
+    """Talk without holding (and stop)."""
+    if in_call() and _call.latched != bool(on):
+        _call.latched = bool(on)
+        _tell('voice')
+
+
+def _voice_sync():
+    if not in_call() or _connection is None:
+        return
+    engine = _connection.engine
+    others = {peer for peer, info in engine.peers.items() if (info.get('state') or {}).get('voice')}
+    if engine.peer:
+        _call.sync(engine.peer, others)
+
+
+def voice_state():
+    """{'on', 'talking', 'latched', 'people': [{'handle', 'name', 'speaking', 'me'}], 'many'} for the panel."""
+    engine = _connection.engine if _connection is not None else None
+    on = in_call()
+    speaking = _call.speaking() if on else set()
+    people = []
+    if engine is not None:
+        for peer, info in sorted(engine.peers.items()):
+            if (info.get('state') or {}).get('voice'):
+                user = info.get('user') or {}
+                people.append({'handle': user.get('handle', ''), 'name': user.get('name') or user.get('handle', ''),
+                               'speaking': peer in speaking, 'me': False})
+    if on:
+        me = getattr(engine, 'you', None) or service.account() or {}
+        people.insert(0, {'handle': me.get('handle', ''), 'name': me.get('name') or me.get('handle', ''),
+                          'speaking': _call.talking, 'me': True})
+    from subtitld.modules import collab_voice
+    return {'on': on, 'talking': bool(on and _call.talking), 'latched': bool(on and _call.latched),
+            'people': people, 'many': len(people) > collab_voice.MANY, 'someone_speaking': bool(speaking)}

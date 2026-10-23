@@ -967,6 +967,12 @@ def _haiku_sound_card():
 
 
 class SoundDeviceAudioEngine:
+
+    # The project's sound while a collaborator speaks in the voice call (1.0: as it is), and where the last
+    # block ended (see _callback).
+    duck = 1.0
+    _duck_now = 1.0
+
     def __init__(self, samplerate=48000, blocksize=4096):
         # ARCHITECTURE
         # ============
@@ -1318,6 +1324,12 @@ class SoundDeviceAudioEngine:
         # is short, so a producer stall manifests as silence (not a
         # crash) and the consumer keeps draining smoothly afterwards.
         frames_from_ring = self._ring.pop_into(outdata, frames)
+        # Ducking (the editors' voice call): the project's sound goes down while someone speaks, eased across
+        # the block so the change doesn't click.
+        duck = self.duck
+        if duck != 1.0 or self._duck_now != 1.0:
+            outdata *= np.linspace(self._duck_now, duck, frames, dtype=np.float32)[:, None]
+            self._duck_now = duck
 
         dac = getattr(_time_info, 'outputBufferDacTime', 0.0) or 0.0
         now = getattr(_time_info, 'currentTime', 0.0) or 0.0

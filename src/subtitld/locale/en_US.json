@@ -1083,5 +1083,17 @@
     "collab.chat_delete": "Delete",
     "collab.chat_deleted": "Message deleted",
     "collab.chat_line": "Line {number}",
-    "collab.chat_line_gone": "a deleted subtitle"
+    "collab.chat_line_gone": "a deleted subtitle",
+    "collab.voice_title": "Voice",
+    "collab.voice_join": "Join the call",
+    "collab.voice_leave": "Leave the call",
+    "collab.voice_talk": "Hold to talk",
+    "collab.voice_talk_tip": "Your voice goes out while you hold this, or the push-to-talk key.",
+    "collab.voice_latch": "Stay on the air (talk without holding)",
+    "collab.voice_key": "Push-to-talk key (while Subtitld has the focus):",
+    "collab.voice_people": "In the call: {people}",
+    "collab.voice_you": "{name} (you)",
+    "collab.voice_many": "Many people in the call: everyone links to everyone else, so the sound may break up.",
+    "collab.voice_unavailable": "Voice isn't available in this Subtitld (it needs libdatachannel, libopus and sound devices).",
+    "collab.voice_failed": "The microphone or the speakers wouldn't open."
 }
