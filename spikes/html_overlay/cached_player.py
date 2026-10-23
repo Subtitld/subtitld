@@ -1,21 +1,27 @@
 """Spike: play with a prerendered HTML overlay drawn in the video item's paint().
 
-Hidden QWebEngineViews render overlay frames ahead of the playhead; the video
-item draws the cached overlay for exactly the frame it is painting, so there is
-no lead to tune. A frame that is not cached yet falls back to the live overlay
+Hidden QWebEngineViews render cue layers (one cue at one time inside it) ahead
+of the playhead; the video item draws the cached layers for exactly the frame it
+is painting, so there is no lead to tune. Layers are kept in RAM around the
+playhead and on disk (disk_cache.py) by a key of everything that changes the
+cue's pixels, so seeks, reruns and undo load them instead of rendering. A frame that is not cached yet falls back to the live overlay
 (the transparent view from spike.py, drawing --lead ms ahead). The source is
 chosen when a frame arrives and applied by moving the live view in or out of
 the video rect, which Qt shows in the same repaint as the frame.
 
     .venv/bin/python spikes/html_overlay/cached_player.py [video] [--views 4] [--render-size 960x540]
                                                           [--ahead 4] [--no-live] [--lead 80]
+                                                          [--no-disk] [--clear-disk] [--disk-limit MB]
                                                           [--snap DIR] [--quit-after S]
 
 Keys: space play/pause · ←/→ seek 1 s · ,/. step one frame · 1/2/3 rate 0.5/1/2
-      e edit the cue under the playhead · c clear the cache · q quit
+      e edit the cue under the playhead · u undo the edit · c clear the RAM cache · q quit
 """
 import argparse
+import hashlib
 import json
+import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -29,28 +35,40 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsScene, QGraphicsView,
                                QVBoxLayout, QWidget)
 
-from render_bench import read_code
+from disk_cache import DiskCache
 
 HERE = Path(__file__).resolve().parent
 FRAME_MS = 40.0
 RAFS = 3
 
 
-def merge_rects(rects):
-    """Union overlapping rects, so no pixel is drawn twice (alpha would stack)."""
-    rects = [QRect(*r) for r in rects]
-    merged = True
-    while merged:
-        merged = False
-        for i in range(len(rects)):
-            for j in range(i + 1, len(rects)):
-                if rects[i].intersects(rects[j]):
-                    rects[i] = rects[i].united(rects.pop(j))
-                    merged = True
-                    break
-            if merged:
-                break
-    return rects
+PAGE_VERSION = hashlib.sha1((HERE / 'overlay.html').read_bytes()).hexdigest()[:12]
+
+
+def frame_of(ms):
+    return math.floor(ms / FRAME_MS + 1e-6)     # same as frameOf() in the page
+
+
+def default_cues():
+    """The page's test cues, owned by the host so it can key and edit them."""
+    texts = {'karaoke': 'every word lights up on time', 'lower-third': 'Speaker Name'}
+    cues = []
+    for i in range(12):
+        style = ['classic', 'pop', 'karaoke', 'lower-third', 'cinema'][i % 5]
+        text = texts.get(style) or (f'CHAPTER {i}' if style == 'cinema'
+                                    else f'Subtitle number {i} in the “{style}” style')
+        cues.append({'i': i, 'start': i * 2500, 'end': i * 2500 + 2500, 'style': style, 'text': text})
+    return cues
+
+
+def read_stamp(img, scale):
+    """Frame number from the binary code drawn under the stage (?stamp=below)."""
+    n = 0
+    for k in range(16):
+        c = img.pixelColor(int((30 + 20 * k + 10) * scale), int(1100 * scale))
+        if c.lightness() > 128 and c.alpha() > 128:
+            n |= 1 << k
+    return n
 
 
 class ConsolePage(QWebEnginePage):
@@ -63,13 +81,13 @@ class ConsolePage(QWebEnginePage):
 
 
 class Renderer(QObject):
-    """One hidden view rendering one frame at a time."""
+    """One hidden view rendering one cue layer at a time."""
 
     def __init__(self, cache, size):
         super().__init__()
         self.cache = cache
         self.w, self.h = size
-        self.job = None          # (frame, generation)
+        self.job = None
         self.ready = False
 
         self.view = QWebEngineView()
@@ -81,9 +99,12 @@ class Renderer(QObject):
         self.view.resize(self.w, self.h)
         self.view.show()
         self.view.loadFinished.connect(self.on_loaded)
-        self.view.load(QUrl.fromLocalFile(str(HERE / 'overlay.html')))
+        url = QUrl.fromLocalFile(str(HERE / 'overlay.html'))
+        url.setQuery('hud=0&stamp=below')
+        self.view.load(url)
 
     def on_loaded(self, ok):
+        self.cache.send_cues(self.js)
         # Let fonts and first layout settle; first captures were wrong in the bench.
         QTimer.singleShot(800, self.warm)
 
@@ -94,96 +115,161 @@ class Renderer(QObject):
     def js(self, code):
         self.view.page().runJavaScript(code)
 
-    def render(self, frame, generation):
-        self.job = (frame, generation)
-        self.t0 = time.perf_counter()
-        self.js(f'renderAt({frame * FRAME_MS}, {frame}, {RAFS})')
+    def render(self, cue, frame, layer, version):
+        self.job = {'frame': frame, 'layer': layer, 'version': version, 't0': time.perf_counter()}
+        self.js(f'renderAt({frame * FRAME_MS}, {frame}, {RAFS}, {cue["i"]})')
 
     def on_console(self, message):
         if not message.startswith('RENDERED ') or self.job is None:
             return
-        _, frame_s, rects_s = message.split(' ', 2)
-        frame, generation = self.job
-        self.job = None
+        _, _frame, payload = message.split(' ', 2)
+        job, self.job = self.job, None
         img = self.view.grab().toImage()
-        self.cache.on_rendered(self, frame, generation, img, json.loads(rects_s), time.perf_counter() - self.t0)
+        self.cache.on_rendered(job, img, json.loads(payload)['cue'], time.perf_counter() - job['t0'])
 
 
-class FrameCache(QObject):
+class LayerCache(QObject):
+    """Rendered cue layers: RAM in front, the disk cache behind, renderers for the rest."""
+
     def __init__(self, player_widget, args):
         super().__init__()
         self.pw = player_widget
         self.ahead = int(args.ahead * 1000 / FRAME_MS)
         self.behind = int(1.0 * 1000 / FRAME_MS)
-        size = tuple(map(int, args.render_size.split('x')))
-        self.scale = size[0] / 1920
-        self.frames = {}          # frame -> [(QRectF normalised, QImage)]
-        self.generation = {}      # cue index -> edit count
-        self.renderers = [Renderer(self, size) for _ in range(args.views)]
-        self.stats = {'rendered': 0, 'wrong': 0, 'stale': 0, 'hits': 0, 'live': 0, 'waits': 0, 'misses': 0,
-                      'render_ms': []}
+        w, h = map(int, args.render_size.split('x'))
+        self.size = (w, h)
+        self.scale = w / 1920
+        self.stage_h = round(1080 * self.scale)
+        self.cues = default_cues()
+        self.cues_version = 0
+        self.undo = []
+        self.layers = {}          # (cue key, offset ms) -> (QRectF normalised or None, QImage or None)
+        self.loading = set()
+        self.disk = None
+        if not args.no_disk:
+            path = Path(args.disk_cache).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if args.clear_disk:
+                for suffix in ('', '-wal', '-shm'):
+                    Path(str(path) + suffix).unlink(missing_ok=True)
+            self.disk = DiskCache(path, args.disk_limit)
+            self.disk.loaded.connect(self.on_loaded)
+        # Taller than the stage by the strip the frame stamp is drawn in.
+        self.renderers = [Renderer(self, (w, round(1120 * self.scale))) for _ in range(args.views)]
+        self.stats = {'rendered': 0, 'wrong': 0, 'stale': 0, 'disk_hits': 0, 'hits': 0, 'live': 0, 'waits': 0,
+                      'misses': 0, 'render_ms': []}
 
-    @staticmethod
-    def cue_of(frame):
-        return int(frame * FRAME_MS // 2500)
+    # --- cues --------------------------------------------------------------
+    def key(self, cue):
+        """Everything that changes the cue's pixels. Same key, same pixels."""
+        if cue.get('_key') is None:
+            parts = {'page': PAGE_VERSION, 'size': self.size, 'style': cue['style'], 'text': cue['text'],
+                     'dur': cue['end'] - cue['start'], 'phase': round(cue['start'] % FRAME_MS, 3),
+                     # the test ruler under each cue prints its index and frames
+                     'ruler': [cue['i'], frame_of(cue['start']), frame_of(cue['end'] - 1)]}
+            cue['_key'] = hashlib.sha1(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:20]
+        return cue['_key']
 
-    def gen_of(self, frame):
-        return self.generation.get(self.cue_of(frame), 0)
+    def active(self, frame):
+        t = frame * FRAME_MS
+        return [(c, (self.key(c), int(round(t - c['start'])))) for c in self.cues if c['start'] <= t < c['end']]
 
-    def schedule(self):
-        head = self.pw.playhead_frame()
-        # Evict what is far from the playhead.
-        for f in [f for f in self.frames if f < head - self.behind or f > head + 2 * self.ahead]:
-            del self.frames[f]
-        in_flight = {r.job[0] for r in self.renderers if r.job}
-        todo = (f for f in range(head, head + self.ahead) if f not in self.frames and f not in in_flight)
+    def send_cues(self, js):
+        plain = [{k: v for k, v in c.items() if not k.startswith('_')} for c in self.cues]
+        js(f'setCues({json.dumps(plain)})')
+
+    def set_text(self, cue, text):
+        cue['text'] = text
+        cue['_key'] = None
+        self.cues_version += 1
         for r in self.renderers:
-            if r.ready and r.job is None:
-                f = next(todo, None)
-                if f is None:
-                    break
-                r.render(f, self.gen_of(f))
-
-    def on_rendered(self, renderer, frame, generation, img, rects, seconds):
-        if generation != self.gen_of(frame):
-            self.stats['stale'] += 1
-        elif read_code(img, self.scale) != frame:
-            self.stats['wrong'] += 1           # captured too early: render again
-        else:
-            w, h = img.width(), img.height()
-            crops = []
-            for r in merge_rects(rects):
-                crop = img.copy(r).convertToFormat(QImage.Format_ARGB32_Premultiplied)
-                crops.append((QRectF(r.x() / w, r.y() / h, r.width() / w, r.height() / h), crop))
-            self.frames[frame] = crops
-            self.stats['rendered'] += 1
-            self.stats['render_ms'].append(seconds * 1000)
-            if frame == self.pw.on_screen_frame():
-                self.pw.decide(frame)          # paused or seeking to a frame that just arrived
-        self.schedule()
-
-    def edit_cue(self, cue, text):
-        self.generation[cue] = self.generation.get(cue, 0) + 1
-        for r in self.renderers:
-            r.js(f'editCue({cue}, {json.dumps(text)})')
+            self.send_cues(r.js)
         if self.pw.live:
-            self.pw.live.page().runJavaScript(f'editCue({cue}, {json.dumps(text)})')
-        start, end = int(cue * 2500 / FRAME_MS), int((cue + 1) * 2500 / FRAME_MS)
-        for f in [f for f in self.frames if start <= f < end]:
-            del self.frames[f]
-        self.pw.decide(self.pw.shown_frame)
+            self.send_cues(self.pw.live.page().runJavaScript)
+        self.pw.decide(self.pw.on_screen_frame())
         self.schedule()
 
-    def clear(self):
-        self.frames.clear()
-        self.pw.decide(self.pw.shown_frame)
-        self.schedule()
+    def cue_at(self, frame):
+        found = self.active(frame)
+        return found[0][0] if found else None
+
+    # --- what the player asks ----------------------------------------------
+    def ready(self, frame):
+        return all(layer in self.layers for _, layer in self.active(frame))
+
+    def crops(self, frame):
+        """[(QRectF, QImage)] for the frame, or None if a layer is missing."""
+        out = []
+        for _, layer in self.active(frame):
+            entry = self.layers.get(layer)
+            if entry is None:
+                return None
+            if entry[1] is not None:
+                out.append(entry)
+        return out
 
     def ahead_count(self, head):
         n = 0
-        while head + n in self.frames:
+        while n < self.ahead and self.ready(head + n):
             n += 1
         return n
+
+    # --- filling -----------------------------------------------------------
+    def schedule(self):
+        head = self.pw.playhead_frame()
+        keep = {layer for f in range(head - self.behind, head + 2 * self.ahead) for _, layer in self.active(f)}
+        for layer in [l for l in self.layers if l not in keep]:
+            del self.layers[layer]
+        in_flight = {r.job['layer'] for r in self.renderers if r.job}
+        free = [r for r in self.renderers if r.ready and r.job is None]
+        for f in range(head, head + self.ahead):
+            for cue, layer in self.active(f):
+                if layer in self.layers or layer in self.loading or layer in in_flight:
+                    continue
+                if self.disk is not None and layer in self.disk.index:
+                    if len(self.loading) < 32:
+                        self.loading.add(layer)
+                        self.disk.get(layer)
+                    continue
+                if free:
+                    free.pop(0).render(cue, f, layer, self.cues_version)
+                    in_flight.add(layer)
+
+    def on_rendered(self, job, img, cue_rect, seconds):
+        frame, layer = job['frame'], job['layer']
+        if job['version'] != self.cues_version:
+            self.stats['stale'] += 1          # cues changed mid-render: pixels may not match the key
+        elif read_stamp(img, self.scale) != frame:
+            self.stats['wrong'] += 1           # captured too early: render again
+        else:
+            if cue_rect is None:
+                rect, crop = None, None
+            else:
+                x, y, w, h = cue_rect
+                crop = img.copy(QRect(x, y, w, h)).convertToFormat(QImage.Format_ARGB32_Premultiplied)
+                rect = QRectF(x / img.width(), y / self.stage_h, w / img.width(), h / self.stage_h)
+            self.layers[layer] = (rect, crop)
+            if self.disk is not None and layer not in self.disk.index:
+                self.disk.put(layer, rect, crop)
+            self.stats['rendered'] += 1
+            self.stats['render_ms'].append(seconds * 1000)
+            self.pw.layer_arrived()
+        self.schedule()
+
+    def on_loaded(self, layer, rect, img):
+        self.loading.discard(layer)
+        if rect is False:                      # trimmed from disk meanwhile
+            self.disk.index.discard(layer)
+        else:
+            self.layers[layer] = (rect, img)
+            self.stats['disk_hits'] += 1
+            self.pw.layer_arrived()
+        self.schedule()
+
+    def clear(self):
+        self.layers.clear()
+        self.pw.decide(self.pw.on_screen_frame())
+        self.schedule()
 
 
 class VideoItem(QGraphicsVideoItem):
@@ -210,7 +296,7 @@ class VideoItem(QGraphicsVideoItem):
         # The item can paint a new frame before on_video_frame has run for it,
         # so decide() looks a frame ahead and this only checks which source is
         # in place: the live view covers the frame, or the cache draws it.
-        crops = None if pw.live_visible else pw.cache.frames.get(frame)
+        crops = None if pw.live_visible else pw.cache.crops(frame)
         if crops is not None:
             painter.setRenderHint(painter.RenderHint.SmoothPixmapTransform)
             for norm, img in crops:
@@ -278,7 +364,7 @@ class PlayerWidget(QWidget):
         self.signal_frame = -1
         self.video_item.videoSink().videoFrameChanged.connect(self.on_video_frame)
 
-        self.cache = FrameCache(self, args)
+        self.cache = LayerCache(self, args)
 
         # Live fallback: always rendering; parked outside the view when the
         # cache has the frame. Parking keeps Chromium drawing (the widget stays
@@ -299,7 +385,7 @@ class PlayerWidget(QWidget):
             self.live.setFocusPolicy(Qt.NoFocus)
             self.live.loadFinished.connect(self.on_live_loaded)
             url = QUrl.fromLocalFile(str(HERE / 'overlay.html'))
-            url.setQuery(f'lead={args.lead}&report=1')
+            url.setQuery(f'lead={args.lead}&report=1&hud=0&stamp=none')
             self.live.load(url)
             self.player.playbackStateChanged.connect(lambda _s: self.push_live())
 
@@ -308,7 +394,7 @@ class PlayerWidget(QWidget):
             ',': lambda: self.step(-1), '.': lambda: self.step(1),
             '1': lambda: self.player.setPlaybackRate(0.5), '2': lambda: self.player.setPlaybackRate(1.0),
             '3': lambda: self.player.setPlaybackRate(2.0),
-            'E': self.edit, 'C': self.cache.clear, 'Q': self.close,
+            'E': self.edit, 'U': self.undo, 'C': self.cache.clear, 'Q': self.close,
         }
         for key, fn in keys.items():
             QShortcut(QKeySequence(key), self, activated=fn, context=Qt.ApplicationShortcut)
@@ -334,6 +420,12 @@ class PlayerWidget(QWidget):
             t.start()
         if args.edit_at:
             QTimer.singleShot(int(args.edit_at * 1000), self.edit)
+        if args.undo_at:
+            QTimer.singleShot(int(args.undo_at * 1000), self.undo)
+        if self.cache.disk is not None:
+            t = QTimer(self, interval=5000)
+            t.timeout.connect(self.cache.disk.maintain)
+            t.start()
         if args.quit_after:
             QTimer.singleShot(int(args.quit_after * 1000), self.close)
 
@@ -345,6 +437,7 @@ class PlayerWidget(QWidget):
             child.setAttribute(Qt.WA_AlwaysStackOnTop)
             child.setAttribute(Qt.WA_TranslucentBackground)
             child.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.cache.send_cues(self.live.page().runJavaScript)
         self.live_ready = True
         self.place_live()
         self.push_live()
@@ -355,7 +448,7 @@ class PlayerWidget(QWidget):
             self.live_drawn = int(message[5:])
             # Waiting for the live view to catch up (after a seek or an edit)?
             f = self.on_screen_frame()
-            if not self.live_visible and f not in self.cache.frames:
+            if not self.live_visible and not self.cache.ready(f):
                 self.decide(f)
             return
         if message.startswith('STATS'):
@@ -388,6 +481,13 @@ class PlayerWidget(QWidget):
             return frame - 3 <= self.live_drawn <= frame + lead + 3
         return self.live_drawn == frame
 
+    def layer_arrived(self):
+        """A layer came from a renderer or the disk: if it completes the frame
+        on screen (paused, seeking), switch to the cache now."""
+        f = self.on_screen_frame()
+        if self.cache.ready(f):
+            self.decide(f)
+
     def decide(self, frame):
         """Put the right overlay source in place for `frame` and, while playing,
         the frame after it: the item may paint that one before we hear of it."""
@@ -395,7 +495,7 @@ class PlayerWidget(QWidget):
         frames = [frame]
         if self.player.playbackState() == QMediaPlayer.PlayingState:
             frames.append(frame + 1)
-        want_live = self.live_ready and any(f not in self.cache.frames for f in frames) and self.live_current(frame)
+        want_live = self.live_ready and any(not self.cache.ready(f) for f in frames) and self.live_current(frame)
         if want_live != self.live_visible:
             self.live_visible = want_live
             self.place_live()
@@ -412,7 +512,7 @@ class PlayerWidget(QWidget):
         self.decide(f)
         # Counted per decoded frame, so it holds even when the window is not
         # being repainted (covered, other workspace).
-        src = 'cache' if not self.live_visible and f in self.cache.frames else 'live' if self.live_visible else 'blank'
+        src = 'cache' if not self.live_visible and self.cache.ready(f) else 'live' if self.live_visible else 'blank'
         self.decoded[src] += 1
         self.cache.schedule()
 
@@ -464,22 +564,35 @@ class PlayerWidget(QWidget):
         self.cache.schedule()
 
     def edit(self):
-        cue = self.cache.cue_of(self.playhead_frame())
+        cue = self.cache.cue_at(self.playhead_frame())
+        if cue is None:
+            return
         self.edits += 1
-        text = f'Edited {self.edits}× while playing'
-        print(f'edit cue {cue} at frame {self.playhead_frame()}', flush=True)
-        self.cache.edit_cue(cue, text)
+        self.cache.undo.append((cue, cue['text']))
+        print(f'edit cue {cue["i"]} at frame {self.playhead_frame()}', flush=True)
+        self.cache.set_text(cue, f'Edited {self.edits}× while playing')
+
+    def undo(self):
+        if self.cache.undo:
+            cue, text = self.cache.undo.pop()
+            print(f'undo cue {cue["i"]} at frame {self.playhead_frame()}', flush=True)
+            self.cache.set_text(cue, text)
 
     # --- reporting ---------------------------------------------------------
     def print_stats(self):
         s = self.cache.stats
-        new = s['rendered'] - self.last_rendered
-        self.last_rendered = s['rendered']
-        ms = sorted(s['render_ms'][-200:]) or [0]
-        print(f'renders/s {new / 2:.1f}  ahead {self.cache.ahead_count(self.playhead_frame())}  '
-              f'cache {s["hits"]} live {s["live"]} wait {s["waits"]} miss {s["misses"]}  wrong {s["wrong"]} stale {s["stale"]}  '
-              f'render ms p50 {ms[len(ms) // 2]:.0f}  cached {len(self.cache.frames)}  '
-              f'decoded: cache {self.decoded["cache"]} live {self.decoded["live"]} blank {self.decoded["blank"]}', flush=True)
+        line = (f'rendered {s["rendered"]} disk_hits {s["disk_hits"]}  ahead {self.cache.ahead_count(self.playhead_frame())}  '
+                f'ram layers {len(self.cache.layers)}  wrong {s["wrong"]} stale {s["stale"]}  '
+                f'decoded: cache {self.decoded["cache"]} live {self.decoded["live"]} blank {self.decoded["blank"]}')
+        disk = self.cache.disk
+        if disk is not None:
+            size, blobs, layers = disk.summary()
+            d = disk.stats
+            lm = sorted(d['load_ms'][-300:]) or [0]
+            wm = sorted(d['write_ms'][-300:]) or [0]
+            line += (f'  | disk ({disk.codec}) {size / 2**20:.1f} MB, {layers} layers, {blobs} images  '
+                     f'load ms p50 {lm[len(lm) // 2]:.1f}  write ms p50 {wm[len(wm) // 2]:.1f}')
+        print(line, flush=True)
 
     def snap(self):
         path = self.snap_dir / f'cached_{self.snap_n:03d}.png'
@@ -489,6 +602,8 @@ class PlayerWidget(QWidget):
     def closeEvent(self, event):
         # The hidden render views count as open windows; quit explicitly.
         super().closeEvent(event)
+        if self.cache.disk is not None:
+            self.cache.disk.close()            # let pending writes finish
         QApplication.quit()
 
     def fit_video(self):
@@ -514,6 +629,12 @@ def main():
     parser.add_argument('--snap-every', type=float, default=1.3)
     parser.add_argument('--edit-at', type=float, help='edit the cue under the playhead after S seconds')
     parser.add_argument('--quit-after', type=float)
+    parser.add_argument('--undo-at', type=float, help='undo the last edit after S seconds')
+    cache_home = os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache')
+    parser.add_argument('--disk-cache', default=str(Path(cache_home) / 'subtitld-spike' / 'overlay.sqlite'))
+    parser.add_argument('--no-disk', action='store_true', help='RAM only, as before')
+    parser.add_argument('--clear-disk', action='store_true', help='start with an empty disk cache')
+    parser.add_argument('--disk-limit', type=int, default=512, help='disk cache size limit in MB')
     args = parser.parse_args()
     app = QApplication(sys.argv)
     w = PlayerWidget(args.video, args)

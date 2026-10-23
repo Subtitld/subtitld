@@ -88,6 +88,15 @@ const hud = document.getElementById('hud');
 const code = document.getElementById('code');
 code.innerHTML = '<i></i>'.repeat(16);
 
+// ?hud=0 hides the test HUD. ?stamp=below draws the frame code under the
+// 1920x1080 stage (the host makes the view taller), so a capture can be
+// checked without the code ever being part of the stage; ?stamp=none drops it.
+const params = new URLSearchParams(location.search);
+if (params.get('hud') === '0') hud.style.display = 'none';
+const stampMode = params.get('stamp') || 'stage';
+if (stampMode === 'below') code.style.top = '1090px';
+if (stampMode === 'none') code.style.display = 'none';
+
 // 2.5 s cues back to back, cycling through the styles. Boundaries fall on
 // frame 0, 62.5 -> each cue's first and last frame are printed under it so an
 // early or late swap shows against the burned-in frame number.
@@ -135,6 +144,13 @@ window.sync = function (mediaMs, playing, rate, sentAtWallMs) {
   anchor = { media: mediaMs, perf: performance.now(), playing, rate };
   lat.push(Date.now() - sentAtWallMs);
 };
+// The host can own the cue list: [{i, start, end, style, text}, ...].
+window.setCues = function (list) {
+  CUES.length = 0;
+  list.forEach(c => CUES.push(c));
+  for (const el of live.values()) el.remove();
+  live.clear();
+};
 window.cueAt = function (t) { const c = CUES.find(c => t >= c.start && t < c.end); return c ? c.i : -1; };
 window.editCue = function (i, text) {
   CUES[i].text = text;
@@ -152,10 +168,14 @@ window.renderAtAsync = function (t) {
   return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(frameOf(t)))));
 };
 // Same, waiting `rafs` animation frames before reporting the frame as drawn.
-window.renderAt = function (t, id, rafs = 2) {
+// With `only`, just that cue is drawn, and its own rect is reported as `cue`.
+let only = null;
+window.renderAt = function (t, id, rafs = 2, onlyCue = null) {
   offline = t;
+  only = onlyCue;
   draw(t);
-  const wait = n => n ? requestAnimationFrame(() => wait(n - 1)) : console.log('RENDERED ' + id + ' ' + JSON.stringify(rects()));
+  const wait = n => n ? requestAnimationFrame(() => wait(n - 1))
+    : console.log('RENDERED ' + id + ' ' + JSON.stringify({ rects: rects(), cue: only === null ? null : cueRect(only) }));
   wait(rafs);
 };
 
@@ -167,6 +187,18 @@ function rects() {
     const x = Math.max(0, Math.floor(r.left - pad)), y = Math.max(0, Math.floor(r.top - pad));
     return [x, y, Math.min(innerWidth, Math.ceil(r.right + pad)) - x, Math.min(innerHeight, Math.ceil(r.bottom + pad)) - y];
   }).filter(r => r[2] > 0 && r[3] > 0);
+}
+
+// Rect of one cue's element, padded, clipped to the stage, in viewport pixels.
+function cueRect(i) {
+  const el = live.get(i);
+  if (!el) return null;
+  const scale = innerWidth / 1920, pad = 70 * scale;
+  const r = el.getBoundingClientRect();
+  const x = Math.max(0, Math.floor(r.left - pad)), y = Math.max(0, Math.floor(r.top - pad));
+  const w = Math.min(innerWidth, Math.ceil(r.right + pad)) - x;
+  const h = Math.min(Math.round(1080 * scale), Math.ceil(r.bottom + pad)) - y;
+  return w > 0 && h > 0 ? [x, y, w, h] : null;
 }
 
 function now() {
@@ -189,7 +221,7 @@ function fmt(ms) {
 
 function draw(t) {
   for (const c of CUES) {
-    const on = t >= c.start && t < c.end;
+    const on = t >= c.start && t < c.end && (offline === null || only === null || c.i === only);
     let el = live.get(c.i);
     if (on && !el) {
       el = buildCue(c);
@@ -242,7 +274,11 @@ function tick() {
   requestAnimationFrame(tick);
 }
 
-function fit() { stage.style.transform = `scale(${innerWidth / 1920}, ${innerHeight / 1080})`; }
+function fit() {
+  // With the stamp below the stage the view is taller than 16:9: scale by width.
+  const sy = stampMode === 'below' ? innerWidth / 1920 : innerHeight / 1080;
+  stage.style.transform = `scale(${innerWidth / 1920}, ${sy})`;
+}
 addEventListener('resize', fit);
 fit();
 requestAnimationFrame(tick);

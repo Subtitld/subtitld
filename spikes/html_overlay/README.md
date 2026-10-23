@@ -89,6 +89,60 @@ stats line also counts the source per decoded frame (`decoded:`), which
 holds when the window is not being repainted (covered or on another
 workspace); the per-paint counts do not.
 
+## Disk cache (`disk_cache.py`)
+
+The cache unit is a cue layer: one cue at one time inside it, rendered alone
+(`renderAt(t, id, rafs, cue)`), keyed by `(cue key, offset ms)`. The cue key
+hashes everything that changes its pixels: page version (hash of
+`overlay.html`), render size, style, text, duration, sub-frame phase, and the
+test ruler. An edit is a new key; undo finds the old one. Frames without cues
+need no render; overlapping cues composite layer by layer.
+
+Layers live in RAM around the playhead and in SQLite on disk (default
+`~/.cache/subtitld-spike/overlay.sqlite`): a `layers` table (key, offset, crop
+rect, image hash, last used) and a `blobs` table storing each distinct image
+once, so a cue's static hold is one image. Images are raw premultiplied ARGB32
+(what Qt draws from) compressed with zstd level 1 (standard library from Python
+3.14, else the `zstandard` package), falling back to zlib level 1; each image
+records its codec. Older cache layouts are dropped (`PRAGMA user_version`). One writer thread encodes and
+writes, two reader threads load and decode; a queued signal hands results to
+the GUI thread. Every 5 s, reads are recorded and the cache is trimmed to
+`--disk-limit` MB, least recently used first. Renderers draw the frame stamp
+under the stage (`?stamp=below`) so captures are still checked without the
+stamp being stored; the test HUD is hidden (`?hud=0`) since its per-frame
+counter would make every frame unique.
+
+On the dev machine, 540p, the 30 s test video:
+
+- cold: 750 layers rendered, 5.6 MB on disk (6.9 MB as PNG), 278 distinct images
+- warm: 0 renders, 750 layers from disk, load p50 0.2 ms
+
+Image formats on those 278 images (~125k px each, 134 MB raw; one thread):
+
+| format | size | encode | decode |
+|---|---|---|---|
+| Qt PNG q70 (first version) | 7.1 MB | 3.7 ms | 1.0 ms |
+| Qt PNG max compression | 5.9 MB | 36 ms | 1.0 ms |
+| Qt WebP lossless | 3.6 MB | 20 ms | 0.45 ms |
+| JPEG XL lossless, effort 1 | 5.9 MB | 1.8 ms | 2.6 ms |
+| AVIF "lossless" (not exact) | 9.4 MB | 20 ms | 10.5 ms |
+| QOI | 10.1 MB | 0.23 ms | 0.13 ms |
+| raw + LZ4 | 8.0 MB | 0.20 ms | 0.14 ms |
+| **raw + zstd 1** | 5.8 MB | 0.30 ms | 0.19 ms |
+| raw + zlib 1 (fallback) | 7.0 MB | 1.3 ms | 0.47 ms |
+
+Seeking every 1.5 s with an edit at 5 s and its undo at 9 s:
+
+| | RAM only | with disk cache (warm) |
+|---|---|---|
+| seek back 3 s | 48 live + 33 blank frames | 3 live + 8 blank |
+| seek forward 3 s | 41 live + 26 blank | 6 live + 2 blank |
+
+Only the edited cue renders; the undo loads from disk.
+
+    .venv/bin/python spikes/html_overlay/cached_player.py --autoplay            # warm after one run
+    .venv/bin/python spikes/html_overlay/cached_player.py --autoplay --clear-disk
+
 ## CPU and memory (`measure.py`)
 
 Whole process tree (app + QtWebEngineProcess children), steady playback of the
