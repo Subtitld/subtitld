@@ -6,6 +6,7 @@ import shutil
 import sys
 import threading
 import zipfile
+import time
 import xml.etree.ElementTree as ET
 from docx import Document
 import datetime
@@ -299,6 +300,10 @@ class _USFXBackgroundExtractor(QThread):
         try:
             with zf.open(arcname) as src, open(tmp, 'wb') as dst:
                 while True:
+                    if self.isInterruptionRequested():
+                        # Subtitld is quitting: drop the partial file
+                        # below; the next open extracts it again.
+                        raise InterruptedError
                     chunk = src.read(self._CHUNK)
                     if not chunk:
                         break
@@ -389,6 +394,8 @@ class _USFXBackgroundExtractor(QThread):
                     return
                 # Second pass: stream each member with progress per chunk.
                 for arc, target in pairs:
+                    if self.isInterruptionRequested():
+                        return
                     try:
                         size = zf.getinfo(arc).file_size
                     except KeyError:
@@ -415,11 +422,46 @@ def _start_speaker_image_loader(items):
     into `session.SPEAKERS` regardless of which project is loaded — but
     since `session.SPEAKERS` is reset on each open, stale writes from a
     previous load would be no-ops for absent names)."""
-    if not items:
+    if not items or _quitting:
         return
     loader = _SpeakerImageLoader(items)
     session.SPEAKER_IMAGE_LOAD = loader
+    _track_background_loader(loader)
     loader.start()
+
+
+# Every project-open loader started and not yet seen finished, the ones a
+# later open replaced on `session` included, so `stop_background_loaders`
+# can wait for each and none is garbage-collected mid-run.
+_background_loaders = []
+# Set by `stop_background_loaders`: events still run after aboutToQuit, and
+# a loader started then would outlive the wait.
+_quitting = False
+
+
+def _track_background_loader(thread):
+    _background_loaders[:] = [t for t in _background_loaders if not t.isFinished()]
+    _background_loaders.append(thread)
+
+
+def stop_background_loaders(milliseconds=5000):
+    """Subtitld is quitting: ask the project-open loaders (the USFX
+    asset extractor, the speaker thumbnail decoder) to stop, and wait for
+    them. A QThread destroyed while still running aborts the process
+    ("QThread: Destroyed while thread '' is still running"), which is what
+    closing Subtitld right after opening a big project did. Both check for
+    the request between chunks/thumbnails, so the wait is short; it is
+    bounded all the same so a stuck read can't hang the quit. Saves are
+    waited for in full: one cut short would lose the user's work."""
+    global _quitting
+    _quitting = True
+    for thread in _background_loaders:
+        thread.requestInterruption()
+    deadline = time.monotonic() + milliseconds / 1000
+    for thread in list(_background_loaders):
+        thread.wait(max(0, int((deadline - time.monotonic()) * 1000)))
+    _background_loaders[:] = [t for t in _background_loaders if not t.isFinished()]
+    wait_for_save_threads()
 
 
 class _SpeakerImageLoader(QThread):
@@ -447,6 +489,8 @@ class _SpeakerImageLoader(QThread):
         # at the top of file_io.py. The previous lazy import here was
         # the bug that broke `speaker_image_ready` deliveries.
         for name, image_bytes, fallback_path in self._items:
+            if self.isInterruptionRequested():
+                return
             qimg = None
             try:
                 if image_bytes:
@@ -504,11 +548,13 @@ class ThreadGenerateHashOfVideo(QThread):
         if self.filepath and os.path.isfile(self.filepath):
             md5_object = hashlib.md5()
             block_size = 128 * md5_object.block_size
-            file_object = open(self.filepath, 'rb')
-            chunk = file_object.read(block_size)
-            while chunk:
-                md5_object.update(chunk)
+            with open(self.filepath, 'rb') as file_object:
                 chunk = file_object.read(block_size)
+                while chunk:
+                    if self.isInterruptionRequested():
+                        return
+                    md5_object.update(chunk)
+                    chunk = file_object.read(block_size)
 
             md5_hash = md5_object.hexdigest()
 
@@ -900,7 +946,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # extract_dir for dubs. Most USFX zips have at least dubs, so
             # the cache_key absence (e.g. video not yet resolved) is no
             # longer a reason to skip the whole background pass.
-            if current_key or extract_dir:
+            if (current_key or extract_dir) and not _quitting:
                 extractor = _USFXBackgroundExtractor(
                     subtitle_file, current_key, extract_dir=extract_dir,
                 )
@@ -920,6 +966,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 except Exception:
                     pass
                 session.USFX_BACKGROUND_LOAD = extractor
+                _track_background_loader(extractor)
                 extractor.start()
 
             if not isinstance(session.FORMAT, dict):
