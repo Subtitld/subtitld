@@ -81,7 +81,8 @@ class Engine:
         self.have_hashes = None     # the media files this app can send (sent again after reconnecting)
         self.peers_have = {}        # peer -> set of media hashes they can send
         self.media = {}             # hash -> the project's media list entry, as it is announced
-        self.listeners = []      # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts', 'lock'
+        self.listeners = []      # callback(kind, ...): 'state', 'document', 'peers', 'locks', 'conflicts', 'lock',
+        #                          'media', 'rtc', 'chat', 'chat_history_request', 'chat_history'
 
     # --- Connection ------------------------------------------------------------------------------
 
@@ -179,6 +180,23 @@ class Engine:
         if self.state == self.LIVE:
             self.send({'type': 'rtc', 'to': peer, 'payload': payload})
 
+    def chat(self, message):
+        """Send an editors' chat message (modules.collab_chat). False when not connected: it waits."""
+        if self.state != self.LIVE:
+            return False
+        self.send({'type': 'chat', 'message': message})
+        return True
+
+    def chat_history_request(self, peer):
+        """Ask one collaborator for the conversation so far."""
+        if self.state == self.LIVE:
+            self.send({'type': 'chat_history_request', 'to': peer})
+
+    def chat_history(self, peer, messages):
+        """Answer a collaborator who asked for the conversation."""
+        if self.state == self.LIVE:
+            self.send({'type': 'chat_history', 'to': peer, 'messages': messages})
+
     def locked_by(self, cue_id):
         """Who else is typing in subtitle `cue_id`: their {'handle', 'name'}, or None."""
         peer = self.locks.get(cue_id)
@@ -274,6 +292,15 @@ class Engine:
 
     def _on_rtc(self, message):
         self._tell('rtc', message.get('from'), message.get('payload') or {})
+
+    def _on_chat(self, message):
+        self._tell('chat', message.get('message') or {})
+
+    def _on_chat_history_request(self, message):
+        self._tell('chat_history_request', message.get('from'))
+
+    def _on_chat_history(self, message):
+        self._tell('chat_history', message.get('from'), message.get('messages') or [])
 
     def _on_left(self, message):
         self.peers.pop(message.get('peer'), None)

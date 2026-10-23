@@ -171,6 +171,15 @@ engine.on_message({'type': 'welcome', 'peer': 'me', 'you': {'handle': 'ana'}, 's
 engine.on_message({'type': 'changes', 'batches': []})
 check('then presence and the lock go', [m['type'] for m in sent], ['hello', 'presence', 'lock'])
 check("the relay subtitld.cc offers is kept", engine.ice, [relay])
+heard = []
+engine.listeners.append(lambda kind, *args: heard.append((kind, *args)))
+engine.on_message({'type': 'chat', 'message': {'id': 'm1'}})
+engine.on_message({'type': 'chat_history_request', 'from': 'p2'})
+engine.on_message({'type': 'chat_history', 'from': 'p2', 'messages': [{'id': 'm0'}]})
+check('chat messages go to the listeners', [h for h in heard if h[0].startswith('chat')],
+      [('chat', {'id': 'm1'}), ('chat_history_request', 'p2'), ('chat_history', 'p2', [{'id': 'm0'}])])
+del sent[:]
+check('a chat message goes while live', (engine.chat({'id': 'm2'}), sent[-1]), (True, {'type': 'chat', 'message': {'id': 'm2'}}))
 engine.on_message({'type': 'lock', 'cue_id': 'c1', 'granted': False, 'holder': 'p2'})
 engine.lock('c1')
 engine.on_message({'type': 'lock', 'cue_id': 'c1', 'granted': False, 'holder': 'p2'})

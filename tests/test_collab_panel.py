@@ -116,7 +116,10 @@ class FakeConnection(QObject):
         self.engine = types.SimpleNamespace(peers={}, conflicts=[], state='live', media={}, have_hashes=[],
                                             listeners=[], holders=lambda file_hash: ['p1'] if file_hash in HELD else [],
                                             have=lambda hashes: calls.append(('have', list(hashes))),
-                                            rtc=lambda peer, payload: None)
+                                            rtc=lambda peer, payload: None, you={'handle': 'ana', 'name': 'Ana'},
+                                            LIVE='live', chat=lambda message: calls.append(('chat', message)) or True,
+                                            chat_history_request=lambda peer: calls.append(('chat_history_request', peer)),
+                                            chat_history=lambda peer, messages: calls.append(('chat_history', peer, len(messages))))
 
     @property
     def state(self):
@@ -269,6 +272,69 @@ check('then on, and saved with the project', (collab_service.sharing_media(), co
 check('a Get button', wait(lambda: buttons('Get')), True)
 card.share_media.setChecked(False)
 
+print('the editors\' chat')
+chat = panel.chat_card
+check('shown while shared', chat.isVisible(), True)
+segments = session.SUBTITLE['segments']
+
+
+def engine_says(kind, *args):
+    for listener in list(connection.engine.listeners):
+        listener(kind, *args)
+    connection.changed.emit(kind if kind != 'chat_history' else 'chat')
+
+
+def stamped(message, handle, at):
+    return dict(message, author={'handle': handle, 'name': handle.title()}, at=at, sig='s')
+
+
+from subtitld.modules import collab_chat  # noqa: E402
+theirs = stamped(collab_chat.say('Is line 2 too fast?', cue_id=segments[1]['id'], at_ms=3500), 'joao', 1000)
+engine_says('chat', theirs)
+labels = lambda: [w.text() for w in chat.findChildren(QLabel)]  # noqa: E731
+check('their message, pointing at the line and the moment',
+      wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t in labels())), True)
+check('unread until read', collab_service.chat_unread() in (0, 1), True)
+session.SUBTITLE['selected'] = segments[0]
+chat.attach.setChecked(True)
+chat.field.setText('Splitting it')
+chat.send()
+sent = [c[1] for c in calls if c[0] == 'chat']
+check('sent, pointing at the selected line', (sent[-1]['text'], sent[-1]['cue_id']), ('Splitting it', segments[0]['id']))
+check('shown as sending until it comes back', wait(lambda: any('sending…' in t for t in labels())), True)
+engine_says('chat', stamped(sent[-1], 'ana', 2000))
+check('then sent, with Edit and Delete for my own',
+      wait(lambda: not any('sending…' in t for t in labels()) and any('Splitting it' in t and 'Edit' in t for t in labels())),
+      True)
+check('not theirs: no Edit there', any('Is line 2 too fast?' in t and 'Edit' in t for t in labels()), False)
+chat._link(f"edit:{sent[-1]['id']}")
+check('editing fills the field', (chat.field.text(), chat.send_button.text()), ('Splitting it', 'Save'))
+chat.field.setText('Splitting it in two')
+chat.send()
+edit = [c[1] for c in calls if c[0] == 'chat'][-1]
+check('an edit, of that message', (edit['action'], edit['reply_to'], edit['text']), ('edit', sent[-1]['id'], 'Splitting it in two'))
+engine_says('chat', stamped(edit, 'ana', 3000))
+check('shown edited', wait(lambda: any('Splitting it in two' in t and 'edited' in t for t in labels())), True)
+forged = stamped(collab_chat.edit(theirs['id'], 'joao never said this'), 'ana', 4000)
+engine_says('chat', forged)
+check("someone else's message can't be edited", any('joao never said this' in t for t in labels()), False)
+chat._link(f"go:{segments[1]['id']}:3500")
+check('a click on the place selects that line', session.SUBTITLE['selected'] is segments[1], True)
+calls[:] = [c for c in calls if c[0] not in ('chat_history_request', 'chat_history')]
+collab_service._chat_asked.clear()
+engine_says('peers')
+check('someone here: asks them for what was said before', ('chat_history_request', 'p1') in calls, True)
+engine_says('chat_history_request', 'p1')
+check('and answers anyone who asks', any(c[0] == 'chat_history' and c[1] == 'p1' for c in calls), True)
+earlier = stamped(collab_chat.say('From before you came'), 'joao', 500)
+engine_says('chat_history', 'p1', [earlier, theirs])
+check('what they had joins, once, in order', [m['text'] for m in collab_service.chat_messages()][:2],
+      ['From before you came', 'Is line 2 too fast?'])
+check('not kept in the project unless asked', 'chat.json' in collab_state.export(), False)
+chat.keep.setChecked(True)
+check('then kept in the project file', ('chat.json' in collab_state.export(), collab_state.STATE['save_chat']), (True, True))
+chat.keep.setChecked(False)
+
 print('offline')
 connection.engine.state = 'offline'
 collab_state.queue([{'op': 'meta.set', 'field': 'language', 'value': 'pt'}])
@@ -276,6 +342,15 @@ connection.changed.emit('state')
 waiting = len(collab_state.STATE['pending'])
 check('changes wait (the one above, and using their text)', (waiting, card.status.text()),
       (2, f'Offline. Your changes are kept ({waiting} waiting) and sent when the connection is back.'))
+connection.engine.chat = lambda message: False  # offline: nothing goes
+before = len([c for c in calls if c[0] == 'chat'])
+collab_service.chat_say('Written offline')
+check('a chat message written offline waits', [m['text'] for m in collab_state.STATE['chat_outbox']], ['Written offline'])
+connection.engine.chat = lambda message: calls.append(('chat', message)) or True
+connection.engine.state = 'live'
+engine_says('state')
+check('and goes when the connection is back', [c[1]['text'] for c in calls if c[0] == 'chat'][before:], ['Written offline'])
+connection.engine.state = 'offline'
 
 print('a sign-in from before co-editing')
 connection.failed.emit('missing_scope')

@@ -10,7 +10,7 @@ import logging
 import os
 import time
 
-from subtitld.modules import collab_state, cue_ids, docops, history, session
+from subtitld.modules import collab_chat, collab_state, cue_ids, docops, history, session
 from subtitld.modules import subtitldcc_service as service
 
 log = logging.getLogger(__name__)
@@ -36,6 +36,8 @@ _transfers = None        # collab_transfer.Manager, while connected (where libda
 _transfer_timer = None
 _dub_registering = None  # the background call putting dub files on the media list
 _dub_asked = set()       # dub files asked for in this connection
+_chat_asked = set()      # collaborators asked for the chat so far, in this connection
+CHAT_HISTORY_SENT = 500  # messages sent to someone who asks for the conversation
 DUB_DOWNLOADS = 4        # dub files coming in at once
 # callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
 # project became shared or stopped being), 'failed' (the connection gave up: see failure()).
@@ -76,6 +78,7 @@ def _stop():
     global _connection, _editing, _last_presence, _media_files, _transfers
     _editing, _last_presence, _media_files = None, None, []
     _dub_asked.clear()
+    _chat_asked.clear()
     if _transfer_timer is not None:
         _transfer_timer.stop()
     if _transfers is not None:
@@ -103,6 +106,7 @@ def connect():
     url = collab_client.websocket_url(collab_state.STATE.get('server') or service.base_url(), collab_state.STATE['doc'])
     _connection = collab_client.Connection(url, token, service.client(token=token).user_agent)
     _connection.changed.connect(_connection_news)
+    _connection.engine.listeners.append(_chat_news)
     _connection.failed.connect(_failed)
     _connection.start()
     _start_presence()
@@ -635,3 +639,111 @@ def stop_sharing(manage, on_success, on_failure):
         return client.remove_member(doc_id, me or client.me()['handle'])
 
     return service.call(work, left, on_failure)
+
+
+# --- Editors' chat (modules.collab_chat): passed on by subtitld.cc, kept here --------------------------------
+
+def _chat_news(kind, *args):
+    """The engine's chat messages, and its connection news the chat needs (main thread)."""
+    state = collab_state.STATE
+    engine = _connection.engine if _connection is not None else None
+    if engine is None:
+        return
+    if kind == 'chat':
+        message = args[0]
+        state['chat_outbox'] = [m for m in state['chat_outbox'] if m['id'] != message.get('id')]
+        collab_chat.merge(state['chat'], [message])
+        _chat_changed()
+    elif kind == 'chat_history_request' and args[0]:
+        engine.chat_history(args[0], state['chat'][-CHAT_HISTORY_SENT:])
+    elif kind == 'chat_history':
+        if collab_chat.merge(state['chat'], args[1]):
+            _chat_changed()
+    elif kind == 'state' and engine.state == engine.LIVE:
+        _send_chat()
+    elif kind == 'peers' and engine.state == engine.LIVE and not _chat_asked and engine.peers:
+        # Someone else is here: ask one of them for what was said while this app was away.
+        peer = sorted(engine.peers)[0]
+        _chat_asked.add(peer)
+        engine.chat_history_request(peer)
+
+
+def _chat_changed():
+    if collab_state.STATE.get('save_chat'):
+        session.set_unsaved(True)
+    _tell('chat')
+
+
+def _send_chat():
+    for message in list(collab_state.STATE['chat_outbox']):
+        if _connection is None or not _connection.engine.chat(message):
+            break
+
+
+def _chat_post(message):
+    collab_state.STATE['chat_outbox'].append(message)
+    _send_chat()
+    _tell('chat')
+    return message['id']
+
+
+def chat_messages():
+    """The conversation as it shows (modules.collab_chat.conversation), oldest first."""
+    state = collab_state.STATE
+    return collab_chat.conversation(state['chat'], state['chat_outbox'])
+
+
+def chat_say(text, cue_id=None, at_ms=None, reply_to=None):
+    """Say something in the editors' chat; it waits while offline. Returns the message's ID, or None."""
+    text = (text or '').strip()
+    if not text or not collab_state.shared():
+        return None
+    return _chat_post(collab_chat.say(text, cue_id=cue_id, at_ms=at_ms, reply_to=reply_to))
+
+
+def chat_edit(message_id, text):
+    text = (text or '').strip()
+    if text and collab_state.shared():
+        _chat_post(collab_chat.edit(message_id, text))
+
+
+def chat_delete(message_id):
+    if collab_state.shared():
+        _chat_post(collab_chat.delete(message_id))
+
+
+def chat_me():
+    """This person's handle, as the chat's messages name them."""
+    engine = _connection.engine if _connection is not None else None
+    return (getattr(engine, 'you', None) or service.account() or {}).get('handle', '')
+
+
+def chat_unread():
+    state = collab_state.STATE
+    return collab_chat.unread(state['chat'], state.get('chat_read'), chat_me())
+
+
+def chat_mark_read():
+    state = collab_state.STATE
+    latest = max((message['at'] for message in state['chat']), default=0)
+    if latest > (state.get('chat_read') or 0):
+        state['chat_read'] = latest
+        _tell('chat')
+
+
+def chat_alone():
+    """No collaborator is online: what was said while this app was away can't be had now."""
+    engine = _connection.engine if _connection is not None else None
+    return engine is None or engine.state != 'live' or not engine.peers
+
+
+def chat_saved():
+    return bool(collab_state.STATE.get('save_chat'))
+
+
+def set_chat_saved(on):
+    """Keep the conversation in the project file (chat.json), or not."""
+    if bool(on) != chat_saved():
+        collab_state.STATE['save_chat'] = bool(on)
+        session.set_unsaved(True)
+        _tell('chat')

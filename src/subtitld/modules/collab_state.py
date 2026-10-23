@@ -9,6 +9,9 @@ A project shared through subtitld.cc for live co-editing remembers, in its
                     (`base`): what the server's later changes are applied to
     pending.jsonl   the changes made here that the server has not yet
                     confirmed, one batch per line, oldest first
+    chat.json       the editors' chat as this person has it, only when they
+                    chose to keep it in the project (`save_chat`;
+                    modules.collab_chat)
 
 so that changes made offline, or before a crash, are sent when it is next
 connected. Each batch is {'client_op_id', 'base_seq', 'ops'}: an ID the
@@ -25,18 +28,22 @@ import copy
 import json
 import secrets
 
-from subtitld.modules import journal
+from subtitld.modules import collab_chat, journal
 
 VERSION = 1
 STATE_MEMBER = 'collab.json'
 BASE_MEMBER = 'collab-base.json'
 PENDING_MEMBER = 'pending.jsonl'
+CHAT_MEMBER = 'chat.json'
 
 # Names the batches made in this run of the app: with a counter, unique.
 _RUN = secrets.token_hex(6)
 
 # share_media: the person lets collaborators get this project's media from this computer (off by default).
-STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False}
+# chat: the editors' chat as this app has it (modules.collab_chat), chat_outbox: messages not sent yet,
+# chat_read: when this person last read it (ms), save_chat: keep the chat in the project file (off by default).
+STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False,
+         'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False}
 _counter = 0
 _muted = 0
 # What the project file being opened holds, until its open is done.
@@ -53,12 +60,13 @@ def start(doc, server, seq=0, base=None):
     server's change `seq`, when its document was `base` (a docops document;
     None until the server sends it)."""
     STATE.update({'doc': doc, 'server': server, 'seq': int(seq), 'base': copy.deepcopy(base), 'pending': [],
-                  'share_media': False})
+                  'share_media': False, 'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False})
 
 
 def clear():
     """The open project is not shared (any more)."""
-    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False})
+    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False,
+                  'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False})
 
 
 def queue(ops):
@@ -105,17 +113,21 @@ def export():
     thread."""
     if not shared():
         return {}
+    save_chat = bool(STATE.get('save_chat'))
     head = {'version': VERSION, 'doc': STATE['doc'], 'server': STATE['server'], 'seq': STATE['seq'],
-            'share_media': bool(STATE.get('share_media'))}
+            'share_media': bool(STATE.get('share_media')), 'save_chat': save_chat,
+            'chat_read': int(STATE.get('chat_read') or 0) if save_chat else 0}
     lines = ''.join(json.dumps(batch, ensure_ascii=False) + '\n' for batch in STATE['pending'])
     members = {STATE_MEMBER: json.dumps(head, ensure_ascii=False, indent=2).encode('utf-8'),
                PENDING_MEMBER: lines.encode('utf-8')}
     if STATE.get('base') is not None:
         members[BASE_MEMBER] = json.dumps(STATE['base'], ensure_ascii=False).encode('utf-8')
+    if save_chat:
+        members[CHAT_MEMBER] = collab_chat.export(list(STATE.get('chat') or []))
     return members
 
 
-def read(state_bytes, pending_bytes=b'', base_bytes=None):
+def read(state_bytes, pending_bytes=b'', base_bytes=None, chat_bytes=None):
     """The state in a project file's members, or None when they do not hold
     one this version understands. A pending line that does not read (a write
     cut short) ends the queue there. A base that does not read is none: the
@@ -145,8 +157,11 @@ def read(state_bytes, pending_bytes=b'', base_bytes=None):
             base = None
         if not (isinstance(base, dict) and isinstance(base.get('segments'), list)):
             base = None
+    save_chat = bool(head.get('save_chat'))
     return {'doc': head['doc'], 'server': head.get('server'), 'seq': int(head.get('seq') or 0) if base else 0,
-            'base': base, 'pending': pending, 'share_media': bool(head.get('share_media'))}
+            'base': base, 'pending': pending, 'share_media': bool(head.get('share_media')),
+            'chat': collab_chat.read(chat_bytes) if save_chat and chat_bytes else [], 'chat_outbox': [],
+            'chat_read': int(head.get('chat_read') or 0) if save_chat else 0, 'save_chat': save_chat}
 
 
 def opening(state):

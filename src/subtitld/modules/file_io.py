@@ -687,7 +687,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     if collab_state.STATE_MEMBER in names:
                         pending = zf.read(collab_state.PENDING_MEMBER) if collab_state.PENDING_MEMBER in names else b''
                         base = zf.read(collab_state.BASE_MEMBER) if collab_state.BASE_MEMBER in names else None
-                        collab_state.opening(collab_state.read(zf.read(collab_state.STATE_MEMBER), pending, base))
+                        chat = zf.read(collab_state.CHAT_MEMBER) if collab_state.CHAT_MEMBER in names else None
+                        collab_state.opening(collab_state.read(zf.read(collab_state.STATE_MEMBER), pending, base, chat))
             except zipfile.BadZipFile as exc:
                 raise CorruptedProjectFileError(str(exc)) from exc
 

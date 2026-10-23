@@ -654,6 +654,31 @@ Planned 2026-10-22. Decisions by the user:
 - Moderation: nothing stored means nothing to report on the server; a
   "Remove from the project" for the owner stays as it is.
 
+**Text chat done (2026-10-22):**
+
+- subtitld.cc (`collab.chat`): `chat` stamps the author and the time and
+  signs the message (Django's Signer, salted with the project, over the
+  signed fields as sorted JSON); `chat_history_request` and `chat_history`
+  are addressed to one connection, like `rtc`, and every message of a copy
+  is checked on the way: an altered or invented one is dropped. 2000
+  characters, 20 messages in 10 s per connection, copies up to 500 messages
+  and 2 MB. Nothing is stored.
+- Subtitld: `collab_chat` (merging copies by ID, edits and deletions only by
+  the author, unread, `chat.json`); `collab_state` keeps the conversation,
+  what waits to be sent, when it was last read, and `save_chat`;
+  `collab_service` sends (waiting while offline), asks the first
+  collaborator it sees for the conversation, answers anyone who asks; the
+  chat card (`interface/subtitldcc_chat.py`) under the co-editing card.
+- Tested: the server's rules and signatures, the websocket relay with a
+  forged message dropped, the panel (a message pointing at a line and the
+  playhead, sending, editing, someone else's edit ignored, the history
+  exchange, keeping it in the project, offline), and two Subtitlds against
+  a local server (the message from before Bob joined reached him, his reply
+  reached Ana).
+- Found: Django's `signing.dumps` puts a time in what it makes, so a
+  signature over it stopped checking a second later; plain JSON now, and a
+  test an hour later.
+
 ### Voice
 
 - **Opus over a data channel**, not libdatachannel's media layer (which would
