@@ -73,6 +73,10 @@ apps:
       - desktop-legacy
       - wayland
       - x11
+      # The subtitle renderer's Chromium: its shared memory in /dev/shm
+      # (.org.chromium.*), where strict confinement allows only snap.*.
+      # Without allow-sandbox it connects by itself.
+      - browser-support
 
 parts:
   # PySide6's FFmpeg decodes AV1, the format of most YouTube downloads, only
@@ -160,15 +164,17 @@ parts:
       OPENCV=$($CRAFT_PART_INSTALL/bin/pip show opencv-contrib-python | awk '/^Version:/{print $2}')
       $CRAFT_PART_INSTALL/bin/pip uninstall -y opencv-python opencv-contrib-python
       $CRAFT_PART_INSTALL/bin/pip install --no-compile --no-deps "opencv-contrib-python-headless==$OPENCV"
-      # PySide6 comes whole. Drop the Qt modules the app never imports
-      # (WebEngine alone is 200 MB), QML, and Qt's own translations, which
-      # it does not load.
+      # PySide6 comes whole. Drop the Qt modules the app never imports,
+      # QML, and Qt's own translations, which it does not load. WebEngine
+      # stays (200 MB): the subtitle renderer is its Chromium, with the
+      # locales it reads.
       QT="$SITE/PySide6/Qt"
-      rm -rf "$QT/qml" "$QT/translations" "$QT/libexec/QtWebEngineProcess" "$QT"/resources/qtwebengine* \
+      find "$QT/translations" -mindepth 1 -maxdepth 1 ! -name qtwebengine_locales -exec rm -rf {} +
+      rm -rf "$QT/qml" \
         "$QT"/plugins/designer "$QT"/plugins/webview "$QT"/plugins/sceneparsers "$QT"/plugins/geometryloaders \
         "$QT"/plugins/renderers "$QT"/plugins/renderplugins "$QT"/plugins/assetimporters "$QT"/plugins/qmltooling \
         "$QT"/plugins/imageformats/libqpdf.so
-      for module in WebEngine Pdf 3D Quick3D Designer WebView Graphs DataVisualization; do
+      for module in Pdf 3D Quick3D Designer WebView Graphs DataVisualization; do
         rm -f "$QT"/lib/libQt6"$module"*.so* "$SITE"/PySide6/Qt"$module"*
       done
       # PySide6's FFmpeg out, the one built with dav1d in (qt-ffmpeg part).
