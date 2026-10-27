@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8">
 <style>
-  /* Classic: Subtitld's preview before styles. Centred at the bottom of
-     the title-safe area, in the style's font and colour, with a shadow and
-     a box behind the text. The settings arrive as CSS custom properties
+  /* Classic: Subtitld's preview before styles. At the bottom of the
+     title-safe area (where the text's {\anN} says, otherwise), in the
+     style's font and colour, with a shadow and a box behind the text.
+     The settings arrive as CSS custom properties
      (subtitle_styles.css_variables), and bools as attributes of the root
      element too. */
   .cue {
     font-family: var(--font-family);
     font-size: var(--font-size);
     color: var(--color);
-    text-align: center;
+    max-width: 100%;
+    box-sizing: border-box;
     white-space: pre-wrap;
     padding: var(--backgroundbox-padding);
     border-radius: var(--backgroundbox-border-radius);

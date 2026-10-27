@@ -9,6 +9,7 @@ the settings it offers, in the fields add-ons use for theirs:
       "name": "Classic",
       "version": "26.10.1",
       "template": "style.html",
+      "animated": false,
       "fields": [
         {"key": "font_size", "type": "int", "label": "Size", "default": 40,
          "min": 8, "max": 200, "unit": "px"},
@@ -21,7 +22,9 @@ the settings it offers, in the fields add-ons use for theirs:
 Field types: number and int (min, max, step, unit), bool, select (options:
 values, or {"value", "label"}), text, color ("#aarrggbb", as Qt writes it)
 and font (a family name). `visible_if` names a bool field the field only
-matters with. Labels are the manifest's own, unless the locale files have
+matters with. `animated` says the template moves (CSS animations or
+transitions): it is rendered a frame at a time, its animations held at
+each frame's moment; otherwise once a subtitle. Labels are the manifest's own, unless the locale files have
 `subtitle_styles.<style id>.<key>`.
 
 Styles come from Subtitld itself (subtitld/subtitle_styles) and from the
@@ -63,6 +66,7 @@ class Style:
     version: str = ''
     fields: list = dataclass_field(default_factory=list)
     builtin: bool = False
+    animated: bool = False          # rendered a frame at a time, not once a subtitle
 
     def field(self, key):
         return next((f for f in self.fields if f['key'] == key), None)
@@ -118,7 +122,10 @@ def load(path, builtin=False):
         condition = checked.get('visible_if')
         if condition is not None and not any(f['key'] == condition and f['type'] == 'bool' for f in fields):
             raise StyleError(f'field "{checked["key"]}": visible_if names no bool field')
-    return Style(style_id, name.strip(), path, template, str(manifest.get('version', '')), fields, builtin)
+    animated = manifest.get('animated', False)
+    if not isinstance(animated, bool):
+        raise StyleError('animated is not true or false')
+    return Style(style_id, name.strip(), path, template, str(manifest.get('version', '')), fields, builtin, animated)
 
 
 def folders():
@@ -282,6 +289,21 @@ def css_variables(style_id=None, settings=None):
             css = json.dumps(value)
         variables[name] = css
     return variables
+
+
+def html_attributes(style_id=None, settings=None):
+    """The bool and select settings as attributes of the template's root
+    element too (data-key, with "_" as "-"), for CSS to match: bools as
+    "1" or "0", selects as their value."""
+    style = get(style_id)
+    settings = values(style.id) if settings is None else settings
+    attributes = {}
+    for f in style.fields:
+        if f['type'] == 'bool':
+            attributes['data-' + f['key'].replace('_', '-')] = '1' if settings[f['key']] else '0'
+        elif f['type'] == 'select':
+            attributes['data-' + f['key'].replace('_', '-')] = str(settings[f['key']])
+    return attributes
 
 
 def preview_look():

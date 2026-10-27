@@ -1,13 +1,13 @@
 import os
 import time
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QVBoxLayout, QGraphicsScene, QGraphicsView, QFrame, QGraphicsOpacityEffect, QSizePolicy, QRubberBand
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QVBoxLayout, QGraphicsScene, QGraphicsView, QFrame, QGraphicsOpacityEffect, QSizePolicy, QRubberBand
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QRectF, QPoint, QSize, QMargins, QMarginsF, Signal, QTimer, QEvent, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush, QImage
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaMetaData
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 
-from subtitld.interface import subtitle_painter
+from subtitld.interface import subtitle_renderer
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
@@ -120,8 +120,20 @@ class PlayerWidget(QWidget):
                 else:
                     video_rect = QRectF(item_rect)
 
-                look = subtitle_styles.values(subtitle_styles.DEFAULT_STYLE)
-                painter.setFont(QFont(look['font_family'], look['font_size']))
+                # The subtitle of the very frame painted, as its style renders it.
+                renderer = outer._subtitle_renderer
+                if renderer is not None:
+                    ratio = widget.devicePixelRatioF() if widget is not None else 1.0
+                    renderer.set_size(video_rect.width() * ratio, video_rect.height() * ratio)
+                    at = outer._picture_time()
+                    showing = next((item for item in session.SUBTITLE.get('segments') or []
+                                    if item['start'] <= at < item['end']), None)
+                    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+                    for area, image in renderer.layers([showing] if showing else [], at):
+                        painter.drawImage(QRectF(video_rect.x() + area.x() * video_rect.width(),
+                                                 video_rect.y() + area.y() * video_rect.height(),
+                                                 area.width() * video_rect.width(),
+                                                 area.height() * video_rect.height()), image)
 
                 title_safe_margin_qrect = video_rect - QMarginsF(
                     (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100) * video_rect.width(),
@@ -129,9 +141,6 @@ class PlayerWidget(QWidget):
                     (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100) * video_rect.width(),
                     (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_y', 10) / 100) * video_rect.height()
                 )
-
-                if session.SUBTITLE.get('current', False):
-                    subtitle_painter.paint(painter, title_safe_margin_qrect, session.SUBTITLE['current']['text'], look)
 
                 if session.CONFIG.get('videoplayer', {}).get('safe_margin_action_enabled', False):
                     action_safe_margin_qrect = video_rect - QMarginsF(
@@ -177,6 +186,11 @@ class PlayerWidget(QWidget):
                     painter.drawRect(title_safe_margin_qrect)
 
         widget._graphics_video_item = graphicsvideoitem()
+        widget._subtitle_renderer = None
+        if subtitle_renderer.available():
+            widget._subtitle_renderer = subtitle_renderer.SubtitleRenderer(widget)
+            widget._subtitle_renderer.layer_ready.connect(widget._graphics_video_item.update)
+            QApplication.instance().aboutToQuit.connect(widget._subtitle_renderer.close)
         widget._graphics_scene.addItem(widget._graphics_video_item)
         widget._media_player.setVideoOutput(widget._graphics_video_item)
         widget._media_player.positionChanged.connect(lambda position: widget.position_changed(position))
@@ -289,7 +303,18 @@ class PlayerWidget(QWidget):
 
     def update_subtitle_layer(widget):
         session.SUBTITLE['current'] = subtitles.subtitle_under_current_position()
+        if widget._subtitle_renderer is not None:
+            widget._subtitle_renderer.prefetch(session.SUBTITLE.get('segments') or [],
+                                               session.SUBTITLE.get('position', 0.0))
         widget.update()
+
+    def _picture_time(widget):
+        """The media time of the frame on screen, in seconds: the picture
+        the subtitle goes with. The playhead's when there is no frame."""
+        frame = widget._last_video_frame
+        if frame is not None and frame.isValid() and frame.startTime() >= 0:
+            return frame.startTime() / 1_000_000
+        return session.SUBTITLE.get('position', 0.0)
 
     def resizeEvent(widget, event):
         widget._graphics_view.setSceneRect(QRect(0, 0, event.size().width(), event.size().height()))
