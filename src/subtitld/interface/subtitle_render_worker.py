@@ -5,6 +5,16 @@ its own process: there, any Python event filter on the whole application
 (the frameless window has one) and a QtWebEngine view crash PySide, and
 Chromium going away cannot take the editor with it.
 
+A style is HTML that may come from anyone, so its page reaches nothing but
+local files in the style's own folder and Subtitld's, and data: and blob:
+URLs: no network, no other file. Chromium's sandbox is on too, where it can
+start: where it cannot (Ubuntu 24.04 on keeps unprivileged user namespaces
+from programs it has no AppArmor profile for, an AppImage among them), the
+first page dies before it is ready, and the helper exits with
+NO_SANDBOX_EXIT for Subtitld to start it again without the sandbox. As
+root (a container), Chromium will not start with it at all: off from the
+start.
+
 It draws offscreen and in software: no window, no GPU, the same pixels
 everywhere. The fonts Subtitld comes with are declared to every page, so a
 style that names Montserrat gets it on a system that has not got it. A few views load the style's template with host.js in it; each
@@ -24,6 +34,7 @@ Results go to stdout: a JSON line, then the pixels it announces (`bytes`
 of premultiplied ARGB32, w × h, rows w × 4 bytes long):
 
     {"hello": {"views": 3}}
+    {"ready": true}                                    a page is ready, once
     {"id": 7, "rect": [x, y, w, h] or null, "w": …, "h": …, "bytes": …}
 """
 
@@ -34,6 +45,7 @@ import threading
 
 STRIP = 12                    # host.js: the strip under the stage with the job's number
 VIEWS = 3
+NO_SANDBOX_EXIT = 75          # Chromium's sandbox cannot start here: start the helper without it
 
 # The fonts Subtitld comes with (graphics/), by file name: family, weight, italic.
 _WEIGHTS = {'Thin': 100, 'ExtraLight': 200, 'Light': 300, 'Regular': 400, 'Medium': 500, 'SemiBold': 600,
@@ -85,6 +97,13 @@ def _read_stamp(image, height):
 
 def main():
     os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    # No display at all: Qt's offscreen platform still reaches for GLX when
+    # there is an X display, and aborts where it has none (Xvfb, some VMs).
+    os.environ['QT_QPA_OFFSCREEN_NO_GLX'] = '1'
+    for name in ('DISPLAY', 'WAYLAND_DISPLAY'):
+        os.environ.pop(name, None)
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        os.environ['QTWEBENGINE_DISABLE_SANDBOX'] = '1'
     os.environ['QT_QUICK_BACKEND'] = 'software'
     flags = os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS', '')
     if '--disable-gpu' not in flags:
@@ -93,7 +112,8 @@ def main():
     from PySide6 import QtWebEngineWidgets  # noqa: F401  (before the application)
     from PySide6.QtCore import QObject, QRect, QTimer, QUrl, Qt, Signal
     from PySide6.QtGui import QImage
-    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineScript
+    from PySide6.QtWebEngineCore import (QWebEnginePage, QWebEngineProfile, QWebEngineScript,
+                                         QWebEngineUrlRequestInterceptor)
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWidgets import QApplication
 
@@ -110,6 +130,29 @@ def main():
         if payload:
             out.write(payload)
         out.flush()
+
+    class Interceptor(QWebEngineUrlRequestInterceptor):
+        """Local files of the style and of Subtitld, data: and blob:;
+        nothing else."""
+
+        def __init__(self):
+            super().__init__()
+            self.roots = (os.path.realpath(session.PATH_SUBTITLD),)
+
+        def allow(self, folder):
+            self.roots = (os.path.realpath(session.PATH_SUBTITLD), os.path.realpath(folder))
+
+        def interceptRequest(self, info):
+            url = info.requestUrl()
+            scheme = url.scheme()
+            if scheme in ('data', 'blob', 'about'):
+                return
+            if scheme == 'file':
+                path = os.path.realpath(url.toLocalFile())
+                if any(path == root or path.startswith(root + os.sep) for root in self.roots):
+                    return
+            print(f'[subtitles] a style asked for {url.toDisplayString()[:200]}: refused', file=sys.stderr, flush=True)
+            info.block(True)
 
     class Page(QWebEnginePage):
         def __init__(self, on_message, parent):
@@ -160,12 +203,19 @@ def main():
 
         def on_ready(self):
             self.ready = True
+            if not self.worker.ever_ready:
+                self.worker.ever_ready = True
+                send({'ready': True})
             self.worker.schedule()
 
         def on_terminated(self, status, code):
             # Chromium's renderer went away: load again, a few times.
             self.crashes += 1
             print(f'[subtitles] a renderer stopped ({status}, {code})', file=sys.stderr, flush=True)
+            if not self.worker.ever_ready and not os.environ.get('QTWEBENGINE_DISABLE_SANDBOX'):
+                # Before any page was ready: the sandbox cannot start here.
+                QApplication.exit(NO_SANDBOX_EXIT)
+                return
             if self.job is not None:
                 self.worker.pending.insert(0, self.job)
                 self.job = None
@@ -213,6 +263,7 @@ def main():
         def __init__(self):
             super().__init__()
             self.pending = []
+            self.ever_ready = False
             self.views = [View(self) for _ in range(VIEWS)]
             self.command.connect(self.on_command)
 
@@ -222,6 +273,7 @@ def main():
             elif message.get('cmd') == 'template':
                 # Jobs for the style before are of no use now.
                 self.pending.clear()
+                interceptor.allow(os.path.dirname(message['path']))
                 for view in self.views:
                     view.job = None
                     view.load(message['path'])
@@ -249,6 +301,8 @@ def main():
 
     app = QApplication([sys.argv[0]])
     app.setQuitOnLastWindowClosed(False)
+    interceptor = Interceptor()
+    QWebEngineProfile.defaultProfile().setUrlRequestInterceptor(interceptor)
     worker = Worker()
 
     def read():
@@ -261,8 +315,7 @@ def main():
 
     threading.Thread(target=read, daemon=True, name='subtitle-render-commands').start()
     send({'hello': {'views': VIEWS}})
-    app.exec()
-    return 0
+    return app.exec()
 
 
 if __name__ == '__main__':

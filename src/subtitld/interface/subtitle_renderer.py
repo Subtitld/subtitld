@@ -55,6 +55,7 @@ AHEAD = 30.0                 # seconds of subtitles rendered ahead of the playhe
 AHEAD_ANIMATED = 2.0         # an animated subtitle: a layer a frame, this far ahead
 SIZE_SETTLE_MS = 200         # a size has to hold this long before layers are rendered at it
 RESTARTS = 3                 # times the helper is started again after it stops
+NO_SANDBOX_EXIT = 75         # subtitle_render_worker: Chromium's sandbox cannot start here
 
 
 def available():
@@ -123,6 +124,8 @@ class SubtitleRenderer(QObject):
         self._style_key = None
         self._template = None
         self.process = None
+        self.no_sandbox = False         # Chromium's sandbox could not start here
+        self.helper_ready = False       # the helper ever had a page ready
         self.slots = 0                  # jobs the helper takes at once
         self.buffer = b''
         self.header = None
@@ -134,6 +137,8 @@ class SubtitleRenderer(QObject):
         self.process = QProcess(self)
         program, arguments = worker_command()
         environment = QProcessEnvironment.systemEnvironment()
+        if self.no_sandbox:
+            environment.insert('QTWEBENGINE_DISABLE_SANDBOX', '1')
         if not getattr(sys, 'frozen', False):
             # The helper imports this very copy of Subtitld.
             path = str(session.PATH_SUBTITLD.parent)
@@ -163,6 +168,14 @@ class SubtitleRenderer(QObject):
             self.queue[job['key']] = job
             self.queue.move_to_end(job['key'], last=False)
         self.sent.clear()
+        if (code == NO_SANDBOX_EXIT or not self.helper_ready) and not self.no_sandbox:
+            # The sandbox could not start (the helper said so, or it never
+            # got as far as a page): once more, without it.
+            # Its pages still reach nothing but local files (subtitle_render_worker).
+            print('[subtitles] Chromium\'s sandbox cannot start here: rendering without it', flush=True)
+            self.no_sandbox = True
+            self._start_and_schedule()
+            return
         self.stats['restarts'] += 1
         print(f'[subtitles] the subtitle renderer stopped (exit {code})', flush=True)
         if self.queue:
@@ -192,6 +205,9 @@ class SubtitleRenderer(QObject):
             self._answer(header, data)
 
     def _answer(self, header, data):
+        if header.get('ready'):
+            self.helper_ready = True
+            return
         if 'hello' in header:
             # Rendering ahead: two jobs a view, but for the one kept for urgent jobs.
             self.slots = max(1, int(header['hello'].get('views', 1)) - 1) * 2

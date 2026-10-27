@@ -226,6 +226,56 @@ check('the oldest layers went first', ('layer 0' not in small.index, 'layer 11' 
 check('and their images with them', images < 12, True)
 small.close()
 
+print('a style reaches its own files, and nothing else')
+from PySide6.QtGui import QColor as _QColor
+outside = Path(tempfile.mkdtemp())
+red = QImage(40, 40, QImage.Format_ARGB32)
+red.fill(_QColor('#ff0000'))
+red.save(str(outside / 'red.png'))
+folder = session.PATH_SUBTITLD_USER_DATA / 'subtitle_styles' / 'reach'
+folder.mkdir(parents=True)
+green = QImage(40, 40, QImage.Format_ARGB32)
+green.fill(_QColor('#00ff00'))
+green.save(str(folder / 'green.png'))
+(folder / 'style.json').write_text(json.dumps({'id': 'test.reach', 'name': 'Reach', 'fields': []}))
+(folder / 'style.html').write_text(f"""<!DOCTYPE html><style>
+  .cue {{ color: #fff; font-size: 60px; }}
+  .cue::before {{ content: url("green.png"); }}
+  .cue::after {{ content: url("{(outside / 'red.png').as_uri()}"); }}
+</style>""")
+styles.available(reload=True)
+styles.set_current('test.reach')
+reach_renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
+reach_renderer.set_size(960, 540)
+reached = rendered(reach_renderer, {'start': 0.0, 'end': 1.0, 'text': 'Reach'})[0][1]
+
+
+def has(image, test):
+    return any(test(image.pixelColor(x, y)) for x in range(0, image.width(), 2) for y in range(0, image.height(), 2))
+
+
+check('an image in its own folder: shown', has(reached, lambda c: c.green() > 200 and c.red() < 60), True)
+check('a file outside it: refused', has(reached, lambda c: c.red() > 200 and c.green() < 60), False)
+reach_renderer.close()
+styles.set_current('subtitld.classic')
+
+print('where Chromium\'s sandbox cannot start')
+stand_in = Path(tempfile.mkdtemp()) / 'no_sandbox_worker.py'
+stand_in.write_text(f"""import os, runpy, sys
+if not os.environ.get('QTWEBENGINE_DISABLE_SANDBOX'):
+    sys.exit(subtitle_render_worker_exit := {subtitle_renderer.NO_SANDBOX_EXIT})
+sys.argv = ['subtitld', '--subtitle-render-worker']
+runpy.run_module('subtitld', run_name='__main__')
+""")
+real_command = subtitle_renderer.worker_command
+subtitle_renderer.worker_command = lambda: (sys.executable, [str(stand_in)])
+sandboxless = subtitle_renderer.SubtitleRenderer(disk_cache=None)
+sandboxless.set_size(640, 360)
+check('started again without it, and it renders', len(rendered(sandboxless, {'start': 0.0, 'end': 1.0, 'text': 'No sandbox'})), 1)
+check('not counted as a stop', (sandboxless.no_sandbox, sandboxless.stats['restarts']), (True, 0))
+sandboxless.close()
+subtitle_renderer.worker_command = real_command
+
 print('the helper process')
 cold = subtitle_renderer.SubtitleRenderer()
 cold.set_size(640, 360)
