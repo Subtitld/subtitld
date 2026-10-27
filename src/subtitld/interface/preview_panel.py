@@ -194,6 +194,16 @@ class PlayerWidget(QWidget):
             # Chromium takes most of a second to start: once the window is
             # up, so even the first subtitle of a project is not late.
             QTimer.singleShot(1000, widget._subtitle_renderer.warm_up)
+        # Any edit (a merge, a split, a retime, undo) can change the subtitle
+        # on screen: draw it again. Qt folds repeated requests into one paint.
+        item = widget._graphics_video_item
+
+        def repaint_subtitle():
+            try:
+                item.update()
+            except RuntimeError:            # this preview is gone
+                session._document_change_callbacks.remove(repaint_subtitle)
+        session._document_change_callbacks.append(repaint_subtitle)
         widget._graphics_scene.addItem(widget._graphics_video_item)
         widget._media_player.setVideoOutput(widget._graphics_video_item)
         widget._media_player.positionChanged.connect(lambda position: widget.position_changed(position))
