@@ -836,5 +836,18 @@
     "subtitldcc.delete": "删除",
     "subtitldcc.delete_tip": "从 subtitld.cc 上删除它",
     "subtitldcc.delete_question": "要把“{title}”从 subtitld.cc 删除吗？它的页面、所有版本和下载都会对所有人移除，而且无法撤销。编辑器中的字幕会保留。",
-    "subtitldcc.deleted": "“{title}”已从 subtitld.cc 删除。编辑器中的字幕仍然在这里。"
+    "subtitldcc.deleted": "“{title}”已从 subtitld.cc 删除。编辑器中的字幕仍然在这里。",
+    "interface_panel.subtitle_style": "字幕样式",
+    "subtitle_styles.subtitld.classic.name": "经典",
+    "subtitle_styles.subtitld.classic.font_family": "字体族",
+    "subtitle_styles.subtitld.classic.font_size": "大小",
+    "subtitle_styles.subtitld.classic.color": "颜色",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "阴影",
+    "subtitle_styles.subtitld.classic.shadow_x": "X 位置",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y 位置",
+    "subtitle_styles.subtitld.classic.shadow_color": "颜色",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "背景框",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "内边距",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "圆角半径",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "颜色"
 }

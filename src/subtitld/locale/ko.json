@@ -836,5 +836,18 @@
     "subtitldcc.delete": "삭제",
     "subtitldcc.delete_tip": "subtitld.cc에서 삭제합니다",
     "subtitldcc.delete_question": "“{title}” 자막을 subtitld.cc에서 삭제하시겠습니까? 해당 페이지와 모든 버전, 다운로드가 모두에게서 사라지며 되돌릴 수 없습니다. 편집기의 자막은 그대로 남습니다.",
-    "subtitldcc.deleted": "“{title}” 자막을 subtitld.cc에서 삭제했습니다. 편집기의 자막은 그대로 남아 있습니다."
+    "subtitldcc.deleted": "“{title}” 자막을 subtitld.cc에서 삭제했습니다. 편집기의 자막은 그대로 남아 있습니다.",
+    "interface_panel.subtitle_style": "자막 스타일",
+    "subtitle_styles.subtitld.classic.name": "클래식",
+    "subtitle_styles.subtitld.classic.font_family": "글꼴 계열",
+    "subtitle_styles.subtitld.classic.font_size": "크기",
+    "subtitle_styles.subtitld.classic.color": "색상",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "그림자",
+    "subtitle_styles.subtitld.classic.shadow_x": "X 위치",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y 위치",
+    "subtitle_styles.subtitld.classic.shadow_color": "색상",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "배경 박스",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "안쪽 여백",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "테두리 반경",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "색상"
 }

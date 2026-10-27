@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Elimina",
     "subtitldcc.delete_tip": "Eliminali da subtitld.cc",
     "subtitldcc.delete_question": "Eliminare “{title}” da subtitld.cc? La sua pagina, tutte le sue versioni e i download vengono rimossi per tutti, e l'operazione non può essere annullata. I sottotitoli nell'editor restano.",
-    "subtitldcc.deleted": "“{title}” è stato eliminato da subtitld.cc. I sottotitoli nell'editor sono ancora qui."
+    "subtitldcc.deleted": "“{title}” è stato eliminato da subtitld.cc. I sottotitoli nell'editor sono ancora qui.",
+    "interface_panel.subtitle_style": "Stile dei sottotitoli",
+    "subtitle_styles.subtitld.classic.name": "Classico",
+    "subtitle_styles.subtitld.classic.font_family": "Famiglia di caratteri",
+    "subtitle_styles.subtitld.classic.font_size": "Dimensione",
+    "subtitle_styles.subtitld.classic.color": "Colore",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Ombra",
+    "subtitle_styles.subtitld.classic.shadow_x": "Posizione X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Posizione Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Colore",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Riquadro di sfondo",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Spaziatura interna",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Raggio del bordo",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Colore"
 }

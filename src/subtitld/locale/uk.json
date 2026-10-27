@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Видалити",
     "subtitldcc.delete_tip": "Видалити їх із subtitld.cc",
     "subtitldcc.delete_question": "Видалити «{title}» із subtitld.cc? Сторінку, всі версії та завантаження буде вилучено для всіх, і цього не можна скасувати. Субтитри в редакторі залишаться.",
-    "subtitldcc.deleted": "«{title}» видалено з subtitld.cc. Субтитри в редакторі залишилися тут."
+    "subtitldcc.deleted": "«{title}» видалено з subtitld.cc. Субтитри в редакторі залишилися тут.",
+    "interface_panel.subtitle_style": "Стиль субтитрів",
+    "subtitle_styles.subtitld.classic.name": "Класичний",
+    "subtitle_styles.subtitld.classic.font_family": "Гарнітура",
+    "subtitle_styles.subtitld.classic.font_size": "Розмір",
+    "subtitle_styles.subtitld.classic.color": "Колір",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Тінь",
+    "subtitle_styles.subtitld.classic.shadow_x": "Положення X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Положення Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Колір",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Фонова підкладка",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Внутрішній відступ",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Радіус закруглення",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Колір"
 }

@@ -1007,5 +1007,18 @@
     "formatting.position_bottom": "Embaixo (o padrão)",
     "formatting.position_bottom_right": "Embaixo, à direita",
     "formatting.clear": "Limpar formatação",
-    "global_panel.import_settings": "Importar configurações"
+    "global_panel.import_settings": "Importar configurações",
+    "interface_panel.subtitle_style": "Estilo da legenda",
+    "subtitle_styles.subtitld.classic.name": "Clássico",
+    "subtitle_styles.subtitld.classic.font_family": "Família da fonte",
+    "subtitle_styles.subtitld.classic.font_size": "Tamanho",
+    "subtitle_styles.subtitld.classic.color": "Cor",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Sombra",
+    "subtitle_styles.subtitld.classic.shadow_x": "Posição X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Posição Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Cor",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Caixa de fundo",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Preenchimento",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Raio da borda",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Cor"
 }

@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Удалить",
     "subtitldcc.delete_tip": "Удалить их с subtitld.cc",
     "subtitldcc.delete_question": "Удалить «{title}» с subtitld.cc? Страница, все версии и загрузки будут удалены для всех, и это нельзя отменить. Субтитры в редакторе останутся.",
-    "subtitldcc.deleted": "«{title}» удалены с subtitld.cc. Субтитры в редакторе остались на месте."
+    "subtitldcc.deleted": "«{title}» удалены с subtitld.cc. Субтитры в редакторе остались на месте.",
+    "interface_panel.subtitle_style": "Стиль субтитров",
+    "subtitle_styles.subtitld.classic.name": "Классический",
+    "subtitle_styles.subtitld.classic.font_family": "Семейство шрифтов",
+    "subtitle_styles.subtitld.classic.font_size": "Размер",
+    "subtitle_styles.subtitld.classic.color": "Цвет",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Тень",
+    "subtitle_styles.subtitld.classic.shadow_x": "Положение X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Положение Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Цвет",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Фоновая подложка",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Внутренний отступ",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Радиус скругления",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Цвет"
 }

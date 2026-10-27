@@ -1006,5 +1006,18 @@
     "formatting.position_bottom_left": "Bottom left",
     "formatting.position_bottom": "Bottom (the default)",
     "formatting.position_bottom_right": "Bottom right",
-    "formatting.clear": "Clear formatting"
+    "formatting.clear": "Clear formatting",
+    "interface_panel.subtitle_style": "Subtitle style",
+    "subtitle_styles.subtitld.classic.name": "Classic",
+    "subtitle_styles.subtitld.classic.font_family": "Font family",
+    "subtitle_styles.subtitld.classic.font_size": "Size",
+    "subtitle_styles.subtitld.classic.color": "Color",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Shadow",
+    "subtitle_styles.subtitld.classic.shadow_x": "X position",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y position",
+    "subtitle_styles.subtitld.classic.shadow_color": "Color",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Background box",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Padding",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Border radius",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Color"
 }
