@@ -14,6 +14,9 @@ its template, its settings, the text, the size, the title-safe area and, for
 an animated style, the subtitle's duration and the moment. Change any of them
 and it is another layer; change one back and the old one is still there.
 
+Layers are kept on disk too (subtitle_disk_cache), so a project opened
+again, or a setting set back days later, reads them instead of rendering.
+
 Asked for a layer it does not have yet, the renderer queues it and answers
 with the last layer it drew for that subtitle, if any (stretched to the new
 size, or the text before an edit), so the subtitle does not blink while its
@@ -36,12 +39,15 @@ import sys
 import time
 from collections import OrderedDict
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTimer, Signal
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTimer, Signal, qVersion
 from PySide6.QtGui import QImage
 
 from subtitld.modules import markup, session, subtitle_styles
 
 HOST_SCRIPT = session.PATH_SUBTITLD / 'subtitle_styles' / 'host.js'
+DISK_CACHE = session.PATH_SUBTITLD_USER_CACHE / 'subtitle_layers.sqlite'
+DISK_LIMIT_MB = 512
+DISK_LOADS = 32              # layers read from disk at once, at most
 WORKER_FLAG = '--subtitle-render-worker'
 PAD = 0.03                   # around the cue, of the stage's height: shadows and glows
 RAM_LIMIT = 192 * 2**20      # bytes of layers kept
@@ -76,12 +82,31 @@ class SubtitleRenderer(QObject):
 
     layer_ready = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, disk_cache=DISK_CACHE):
+        """`disk_cache`: the file layers are kept in, or None for none."""
         super().__init__(parent)
+        self._host_digest = hashlib.sha1(HOST_SCRIPT.read_bytes()).hexdigest()
+        self.disk = None
+        if disk_cache is not None:
+            from subtitld.interface.subtitle_disk_cache import SubtitleDiskCache
+            try:
+                disk_cache.parent.mkdir(parents=True, exist_ok=True)
+                self.disk = SubtitleDiskCache(disk_cache, DISK_LIMIT_MB)
+                self.disk.loaded.connect(self._loaded)
+            except Exception as error:      # no disk cache is slower, not broken
+                print(f'[subtitles] no layers on disk: {error}', flush=True)
+                self.disk = None
+        self.loading = set()            # keys being read from disk
+        self.disk_timer = QTimer(self)
+        self.disk_timer.setInterval(10_000)
+        self.disk_timer.timeout.connect(lambda: self.disk and self.disk.maintain())
+        if self.disk is not None:
+            self.disk_timer.start()
         self.cache = OrderedDict()      # key -> (QRectF of the stage, 0..1, or None; QImage or None)
         self.bytes = 0
         self.last = {}                  # id(segment) -> key of the layer last drawn for it
         self.queue = OrderedDict()      # key -> job, waiting
+        self.jobs = {}                  # key -> job, of the keys asked for lately (a read from disk may fail)
         self.sent = {}                  # job id -> job, with the helper
         self.next_id = 1
         self.size = None                # (width, height) in device pixels layers are rendered at
@@ -89,7 +114,7 @@ class SubtitleRenderer(QObject):
         self.size_timer = QTimer(self)
         self.size_timer.setSingleShot(True)
         self.size_timer.timeout.connect(self._settle_size)
-        self.stats = {'rendered': 0, 'hits': 0, 'stand_ins': 0, 'misses': 0, 'restarts': 0}
+        self.stats = {'rendered': 0, 'from_disk': 0, 'hits': 0, 'stand_ins': 0, 'misses': 0, 'restarts': 0}
         self.urgent = set()             # keys of queued or sent jobs a subtitle on screen waits for
         self.waiting = {}               # key -> when a subtitle on screen first lacked it
         self.gaps = []                  # ms subtitles on screen waited for their layer
@@ -181,21 +206,42 @@ class SubtitleRenderer(QObject):
                 image = QImage(data, header['w'], header['h'], header['w'] * 4,
                                QImage.Format_ARGB32_Premultiplied).copy()
                 layer = (QRectF(x / width, y / height, w / width, h / height), image)
-                self.bytes += image.sizeInBytes()
-            self.cache[job['key']] = layer
             self.stats['rendered'] += 1
-            self.urgent.discard(job['key'])
-            asked = self.waiting.pop(job['key'], None)
-            if asked is not None:
-                self.gaps.append((time.perf_counter() - asked) * 1000)
-                if os.environ.get('SUBTITLD_DEBUG_RENDER'):
-                    print(f'[subtitles] waited {self.gaps[-1]:.0f} ms for a layer', flush=True)
-            while self.bytes > RAM_LIMIT and len(self.cache) > 1:
-                _key, (_rect, old) = self.cache.popitem(last=False)
-                if old is not None:
-                    self.bytes -= old.sizeInBytes()
-            self.layer_ready.emit()
+            if self.disk is not None:
+                self.disk.put(job['key'], *layer)
+            self._store(job['key'], layer)
         self.schedule()
+
+    def _loaded(self, key, layer):
+        """A layer read from disk, or None when it was not there after all."""
+        self.loading.discard(key)
+        if layer is None:
+            if key in self.urgent or key in self.waiting:
+                self.urgent.add(key)
+                self._enqueue_render(key, first=True)
+        else:
+            self.stats['from_disk'] += 1
+            self._store(key, layer)
+        self.schedule()
+
+    def _store(self, key, layer):
+        if key in self.cache:
+            return
+        if layer[1] is not None:
+            self.bytes += layer[1].sizeInBytes()
+        self.cache[key] = layer
+        self.jobs.pop(key, None)
+        self.urgent.discard(key)
+        asked = self.waiting.pop(key, None)
+        if asked is not None:
+            self.gaps.append((time.perf_counter() - asked) * 1000)
+            if os.environ.get('SUBTITLD_DEBUG_RENDER'):
+                print(f'[subtitles] waited {self.gaps[-1]:.0f} ms for a layer', flush=True)
+        while self.bytes > RAM_LIMIT and len(self.cache) > 1:
+            _key, (_rect, old) = self.cache.popitem(last=False)
+            if old is not None:
+                self.bytes -= old.sizeInBytes()
+        self.layer_ready.emit()
 
     def warm_up(self):
         """Start the helper and load the style now, before the first
@@ -204,6 +250,11 @@ class SubtitleRenderer(QObject):
         self._start()
 
     def close(self):
+        if os.environ.get('SUBTITLD_DEBUG_RENDER'):
+            print(f'[subtitles] {self.stats}', flush=True)
+        self.disk_timer.stop()
+        if self.disk is not None:
+            self.disk.close()
         if self.process is not None:
             process, self.process = self.process, None
             process.finished.disconnect(self._finished)
@@ -226,7 +277,7 @@ class SubtitleRenderer(QObject):
             source = template.read_bytes()
         except OSError:
             source = b''
-        key = _digest(style.id, hashlib.sha1(source).hexdigest(), HOST_SCRIPT.stat().st_mtime_ns,
+        key = _digest(style.id, hashlib.sha1(source).hexdigest(), self._host_digest, qVersion(),
                       variables, attributes, session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10),
                       session.CONFIG.get('videoplayer', {}).get('safe_margin_title_y', 10))
         if key != self._style_key:
@@ -234,6 +285,7 @@ class SubtitleRenderer(QObject):
             self.queue.clear()
             self.urgent.clear()
             self.waiting.clear()
+            self.jobs.clear()
             if template != self._template:
                 self._template = template
                 self.sent.clear()
@@ -261,6 +313,7 @@ class SubtitleRenderer(QObject):
             self.queue.clear()
             self.urgent.clear()
             self.waiting.clear()
+            self.jobs.clear()
             self.layer_ready.emit()
 
     # --- layers ------------------------------------------------------------
@@ -318,6 +371,7 @@ class SubtitleRenderer(QObject):
         # From the playhead on: what was queued for elsewhere goes behind.
         for key in [k for k in self.queue if k not in self.urgent]:
             del self.queue[key]
+            self.jobs.pop(key, None)
         for segment in segments:
             start, end = float(segment['start']), float(segment['end'])
             if end <= at:
@@ -339,8 +393,20 @@ class SubtitleRenderer(QObject):
     def _enqueue(self, key, job, first=False):
         if first:
             self.urgent.add(key)
+        if key in self.cache or key in self.loading:
+            return
+        self.jobs[key] = job
+        if self.disk is not None and key in self.disk.index and (first or len(self.loading) < DISK_LOADS):
+            # On disk: read, not rendered (a millisecond, not tens).
+            self.loading.add(key)
+            self.disk.get(key)
+            return
+        self._enqueue_render(key, first)
+
+    def _enqueue_render(self, key, first=False):
+        job = self.jobs.get(key)
         sent = next((s for s in self.sent.values() if s['key'] == key), None)
-        if key in self.cache or (sent is not None and (sent['urgent'] or not first)):
+        if job is None or key in self.cache or (sent is not None and (sent['urgent'] or not first)):
             return
         self.queue[key] = job
         if first:

@@ -157,6 +157,66 @@ check('after it: solid', strongest(late) > 200, True)
 check('the same frame: one layer', renderer._job(fading, 20.04, *renderer._style())[0],
       renderer._job(fading, 20.05, *renderer._style())[0])
 
+print('kept on disk')
+disk_path = Path(tempfile.mkdtemp()) / 'layers.sqlite'
+styles.set_current('subtitld.classic')
+first_run = subtitle_renderer.SubtitleRenderer(disk_cache=disk_path)
+first_run.set_size(960, 540)
+project = [{'start': 40.0 + i, 'end': 40.8 + i, 'text': f'Kept {i}'} for i in range(6)]
+before = [rendered(first_run, segment) for segment in project]
+check('rendered the first time', first_run.stats['rendered'], 6)
+first_run.close()
+second_run = subtitle_renderer.SubtitleRenderer(disk_cache=disk_path)
+check('on disk once closed', len(second_run.disk.index), 6)
+second_run.set_size(960, 540)
+again = [rendered(second_run, segment) for segment in project]
+check('the next time: read from disk, none rendered', (second_run.stats['from_disk'], second_run.stats['rendered']), (6, 0))
+check('the same pixels, in the same place', all(a[0][1] == b[0][1] and a[0][0] == b[0][0] for a, b in zip(before, again)),
+      True)
+second_run.prefetch(project, 40.0)
+check('rendering ahead reads from disk too', second_run.stats['rendered'], 0)
+second_run.set_size(1280, 720)
+wait_for(lambda: second_run.size == (1280, 720), 10)
+check('another size: rendered, then kept', len(rendered(second_run, project[0])), 1)
+check('which was rendered', second_run.stats['rendered'], 1)
+second_run.close()
+third_run = subtitle_renderer.SubtitleRenderer(disk_cache=disk_path)
+third_run.set_size(960, 540)
+import sqlite3
+db = sqlite3.connect(str(disk_path))
+db.execute('DELETE FROM layers'); db.execute('DELETE FROM images'); db.commit(); db.close()
+check('gone from the file, still in the index', len(third_run.disk.index), 7)
+check('then rendered again', len(rendered(third_run, project[1])), 1)
+check('by the helper', third_run.stats['rendered'], 1)
+third_run.close()
+disk_path.write_bytes(b'not a database' * 100)
+for suffix in ('-wal', '-shm'):
+    Path(str(disk_path) + suffix).unlink(missing_ok=True)
+fourth_run = subtitle_renderer.SubtitleRenderer(disk_cache=disk_path)
+check('a file that is not a cache: started over', (fourth_run.disk is not None, len(fourth_run.disk.index)), (True, 0))
+fourth_run.set_size(960, 540)
+check('and it works', len(rendered(fourth_run, project[2])), 1)
+fourth_run.close()
+
+from subtitld.interface.subtitle_disk_cache import SubtitleDiskCache
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QImage
+small = SubtitleDiskCache(Path(tempfile.mkdtemp()) / 'small.sqlite', limit_mb=1)
+for i in range(12):
+    # Opaque noise: 360 KB that does not compress.
+    pixels = bytearray(os.urandom(300 * 300 * 4))
+    pixels[3::4] = b'\xff' * (300 * 300)
+    noise = QImage(bytes(pixels), 300, 300, 1200, QImage.Format_ARGB32_Premultiplied).copy()
+    small.put(f'layer {i}', QRectF(0, 0, 0.1, 0.1), noise)
+small.put('empty', None, None)
+small.maintain()
+small.writer.submit(lambda: None).result()
+size, images, layers = small.size()
+check('past its limit: trimmed under it', size <= 2**20, True)
+check('the oldest layers went first', ('layer 0' not in small.index, 'layer 11' in small.index), (True, True))
+check('and their images with them', images < 12, True)
+small.close()
+
 print('the helper process')
 cold = subtitle_renderer.SubtitleRenderer()
 cold.set_size(640, 360)
