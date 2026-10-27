@@ -470,36 +470,42 @@ def update(self):
 
 
 
+def refresh_preview(self):
+    """Repaint the subtitle drawn over the video with the new settings."""
+    if hasattr(self, 'preview_panel_player'):
+        self.preview_panel_player._graphics_video_item.update()
+
+
 def global_panel_interface_videoplayer_fontfamily_combobox_changed(self):
     session.CONFIG['videoplayer']['font_family'] = self.global_panel_interface_videoplayer_fontfamily_combobox.currentText()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_fontsize_spinbox_changed(self):
     session.CONFIG['videoplayer']['font_size'] = self.global_panel_interface_videoplayer_fontsize_spinbox.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_group_toggled(self):
     session.CONFIG['videoplayer']['shadow_enabled'] = self.global_panel_interface_videoplayer_shadow_group.isChecked()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_x_position_changed(self):
     session.CONFIG['videoplayer']['shadow_x'] = self.global_panel_interface_videoplayer_shadow_x_position.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_y_position_changed(self):
     session.CONFIG['videoplayer']['shadow_y'] = self.global_panel_interface_videoplayer_shadow_y_position.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
         session.CONFIG['videoplayer']['shadow_color'] = color.name(QColor.HexArgb)
-    # self.preview_panel_player.update()
+    refresh_preview(self)
     update(self)
 
 
@@ -507,76 +513,76 @@ def global_panel_interface_videoplayer_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
         session.CONFIG['videoplayer']['color'] = color.name(QColor.HexArgb)
-    # self.preview_panel_player.update()
+    refresh_preview(self)
     update(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_group_toggled(self):
     session.CONFIG['videoplayer']['backgroundbox_enabled'] = self.global_panel_interface_videoplayer_backgroundbox_group.isChecked()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_padding_changed(self):
     session.CONFIG['videoplayer']['backgroundbox_padding'] = self.global_panel_interface_videoplayer_backgroundbox_padding.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_border_radius_changed(self):
     session.CONFIG['videoplayer']['backgroundbox_border_radius'] = self.global_panel_interface_videoplayer_backgroundbox_border_radius.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
         session.CONFIG['videoplayer']['backgroundbox_color'] = color.name(QColor.HexArgb)
-    # self.preview_panel_player.update()
+    refresh_preview(self)
     update(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_action_group_toggled(self):
     session.CONFIG['videoplayer']['safe_margin_action_enabled'] = self.global_panel_interface_videoplayer_safe_margin_action_group.isChecked()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_action_x_margin_changed(self):
     session.CONFIG['videoplayer']['safe_margin_action_x'] = self.global_panel_interface_videoplayer_safe_margin_action_x_margin.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_action_y_margin_changed(self):
     session.CONFIG['videoplayer']['safe_margin_action_y'] = self.global_panel_interface_videoplayer_safe_margin_action_y_margin.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_action_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
         session.CONFIG['videoplayer']['safe_margin_action_color'] = color.name(QColor.HexArgb)
-    # self.preview_panel_player.update()
+    refresh_preview(self)
     update(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_title_group_toggled(self):
     session.CONFIG['videoplayer']['safe_margin_title_enabled'] = self.global_panel_interface_videoplayer_safe_margin_title_group.isChecked()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_title_x_margin_changed(self):
     session.CONFIG['videoplayer']['safe_margin_title_x'] = self.global_panel_interface_videoplayer_safe_margin_title_x_margin.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_title_y_margin_changed(self):
     session.CONFIG['videoplayer']['safe_margin_title_y'] = self.global_panel_interface_videoplayer_safe_margin_title_y_margin.value()
-    # self.preview_panel_player.update()
+    refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_safe_margin_title_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
         session.CONFIG['videoplayer']['safe_margin_title_color'] = color.name(QColor.HexArgb)
-    # self.preview_panel_player.update()
+    refresh_preview(self)
     update(self)
 
     
