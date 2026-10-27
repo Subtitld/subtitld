@@ -6,7 +6,8 @@ its own process: there, any Python event filter on the whole application
 Chromium going away cannot take the editor with it.
 
 It draws offscreen and in software: no window, no GPU, the same pixels
-everywhere. A few views load the style's template with host.js in it; each
+everywhere. The fonts Subtitld comes with are declared to every page, so a
+style that names Montserrat gets it on a system that has not got it. A few views load the style's template with host.js in it; each
 renders one job at a time, checks the capture is that job's (the number
 host.js draws under the stage, and the view's size), crops it to the
 subtitle and sends it back. An urgent job (a subtitle on screen with no
@@ -33,6 +34,42 @@ import threading
 
 STRIP = 12                    # host.js: the strip under the stage with the job's number
 VIEWS = 3
+
+# The fonts Subtitld comes with (graphics/), by file name: family, weight, italic.
+_WEIGHTS = {'Thin': 100, 'ExtraLight': 200, 'Light': 300, 'Regular': 400, 'Medium': 500, 'SemiBold': 600,
+            'Bold': 700, 'ExtraBold': 800, 'Black': 900}
+_UBUNTU = {'Th': 100, 'L': 300, 'R': 400, 'M': 500, 'B': 700}
+
+
+def _font_face(path):
+    """(family, weight, italic) of a font Subtitld comes with, or None."""
+    family, _, style = path.stem.partition('-')
+    if family == 'Montserrat':
+        italic = style.endswith('Italic')
+        weight = _WEIGHTS.get(style[:-len('Italic')] if italic else style) or (400 if style == 'Italic' else None)
+        return (family, weight, italic) if weight else None
+    if family in ('Ubuntu', 'UbuntuMono'):
+        if style == 'C':
+            return 'Ubuntu Condensed', 400, False
+        italic = style.endswith('I') and style != 'I'
+        weight = _UBUNTU.get(style[:-1] if italic else style)
+        return ('Ubuntu Mono' if family == 'UbuntuMono' else 'Ubuntu', weight, italic) if weight else None
+    return None
+
+
+def bundled_font_faces(folder):
+    """@font-face rules for the fonts in `folder`: Chromium finds fonts
+    through the system, and these are Subtitld's own (Qt has them; the
+    system may not), so a style that names one gets it everywhere."""
+    rules = []
+    for path in sorted(folder.glob('*.ttf')):
+        face = _font_face(path)
+        if face is None:
+            continue
+        family, weight, italic = face
+        rules.append(f'@font-face {{ font-family: "{family}"; src: url("{path.as_uri()}"); '
+                     f'font-weight: {weight}; font-style: {"italic" if italic else "normal"}; }}')
+    return '\n'.join(rules)
 
 
 def _read_stamp(image, height):
@@ -63,6 +100,9 @@ def main():
     from subtitld.modules import session
 
     host_script = (session.PATH_SUBTITLD / 'subtitle_styles' / 'host.js').read_text(encoding='utf-8')
+    fonts_script = ('(() => { const css = document.createElement("style"); css.id = "subtitld-fonts"; '
+                    f'css.textContent = {json.dumps(bundled_font_faces(session.PATH_SUBTITLD_GRAPHICS))}; '
+                    'document.head.prepend(css); })();')
     out = sys.stdout.buffer
 
     def send(header, payload=b''):
@@ -99,7 +139,7 @@ def main():
             self.page.renderProcessTerminated.connect(self.on_terminated)
             script = QWebEngineScript()
             script.setName('subtitld-host')
-            script.setSourceCode(host_script)
+            script.setSourceCode(fonts_script + '\n' + host_script)
             script.setInjectionPoint(QWebEngineScript.DocumentReady)
             script.setWorldId(QWebEngineScript.MainWorld)
             script.setRunsOnSubFrames(False)

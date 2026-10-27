@@ -77,6 +77,15 @@ empty = {'start': 4.0, 'end': 5.0, 'text': '   '}
 check('an empty subtitle: no layer to draw', rendered(renderer, empty), [])
 check('each capture is the job asked for', renderer.stats['rendered'] >= 3, True)
 
+print('Subtitld\'s own fonts, whatever the system has')
+wide = {'start': 6.0, 'end': 7.0, 'text': 'Condensed words here'}
+styles.set_value('font_family', 'No Such Font At All')
+fallback = rendered(renderer, wide)[0][1].width()
+styles.set_value('font_family', 'Ubuntu Condensed')     # in graphics/, not a system font here
+condensed = rendered(renderer, wide)[0][1].width()
+check('a bundled font is used (narrower than the fallback)', condensed < fallback * 0.92, True)
+styles.set_value('font_family', 'Montserrat')
+
 print('kept by what changes the pixels')
 before = renderer.stats['rendered']
 renderer.layers([bottom], 1.5)

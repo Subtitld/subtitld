@@ -85,7 +85,9 @@ class SubtitleRenderer(QObject):
     def __init__(self, parent=None, disk_cache=DISK_CACHE):
         """`disk_cache`: the file layers are kept in, or None for none."""
         super().__init__(parent)
-        self._host_digest = hashlib.sha1(HOST_SCRIPT.read_bytes()).hexdigest()
+        # What every page gets besides its template: host.js and Subtitld's fonts.
+        fonts = sorted(path.name for path in session.PATH_SUBTITLD_GRAPHICS.glob('*.ttf'))
+        self._host_digest = hashlib.sha1(HOST_SCRIPT.read_bytes() + json.dumps(fonts).encode()).hexdigest()
         self.disk = None
         if disk_cache is not None:
             from subtitld.interface.subtitle_disk_cache import SubtitleDiskCache
