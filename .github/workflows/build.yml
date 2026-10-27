@@ -115,12 +115,14 @@ jobs:
       - name: Install the libraries to bundle
         # Qt's xcb platform plugin needs the libxcb-* helpers; without them on
         # the build machine they are left out, and the AppImage fails on
-        # systems that lack them too.
+        # systems that lack them too. QtWebEngine (the subtitle renderer's
+        # Chromium) needs NSS and the X extensions after them.
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libportaudio2 libsndfile1 libpulse0 file wget \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
-            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libsm6 libice6
+            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libsm6 libice6 \
+            libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbfile1 libasound2
       - name: Build
         run: bash build-appimage.sh
       - name: Start it on clean systems

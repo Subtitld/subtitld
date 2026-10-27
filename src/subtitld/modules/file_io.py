@@ -28,6 +28,7 @@ from subtitld.modules import sami
 from subtitld.modules import sbv
 from subtitld.modules import scc
 from subtitld.modules import srt
+from subtitld.modules import subtitle_styles
 from subtitld.modules import session
 from subtitld.modules import ttml
 from subtitld.modules import waveform
@@ -1429,7 +1430,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       else language,
                       agents=options.get('speakers') == 'voice',
                       look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
-                      preview=session.CONFIG.get('videoplayer', {}))
+                      preview=subtitle_styles.preview_look())
 
         elif subtitle_format == 'SAMI':
             # A class for each language written: the original's, the
@@ -1460,7 +1461,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Sized to the video, in the export's look; .ssa as SSA v4.
             ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
-                     preview=session.CONFIG.get('videoplayer', {}))
+                     preview=subtitle_styles.preview_look())
 
         elif subtitle_format == 'MCC':
             # Pop-on captions in CEA-608 and CEA-708 (or CEA-608 alone), a packet

@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Xóa",
     "subtitldcc.delete_tip": "Xóa phụ đề này khỏi subtitld.cc",
     "subtitldcc.delete_question": "Xóa “{title}” khỏi subtitld.cc? Trang của nó, mọi phiên bản và các lượt tải sẽ bị loại bỏ với mọi người, và không thể hoàn tác. Phụ đề trong trình biên tập vẫn còn.",
-    "subtitldcc.deleted": "“{title}” đã bị xóa khỏi subtitld.cc. Phụ đề trong trình biên tập vẫn còn ở đây."
+    "subtitldcc.deleted": "“{title}” đã bị xóa khỏi subtitld.cc. Phụ đề trong trình biên tập vẫn còn ở đây.",
+    "interface_panel.subtitle_style": "Kiểu phụ đề",
+    "subtitle_styles.subtitld.classic.name": "Cổ điển",
+    "subtitle_styles.subtitld.classic.font_family": "Họ phông chữ",
+    "subtitle_styles.subtitld.classic.font_size": "Kích thước",
+    "subtitle_styles.subtitld.classic.color": "Màu",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Bóng",
+    "subtitle_styles.subtitld.classic.shadow_x": "Vị trí X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Vị trí Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Màu",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Khung nền",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Đệm",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Bán kính góc",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Màu"
 }

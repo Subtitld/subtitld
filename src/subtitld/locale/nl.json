@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Verwijderen",
     "subtitldcc.delete_tip": "Van subtitld.cc verwijderen",
     "subtitldcc.delete_question": "“{title}” van subtitld.cc verwijderen? De pagina, alle versies en de downloads verdwijnen voor iedereen, en dit kan niet worden teruggedraaid. De ondertitels in de editor blijven staan.",
-    "subtitldcc.deleted": "“{title}” is van subtitld.cc verwijderd. De ondertitels in de editor staan er nog."
+    "subtitldcc.deleted": "“{title}” is van subtitld.cc verwijderd. De ondertitels in de editor staan er nog.",
+    "interface_panel.subtitle_style": "Ondertitelstijl",
+    "subtitle_styles.subtitld.classic.name": "Klassiek",
+    "subtitle_styles.subtitld.classic.font_family": "Letterfamilie",
+    "subtitle_styles.subtitld.classic.font_size": "Grootte",
+    "subtitle_styles.subtitld.classic.color": "Kleur",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Schaduw",
+    "subtitle_styles.subtitld.classic.shadow_x": "X-positie",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y-positie",
+    "subtitle_styles.subtitld.classic.shadow_color": "Kleur",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Achtergrondvak",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Binnenmarge",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Hoekradius",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Kleur"
 }

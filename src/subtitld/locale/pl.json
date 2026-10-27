@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Usuń",
     "subtitldcc.delete_tip": "Usuń je z subtitld.cc",
     "subtitldcc.delete_question": "Usunąć „{title}” z subtitld.cc? Strona, wszystkie wersje i pobrania zostaną usunięte dla wszystkich, a tego nie można cofnąć. Napisy w edytorze pozostaną.",
-    "subtitldcc.deleted": "„{title}” zostały usunięte z subtitld.cc. Napisy w edytorze nadal tu są."
+    "subtitldcc.deleted": "„{title}” zostały usunięte z subtitld.cc. Napisy w edytorze nadal tu są.",
+    "interface_panel.subtitle_style": "Styl napisów",
+    "subtitle_styles.subtitld.classic.name": "Klasyczny",
+    "subtitle_styles.subtitld.classic.font_family": "Rodzina czcionek",
+    "subtitle_styles.subtitld.classic.font_size": "Rozmiar",
+    "subtitle_styles.subtitld.classic.color": "Kolor",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Cień",
+    "subtitle_styles.subtitld.classic.shadow_x": "Pozycja X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Pozycja Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Kolor",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Pole tła",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Dopełnienie",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Promień narożnika",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Kolor"
 }

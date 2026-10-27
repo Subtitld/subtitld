@@ -3,6 +3,12 @@ import os
 import argparse
 import inspect
 
+# The preview's subtitle renderer runs as this same program in a process of
+# its own (interface.subtitle_renderer): nothing else of Subtitld is loaded.
+if '--subtitle-render-worker' in sys.argv[1:]:
+    from subtitld.interface import subtitle_render_worker
+    sys.exit(subtitle_render_worker.main())
+
 from subtitld import __version__
 
 

@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Sil",
     "subtitldcc.delete_tip": "subtitld.cc'den sil",
     "subtitldcc.delete_question": "“{title}” subtitld.cc'den silinsin mi? Sayfası, tüm sürümleri ve indirmeleri herkes için kaldırılır ve bu geri alınamaz. Düzenleyicideki altyazılar kalır.",
-    "subtitldcc.deleted": "“{title}” subtitld.cc'den silindi. Düzenleyicideki altyazılar hâlâ burada."
+    "subtitldcc.deleted": "“{title}” subtitld.cc'den silindi. Düzenleyicideki altyazılar hâlâ burada.",
+    "interface_panel.subtitle_style": "Altyazı stili",
+    "subtitle_styles.subtitld.classic.name": "Klasik",
+    "subtitle_styles.subtitld.classic.font_family": "Yazı tipi ailesi",
+    "subtitle_styles.subtitld.classic.font_size": "Boyut",
+    "subtitle_styles.subtitld.classic.color": "Renk",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Gölge",
+    "subtitle_styles.subtitld.classic.shadow_x": "X konumu",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y konumu",
+    "subtitle_styles.subtitld.classic.shadow_color": "Renk",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Arka plan kutusu",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "İç boşluk",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Kenar yarıçapı",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Renk"
 }
