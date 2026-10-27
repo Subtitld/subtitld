@@ -17,11 +17,14 @@ and it is another layer; change one back and the old one is still there.
 Asked for a layer it does not have yet, the renderer queues it and answers
 with the last layer it drew for that subtitle, if any (stretched to the new
 size, or the text before an edit), so the subtitle does not blink while its
-new layer renders. `layer_ready` says when to paint again. It also renders
-ahead: the subtitles after the playhead, so each is ready when it comes.
+new layer renders. `layer_ready` says when to paint again. A subtitle on
+screen with no layer is urgent: it goes to the helper at once, before what
+is rendered ahead, and the helper keeps a view for urgent jobs alone.
+Rendering ahead (the subtitles after the playhead, so each is ready when it
+comes) starts again from wherever the playhead goes.
 
-The helper starts the first time a subtitle is asked for, and again if it
-stops (a few times).
+The helper starts a second after Subtitld does (warm_up), or with the first
+subtitle asked for if that is sooner, and again if it stops (a few times).
 """
 
 import hashlib
@@ -30,6 +33,7 @@ import json
 import math
 import os
 import sys
+import time
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTimer, Signal
@@ -86,6 +90,9 @@ class SubtitleRenderer(QObject):
         self.size_timer.setSingleShot(True)
         self.size_timer.timeout.connect(self._settle_size)
         self.stats = {'rendered': 0, 'hits': 0, 'stand_ins': 0, 'misses': 0, 'restarts': 0}
+        self.urgent = set()             # keys of queued or sent jobs a subtitle on screen waits for
+        self.waiting = {}               # key -> when a subtitle on screen first lacked it
+        self.gaps = []                  # ms subtitles on screen waited for their layer
         self._style_key = None
         self._template = None
         self.process = None
@@ -159,7 +166,8 @@ class SubtitleRenderer(QObject):
 
     def _answer(self, header, data):
         if 'hello' in header:
-            self.slots = int(header['hello'].get('views', 1)) * 2
+            # Rendering ahead: two jobs a view, but for the one kept for urgent jobs.
+            self.slots = max(1, int(header['hello'].get('views', 1)) - 1) * 2
             self.schedule()
             return
         job = self.sent.pop(header.get('id'), None)
@@ -176,12 +184,24 @@ class SubtitleRenderer(QObject):
                 self.bytes += image.sizeInBytes()
             self.cache[job['key']] = layer
             self.stats['rendered'] += 1
+            self.urgent.discard(job['key'])
+            asked = self.waiting.pop(job['key'], None)
+            if asked is not None:
+                self.gaps.append((time.perf_counter() - asked) * 1000)
+                if os.environ.get('SUBTITLD_DEBUG_RENDER'):
+                    print(f'[subtitles] waited {self.gaps[-1]:.0f} ms for a layer', flush=True)
             while self.bytes > RAM_LIMIT and len(self.cache) > 1:
                 _key, (_rect, old) = self.cache.popitem(last=False)
                 if old is not None:
                     self.bytes -= old.sizeInBytes()
             self.layer_ready.emit()
         self.schedule()
+
+    def warm_up(self):
+        """Start the helper and load the style now, before the first
+        subtitle (Chromium takes most of a second to start)."""
+        self._style()
+        self._start()
 
     def close(self):
         if self.process is not None:
@@ -212,6 +232,8 @@ class SubtitleRenderer(QObject):
         if key != self._style_key:
             self._style_key = key
             self.queue.clear()
+            self.urgent.clear()
+            self.waiting.clear()
             if template != self._template:
                 self._template = template
                 self.sent.clear()
@@ -237,6 +259,8 @@ class SubtitleRenderer(QObject):
         if self.pending_size is not None:
             self.size, self.pending_size = self.pending_size, None
             self.queue.clear()
+            self.urgent.clear()
+            self.waiting.clear()
             self.layer_ready.emit()
 
     # --- layers ------------------------------------------------------------
@@ -275,6 +299,7 @@ class SubtitleRenderer(QObject):
                 self.stats['hits'] += 1
             else:
                 self._enqueue(key, job, first=True)
+                self.waiting.setdefault(key, time.perf_counter())
                 stand_in = self.cache.get(self.last.get(id(segment)))
                 self.stats['stand_ins' if stand_in else 'misses'] += 1
                 layer = stand_in
@@ -290,6 +315,9 @@ class SubtitleRenderer(QObject):
             return
         style, variables, attributes = self._style()
         horizon = AHEAD_ANIMATED if style.animated else AHEAD
+        # From the playhead on: what was queued for elsewhere goes behind.
+        for key in [k for k in self.queue if k not in self.urgent]:
+            del self.queue[key]
         for segment in segments:
             start, end = float(segment['start']), float(segment['end'])
             if end <= at:
@@ -309,7 +337,10 @@ class SubtitleRenderer(QObject):
         self.schedule()
 
     def _enqueue(self, key, job, first=False):
-        if key in self.cache or any(sent['key'] == key for sent in self.sent.values()):
+        if first:
+            self.urgent.add(key)
+        sent = next((s for s in self.sent.values() if s['key'] == key), None)
+        if key in self.cache or (sent is not None and (sent['urgent'] or not first)):
             return
         self.queue[key] = job
         if first:
@@ -318,12 +349,21 @@ class SubtitleRenderer(QObject):
     def schedule(self):
         if self.queue and self.process is None:
             self._start()
-        while self.queue and len(self.sent) < self.slots:
-            key, job = self.queue.popitem(last=False)
-            job = dict(job, id=self.next_id)
-            self.next_id += 1
-            self.sent[job['id']] = job
-            self._send({'cmd': 'render', 'id': job['id'], 'size': job['size'], 'page': job['page']})
+        if not self.slots:
+            return                      # the helper has not said hello yet
+        # Urgent jobs at once; the rest while the helper has room for them.
+        for key in [k for k in self.queue if k in self.urgent]:
+            self._dispatch(key, urgent=True)
+        ahead = sum(1 for job in self.sent.values() if not job['urgent'])
+        while self.queue and ahead < self.slots:
+            self._dispatch(next(iter(self.queue)), urgent=False)
+            ahead += 1
+
+    def _dispatch(self, key, urgent):
+        job = dict(self.queue.pop(key), id=self.next_id, urgent=urgent)
+        self.next_id += 1
+        self.sent[job['id']] = job
+        self._send({'cmd': 'render', 'id': job['id'], 'size': job['size'], 'page': job['page'], 'urgent': urgent})
 
     def forget(self, segments):
         """Stand-ins only for these segments (the subtitles now loaded)."""

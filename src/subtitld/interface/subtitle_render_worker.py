@@ -9,12 +9,14 @@ It draws offscreen and in software: no window, no GPU, the same pixels
 everywhere. A few views load the style's template with host.js in it; each
 renders one job at a time, checks the capture is that job's (the number
 host.js draws under the stage, and the view's size), crops it to the
-subtitle and sends it back.
+subtitle and sends it back. An urgent job (a subtitle on screen with no
+layer yet) goes before the others, and one view is kept for urgent jobs
+alone, so rendering ahead never keeps one waiting.
 
 Commands come on stdin, a JSON line each:
 
     {"cmd": "template", "path": "/…/style.html"}       load a style
-    {"cmd": "render", "id": 7, "size": [w, h], "page": {…}}
+    {"cmd": "render", "id": 7, "size": [w, h], "page": {…}, "urgent": false}
     {"cmd": "quit"}
 
 Results go to stdout: a JSON line, then the pixels it announces (`bytes`
@@ -184,14 +186,25 @@ def main():
                     view.job = None
                     view.load(message['path'])
             elif message.get('cmd') == 'render':
-                self.pending.append(message)
+                if message.get('urgent'):
+                    # After the urgent ones already waiting, before the rest.
+                    at = next((i for i, job in enumerate(self.pending) if not job.get('urgent')), len(self.pending))
+                    self.pending.insert(at, message)
+                else:
+                    self.pending.append(message)
                 self.schedule()
 
         def schedule(self):
-            for view in self.views:
+            for index, view in enumerate(self.views):
                 if not self.pending:
                     return
-                if view.ready and view.job is None:
+                if not view.ready or view.job is not None:
+                    continue
+                if index == 0:
+                    # Kept for urgent jobs.
+                    if self.pending[0].get('urgent'):
+                        view.start(self.pending.pop(0))
+                else:
                     view.start(self.pending.pop(0))
 
     app = QApplication([sys.argv[0]])

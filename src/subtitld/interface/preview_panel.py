@@ -191,6 +191,9 @@ class PlayerWidget(QWidget):
             widget._subtitle_renderer = subtitle_renderer.SubtitleRenderer(widget)
             widget._subtitle_renderer.layer_ready.connect(widget._graphics_video_item.update)
             QApplication.instance().aboutToQuit.connect(widget._subtitle_renderer.close)
+            # Chromium takes most of a second to start: once the window is
+            # up, so even the first subtitle of a project is not late.
+            QTimer.singleShot(1000, widget._subtitle_renderer.warm_up)
         widget._graphics_scene.addItem(widget._graphics_video_item)
         widget._media_player.setVideoOutput(widget._graphics_video_item)
         widget._media_player.positionChanged.connect(lambda position: widget.position_changed(position))
@@ -343,6 +346,8 @@ class PlayerWidget(QWidget):
             widget._picture_seen = False
             widget._picture_unavailable_sent = False
             widget._media_player.setSource(QUrl.fromLocalFile(str(filepath)))
+            if widget._subtitle_renderer is not None:
+                widget._subtitle_renderer.warm_up()
             # widget._audio_device.load(filepath)
             widget.play()
             widget.pause()

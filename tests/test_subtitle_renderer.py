@@ -116,6 +116,23 @@ renderer.prefetch(later, 9.0)
 check('every subtitle ahead rendered before it shows', wait_for(lambda: all(
     renderer._job(s, s['start'], *renderer._style())[0] in renderer.cache for s in later)), True)
 
+print('a subtitle on screen goes first')
+busy = [{'start': 100.0 + i, 'end': 100.5 + i, 'text': f'Busy {i} ' * 6} for i in range(40)]
+renderer.prefetch(busy, 100.0)
+far = {'start': 500.0, 'end': 501.0, 'text': 'Jumped here'}
+started = time.perf_counter()
+check('not ready the moment it shows', renderer.layers([far], 500.0), [])
+check('ready long before the 40 rendered ahead', len(rendered(renderer, far)), 1)
+waited = (time.perf_counter() - started) * 1000
+ahead_done = sum(renderer._job(s, s['start'], *renderer._style())[0] in renderer.cache for s in busy)
+print(f'    (waited {waited:.0f} ms, with {ahead_done} of 40 rendered ahead meanwhile)')
+check('fewer than half rendered ahead meanwhile', ahead_done < 20, True)
+check('the wait was measured', len(renderer.gaps) >= 1 and renderer.gaps[-1] > 0, True)
+renderer.prefetch(busy, 130.0)
+first = next(iter(renderer.queue.values()), None)
+check('a seek: rendering ahead goes on from there',
+      first is None or first['page']['html'].startswith('Busy 3'), True)
+
 print('an animated style: a layer a frame')
 folder = session.PATH_SUBTITLD_USER_DATA / 'subtitle_styles' / 'fade'
 folder.mkdir(parents=True)
@@ -141,6 +158,18 @@ check('the same frame: one layer', renderer._job(fading, 20.04, *renderer._style
       renderer._job(fading, 20.05, *renderer._style())[0])
 
 print('the helper process')
+cold = subtitle_renderer.SubtitleRenderer()
+cold.set_size(640, 360)
+cold.warm_up()
+check('warmed up: the helper starts before any subtitle', cold.process is not None, True)
+wait_for(lambda: cold.slots > 0)
+loop = QEventLoop()
+QTimer.singleShot(1500, loop.quit)       # the helper loads the style meanwhile
+loop.exec()
+started = time.perf_counter()
+first = rendered(cold, {'start': 0.0, 'end': 1.0, 'text': 'First'})
+check('then the first subtitle comes as fast as any', (len(first), (time.perf_counter() - started) * 1000 < 300), (1, True))
+cold.close()
 process = renderer.process
 check('one helper, running', process is not None and process.state() == process.ProcessState.Running, True)
 process.kill()
