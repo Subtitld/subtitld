@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* Classic: Subtitld's preview before styles. Centred at the bottom of
+     the title-safe area, in the style's font and colour, with a shadow and
+     a box behind the text. The settings arrive as CSS custom properties
+     (subtitle_styles.css_variables), and bools as attributes of the root
+     element too. */
+  .cue {
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    color: var(--color);
+    text-align: center;
+    white-space: pre-wrap;
+    padding: var(--backgroundbox-padding);
+    border-radius: var(--backgroundbox-border-radius);
+    background: var(--backgroundbox-color);
+    text-shadow: var(--shadow-x) var(--shadow-y) 0 var(--shadow-color);
+  }
+  :root[data-shadow-enabled="0"] .cue { text-shadow: none; }
+  :root[data-backgroundbox-enabled="0"] .cue { background: none; padding: 0; }
+</style>
+</head>
+<body></body>
+</html>

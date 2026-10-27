@@ -144,7 +144,7 @@ check('MicroDVD keeps its italics, {y:i} to the end of its line', [(s['start'], 
 session.SUBTITLE['segments'] = segments
 session.SUBTITLE['language'] = 'en'
 session.VIDEO = {'width': 1280, 'height': 720}
-session.CONFIG['videoplayer'] = {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}
+session.CONFIG['subtitle_style'] = {'settings': {'subtitld.classic': {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}}}
 for look, font in (('clean', 'Arial'), ('preview', 'Ubuntu')):
     session.FORMAT['options'] = {'look': look}
     file_io.save_file(str(folder / 'out.ass'), 'ASS')

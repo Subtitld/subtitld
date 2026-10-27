@@ -1,8 +1,8 @@
 """The current subtitle, drawn over the video in the preview.
 
 Centred at the bottom of the title-safe area and wrapped to it, in the
-font, colour, shadow and background box the preview settings give
-(session.CONFIG['videoplayer']). Plain text is drawn as one string; text
+font, colour, shadow and background box of the Classic subtitle style's
+settings (modules.subtitle_styles). Plain text is drawn as one string; text
 with formatting tags (modules.markup) goes through Qt's rich text, so its
 italic, bold, underline, strikeout and colours show as they will in a
 player.

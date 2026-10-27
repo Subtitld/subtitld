@@ -13,6 +13,7 @@ from subtitld.interface.translation import _
 
 from subtitld.modules import session
 from subtitld.modules import subtitles
+from subtitld.modules import subtitle_styles
 from subtitld.modules import audioengine #AudaspaceAudioDevice
     
 
@@ -119,7 +120,8 @@ class PlayerWidget(QWidget):
                 else:
                     video_rect = QRectF(item_rect)
 
-                painter.setFont(QFont(session.CONFIG.get('videoplayer', {}).get('font_family', 'Montserrat'), session.CONFIG.get('videoplayer', {}).get('font_size', 40)))
+                look = subtitle_styles.values(subtitle_styles.DEFAULT_STYLE)
+                painter.setFont(QFont(look['font_family'], look['font_size']))
 
                 title_safe_margin_qrect = video_rect - QMarginsF(
                     (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100) * video_rect.width(),
@@ -129,8 +131,7 @@ class PlayerWidget(QWidget):
                 )
 
                 if session.SUBTITLE.get('current', False):
-                    subtitle_painter.paint(painter, title_safe_margin_qrect, session.SUBTITLE['current']['text'],
-                                           session.CONFIG.get('videoplayer', {}))
+                    subtitle_painter.paint(painter, title_safe_margin_qrect, session.SUBTITLE['current']['text'], look)
 
                 if session.CONFIG.get('videoplayer', {}).get('safe_margin_action_enabled', False):
                     action_safe_margin_qrect = video_rect - QMarginsF(

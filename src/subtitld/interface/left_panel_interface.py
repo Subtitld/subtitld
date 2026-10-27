@@ -5,6 +5,7 @@ from PySide6.QtGui import QColor, QFontDatabase
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.modules import session
+from subtitld.modules import subtitle_styles
 
 
 def load(self):
@@ -447,17 +448,18 @@ def show(self):
     update(self)
 
 def update(self):
-    self.global_panel_interface_videoplayer_fontsize_spinbox.setValue(session.CONFIG['videoplayer'].get('font_size', 40))
-    self.global_panel_interface_videoplayer_fontfamily_combobox.setCurrentText(session.CONFIG['videoplayer'].get('font_family', 'Montserrat'))
-    self.global_panel_interface_videoplayer_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('color', '#ffffffff') + ' }')
-    self.global_panel_interface_videoplayer_shadow_group.setChecked(session.CONFIG['videoplayer'].get('shadow_enabled', True))
-    self.global_panel_interface_videoplayer_shadow_x_position.setValue(session.CONFIG['videoplayer'].get('shadow_x', 2))
-    self.global_panel_interface_videoplayer_shadow_y_position.setValue(session.CONFIG['videoplayer'].get('shadow_y', 2))
-    self.global_panel_interface_videoplayer_shadow_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('shadow_color', '#ff000000') + ' }')
-    self.global_panel_interface_videoplayer_backgroundbox_group.setChecked(session.CONFIG['videoplayer'].get('backgroundbox_enabled', True))
-    self.global_panel_interface_videoplayer_backgroundbox_padding.setValue(session.CONFIG['videoplayer'].get('backgroundbox_padding', 10))
-    self.global_panel_interface_videoplayer_backgroundbox_border_radius.setValue(session.CONFIG['videoplayer'].get('backgroundbox_border_radius', 5))
-    self.global_panel_interface_videoplayer_backgroundbox_color_button.setStyleSheet('QPushButton { background-color: ' + session.CONFIG['videoplayer'].get('backgroundbox_color', '#55000000') + ' }')
+    look = subtitle_styles.values(subtitle_styles.DEFAULT_STYLE)
+    self.global_panel_interface_videoplayer_fontsize_spinbox.setValue(look['font_size'])
+    self.global_panel_interface_videoplayer_fontfamily_combobox.setCurrentText(look['font_family'])
+    self.global_panel_interface_videoplayer_color_button.setStyleSheet('QPushButton { background-color: ' + look['color'] + ' }')
+    self.global_panel_interface_videoplayer_shadow_group.setChecked(look['shadow_enabled'])
+    self.global_panel_interface_videoplayer_shadow_x_position.setValue(look['shadow_x'])
+    self.global_panel_interface_videoplayer_shadow_y_position.setValue(look['shadow_y'])
+    self.global_panel_interface_videoplayer_shadow_color_button.setStyleSheet('QPushButton { background-color: ' + look['shadow_color'] + ' }')
+    self.global_panel_interface_videoplayer_backgroundbox_group.setChecked(look['backgroundbox_enabled'])
+    self.global_panel_interface_videoplayer_backgroundbox_padding.setValue(look['backgroundbox_padding'])
+    self.global_panel_interface_videoplayer_backgroundbox_border_radius.setValue(look['backgroundbox_border_radius'])
+    self.global_panel_interface_videoplayer_backgroundbox_color_button.setStyleSheet('QPushButton { background-color: ' + look['backgroundbox_color'] + ' }')
     self.global_panel_interface_videoplayer_safe_margin_action_group.setChecked(session.CONFIG['videoplayer'].get('safe_margin_action_enabled', False))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_x', 5))
     self.global_panel_interface_videoplayer_safe_margin_action_y_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_y', 5))
@@ -470,6 +472,12 @@ def update(self):
 
 
 
+def _set_style_value(key, value):
+    # The preview's look is Classic's settings; a generated panel for every
+    # style's own settings replaces these fields later.
+    subtitle_styles.set_value(key, value, subtitle_styles.DEFAULT_STYLE)
+
+
 def refresh_preview(self):
     """Repaint the subtitle drawn over the video with the new settings."""
     if hasattr(self, 'preview_panel_player'):
@@ -477,34 +485,34 @@ def refresh_preview(self):
 
 
 def global_panel_interface_videoplayer_fontfamily_combobox_changed(self):
-    session.CONFIG['videoplayer']['font_family'] = self.global_panel_interface_videoplayer_fontfamily_combobox.currentText()
+    _set_style_value('font_family', self.global_panel_interface_videoplayer_fontfamily_combobox.currentText())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_fontsize_spinbox_changed(self):
-    session.CONFIG['videoplayer']['font_size'] = self.global_panel_interface_videoplayer_fontsize_spinbox.value()
+    _set_style_value('font_size', self.global_panel_interface_videoplayer_fontsize_spinbox.value())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_group_toggled(self):
-    session.CONFIG['videoplayer']['shadow_enabled'] = self.global_panel_interface_videoplayer_shadow_group.isChecked()
+    _set_style_value('shadow_enabled', self.global_panel_interface_videoplayer_shadow_group.isChecked())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_x_position_changed(self):
-    session.CONFIG['videoplayer']['shadow_x'] = self.global_panel_interface_videoplayer_shadow_x_position.value()
+    _set_style_value('shadow_x', self.global_panel_interface_videoplayer_shadow_x_position.value())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_y_position_changed(self):
-    session.CONFIG['videoplayer']['shadow_y'] = self.global_panel_interface_videoplayer_shadow_y_position.value()
+    _set_style_value('shadow_y', self.global_panel_interface_videoplayer_shadow_y_position.value())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_shadow_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        session.CONFIG['videoplayer']['shadow_color'] = color.name(QColor.HexArgb)
+        _set_style_value('shadow_color', color.name(QColor.HexArgb))
     refresh_preview(self)
     update(self)
 
@@ -512,30 +520,30 @@ def global_panel_interface_videoplayer_shadow_color_button_clicked(self):
 def global_panel_interface_videoplayer_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        session.CONFIG['videoplayer']['color'] = color.name(QColor.HexArgb)
+        _set_style_value('color', color.name(QColor.HexArgb))
     refresh_preview(self)
     update(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_group_toggled(self):
-    session.CONFIG['videoplayer']['backgroundbox_enabled'] = self.global_panel_interface_videoplayer_backgroundbox_group.isChecked()
+    _set_style_value('backgroundbox_enabled', self.global_panel_interface_videoplayer_backgroundbox_group.isChecked())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_padding_changed(self):
-    session.CONFIG['videoplayer']['backgroundbox_padding'] = self.global_panel_interface_videoplayer_backgroundbox_padding.value()
+    _set_style_value('backgroundbox_padding', self.global_panel_interface_videoplayer_backgroundbox_padding.value())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_border_radius_changed(self):
-    session.CONFIG['videoplayer']['backgroundbox_border_radius'] = self.global_panel_interface_videoplayer_backgroundbox_border_radius.value()
+    _set_style_value('backgroundbox_border_radius', self.global_panel_interface_videoplayer_backgroundbox_border_radius.value())
     refresh_preview(self)
 
 
 def global_panel_interface_videoplayer_backgroundbox_color_button_clicked(self):
     color = QColorDialog.getColor(options=QColorDialog.ShowAlphaChannel)
     if color.isValid():
-        session.CONFIG['videoplayer']['backgroundbox_color'] = color.name(QColor.HexArgb)
+        _set_style_value('backgroundbox_color', color.name(QColor.HexArgb))
     refresh_preview(self)
     update(self)
 

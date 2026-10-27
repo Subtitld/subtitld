@@ -91,4 +91,4 @@ where = ["src"]
 include = ["subtitld*"]
 
 [tool.setuptools.package-data]
-subtitld = ["graphics/*", "locale/*", "ftfy/*", "models/*"]
+subtitld = ["graphics/*", "locale/*", "ftfy/*", "models/*", "subtitle_styles/*/*"]

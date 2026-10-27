@@ -1,0 +1,19 @@
+{
+    "id": "subtitld.classic",
+    "name": "Classic",
+    "version": "26.10.1",
+    "template": "style.html",
+    "fields": [
+        {"key": "font_family", "type": "font", "label": "Font", "default": "Montserrat"},
+        {"key": "font_size", "type": "int", "label": "Size", "default": 40, "min": 1, "max": 999, "unit": "px"},
+        {"key": "color", "type": "color", "label": "Colour", "default": "#ffffffff"},
+        {"key": "shadow_enabled", "type": "bool", "label": "Shadow", "default": true},
+        {"key": "shadow_x", "type": "int", "label": "X position", "default": 2, "min": -500, "max": 500, "unit": "px", "visible_if": "shadow_enabled"},
+        {"key": "shadow_y", "type": "int", "label": "Y position", "default": 2, "min": -500, "max": 500, "unit": "px", "visible_if": "shadow_enabled"},
+        {"key": "shadow_color", "type": "color", "label": "Shadow colour", "default": "#ff000000", "visible_if": "shadow_enabled"},
+        {"key": "backgroundbox_enabled", "type": "bool", "label": "Background box", "default": true},
+        {"key": "backgroundbox_padding", "type": "int", "label": "Padding", "default": 10, "min": -500, "max": 500, "unit": "px", "visible_if": "backgroundbox_enabled"},
+        {"key": "backgroundbox_border_radius", "type": "int", "label": "Border radius", "default": 5, "min": 0, "max": 500, "unit": "px", "visible_if": "backgroundbox_enabled"},
+        {"key": "backgroundbox_color", "type": "color", "label": "Box colour", "default": "#55000000", "visible_if": "backgroundbox_enabled"}
+    ]
+}
