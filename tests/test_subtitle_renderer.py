@@ -262,9 +262,9 @@ styles.set_current('subtitld.classic')
 print('where Chromium\'s sandbox cannot start')
 stand_in = Path(tempfile.mkdtemp()) / 'no_sandbox_worker.py'
 stand_in.write_text(f"""import os, runpy, sys
-if not os.environ.get('QTWEBENGINE_DISABLE_SANDBOX'):
+if '--no-sandbox' not in sys.argv[1:]:
     sys.exit(subtitle_render_worker_exit := {subtitle_renderer.NO_SANDBOX_EXIT})
-sys.argv = ['subtitld', '--subtitle-render-worker']
+sys.argv = ['subtitld', '--subtitle-render-worker', '--no-sandbox']
 runpy.run_module('subtitld', run_name='__main__')
 """)
 real_command = subtitle_renderer.worker_command

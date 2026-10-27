@@ -138,7 +138,7 @@ class SubtitleRenderer(QObject):
         program, arguments = worker_command()
         environment = QProcessEnvironment.systemEnvironment()
         if self.no_sandbox:
-            environment.insert('QTWEBENGINE_DISABLE_SANDBOX', '1')
+            arguments = [*arguments, '--no-sandbox']
         if not getattr(sys, 'frozen', False):
             # The helper imports this very copy of Subtitld.
             path = str(session.PATH_SUBTITLD.parent)

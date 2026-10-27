@@ -23,3 +23,11 @@ flatpak --user install -y --noninteractive "$bundle"
 SMOKE_LOG=/tmp/smoke-flatpak.log bash "$here/smoke.sh" 30 \
     dbus-run-session -- flatpak run --env=QT_QPA_PLATFORM=offscreen --env=QT_QPA_PLATFORMTHEME= \
     org.subtitld.Subtitld
+
+# The subtitle renderer: QtWebEngine (the BaseApp's) and its Chromium run in
+# the Flatpak, sandboxed by Flatpak's own sandbox or (where that cannot
+# start) not.
+template=$(flatpak run --command=sh org.subtitld.Subtitld -c \
+    'ls /app/lib/python3*/site-packages/subtitld/subtitle_styles/classic/style.html' | head -1)
+SMOKE_RENDER_LOG=/tmp/smoke-flatpak-render.log bash "$here/smoke-render.sh" "$template" \
+    dbus-run-session -- flatpak run org.subtitld.Subtitld

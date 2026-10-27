@@ -26,13 +26,15 @@ job=$(echo "$job" | tr -d '\n')
 for attempt in 1 2; do
     # Where Chromium's sandbox cannot start, the helper stops before a page
     # is ready; Subtitld then starts it again without it, and so does this.
-    { printf '{"cmd": "template", "path": "%s"}\n%s\n' "$template" "$job"; sleep 60; } \
-        | timeout 60 "$@" --subtitle-render-worker > "$log.out" 2> "$log" &
+    { printf '{"cmd": "template", "path": "%s"}\n%s\n' "$template" "$job"; exec sleep 60; } \
+        | timeout 60 "$@" --subtitle-render-worker ${no_sandbox:-} > "$log.out" 2> "$log" &
     pid=$!
     for ((i = 1; i <= 60; i++)); do
         sleep 1
         if grep -aq '"id": 1, "rect": \[' "$log.out" 2>/dev/null; then
+            # The helper, and the commands' keep-alive before it.
             kill "$pid" 2>/dev/null
+            pkill -P $$ 2>/dev/null || true
             grep -a '"id": 1' "$log.out" | head -1 | cut -c1-120
             echo "rendered a subtitle after ${i}s"
             exit 0
@@ -43,7 +45,7 @@ for attempt in 1 2; do
     code=$?
     if [ "$attempt" = 1 ] && ! grep -aq '"ready": true' "$log.out"; then
         echo "Chromium's sandbox cannot start here: again without it"
-        export QTWEBENGINE_DISABLE_SANDBOX=1
+        no_sandbox=--no-sandbox
         continue
     fi
     tail -30 "$log"

@@ -11,9 +11,10 @@ URLs: no network, no other file. Chromium's sandbox is on too, where it can
 start: where it cannot (Ubuntu 24.04 on keeps unprivileged user namespaces
 from programs it has no AppArmor profile for, an AppImage among them), the
 first page dies before it is ready, and the helper exits with
-NO_SANDBOX_EXIT for Subtitld to start it again without the sandbox. As
-root (a container), Chromium will not start with it at all: off from the
-start.
+NO_SANDBOX_EXIT for Subtitld to start it again without the sandbox
+(--no-sandbox: an argument, which reaches it through any wrapper, a
+Flatpak's or a Snap's, where the environment may not). As root (a
+container), Chromium will not start with it at all: off from the start.
 
 It draws offscreen and in software: no window, no GPU, the same pixels
 everywhere. The fonts Subtitld comes with are declared to every page, so a
@@ -102,7 +103,7 @@ def main():
     os.environ['QT_QPA_OFFSCREEN_NO_GLX'] = '1'
     for name in ('DISPLAY', 'WAYLAND_DISPLAY'):
         os.environ.pop(name, None)
-    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+    if '--no-sandbox' in sys.argv[1:] or (hasattr(os, 'geteuid') and os.geteuid() == 0):
         os.environ['QTWEBENGINE_DISABLE_SANDBOX'] = '1'
     os.environ['QT_QUICK_BACKEND'] = 'software'
     flags = os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS', '')
