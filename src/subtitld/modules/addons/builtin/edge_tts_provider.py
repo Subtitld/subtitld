@@ -20,6 +20,7 @@ import logging
 import os
 import socket
 import subprocess
+import time
 
 import aiohttp
 import edge_tts
@@ -199,6 +200,10 @@ class EdgeTTSProvider(TTSProvider):
         super().__init__(parent)
         self._speech_threads: list[_EdgeTTSSpeechThread] = []
         self._voices_thread: _EdgeTTSVoicesThread | None = None
+        # Set on quit: events still run after aboutToQuit (a speakers list
+        # rebuilt by a timer asks for voices again), and a thread started
+        # then would outlive the wait in `shutdown`.
+        self._closed = False
         self.speech_ready.connect(self._on_speech_ready)
         self.speech_error.connect(self._on_speech_error)
 
@@ -235,6 +240,8 @@ class EdgeTTSProvider(TTSProvider):
             return
 
         cfg = session.CONFIG.setdefault('dubbing', {}).setdefault('edge-tts', {}).setdefault('voices', {})
+        if self._closed:
+            return
 
         def on_voice(voice: dict) -> None:
             cfg[voice['ShortName']] = voice
@@ -249,8 +256,21 @@ class EdgeTTSProvider(TTSProvider):
         self._voices_thread = thread
         thread.start()
 
+    def shutdown(self, milliseconds: int = 5000) -> None:
+        """Subtitld is quitting: wait for the voice list fetch (started at
+        launch) and any speech still being made. A QThread destroyed while
+        running aborts the process; neither can be cut short, so the wait is
+        bounded."""
+        self._closed = True
+        deadline = time.monotonic() + milliseconds / 1000
+        for thread in [self._voices_thread, *self._speech_threads]:
+            if thread is not None:
+                thread.wait(max(0, int((deadline - time.monotonic()) * 1000)))
+
     # ---- Synthesis --------------------------------------------------------
     def generate_speeches(self, text_list: list[dict]) -> None:
+        if self._closed:
+            return
         # Online preflight — emit a single error per item if offline so the
         # UI can show a "you're offline" message instead of a 30s timeout.
         if not _online():

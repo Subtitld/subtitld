@@ -5,7 +5,7 @@ import logging
 import cv2
 import numpy as np
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QPen, QIcon
 from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QLineF, QPoint, QEvent
 
@@ -125,8 +125,14 @@ class FaceExtractorThread(QThread):
     # Public control methods
     # ---------------------------------
     def stop(self):
-        """Request thread stop gracefully."""
+        """Request thread stop gracefully. For good: Subtitld is quitting."""
         self._running = False
+
+    def start(self, *args):
+        # Events still run after aboutToQuit; a search started then would
+        # outlive the wait in `stop_face_extractor`.
+        if self._running:
+            super().start(*args)
 
     # ---------------------------------
     # Internal utility
@@ -1278,6 +1284,14 @@ class remove_speaker_name_dialog(utils.SimpleDialog):
         return None
 
 
+def stop_face_extractor(self, milliseconds=5000):
+    """Subtitld is quitting: stop the face search and wait for it. It checks
+    between frames; starting MediaPipe can't be cut short, hence the bound."""
+    thread = self.left_panel_speakers_image_test_thread
+    thread.stop()
+    thread.wait(milliseconds)
+
+
 def load(self):
     tab_name = 'speakers'
     
@@ -1334,6 +1348,12 @@ def load(self):
 
     self.left_panel_speakers_image_test_thread = FaceExtractorThread(parent=self)
     self.left_panel_speakers_image_test_thread.result.connect(handle_face_result)
+    application = QApplication.instance()
+    if application is not None:
+        # Opening a project whose speakers have no picture yet starts the
+        # face search; quitting while it ran aborted the process
+        # ("QThread: Destroyed while thread '' is still running").
+        application.aboutToQuit.connect(lambda: stop_face_extractor(self))
 
     # Off-main-thread speaker-thumbnail decode (file_io._SpeakerImageLoader)
     # writes into session.SPEAKERS[name]['image'] from a worker thread and

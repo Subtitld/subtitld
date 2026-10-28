@@ -37,6 +37,7 @@ a = Analysis(
     datas=[
         ('src/subtitld/graphics', 'subtitld/graphics'),
         ('src/subtitld/locale', 'subtitld/locale'),
+        ('src/subtitld/subtitle_styles', 'subtitld/subtitle_styles'),
         ('src/subtitld/ftfy', 'subtitld/ftfy'),
         ('src/subtitld/models', 'subtitld/models'),
     ] + libdatachannel_datas,

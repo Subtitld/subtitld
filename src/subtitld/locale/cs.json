@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Smazat",
     "subtitldcc.delete_tip": "Smaže je ze subtitld.cc",
     "subtitldcc.delete_question": "Smazat „{title}“ ze subtitld.cc? Jejich stránka, všechny verze i stažení budou pro všechny odebrány a nelze to vrátit. Titulky v editoru zůstanou.",
-    "subtitldcc.deleted": "„{title}“ byly smazány ze subtitld.cc. Titulky v editoru tu zůstávají."
+    "subtitldcc.deleted": "„{title}“ byly smazány ze subtitld.cc. Titulky v editoru tu zůstávají.",
+    "interface_panel.subtitle_style": "Styl titulků",
+    "subtitle_styles.subtitld.classic.name": "Klasický",
+    "subtitle_styles.subtitld.classic.font_family": "Rodina fontů",
+    "subtitle_styles.subtitld.classic.font_size": "Velikost",
+    "subtitle_styles.subtitld.classic.color": "Barva",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Stín",
+    "subtitle_styles.subtitld.classic.shadow_x": "Pozice X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Pozice Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Barva",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Rámeček pozadí",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Vnitřní okraj",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Zaoblení rohů",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Barva"
 }

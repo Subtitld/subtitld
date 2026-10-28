@@ -117,6 +117,28 @@ try:
 except file_io.CorruptedProjectFileError as error:
     check('not USF: says so', str(error), 'Not a USF document: it is <tt>, not <USFSubtitles>')
 
+print('an embedded dub: written in the cache, whatever its uid says')
+import base64
+dub_cache = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
+os.makedirs(dub_cache, exist_ok=True)
+# Relative to the folder the dub is written to, so without the cleaning
+# it would land on `planted.desktop` in the test's folder.
+climbing = os.path.relpath(folder / 'planted', dub_cache).replace(os.sep, '/')
+EMBEDDED = base64.b64encode(b'RIFF embedded dub').decode()
+(folder / 'embedded.usf').write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
+<USFSubtitles version="1.1"><subtitles>
+  <subtitle start="1" stop="2"><text>Kept</text>
+    <dubbing uid="1a2b3c4d" start="1" end="2"><data encoding="base64" format="wav">{EMBEDDED}</data></dubbing></subtitle>
+  <subtitle start="3" stop="4"><text>Crafted</text>
+    <dubbing uid="{climbing}" start="3" end="4"><data encoding="base64" format="desktop">{EMBEDDED}</data></dubbing></subtitle>
+</subtitles></USFSubtitles>''', encoding='utf-8')
+opened, _fmt = file_io.process_subtitles_file(str(folder / 'embedded.usf'))
+paths = [segment['dubbing'][0]['path'] for segment in opened]
+check('a real uid: its name as before', paths[0], os.path.join(dub_cache, '1a2b3c4d.wav'))
+check('a climbing one: in the cache all the same', os.path.dirname(paths[1]), dub_cache)
+check('nothing written outside it', (folder / 'planted.desktop').exists(), False)
+check('the bytes there', [Path(path).read_bytes() for path in paths], [b'RIFF embedded dub'] * 2)
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

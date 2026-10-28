@@ -836,5 +836,18 @@
     "subtitldcc.delete": "削除",
     "subtitldcc.delete_tip": "subtitld.cc から削除します",
     "subtitldcc.delete_question": "“{title}” を subtitld.cc から削除しますか？そのページ、すべてのバージョン、ダウンロードが全員から削除され、元に戻すことはできません。エディターの字幕はそのまま残ります。",
-    "subtitldcc.deleted": "“{title}” を subtitld.cc から削除しました。エディターの字幕はそのまま残っています。"
+    "subtitldcc.deleted": "“{title}” を subtitld.cc から削除しました。エディターの字幕はそのまま残っています。",
+    "interface_panel.subtitle_style": "字幕スタイル",
+    "subtitle_styles.subtitld.classic.name": "クラシック",
+    "subtitle_styles.subtitld.classic.font_family": "フォントファミリー",
+    "subtitle_styles.subtitld.classic.font_size": "サイズ",
+    "subtitle_styles.subtitld.classic.color": "色",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "影",
+    "subtitle_styles.subtitld.classic.shadow_x": "X 位置",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y 位置",
+    "subtitle_styles.subtitld.classic.shadow_color": "色",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "背景ボックス",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "内側の余白",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "角の丸み",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "色"
 }

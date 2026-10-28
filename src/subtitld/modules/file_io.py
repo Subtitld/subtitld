@@ -3,8 +3,10 @@ import copy
 import re
 import hashlib
 import shutil
+import sys
 import threading
 import zipfile
+import time
 import xml.etree.ElementTree as ET
 from docx import Document
 import datetime
@@ -28,6 +30,7 @@ from subtitld.modules import sami
 from subtitld.modules import sbv
 from subtitld.modules import scc
 from subtitld.modules import srt
+from subtitld.modules import subtitle_styles
 from subtitld.modules import session
 from subtitld.modules import ttml
 from subtitld.modules import waveform
@@ -91,6 +94,72 @@ def _usfx_extract_dir(usfx_path):
     path = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'usfx', project_hash)
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _path_inside(base, relative):
+    """`relative` joined onto `base` and normalised, or None when the
+    result would land outside `base`. Paths in a project (dub and subclip
+    paths in subtitles.usf, member names in the zip) come from the file,
+    so a crafted one could say `../../somewhere/file.wav` and have the
+    audio engine read, or the extractor write, anywhere.
+
+    The check compares realpaths, so `..`, a drive letter and a symlink
+    are all resolved first; the path returned keeps `base` as given, not
+    its realpath, because the audio engine matches a dub's path to the
+    one the background extractor announces by plain string equality, and
+    both are built here."""
+    joined = os.path.normpath(os.path.join(base, relative))
+    root = os.path.realpath(base)
+    try:
+        if os.path.commonpath([root, os.path.realpath(joined)]) == root:
+            return joined
+    except ValueError:
+        # Another drive on Windows: certainly not inside.
+        pass
+    return None
+
+
+def _fsync(fd):
+    """Push what was written to `fd` past the OS cache onto the disk.
+    On macOS fsync() stops at the drive's own cache; F_FULLFSYNC goes all
+    the way, and falls back to fsync() where the filesystem refuses it."""
+    if sys.platform == 'darwin':
+        try:
+            import fcntl
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+            return
+        except (ImportError, AttributeError, OSError):
+            pass
+    os.fsync(fd)
+
+
+def _fsync_file(path):
+    """Flush `path`'s bytes to disk before it is renamed over a project:
+    without it a power loss right after the rename can leave a zero-length
+    or truncated file on some filesystems. Opened for writing because
+    Windows only flushes handles that can write."""
+    with open(path, 'r+b') as fh:
+        _fsync(fh.fileno())
+
+
+def _fsync_dir(path):
+    """Flush the directory entry a rename just changed, so the new name
+    survives a power loss too. POSIX only: Windows can't open a directory
+    with os.open. Best-effort — by now
+    the file is in place, and a filesystem that can't sync a directory
+    (some network mounts) shouldn't turn a good save into a failed one."""
+    if os.name == 'nt':
+        return
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        _fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _is_phase1_usfx_member(name):
@@ -234,12 +303,22 @@ class _USFXBackgroundExtractor(QThread):
         try:
             with zf.open(arcname) as src, open(tmp, 'wb') as dst:
                 while True:
+                    if self.isInterruptionRequested():
+                        # Subtitld is quitting: drop the partial file
+                        # below; the next open extracts it again.
+                        raise InterruptedError
                     chunk = src.read(self._CHUNK)
                     if not chunk:
                         break
                     dst.write(chunk)
                     self._extracted_bytes += len(chunk)
                     self._emit_progress()
+            # No fsync here, unlike `save_file`: this is a cache of the
+            # .usfx, and a file a power loss leaves empty or short fails
+            # the size check above on the next open and is extracted
+            # again. A sync per dub cost ~8 ms each on NVMe (2.3 s for
+            # 300 dubs, against 0.03 s without), all of it before the
+            # Save button unlocks.
             os.replace(tmp, target_path)
         except Exception:
             if os.path.exists(tmp):
@@ -272,9 +351,13 @@ class _USFXBackgroundExtractor(QThread):
                     continue
                 # Map directly: arcname `assets/dubs/uid.wav` lands at
                 # `<extract_dir>/assets/dubs/uid.wav` — same path the
-                # main-thread USFX parse stored in `dub['path']`.
-                target = os.path.join(self._extract_dir, name.replace('/', os.sep))
-                yield name, target
+                # main-thread USFX parse stored in `dub['path']`, built
+                # by the same helper. Member names come from the file,
+                # and unlike `zf.extract` this write doesn't clean them:
+                # one that climbs out of the extract dir is skipped.
+                target = _path_inside(self._extract_dir, name)
+                if target:
+                    yield name, target
         if 'assets/waveform.npy' in names:
             target = os.path.join(
                 session.PATH_SUBTITLD_USER_CACHE, 'waveform',
@@ -314,6 +397,8 @@ class _USFXBackgroundExtractor(QThread):
                     return
                 # Second pass: stream each member with progress per chunk.
                 for arc, target in pairs:
+                    if self.isInterruptionRequested():
+                        return
                     try:
                         size = zf.getinfo(arc).file_size
                     except KeyError:
@@ -340,11 +425,46 @@ def _start_speaker_image_loader(items):
     into `session.SPEAKERS` regardless of which project is loaded — but
     since `session.SPEAKERS` is reset on each open, stale writes from a
     previous load would be no-ops for absent names)."""
-    if not items:
+    if not items or _quitting:
         return
     loader = _SpeakerImageLoader(items)
     session.SPEAKER_IMAGE_LOAD = loader
+    _track_background_loader(loader)
     loader.start()
+
+
+# Every project-open loader started and not yet seen finished, the ones a
+# later open replaced on `session` included, so `stop_background_loaders`
+# can wait for each and none is garbage-collected mid-run.
+_background_loaders = []
+# Set by `stop_background_loaders`: events still run after aboutToQuit, and
+# a loader started then would outlive the wait.
+_quitting = False
+
+
+def _track_background_loader(thread):
+    _background_loaders[:] = [t for t in _background_loaders if not t.isFinished()]
+    _background_loaders.append(thread)
+
+
+def stop_background_loaders(milliseconds=5000):
+    """Subtitld is quitting: ask the project-open loaders (the USFX
+    asset extractor, the speaker thumbnail decoder) to stop, and wait for
+    them. A QThread destroyed while still running aborts the process
+    ("QThread: Destroyed while thread '' is still running"), which is what
+    closing Subtitld right after opening a big project did. Both check for
+    the request between chunks/thumbnails, so the wait is short; it is
+    bounded all the same so a stuck read can't hang the quit. Saves are
+    waited for in full: one cut short would lose the user's work."""
+    global _quitting
+    _quitting = True
+    for thread in _background_loaders:
+        thread.requestInterruption()
+    deadline = time.monotonic() + milliseconds / 1000
+    for thread in list(_background_loaders):
+        thread.wait(max(0, int((deadline - time.monotonic()) * 1000)))
+    _background_loaders[:] = [t for t in _background_loaders if not t.isFinished()]
+    wait_for_save_threads()
 
 
 class _SpeakerImageLoader(QThread):
@@ -372,6 +492,8 @@ class _SpeakerImageLoader(QThread):
         # at the top of file_io.py. The previous lazy import here was
         # the bug that broke `speaker_image_ready` deliveries.
         for name, image_bytes, fallback_path in self._items:
+            if self.isInterruptionRequested():
+                return
             qimg = None
             try:
                 if image_bytes:
@@ -429,11 +551,13 @@ class ThreadGenerateHashOfVideo(QThread):
         if self.filepath and os.path.isfile(self.filepath):
             md5_object = hashlib.md5()
             block_size = 128 * md5_object.block_size
-            file_object = open(self.filepath, 'rb')
-            chunk = file_object.read(block_size)
-            while chunk:
-                md5_object.update(chunk)
+            with open(self.filepath, 'rb') as file_object:
                 chunk = file_object.read(block_size)
+                while chunk:
+                    if self.isInterruptionRequested():
+                        return
+                    md5_object.update(chunk)
+                    chunk = file_object.read(block_size)
 
             md5_hash = md5_object.hexdigest()
 
@@ -652,7 +776,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     raw = dub.pop('_embedded_bytes', None)
                     fmt = dub.pop('_embedded_format', 'wav')
                     if raw and dub.get('uid'):
-                        target = os.path.join(dub_cache_dir, f'{dub["uid"]}.{fmt}')
+                        # Both come from the file: cleaned like the USFX
+                        # arcnames, so a uid of `../../somewhere/x` with a
+                        # format of its choosing can't create a file
+                        # outside the cache. Real uids are hex, unchanged.
+                        target = os.path.join(dub_cache_dir, f'{_safe_asset_name(dub["uid"])}.{_safe_asset_name(fmt)}')
                         if not os.path.exists(target):
                             try:
                                 with open(target, 'wb') as wf:
@@ -742,11 +870,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         image_jobs.append((speaker_name, None, fallback))
             _start_speaker_image_loader(image_jobs)
 
+            # Relative paths are arcnames under the extract dir. One that
+            # climbs out of it (`../../somewhere/file.wav`) only comes
+            # from a crafted project: it's dropped, and the dub plays as
+            # silence, as it does when its file is missing.
             for segment in segments_list:
                 for dub in segment.get('dubbing', []) or []:
                     path = dub.get('path', '')
                     if path and not os.path.isabs(path):
-                        dub['path'] = os.path.join(extract_dir, path)
+                        inside = _path_inside(extract_dir, path)
+                        if inside:
+                            dub['path'] = inside
+                        else:
+                            dub.pop('path')
                     # Mirror the rewrite for subclip paths: the saver
                     # bundled each unique source under `assets/dubs/`
                     # and stored the arcname; map back to the extracted
@@ -757,7 +893,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                         for key in ('path', 'raw_path'):
                             p = seg.get(key, '')
                             if p and not os.path.isabs(p):
-                                seg[key] = os.path.join(extract_dir, p)
+                                inside = _path_inside(extract_dir, p)
+                                if inside:
+                                    seg[key] = inside
+                                else:
+                                    seg.pop(key)
 
             # Resolve the project's source video. Priority: bundled video file →
             # original-path entry recorded in the manifest → same-folder match
@@ -819,7 +959,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # extract_dir for dubs. Most USFX zips have at least dubs, so
             # the cache_key absence (e.g. video not yet resolved) is no
             # longer a reason to skip the whole background pass.
-            if current_key or extract_dir:
+            if (current_key or extract_dir) and not _quitting:
                 extractor = _USFXBackgroundExtractor(
                     subtitle_file, current_key, extract_dir=extract_dir,
                 )
@@ -839,6 +979,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 except Exception:
                     pass
                 session.USFX_BACKGROUND_LOAD = extractor
+                _track_background_loader(extractor)
                 extractor.start()
 
             if not isinstance(session.FORMAT, dict):
@@ -1174,21 +1315,30 @@ def _ensure_dub_files_present(segments, existing_usfx_path):
         return
 
     missing = []  # list of (absolute_path, expected_arcname)
+    extract_root = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'usfx')
 
     def _consider(p):
         if not p or not isinstance(p, str):
             return
         if os.path.isfile(p):
             return
+        # Only ever rewrite files in an extract dir. An absolute path
+        # kept from the project as it was read (a legacy project, or a
+        # crafted one) can name any folder, and the bytes written come
+        # from the zip.
+        if not os.path.isabs(p) or not _path_inside(extract_root, p):
+            return
         # Derive the arcname by finding the `assets/dubs/...` substring
         # of the absolute path. `process_subtitles_file` builds the
         # session's dub paths as `<extract_dir>/assets/dubs/<file>`,
-        # so the suffix is stable across machines.
+        # so the suffix is stable across machines. Searched with `/`
+        # separators, so a Windows path matches too.
         marker = '/assets/dubs/'
-        idx = p.find(marker)
+        posix = p.replace(os.sep, '/')
+        idx = posix.find(marker)
         if idx < 0:
             return
-        arcname = p[idx + 1:].replace(os.sep, '/')
+        arcname = posix[idx + 1:]
         missing.append((p, arcname))
 
     for segment in segments:
@@ -1295,7 +1445,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       else language,
                       agents=options.get('speakers') == 'voice',
                       look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
-                      preview=session.CONFIG.get('videoplayer', {}))
+                      preview=subtitle_styles.preview_look())
 
         elif subtitle_format == 'SAMI':
             # A class for each language written: the original's, the
@@ -1326,7 +1476,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Sized to the video, in the export's look; .ssa as SSA v4.
             ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
-                     preview=session.CONFIG.get('videoplayer', {}))
+                     preview=subtitle_styles.preview_look())
 
         elif subtitle_format == 'MCC':
             # Pop-on captions in CEA-608 and CEA-708 (or CEA-608 alone), a packet
@@ -1616,6 +1766,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         raise zipfile.BadZipFile(
                             f'CRC mismatch on member {bad!r} — refusing to overwrite destination',
                         )
+                # The bytes on disk, not just in the OS cache, before the
+                # rename: otherwise a power loss right after it can leave
+                # the project zero-length or truncated, the previous
+                # version already gone.
+                _fsync_file(tmp_path)
                 os.replace(tmp_path, final_file)
             except Exception:
                 if os.path.exists(tmp_path):
@@ -1624,6 +1779,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     except Exception:
                         pass
                 raise
+            # And the rename itself, recorded in the folder.
+            _fsync_dir(os.path.dirname(os.path.abspath(final_file)))
 
 
 def peek_usfx_video(usfx_path):
@@ -1637,11 +1794,15 @@ def peek_usfx_video(usfx_path):
         with zipfile.ZipFile(usfx_path, 'r') as zf:
             usfx_dir = os.path.dirname(os.path.abspath(usfx_path))
 
-            # Bundled video first.
+            # Bundled video first. `zf.extract` cleans the member name
+            # but the path checked and returned here is built from it as
+            # is, so a `..` in it could hand back any file as the video.
             for name in zf.namelist():
                 if name.startswith('assets/video/') and not name.endswith('/'):
                     extract_dir = _usfx_extract_dir(usfx_path)
-                    target = os.path.join(extract_dir, name)
+                    target = _path_inside(extract_dir, name)
+                    if not target:
+                        continue
                     if not os.path.isfile(target):
                         zf.extract(name, extract_dir)
                     if os.path.isfile(target):

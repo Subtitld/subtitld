@@ -3,6 +3,12 @@ import os
 import argparse
 import inspect
 
+# The preview's subtitle renderer runs as this same program in a process of
+# its own (interface.subtitle_renderer): nothing else of Subtitld is loaded.
+if '--subtitle-render-worker' in sys.argv[1:]:
+    from subtitld.interface import subtitle_render_worker
+    sys.exit(subtitle_render_worker.main())
+
 from subtitld import __version__
 from subtitld.modules import subtitldcc_links
 
@@ -481,6 +487,9 @@ def main():
     except Exception as exc:
         print(f'Add-on discovery failed: {exc}')
     app.aboutToQuit.connect(addon_manager.shutdown_all)
+    # The loaders a project open starts (USFX assets, speaker thumbnails)
+    # would still be running if Subtitld closed right after the open.
+    app.aboutToQuit.connect(file_io.stop_background_loaders)
 
     QDir.addSearchPath('graphics', session.PATH_SUBTITLD_GRAPHICS)
 
@@ -502,7 +511,29 @@ def main():
     links_listener.listen()
     app.aboutToQuit.connect(links_listener.close)
 
-    sys.exit(app.exec())
+    code = app.exec()
+    # The waits on aboutToQuit are bounded, and a network read can't be
+    # interrupted: a thread still in one would be destroyed running in the
+    # teardown, and Qt aborts the process over it. Everything worth keeping
+    # (config, saves) is on disk by now, so leave without the teardown.
+    if _threads_still_running():
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    sys.exit(code)
+
+
+def _threads_still_running():
+    import gc
+    from PySide6.QtCore import QThread
+    main_thread = QThread.currentThread()
+    for obj in gc.get_objects():
+        try:
+            if isinstance(obj, QThread) and obj is not main_thread and obj.isRunning():
+                return True
+        except RuntimeError:  # its C++ side is already gone
+            pass
+    return False
 
 if __name__ == '__main__':
     main()

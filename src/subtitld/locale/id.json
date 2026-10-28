@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Hapus",
     "subtitldcc.delete_tip": "Hapus dari subtitld.cc",
     "subtitldcc.delete_question": "Hapus “{title}” dari subtitld.cc? Halamannya, semua versinya, dan unduhannya dihapus untuk semua orang, dan ini tidak bisa dibatalkan. Subtitle di editor tetap ada.",
-    "subtitldcc.deleted": "“{title}” telah dihapus dari subtitld.cc. Subtitle di editor masih ada."
+    "subtitldcc.deleted": "“{title}” telah dihapus dari subtitld.cc. Subtitle di editor masih ada.",
+    "interface_panel.subtitle_style": "Gaya subtitle",
+    "subtitle_styles.subtitld.classic.name": "Klasik",
+    "subtitle_styles.subtitld.classic.font_family": "Keluarga font",
+    "subtitle_styles.subtitld.classic.font_size": "Ukuran",
+    "subtitle_styles.subtitld.classic.color": "Warna",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Bayangan",
+    "subtitle_styles.subtitld.classic.shadow_x": "Posisi X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Posisi Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Warna",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Kotak latar",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Padding",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Radius sudut",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Warna"
 }

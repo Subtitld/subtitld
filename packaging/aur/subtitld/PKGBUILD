@@ -33,9 +33,11 @@ depends=(
     'python-scipy'
     'python-sounddevice'
     'python-soundfile'
-    # Optional for pyside6 on Arch, but the app needs them.
+    # Optional for pyside6 on Arch, but the app needs them: QtWebEngine
+    # renders the preview's subtitles, QtWebSockets carries live co-editing.
     'qt6-multimedia'
     'qt6-svg'
+    'qt6-webengine'
     'qt6-websockets'
     'hicolor-icon-theme'
 )

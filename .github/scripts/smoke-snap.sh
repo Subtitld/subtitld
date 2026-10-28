@@ -20,6 +20,7 @@ lxc exec "$name" -- cloud-init status --wait >/dev/null || true
 lxc exec "$name" -- snap wait system seed.loaded
 lxc file push -q "$snap_file" "$name/root/subtitld.snap"
 lxc file push -q "$here/smoke.sh" "$name/root/smoke.sh"
+lxc file push -q "$here/smoke-render.sh" "$name/root/smoke-render.sh"
 lxc file push -q "$here/snap-video-check.sh" "$here/snap-video-check.py" "$name/root/"
 lxc exec "$name" -- bash -c '
     set -e
@@ -27,6 +28,7 @@ lxc exec "$name" -- bash -c '
     snap install --dangerous /root/subtitld.snap
     snap connect subtitld:kf6-core22 kf6-core22:kf6-core22-slot
     install -m 755 /root/smoke.sh /usr/local/bin/smoke.sh
+    install -m 755 /root/smoke-render.sh /usr/local/bin/smoke-render.sh
     # Output through a pipe: confinement keeps it from writing
     # to a log file opened outside the snap, and Python then exits (120)
     # with nothing said. The pipe lives as long as the app.
@@ -61,3 +63,11 @@ lxc exec "$name" -- su - ubuntu -c '
     WAYLAND_DISPLAY=wayland-1 SMOKE_LOG=$HOME/smoke-wayland.log \
         SMOKE_FAIL_ON="Could not create a shell surface|Failed to load (client buffer|shell) integration|wl-shell. is a deprecated" \
         smoke.sh 30 subtitld-piped'
+
+# The subtitle renderer: QtWebEngine staged, and its Chromium runs in the
+# snap's confinement (without its own sandbox, which strict confinement
+# keeps from starting). Its output goes through a pipe, as above: the
+# layer and the helper's messages together.
+lxc exec "$name" -- su - ubuntu -c '
+    template=/snap/subtitld/current/lib/python3.10/site-packages/subtitld/subtitle_styles/classic/style.html
+    cd $HOME && SMOKE_RENDER_LOG=$HOME/smoke-render.log smoke-render.sh "$template" subtitld-piped'

@@ -105,6 +105,13 @@ echo "== live co-editing"
 cp "$SRC/.github/scripts/collab-check.py" /tmp/collab-check.py
 sudo -u builder env HOME=/tmp/smoke QT_QPA_PLATFORM=offscreen python /tmp/collab-check.py
 
+# The subtitle renderer: Arch's QtWebEngine, through the installed command.
+echo "== subtitle renderer"
+template=$(ls /usr/lib/python3*/site-packages/subtitld/subtitle_styles/classic/style.html | head -1)
+sudo -u builder env HOME=/tmp/smoke XDG_CONFIG_HOME=/tmp/smoke/c XDG_DATA_HOME=/tmp/smoke/d \
+    XDG_CACHE_HOME=/tmp/smoke/k SMOKE_RENDER_LOG=/tmp/smoke/render.log \
+    bash "$SRC/.github/scripts/smoke-render.sh" "$template" subtitld
+
 for p in "$WORK"/local/*; do
     name=$(basename "$p")
     mkdir -p "$OUT/$name"

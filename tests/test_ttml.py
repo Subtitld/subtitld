@@ -250,7 +250,7 @@ except file_io.CorruptedProjectFileError as error:
 session.SUBTITLE['segments'] = segments
 session.SUBTITLE['language'] = 'pt-br'
 session.SUBTITLE['translations'] = {}
-session.CONFIG['videoplayer'] = {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}
+session.CONFIG['subtitle_style'] = {'settings': {'subtitld.classic': {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}}}
 for fmt, name in (('TTML', 'out.ttml'), ('DFXP', 'out.dfxp')):
     session.FORMAT['options'] = {'speakers': 'voice', 'look': 'preview'}
     file_io.save_file(str(folder / name), fmt)

@@ -43,7 +43,10 @@ def check(name, got, want):
 
 EN = json.loads((session.PATH_LOCALE / 'en_US.json').read_text(encoding='utf-8'))
 PT = json.loads((session.PATH_LOCALE / 'pt_BR.json').read_text(encoding='utf-8'))
-MISSING = next(key for key in EN if key not in PT)
+# A key only English has; pt_BR is complete, so one is added for the test.
+MISSING = next((key for key in EN if key not in PT), 'test.only_in_english')
+EN.setdefault(MISSING, 'Only in English')
+i18n.add_translation(MISSING, EN[MISSING], locale='en_US')
 # Every locale file, by its own name, in the order the picker lists them
 # (sorted by file name). Swedish is the stand-in for a language with no file.
 LANGUAGES = {

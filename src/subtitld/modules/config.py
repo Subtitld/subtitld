@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from subtitld.modules import subtitle_styles
 from subtitld.modules.session import PATH_SUBTITLD_USER_CONFIG_FILE
 
 # The timeline's zoom, in pixels a second: the wheel, the buttons and the
@@ -25,6 +26,9 @@ class Config(dict):
         self.load_defaults()
 
         super().__init__(data)
+
+        # The preview's look used to be kept in videoplayer; it is Classic's now.
+        subtitle_styles.migrate(self)
 
         # A zoom out of range draws the timeline too narrow to see (0 makes
         # it vanish), and it was saved: the keys used to go past the limits.
@@ -57,6 +61,7 @@ class Config(dict):
         self.setdefault('quality_check', {})
         self.setdefault('default_values', {})
         self.setdefault('videoplayer', {})
+        self.setdefault('subtitle_style', {})
         self.setdefault('export', {})
         self.setdefault('autosave', {})
         self.setdefault('transcription', {})
@@ -87,6 +92,7 @@ class Config(dict):
             'quality_check',
             'default_values',
             'videoplayer',
+            'subtitle_style',
             'export',
             'autosave',
             'transcription',

@@ -15,6 +15,9 @@ finish-args:
   - --device=all
   - --filesystem=home
   - --env=QT_QPA_PLATFORMTHEME=gtk3
+  # QtWebEngine (the subtitle renderer) is the BaseApp's, in /app, where
+  # the runtime's Qt does not look for it.
+  - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
 
 cleanup-commands:
   - /app/cleanup-BaseApp.sh

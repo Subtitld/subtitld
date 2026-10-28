@@ -60,3 +60,7 @@ for i in $(seq 40); do [ -S "$XDG_RUNTIME_DIR/wayland-1" ] && break; sleep 0.5; 
 WAYLAND_DISPLAY=wayland-1 SMOKE_LOG=/tmp/smoke-wayland.log \
     SMOKE_FAIL_ON='Could not create a shell surface|Failed to load (client buffer|shell) integration|wl-shell. is a deprecated' \
     bash "$here/smoke.sh" 25 /tmp/squashfs-root/AppRun
+
+# The subtitle renderer: QtWebEngine bundled, and its Chromium runs here.
+template=$(find /tmp/squashfs-root -path '*subtitle_styles/classic/style.html' | head -1)
+SMOKE_RENDER_LOG=/tmp/smoke-render.log bash "$here/smoke-render.sh" "$template" /tmp/squashfs-root/AppRun

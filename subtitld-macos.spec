@@ -35,6 +35,7 @@ a = Analysis(
     datas=[
         ('src/subtitld/graphics', 'subtitld/graphics'),
         ('src/subtitld/locale', 'subtitld/locale'),
+        ('src/subtitld/subtitle_styles', 'subtitld/subtitle_styles'),
         ('src/subtitld/ftfy', 'subtitld/ftfy'),
         ('src/subtitld/models', 'subtitld/models'),
         # Contents/Resources/usfx.icns: the .usfx document type's icon.

@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Löschen",
     "subtitldcc.delete_tip": "Von subtitld.cc löschen",
     "subtitldcc.delete_question": "“{title}” von subtitld.cc löschen? Die Seite, alle Versionen und die Downloads werden für alle entfernt, und das kann nicht widerrufen werden. Die Untertitel im Editor bleiben erhalten.",
-    "subtitldcc.deleted": "“{title}” wurde von subtitld.cc gelöscht. Die Untertitel im Editor sind noch hier."
+    "subtitldcc.deleted": "“{title}” wurde von subtitld.cc gelöscht. Die Untertitel im Editor sind noch hier.",
+    "interface_panel.subtitle_style": "Untertitelstil",
+    "subtitle_styles.subtitld.classic.name": "Klassisch",
+    "subtitle_styles.subtitld.classic.font_family": "Schriftfamilie",
+    "subtitle_styles.subtitld.classic.font_size": "Größe",
+    "subtitle_styles.subtitld.classic.color": "Farbe",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Schatten",
+    "subtitle_styles.subtitld.classic.shadow_x": "X-Position",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y-Position",
+    "subtitle_styles.subtitld.classic.shadow_color": "Farbe",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Hintergrundbox",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Innenabstand",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Eckenradius",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Farbe"
 }

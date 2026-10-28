@@ -1121,5 +1121,18 @@
     "collab.voice_you": "{name} (you)",
     "collab.voice_many": "Many people in the call: everyone links to everyone else, so the sound may break up.",
     "collab.voice_unavailable": "Voice isn't available in this Subtitld (it needs libdatachannel, libopus and sound devices).",
-    "collab.voice_failed": "The microphone or the speakers wouldn't open."
+    "collab.voice_failed": "The microphone or the speakers wouldn't open.",
+    "interface_panel.subtitle_style": "Subtitle style",
+    "subtitle_styles.subtitld.classic.name": "Classic",
+    "subtitle_styles.subtitld.classic.font_family": "Font family",
+    "subtitle_styles.subtitld.classic.font_size": "Size",
+    "subtitle_styles.subtitld.classic.color": "Color",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Shadow",
+    "subtitle_styles.subtitld.classic.shadow_x": "X position",
+    "subtitle_styles.subtitld.classic.shadow_y": "Y position",
+    "subtitle_styles.subtitld.classic.shadow_color": "Color",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Background box",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Padding",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Border radius",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Color"
 }

@@ -836,5 +836,18 @@
     "subtitldcc.delete": "Supprimer",
     "subtitldcc.delete_tip": "Le supprimer de subtitld.cc",
     "subtitldcc.delete_question": "Supprimer « {title} » de subtitld.cc ? Sa page, toutes ses versions et les téléchargements sont retirés pour tout le monde, et c'est irréversible. Les sous-titres de l'éditeur restent en place.",
-    "subtitldcc.deleted": "« {title} » a été supprimé de subtitld.cc. Les sous-titres de l'éditeur sont toujours là."
+    "subtitldcc.deleted": "« {title} » a été supprimé de subtitld.cc. Les sous-titres de l'éditeur sont toujours là.",
+    "interface_panel.subtitle_style": "Style des sous-titres",
+    "subtitle_styles.subtitld.classic.name": "Classique",
+    "subtitle_styles.subtitld.classic.font_family": "Famille de police",
+    "subtitle_styles.subtitld.classic.font_size": "Taille",
+    "subtitle_styles.subtitld.classic.color": "Couleur",
+    "subtitle_styles.subtitld.classic.shadow_enabled": "Ombre",
+    "subtitle_styles.subtitld.classic.shadow_x": "Position X",
+    "subtitle_styles.subtitld.classic.shadow_y": "Position Y",
+    "subtitle_styles.subtitld.classic.shadow_color": "Couleur",
+    "subtitle_styles.subtitld.classic.backgroundbox_enabled": "Cadre d'arrière-plan",
+    "subtitle_styles.subtitld.classic.backgroundbox_padding": "Marge intérieure",
+    "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Rayon des coins",
+    "subtitle_styles.subtitld.classic.backgroundbox_color": "Couleur"
 }
