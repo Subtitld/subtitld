@@ -83,6 +83,13 @@
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>
+        <!-- subtitld:// links, subtitld.cc's "Open in Subtitld" for a shared project: the link comes as the
+             first argument, as a file does. -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="subtitld" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>Subtitld</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
       </Extensions>
     </Application>
   </Applications>

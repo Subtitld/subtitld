@@ -126,6 +126,11 @@ app = BUNDLE(
                 'LSHandlerRank': 'Alternate',
             },
         ],
+        # subtitld:// links, subtitld.cc's "Open in Subtitld" for a shared project:
+        # macOS sends them to the app as it does files (__main__.FileOpenFilter).
+        'CFBundleURLTypes': [
+            {'CFBundleURLName': 'org.subtitld.link', 'CFBundleURLSchemes': ['subtitld']},
+        ],
         'UTExportedTypeDeclarations': [
             {
                 'UTTypeIdentifier': 'org.subtitld.usfx',

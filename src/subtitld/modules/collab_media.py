@@ -138,6 +138,17 @@ def video_fingerprint(path):
         return ''
 
 
+def free_path(folder, name):
+    """Where a received file named `name` can go in `folder` without replacing another: "name (2).ext" and on
+    when the name is taken. A file part-received there before keeps its name, so it resumes."""
+    stem, extension = os.path.splitext(os.path.basename(name) or 'video')
+    candidate, number = os.path.join(folder, stem + extension), 2
+    while os.path.exists(candidate):
+        candidate = os.path.join(folder, f'{stem} ({number}){extension}')
+        number += 1
+    return candidate
+
+
 def destination(kind, name):
     """Where a received file of this kind goes here, for the video open now (None when there is none)."""
     video = (session.VIDEO or {}).get('filepath')

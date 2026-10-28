@@ -13,7 +13,8 @@ import os
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from subtitld.interface.translation import _
@@ -103,6 +104,7 @@ class LiveCard(QWidget):
         layout.setSpacing(8)
         self._project = None      # GET /collab/projects/{doc_id} for the open shared project
         self._projects = None     # the shared projects list, once asked for
+        self._link = None         # a project a subtitld:// link named, waiting for a sign-in
         self._busy = False
         self._pending_confirm = None
 
@@ -141,6 +143,10 @@ class LiveCard(QWidget):
         shared.addWidget(self.here)
         self.publishes_to = _text()
         shared.addWidget(self.publishes_to)
+        # Its page on subtitld.cc, where collaborators open it in Subtitld (subtitldcc_open.py).
+        self.copy_link_button = _button()
+        self.copy_link_button.clicked.connect(self.copy_link)
+        shared.addWidget(_row(self.copy_link_button))
         self.conflicts = _text()
         shared.addWidget(self.conflicts)
         self.conflicts_box = QVBoxLayout()
@@ -205,6 +211,9 @@ class LiveCard(QWidget):
         from subtitld.interface import left_panel, left_panel_subtitleslist
 
         window = self.panel.window_
+        start_screen = getattr(window, 'start_screen', None)
+        if start_screen is not None and window.central_widget.layout().currentWidget() is start_screen:
+            return  # a project opened from a link, waiting for its video (subtitldcc_open.py)
         if hasattr(window, 'timeline_widget'):
             window.timeline_widget.update_size()
             window.timeline_widget.update()
@@ -313,6 +322,7 @@ class LiveCard(QWidget):
         if subtitle:
             self.publishes_to.setText(_('collab.publishes_to').format(
                 title=html.escape(subtitle.get('title') or ''), version=subtitle.get('version') or 0))
+        self.copy_link_button.setVisible(bool(project.get('url')))
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.stop_button.setVisible(bool(project))
@@ -380,7 +390,7 @@ class LiveCard(QWidget):
             folder = QFileDialog.getExistingDirectory(self, _('collab.media_where'), start)
             if not folder:
                 return
-            destination = os.path.join(folder, row['name'])
+            destination = collab_media.free_path(folder, row['name'])
         else:
             destination = collab_media.destination(row['kind'], row['name'])
             if destination is None:
@@ -468,6 +478,32 @@ class LiveCard(QWidget):
         self._project = None
         self.refresh()
 
+    def open_link(self, doc_id):
+        """A subtitld:// link to shared project `doc_id`, followed with a project open in the editor: asked
+        here first, like opening one from the list."""
+        if collab_state.shared() and collab_state.STATE.get('doc') == doc_id:
+            self.panel.show_message(_('open_link.already_open'))
+            return
+        if not service.is_connected():
+            self._link = doc_id  # once connected (signed_in)
+            self.panel.show_message(_('open_link.connect_first'))
+            return
+        self._link = None
+
+        def failed(error):
+            if service.error_code(error) == 'not_found':
+                self.panel.show_message(_('open_link.not_found'), error=True)
+            else:
+                self._call_failed(error)
+
+        collab_service.project(self.ask_join, failed, doc_id=doc_id)
+
+    def copy_link(self):
+        url = (self._project or {}).get('url')
+        if url:
+            QApplication.clipboard().setText(url)
+            self.panel.show_message(_('collab.link_copied'))
+
     # --- Shared --------------------------------------------------------------------------------------------
 
     def _project_loaded(self, project):
@@ -526,10 +562,12 @@ class LiveCard(QWidget):
         self.panel.sign_in(device=False)
 
     def signed_in(self):
-        """A new sign-in: the open shared project tries again with it."""
+        """A new sign-in: the open shared project tries again with it, and a link waiting for it goes on."""
         if collab_state.shared():
             collab_service.connect()
         self.refresh()
+        if self._link:
+            self.open_link(self._link)
 
     # --- Questions and errors -------------------------------------------------------------------------------
 
@@ -561,6 +599,8 @@ class LiveCard(QWidget):
         self.share_button.setText(_('collab.share'))
         self.share_button.setToolTip(_('collab.share_tip'))
         self.list_button.setText(_('collab.shared_with_you'))
+        self.copy_link_button.setText(_('collab.copy_link'))
+        self.copy_link_button.setToolTip(_('collab.copy_link_tip'))
         self.members_title.setText(_('collab.members'))
         self.member_field.setPlaceholderText(_('collab.member_placeholder'))
         self.add_button.setText(_('collab.add'))

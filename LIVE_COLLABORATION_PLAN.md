@@ -620,6 +620,45 @@ no PyAV) can still talk to it.
 **Cache:** files that arrive go into the existing cache under the same names
 (`get_cache_key`), so the rest of the app treats them as local results.
 
+## Opening a shared project from subtitld.cc, with no file of it
+
+Done 2026-10-28. Someone the project is shared with, who has no `.usfx` of it (and maybe no video), opens it
+from the site; Subtitld takes the subtitles from subtitld.cc and the video from a collaborator.
+
+- **subtitld.cc.** Each shared project has a page, `/projects/<doc_id>`, for those who co-edit it (404 for
+  anyone else, as a closed one): title, owner, people, the media list (names and sizes, never paths) and
+  **Open in Subtitld**, a `subtitld://<site host>/project/<doc_id>` link (`collab/links.py`). The library
+  has a "Live projects" tab; being added to a project, or a group of yours being added, leaves an inbox
+  note that links to the page (`Notification.Kind.PROJECT`); a subtitle's page links the project that
+  publishes to it, for its co-editors. The API's project has `url` (the page), which Subtitld's co-editing
+  card copies ("Copy link") for the owner to send.
+- **The scheme**, registered by every package: desktop entries (`x-scheme-handler/subtitld`, `Exec=subtitld
+  %u`, so files now come as `file://` URIs, read as paths), the NSIS installer (`HKCR\subtitld`), MSIX
+  (`windows.protocol`), macOS (`CFBundleURLTypes`: the link comes as a file-open event), Haiku
+  (`application/x-vnd.Be.URL.subtitld` among the types it opens). pip installs register nothing.
+- **Only for its own site.** Subtitld follows a link only when its host is the subtitld.cc it connects to:
+  one naming another host would get the person's token.
+- **One window.** A Subtitld started with a link while another one runs hands the link over through a
+  local socket (`QLocalServer`, one name per user) and quits (`modules/link_handover.py`). It still takes
+  its usual start (2.5–3.5 s) before it can.
+- **On the start screen** (`interface/subtitldcc_open.py`, a card, no dialogs): connect if needed (the
+  browser), take the project (`collab_service.take`: the subtitles come as the connection catches up),
+  then the video: from the collaborators who share it, at once, into the Videos folder (changeable,
+  remembered), or "Use a video I have". Once it is here the editor opens with it, still shared
+  (`load_productionscreen(collab=…)`, as `history_clear` forgets an open in progress). Cancel gives it up
+  (`collab_service.drop`): nothing stays open. A received file never replaces another of the same name
+  (`collab_media.free_path`, also for "Get" in the card).
+- **With a project open**, the subtitld.cc panel asks first, as its list of shared projects does; a link
+  to the open project only says so.
+- Tested: `tests/test_collab_link.py` (links, the hand-over, the card through to the editor, the panel),
+  `tests/test_collab_page.py` on the site, and two Subtitld processes against a local uvicorn: João, with no
+  file, opened the project from its link and had Marina's video 6 s later, identical, subtitld.cc noted
+  the copy, and the editor opened with it; a second João process handed the link over and quit.
+- Not done: the waveform and separated audio are not fetched by themselves once the video is here (the
+  editor makes its own; "Get" in the card works); on Windows two Subtitlds can both listen (named pipes
+  allow it), so a link goes to either; the scheme's registration is untested on Windows, macOS, snap,
+  Flatpak and Haiku.
+
 ## Editors' chat (text and voice)
 
 Planned 2026-10-22. Decisions by the user:

@@ -32,6 +32,7 @@ _last_typed = 0.0
 _last_lock = 0.0
 _media_files = []        # the open project's media here, described (collab_media.scan)
 _media_scan = None       # the background scan running, if one is
+_media_listed = False    # the project's media list came from subtitld.cc, in this connection
 _transfers = None        # collab_transfer.Manager, while connected (where libdatachannel is)
 _transfer_timer = None
 _dub_registering = None  # the background call putting dub files on the media list
@@ -76,8 +77,8 @@ def state():
 
 
 def _stop():
-    global _connection, _editing, _last_presence, _media_files, _transfers
-    _editing, _last_presence, _media_files = None, None, []
+    global _connection, _editing, _last_presence, _media_files, _transfers, _media_listed
+    _editing, _last_presence, _media_files, _media_listed = None, None, [], False
     _dub_asked.clear()
     _chat_asked.clear()
     voice_leave()
@@ -400,11 +401,12 @@ def list_media():
         return files, listed
 
     def done(result):
-        global _media_files
+        global _media_files, _media_listed
         files, listed = result
         _media_files = files
         if _connection is not None and collab_state.STATE.get('doc') == doc_id:
             _connection.engine.media.update(listed)
+            _media_listed = True
             _announce()
         _tell('media')
 
@@ -412,6 +414,11 @@ def list_media():
         log.warning('collab: could not share the media list: %s', error)
 
     _media_scan = service.call(work, done, failed)
+
+
+def media_listed():
+    """Whether the project's media list came from subtitld.cc since connecting (media_status() is whole)."""
+    return _media_listed
 
 
 def media_files():
@@ -564,12 +571,11 @@ def share(title, owner, on_success, on_failure):
     return service.call(lambda: service.client().share_project(title, document, owner=owner), shared, on_failure)
 
 
-def join(window, project):
-    """Open shared project `project` (from projects()) in the editor, in place of what is there: the
-    subtitles come from subtitld.cc as the connection catches up. Like a subtitle opened from subtitld.cc,
-    it isn't a file yet: saving asks where to put it. Main thread only."""
-    from subtitld.interface import left_panel, top_bar
-
+def take(project):
+    """Make shared project `project` (from projects() or project()) the open one, in place of what is there:
+    the subtitles come from subtitld.cc as the connection catches up. Like a subtitle opened from subtitld.cc,
+    it isn't a file yet: saving asks where to put it. Needs no video (a project opened from a link gets its
+    video later: interface/subtitldcc_open.py). Main thread only."""
     _stop()
     history.history_clear()
     session.SUBTITLE['segments'] = []
@@ -583,6 +589,26 @@ def join(window, project):
     session.set_unsaved(True)
     connect()
     _tell('shared')
+
+
+def drop():
+    """Give up the open shared project without keeping it here: one opened from a link, before the editor
+    opened with its video (interface/subtitldcc_open.py). Disconnected, and nothing is open any more."""
+    _stop()
+    history.history_clear()
+    session.SUBTITLE['segments'] = []
+    session.SUBTITLE['selected'] = None
+    session.SPEAKERS.clear()
+    session.document_loaded()  # nothing is shared: the open project is no project
+    session.set_unsaved(False)
+    _tell('shared')
+
+
+def join(window, project):
+    """Open shared project `project` in the editor (take()), which follows."""
+    from subtitld.interface import left_panel, top_bar
+
+    take(project)
     if hasattr(window, 'timeline_widget'):
         window.timeline_widget.update_size()
         window.timeline_widget.update()
@@ -595,9 +621,10 @@ def projects(on_success, on_failure):
     return service.call(lambda: service.client().projects(), on_success, on_failure)
 
 
-def project(on_success, on_failure):
-    """The open shared project as subtitld.cc has it: title, owner, members, permissions."""
-    doc_id = collab_state.STATE.get('doc')
+def project(on_success, on_failure, doc_id=None):
+    """The open shared project (or shared project `doc_id`) as subtitld.cc has it: title, owner, members,
+    permissions, its page (`url`)."""
+    doc_id = doc_id or collab_state.STATE.get('doc')
     return service.call(lambda: service.client().project(doc_id), on_success, on_failure)
 
 

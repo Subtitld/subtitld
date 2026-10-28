@@ -851,9 +851,11 @@ def write_haiku_icon(icon_svg: str) -> None:
     print(f'subtitld.hvif ({len(hvif)} bytes), subtitld.rdef.in')
 
 
-# The types Subtitld offers to open on Haiku: its projects, and the subtitle
-# formats with a type of their own.
-HAIKU_FILE_TYPES = ('application/x-usfx', 'application/x-subrip', 'text/vtt', 'text/x-ssa')
+# The types Subtitld offers to open on Haiku: its projects, the subtitle
+# formats with a type of their own, and subtitld:// links (subtitld.cc's
+# "Open in Subtitld"; Haiku opens a URL with its scheme's type's app).
+HAIKU_FILE_TYPES = ('application/x-usfx', 'application/x-subrip', 'text/vtt', 'text/x-ssa',
+                    'application/x-vnd.Be.URL.subtitld')
 
 
 def write_haiku_usfx_type(bar: list, arrow: list, out: Path) -> None:

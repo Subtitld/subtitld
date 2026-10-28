@@ -4,6 +4,7 @@ import argparse
 import inspect
 
 from subtitld import __version__
+from subtitld.modules import subtitldcc_links
 
 
 def _existing_file(value):
@@ -15,14 +16,25 @@ def _existing_file(value):
     return os.path.abspath(value)
 
 
+def _file_or_link(value):
+    """A file (a path, or the file:// URI a desktop entry passes), or a
+    subtitld:// link from subtitld.cc, followed once the window is up."""
+    if subtitldcc_links.is_link(value):
+        return value
+    return _existing_file(subtitldcc_links.file_path(value))
+
+
 # Before the heavy imports below (MediaPipe, Qt): --version and --help
 # answer at once, and exit without starting the app.
 parser = argparse.ArgumentParser(prog='subtitld',
                                  description='Subtitld is a software to create, edit and transcribe subtitles')
-parser.add_argument('file', type=_existing_file, help='The path for video or subtitle file', nargs='*', default=False)
+parser.add_argument('file', type=_file_or_link, nargs='*', default=False,
+                    help='The path for video or subtitle file, or a subtitld:// link from subtitld.cc')
 parser.add_argument('--version', action='version', version=f'Subtitld {__version__}',
                     help='Prints the version of Subtitld and exits.')
 args = parser.parse_args()
+LINKS = [value for value in args.file or [] if subtitldcc_links.is_link(value)]
+FILES = [value for value in args.file or [] if not subtitldcc_links.is_link(value)]
 
 # Before anything loads PortAudio through ctypes (sounddevice): find the
 # copy a snap or another bundle carries on LD_LIBRARY_PATH.
@@ -58,6 +70,7 @@ else:
 
 from subtitld.interface import top_bar
 from subtitld.interface import startscreen
+from subtitld.interface import subtitldcc_open
 from subtitld.interface import productionscreen
 from subtitld.interface import actionmanager
 from subtitld.interface import utils
@@ -71,6 +84,7 @@ from subtitld.interface import find_replace_dialog as _find_replace_dialog  # no
 from subtitld.modules import session
 from subtitld.modules import config
 from subtitld.modules import file_io
+from subtitld.modules import link_handover
 from subtitld.modules import shortcuts
 from subtitld.modules import addons
 from subtitld.modules.addons import registry as addons_registry
@@ -115,7 +129,8 @@ class FileOpenFilter(QObject):
     """macOS (Finder) and Haiku (Tracker) open a file with an event, not on
     the command line. On the start screen it opens as the Open button opens
     it; with a project open, the window comes to the front instead, so the
-    project is not replaced unasked."""
+    project is not replaced unasked. macOS sends subtitld:// links the same
+    way."""
 
     def __init__(self, window):
         super().__init__(window)
@@ -124,6 +139,10 @@ class FileOpenFilter(QObject):
     def eventFilter(self, watched, event):
         if event.type() != QEvent.FileOpen:
             return False
+        url = event.url().toString()
+        if subtitldcc_links.is_link(url):
+            QTimer.singleShot(0, lambda: subtitldcc_open.open_link(self.window, url))
+            return True
         path = event.file()
         if path and os.path.isfile(path):
             QTimer.singleShot(0, lambda: self.open(path))
@@ -214,11 +233,15 @@ class Window(_MainWindowBase):
         # ffprobe, and USF parse on the main thread before the screen
         # transition. See the matching note in
         # `start_screen_recent_listwidget_item_clicked`.
-        files = list(args.file) if args.file else []
+        files = list(FILES)
         if not (files and startscreen.open_files(self, files, ask=False)):
             startscreen.show(self)
             if files:
                 QTimer.singleShot(0, lambda: startscreen.open_files(self, files))
+        # A link from subtitld.cc's "Open in Subtitld": a shared project,
+        # with no file of it here (interface/subtitldcc_open.py).
+        if LINKS:
+            QTimer.singleShot(0, lambda: subtitldcc_open.open_link(self, LINKS[0]))
 
         # self.action_manager.register("open", "open_file", "Ctrl+O", self.open_file)
         # self.action_manager.register("save", "save_file", "Ctrl+S", self.save_file)
@@ -378,6 +401,11 @@ class confirm_exit_dialog(utils.SimpleDialog):
 def main():
     app = QApplication(sys.argv)
 
+    # Started for a subtitld.cc link while Subtitld runs: the running one
+    # opens it, in its window.
+    if LINKS and link_handover.hand_over(LINKS):
+        sys.exit(0)
+
     # ---- Paint-conflict guard -----------------------------------------
     # If any widget's paintEvent ever leaves a QPainter open on its device
     # (e.g. a paint body that raised before end()), Qt's backing-store
@@ -469,6 +497,10 @@ def main():
     main_window = Window()
     main_window.show()
     app.installEventFilter(FileOpenFilter(main_window))
+    links_listener = link_handover.Listener(main_window)
+    links_listener.received.connect(lambda link: subtitldcc_open.open_link(main_window, link))
+    links_listener.listen()
+    app.aboutToQuit.connect(links_listener.close)
 
     sys.exit(app.exec())
 
