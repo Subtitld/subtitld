@@ -271,7 +271,10 @@ check('the project\'s video, from whoever has it', wait(lambda: any('Sintel.2010
 check('sharing mine is off until I say so', (card.share_media.isChecked(), collab_service.sharing_media()), (False, False))
 card.share_media.setChecked(True)
 check('then on, and saved with the project', (collab_service.sharing_media(), collab_state.STATE['share_media']), (True, True))
-check('a Get button', wait(lambda: buttons('Get')), True)
+if collab_service.transfers_available():
+    check('a Get button', wait(lambda: buttons('Get')), True)
+else:
+    print('  libdatachannel is not available here: the Get button skipped')
 card.share_media.setChecked(False)
 
 print('the editors\' chat')
@@ -340,55 +343,56 @@ chat.keep.setChecked(False)
 print('the voice call')
 from PySide6.QtCore import QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QKeyEvent  # noqa: E402
-from subtitld.modules import collab_voice  # noqa: E402
+from subtitld.modules import collab_voice, opus, rtc  # noqa: E402
 collab_service.voice_available = lambda: True
 collab_voice.Call._open_devices = lambda self, input_device, output_device: None  # no sound devices here
 check('a Join button', (chat.join_button.isVisible(), chat.join_button.text()), (True, 'Join the call'))
-chat.join_button.click()
-check('in the call', wait(lambda: (collab_service.in_call(), chat.join_button.text(), chat.talk_button.isVisible())
-                         == (True, 'Leave the call', True)), True)
-check('the others are told', [c[1].get('voice') for c in calls if c[0] == 'presence'][-1], True)
-connection.engine.peers['p1'] = {'user': {'handle': 'joao', 'name': 'João'}, 'state': {'voice': True}}
-engine_says('peers')
-check('who is in the call', wait(lambda: 'In the call: Ana (you), João' in chat.voice_people.text()), True)
-call = collab_service._call
-check('a voice link with them (the lower ID offers)', sorted(call.links), ['p1'])
+if not (rtc.available() and opus.available()):
+    print('  libdatachannel or libopus is not available here: the call skipped')
+else:
+    chat.join_button.click()
+    check('in the call', wait(lambda: (collab_service.in_call(), chat.join_button.text(), chat.talk_button.isVisible())
+                             == (True, 'Leave the call', True)), True)
+    check('the others are told', [c[1].get('voice') for c in calls if c[0] == 'presence'][-1], True)
+    connection.engine.peers['p1'] = {'user': {'handle': 'joao', 'name': 'João'}, 'state': {'voice': True}}
+    engine_says('peers')
+    check('who is in the call', wait(lambda: 'In the call: Ana (you), João' in chat.voice_people.text()), True)
+    call = collab_service._call
+    check('a voice link with them (the lower ID offers)', sorted(call.links), ['p1'])
 
+    def key(kind):
+        QApplication.sendEvent(chat, QKeyEvent(kind, Qt.Key_F8, Qt.NoModifier))
 
-def key(kind):
-    QApplication.sendEvent(chat, QKeyEvent(kind, Qt.Key_F8, Qt.NoModifier))
-
-
-key(QEvent.KeyPress)
-check('F8 held: talking', call.talking, True)
-key(QEvent.KeyRelease)
-check('let go: not', call.talking, False)
-chat.talk_button.pressed.emit()
-check('the Talk button held: talking', call.talking, True)
-chat.talk_button.released.emit()
-chat.latch.setChecked(True)
-check('stay on the air', (call.talking, call.latched), (True, True))
-chat.latch.setChecked(False)
-import time as _time  # noqa: E402
-call.heard['p1'] = _time.monotonic()
-chat._voice_tick()
-check('João speaking: marked, and the project\'s sound down',
-      ('<b>● João</b>' in chat.voice_people.text(), host.preview_panel_player._audio_device.duck), (True, 0.3))
-call.heard.clear()
-chat._voice_tick()
-check('then back up', host.preview_panel_player._audio_device.duck, 1.0)
-for i in range(7):
-    connection.engine.peers[f'q{i}'] = {'user': {'handle': f'u{i}'}, 'state': {'voice': True}}
-engine_says('peers')
-check('many in the call: a note, no limit', wait(lambda: chat.voice_note.isVisible() and 'Many people' in chat.voice_note.text()), True)
-for i in range(7):
-    del connection.engine.peers[f'q{i}']
-chat.join_button.click()
-check('left: no call, links closed', (collab_service.in_call(), call.links), (False, {}))
-check('and the Join button back', wait(lambda: chat.join_button.text() == 'Join the call'), True)
-key(QEvent.KeyPress)
-check('F8 does nothing out of the call', collab_service.in_call(), False)
-del connection.engine.peers['p1']
+    key(QEvent.KeyPress)
+    check('F8 held: talking', call.talking, True)
+    key(QEvent.KeyRelease)
+    check('let go: not', call.talking, False)
+    chat.talk_button.pressed.emit()
+    check('the Talk button held: talking', call.talking, True)
+    chat.talk_button.released.emit()
+    chat.latch.setChecked(True)
+    check('stay on the air', (call.talking, call.latched), (True, True))
+    chat.latch.setChecked(False)
+    import time as _time  # noqa: E402
+    call.heard['p1'] = _time.monotonic()
+    chat._voice_tick()
+    check('João speaking: marked, and the project\'s sound down',
+          ('<b>● João</b>' in chat.voice_people.text(), host.preview_panel_player._audio_device.duck), (True, 0.3))
+    call.heard.clear()
+    chat._voice_tick()
+    check('then back up', host.preview_panel_player._audio_device.duck, 1.0)
+    for i in range(7):
+        connection.engine.peers[f'q{i}'] = {'user': {'handle': f'u{i}'}, 'state': {'voice': True}}
+    engine_says('peers')
+    check('many in the call: a note, no limit', wait(lambda: chat.voice_note.isVisible() and 'Many people' in chat.voice_note.text()), True)
+    for i in range(7):
+        del connection.engine.peers[f'q{i}']
+    chat.join_button.click()
+    check('left: no call, links closed', (collab_service.in_call(), call.links), (False, {}))
+    check('and the Join button back', wait(lambda: chat.join_button.text() == 'Join the call'), True)
+    key(QEvent.KeyPress)
+    check('F8 does nothing out of the call', collab_service.in_call(), False)
+    del connection.engine.peers['p1']
 
 print('offline')
 connection.engine.state = 'offline'
