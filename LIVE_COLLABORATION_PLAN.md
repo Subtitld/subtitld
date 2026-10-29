@@ -512,6 +512,10 @@ no PyAV) can still talk to it.
   either ends at once or waits for its first retransmission (1 s, then 2,
   4), and on loopback the first link open takes every chunk in that time.
   The test now holds the senders until both links are open.
+- Exit could hang (about 1 in 60 runs under load): closing a link never
+  deleted its data channels, so rtcCleanup destroyed them holding the lock
+  a closing channel's callback was waiting for. rtc.py now deletes them,
+  and waits for deletions under way before rtcCleanup (2026-10-29).
 - Not done: a bandwidth limit and pause, a TURN relay, a router-to-router
   test, builds for Windows, macOS and Haiku.
 

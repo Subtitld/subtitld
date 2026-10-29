@@ -7,7 +7,7 @@ Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import faulthandler, hashlib, os, sys, tempfile, threading, time
+import faulthandler, hashlib, os, shutil, sys, tempfile, threading, time
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 faulthandler.dump_traceback_later(170, exit=True)
@@ -174,6 +174,8 @@ check('intact', same(video, fay_target), True)
 
 for made, _owned in managers.values():
     made.close()
+shutil.rmtree(folder, ignore_errors=True)
+shutil.rmtree(_xdg, ignore_errors=True)
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL PASS')
 sys.exit(1 if fails else 0)

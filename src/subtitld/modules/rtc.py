@@ -78,6 +78,8 @@ _load_lock = threading.Lock()
 _peers = {}      # pc id -> PeerConnection
 _channels = {}   # dc id -> DataChannel
 _registry_lock = threading.Lock()
+_closing = 0     # deletions under way (PeerConnection.close, _delete_channel): _cleanup waits for them
+_closed = threading.Condition(_registry_lock)
 
 
 def _names():
@@ -142,9 +144,17 @@ def library():
 
 
 def _cleanup():
-    if _lib:
-        _lib.rtcCleanup.restype = None
-        _lib.rtcCleanup()
+    """Every connection deleted, and the deletions under way finished, before rtcCleanup: it destroys what is
+    left while holding the lock that the library's callbacks take, and a channel destroyed there waits for a
+    callback in progress, which waits for that lock (the process never ends)."""
+    if not _lib:
+        return
+    for peer in list(_peers.values()):
+        peer.close()
+    with _closed:
+        _closed.wait_for(lambda: _closing == 0, timeout=10)
+    _lib.rtcCleanup.restype = None
+    _lib.rtcCleanup()
 
 
 def available():
@@ -157,6 +167,7 @@ def _setup(lib):
     lib.rtcAddRemoteCandidate.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p]
     lib.rtcCreateDataChannel.argtypes = [ctypes.c_int, ctypes.c_char_p]
     lib.rtcCreateDataChannelEx.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(_DataChannelInit)]
+    lib.rtcDeleteDataChannel.argtypes = [ctypes.c_int]
     settings = _SctpSettings()
     tuned = os.environ.get('SUBTITLDCC_RTC_SCTP', 'sack').split(',')
     if 'buffers' in tuned:
@@ -202,6 +213,31 @@ def _on_channel(pc, dc, _ptr):
         channel = DataChannel(dc, peer)
         if peer.on_channel:
             peer.on_channel(channel)
+    else:
+        # A channel the other side opened as this side closed: deleted too, not from inside the callback.
+        with _closed:
+            _closing_started()
+        threading.Thread(target=_delete_channel, args=(dc,), daemon=True).start()
+
+
+def _delete_channel(dc):
+    try:
+        _lib.rtcDeleteDataChannel(dc)
+    finally:
+        _closing_ended()
+
+
+def _closing_started():
+    """(with _closed held)"""
+    global _closing
+    _closing += 1
+
+
+def _closing_ended():
+    global _closing
+    with _closed:
+        _closing -= 1
+        _closed.notify_all()
 
 
 def _on_open(dc, _ptr):
@@ -295,12 +331,20 @@ class PeerConnection:
         return DataChannel(dc, self)
 
     def close(self):
-        with _registry_lock:
+        """Delete the connection and its channels (left to rtcCleanup, a channel can hang it: _cleanup)."""
+        with _closed:
             if _peers.pop(self.id, None) is None:
                 return
-            for dc in [dc for dc, channel in _channels.items() if channel.peer is self]:
+            channels = [dc for dc, channel in _channels.items() if channel.peer is self]
+            for dc in channels:
                 _channels.pop(dc, None)
-        self.lib.rtcDeletePeerConnection(self.id)
+            _closing_started()
+        try:
+            for dc in channels:
+                self.lib.rtcDeleteDataChannel(dc)
+            self.lib.rtcDeletePeerConnection(self.id)
+        finally:
+            _closing_ended()
 
 
 class DataChannel:
