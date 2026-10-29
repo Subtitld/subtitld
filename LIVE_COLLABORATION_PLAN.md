@@ -506,6 +506,12 @@ no PyAV) can still talk to it.
   once, compressed, refused, resumed; 20 runs clean), and two Subtitld
   processes against a local server (40 MB in 2.1 s, identical, copy noted;
   with sharing off the video stays unavailable).
+- "From two collaborators at once" failed now and then (one holder sent
+  nothing) until 2026-10-28. Not the scheduling: with both links open the
+  chunks split evenly (72 MB: 36/36 in 30 rounds). A link's DTLS handshake
+  either ends at once or waits for its first retransmission (1 s, then 2,
+  4), and on loopback the first link open takes every chunk in that time.
+  The test now holds the senders until both links are open.
 - Not done: a bandwidth limit and pause, a TURN relay, a router-to-router
   test, builds for Windows, macOS and Haiku.
 
