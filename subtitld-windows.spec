@@ -18,6 +18,17 @@ if ffmpeg_path:
 if ffprobe_path:
     binaries_list.append((ffprobe_path, '.'))
 
+# libdatachannel, for live co-editing's direct links between collaborators (packaging/libdatachannel builds it):
+# next to the app, where modules/rtc.py looks, with its licences. Without it the app still runs; collaborators
+# just can't send each other media.
+libdatachannel_dir = os.path.join('packaging', 'libdatachannel', 'dist', 'windows-x64')
+libdatachannel_datas = []
+if os.path.isfile(os.path.join(libdatachannel_dir, 'datachannel.dll')):
+    binaries_list.append((os.path.join(libdatachannel_dir, 'datachannel.dll'), '.'))
+    libdatachannel_datas.append((os.path.join(libdatachannel_dir, 'licenses'), 'licenses/libdatachannel'))
+else:
+    print('WARNING: no libdatachannel in', libdatachannel_dir, '- live co-editing will not send media')
+
 a = Analysis(
     ['src/subtitld/__main__.py'],
     pathex=[],
@@ -28,11 +39,12 @@ a = Analysis(
         ('src/subtitld/subtitle_styles', 'subtitld/subtitle_styles'),
         ('src/subtitld/ftfy', 'subtitld/ftfy'),
         ('src/subtitld/models', 'subtitld/models'),
-    ],
+    ] + libdatachannel_datas,
     hiddenimports=[
         'PySide6.QtCore',
         'PySide6.QtGui', 
         'PySide6.QtWidgets',
+        'PySide6.QtWebSockets',
         'PySide6.QtSvg',
         'qframelesswindow',
         'charset_normalizer',

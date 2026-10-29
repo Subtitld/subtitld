@@ -30,6 +30,8 @@ ManifestDPIAware true
 !define CAPABILITIES "Software\${APPNAME}\Capabilities"
 !define PROGID_PROJECT "Subtitld.usfx"
 !define PROGID_SUBTITLE "Subtitld.subtitle"
+; subtitld.cc's links to a shared project: subtitld://subtitld.cc/project/...
+!define URL_SCHEME "subtitld"
 ; The thumbnail provider (packaging/windows/thumbnail), and Windows' key for
 ; a type's thumbnail handler.
 !define THUMBNAIL_CLSID "{59A8C040-1202-4033-8DB5-F5E7A7709527}"
@@ -305,6 +307,13 @@ Function RegisterFileTypes
   !insertmacro OpenWith ".ass" "${PROGID_SUBTITLE}"
   !insertmacro OpenWith ".ssa" "${PROGID_SUBTITLE}"
 
+  ; subtitld:// links, subtitld.cc's "Open in Subtitld" for a shared project.
+  WriteRegStr SHCTX "${CLASSES}\${URL_SCHEME}" "" "URL:${APPNAME}"
+  WriteRegStr SHCTX "${CLASSES}\${URL_SCHEME}" "URL Protocol" ""
+  WriteRegStr SHCTX "${CLASSES}\${URL_SCHEME}\DefaultIcon" "" '"$INSTDIR\Subtitld.exe",0'
+  WriteRegStr SHCTX "${CLASSES}\${URL_SCHEME}\shell\open\command" "" '"$INSTDIR\Subtitld.exe" "%1"'
+  WriteRegStr SHCTX "${CAPABILITIES}\URLAssociations" "${URL_SCHEME}" "${URL_SCHEME}"
+
   ; Tell Explorer, so the icons and "Open with" change now, not at the next sign-in.
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 FunctionEnd
@@ -330,6 +339,7 @@ Function un.UnregisterFileTypes
 
   DeleteRegKey SHCTX "${CLASSES}\${PROGID_PROJECT}"
   DeleteRegKey SHCTX "${CLASSES}\${PROGID_SUBTITLE}"
+  DeleteRegKey SHCTX "${CLASSES}\${URL_SCHEME}"
   DeleteRegKey SHCTX "${CLASSES}\Applications\Subtitld.exe"
   DeleteRegValue SHCTX "Software\RegisteredApplications" "${APPNAME}"
   DeleteRegKey SHCTX "${CAPABILITIES}"

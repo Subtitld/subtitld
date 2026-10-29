@@ -24,6 +24,10 @@ SMOKE_LOG=/tmp/smoke-flatpak.log bash "$here/smoke.sh" 30 \
     dbus-run-session -- flatpak run --env=QT_QPA_PLATFORM=offscreen --env=QT_QPA_PLATFORMTHEME= \
     org.subtitld.Subtitld
 
+# Live co-editing's libraries, with the bundle's Python (collab-check.py).
+dbus-run-session -- flatpak run --env=QT_QPA_PLATFORM=offscreen --env=QT_QPA_PLATFORMTHEME= \
+    --filesystem="$here":ro --command=python3 org.subtitld.Subtitld "$here/collab-check.py"
+
 # The subtitle renderer: QtWebEngine (the BaseApp's) and its Chromium run in
 # the Flatpak, sandboxed by Flatpak's own sandbox or (where that cannot
 # start) not.

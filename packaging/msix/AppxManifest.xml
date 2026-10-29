@@ -83,9 +83,26 @@
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>
+        <!-- subtitld:// links, subtitld.cc's "Open in Subtitld" for a shared project: the link comes as the
+             first argument, as a file does. -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="subtitld" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>Subtitld</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
       </Extensions>
     </Application>
   </Applications>
+
+  <Extensions>
+    <!-- Live co-editing: collaborators send each other media directly (WebRTC data channels, over UDP).
+         Without the rule, Windows asks the first time, and a "Cancel" blocks links on the local network. -->
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="Subtitld.exe">
+        <desktop2:Rule Direction="in" IPProtocol="UDP" Profile="all" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />

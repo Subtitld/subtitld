@@ -386,6 +386,15 @@ class _AudioPanel(QWidget):
                     self.mode_background_only, self.mode_vocals_only):
             btn.toggled.connect(self._refresh_checkbox_state)
 
+        # A shared project's dub clips still on their way from collaborators (modules/collab_service.py).
+        from subtitld.modules import collab_service
+        missing = collab_service.dubs_status()['missing']
+        self.dubs_missing = QLabel(_('export_audio_dialog.dubs_missing').format(count=missing))
+        self.dubs_missing.setWordWrap(True)
+        self.dubs_missing.setProperty('class', 'widget_label')
+        self.dubs_missing.setVisible(bool(missing))
+        self.layout().addWidget(self.dubs_missing)
+
         self.layout().addStretch()
 
     def _refresh_checkbox_state(self):

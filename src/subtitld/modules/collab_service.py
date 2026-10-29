@@ -1,0 +1,886 @@
+"""Live co-editing in Subtitld: sharing the open project, joining a shared one, who it is shared with, and its
+connection (modules.collab_client), which runs while a shared project is open.
+
+The calls to subtitld.cc run in the background (subtitldcc_service.call); everything else here is main-thread
+work on the open project.
+"""
+
+import hashlib
+import logging
+import os
+import time
+
+from subtitld.modules import collab_chat, collab_state, cue_ids, docops, history, session
+from subtitld.modules import subtitldcc_service as service
+
+log = logging.getLogger(__name__)
+
+# What this person is doing goes to the others at most this often, when it changes.
+PRESENCE_MS = 500
+# A text lock is asked for again this often while typing (the server lets it go after 15 s), and given up
+# after this long without a keystroke.
+LOCK_RENEW_SECONDS = 5
+TYPING_IDLE_SECONDS = 10
+# Collaborators' colours on the timeline: picked by handle, so each person keeps theirs everywhere.
+COLORS = ('#ff9f43', '#2ed573', '#1e90ff', '#ff6b81', '#eccc68', '#a29bfe', '#7bed9f', '#70a1ff', '#ffa502', '#fd79a8')
+
+_connection = None
+_presence_timer = None
+_last_presence = None
+_editing = None          # the subtitle ID this person is typing in
+_last_typed = 0.0
+_last_lock = 0.0
+_media_files = []        # the open project's media here, described (collab_media.scan)
+_media_scan = None       # the background scan running, if one is
+_media_listed = False    # the project's media list came from subtitld.cc, in this connection
+_transfers = None        # collab_transfer.Manager, while connected (where libdatachannel is)
+_transfer_timer = None
+_dub_registering = None  # the background call putting dub files on the media list
+_dub_asked = set()       # dub files asked for in this connection
+_chat_asked = set()      # collaborators asked for the chat so far, in this connection
+_call = None             # the voice call, while this person is in it (modules.collab_voice)
+CHAT_HISTORY_SENT = 500  # messages sent to someone who asks for the conversation
+DUB_DOWNLOADS = 4        # dub files coming in at once
+# callback(kind): 'state', 'document', 'peers', 'locks', 'conflicts' (from the connection), 'shared' (the
+# project became shared or stopped being), 'failed' (the connection gave up: see failure()).
+listeners = []
+_failure = None
+
+
+def _tell(kind):
+    for callback in list(listeners):
+        try:
+            callback(kind)
+        except Exception:
+            log.exception('collab: a listener failed')
+
+
+def connection():
+    """The open shared project's connection, or None."""
+    return _connection
+
+
+def failure():
+    """Why the connection gave up ('missing_scope': sign in again; 'not_found': not shared with you any more;
+    'sign_in_required'), or None."""
+    return _failure
+
+
+def state():
+    """'offline', 'joining', 'live', or None for a project that is not shared."""
+    if not collab_state.shared():
+        return None
+    return _connection.state if _connection is not None else 'offline'
+
+
+# --- The connection follows the open project ----------------------------------------------------------
+
+
+def _stop():
+    global _connection, _editing, _last_presence, _media_files, _transfers, _media_listed
+    _editing, _last_presence, _media_files, _media_listed = None, None, [], False
+    _dub_asked.clear()
+    _chat_asked.clear()
+    voice_leave()
+    if _transfer_timer is not None:
+        _transfer_timer.stop()
+    if _transfers is not None:
+        _transfers.close()
+        _transfers = None
+    if _presence_timer is not None:
+        _presence_timer.stop()
+    if _connection is not None:
+        _connection.stop()
+        _connection.deleteLater()
+        _connection = None
+
+
+def connect():
+    """(Re)connect the open project if it is shared and someone is signed in."""
+    global _connection, _failure
+    from subtitld.modules import collab_client
+
+    _stop()
+    _failure = None
+    token = service.store().load() if collab_state.shared() else None
+    if not token:
+        _tell('state')
+        return
+    url = collab_client.websocket_url(collab_state.STATE.get('server') or service.base_url(), collab_state.STATE['doc'])
+    _connection = collab_client.Connection(url, token, service.client(token=token).user_agent)
+    _connection.changed.connect(_connection_news)
+    _connection.engine.listeners.append(_chat_news)
+    _connection.failed.connect(_failed)
+    _connection.start()
+    _start_presence()
+    _start_transfers()
+    _tell('state')
+
+
+def _connection_news(kind):
+    if kind == 'state' and _connection is not None and _connection.state == 'live':
+        list_media()
+    _tell(kind)
+
+
+def _failed(reason):
+    global _failure
+    _failure = reason
+    log.warning('collab: the connection gave up: %s', reason)
+    if reason == 'not_found':
+        # Closed, or no longer shared with this person: the project stays here, as a project of their own.
+        collab_state.clear()
+        session.set_unsaved(True)
+        _tell('shared')
+    _tell('failed')
+
+
+def _project_loaded():
+    if collab_state.shared():
+        connect()
+    else:
+        _stop()
+        _tell('state')
+
+
+session._document_loaded_callbacks.append(_project_loaded)
+
+
+def shutdown():
+    """Quitting: close the connection (what is queued stays in the project file)."""
+    _stop()
+
+
+# --- Media: described on subtitld.cc, sent between collaborators ---------------------------------------------
+
+
+def _start_transfers():
+    """Direct links for media, where this Subtitld has libdatachannel (modules/rtc.py)."""
+    global _transfers, _transfer_timer
+    from subtitld.modules import collab_transfer, rtc
+    from PySide6.QtCore import QTimer
+
+    if _connection is None or not rtc.available():
+        return
+    engine = _connection.engine
+    _transfers = collab_transfer.Manager(lambda peer, payload: engine.rtc(peer, payload), _shareable,
+                                         engine.holders, relays=lambda: engine.ice)
+    _transfers.bridge.finished.connect(_received)
+    _transfers.bridge.failed.connect(lambda file_hash, reason: _tell('media'))
+    _transfers.bridge.news.connect(lambda file_hash: _tell('media'))
+    engine.listeners.append(_route_rtc)
+    if _transfer_timer is None:
+        _transfer_timer = QTimer()
+        _transfer_timer.setInterval(2000)
+        _transfer_timer.timeout.connect(_transfer_tick)
+    _transfer_timer.start()
+
+
+def _route_rtc(kind, *args):
+    """Direct-link set-up: the voice call's (marked `voice`) or the media transfers'."""
+    if kind != 'rtc':
+        return
+    peer, payload = args
+    if payload.get('voice'):
+        if _call is not None:
+            _call.on_rtc(peer, payload)
+    elif _transfers is not None:
+        _transfers.on_rtc(peer, payload)
+
+
+def _transfer_tick():
+    if _transfers is not None:
+        _transfers.tick()
+        sync_dubs()
+
+
+# --- Dub clips: shared by everyone in the project, fetched by themselves --------------------------------------
+
+
+def _dub_hashes_here():
+    from subtitld.modules import collab_media
+    return collab_media.dub_files(session.SUBTITLE.get('segments'))
+
+
+def sync_dubs():
+    """Dub files are the project's own (made by its members), so they go to everyone in it, whatever the
+    media choice: those here not on the media list go on it, everyone hears this app has them, and those
+    missing here come from whoever has them, a few at a time."""
+    global _dub_registering
+    from subtitld.modules import collab_media
+    if _connection is None or _transfers is None or not collab_state.shared():
+        return
+    engine = _connection.engine
+    here = _dub_hashes_here()
+    unlisted = {h: p for h, p in here.items() if h not in engine.media}
+    if unlisted and not service.running(_dub_registering):
+        doc_id = collab_state.STATE['doc']
+
+        def work():
+            client = service.client()
+            listed = {}
+            for file_hash, path in unlisted.items():
+                description = collab_media.index().known(path) or collab_media.describe(path)
+                listed[file_hash] = client.add_project_media(
+                    doc_id, hash=file_hash, kind='dub', size=description['size'],
+                    chunk_size=description['chunk_size'], chunks=description['chunks'],
+                    fingerprint='', name=os.path.basename(path))
+            return listed
+
+        def done(listed):
+            if _connection is not None:
+                _connection.engine.media.update(listed)
+                _announce()
+
+        _dub_registering = service.call(work, done, lambda error: log.warning('collab: dub files not listed: %s', error))
+    _announce()
+    # The missing ones, from whoever has them.
+    missing = collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
+    coming = sum(1 for d in _transfers.downloads.values() if d.kind == 'dub' and d.state in ('waiting', 'downloading', 'checking'))
+    for file_hash in dict.fromkeys(missing):
+        if coming >= DUB_DOWNLOADS:
+            break
+        if file_hash in _dub_asked or not engine.holders(file_hash):
+            continue
+        _dub_asked.add(file_hash)
+        coming += 1
+        name = (engine.media.get(file_hash) or {}).get('name') or 'dub.wav'
+        download_media(file_hash, collab_media.dub_destination(file_hash, name),
+                       lambda error, h=file_hash: (_dub_asked.discard(h), log.warning('collab: dub file %s: %s', h[:12], error)))
+
+
+def dubs_status():
+    """{'missing', 'coming'}: dub files of the project not here yet, and how many of those are coming in."""
+    from subtitld.modules import collab_media
+    missing = set(collab_media.resolve_dubs(session.SUBTITLE.get('segments'))) if collab_state.shared() else set()
+    coming = {h for h, d in (_transfers.downloads.items() if _transfers is not None else [])
+              if d.kind == 'dub' and d.state in ('waiting', 'downloading', 'checking')}
+    return {'missing': len(missing), 'coming': len(missing & coming)}
+
+
+def transfers_available():
+    from subtitld.modules import rtc
+    return rtc.available()
+
+
+def sharing_media():
+    """Whether collaborators may get this project's media from this computer."""
+    return bool(collab_state.STATE.get('share_media'))
+
+
+def set_sharing_media(on):
+    """The person's choice for this project (saved with it). Off, nothing is announced nor sent."""
+    collab_state.STATE['share_media'] = bool(on)
+    session.set_unsaved(True)
+    _announce()
+    _tell('media')
+
+
+def _announce():
+    """What this app can send: the project's dub files here, and its other media when the person shares them."""
+    if _connection is not None:
+        media = [item['hash'] for item in _media_files] if sharing_media() else []
+        _connection.engine.have(sorted(set(media) | set(_dub_hashes_here())))
+
+
+def _shareable(file_hash):
+    """The local path of a file this app announced and may send (libdatachannel's thread): a dub file of the
+    project always, other media when the person shares them."""
+    from subtitld.modules import collab_media
+    if _connection is None or file_hash not in (_connection.engine.have_hashes or []):
+        return None
+    return collab_media.index().path_for(file_hash)
+
+
+def _received(file_hash, path):
+    """A file came whole and checked: it is known here, this app can pass it on, and subtitld.cc notes the
+    copy (from whoever sent most of it)."""
+    from subtitld.modules import collab_media
+    global _media_files
+    download = _transfers.downloads.get(file_hash) if _transfers is not None else None
+    entry = media_list().get(file_hash) or {}
+    if download is not None:
+        description = {'hash': file_hash, 'size': download.size, 'chunk_size': download.chunk_size,
+                       'chunks': download.chunks}
+        collab_media.index().remember(path, description)
+        if entry.get('kind') != 'video':
+            _media_files = [f for f in _media_files if f['hash'] != file_hash] + [
+                dict(description, kind=entry.get('kind'), name=entry.get('name'), path=path, fingerprint='')]
+        if entry.get('kind') == 'dub' or download.kind == 'dub':
+            # A dub file came: the subtitles that name it play it now.
+            collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
+            _tell('dubs')
+        _announce()
+        sender = max(download.sources, key=download.sources.get) if download.sources else None
+        handle = ((_connection.engine.peers.get(sender) or {}).get('user') or {}).get('handle', '') if _connection else ''
+        doc_id = collab_state.STATE.get('doc')
+        service.call(lambda: service.client().media_received(doc_id, file_hash, handle), None,
+                     lambda error: log.warning('collab: could not note the copy: %s', error))
+    _tell('media')
+
+
+def download_media(file_hash, destination, on_failure):
+    """Get a file of the project's media list from the collaborators who have it, to `destination`."""
+    if _transfers is None:
+        on_failure(RuntimeError('no direct links here'))
+        return None
+    doc_id = collab_state.STATE.get('doc')
+
+    def start(media):
+        try:
+            _transfers.download(media, destination)
+        except OSError as error:
+            on_failure(error)
+        _tell('media')
+
+    return service.call(lambda: service.client().project_media_file(doc_id, file_hash), start, on_failure)
+
+
+def cancel_download(file_hash):
+    if _transfers is not None:
+        _transfers.cancel(file_hash)
+    _tell('media')
+
+
+def media_status():
+    """The project's media list as the person sees it: [{'hash', 'kind', 'name', 'size', 'state', 'fraction',
+    'holders', 'path'}]. state: 'here', 'downloading', 'checking', 'failed', 'available' (someone online has
+    it), 'unavailable'."""
+    from subtitld.modules import collab_media
+    here = {item['hash']: item['path'] for item in _media_files}
+    rows = []
+    for file_hash, entry in media_list().items():
+        download = _transfers.downloads.get(file_hash) if _transfers is not None else None
+        holders = _connection.engine.holders(file_hash) if _connection is not None else []
+        path = here.get(file_hash) or collab_media.index().path_for(file_hash)
+        if path:
+            state, fraction = 'here', 1.0
+        elif download is not None and download.state in ('downloading', 'waiting', 'checking', 'failed'):
+            state, fraction = ('downloading' if download.state == 'waiting' else download.state), download.fraction()
+        else:
+            state, fraction = ('available' if holders else 'unavailable'), 0.0
+        rows.append({'hash': file_hash, 'kind': entry.get('kind'), 'name': entry.get('name') or '',
+                     'size': entry.get('size') or 0, 'state': state, 'fraction': fraction, 'holders': len(holders),
+                     'path': path, 'fingerprint': entry.get('fingerprint') or ''})
+    rows = [row for row in rows if row['kind'] != 'dub']  # dub files come by themselves (dubs_status)
+    order = {'video': 0, 'waveform': 1, 'stem': 2}
+    return sorted(rows, key=lambda row: (order.get(row['kind'], 9), row['name']))
+
+
+def video_matches_project():
+    """Whether the video open here is the project's (by its lookup fingerprint): then its waveform and
+    separated audio fit it."""
+    from subtitld.modules import collab_media
+    video = next((item for item in _media_files if item['kind'] == 'video'), None)
+    project = next((row for row in media_list().values() if row.get('kind') == 'video'), None)
+    if video is None or project is None:
+        return False
+    return video['hash'] == project['hash'] or (bool(video.get('fingerprint')) and video['fingerprint'] == project.get('fingerprint'))
+
+
+def list_media():
+    """Describe the open project's media here (in the background, hashing only what is new), put on the
+    project's media list what is not on it yet, and tell the others what this app can send."""
+    global _media_scan
+    if _connection is None or not collab_state.shared():
+        return
+    if service.running(_media_scan):
+        return
+    from subtitld.modules import collab_media
+
+    doc_id = collab_state.STATE['doc']
+
+    def work():
+        files = collab_media.scan()
+        client = service.client()
+        listed = {entry['hash']: entry for entry in client.project_media(doc_id)}
+        for item in files:
+            if item['hash'] not in listed:
+                description = {key: item[key] for key in ('hash', 'kind', 'size', 'chunk_size', 'chunks', 'fingerprint', 'name')}
+                listed[item['hash']] = client.add_project_media(doc_id, **description)
+        return files, listed
+
+    def done(result):
+        global _media_files, _media_listed
+        files, listed = result
+        _media_files = files
+        if _connection is not None and collab_state.STATE.get('doc') == doc_id:
+            _connection.engine.media.update(listed)
+            _media_listed = True
+            _announce()
+        _tell('media')
+
+    def failed(error):
+        log.warning('collab: could not share the media list: %s', error)
+
+    _media_scan = service.call(work, done, failed)
+
+
+def media_listed():
+    """Whether the project's media list came from subtitld.cc since connecting (media_status() is whole)."""
+    return _media_listed
+
+
+def media_files():
+    """The open project's media here, described: [{'kind', 'name', 'path', 'hash', ...}]."""
+    return list(_media_files)
+
+
+def media_list():
+    """The project's media list (what subtitld.cc describes), by hash."""
+    return dict(_connection.engine.media) if _connection is not None else {}
+
+
+# --- Presence, text locks, conflicts -----------------------------------------------------------------------
+
+
+def _start_presence():
+    global _presence_timer
+    from PySide6.QtCore import QTimer
+
+    if _presence_timer is None:
+        _presence_timer = QTimer()
+        _presence_timer.setInterval(PRESENCE_MS)
+        _presence_timer.timeout.connect(_presence_tick)
+    _presence_timer.start()
+
+
+def _presence_tick():
+    """Say what changed in what this person is doing; let go of a text they stopped typing in."""
+    global _last_presence
+    if _connection is None:
+        return
+    selected = session.SUBTITLE.get('selected')
+    selected_id = selected.get('id') if isinstance(selected, dict) else None
+    if _editing and (selected_id != _editing or time.monotonic() - _last_typed > TYPING_IDLE_SECONDS):
+        stopped_typing()
+    position = session.SUBTITLE.get('position')
+    state = {'selected': selected_id, 'playhead': round(float(position), 2) if position is not None else None,
+             'editing': _editing, 'voice': in_call()}
+    if state != _last_presence:
+        _last_presence = state
+        _connection.engine.presence(state)
+
+
+def typing(cue_id):
+    """This person is typing in subtitle `cue_id`'s text: hold its lock, so the others leave it be."""
+    global _editing, _last_typed, _last_lock
+    if _connection is None or not cue_id:
+        return
+    now = time.monotonic()
+    _last_typed = now
+    if cue_id != _editing:
+        if _editing:
+            _connection.engine.unlock(_editing)
+        _editing = cue_id
+        _last_lock = 0.0
+    if now - _last_lock >= LOCK_RENEW_SECONDS:
+        _last_lock = now
+        _connection.engine.lock(cue_id)
+
+
+def stopped_typing():
+    global _editing
+    if _connection is not None and _editing:
+        _connection.engine.unlock(_editing)
+    _editing = None
+
+
+def locked_by(cue_id):
+    """The collaborator typing in subtitle `cue_id` right now ({'handle', 'name'}), or None."""
+    if _connection is None or not cue_id:
+        return None
+    return _connection.engine.locked_by(cue_id)
+
+
+def color_for(handle):
+    digest = hashlib.sha1((handle or '').encode()).digest()
+    return COLORS[digest[0] % len(COLORS)]
+
+
+def collaborators():
+    """The others in the project now: [{'peer', 'handle', 'name', 'color', 'selected', 'playhead',
+    'editing'}]."""
+    if _connection is None:
+        return []
+    people = []
+    for peer, info in _connection.engine.peers.items():
+        user = info.get('user') or {}
+        state = info.get('state') or {}
+        handle = user.get('handle') or ''
+        people.append({'peer': peer, 'handle': handle, 'name': user.get('name') or handle,
+                       'color': color_for(handle), 'selected': state.get('selected'),
+                       'playhead': state.get('playhead'), 'editing': state.get('editing')})
+    return sorted(people, key=lambda person: person['handle'])
+
+
+def conflicts():
+    """What crossed someone else's changes (collab_sync.Engine.conflicts)."""
+    return list(_connection.engine.conflicts) if _connection is not None else []
+
+
+def resolve(conflict, keep):
+    """Settle a conflict: 'mine' keeps what is there (this person's text won), 'theirs' puts back the other
+    person's, as an edit of this person's (undoable, sent to everyone). A refused batch is only dismissed."""
+    if _connection is None:
+        return
+    engine = _connection.engine
+    if conflict in engine.conflicts:
+        engine.conflicts.remove(conflict)
+    if keep == 'theirs' and conflict.get('cue_id'):
+        segment = cue_ids.find(session.SUBTITLE.get('segments'), conflict['cue_id'])
+        if segment is not None:
+            history.history_append()
+            head, _dot, key = conflict['field'].partition('.')
+            if key:
+                segment.setdefault(head, {})[key] = conflict['theirs']
+            else:
+                segment[head] = conflict['theirs']
+            session.set_unsaved()
+    _tell('conflicts')
+
+
+# --- Sharing and joining ------------------------------------------------------------------------------------
+
+
+def _live():
+    return session.SUBTITLE.get('segments') or [], session.SPEAKERS, session.SUBTITLE
+
+
+def _document():
+    session.capture_changes()
+    return docops.snapshot(*_live())
+
+
+def share(title, owner, on_success, on_failure):
+    """Share the open project for live co-editing, as `owner` (a handle: yourself or a group you may publish
+    as). The project becomes shared once subtitld.cc has it; saving keeps that with it."""
+    document = _document()
+
+    def shared(project):
+        collab_state.start(project['doc_id'], service.base_url(), int(project.get('seq') or 0), base=document)
+        # Edits made while subtitld.cc was taking it: the first changes to send.
+        since = docops.diff(document, *_live())
+        if since:
+            collab_state.queue(since)
+        session.set_unsaved(True)
+        connect()
+        _tell('shared')
+        on_success(project)
+
+    return service.call(lambda: service.client().share_project(title, document, owner=owner), shared, on_failure)
+
+
+def take(project):
+    """Make shared project `project` (from projects() or project()) the open one, in place of what is there:
+    the subtitles come from subtitld.cc as the connection catches up. Like a subtitle opened from subtitld.cc,
+    it isn't a file yet: saving asks where to put it. Needs no video (a project opened from a link gets its
+    video later: interface/subtitldcc_open.py). Main thread only."""
+    _stop()
+    history.history_clear()
+    session.SUBTITLE['segments'] = []
+    session.SUBTITLE['selected'] = None
+    session.SUBTITLE['filepath'] = ''
+    session.SUBTITLE.pop('origin', None)
+    session.SPEAKERS.clear()
+    session.CONFIG['format_to_save'] = 'USFX'
+    session.document_loaded()
+    collab_state.start(project['doc_id'], service.base_url(), 0, base=None)
+    session.set_unsaved(True)
+    connect()
+    _tell('shared')
+
+
+def drop():
+    """Give up the open shared project without keeping it here: one opened from a link, before the editor
+    opened with its video (interface/subtitldcc_open.py). Disconnected, and nothing is open any more."""
+    _stop()
+    history.history_clear()
+    session.SUBTITLE['segments'] = []
+    session.SUBTITLE['selected'] = None
+    session.SPEAKERS.clear()
+    session.document_loaded()  # nothing is shared: the open project is no project
+    session.set_unsaved(False)
+    _tell('shared')
+
+
+def join(window, project):
+    """Open shared project `project` in the editor (take()), which follows."""
+    from subtitld.interface import left_panel, top_bar
+
+    take(project)
+    if hasattr(window, 'timeline_widget'):
+        window.timeline_widget.update_size()
+        window.timeline_widget.update()
+    left_panel.update(window)
+    top_bar.update(window)
+
+
+def projects(on_success, on_failure):
+    """The shared projects the signed-in person co-edits (one page: {results, next_cursor})."""
+    return service.call(lambda: service.client().projects(), on_success, on_failure)
+
+
+def project(on_success, on_failure, doc_id=None):
+    """The open shared project (or shared project `doc_id`) as subtitld.cc has it: title, owner, members,
+    permissions, its page (`url`)."""
+    doc_id = doc_id or collab_state.STATE.get('doc')
+    return service.call(lambda: service.client().project(doc_id), on_success, on_failure)
+
+
+def report_published(share_id, version, on_success, on_failure):
+    """This person published version `version` of `share_id` from the open shared project: subtitld.cc
+    links the project to that subtitle and credits everyone who co-edited it."""
+    doc_id = collab_state.STATE.get('doc')
+    return service.call(lambda: service.client().project_published(doc_id, share_id, version), on_success, on_failure)
+
+
+def follow_subtitle(project):
+    """The subtitle the shared project publishes to (its `subtitle`) is the editor's origin, at its latest
+    version: publishing from here offers its next version to those who may. True when that changed."""
+    subtitle = (project or {}).get('subtitle')
+    if not subtitle or not collab_state.shared():
+        return False
+    origin = service.origin() or {}
+    if origin.get('share_id') == subtitle['share_id'] and (origin.get('version') or 0) >= (subtitle.get('version') or 0):
+        return False
+    service.set_origin(subtitle['share_id'], subtitle.get('version'))
+    session.set_unsaved(True)
+    return True
+
+
+def add_member(handle, on_success, on_failure):
+    doc_id = collab_state.STATE.get('doc')
+    return service.call(lambda: service.client().add_member(doc_id, handle.strip().lstrip('@')), on_success, on_failure)
+
+
+def remove_member(handle, on_success, on_failure):
+    doc_id = collab_state.STATE.get('doc')
+    return service.call(lambda: service.client().remove_member(doc_id, handle), on_success, on_failure)
+
+
+def stop_sharing(manage, on_success, on_failure):
+    """Leave the project (a member) or close it for everyone (`manage`: its owner). Either way it stays here
+    as a project of one's own."""
+    doc_id = collab_state.STATE.get('doc')
+    me = (service.account() or {}).get('handle') or ''
+
+    def left(_result):
+        _stop()
+        collab_state.clear()
+        session.set_unsaved(True)
+        _tell('shared')
+        on_success(None)
+
+    def work():
+        client = service.client()
+        if manage:
+            return client.close_project(doc_id)
+        # Leaving is removing oneself: by handle, which subtitld.cc tells when it isn't remembered yet.
+        return client.remove_member(doc_id, me or client.me()['handle'])
+
+    return service.call(work, left, on_failure)
+
+
+# --- Editors' chat (modules.collab_chat): passed on by subtitld.cc, kept here --------------------------------
+
+def _chat_news(kind, *args):
+    """The engine's chat messages, and its connection news the chat needs (main thread)."""
+    state = collab_state.STATE
+    engine = _connection.engine if _connection is not None else None
+    if engine is None:
+        return
+    if kind == 'chat':
+        message = args[0]
+        state['chat_outbox'] = [m for m in state['chat_outbox'] if m['id'] != message.get('id')]
+        collab_chat.merge(state['chat'], [message])
+        _chat_changed()
+    elif kind == 'chat_history_request' and args[0]:
+        engine.chat_history(args[0], state['chat'][-CHAT_HISTORY_SENT:])
+    elif kind == 'chat_history':
+        if collab_chat.merge(state['chat'], args[1]):
+            _chat_changed()
+    elif kind == 'state' and engine.state == engine.LIVE:
+        _send_chat()
+    if kind in ('peers', 'state'):
+        _voice_sync()
+    if kind == 'peers' and engine.state == engine.LIVE and not _chat_asked and engine.peers:
+        # Someone else is here: ask one of them for what was said while this app was away.
+        peer = sorted(engine.peers)[0]
+        _chat_asked.add(peer)
+        engine.chat_history_request(peer)
+
+
+def _chat_changed():
+    if collab_state.STATE.get('save_chat'):
+        session.set_unsaved(True)
+    _tell('chat')
+
+
+def _send_chat():
+    for message in list(collab_state.STATE['chat_outbox']):
+        if _connection is None or not _connection.engine.chat(message):
+            break
+
+
+def _chat_post(message):
+    collab_state.STATE['chat_outbox'].append(message)
+    _send_chat()
+    _tell('chat')
+    return message['id']
+
+
+def chat_messages():
+    """The conversation as it shows (modules.collab_chat.conversation), oldest first."""
+    state = collab_state.STATE
+    return collab_chat.conversation(state['chat'], state['chat_outbox'])
+
+
+def chat_say(text, cue_id=None, at_ms=None, reply_to=None):
+    """Say something in the editors' chat; it waits while offline. Returns the message's ID, or None."""
+    text = (text or '').strip()
+    if not text or not collab_state.shared():
+        return None
+    return _chat_post(collab_chat.say(text, cue_id=cue_id, at_ms=at_ms, reply_to=reply_to))
+
+
+def chat_edit(message_id, text):
+    text = (text or '').strip()
+    if text and collab_state.shared():
+        _chat_post(collab_chat.edit(message_id, text))
+
+
+def chat_delete(message_id):
+    if collab_state.shared():
+        _chat_post(collab_chat.delete(message_id))
+
+
+def chat_me():
+    """This person's handle, as the chat's messages name them."""
+    engine = _connection.engine if _connection is not None else None
+    return (getattr(engine, 'you', None) or service.account() or {}).get('handle', '')
+
+
+def chat_unread():
+    state = collab_state.STATE
+    return collab_chat.unread(state['chat'], state.get('chat_read'), chat_me())
+
+
+def chat_mark_read():
+    state = collab_state.STATE
+    latest = max((message['at'] for message in state['chat']), default=0)
+    if latest > (state.get('chat_read') or 0):
+        state['chat_read'] = latest
+        _tell('chat')
+
+
+def chat_alone():
+    """No collaborator is online: what was said while this app was away can't be had now."""
+    engine = _connection.engine if _connection is not None else None
+    return engine is None or engine.state != 'live' or not engine.peers
+
+
+def chat_saved():
+    return bool(collab_state.STATE.get('save_chat'))
+
+
+def set_chat_saved(on):
+    """Keep the conversation in the project file (chat.json), or not."""
+    if bool(on) != chat_saved():
+        collab_state.STATE['save_chat'] = bool(on)
+        session.set_unsaved(True)
+        _tell('chat')
+
+
+# --- Editors' voice call (modules.collab_voice): push-to-talk, a link of its own with each person in it -------
+
+def voice_available():
+    """Whether this Subtitld can be in a call: libdatachannel, libopus and an audio library."""
+    from subtitld.modules import opus, rtc
+    try:
+        import sounddevice  # noqa: F401
+    except (ImportError, OSError):
+        return False
+    return rtc.available() and opus.available()
+
+
+def in_call():
+    return _call is not None and _call.on
+
+
+def voice_join():
+    """Join the project's call: the microphone and speakers open; links come as the others are found."""
+    global _call
+    from subtitld.modules import collab_transfer, collab_voice
+
+    if in_call() or _connection is None or not voice_available():
+        return False
+    engine = _connection.engine
+    _call = collab_voice.Call(lambda peer, payload: engine.rtc(peer, payload),
+                              relays=lambda: collab_transfer.relay_urls(engine.ice))
+    try:
+        _call.start(input_device=(session.CONFIG.get('record') or {}).get('device'))
+    except Exception as error:  # a device that won't open
+        log.warning('collab: could not open the audio devices for the call: %s', error)
+        _call.stop()
+        _call = None
+        return False
+    _presence_tick()
+    _voice_sync()
+    _tell('voice')
+    return True
+
+
+def voice_leave():
+    global _call
+    if _call is None:
+        return
+    call, _call = _call, None
+    call.stop()
+    if _connection is not None:
+        _presence_tick()
+    _tell('voice')
+
+
+def voice_talk(held):
+    """The push-to-talk key or button went down (True) or up."""
+    if in_call() and _call.held != bool(held):
+        _call.held = bool(held)
+        _tell('voice')
+
+
+def voice_latch(on):
+    """Talk without holding (and stop)."""
+    if in_call() and _call.latched != bool(on):
+        _call.latched = bool(on)
+        _tell('voice')
+
+
+def _voice_sync():
+    if not in_call() or _connection is None:
+        return
+    engine = _connection.engine
+    others = {peer for peer, info in engine.peers.items() if (info.get('state') or {}).get('voice')}
+    if engine.peer:
+        _call.sync(engine.peer, others)
+
+
+def voice_state():
+    """{'on', 'talking', 'latched', 'people': [{'handle', 'name', 'speaking', 'me'}], 'many'} for the panel."""
+    engine = _connection.engine if _connection is not None else None
+    on = in_call()
+    speaking = _call.speaking() if on else set()
+    people = []
+    if engine is not None:
+        for peer, info in sorted(engine.peers.items()):
+            if (info.get('state') or {}).get('voice'):
+                user = info.get('user') or {}
+                people.append({'handle': user.get('handle', ''), 'name': user.get('name') or user.get('handle', ''),
+                               'speaking': peer in speaking, 'me': False})
+    if on:
+        me = getattr(engine, 'you', None) or service.account() or {}
+        people.insert(0, {'handle': me.get('handle', ''), 'name': me.get('name') or me.get('handle', ''),
+                          'speaking': _call.talking, 'me': True})
+    from subtitld.modules import collab_voice
+    return {'on': on, 'talking': bool(on and _call.talking), 'latched': bool(on and _call.latched),
+            'people': people, 'many': len(people) > collab_voice.MANY, 'someone_speaking': bool(speaking)}

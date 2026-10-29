@@ -61,6 +61,7 @@ apps:
       - kde-neon-6
     environment:
       PYTHONPATH: $SNAP/lib/python3.10/site-packages:$PYTHONPATH
+      SUBTITLDCC_LIBDATACHANNEL: $SNAP/usr/lib/libdatachannel.so
     plugs:
       - home
       - removable-media
@@ -107,8 +108,45 @@ parts:
       # In the snap as PySide6's own, not here.
       - -qt-ffmpeg
 
+  # libdatachannel, for live co-editing's direct links between collaborators
+  # (media goes from one Subtitld to another). Data channels only, with the
+  # base's OpenSSL; the app is told where it is (SUBTITLDCC_LIBDATACHANNEL).
+  libdatachannel:
+    plugin: cmake
+    source: https://github.com/paullouisageneau/libdatachannel.git
+    source-tag: v0.23.2
+    source-submodules:
+      - deps/libjuice
+      - deps/usrsctp
+      - deps/plog
+    cmake-generator: Ninja
+    cmake-parameters:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DNO_MEDIA=ON
+      - -DNO_WEBSOCKET=ON
+      - -DNO_EXAMPLES=ON
+      - -DNO_TESTS=ON
+    build-packages:
+      - libssl-dev
+      - ninja-build
+    stage-packages:
+      - libssl3
+    override-build: |
+      craftctl default
+      mkdir -p "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel"
+      cp "$CRAFT_PART_SRC/LICENSE" "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/"
+      cp "$CRAFT_PART_SRC/deps/libjuice/LICENSE" "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/LICENSE.libjuice"
+      cp "$CRAFT_PART_SRC/deps/usrsctp/LICENSE.md" "$CRAFT_PART_INSTALL/usr/share/doc/libdatachannel/LICENSE.usrsctp"
+    prime:
+      - usr/lib/libdatachannel.so*
+      - usr/lib/*/libssl.so*
+      - usr/lib/*/libcrypto.so*
+      - usr/share/doc/libdatachannel
+
   subtitld:
-    after: [qt-ffmpeg]
+    after: [qt-ffmpeg, libdatachannel]
     plugin: python
     source: .
     build-packages:

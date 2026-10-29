@@ -4,6 +4,11 @@ set -e
 VERSION=${VERSION:-$(date -u +%y.%m.%d.%H%M)}
 APP_DIR="Subtitld.AppDir"
 
+# libdatachannel (live co-editing's media transfer), which the spec bundles: built once in Docker.
+if [ ! -f packaging/libdatachannel/dist/linux-x86_64/libdatachannel.so ]; then
+    bash packaging/libdatachannel/build-linux.sh
+fi
+
 # Install dependencies and build with PyInstaller
 pip install .
 pip install pyinstaller

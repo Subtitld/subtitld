@@ -266,6 +266,66 @@ class Client:
         body = {**video, "release_name": release_name}
         return self.request("POST", f"/assets/{share_id}/matches", json_body=body)
 
+    # --- Live co-editing (the "collab" scope) ---------------------------------------------------------------
+
+    def projects(self, cursor: str | None = None) -> dict:
+        """The shared projects you co-edit, most recently changed first: {results, next_cursor}."""
+        return self.request("GET", "/collab/projects", params={"cursor": cursor})
+
+    def project(self, doc_id: str) -> dict:
+        return self.request("GET", f"/collab/projects/{doc_id}")
+
+    def share_project(
+        self, title: str, state: dict, *, owner: str = "", idempotency_key: str | None = None
+    ) -> dict:
+        """Share a project for live co-editing: ``state`` is its document now ({segments, speakers, meta},
+        subtitles with IDs). ``owner``: yourself (the default) or a group you may publish as. Returns the
+        project, with the address of its websocket."""
+        body = {"title": title, "owner": owner, "state": state}
+        key = idempotency_key or str(uuid.uuid4())
+        return self.request("POST", "/collab/projects", json_body=body, idempotency_key=key)
+
+    def rename_project(self, doc_id: str, title: str) -> dict:
+        return self.request("PATCH", f"/collab/projects/{doc_id}", json_body={"title": title})
+
+    def close_project(self, doc_id: str) -> None:
+        """Stop sharing it (the owner): no one connects any more."""
+        self.request("DELETE", f"/collab/projects/{doc_id}")
+
+    def add_member(self, doc_id: str, handle: str) -> dict:
+        """Share it with a person or a group, by handle (the owner). Returns the project."""
+        return self.request("POST", f"/collab/projects/{doc_id}/members", json_body={"handle": handle})
+
+    def project_published(self, doc_id: str, share_id: str, version: int) -> dict:
+        """You published this version from the project: it publishes to that subtitle from now on, and the
+        version credits everyone whose changes it had. Returns the project, with its ``coeditors``."""
+        return self.request(
+            "POST",
+            f"/collab/projects/{doc_id}/published",
+            json_body={"share_id": share_id, "version": version},
+        )
+
+    def project_media(self, doc_id: str) -> list[dict]:
+        """The project's media files, described (hash, kind, size, name…; never their bytes)."""
+        return self.request("GET", f"/collab/projects/{doc_id}/media")["results"]
+
+    def project_media_file(self, doc_id: str, hash: str) -> dict:
+        """One media file, with the hash of each chunk."""
+        return self.request("GET", f"/collab/projects/{doc_id}/media/{hash}")
+
+    def add_project_media(self, doc_id: str, **description) -> dict:
+        """Describe a file of the project: hash, kind, size, chunk_size, chunks, fingerprint, name."""
+        return self.request("POST", f"/collab/projects/{doc_id}/media", json_body=description)
+
+    def media_received(self, doc_id: str, hash: str, sender: str = "", device_name: str = "") -> None:
+        """You received the file from ``sender`` (a handle)."""
+        body = {"sender": sender, "device_name": device_name}
+        self.request("POST", f"/collab/projects/{doc_id}/media/{hash}/received", json_body=body)
+
+    def remove_member(self, doc_id: str, handle: str) -> None:
+        """Stop sharing it with someone (the owner), or leave it (your own handle)."""
+        self.request("DELETE", f"/collab/projects/{doc_id}/members/{handle.lstrip('@')}")
+
     # --- Signing out -------------------------------------------------------------------------------------
 
     def revoke(self) -> None:

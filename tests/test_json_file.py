@@ -28,6 +28,11 @@ def check(name, got, want):
         fails.append(name)
 
 
+def without_ids(segments):
+    """The subtitles as opened, less the stable IDs opening gives them."""
+    return [{key: value for key, value in segment.items() if key != 'id'} for segment in segments]
+
+
 folder = Path(tempfile.mkdtemp())
 session.SUBTITLE = {
     'language': 'pt-br', 'filepath': '/somewhere/project.usfx', 'position': 12.5,
@@ -56,7 +61,8 @@ print('opening reads it all back')
 session.SUBTITLE = {'language': 'en-us', 'segments': []}
 segments, fmt = file_io.process_subtitles_file(str(path))
 check('format', fmt, 'JSON')
-check('segments', segments, [
+check('each gets a stable ID, not Whisper\'s number', all(isinstance(segment.get('id'), str) for segment in segments), True)
+check('segments', without_ids(segments), [
     {'start': 1.0, 'end': 2.5, 'text': 'Olá\nmundo', 'speaker': 'A',
      'translations': {'en-us': 'Hello world'}, 'dubbing': [{'path': 'a.wav', 'uid': 'd1'}]},
     {'start': 3.0, 'end': 4.0, 'text': 'Tchau', 'speaker': 'B', 'locked': True}])
@@ -70,7 +76,7 @@ whisper.write_text(json.dumps({
                   'temperature': 0.0, 'avg_logprob': -0.3, 'compression_ratio': 0.8, 'no_speech_prob': 0.01}]}))
 session.SUBTITLE = {'language': 'pt-br', 'segments': []}
 segments, fmt = file_io.process_subtitles_file(str(whisper))
-check('one subtitle, speaker A as for other formats, no decoder statistics', segments,
+check('one subtitle, speaker A as for other formats, no decoder statistics', without_ids(segments),
       [{'start': 0.0, 'end': 2.0, 'text': 'Hello there.', 'speaker': 'A'}])
 check('"en" is English: the project takes it, as Subtitld writes it', session.SUBTITLE['language'], 'en-us')
 

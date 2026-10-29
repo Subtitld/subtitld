@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .client import CLIENT_ID, ApiError, Client
 
-SCOPES = ("read", "publish", "rate")
+SCOPES = ("read", "publish", "rate", "collab")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 DONE_PAGE = (
     "<!doctype html><meta charset=utf-8><title>Subtitld</title>"

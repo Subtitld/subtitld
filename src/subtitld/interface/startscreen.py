@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QPushButton, QLabel, QListWidget, QVBoxLayout, QWi
 from PySide6.QtCore import QPropertyAnimation, Qt, QEasingCurve, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 
+from subtitld.modules import collab_state
 from subtitld.modules import file_io
 from subtitld.modules import session
 from subtitld.modules import history
@@ -139,6 +140,10 @@ def load(self):
 
     self.start_screen.layout().addWidget(self.start_screen_bottom_line_container, 0)
 
+    # A project shared on subtitld.cc, opened from a link (no file of it here).
+    from subtitld.interface import subtitldcc_open
+    subtitldcc_open.load(self)
+
     self.central_widget.layout().addWidget(self.start_screen)
 
 
@@ -207,10 +212,16 @@ def open_files(self, filepaths, ask=True):
     return True
 
 
-def load_productionscreen(self):
+def load_productionscreen(self, collab=None):
+    """Open the editor with session.VIDEO's video and session.SUBTITLE's
+    file. `collab`: the co-editing state of a shared project opened from a
+    link, which has no file (interface/subtitldcc_open.py); it stays shared
+    as the editor opens."""
     # Fresh project means a fresh undo stack — otherwise Ctrl+Z could
     # restore segments from the previously-loaded document.
     history.history_clear()
+    if collab is not None:
+        collab_state.opening(collab)
     if not session.VIDEO.get('filepath', False):
         return
 
@@ -256,6 +267,7 @@ def load_productionscreen(self):
             return
         for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
             session.SPEAKERS.setdefault(name, {})
+    session.document_loaded()
 
     # Show the production screen NOW — data the widgets need for first
     # paint is on hand. Previous code scheduled the show on a 200 ms
@@ -353,6 +365,7 @@ def translate(self):
     self.start_screen_recent_label.setText(_('startscreen.recent_subtitles'))
     self.start_screen_adver_label.setText((_('startscreen.version_number').format(__version__)))
     self.start_screen_adver_label_details.setText(_('startscreen.visit_website'))
+    self.open_link_card.retranslate()
     for label in self.start_screen_recent_listwidget.findChildren(QLabel):
         if label.property('class') == 'age':
             label.setText(utils.friendly_time(label.property('last_opened')))

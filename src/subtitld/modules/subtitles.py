@@ -5,7 +5,7 @@
 import os
 import secrets
 from bisect import bisect
-from subtitld.modules import history, markup, session
+from subtitld.modules import cue_ids, history, markup, session
 
 
 def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
@@ -25,6 +25,7 @@ def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
         duration = session.SUBTITLE['segments'][index]['start'] - position
 
     session.SUBTITLE['segments'].insert(index, {
+        'id': cue_ids.new_id(),
         'start': position,
         'end': position + duration,
         'text': text

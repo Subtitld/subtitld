@@ -12,6 +12,8 @@ url="https://subtitld.org"
 license=('GPL-3.0-or-later')
 depends=(
     'ffmpeg'
+    # Live co-editing: media sent directly between collaborators.
+    'libdatachannel'
     'portaudio'
     'pyside6'
     'python'
@@ -32,10 +34,11 @@ depends=(
     'python-sounddevice'
     'python-soundfile'
     # Optional for pyside6 on Arch, but the app needs them: QtWebEngine
-    # renders the preview's subtitles.
+    # renders the preview's subtitles, QtWebSockets carries live co-editing.
     'qt6-multimedia'
     'qt6-svg'
     'qt6-webengine'
+    'qt6-websockets'
     'hicolor-icon-theme'
 )
 optdepends=(

@@ -17,6 +17,8 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
+from subtitld.modules import collab_state
+from subtitld.modules import cue_ids
 from subtitld.modules import ebustl
 from subtitld.modules import timecode
 from subtitld.modules import export_options
@@ -622,6 +624,8 @@ def _usf_language(code, name=''):
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
+    # Only a USFX can be a shared project (modules.collab_state).
+    collab_state.opening(None)
     # Only USF and USFX files remember a subtitld.cc origin; any other file starts without one.
     session.SUBTITLE.pop('origin', None)
 
@@ -805,6 +809,14 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     for member in zf.namelist():
                         if _is_phase1_usfx_member(member):
                             zf.extract(member, extract_dir)
+                    # From the file itself, not the extract folder: that can
+                    # still hold an earlier save's.
+                    names = zf.namelist()
+                    if collab_state.STATE_MEMBER in names:
+                        pending = zf.read(collab_state.PENDING_MEMBER) if collab_state.PENDING_MEMBER in names else b''
+                        base = zf.read(collab_state.BASE_MEMBER) if collab_state.BASE_MEMBER in names else None
+                        chat = zf.read(collab_state.CHAT_MEMBER) if collab_state.CHAT_MEMBER in names else None
+                        collab_state.opening(collab_state.read(zf.read(collab_state.STATE_MEMBER), pending, base, chat))
             except zipfile.BadZipFile as exc:
                 raise CorruptedProjectFileError(str(exc)) from exc
 
@@ -1022,6 +1034,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
 
+    cue_ids.ensure_ids(segments_list)
     return segments_list, subtitle_format
 
 
@@ -1379,12 +1392,14 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         VIDEO = snap['VIDEO']
         FORMAT = snap['FORMAT']
         thumbnail = snap.get('THUMBNAIL')
+        collab_members = snap.get('COLLAB') or {}
     else:
         SUBTITLE = session.SUBTITLE
         SPEAKERS = session.SPEAKERS
         VIDEO = session.VIDEO
         FORMAT = session.FORMAT
         thumbnail = None
+        collab_members = collab_state.export()
     document_language = (SUBTITLE.get('language') or '').strip()
     if document_language:
         language = document_language
@@ -1701,6 +1716,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 manifest_entries.append((arc, _mime_for(arc)))
             for arc in extra_files_to_include.values():
                 manifest_entries.append((arc, _mime_for(arc)))
+            for arc in collab_members:
+                manifest_entries.append((arc, 'application/json' if arc.endswith('.json') else 'application/x-ndjson'))
 
             manifest_lines = ['<?xml version="1.0" encoding="UTF-8"?>',
                               '<manifest version="1.0">',
@@ -1735,6 +1752,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         zf.writestr(f'assets/speakers/{_safe_asset_name(name)}.png', img_bytes)
                     for source, arc in extra_files_to_include.items():
                         zf.write(source, arc)
+                    for arc, data in collab_members.items():
+                        zf.writestr(arc, data)
                 # Verify the tmp file is a structurally valid zip with
                 # intact CRCs for every member BEFORE atomic rename —
                 # otherwise a partial / I/O-corrupted write would
@@ -1883,6 +1902,7 @@ def _snapshot_for_save():
     try:
         return {
             'THUMBNAIL': _thumbnail_png(),
+            'COLLAB': collab_state.export(),
             'SUBTITLE': copy.deepcopy(session.SUBTITLE),
             'SPEAKERS': copy.deepcopy(session.SPEAKERS),
             'VIDEO': copy.deepcopy(session.VIDEO),

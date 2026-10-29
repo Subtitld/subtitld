@@ -545,6 +545,7 @@ def _open_backup_into_session(self, backup_path):
     session.CONFIG['format_to_save'] = format_to_save
     for name in {segment.get('speaker', 'A') for segment in segments}:
         session.SPEAKERS.setdefault(name, {})
+    session.document_loaded()
 
     new_video = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
     if not new_video:

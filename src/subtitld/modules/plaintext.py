@@ -71,6 +71,9 @@ ERROR = 'error'
 WARNING = 'warning'
 
 CORE_KEYS = ('start', 'end', 'text')
+# Never written nor read: a subtitle's stable ID (modules.cue_ids) stays with
+# the subtitle an edited cue is matched to.
+_RESERVED = ('id',)
 # Metadata written first, in this order; anything else follows by name.
 _META_ORDER = ('speaker', 'translations', 'dubbing')
 # Kept with the subtitle but not written in Markdown: file paths, ids and
@@ -178,7 +181,7 @@ def _hidden(key, value):
     """Keys the text cannot carry: runtime-only ones (``_``-prefixed), names
     that cannot be written as a key, and values JSON cannot represent.
     They are kept as they are on apply."""
-    if not isinstance(key, str) or key.startswith('_') or not _KEY_ONLY.match(key):
+    if not isinstance(key, str) or key.startswith('_') or key in _RESERVED or not _KEY_ONLY.match(key):
         return True
     try:
         json.dumps(value)
@@ -1058,9 +1061,10 @@ def apply_cues(segments, cues, dry_run=False):
 
     result = []
     for segment, cue in pairs:
+        meta = {key: value for key, value in cue.meta.items() if key not in _RESERVED}
         if segment is None:
             segment = {'start': cue.start, 'end': cue.end, 'text': cue.text}
-            segment.update(cue.meta)
+            segment.update(meta)
         else:
             if _ms(segment.get('start')) != _ms(cue.start):
                 segment['start'] = cue.start
@@ -1069,9 +1073,9 @@ def apply_cues(segments, cues, dry_run=False):
             if markup.key(segment.get('text')) != markup.key(cue.text):
                 segment['text'] = cue.text
             for key in list(shown_meta(segment, cue.fmt)):
-                if key not in cue.meta:
+                if key not in meta:
                     del segment[key]
-            for key, value in cue.meta.items():
+            for key, value in meta.items():
                 if key not in segment or not _same_field(key, segment[key], value):
                     segment[key] = value
         result.append(segment)

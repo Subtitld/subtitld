@@ -7,6 +7,7 @@ import subprocess
 import datetime
 import subtitld
 import platformdirs
+from subtitld.modules import collab_state, cue_ids, journal
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
@@ -351,12 +352,47 @@ _save_success_callbacks = []
 # Called on every set_unsaved() — after any edit, not just when the
 # unsaved state flips — for views that mirror the whole document.
 _document_change_callbacks = []
+# Called once a project is opened or started (document_loaded): a shared one connects (modules.collab_service).
+_document_loaded_callbacks = []
+# Called before each change is recorded, and when a project opens: what the document holds is brought up to
+# date, such as each dub file's hash (modules.collab_media).
+_before_capture_callbacks = []
+def capture_changes():
+    """Record what the document's last edit changed (modules.journal)."""
+    # Whatever the edit made, every subtitle leaves it with its own ID.
+    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    _before_capture()
+    return journal.capture(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+
+
+def _before_capture():
+    for callback in list(_before_capture_callbacks):
+        try:
+            callback()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('session: a before-capture step failed')
+
+
+def document_loaded():
+    """A project was opened or started: the journal starts from it, so that
+    opening it is not recorded as an edit, and it is shared for co-editing
+    if its file says so (modules.collab_state)."""
+    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    _before_capture()
+    journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+    collab_state.opened()
+    for callback in list(_document_loaded_callbacks):
+        callback()
+
+
 def set_unsaved(value=True):
     global UNSAVED, AUTOSAVE_BACKUP_DIRTY
     old_value = UNSAVED
     UNSAVED = value
     if value:
         AUTOSAVE_BACKUP_DIRTY = True
+    capture_changes()
     if old_value != value:
         for callback in _unsaved_change_callbacks:
             callback()

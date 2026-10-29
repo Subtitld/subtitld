@@ -55,5 +55,6 @@ resource file_types message {
 	"types" = "application/x-usfx",
 	"types" = "application/x-subrip",
 	"types" = "text/vtt",
-	"types" = "text/x-ssa"
+	"types" = "text/x-ssa",
+	"types" = "application/x-vnd.Be.URL.subtitld"
 };

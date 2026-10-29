@@ -123,7 +123,12 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libsm6 libice6 \
             libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbfile1 libasound2
+      - uses: actions/cache@v6
+        with:
+          path: packaging/libdatachannel/dist/linux-x86_64
+          key: libdatachannel-${{ hashFiles('packaging/libdatachannel/build-linux.sh') }}
       - name: Build
+        # build-appimage.sh builds libdatachannel (in Docker) when the cache has none.
         run: bash build-appimage.sh
       - name: Start it on clean systems
         run: |
@@ -259,11 +264,21 @@ jobs:
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
           $bin = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
           $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - uses: actions/cache@v6
+        id: libdatachannel
+        with:
+          path: packaging/libdatachannel/dist/windows-x64
+          key: libdatachannel-windows-${{ hashFiles('packaging/libdatachannel/build-windows.ps1') }}
+      - name: Build libdatachannel
+        # Live co-editing's direct links; the spec bundles it.
+        if: steps.libdatachannel.outputs.cache-hit != 'true'
+        run: pwsh packaging/libdatachannel/build-windows.ps1
       - name: Build with PyInstaller
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller .
           pyinstaller subtitld-windows.spec --clean --noconfirm
+          if (-not (Test-Path dist\Subtitld\datachannel.dll)) { throw 'libdatachannel is not in the bundle' }
           & dist\Subtitld\ffmpeg.exe -hide_banner -version | Select-Object -First 1
       - name: Thumbnail provider (.usfx in Explorer)
         # Into the app's folder, so the portable build, the installer and the
@@ -345,6 +360,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: python .github/scripts/inject-version.py "$VERSION"
       - run: brew install ffmpeg create-dmg
+      - uses: actions/cache@v6
+        id: libdatachannel
+        with:
+          path: packaging/libdatachannel/dist/macos-arm64
+          key: libdatachannel-macos-${{ hashFiles('packaging/libdatachannel/build-macos.sh') }}
+      - name: Build libdatachannel
+        # Live co-editing's direct links; the spec bundles it.
+        if: steps.libdatachannel.outputs.cache-hit != 'true'
+        run: |
+          brew install ninja
+          bash packaging/libdatachannel/build-macos.sh
       - name: Build with PyInstaller
         run: |
           python -m pip install --upgrade pip
@@ -356,6 +382,13 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
           ff=$(find "$app" -name ffmpeg -type f -perm -u+x | head -1)
           "$ff" -hide_banner -version | head -1
+          dc=$(find "$app" -name libdatachannel.dylib | head -1)
+          [ -n "$dc" ] || { echo "::error::libdatachannel is not in the bundle"; exit 1; }
+          if otool -L "$dc" | grep -q /opt/homebrew; then
+            otool -L "$dc"
+            echo "::error::the bundled libdatachannel links to Homebrew libraries"
+            exit 1
+          fi
           # Bundled binaries must not reach into Homebrew, which users lack.
           if otool -L "$ff" | grep -q /opt/homebrew; then
             otool -L "$ff"
