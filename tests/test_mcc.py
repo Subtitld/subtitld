@@ -111,9 +111,10 @@ check('a line in letters, as MacCaption writes it', cues(
 AT_25 = to_mcc(SCC, rate='25', timecode=at_25, rate_code=3, count=24)
 check('at 25: the header says so, and the packets', (cues(AT_25)[0][:2], mcc.parse(AT_25)[1]),
       ((1.2, 3.0), {'rate': '25', 'captions': '608'}))
-check('the rate the export offers, by the header and the packets', [mcc.parse(to_mcc(SCC, rate=label, rate_code=code))[1]['rate']
-      for label, code in (('30DF', 4), ('30', 4), ('30', 5), ('24', 1), ('24', 2), ('60', 8))],
-      ['29.97DF', '29.97', '30', '23.976', '24', None])
+check('the rate the export offers, by the header and the packets; none where the two disagree',
+      [mcc.parse(to_mcc(SCC, rate=label, rate_code=code))[1]['rate']
+       for label, code in (('30DF', 4), ('30', 4), ('30', 5), ('24', 1), ('24', 2), ('60', 8), ('30DF', 3))],
+      ['29.97DF', '29.97', '30', '23.976', '24', '60', None])
 # CEA-708 as the cea708 module writes it: in a file with CEA-608 too, it is read first; alone, it is read.
 DTVCC_DATA = cea708.frame_data([('{\\an8}<font color="#ffd700">Only in 708</font>', 30, 60)], 18)
 CEA608_TOO = to_mcc(SCC.split('\n\n00:00:01;20')[0])
@@ -197,7 +198,8 @@ for name, options, framerate, want in (
         ('saved at the rate asked; >> marks; Windows line ends', {'mcc_rate': '23.976', 'speakers': 'voice'}, 25.0,
          ('Time Code Rate=24', 1, '>> ', True)),
         ("else the video's; CEA-608 alone when asked", {'mcc_captions': '608'}, 25.0, ('Time Code Rate=25', 3, "You", True)),
-        ('else 29.97 drop-frame', {}, 50.0, ('Time Code Rate=30DF', 4, "You", True))):
+        ("else the video's, at the faster rates too", {}, 50.0, ('Time Code Rate=50', 6, "You", True)),
+        ('else 29.97 drop-frame', {}, 48.0, ('Time Code Rate=30DF', 4, "You", True))):
     session.FORMAT = {'options': options}
     session.VIDEO = {'framerate': framerate}
     file_io.save_file(str(folder / 'out.mcc'), 'MCC')
