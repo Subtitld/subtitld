@@ -18,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import cea708, file_io, mcc, scc, session
+from subtitld.modules import cea708, closed_captions, file_io, mcc, scc, session
 
 fails = []
 
@@ -212,6 +212,47 @@ try:
     check('not MCC: says so', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('not MCC: says so', str(error).startswith('Not a MacCaption file'), True)
+
+print('writing: the modes, the channels, another service, every frame')
+TYPED = [{'start': 1.0, 'end': 3.0, 'text': 'First line'}, {'start': 3.0, 'end': 5.0, 'text': 'Second line'}]
+
+
+def batches_of(text):
+    """The caption data an MCC's lines carry, as closed_captions reads it."""
+    out = []
+    for line in text.split('\n'):
+        match = mcc._LINE.match(line)
+        if not match:
+            continue
+        frame = mcc._frame(*(int(part) for part in match.groups()[:4]), 30, True)
+        triplets, _rate = mcc._cc_data(mcc._expand(match.group(5)))
+        if triplets:
+            out.append((frame, triplets))
+    return out
+
+
+check('roll-up through CEA-608 and CEA-708 alike',
+      ([s['text'] for s in mcc.parse(mcc.write(TYPED, mode='roll2'))[0]],
+       [s['text'] for s in mcc.parse(mcc.write(TYPED, mode='roll2', captions='608'))[0]]),
+      (['First line', 'Second line'], ['First line', 'Second line']))
+check('paint-on too', [s['text'] for s in mcc.parse(mcc.write(TYPED, mode='paint', captions='608'))[0]],
+      ['First line', 'Second line'])
+third = batches_of(mcc.write(TYPED, channel=3, captions='608'))
+check('CC3 rides in the second field, where CC1 is empty',
+      ([s['text'] for s in closed_captions.decode(third, mcc.RATES['29.97DF'][2], 'cc3')[0]],
+       closed_captions.decode(third, mcc.RATES['29.97DF'][2], 'cc1')[0],
+       sorted({cc_type for _frame, triplets in third for cc_type, _a, _b in triplets})),
+      (['First line', 'Second line'], [], [0, 1]))
+spanish = batches_of(mcc.write(TYPED, services={2: [{'start': 1.0, 'end': 3.0, 'text': 'Primera linea'}]}))
+check('a CEA-708 service of its own for another language',
+      (cea708.services([(f, [t for t in trip if t[0] >= 2]) for f, trip in spanish]),
+       [s['text'] for s in cea708.decode(spanish, mcc.RATES['29.97DF'][2], 2)]),
+      ([1, 2], ['Primera linea']))
+check('a packet for every frame, as ancillary data needs',
+      len([line for line in mcc.write(TYPED, frames=180).split('\n') if '\t' in line]), 180)
+check('and never fewer than the captions need', len([line for line in mcc.write(TYPED, frames=2).split('\n')
+                                                     if '\t' in line]) > 2, True)
+
 
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel

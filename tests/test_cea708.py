@@ -189,6 +189,28 @@ tight = cea708.frame_data([('One', 10, None), ('Two two two two two two two', 11
 check('too little room: the show waits for its load', [round(s['start'] * RATE) for s in cea708.decode(
     sorted(tight.items()), RATE)][1] > 11, True)
 
+print('writing: roll-up, paint-on and more than one service')
+SHOWS = [('First line', 30, None), ('Second line', 90, 150)]
+for mode, want in (('roll2', [(1.034, 3.003, 'First line'), (3.003, 5.005, 'Second line')]),
+                   ('roll4', [(1.034, 3.003, 'First line'), (3.003, 5.005, 'Second line')]),
+                   ('paint', [(1.034, 3.036, 'First line'), (3.036, 5.005, 'Second line')])):
+    typed = cea708.frame_data(SHOWS, 18, mode=mode)
+    check(f'{mode}: read back as it was typed',
+          [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in cea708.decode(sorted(typed.items()), RATE)],
+          want)
+rolled = cea708.frame_data(SHOWS, 18, mode='roll3')
+first = cea708.blocks(cea708.packets(sorted(rolled.items()))[0][1])[0][1]
+check('roll-up: the windows cleared, then one defined visible, three rows, the pen on its base row',
+      (list(first[:2]), first[3] & 0x20, (first[6] & 0x0F) + 1, list(first[14:19])),
+      ([0x8C, 0xFF], 0x20, 3, [0x88, 0x01, 0x92, 0x02, 0x00]))
+both = cea708.frames_for({1: SHOWS, 3: [('Primera linea', 30, None)]}, 18)
+batches = sorted(both.items())
+check('two services in one channel, each read on its own',
+      (cea708.services(batches), [s['text'] for s in cea708.decode(batches, RATE, 1)],
+       [s['text'] for s in cea708.decode(batches, RATE, 3)]),
+      ([1, 3], ['First line', 'Second line'], ['Primera linea']))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

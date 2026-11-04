@@ -17,11 +17,15 @@ decoded as the SCC module does: pop-on, roll-up and paint-on captions,
 italics, underline, colours and places (see closed_captions).
 
 Writing gives MCC V1.0 with the header MacCaption's licence asks for
-whole, and a packet for each frame with caption data: the pop-on captions
-the SCC module writes in CEA-608, at the export's frame rate, its pair in
-the first field, nothing in the second; and, unless only CEA-608 is
-asked for, the same captions in CEA-708's service 1, shown on the same
-frames; padding for the rest of each packet's count.
+whole, and a packet for each frame with caption data: the captions the SCC
+module writes in CEA-608 (pop-on, roll-up or paint-on, in CC1, CC2, CC3 or
+CC4 — the first two in the first field, the others in the second), at the
+export's frame rate; and, unless only CEA-608 is asked for, the same
+captions in CEA-708's service 1, shown on the same frames, with a service
+of its own for each further language asked for. `frames` writes a packet
+for every frame of a video rather than only those with captions, as the
+ancillary data of an MXF or a QuickTime caption track needs; padding fills
+the rest of each packet's count.
 """
 
 import datetime
@@ -239,13 +243,27 @@ def _packet(triplets, sequence, cdp_rate, count):
     return anc + bytes([sum(anc) & 0xFF])
 
 
-def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=None):
-    """MCC text for `segments`, pop-on captions in CC1 and, with `captions`
-    'both', in CEA-708's service 1, at `rate` (a key of RATES); with
-    `speaker_changes`, ">> " where a new speaker begins."""
+def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=None,
+          mode='pop', channel=1, services=None, frames=0):
+    """MCC text for `segments`, captions of `mode` in CEA-608's channel
+    `channel` (1 to 4) and, with `captions` 'both', in CEA-708's service 1,
+    at `rate` (a key of RATES); with `speaker_changes`, ">> " where a new
+    speaker begins. `services` {number: segments} gives CEA-708 a service of
+    its own for each further language. `frames` writes a packet for every
+    frame up to it, as ancillary data needs."""
     label, nominal, frames_per_second, drop, cdp_rate, count = RATES.get(rate, RATES['29.97DF'])
-    words, _breaks, shows = scc.frame_words(segments, frames_per_second, speaker_changes)
-    dtvcc = cea708.frame_data(shows, count - 2) if captions != '608' else {}
+    channel = channel if channel in (1, 2, 3, 4) else 1
+    field = 1 if channel >= 3 else 0                   # CC3 and CC4 ride in the second field
+    words, _breaks, shows = scc.frame_words(segments, frames_per_second, speaker_changes,
+                                            mode=mode, channel=2 if channel in (2, 4) else 1)
+    dtvcc = {}
+    if captions != '608':
+        by_service = {1: shows}
+        for number, extra in (services or {}).items():
+            if number != 1 and extra:
+                _words_, _b_, extra_shows = scc.frame_words(extra, frames_per_second, speaker_changes, mode=mode)
+                by_service[int(number)] = extra_shows
+        dtvcc = cea708.frames_for(by_service, count - 2, mode)
     now = now or datetime.datetime.now()
     days = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
     months = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
@@ -253,17 +271,21 @@ def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=
     lines = [HEADER, f'UUID={str(uuid.uuid4()).upper()}', 'Creation Program=Subtitld',
              f'Creation Date={days[now.weekday()]}, {months[now.month - 1]} {now.day}, {now.year}',
              f'Creation Time={now.hour}:{now.minute:02d}:{now.second:02d}', f'Time Code Rate={label}', '']
-    for sequence, frame in enumerate(sorted(set(words) | set(dtvcc))):
+    span = range(max(frames, (max(set(words) | set(dtvcc)) + 1) if (words or dtvcc) else 0)) if frames \
+        else sorted(set(words) | set(dtvcc))
+    for sequence, frame in enumerate(span):
         # CEA-608's pair (or nothing) for each field, then CEA-708's.
         pair = bytes.fromhex(words[frame]) if frame in words else b'\x80\x80'
-        triplets = [(0xFC, *pair), (0xFD, 0x80, 0x80)]
+        triplets = [(0xFC, 0x80, 0x80), (0xFD, 0x80, 0x80)]
+        triplets[field] = (0xFC if field == 0 else 0xFD, *pair)
         triplets += [(0xFF if cc_type == 3 else 0xFE, first, second) for cc_type, first, second in dtvcc.get(frame, [])]
         packet = _packet(triplets, sequence % 65536, cdp_rate, count)
         lines.append(f'{_timecode(frame, nominal, drop)}\t{_compress(packet)}')
     return '\n'.join(lines) + '\n'
 
 
-def save(path, segments, rate='29.97DF', speaker_changes=False, captions='both'):
+def save(path, segments, rate='29.97DF', speaker_changes=False, captions='both',
+         mode='pop', channel=1, services=None, frames=0):
     """Write `segments` to `path` as MCC (ASCII, Windows line ends)."""
     with open(path, 'w', encoding='ascii', newline='\r\n') as mcc_file:
-        mcc_file.write(write(segments, rate, speaker_changes, captions))
+        mcc_file.write(write(segments, rate, speaker_changes, captions, None, mode, channel, services, frames))

@@ -529,27 +529,32 @@ def _pen(style):
     return [[0x90, 0x05, (0x80 if style.italic else 0) | (0x40 if style.underline else 0)], [0x91, color, 0x00, 0x00]]
 
 
-def _load(text, window):
-    """The commands that load a subtitle into a hidden window."""
-    rows, keypad = _rows(text)
-    if not rows:
-        return []
+def _define(window, keypad, rows, columns, visible):
+    """DefineWindow and SetWindowAttributes for a window of `rows` rows and
+    `columns` columns at `keypad`, placed by percentages of the screen so
+    4:3 and 16:9 decoders put it alike."""
     vertical, horizontal = (keypad - 1) // 3, (keypad - 1) % 3          # 0 bottom ... 2 top; 0 left ...
     anchor_point = (2 - vertical) * 3 + horizontal
-    columns = max(len(row) for row in rows)
-    units = [[0x98 + window,
-              0x18,                                                     # hidden; rows and columns locked
-              0x80 | (90, 50, 10)[vertical],                            # relative: % of the screen's height
-              (10, 50, 90)[horizontal],
-              anchor_point << 4 | (len(rows) - 1),
-              columns - 1,
-              0x09],                                                    # window and pen style 1
-             [0x88, 1 << window],                                       # ClearWindows
-             # Transparent fill, bottom-to-top scroll, the place's justification.
-             [0x97, 0xC0, 0x00, 0x0C | (_LEFT, _CENTER, _RIGHT)[horizontal], 0x00]]
-    pen = None
+    return [[0x98 + window,
+             0x38 if visible else 0x18,                                 # visible or not; rows and columns locked
+             0x80 | (90, 50, 10)[vertical],                             # relative: % of the screen's height
+             (10, 50, 90)[horizontal],
+             anchor_point << 4 | (rows - 1),
+             columns - 1,
+             0x09],                                                     # window and pen style 1
+            # Transparent fill, bottom-to-top scroll, the place's justification.
+            [0x97, 0xC0, 0x00, 0x0C | (_LEFT, _CENTER, _RIGHT)[horizontal], 0x00]]
+
+
+def _typed(rows, pen, first_row=0):
+    """(the commands that write `rows` from `first_row`, the pen they leave
+    set to): a pen change where the look changes, then the characters."""
+    units = []
     for index, row in enumerate(rows):
-        units.append([0x92, index, 0])
+        if index:
+            units.append([0x0D])                                        # CR: the next row
+        elif first_row:
+            units.append([0x92, first_row, 0])                          # SetPenLocation
         looks = [markup.Style(style.italic, False, style.underline, False, style.color) for _char_, style in row]
         for position, (char, _style) in enumerate(row):
             look = looks[position]
@@ -563,6 +568,60 @@ def _load(text, window):
                 units.extend(_pen(look))
                 pen = look
             units.append(_char(char))
+    return units, pen
+
+
+def _load(text, window):
+    """The commands that load a subtitle into a hidden window."""
+    rows, keypad = _rows(text)
+    if not rows:
+        return []
+    columns = max(len(row) for row in rows)
+    units = _define(window, keypad, len(rows), columns, visible=False)
+    units.insert(1, [0x88, 1 << window])                                # ClearWindows
+    pen = None
+    for index, row in enumerate(rows):
+        units.append([0x92, index, 0])                                  # each row from its left
+        written, pen = _typed([row], pen)
+        units.extend(written)
+    return units
+
+
+def _roll(text, window, count, define):
+    """The commands that type a subtitle as roll-up lines in a window of
+    `count` rows, on screen as they are typed: the window defined the first
+    time, then each line after a CR has rolled the ones before it up."""
+    rows, keypad = _rows(text)
+    if not rows:
+        return []
+    units = []
+    if define:
+        units = _define(window, keypad, count, _COLUMNS, visible=True)
+        units.append([0x88, 1 << window])                               # ClearWindows
+        units.append([0x92, count - 1, 0])                              # the pen on the base row
+    else:
+        units.append([0x80 + window])                                   # CW: write in this window
+    pen = None
+    for row in rows:
+        units.append([0x0D])                                            # CR: roll the rows up
+        written, pen = _typed([row], pen)
+        units.extend(written)
+    return units
+
+
+def _paint(text, window):
+    """The commands that paint a subtitle onto the screen as it is typed:
+    the window defined where the subtitle sits, visible and empty, then its
+    text."""
+    rows, keypad = _rows(text)
+    if not rows:
+        return []
+    columns = max(len(row) for row in rows)
+    units = _define(window, keypad, len(rows), columns, visible=True)
+    units.insert(1, [0x88, 1 << window])                                # ClearWindows
+    units.append([0x92, 0, 0])
+    written, _pen_ = _typed(rows, None)
+    units.extend(written)
     return units
 
 
@@ -590,22 +649,48 @@ def _packets(units, service=1):
     return [packet + [0x00] if len(packet) % 2 == 0 else packet for packet in out]
 
 
-def frame_data(shows, capacity):
-    """{frame: [(cc_type, byte, byte)]} carrying `shows` [(text, frame it
-    shows, frame it is cleared or None)] as service 1's pop-on captions, at
-    most `capacity` a frame. Packets go one after another, each sent from
-    its frame on: a caption's load in the frames before it shows, its show
-    (and the last one's deletion) on its frame, a deletion on its own."""
+def _queue(shows, capacity, service, mode):
+    """[(frame, order, packets)] for one service's captions of `mode`: a
+    pop-on caption's load in the frames before it shows and its show on its
+    frame; a roll-up or paint-on caption's text from the frame it starts,
+    since it is read as it arrives."""
     queue = []                                   # (frame, order, packets)
-    visible = None
+    rows = int(mode[4]) if mode.startswith('roll') else 0
+    visible, defined = None, False
     for index, (text, shown, cleared) in enumerate(shows):
+        last = index == len(shows) - 1
+        if rows:
+            # One window of its own, defined once: its lines roll up in it.
+            units = _roll(text, 0, rows, not defined)
+            if not units:
+                continue
+            if not defined:
+                units.insert(0, [0x8C, 0xFF])    # DeleteWindows: a clean start
+                defined = True
+            queue.append((shown, 1, _packets(units, service)))
+            if last and cleared is not None:
+                queue.append((cleared, 0, _packets([[0x8C, 0x01]], service)))
+            continue
         window = index % 2
+        if mode == 'paint':
+            units = _paint(text, window)
+            if not units:
+                continue
+            # The one before it goes as this one is defined, so that only
+            # one caption is on screen.
+            units.insert(0, [0x8C, 1 << visible] if visible is not None else [0x8C, 0xFF])
+            queue.append((shown, 1, _packets(units, service)))
+            visible = window
+            if cleared is not None:
+                queue.append((cleared, 0, _packets([[0x8C, 1 << window]], service)))
+                visible = None
+            continue
         units = _load(text, window)
         if not units:
             continue
         if not queue:
             units.insert(0, [0x8C, 0xFF])        # DeleteWindows: a clean start
-        loads = _packets(units)
+        loads = _packets(units, service)
         frames_needed = -(-sum((len(packet) + 1) // 2 for packet in loads) // capacity) + 1
         earliest = shows[index - 1][1] + 1 if index else 0
         queue.append((max(earliest, shown - frames_needed), 1, loads))
@@ -614,11 +699,30 @@ def frame_data(shows, capacity):
         # none is left see each caption apart.
         show = [[0x8C, 1 << visible]] if visible is not None else []
         show.append([0x89, 1 << window])
-        queue.append((shown, 2, _packets(show)))
+        queue.append((shown, 2, _packets(show, service)))
         visible = window
         if cleared is not None:
-            queue.append((cleared, 0, _packets([[0x8C, 1 << window]])))
+            queue.append((cleared, 0, _packets([[0x8C, 1 << window]], service)))
             visible = None
+    return queue
+
+
+def frame_data(shows, capacity, mode='pop', service=1):
+    """{frame: [(cc_type, byte, byte)]} carrying `shows` [(text, frame it
+    shows, frame it is cleared or None)] as `service`'s captions of `mode`
+    ('pop', 'roll2', 'roll3', 'roll4' or 'paint'), at most `capacity` a
+    frame."""
+    return frames_for({service: shows}, capacity, mode)
+
+
+def frames_for(by_service, capacity, mode='pop'):
+    """{frame: [(cc_type, byte, byte)]} carrying the captions of several
+    services, `by_service` {service number: shows}, in one caption channel.
+    Packets go one after another, each sent from its frame on; a service's
+    windows are its own, so services do not tread on each other."""
+    queue = []
+    for service, shows in sorted(by_service.items()):
+        queue.extend(_queue(shows, capacity, service, mode))
     queue.sort(key=lambda entry: (entry[0], entry[1]))
     items = [(frame, packet) for frame, _order, packets in queue for packet in packets]
 
