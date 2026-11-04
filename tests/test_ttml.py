@@ -225,6 +225,58 @@ check('read back, the box changes nothing', [s['text'] for s in ttml.parse(previ
       '{\\an8}<font color="#ffd700">Gold <b>bold</b> & <u>under</u> <s>struck</s></font>')
 check('without the box: none', 'box' in ttml.write(segments, look='preview', preview={'backgroundbox_enabled': False}), False)
 
+print('the profile a file declares')
+check('nothing declared by default, as Subtitld has always written it',
+      ('ttp:profile' in clean, 'contentProfiles' in clean, 'cellResolution' in clean), (False, False, False))
+imsc1 = ttml.write(segments, 'en', profile='imsc1')
+check("IMSC 1.0.1: its Text Profile in ttp:profile, the grid written down",
+      (f'ttp:profile="{ttml._IMSC1_TEXT}"' in imsc1, 'ttp:cellResolution="32 15"' in imsc1), (True, True))
+imsc11 = ttml.write(segments, 'en', profile='imsc1.1')
+check('IMSC 1.1: in ttp:contentProfiles, where 1.1 moved it',
+      (f'ttp:contentProfiles="{ttml._IMSC11_TEXT}"' in imsc11, 'ttp:profile=' in imsc11), (True, False))
+ebu = ttml.write(segments, 'en', profile='ebu-tt-d')
+check('EBU-TT-D: its URN in metadata, its namespace, and no contentProfiles', (
+    f'<ebuttm:conformsToStandard>{ttml._EBUTTD_STANDARD}</ebuttm:conformsToStandard>' in ebu,
+    f'xmlns:ebuttm="{ttml._EBUTTM_NS}"' in ebu, 'contentProfiles' in ebu), (True, True, False))
+check('agents still written beside it', ttml.write(segments, 'en', agents=True, profile='ebu-tt-d').count('<ttm:agent '), 2)
+check('an unknown profile is plain TTML 1', 'Profiles' in ttml.write(segments, 'en', profile='nonsense'), False)
+check('all of them read back the same', [len(ttml.parse(written)) for written in (imsc1, imsc11, ebu)], [5, 5, 5])
+
+japanese = [{'start': 1, 'end': 2, 'text': '<i>こんにちは</i>'}]
+ja = ttml.write(japanese, 'ja', profile='imsc1.1')
+check('Japanese in an IMSC profile: italics as a shear, no fontStyle',
+      (f'tts:shear="{ttml._SHEAR}"' in ja, 'fontStyle' in ja), (True, False))
+check('and they read back as italics', [s['text'] for s in ttml.parse(ja)], ['<i>こんにちは</i>'])
+check('English keeps fontStyle; so does plain TTML 1 in Japanese',
+      ('tts:fontStyle="italic"' in ttml.write(japanese, 'en', profile='imsc1.1'),
+       'tts:fontStyle="italic"' in ttml.write(japanese, 'ja')), (True, True))
+check('a shear read on its own is italics',
+      cues(doc('<p begin="1s" end="2s"><span tts:shear="16.67%">Slanted</span></p>')), [(1.0, 2.0, '<i>Slanted</i>')])
+check('a shear of zero stands the text up again',
+      cues(doc('<p begin="1s" end="2s" tts:shear="16.67%">A<span tts:shear="0%">B</span></p>')), [(1.0, 2.0, '<i>A</i>B')])
+
+print('checking a file against its profile')
+check('what Subtitld writes passes its own check',
+      (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
+check('the wrong declaration is found', ttml.check(imsc1, 'imsc1.1'),
+      [f"ttp:contentProfiles does not name IMSC 1.1's Text Profile ({ttml._IMSC11_TEXT})"])
+check('a file with no language', ttml.check(doc('<p begin="1s" end="2s">Hi</p>'), 'ttml1')[0].startswith('<tt> has no xml:lang'), True)
+check('a region a subtitle names but the file has not',
+      ttml.check(doc('<p begin="1s" end="2s" region="nope">Hi</p>', attrs=' xml:lang="en"'), 'ttml1'),
+      ['Subtitles name regions the file does not have: nope'])
+image = doc('<p begin="1s" end="2s" smpte:backgroundImage="card.png"/>',
+            attrs=' xml:lang="en" xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt"')
+check('pictures in a text profile', ttml.check(image, 'imsc1.1')[-1].startswith('1 element(s) carry smpte:backgroundImage'), True)
+check('EBU-TT-D with a profile attribute it may not have',
+      ttml.check(doc('<p begin="1s" end="2s">Hi</p>', attrs=' xml:lang="en" ttp:contentProfiles="x"'), 'ebu-tt-d'),
+      ['No ebuttm:conformsToStandard: EBU-TT-D is declared in metadata, not in a ttp: attribute',
+       'ttp:contentProfiles is prohibited in EBU-TT-D'])
+check('a cell grid that is not two numbers',
+      ttml.check(doc('<p begin="1s" end="2s">Hi</p>', attrs=' xml:lang="en" ttp:cellResolution="32"'), 'ttml1'),
+      ["ttp:cellResolution is '32': it is two whole numbers above zero"])
+check('text that is not XML at all', ttml.check('not xml', 'ttml1')[0].startswith('Not XML that can be read'), True)
+check('XML that is not TTML', ttml.check('<html><body/></html>', 'ttml1'), ['The document is <html>, not <tt>'])
+
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 for name, text, encoding in (('in.ttml', AGENTS, 'utf-8'), ('in.dfxp', OLD, 'utf-8'), ('in.itt', ITT, 'utf-8'),

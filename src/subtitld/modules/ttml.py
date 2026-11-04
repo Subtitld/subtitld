@@ -22,7 +22,9 @@ Reading:
   div, p and span, each element's being the styles its style="..." names
   (and the ones they name) and then its own tts:* attributes. Italic (or
   oblique), bold, underline, line-through and a colour other than white
-  become formatting tags;
+  become formatting tags; so does a tts:shear, which is how IMSC 1.1
+  writes italics for Japanese (Netflix's profile asks for it there, and a
+  file written that way has no fontStyle to find);
 - where the subtitle sits, from its region: the point tts:displayAlign
   and tts:textAlign put the text at in the region's tts:origin and
   tts:extent (in %, px or cells), or, without those, the two alone
@@ -40,6 +42,22 @@ spans with tts:fontStyle, tts:fontWeight, tts:textDecoration and
 tts:color, line breaks as <br/>, and, when asked, each speaker as a
 ttm:agent. Its one style is white with a black outline, or the look of
 Subtitld's preview: its font, colour and box.
+
+`profile` says which of TTML's profiles the file declares itself to be, so
+a service that checks what it is given accepts it (PROFILES):
+
+    'ttml1'     TTML 1 with nothing declared, as Subtitld has always
+                written it
+    'imsc1'     IMSC 1.0.1's Text Profile, declared in ttp:profile
+    'imsc1.1'   IMSC 1.1's Text Profile, declared in ttp:contentProfiles,
+                which is where 1.1 moved it
+    'ebu-tt-d'  EBU-TT-D, declared in ebuttm:conformsToStandard, the way
+                the EBU's own spec asks for and which forbids
+                ttp:contentProfiles
+
+A profile also sets what the file may hold, and `check` reads a file back
+to say where it breaks the rules this module knows (it is a useful set of
+checks, not a conformance certificate).
 """
 
 import html.entities
@@ -54,13 +72,32 @@ _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
 _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
-_STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent')
+_STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
+                 'shear')
 _RGB = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
 _DECLARED = re.compile(rb'\s*<\?xml[^>]*?encoding\s*=\s*["\']([\w.:-]+)["\']')
 _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
 _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
+
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
+
+# What each profile is called where it is declared. IMSC 1.0.1 names the
+# profile it conforms to in ttp:profile; 1.1 moved that to
+# ttp:contentProfiles (ttp:profile there says what a processor must do, not
+# what the document is); EBU-TT-D has its own URN, in metadata, and
+# forbids ttp:contentProfiles.
+_IMSC1_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1/text'
+_IMSC11_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1.1/text'
+_EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
+_EBUTTM_NS = 'urn:ebu:tt:metadata'
+
+# Japanese subtitles write italics as a shear: IMSC 1.1 has tts:shear, and
+# Netflix's Japanese profile asks for it in place of tts:fontStyle, which
+# it prohibits. 16.67% is the slant their guide gives.
+_SHEAR = '16.67%'
+_PERCENT = re.compile(r'^(-?\d+(?:\.\d+)?)%$')
 
 
 def _local(name):
@@ -232,11 +269,19 @@ class _Styles:
         return props
 
 
+def _sheared(value):
+    """Whether a tts:shear slants the text: a percentage other than zero.
+    A span that sets it back to 0% stands the text up again, as one with
+    tts:fontStyle="normal" does."""
+    percent = _PERCENT.match((value or '').strip())
+    return bool(percent) and float(percent.group(1)) != 0
+
+
 def _look(props):
     decoration = (props.get('textDecoration') or '').split()
     color = _color(props.get('color'))
     return markup.Style(
-        (props.get('fontStyle') or '') in ('italic', 'oblique'),
+        (props.get('fontStyle') or '') in ('italic', 'oblique') or _sheared(props.get('shear')),
         (props.get('fontWeight') or '') == 'bold',
         'underline' in decoration,
         'lineThrough' in decoration,
@@ -387,6 +432,68 @@ def read(path):
         return _document(_text_of(ttml_file.read()))
 
 
+def check(text, profile='imsc1.1'):
+    """What breaks `profile`'s rules in TTML text: ["what is wrong", ...],
+    empty when this finds nothing.
+
+    A useful set of checks, not a conformance certificate: it holds the
+    rules that are written down plainly and that a file Subtitld wrote or
+    read can actually break — the declaration itself, the language, a
+    region a subtitle names but the file does not have, images in a text
+    profile, and what EBU-TT-D asks for. A service's own validator still
+    has the last word.
+    """
+    profile = profile if profile in PROFILES else 'ttml1'
+    try:
+        root = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', _ENTITY.sub(_entity, (text or '').lstrip('﻿'))))
+    except ET.ParseError as error:
+        return [f'Not XML that can be read: {error}']
+    if _local(root.tag) != 'tt':
+        return [f'The document is <{_local(root.tag)}>, not <tt>']
+
+    problems = []
+    if not (root.get(_XML_NS + 'lang') or '').strip():
+        problems.append('<tt> has no xml:lang: every profile asks a file to say what language it is in')
+
+    declared_profile = _attr(root, 'profile') or ''
+    content_profiles = (_attr(root, 'contentProfiles') or '').split()
+    standards = [(element.text or '').strip() for element in root.iter()
+                 if _local(element.tag) == 'conformsToStandard']
+    if profile == 'imsc1' and declared_profile != _IMSC1_TEXT:
+        problems.append(f'ttp:profile does not name IMSC 1.0.1\'s Text Profile ({_IMSC1_TEXT})')
+    if profile == 'imsc1.1' and _IMSC11_TEXT not in content_profiles:
+        problems.append(f'ttp:contentProfiles does not name IMSC 1.1\'s Text Profile ({_IMSC11_TEXT})')
+    if profile == 'ebu-tt-d':
+        if not any(standard.startswith('urn:ebu:tt:distribution') for standard in standards):
+            problems.append('No ebuttm:conformsToStandard: EBU-TT-D is declared in metadata, not in a ttp: attribute')
+        if content_profiles:
+            problems.append('ttp:contentProfiles is prohibited in EBU-TT-D')
+        if (_attr(root, 'timeBase') or 'media') != 'media':
+            problems.append('EBU-TT-D asks for ttp:timeBase="media"')
+
+    cells = (_attr(root, 'cellResolution') or '').split()
+    if cells:
+        try:
+            if len(cells) != 2 or not all(int(cell) > 0 for cell in cells):
+                raise ValueError
+        except ValueError:
+            problems.append(f'ttp:cellResolution is {" ".join(cells)!r}: it is two whole numbers above zero')
+
+    if profile in ('imsc1', 'imsc1.1'):
+        images = [element for element in root.iter() if _attr(element, 'backgroundImage')]
+        if images:
+            problems.append(f'{len(images)} element(s) carry smpte:backgroundImage: '
+                            'pictures belong to the Image Profile, not the Text Profile')
+
+    regions = {_xml_id(element) for element in root.iter()
+               if _local(element.tag) == 'region' and _xml_id(element)}
+    missing = sorted({element.get('region') for element in root.iter()
+                      if element.get('region') and element.get('region') not in regions})
+    if missing:
+        problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    return problems
+
+
 def format_time(seconds):
     """TTML clock time for `seconds`: "HH:MM:SS.mmm"."""
     total = max(0, int(round(float(seconds) * 1000)))
@@ -405,16 +512,17 @@ def _rgba(value, default):
     return '#' + value
 
 
-def _open_span(tags, style):
+def _open_span(tags, style, shear=False):
     """A <span> for the formatting `tags` ({(name, value)}) open together;
     its textDecoration names all the run's, so none an outer span set is
-    lost, whatever a player makes of a nested one."""
+    lost, whatever a player makes of a nested one. With `shear`, italics
+    are written as a slant instead (see _SHEAR)."""
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
         attrs.append(f'tts:color="{names["font"]}"')
     if 'i' in names:
-        attrs.append('tts:fontStyle="italic"')
+        attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:
         attrs.append('tts:fontWeight="bold"')
     if 'u' in names or 's' in names:
@@ -423,7 +531,7 @@ def _open_span(tags, style):
     return f'<span {" ".join(attrs)}>'
 
 
-def _content(text):
+def _content(text, shear=False):
     """A subtitle's text as TTML: spans for its formatting, nested as its
     tags are, <br/> between lines."""
     out = []
@@ -439,7 +547,7 @@ def _content(text):
         del stack[keep:]
         new = wanted.difference(*stack)
         if new:
-            out.append(_open_span(new, style))
+            out.append(_open_span(new, style, shear))
             stack.append(frozenset(new))
         out.append('<br/>'.join(escape(part) for part in run.split('\n')))
     out.extend('</span>' for _span in stack)
@@ -462,10 +570,43 @@ def _styles(look, preview):
     return styles, 'box'
 
 
-def write(segments, language='en', agents=False, look='clean', preview=None):
+def _japanese(language):
+    return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
+
+
+def _root_attributes(profile, language):
+    """What <tt> carries: the namespaces and parameters, and the profile
+    the file declares itself to be."""
+    namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
+                  'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
+                  'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
+                  'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"']
+    if profile == 'ebu-tt-d':
+        namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
+    attrs = ['ttp:timeBase="media"']
+    if profile == 'imsc1':
+        attrs.append(f'ttp:profile="{_IMSC1_TEXT}"')
+    elif profile == 'imsc1.1':
+        attrs.append(f'ttp:contentProfiles="{_IMSC11_TEXT}"')
+    if profile != 'ttml1':
+        # What the percentages in this file are measured against. It is
+        # TTML's default, but EBU-TT-D asks for it in writing and a file
+        # that says so cannot be read against another grid by mistake.
+        attrs.append('ttp:cellResolution="32 15"')
+    attrs.append(f'xml:lang={quoteattr(export_options.language_tag(language))}')
+    return ' '.join(namespaces + attrs)
+
+
+def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1'):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
-    `preview`, CONFIG['videoplayer'])."""
+    `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
+
+    A Japanese file in an IMSC profile writes its italics as tts:shear:
+    that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
+    profile prohibits tts:fontStyle outright."""
+    profile = profile if profile in PROFILES else 'ttml1'
+    shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     cues = []
     places = {}
     speakers = {}
@@ -484,18 +625,22 @@ def write(segments, language='en', agents=False, look='clean', preview=None):
         speaker = str(segment.get('speaker') or '').strip()
         if agents and speaker:
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
-        content = _content(rest)
+        content = _content(rest, shear)
         if box:
             content = f'<span style="{box}">{content}</span>'
         cues.append(f'      <p {attrs}>{content}</p>')
 
     head = ['  <head>']
-    if speakers:
-        head.append('    <metadata>')
-        for name, agent_id in speakers.items():
-            head.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
+    metadata = []
+    if profile == 'ebu-tt-d':
+        metadata.append(f'      <ebuttm:documentMetadata>'
+                        f'<ebuttm:conformsToStandard>{_EBUTTD_STANDARD}</ebuttm:conformsToStandard>'
+                        f'</ebuttm:documentMetadata>')
+    for name, agent_id in speakers.items():
+        metadata.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
                         f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
-        head.append('    </metadata>')
+    if metadata:
+        head += ['    <metadata>', *metadata, '    </metadata>']
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
     for keypad in sorted(places, key=lambda keypad: (-((keypad - 1) // 3), keypad)):
         display = ('after', 'center', 'before')[(keypad - 1) // 3]
@@ -505,9 +650,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None):
     head += ['    </layout>', '  </head>']
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" '
-        'xmlns:ttp="http://www.w3.org/ns/ttml#parameter" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" '
-        f'ttp:timeBase="media" xml:lang={quoteattr(export_options.language_tag(language))}>',
+        f'<tt {_root_attributes(profile, language)}>',
         *head,
         '  <body style="text">',
         '    <div>',
@@ -518,7 +661,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None):
         ''])
 
 
-def save(path, segments, language='en', agents=False, look='clean', preview=None):
+def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1'):
     """Write `segments` to `path` as TTML, in UTF-8."""
     with open(path, 'w', encoding='utf-8', newline='\n') as ttml_file:
-        ttml_file.write(write(segments, language, agents, look, preview))
+        ttml_file.write(write(segments, language, agents, look, preview, profile))
