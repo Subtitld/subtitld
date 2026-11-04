@@ -2,7 +2,10 @@
 headless box): the audio engine, the preview panel and the main window still
 build, playback is silent, and play() tries the device again. On Haiku with
 no sound card no stream is tried at all: its media server's default output
-is listed regardless, and opening it crashes the process. A window that
+is listed regardless, and opening it crashes the process. Where PortAudio
+itself fails to start (19.7, Ubuntu 26.04's, with no PulseAudio server),
+importing sounddevice raises: the app starts all the same, silent, and offers
+no voice call. A window that
 fails half-way through being built stops the add-ons catalog fetch it started
 instead of letting Qt abort the process over the running QThread.
 
@@ -170,6 +173,50 @@ finally:
     preview_panel.load = load_preview_panel
 check('the error still reaches the caller', error, 'a later panel failed')
 check('the fetch was started, and is no longer running', (len(fetches), any(t.isRunning() for t in fetches)), (1, False))
+
+print('PortAudio failing to start: the engine, the voice call check and the main window')
+
+
+class PortAudioError(Exception):
+    pass
+
+
+class PortAudioFailsToStart:
+    """What importing sounddevice does when PortAudio's start fails (19.7 with no PulseAudio server)."""
+
+    def find_spec(self, name, path=None, target=None):
+        if name == 'sounddevice':
+            raise PortAudioError("Error initializing PortAudio: Unanticipated host error [PaErrorCode -9999]: "
+                                 "'PulseAudio_Initialize: Can't connect to server'")
+        return None
+
+
+import importlib
+from subtitld.modules import collab_service
+finder, real_sounddevice = PortAudioFailsToStart(), sys.modules.pop('sounddevice')
+sys.meta_path.insert(0, finder)
+stderr, sys.stderr = sys.stderr, io.StringIO()
+try:
+    importlib.reload(audioengine)
+    engine = audioengine.SoundDeviceAudioEngine()
+    engine.play(0.5)
+    log = sys.stderr.getvalue()
+    voice = collab_service.voice_available()
+    window = subtitld_main.Window()
+finally:
+    sys.stderr = stderr
+    sys.meta_path.remove(finder)
+    sys.modules['sounddevice'] = real_sounddevice
+check('no PortAudio in the engine', audioengine.sd, None)
+check('no stream, and one warning naming the error',
+      (engine.stream, log.count('WARNING'), "Can't connect to server" in log), (None, 1, True))
+check('play() does not claim to be playing', engine.playing, False)
+check('the engine still mixes offline', engine.render_buffer(0.0, 0.1).shape, (4800, 2))
+check('no voice call offered', voice, False)
+check('the main window builds, silent', window.preview_panel_player._audio_device.stream, None)
+engine.shutdown()
+window.left_panel_global_addons_panel.shutdown()
+window.preview_panel_player._audio_device.shutdown()
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

@@ -799,7 +799,7 @@ def voice_available():
     from subtitld.modules import opus, rtc
     try:
         import sounddevice  # noqa: F401
-    except (ImportError, OSError):
+    except Exception:       # not installed, no PortAudio, or PortAudio failing to start (PortAudioError)
         return False
     return rtc.available() and opus.available()
 

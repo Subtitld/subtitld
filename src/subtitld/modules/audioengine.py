@@ -1,4 +1,12 @@
-import sounddevice as sd
+# PortAudio starts when sounddevice is imported, and that can fail: PortAudio
+# 19.7 (Ubuntu 26.04's) gives up altogether when no PulseAudio server answers,
+# on a headless box say. The app still starts, silent, as it does with no
+# output device (see _output_choices).
+try:
+    import sounddevice as sd
+    _sounddevice_error = None
+except Exception as exc:
+    sd, _sounddevice_error = None, exc
 import soundfile as sf
 import numpy as np
 import gc
@@ -1208,7 +1216,7 @@ class SoundDeviceAudioEngine:
             return True
         if not self._no_output_logged:
             self._no_output_logged = True
-            reason = error if error is not None else 'no sound card'
+            reason = error or _sounddevice_error or 'no sound card'
             sys.stderr.write(f'[audioengine] WARNING: no audio output device, playback is silent ({reason})\n')
             sys.stderr.flush()
         return False
@@ -1221,8 +1229,11 @@ class SoundDeviceAudioEngine:
         some 430 ms of audio and reports about 175: the picture, lined up
         with what it reports, still ran a quarter of a second ahead of the
         sound. WASAPI reports what it holds, and holds less. Then the
-        default, everywhere; except on Haiku without a sound card, where
-        there is nothing to try (see _haiku_sound_card)."""
+        default, everywhere; except on Haiku without a sound card, and where
+        PortAudio could not start, where there is nothing to try (see
+        _haiku_sound_card, and the import of sounddevice)."""
+        if sd is None:
+            return []
         if sys.platform.startswith('haiku') and not _haiku_sound_card():
             return []
         choices = []
