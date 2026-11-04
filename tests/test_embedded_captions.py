@@ -90,6 +90,27 @@ else:
                           str(made)], capture_output=True, text=True).stdout.split(),
           ['dnxhd', 'pcm_s16le', 'smpte_436m_anc'])
 
+    print('the export path')
+    from subtitld.modules import bounce, session
+    session.VIDEO = {'filepath': str(source), 'framerate': RATE, 'duration': 6.0}
+    session.SUBTITLE = {'segments': segments, 'language': 'en-us'}
+    session.FFMPEG_EXECUTABLE = ffmpeg
+    said = []
+    worker = bounce.CaptionsThread(str(folder / 'wired.mov'), 'MOV',
+                                   {'caption_mode': 'roll2', 'caption_channel': 1, 'speakers': 'none'})
+    worker.captions_finished.connect(lambda path, ok, error: said.append((ok, error)))
+    worker.run()                                   # the thread's work, here on this one
+    check('what the export runs writes the file and says it did', said, [(True, '')])
+    check('and the captions are in it, rolled up as asked',
+          [s['text'] for s in closed_captions.from_video(folder / 'wired.mov', ffprobe=ffprobe)[0]],
+          ['Written into the video', '<i>And another</i>'])
+    session.VIDEO = {}
+    said = []
+    worker = bounce.CaptionsThread(str(folder / 'none.mov'), 'MOV', {})
+    worker.captions_finished.connect(lambda path, ok, error: said.append((ok, error)))
+    worker.run()
+    check('with no video loaded it says so rather than raising', (said[0][0], 'No video' in said[0][1]), (False, True))
+
     try:
         embedded_captions.write_video(source, folder / 'odd.mov', segments, fps=48.0, duration=6.0, ffmpeg=ffmpeg)
         check('a frame rate captions cannot be written at: an error', None, 'ValueError')

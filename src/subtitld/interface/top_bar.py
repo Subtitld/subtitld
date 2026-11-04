@@ -609,6 +609,13 @@ def toppanel_export_quick_button_clicked(self):
     filepath = info['filepath']
     category = info.get('category')
 
+    if category == 'video' and info.get('format') in session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS:
+        # A video with its captions in it, written again: off the main
+        # thread, since FFmpeg rewrites the whole file.
+        from subtitld.modules import bounce as _bounce
+        _bounce.captioned_video_async(filepath, info['format'], info.get('captions') or {}, parent=self)
+        return
+
     if category in ('audio', 'video'):
         from subtitld.modules import bounce as _bounce
         audio_format = info.get('audio_format') or info.get('format')
