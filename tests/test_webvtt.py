@@ -15,7 +15,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, session, webvtt
+from subtitld.modules import file_io, markup, session, webvtt
 
 fails = []
 
@@ -70,10 +70,16 @@ check('entities', cues('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nTom &amp; Jerry
       [(1.0, 2.0, 'Tom & Jerry <3\xa0you > me ♥')])
 check("WebVTT's own colour classes", cues('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<c.yellow>Yellow</c> <c.cyan.bg_black>cyan</c> <c.loud>no colour</c>\n'),
       [(1.0, 2.0, '<font color="#ffff00">Yellow</font> <font color="#00ffff">cyan</font> no colour')])
-check('karaoke timestamps, ruby readings and lang go', cues(
-    'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nNever <00:00:01.500>drink <lang pt>Olá</lang>\n\n'
-    '00:00:04.000 --> 00:00:05.000\n<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>\n'),
-      [(1.0, 3.0, 'Never drink Olá'), (4.0, 5.0, '漢字')])
+check('karaoke timestamps and lang go', cues(
+    'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nNever <00:00:01.500>drink <lang pt>Olá</lang>\n'),
+      [(1.0, 3.0, 'Never drink Olá')])
+check('a ruby keeps its readings', cues(
+    'WEBVTT\n\n00:00:04.000 --> 00:00:05.000\n<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>\n'),
+      [(4.0, 5.0, '<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>')])
+check('written back as a ruby for each reading, which is the same to a player',
+      webvtt._cue_body('<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>', {}),
+      '<ruby>漢<rt>kan</rt></ruby><ruby>字<rt>ji</rt></ruby>')
+check('and the text it says is the base alone', markup.plain('<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>'), '漢字')
 check('tags closed out of order stay well nested', cues('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<i>a <b>b</i> c</b>\n'),
       [(1.0, 2.0, '<i>a <b>b</b></i><b> c</b>')])
 check('left open: closed at the end', cues('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<i>open\n'), [(1.0, 2.0, '<i>open</i>')])

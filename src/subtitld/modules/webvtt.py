@@ -10,17 +10,18 @@ Reading forgives, as for SRT (modules.srt):
 - cues are found by their timing lines: an identifier before one is
   skipped, hours may be left out, a comma reads as the dot; the cue settings
   give where the subtitle sits (``line:``, ``align:``, ``position:``);
-- the cue text keeps <i>, <b> and <u>; <c.class> takes the colour its class
-  has (WebVTT's own colour classes, or a STYLE block's); <v Name> is the
-  subtitle's speaker; <lang>, ruby's readings (<rt>) and karaoke
-  timestamps go; entities (&amp;, &lt;, &nbsp;, ...) are characters.
+- the cue text keeps <i>, <b> and <u>, and <ruby> with its readings
+  (<rt>), which Subtitld keeps the same way; <c.class> takes the colour
+  its class has (WebVTT's own colour classes, or a STYLE block's);
+  <v Name> is the subtitle's speaker; <lang> and karaoke timestamps go;
+  entities (&amp;, &lt;, &nbsp;, ...) are characters.
 
 Writing gives "WEBVTT" and the cues in order of start: times as
 "HH:MM:SS.mmm"; italic, bold and underline as tags (WebVTT has no
-strikeout); a colour as a class, WebVTT's own where it is one of them,
-else one a STYLE block defines; the position as cue settings; the speaker
-as a voice tag when asked; &, < and > escaped; no blank line in a cue and
-no "-->" in its text.
+strikeout); a ruby around each reading and what it reads; a colour as a
+class, WebVTT's own where it is one of them, else one a STYLE block
+defines; the position as cue settings; the speaker as a voice tag when
+asked; &, < and > escaped; no blank line in a cue and no "-->" in its text.
 """
 
 import html
@@ -93,18 +94,15 @@ def cue_text(text, classes=None):
     out = []
     stack = []                                  # [(tag name, what closes what it opened)]
     speaker = None
-    in_rt = 0
     position = 0
     for match in _TAG.finditer(text):
-        if match.start() > position and not in_rt:
+        if match.start() > position:
             out.append(html.unescape(text[position:match.start()]))
         position = match.end()
         if match.group(5):                      # a karaoke timestamp
             continue
         closing, name, dotted = match.group(1), match.group(2).lower(), match.group(3)
         if closing:
-            if name == 'rt':
-                in_rt = max(0, in_rt - 1)
             for index in range(len(stack) - 1, -1, -1):
                 if stack[index][0] == name:
                     # Close down to it, then open again what was inside it
@@ -118,11 +116,8 @@ def cue_text(text, classes=None):
                         stack.append(item)
                     break
             continue
-        if name == 'rt':
-            in_rt += 1
-            continue
         opened, closer = '', ''
-        if name in ('i', 'b', 'u'):
+        if name in ('i', 'b', 'u', 'ruby', 'rt'):
             opened, closer = f'<{name}>', f'</{name}>'
         elif name == 'c':
             color = next((classes[c] for c in dotted.split('.') if c in classes), '')
@@ -136,7 +131,7 @@ def cue_text(text, classes=None):
                 out.append(f'{voice}: ')
         out.append(opened)
         stack.append((name, closer, opened))
-    if position < len(text) and not in_rt:
+    if position < len(text):
         out.append(html.unescape(text[position:]))
     for item in reversed(stack):
         out.append(item[1])
@@ -232,11 +227,12 @@ def _class_for(color, classes):
     return classes.setdefault(color, 'color_' + color.lstrip('#'))
 
 
-def _cue_body(text, classes):
-    """The text's runs as WebVTT cue text: tags well nested, a colour as a class."""
+def _nested_cue(runs, classes):
+    """Runs of one stretch as WebVTT cue text: tags well nested, a colour as
+    a class."""
     out = []
     stack = []
-    for run, style in markup.spans(text):
+    for run, style in runs:
         if not run:
             continue
         wanted = ([('c', _class_for(style.color, classes))] if style.color else []) + \
@@ -254,6 +250,19 @@ def _cue_body(text, classes):
         out.append(_escape(run))
     for name, _value in reversed(stack):
         out.append(f'</{name}>')
+    return ''.join(out)
+
+
+def _cue_body(text, classes):
+    """The text as WebVTT cue text. A ruby is written the way WebVTT writes
+    one, which is the way Subtitld keeps it."""
+    out = []
+    for group in markup.ruby_groups(markup.spans(text)):
+        if group[0] == 'plain':
+            out.append(_nested_cue(group[1], classes))
+            continue
+        base, reading = _nested_cue(group[1], classes), _nested_cue(group[2], classes)
+        out.append(f'<ruby>{base}<rt>{reading}</rt></ruby>' if base and reading else base + reading)
     return ''.join(out)
 
 

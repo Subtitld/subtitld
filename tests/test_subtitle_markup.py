@@ -76,6 +76,25 @@ session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 2.0, 'text': '<b>one two</
 subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['segments'][0], last_text='<b>one', next_text='two</b>')
 check('sending text to the next subtitle', [s['text'] for s in session.SUBTITLE['segments']], ['<b>one</b>', '<b>two</b> three'])
 
+print('a ruby carries a reading')
+RUBY = '<ruby>漢字<rt>かんじ</rt></ruby>を<i>読</i>む'
+check('the base and its reading are runs that know which they are',
+      [(run, style.ruby) for run, style in markup.spans(RUBY)][:3], [('漢字', 'base'), ('かんじ', 'text'), ('を', '')])
+check('what it says is the base, not the reading', markup.plain(RUBY), '漢字を読む')
+check('written back as it was', markup.from_spans(markup.spans(RUBY)), RUBY)
+check('and through tidy, which every markup format reads with', markup.tidy(markup.spans(RUBY)), RUBY)
+check('drawn as a ruby', markup.to_html('<ruby>漢<rt>かん</rt></ruby>'), '<ruby>漢<rt>かん</rt></ruby>')
+check('ASS has none: the reading is left out, not run into the text', markup.to_ass(RUBY), '漢字を{\\i1}読{\\i0}む')
+check('formatting inside a ruby stays inside it',
+      markup.from_spans(markup.spans('<i><ruby>A<rt>a</rt></ruby></i>')), '<ruby><i>A</i><rt><i>a</i></rt></ruby>')
+check('a reading with nothing to read is the text it is',
+      (markup.from_spans(markup.spans('<rt>lonely</rt>')), markup.plain('<rt>lonely</rt>')), ('lonely', 'lonely'))
+check('Markdown keeps the tags, and reads them back as the ruby they were',
+      (markup.to_markdown(RUBY), markup.from_markdown(markup.to_markdown(RUBY))),
+      ('<ruby>漢字<rt>かんじ</rt></ruby>を*読*む', RUBY))
+check('text with no ruby is written exactly as before',
+      markup.from_spans(markup.spans('a <i>b <b>c</b></i> d')), 'a <i>b <b>c</b></i> d')
+
 print('the quality check counts what is read')
 long_tags = '<font color="#ff0000"><i>' + 'x' * 30 + '</i></font>'
 check('tags are not characters per line', 'cpl' in quality_check.check_subtitle({'start': 0, 'end': 5, 'text': long_tags})[2], False)
@@ -153,6 +172,9 @@ check('plain text is drawn', lit_rows(plain_image) is not None, True)
 check('italic is drawn, and not as the plain', (lit_rows(italic_image) is not None, plain_image != italic_image), (True, True))
 check('the same place as plain text', abs(lit_rows(plain_image)[1] - lit_rows(italic_image)[1]) <= 2, True)
 check('no tag drawn as text', render('<i></i>') == render(''), True)
+base_only, with_reading = lit_rows(render('AB')), lit_rows(render('<ruby>AB<rt>cd</rt></ruby>'))
+check('a ruby draws its reading above the text it reads',
+      with_reading is not None and base_only is not None and with_reading[0] < base_only[0], True)
 top = lit_rows(render('{\\an8}<b>Top</b>'))
 check('{\\an8} draws at the top', top is not None and top[0] < 100, True)
 coloured = render('<font color="#00ff00">green</font>')

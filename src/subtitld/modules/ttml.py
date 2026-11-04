@@ -73,7 +73,12 @@ _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'shear')
+                 'shear', 'ruby')
+
+# tts:ruby says what part of a ruby a span is. Only the two that hold text
+# are a run of their own; the containers around them hold no text, and a
+# delimiter is punctuation a player draws, not the subtitle's words.
+_RUBY_ROLES = {'base': 'base', 'text': 'text'}
 _RGB = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
 _DECLARED = re.compile(rb'\s*<\?xml[^>]*?encoding\s*=\s*["\']([\w.:-]+)["\']')
 _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
@@ -285,7 +290,8 @@ def _look(props):
         (props.get('fontWeight') or '') == 'bold',
         'underline' in decoration,
         'lineThrough' in decoration,
-        '' if color == '#ffffff' else color)
+        '' if color == '#ffffff' else color,
+        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''))
 
 
 def _keypad(props, frame):
@@ -335,6 +341,10 @@ def _preserving(element, preserve):
 def _runs(element, styles, props, preserve, out, agent):
     """Collect `element`'s text into `out` as [(text, Style)]; the first
     ttm:agent met goes in `agent`."""
+    if (props.get('ruby') or '').strip() == 'delimiter':
+        # Brackets a player draws around a reading. They are not words of
+        # the subtitle, and taking them for words would cut the ruby in two.
+        return
     preserve = _preserving(element, preserve)
     if agent[0] is None and _attr(element, 'agent'):
         agent[0] = _attr(element, 'agent').split()[0]
@@ -531,12 +541,12 @@ def _open_span(tags, style, shear=False):
     return f'<span {" ".join(attrs)}>'
 
 
-def _content(text, shear=False):
-    """A subtitle's text as TTML: spans for its formatting, nested as its
-    tags are, <br/> between lines."""
+def _nested_content(runs, shear=False):
+    """Runs of one stretch as TTML: spans for their formatting, nested as
+    the tags are, <br/> between lines."""
     out = []
     stack = []                                  # [frozenset of tags], one per open span
-    for run, style in markup.spans(text):
+    for run, style in runs:
         if not run:
             continue
         wanted = set(markup.tags_for(style))
@@ -551,6 +561,24 @@ def _content(text, shear=False):
             stack.append(frozenset(new))
         out.append('<br/>'.join(escape(part) for part in run.split('\n')))
     out.extend('</span>' for _span in stack)
+    return ''.join(out)
+
+
+def _content(text, shear=False):
+    """A subtitle's text as TTML. A ruby is a container span holding the
+    base and its text, which is how IMSC 1.1 writes one."""
+    out = []
+    for group in markup.ruby_groups(markup.spans(text)):
+        if group[0] == 'plain':
+            out.append(_nested_content(group[1], shear))
+            continue
+        base = _nested_content(group[1], shear)
+        reading = _nested_content(group[2], shear)
+        if not (base and reading):
+            out.append(base + reading)
+            continue
+        out.append(f'<span tts:ruby="container"><span tts:ruby="base">{base}</span>'
+                   f'<span tts:ruby="text">{reading}</span></span>')
     return ''.join(out)
 
 

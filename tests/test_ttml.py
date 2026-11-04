@@ -255,6 +255,28 @@ check('a shear read on its own is italics',
 check('a shear of zero stands the text up again',
       cues(doc('<p begin="1s" end="2s" tts:shear="16.67%">A<span tts:shear="0%">B</span></p>')), [(1.0, 2.0, '<i>A</i>B')])
 
+print('ruby, the reading above the text')
+RUBY = '<ruby>漢字<rt>かんじ</rt></ruby>を読む'
+ruby_written = ttml.write([{'start': 1, 'end': 2, 'text': RUBY}], 'ja', profile='imsc1.1')
+check('written as IMSC writes one: a container holding the base and its text',
+      [line.split('>', 1)[1].rsplit('</p>', 1)[0] for line in ruby_written.splitlines() if '<p ' in line],
+      ['<span tts:ruby="container"><span tts:ruby="base">漢字</span>'
+       '<span tts:ruby="text">かんじ</span></span>を読む'])
+check('and read back as it was', [s['text'] for s in ttml.parse(ruby_written)], [RUBY])
+check('the containers of a file written elsewhere', cues(doc(
+    '<p begin="1s" end="2s"><span tts:ruby="container"><span tts:ruby="base">東京</span>'
+    '<span tts:ruby="text">とうきょう</span></span>へ</p>')),
+      [(1.0, 2.0, '<ruby>東京<rt>とうきょう</rt></ruby>へ')])
+check('a delimiter is punctuation a player draws, not words of the subtitle', cues(doc(
+    '<p begin="1s" end="2s"><span tts:ruby="container"><span tts:ruby="base">A</span>'
+    '<span tts:ruby="delimiter">(</span><span tts:ruby="text">a</span>'
+    '<span tts:ruby="delimiter">)</span></span></p>')),
+      [(1.0, 2.0, '<ruby>A<rt>a</rt></ruby>')])
+check('italics inside a ruby, and the shear with them',
+      '<span tts:ruby="base"><span tts:shear="16.67%">A</span></span>' in
+      ttml.write([{'start': 1, 'end': 2, 'text': '<ruby><i>A</i><rt>a</rt></ruby>'}], 'ja', profile='imsc1.1'), True)
+check('a file with no ruby is written exactly as before', ttml.write(segments, 'pt-br', agents=True), written)
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
