@@ -456,6 +456,24 @@ class PlayerWidget(QWidget):
     def get_position(widget):
         return widget._media_player.position()
 
+    def hand_sound_to_engine(widget):
+        """The sound engine has the video's own sound now: the player stops
+        playing it. Without its audio output Qt builds the player's pipeline
+        anew, and a new demuxer at 0 does not seek: it reads on from where
+        the old one stopped, mid-way between keyframes. The decoder fails on
+        those packets and shows the next keyframe instead of the frame under
+        the playhead. Paused, seek to where the player is. Playing, the new
+        demuxer starts from where the picture is, past 0, and seeks itself."""
+        player = widget._media_player
+        if player.audioOutput() is None:
+            return
+        player.setAudioOutput(None)
+        widget._audio_output = None
+        if (player.playbackState() == QMediaPlayer.PausedState
+                and player.mediaStatus() in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia,
+                                             QMediaPlayer.BufferingMedia)):
+            player.setPosition(player.position())
+
     def update_speed(self):
         """Function to change playback speed"""
         self._media_player.setPlaybackRate(session.CONFIG['playback_speed'])
