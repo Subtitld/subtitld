@@ -27,11 +27,11 @@ jobs:
       - name: Install
         # libgles2: MediaPipe's native library links libGLESv2, and without
         # it the face detector cannot start (it runs on the CPU, but the
-        # library has to load).
+        # library has to load). pulseaudio: see the tests.
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libportaudio2 libpulse0 libsndfile1 libegl1 libgl1 libgles2 libopengl0 \
-            libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-dejavu-core fonts-liberation
+            libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-dejavu-core fonts-liberation pulseaudio
           pip install .
       - name: Tests
         # Each test is a script that sets up its own off-screen Qt and scratch
@@ -39,6 +39,11 @@ jobs:
         run: |
           # No sound card on the runner: a null ALSA device stands in for one.
           printf 'pcm.!default { type null }\nctl.!default { type hw card 0 }\n' > ~/.asoundrc
+          # And a PulseAudio server, with nothing behind it, for the desktop's:
+          # PortAudio 19.7 (Ubuntu 26.04's) does not start without one, and
+          # these tests stand in for its streams, not for PortAudio itself
+          # (test_audio_no_device covers that).
+          pulseaudio --start --exit-idle-time=-1
           failed=
           for t in tests/test_*.py tests/addons_mock/test_*.py; do
             echo "::group::$t"
