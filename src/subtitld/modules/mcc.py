@@ -46,8 +46,11 @@ RATES = {
     '29.97DF': ('30DF', 30, 30000 / 1001, True, 4, 20),
     '29.97': ('30', 30, 30000 / 1001, False, 4, 20),
     '30': ('30', 30, 30.0, False, 5, 20),
+    '50': ('50', 50, 50.0, False, 6, 12),
+    '59.94DF': ('60DF', 60, 60000 / 1001, True, 7, 10),
+    '59.94': ('60', 60, 60000 / 1001, False, 7, 10),
+    '60': ('60', 60, 60.0, False, 8, 10),
 }
-_CDP_RATES = {1: 24000 / 1001, 2: 24.0, 3: 25.0, 4: 30000 / 1001, 5: 30.0, 6: 50.0, 7: 60000 / 1001, 8: 60.0}
 _HEADER_RATES = {'24': (24, 24000 / 1001, False), '25': (25, 25.0, False), '30': (30, 30000 / 1001, False),
                  '30DF': (30, 30000 / 1001, True), '50': (50, 50.0, False), '60': (60, 60000 / 1001, False),
                  '60DF': (60, 60000 / 1001, True)}
@@ -121,35 +124,9 @@ def _frame(hours, minutes, seconds, frames, nominal, drop):
 
 
 def _cc_data(packet):
-    """([(cc_type, byte, byte)], the CDP's frame rate) of an ANC packet: a
-    CDP's cc_data, or a SMPTE 334 608 packet's. cc_type 0 and 1 are CEA-608's
-    fields 1 and 2; 3 and 2 a CEA-708 packet's start and the rest of it."""
-    if len(packet) < 3 or packet[0] != 0x61:
-        return [], None
-    sdid, count, data = packet[1], packet[2], packet[3:3 + packet[2]]
-    if sdid == 0x02:
-        # SMPTE 334: a byte with the field (set for field 1), then the pair.
-        return [(0 if data[i] & 0x80 else 1, data[i + 1], data[i + 2]) for i in range(0, len(data) - 2, 3)], None
-    if sdid != 0x01 or len(data) < 7 or data[:2] != b'\x96\x69':
-        return [], None
-    rate = _CDP_RATES.get(data[3] >> 4)
-    pairs, index = [], 7
-    while index < len(data):
-        section = data[index]
-        if section == 0x71:                        # time code
-            index += 5
-        elif section == 0x72:                      # cc_data
-            count = data[index + 1] & 0x1F if index + 1 < len(data) else 0
-            for offset in range(index + 2, min(len(data) - 2, index + 2 + 3 * count), 3):
-                marker, first, second = data[offset:offset + 3]
-                if marker & 0x04:
-                    pairs.append((marker & 0x03, first, second))
-            index += 2 + 3 * count
-        elif section == 0x73:                      # service information
-            index += 2 + 7 * ((data[index + 1] & 0x0F) if index + 1 < len(data) else 0)
-        else:
-            break                                  # the footer, or what is not known
-    return pairs, rate
+    """([(cc_type, byte, byte)], the CDP's frame rate) of an ANC packet, as
+    closed_captions reads it wherever it is carried."""
+    return closed_captions.anc_triplets(packet)
 
 
 def parse(text):
@@ -189,8 +166,8 @@ def read(path):
 
 def rate_for(fps):
     """The key of RATES for a video's frames a second, drop-frame at 29.97
-    as broadcast has it; None for a rate not offered."""
-    for key in ('23.976', '24', '25', '29.97DF', '30'):
+    and 59.94 as broadcast has it; None for a rate not offered."""
+    for key in ('23.976', '24', '25', '29.97DF', '30', '50', '59.94DF', '60'):
         if fps and abs(float(fps) - RATES[key][2]) < 0.01:
             return key
     return None
