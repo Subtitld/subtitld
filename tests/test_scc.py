@@ -218,9 +218,19 @@ check('SCC: its timecode, >> for speakers', (panel.scc_options.isHidden(), panel
 panel.timecode_combo.combobox.setCurrentIndex(1)
 check('chosen', panel.get_config()['options'].get('timecode'), 'non-drop')
 check('remembered', _SubtitlesPanel().timecode_combo.combobox.currentData(), 'non-drop')
+check('how the captions are written, and in which channel',
+      (panel.caption_options.isHidden(),
+       [panel.caption_channel_combo.combobox.itemData(i) for i in range(panel.caption_channel_combo.combobox.count())],
+       panel.caption_service_combo.isHidden()), (False, [1, 2], True))
+panel.caption_mode_combo.combobox.setCurrentIndex(2)
+check('chosen and kept', ({key: panel.get_config()['options'].get(key) for key in ('caption_mode', 'caption_channel')},
+                          _SubtitlesPanel().caption_mode_combo.combobox.currentData()),
+      ({'caption_mode': 'roll3', 'caption_channel': 1}, 'roll3'))
 panel.format_combo.setCurrentText('SRT')
 panel._refresh_options()
-check('not for SRT', (panel.scc_options.isHidden(), 'timecode' in panel.get_config()['options']), (True, False))
+check('not for SRT', (panel.scc_options.isHidden(), panel.caption_options.isHidden(),
+                      'timecode' in panel.get_config()['options'],
+                      'caption_mode' in panel.get_config()['options']), (True, True, False, False))
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

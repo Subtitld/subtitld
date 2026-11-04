@@ -277,10 +277,15 @@ check('chosen', {key: panel.get_config()['options'].get(key) for key in ('mcc_ra
 session.VIDEO = {}
 check('remembered, without a video', (_SubtitlesPanel().mcc_rate_combo.combobox.currentData(),
                                       _SubtitlesPanel().mcc_captions_combo.combobox.currentData()), ('25', '608'))
+check('all four channels, since MacCaption carries both fields',
+      [panel.caption_channel_combo.combobox.itemData(index)
+       for index in range(panel.caption_channel_combo.combobox.count())], [1, 2, 3, 4])
 panel.format_combo.setCurrentText('SCC')
 panel._refresh_options()
 check('not for SCC', (panel.mcc_options.isHidden(), 'mcc_rate' in panel.get_config()['options'],
-                      'mcc_captions' in panel.get_config()['options']), (True, False, False))
+                      'mcc_captions' in panel.get_config()['options'],
+                      [panel.caption_channel_combo.combobox.itemData(index)
+                       for index in range(panel.caption_channel_combo.combobox.count())]), (True, False, False, [1, 2]))
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

@@ -464,6 +464,10 @@ def toppanel_export_button_clicked(self):
         info = session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[fmt]
         extensions = info['extensions']
         description = info['description']
+    elif category == 'video' and fmt in session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS:
+        info = session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
     elif category in ('audio', 'video') and fmt in session.LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS:
         info = session.LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS[fmt]
         extensions = info['extensions']
@@ -525,6 +529,28 @@ def toppanel_export_button_clicked(self):
             import sys as _sys
             print(f'[export] FAILED: {error}', file=_sys.stderr)
             return
+
+    if category == 'video' and fmt in session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS:
+        # The video written out with its subtitles inside it, as closed
+        # captions: the picture copied (QuickTime) or re-encoded (MXF).
+        captions = dict(config.get('captions') or {})
+        captions.setdefault('speakers', (session.CONFIG.get('export_subtitles') or {}).get('speakers'))
+
+        def _on_captions_done(path, success, error):
+            if success:
+                session.set_last_export({
+                    'filepath': path,
+                    'extension': selected_extension,
+                    'category': category,
+                    'format': fmt,
+                    'audio_format': None,
+                    'audio_config': None,
+                    'captions': captions,
+                })
+            _finish_export(path, success, error)
+
+        _bounce.captioned_video_async(filepath, fmt, captions, on_done=_on_captions_done, parent=self)
+        return
 
     if category in ('audio', 'video'):
         audio_config = config.get('audio_config') or {'mode': 'mixdown', 'include_background': False}

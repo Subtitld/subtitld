@@ -29,6 +29,18 @@ And for a format of its own:
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
     mcc_captions MCC: 'both' (CEA-608 and CEA-708) or '608' (CEA-608 alone)
+    caption_mode SCC and MCC: how the captions are written — 'pop' (pop-on,
+                 as prepared captions are), 'roll2', 'roll3', 'roll4'
+                 (roll-up of that many rows, as live captions are) or
+                 'paint' (paint-on). A video written with captions in it
+                 takes the same choice (modules.embedded_captions)
+    caption_channel
+                 SCC: 1 or 2 (CC1 or CC2, the channels one field holds);
+                 MCC: 1 to 4, CC3 and CC4 being the second field's
+    caption_service_language
+                 MCC: a translation's language code to write beside the
+                 captions as CEA-708's service 2, where a second language
+                 goes; '' for none
     stl_fps      STL: 25 (STL25.01) or 30 (STL30.01, for 29.97 video)
     display      STL: 'teletext' (level 1) or 'open' subtitles
     start        STL: the programme's start, '00:00:00:00' or '10:00:00:00'
