@@ -51,6 +51,18 @@ for lib in libdatachannel.so PySide6/Qt/lib/libQt6WebSockets.so.6; do
 done
 SMOKE_LOG=/tmp/smoke.log bash "$here/smoke.sh" 25 xvfb-run -a /tmp/squashfs-root/AppRun
 
+# The preview's picture: a few seconds of AV1, the format of most YouTube
+# downloads, which PySide6's own FFmpeg shows only with a GPU's help (none
+# here), and of H.264, made with the AppImage's ffmpeg and played with its Qt.
+internal=/tmp/squashfs-root/usr/bin/subtitld/_internal
+clip() {
+    LD_LIBRARY_PATH=$internal "$internal/ffmpeg" -hide_banner -loglevel error -y \
+        -f lavfi -i testsrc2=size=320x180:rate=25 -t 4 "$@"
+}
+clip -c:v libaom-av1 -cpu-used 8 -row-mt 1 /tmp/av1.mkv
+clip -c:v libx264 -pix_fmt yuv420p /tmp/h264.mp4
+QT_QPA_PLATFORM=offscreen /tmp/squashfs-root/AppRun --video-check /tmp/av1.mkv /tmp/h264.mp4
+
 # And on Wayland, with weston as a headless desktop. A window Qt cannot make
 # there leaves the app running, so its output is checked as well.
 export XDG_RUNTIME_DIR=/tmp/smoke/run

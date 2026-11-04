@@ -116,19 +116,27 @@ jobs:
         # Qt's xcb platform plugin needs the libxcb-* helpers; without them on
         # the build machine they are left out, and the AppImage fails on
         # systems that lack them too. QtWebEngine (the subtitle renderer's
-        # Chromium) needs NSS and the X extensions after them.
+        # Chromium) needs NSS and the X extensions after them. The FFmpeg
+        # that takes the place of PySide6's (packaging/qt-ffmpeg) is built
+        # with the last line.
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libportaudio2 libsndfile1 libpulse0 file wget \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libsm6 libice6 \
-            libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbfile1 libasound2
+            libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbfile1 libasound2 \
+            nasm pkg-config libdav1d-dev zlib1g-dev libbz2-dev
       - uses: actions/cache@v6
         with:
           path: packaging/libdatachannel/dist/linux-x86_64
           key: libdatachannel-${{ hashFiles('packaging/libdatachannel/build-linux.sh') }}
+      - uses: actions/cache@v6
+        with:
+          path: packaging/qt-ffmpeg/dist/linux-x86_64
+          key: qt-ffmpeg-ubuntu-22.04-${{ hashFiles('packaging/qt-ffmpeg/build-linux.sh') }}
       - name: Build
-        # build-appimage.sh builds libdatachannel (in Docker) when the cache has none.
+        # build-appimage.sh builds libdatachannel (in Docker) and the FFmpeg
+        # when the cache has none.
         run: bash build-appimage.sh
       - name: Start it on clean systems
         run: |
