@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 env:
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.14'
   # MSStore publisher identity (public values, safe in the repository)
   MSIX_PUBLISHER_ID: '62905jonata.org.subtitld'
   MSIX_PUBLISHER_CN: 'CN=BED8C990-8289-49D1-B2A9-438CB5220AAF'
