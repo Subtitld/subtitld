@@ -9,6 +9,12 @@ if '--subtitle-render-worker' in sys.argv[1:]:
     from subtitld.interface import subtitle_render_worker
     sys.exit(subtitle_render_worker.main())
 
+# A package's check of itself: does its Qt show these videos' picture?
+# (modules/video_check). Nothing else of Subtitld is loaded either.
+if sys.argv[1:2] == ['--video-check']:
+    from subtitld.modules import video_check
+    sys.exit(video_check.main(sys.argv[2:]))
+
 from subtitld import __version__
 from subtitld.modules import subtitldcc_links
 

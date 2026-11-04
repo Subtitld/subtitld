@@ -58,6 +58,15 @@ a = Analysis(
     noarchive=False,
 )
 
+# libstdc++ and libgcc_s: the system's, not copies of the build machine's.
+# Drivers the system loads into the app (VAAPI's, OpenGL's) are built with
+# its own, often newer, and fail to load against an older copy that came
+# first ("CXXABI_1.3.15 not found"). The bundle needs no more than Ubuntu
+# 22.04's (GLIBCXX_3.4.29, CXXABI_1.3.13), and glibc 2.35, which it needs as
+# well, came after them: any system that runs it has a libstdc++ new enough.
+a.binaries = [entry for entry in a.binaries
+              if os.path.basename(entry[0]) not in ('libstdc++.so.6', 'libgcc_s.so.1')]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
