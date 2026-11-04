@@ -172,6 +172,27 @@ crowded_frames = [scc.frame_of(line.split('\t')[0]) + index for line in crowded.
 check('too close to load in time: shown as soon as it is loaded (40 frames each), no frame used twice',
       ([round(s['start'], 2) for s in scc.parse(crowded)], len(crowded_frames) == len(set(crowded_frames))), ([1.33, 2.74], True))
 
+print('writing: roll-up, paint-on and the second channel')
+typed = [{'start': 1.0, 'end': 3.0, 'text': 'First line'}, {'start': 3.0, 'end': 5.0, 'text': 'Second line'}]
+rolled = scc.write(typed, mode='roll2')
+check('roll-up: RU2, a CR to roll, the base row and its text',
+      rolled.split('\n')[2].split('\t')[1].split()[:8],
+      ['9425', '9425', '94ad', '94ad', '94f4', '94f4', '9723', '9723'])
+check('of four rows: RU4', scc.write(typed, mode='roll4').split('\n')[2].split('\t')[1][:4], '94a7')
+check('each line read back on its own frame, until the next begins',
+      [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in scc.parse(rolled)],
+      [(1.001, 3.003, 'First line'), (3.003, 5.005, 'Second line')])
+painted = scc.write(typed, mode='paint')
+check('paint-on: RDC, the row, the screen erased just before the text',
+      painted.split('\n')[2].split('\t')[1].split()[:8],
+      ['9429', '9429', '94f4', '94f4', '9723', '9723', '942c', '942c'])
+check('painted on its frame, erased as the next is painted',
+      [(round(s['start'], 3), round(s['end'], 3)) for s in scc.parse(painted)], [(1.001, 2.936), (3.003, 5.005)])
+check('the mode asked for, or pop-on', (scc.write(typed, mode='nonsense') == scc.write(typed), scc.MODES[0]), (True, 'pop'))
+check('the second channel: CC2 control codes', scc.write(typed[:1], channel=2).split('\n')[2].split('\t')[1][:4], '1c20')
+check('read back from the second channel', [s['text'] for s in scc.parse(scc.write(typed, channel=2))],
+      ['First line', 'Second line'])
+
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'in.scc').write_text(POP, encoding='ascii')

@@ -24,18 +24,29 @@ of 32 columns:
 - the first channel (CC1) is read, the second when the first is empty;
   control codes sent twice count once; parity bits are not checked.
 
-Writing gives pop-on captions in CC1: each loaded in the frames before it
-shows (RCL, ENM, a PAC for each row, its text) and shown (EOC) on the
-frame it starts, on a line of its own so that decoders reading a line at
-a time show it on time too; cleared (EDM) where it ends, unless the next
-one replaces it. Lines longer than 32 columns are wrapped; each row is
-centred, or put left or right, top, middle or bottom as the subtitle
-asks. Italics, underline and colours go as PAC and mid-row codes, the
-codes put where spaces are (punctuation against a word takes its style,
-so that no code puts a space before it). When asked, ">> " marks each
-change of speaker, as captioners do. A character CEA-608 has only in its extended
-set goes after its plain fallback (É after E), as decoders expect; one it
-lacks becomes its letter without accents, or "?".
+Writing gives captions in the channel asked for (CC1 or CC2; a file holds
+field 1 alone), in one of the three ways captioners write them:
+
+- pop-on (the default): each caption loaded in the frames before it shows
+  (RCL, ENM, a PAC for each row, its text) and shown (EOC) on the frame it
+  starts, on a line of its own so that decoders reading a line at a time
+  show it on time too; cleared (EDM) where it ends, unless the next one
+  replaces it;
+- roll-up of two, three or four rows (RU2, RU3, RU4), as live captions
+  are: each line typed on the base row after a CR has rolled the ones
+  before it up, from the frame its subtitle starts;
+- paint-on (RDC): each caption typed straight onto the screen from the
+  frame it starts, cleared (EDM) where it ends.
+
+Lines longer than 32 columns are wrapped; each row is centred, or put left
+or right, top, middle or bottom as the subtitle asks (a roll-up caption
+sits on row 15, 8 or its own rows, by where it asks to be). Italics,
+underline and colours go as PAC and mid-row codes, the codes put where
+spaces are (punctuation against a word takes its style, so that no code
+puts a space before it). When asked, ">> " marks each change of speaker,
+as captioners do. A character CEA-608 has only in its extended set goes
+after its plain fallback (É after E), as decoders expect; one it lacks
+becomes its letter without accents, or "?".
 """
 
 import re
@@ -45,6 +56,8 @@ from subtitld.modules import markup
 from subtitld.modules.srt import decode
 
 LAST_DURATION = 4.0                      # seconds a caption still shown at the end lasts
+MODES = ('pop', 'roll2', 'roll3', 'roll4', 'paint')
+CHANNELS = (1, 2)                        # a file carries field 1: its CC1 and CC2
 _RATE = 30000 / 1001
 _ROWS, _COLUMNS = 15, 32
 _TIMECODE = r'(\d{1,2})[:;.,](\d{2})[:;.,](\d{2})([:;.,])(\d{2})'
@@ -569,9 +582,15 @@ def _row(row, line, column):
     return tokens
 
 
-def _words(tokens):
+def _chan(first, channel):
+    """A control code's first byte in `channel`: the field's second channel
+    (CC2, or CC4 in field 2) has bit 3 set."""
+    return first | 0x08 if channel == 2 else first
+
+
+def _words(tokens, channel=1):
     """Words for tokens: characters two to a word, codes sent twice, on a
-    word of their own."""
+    word of their own, in `channel`."""
     words, pending = [], []
     for token in tokens + [None]:
         if token is not None and token[0] == 'b':
@@ -584,30 +603,94 @@ def _words(tokens):
             words.append(_word(pending[0], 0x00))
             pending = []
         if token is not None:
-            words.extend([_word(token[1], token[2])] * 2)
+            words.extend([_word(_chan(token[1], channel), token[2])] * 2)
     return words
 
 
-def _load(text):
-    """The words that load a subtitle as a pop-on caption, before its EOC."""
+def _stacked(lines, keypad):
+    """The row the first of `lines` goes on, where `keypad` puts them: at
+    the top from row 1, in the middle about row 8, at the bottom so the
+    last line is on row 15."""
+    count = len(lines)
+    return 1 if keypad >= 7 else max(1, 8 - count // 2) if keypad >= 4 else _ROWS - count + 1
+
+
+def _column(line, keypad):
+    """The column a line starts at: left, centred or right, as `keypad` asks."""
+    width = len(line)
+    return 0 if keypad % 3 == 1 else _COLUMNS - width if keypad % 3 == 0 else (_COLUMNS - width) // 2
+
+
+def _lead(tokens):
+    """How many words the codes before the first character take: what a
+    typed caption is sent ahead by, so its text lands on its own frame. A
+    mid-row code ends the lead as a character does — it takes a column on
+    screen, so a decoder sees the caption begin there."""
+    before = []
+    for token in tokens:
+        if token[0] == 'b' or (token[1] == 0x11 and 0x20 <= token[2] <= 0x2F):
+            break
+        before.append(token)
+    return len(_words(before))
+
+
+def _load(text, channel=1):
+    """(the words that load a subtitle as a pop-on caption, before its EOC;
+    0, since its EOC says when it shows)."""
     lines, keypad = _text_lines(text)
     if not lines:
-        return []
-    count = len(lines)
-    first_row = 1 if keypad >= 7 else max(1, 8 - count // 2) if keypad >= 4 else _ROWS - count + 1
+        return [], 0
+    first_row = _stacked(lines, keypad)
     tokens = [('c', 0x14, _RCL), ('c', 0x14, _ENM)]
     for index, line in enumerate(lines):
-        width = len(line)
-        column = 0 if keypad % 3 == 1 else _COLUMNS - width if keypad % 3 == 0 else (_COLUMNS - width) // 2
-        tokens.extend(_row(first_row + index, line, column))
-    return _words(tokens)
+        tokens.extend(_row(first_row + index, line, _column(line, keypad)))
+    return _words(tokens, channel), 0
 
 
-def write(segments, drop_frame=True, speaker_changes=False):
-    """SCC text for `segments`, as pop-on captions in CC1. With
-    `speaker_changes`, ">> " begins each subtitle a new speaker says, as
-    captions mark them."""
-    frames, breaks, _shows = frame_words(segments, speaker_changes=speaker_changes)
+def _roll(text, rows, channel=1):
+    """(the words that type a subtitle as roll-up lines in a window of
+    `rows` rows: the mode, then each line on the base row after a CR has
+    rolled the ones before it up; the words its first character comes
+    after)."""
+    lines, keypad = _text_lines(text)
+    if not lines:
+        return [], 0
+    # The base row is the window's last: at the bottom row 15, in the
+    # middle row 8, at the top the window's own height.
+    base = rows if keypad >= 7 else 8 if keypad >= 4 else _ROWS
+    tokens = [('c', 0x14, (_RU2, _RU3, _RU4)[rows - 2])]
+    for line in lines:
+        tokens.append(('c', 0x14, _CR))
+        tokens.extend(_row(base, line, _column(line, keypad)))
+    return _words(tokens, channel), _lead(tokens)
+
+
+def _paint(text, channel=1):
+    """(the words that paint a subtitle onto the screen as it is typed: the
+    mode, the first row's place, the screen erased, then the text; the words
+    its first character comes after).
+
+    The erase goes as late as it can, right before the first character, so
+    that the caption before it stays on screen until then."""
+    lines, keypad = _text_lines(text)
+    if not lines:
+        return [], 0
+    first_row = _stacked(lines, keypad)
+    tokens = [('c', 0x14, _RDC)]
+    for index, line in enumerate(lines):
+        tokens.extend(_row(first_row + index, line, _column(line, keypad)))
+    painting = next((index for index, token in enumerate(tokens)
+                     if token[0] == 'b' or (token[1] == 0x11 and 0x20 <= token[2] <= 0x2F)), len(tokens))
+    tokens.insert(painting, ('c', 0x14, _EDM))
+    return _words(tokens, channel), _lead(tokens)
+
+
+def write(segments, drop_frame=True, speaker_changes=False, mode='pop', channel=1):
+    """SCC text for `segments`, as captions of `mode` ('pop', 'roll2',
+    'roll3', 'roll4' or 'paint') in channel `channel` (1 for CC1, 2 for
+    CC2). With `speaker_changes`, ">> " begins each subtitle a new speaker
+    says, as captions mark them."""
+    frames, breaks, _shows = frame_words(segments, speaker_changes=speaker_changes, mode=mode, channel=channel)
     lines = ['Scenarist_SCC V1.0']
     group, group_start = [], 0
     for frame in sorted(frames):
@@ -622,11 +705,9 @@ def write(segments, drop_frame=True, speaker_changes=False):
     return '\n'.join(lines) + '\n'
 
 
-def frame_words(segments, rate=_RATE, speaker_changes=False):
-    """({frame: word}, the frames an EOC or EDM is on, [(text, frame shown,
-    frame cleared or None when the next replaces it)]) for `segments` as
-    pop-on captions in CC1, a word a frame at `rate` frames a second."""
-    eoc, edm = _word(0x14, _EOC), _word(0x14, _EDM)
+def _captions(segments, rate, speaker_changes, build):
+    """[[frame it starts, frame it ends, its words from `build`, its text,
+    the words before its first character]] for `segments`, by start."""
     captions = []
     speaker = ''
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
@@ -637,14 +718,64 @@ def frame_words(segments, rate=_RATE, speaker_changes=False):
                 lead, rest = markup.split_lead(text)
                 text = lead + '>> ' + rest.lstrip()
             speaker = said_by
-        words = _load(text)
+        words, lead = build(text)
         if words:
             start = round(float(segment.get('start', 0)) * rate)
-            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words, text])
+            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words, text, lead])
+    return captions
+
+
+def _typed(captions, channel, rolling):
+    """Frames for captions typed onto the screen, roll-up or paint-on: the
+    codes before each go in the frames ahead of its subtitle, so its first
+    character lands on the frame the subtitle starts, after the one before
+    it is typed. A paint-on caption is cleared where it ends (its own EDM
+    clears the screen before the next is painted); roll-up lines roll away
+    by themselves, so only the last is cleared."""
+    edm = _word(_chan(0x14, channel), _EDM)
+    frames, breaks, shows = {}, set(), []
+    free = 0
+    for index, (start, end, words, text, lead) in enumerate(captions):
+        first = max(start - lead, free)
+        for offset, word in enumerate(words):
+            frames[first + offset] = word
+        free = first + len(words)
+        breaks.add(first)
+        following = captions[index + 1][0] if index + 1 < len(captions) else None
+        clear = None
+        if not rolling or following is None:
+            clear = max(end, free)
+            if following is not None and following <= clear + 1:
+                clear = None                       # the next one clears the screen itself
+            else:
+                while clear in frames or clear + 1 in frames:
+                    clear += 1
+                frames[clear] = frames[clear + 1] = edm
+                breaks.add(clear)
+        shows.append((text, first + lead, clear))
+    return frames, breaks, shows
+
+
+def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel=1):
+    """({frame: word}, the frames a line starts at, [(text, frame shown,
+    frame cleared or None when the next replaces it)]) for `segments` as
+    captions of `mode` in channel `channel`, a word a frame at `rate` frames
+    a second."""
+    mode = mode if mode in MODES else 'pop'
+    channel = 2 if channel == 2 else 1
+    if mode.startswith('roll'):
+        rows = int(mode[4])
+        return _typed(_captions(segments, rate, speaker_changes,
+                                lambda text: _roll(text, rows, channel)), channel, rolling=True)
+    if mode == 'paint':
+        return _typed(_captions(segments, rate, speaker_changes,
+                                lambda text: _paint(text, channel)), channel, rolling=False)
+    eoc, edm = _word(_chan(0x14, channel), _EOC), _word(_chan(0x14, channel), _EDM)
+    captions = _captions(segments, rate, speaker_changes, lambda text: _load(text, channel))
 
     frames, breaks, shows = {}, set(), []          # frame: word; the frames a line starts at
     loaded_from = 0                                # the first frame the next load may use
-    for index, (start, end, words, text) in enumerate(captions):
+    for index, (start, end, words, text, _lead_) in enumerate(captions):
         # Loaded after the last one was shown (until then the memory it
         # loads into holds that one), shown on its frame, or as soon after
         # as there is time to load it.
@@ -673,8 +804,8 @@ def frame_words(segments, rate=_RATE, speaker_changes=False):
     return frames, breaks, shows
 
 
-def save(path, segments, drop_frame=True, speaker_changes=False):
+def save(path, segments, drop_frame=True, speaker_changes=False, mode='pop', channel=1):
     """Write `segments` to `path` as SCC (ASCII, Windows line ends, as
     Scenarist wrote them)."""
     with open(path, 'w', encoding='ascii', newline='\r\n') as scc_file:
-        scc_file.write(write(segments, drop_frame, speaker_changes))
+        scc_file.write(write(segments, drop_frame, speaker_changes, mode, channel))
