@@ -22,8 +22,11 @@ import socket
 import subprocess
 import time
 
-import aiohttp
-import edge_tts
+try:
+    import aiohttp
+    import edge_tts
+except Exception:  # optional: not packaged on some platforms (e.g. Haiku), where Edge is not offered
+    aiohttp = edge_tts = None
 from PySide6.QtCore import QObject, QThread, Signal
 
 from subtitld.modules import session
@@ -74,7 +77,12 @@ _REFUSED = ("Microsoft's Edge speech service refused the request (403). It is ch
 
 
 def _refused(error):
-    return isinstance(error, aiohttp.ClientResponseError) and error.status == 403
+    return aiohttp is not None and isinstance(error, aiohttp.ClientResponseError) and error.status == 403
+
+
+def available() -> bool:
+    """Whether edge-tts (and its aiohttp) are installed: Subtitld offers Edge's voices only then."""
+    return edge_tts is not None
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +248,7 @@ class EdgeTTSProvider(TTSProvider):
             return
 
         cfg = session.CONFIG.setdefault('dubbing', {}).setdefault('edge-tts', {}).setdefault('voices', {})
-        if self._closed:
+        if self._closed or not available():
             return
 
         def on_voice(voice: dict) -> None:
@@ -270,6 +278,11 @@ class EdgeTTSProvider(TTSProvider):
     # ---- Synthesis --------------------------------------------------------
     def generate_speeches(self, text_list: list[dict]) -> None:
         if self._closed:
+            return
+        if not available():
+            for subtitle in text_list:
+                self.speech_error.emit(subtitle.get('uid', ''), subtitle,
+                                       'edge-tts: not installed in this Subtitld')
             return
         # Online preflight — emit a single error per item if offline so the
         # UI can show a "you're offline" message instead of a 30s timeout.

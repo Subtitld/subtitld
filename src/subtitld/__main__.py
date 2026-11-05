@@ -467,7 +467,7 @@ def main():
     # Built-in providers are registered first so they're always available
     # right after install, even before the user discovers the add-ons
     # panel. Today's set:
-    #   - Edge TTS — speech synthesis, no credentials required
+    #   - Edge TTS — speech synthesis, no credentials required (where edge-tts is installed)
     #   - FFmpeg separator — audio source separation, no model required
     # No speech-to-text engine ships as a built-in. Offline whisper.cpp and
     # RealtimeSTT are add-ons, which keeps the app download small; the cloud
@@ -480,7 +480,8 @@ def main():
     # (provider QObjects are auto-parented to it), so this happens
     # after `QApplication(sys.argv)`.
     addon_manager = addons.get_manager()
-    addon_manager.register_builtin(_edge_tts_provider.get_provider())
+    if _edge_tts_provider.available():
+        addon_manager.register_builtin(_edge_tts_provider.get_provider())
     addon_manager.register_builtin(_ffmpeg_separator_provider.get_provider())
     addon_manager.register_builtin(_gtts_provider.get_provider())
     addon_manager.register_builtin(_import_provider.get_provider())
