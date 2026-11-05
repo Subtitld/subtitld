@@ -1,0 +1,11 @@
+# The ports in dev-python/ here, in the order they build (each needs the ones
+# above it): haiku-build.sh builds them before Subtitld's own.
+typing_extensions
+click
+pycparser
+editables
+pathspec
+hatchling
+soupsieve
+beautifulsoup4
+cffi

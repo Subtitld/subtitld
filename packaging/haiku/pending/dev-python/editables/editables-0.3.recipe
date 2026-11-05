@@ -1,0 +1,75 @@
+SUMMARY="A Python library for creating 'editable wheels'"
+DESCRIPTION="This library supports the building of wheels which, when installed, will expose \
+packages in a local directory on 'sys.path' in 'editable mode'. In other words, changes to the \
+package source will be reflected in the package visible to Python, without needing a reinstall."
+HOMEPAGE="https://github.com/pfmoore/editables"
+COPYRIGHT="2020 Paul Moore"
+LICENSE="MIT"
+REVISION="3"
+SOURCE_URI="$HOMEPAGE/archive/refs/tags/$portVersion.tar.gz"
+CHECKSUM_SHA256="42f7240164af1e028ccb7b60e72f54bbd8b639e9409595fbeffac5d3fb610643"
+SOURCE_FILENAME="editables-$portVersion.tar.gz"
+
+ARCHITECTURES="any"
+
+PROVIDES="
+	$portName = $portVersion
+	"
+REQUIRES="
+	haiku
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.10 3.14)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	# Not renaming 3.10 packages to avoid needing massive packages rebuilds.
+	# No need for REPLACES then. ToDo: remove the conditional after dropping 3.10.
+	if [ $pythonVersion != 3.10 ]; then
+		# Allows using dot in sub-package names (eg: "_python3.14" vs "_python314"):
+		eval "PACKAGE_NAME_$pythonPackage=${portName}_python$pythonVersion"
+
+		eval "PROVIDES_$pythonPackage=\"
+			${portName}_python$pythonVersion = $portVersion
+			\""
+	fi
+
+	eval "PROVIDES_$pythonPackage+=\"
+		${portName}_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		\""
+	BUILD_REQUIRES+="
+		setuptools_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+		installLocation=$prefix/lib/$python/vendor-packages/
+		export PYTHONPATH=$installLocation:$PYTHONPATH
+
+		mkdir -p $installLocation
+		rm -rf build
+
+		$python setup.py build install \
+			--root=/ --prefix=$prefix
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

@@ -34,6 +34,13 @@ pkgman install -y haikuporter > /dev/null
 rm -rf "$TREE" 2>/dev/null || mv "$TREE" "$TREE.stale.$(date +%s)"
 mkdir -p "$TREE/licenses" "$TREE/files"
 cp -r "$SRC"/packaging/haiku/dev-python "$SRC"/packaging/haiku/media-video "$TREE/"
+# Python 3.14 versions HaikuPorts does not have yet, from Subtitld's pull
+# request there (packaging/haiku/pending/README.md): built first, in order.
+pending=()
+if [ -d "$SRC/packaging/haiku/pending" ]; then
+    cp -r "$SRC"/packaging/haiku/pending/dev-python "$TREE/"
+    mapfile -t pending < <(grep -v '^#' "$SRC/packaging/haiku/pending/build-order")
+fi
 # libdatachannel's patches, kept with its other builds (packaging/libdatachannel).
 cp "$SRC"/packaging/libdatachannel/*.patch "$TREE/media-video/subtitld/additional-files/"
 printf 'RecipeFormatVersion=1\nRepositoryFormatVersion=2\n' > "$TREE/FormatVersions"
@@ -60,7 +67,7 @@ haikuporter --config=haikuports.conf --lint
 # Everything in the tree: the Python packages Haiku lacks, then the app. What
 # the repositories do have is installed as needed.
 haikuporter --config=haikuports.conf -y --no-source-packages --get-dependencies \
-    $(ls dev-python) subtitld
+    "${pending[@]}" $(ls "$SRC/packaging/haiku/dev-python") subtitld
 
 # Install the lot as a user would, check the app's modules import with what
 # the packages bring, and start it (headless: no screen or sound card here).
@@ -73,17 +80,17 @@ for p in "$TREE"/packages/*.hpkg; do
 done
 [ ${#installed[@]} -eq 0 ] || pkgman uninstall -y "${installed[@]}" > /dev/null
 pkgman install -y "$TREE"/packages/*.hpkg > /dev/null
-QT_QPA_PLATFORM=offscreen python3.10 -c "
+QT_QPA_PLATFORM=offscreen python3.14 -c "
 from subtitld.interface import startscreen, productionscreen, top_bar
 from subtitld.modules import audioengine, file_io
 print('subtitld imports OK')
 "
 # Live co-editing's libraries: Qt's websockets, and the bundled libdatachannel
 # carrying data across a link.
-QT_QPA_PLATFORM=offscreen python3.10 "$SRC/.github/scripts/collab-check.py"
+QT_QPA_PLATFORM=offscreen python3.14 "$SRC/.github/scripts/collab-check.py"
 command -v subtitld
-# The application: the native launcher, with Subtitld's signature (and so
-# its icon) as Deskbar and Tracker see it.
+# The application: Subtitld's script, with its signature (and so its icon)
+# as Deskbar and Tracker see it.
 app=/boot/system/apps/Subtitld
 test -x "$app"
 [ "$(catattr -d BEOS:APP_SIG "$app")" = application/x-vnd.qt6-Subtitld ]

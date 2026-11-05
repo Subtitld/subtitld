@@ -17,17 +17,6 @@ import os
 import urllib.request
 
 PKGS = [
-    dict(port="edge_tts", pypi="edge-tts", version="7.3.1",
-         summary="Use Microsoft Edge's online text-to-speech service from Python",
-         description="Lets Python code synthesise speech through Microsoft Edge's online "
-                     "text-to-speech service, without installing the browser or holding an API "
-                     "key. Audio can be written to a file or streamed, with subtitles for it.",
-         homepage="https://github.com/rany2/edge-tts",
-         # LGPLv3, except src/edge_tts/srt_composer.py: MIT.
-         copyright=["2014-2023 Christopher Down", "2025 rany"],
-         license=["GNU LGPL v3", "MIT"],
-         build=["setuptools"],
-         requires=["aiohttp", "certifi", "tabulate", "typing_extensions"]),
     dict(port="gtts", pypi="gTTS", version="2.5.4",
          summary="Python interface to Google Translate's text-to-speech API",
          description="Provides a library and command line tool that turn text into spoken "
@@ -48,7 +37,7 @@ PKGS = [
          copyright=["2010-202x The platformdirs developers"],
          license=["MIT"],
          requires=[]),
-    dict(port="pysubs2", pypi="pysubs2", version="1.8.1",
+    dict(port="pysubs2", pypi="pysubs2", version="1.8.1", wheel=True,
          summary="Load, edit and save subtitle files in several formats",
          description="A library and command line tool for loading, editing and saving subtitle "
                      "files in the SubStation Alpha, SubRip, WebVTT and MicroDVD formats, "
@@ -56,7 +45,6 @@ PKGS = [
          homepage="https://github.com/tkarabela/pysubs2",
          copyright=["2014-2026 Tomas Karabela"],
          license=["MIT"],
-         build=["hatchling"],
          requires=[]),
     dict(port="python_docx", pypi="python-docx", version="1.2.0",
          summary="Create and update Microsoft Word .docx files from Python",
@@ -98,15 +86,6 @@ PKGS = [
          license=["BSD (3-clause)"],
          build=["cffi", "setuptools"],
          requires=["cffi", "numpy", "typing_extensions", "lib:libsndfile"]),
-    dict(port="tabulate", pypi="tabulate", version="0.10.0",
-         summary="Format tabular data as plain-text tables",
-         description="Renders lists, dictionaries and NumPy arrays as readable plain-text tables "
-                     "in a range of styles, including grid, pipe, rst and HTML output.",
-         homepage="https://github.com/astanin/python-tabulate",
-         copyright=["2011-2020 Sergey Astanin and contributors"],
-         license=["MIT"],
-         build=["setuptools", "setuptools_scm"],
-         requires=[]),
 ]
 
 HEADER = """SUMMARY="{summary}"
@@ -131,12 +110,16 @@ BUILD_REQUIRES="
 \thaiku_devel
 \t"
 
-PYTHON_VERSIONS=(3.10)
+PYTHON_VERSIONS=(3.14)
 
 for pythonVersion in ${{PYTHON_VERSIONS[@]}}; do
 \tpythonPackage=python${{pythonVersion//.}}
 
+\t# Allows using dot in sub-package names (eg: "_python3.14" vs "_python314"):
+\teval "PACKAGE_NAME_$pythonPackage=${{portName}}_python$pythonVersion"
+
 \teval "PROVIDES_$pythonPackage=\\"
+\t\t${{portName}}_python$pythonVersion = $portVersion
 \t\t${{portName}}_$pythonPackage = $portVersion
 \t\t\\""
 \teval "REQUIRES_$pythonPackage=\\"
