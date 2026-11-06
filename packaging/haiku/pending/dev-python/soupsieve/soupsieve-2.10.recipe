@@ -8,17 +8,10 @@ HOMEPAGE="https://github.com/facelessuser/soupsieve"
 COPYRIGHT="2018-2026 Isaac Muse"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/source/s/soupsieve/soupsieve-$portVersion.tar.gz"
-CHECKSUM_SHA256="49e9380d7d2905463583bafe285e818c7366a9ed7b3aee221c1ac79c905d8bc0"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/s/soupsieve/soupsieve-$portVersion-py3-none-any.whl#noarchive"
+CHECKSUM_SHA256="8596eb8967d744174820280fa62b4542a2e955bfaccca73ed8a13c6eb8e9b502"
 
 ARCHITECTURES="any"
-
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku
-	"
 
 BUILD_REQUIRES="
 	haiku_devel
@@ -40,16 +33,18 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 			\""
 	fi
 
+	# We need to provide the "dotless" package name too for now (to avoid having
+	# to change '_$pythonPackage' in each BUILD_REQUIRES/REQUIRES of all recipes).
 	eval "PROVIDES_$pythonPackage+=\"
 		${portName}_$pythonPackage = $portVersion
 		\""
+
 	eval "REQUIRES_$pythonPackage=\"
 		haiku
 		cmd:python$pythonVersion
 		\""
+
 	BUILD_REQUIRES+="
-		build_$pythonPackage
-		hatchling_$pythonPackage
 		installer_$pythonPackage
 		"
 	BUILD_PREREQUIRES+="
@@ -64,9 +59,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		rm -rf dist
-		$python -m build --wheel --no-isolation
-		$python -m installer -p $prefix dist/*.whl
+		$python -m installer -p $prefix soupsieve-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

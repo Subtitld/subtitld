@@ -55,12 +55,12 @@ ports, with the app's recipe named after the tag (`subtitld-26.10.recipe` for
 
 For Python 3.14, already in haikuports: pyside6, numpy, lxml, requests,
 certifi, chardet. Given a 3.14 version in a pull request of their own, and kept
-in `pending/` until it is merged: typing_extensions, click, pycparser, cffi
-(2.1.1), soupsieve (2.10), beautifulsoup4, and hatchling with pathspec and
-editables, which soupsieve and beautifulsoup4 build with. Left out on Haiku, as Subtitld runs without them: OpenCV and
-scipy (no 3.14 build there; face detection needs MediaPipe anyway, which Haiku
-lacks) and edge-tts (aiohttp and its own dependencies have none either), so
-Edge's voices are not offered there.
+in `pending/` until it is merged: typing_extensions, click (8.1.8), pycparser
+(2.23), soupsieve (2.10), beautifulsoup4 and cffi (2.1.1). Left out on Haiku,
+as Subtitld runs without them: OpenCV and scipy (no 3.14 build there; face
+detection needs MediaPipe anyway, which Haiku lacks) and edge-tts (aiohttp and
+its own dependencies have none either), so Edge's voices are not offered
+there.
 
 Also required at runtime: **`cmd:ffmpeg`**, which comes from the `ffmpeg_tools`
 package — *not* `ffmpeg`, which ships libraries only. Subtitld shells out to the
@@ -78,11 +78,11 @@ Dropped on Haiku:
 
 ## How the dependencies are built
 
-As haikuports builds its own Python packages: from PyPI's source archive with
-`build` and `installer` (like its requests and beautifulsoup4), for eight of
-the nine. `platformdirs` takes its version from git through hatch-vcs, which
-Haiku does not package, so its recipe installs the pure-Python wheel with
-`installer` instead (`#noarchive`), as haikuports' typing_extensions does.
+As haikuports packages its pure-Python modules now (iniconfig, certifi): PyPI's
+wheel, repackaged with `installer` (`#noarchive`), so nothing is built and no
+build backend is needed. Each recipe makes the Python 3.14 package alone, with
+no empty base package; the commands a wheel installs (`gtts-cli`, `pysubs2`) go
+with it.
 
 `gen_recipes.py` writes them: each archive's checksum comes from PyPI and is
 checked against the download, and each recipe's copyright and license lines

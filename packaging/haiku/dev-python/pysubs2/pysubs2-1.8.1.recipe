@@ -11,13 +11,6 @@ CHECKSUM_SHA256="eb5d8872b7f87208070dd6f0d85fc110b7ad6cc2a7ec422f5b12363e9194e4e
 
 ARCHITECTURES="any"
 
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku
-	"
-
 BUILD_REQUIRES="
 	haiku_devel
 	"
@@ -33,6 +26,7 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 	eval "PROVIDES_$pythonPackage=\"
 		${portName}_python$pythonVersion = $portVersion
 		${portName}_$pythonPackage = $portVersion
+		cmd:pysubs2 = $portVersion
 		\""
 	eval "REQUIRES_$pythonPackage=\"
 		haiku
@@ -56,6 +50,7 @@ INSTALL()
 		$python -m installer -p $prefix pysubs2-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
-			$prefix/lib/python*
+			$prefix/lib/python* \
+			$binDir
 	done
 }

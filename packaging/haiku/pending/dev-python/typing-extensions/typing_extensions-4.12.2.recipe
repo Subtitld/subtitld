@@ -18,17 +18,10 @@ HOMEPAGE="https://github.com/python/typing_extensions"
 COPYRIGHT="2023 Guido van Rossum and others"
 LICENSE="Python"
 REVISION="3"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/t/typing_extensions/typing_extensions-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/t/typing-extensions/typing_extensions-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"
 
 ARCHITECTURES="any"
-
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku
-	"
 
 BUILD_REQUIRES="
 	haiku_devel
@@ -50,13 +43,17 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 			\""
 	fi
 
+	# We need to provide the "dotless" package name too for now (to avoid having
+	# to change '_$pythonPackage' in each BUILD_REQUIRES/REQUIRES of all recipes).
 	eval "PROVIDES_$pythonPackage+=\"
 		${portName}_$pythonPackage = $portVersion
 		\""
+
 	eval "REQUIRES_$pythonPackage=\"
 		haiku
 		cmd:python$pythonVersion
 		\""
+
 	BUILD_REQUIRES+="
 		installer_$pythonPackage
 		"

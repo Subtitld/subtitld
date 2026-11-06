@@ -3,9 +3,6 @@
 typing_extensions
 click
 pycparser
-editables
-pathspec
-hatchling
 soupsieve
 beautifulsoup4
 cffi

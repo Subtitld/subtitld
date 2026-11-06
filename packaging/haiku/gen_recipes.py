@@ -4,12 +4,12 @@ Haiku does not package yet (dev-python/).
 
     python3 gen_recipes.py        (from packaging/haiku)
 
-They follow haikuports' own: built from PyPI's source archive with build and
-installer (as requests and beautifulsoup4 are), or, where the build backend
-is not packaged for Haiku, installed from the pure-Python wheel with installer
-(as typing_extensions is). Each archive's checksum is taken from PyPI and
-checked against the download. Copyright lines and licenses come from each
-project's own LICENSE file; check them again on a version bump.
+They follow haikuports' own pure-Python recipes (iniconfig, certifi): PyPI's
+wheel, repackaged with installer, so nothing is built and no build backend is
+needed; the package is the Python one alone, with no empty base package. Each
+wheel's checksum is taken from PyPI and checked against the download.
+Copyright lines and licenses come from each project's own LICENSE file; check
+them again on a version bump.
 """
 import hashlib
 import json
@@ -17,7 +17,7 @@ import os
 import urllib.request
 
 PKGS = [
-    dict(port="gtts", pypi="gTTS", version="2.5.4",
+    dict(port="gtts", pypi="gTTS", version="2.5.4", commands=["gtts-cli"],
          summary="Python interface to Google Translate's text-to-speech API",
          description="Provides a library and command line tool that turn text into spoken "
                      "audio using Google Translate's text-to-speech service, writing the result "
@@ -25,10 +25,9 @@ PKGS = [
          homepage="https://github.com/pndurette/gTTS",
          copyright=["2014-2024 Pierre Nicolas Durette"],
          license=["MIT"],
-         build=["setuptools", "wheel"],
          requires=["click", "requests"]),
     # hatch-vcs is not packaged for Haiku: the wheel instead.
-    dict(port="platformdirs", pypi="platformdirs", version="4.11.8", wheel=True,
+    dict(port="platformdirs", pypi="platformdirs", version="4.11.8",
          summary="Determine platform-specific directories for app data and config",
          description="Works out the correct per-platform locations for application data, "
                      "configuration, cache, state and log directories, so applications do not "
@@ -37,7 +36,7 @@ PKGS = [
          copyright=["2010-202x The platformdirs developers"],
          license=["MIT"],
          requires=[]),
-    dict(port="pysubs2", pypi="pysubs2", version="1.8.1", wheel=True,
+    dict(port="pysubs2", pypi="pysubs2", version="1.8.1", commands=["pysubs2"],
          summary="Load, edit and save subtitle files in several formats",
          description="A library and command line tool for loading, editing and saving subtitle "
                      "files in the SubStation Alpha, SubRip, WebVTT and MicroDVD formats, "
@@ -53,7 +52,6 @@ PKGS = [
          homepage="https://github.com/python-openxml/python-docx",
          copyright=["2013 Steve Canny"],
          license=["MIT"],
-         build=["setuptools"],
          requires=["lxml", "typing_extensions"]),
     # The sdist has no LICENSE file; the repository's says this.
     dict(port="python_i18n", pypi="python-i18n", version="0.3.9",
@@ -64,7 +62,6 @@ PKGS = [
          homepage="https://github.com/tuvistavie/python-i18n",
          copyright=["2012 Daniel Perez"],
          license=["MIT"],
-         build=["setuptools"],
          requires=[]),
     dict(port="sounddevice", pypi="sounddevice", version="0.5.6",
          summary="Play and record sound using PortAudio and NumPy arrays",
@@ -74,7 +71,6 @@ PKGS = [
          homepage="https://github.com/spatialaudio/python-sounddevice",
          copyright=["2015-2025 Matthias Geier"],
          license=["MIT"],
-         build=["cffi", "setuptools", "setuptools_scm"],
          requires=["cffi", "lib:libportaudio"]),
     dict(port="soundfile", pypi="soundfile", version="0.14.0",
          summary="Read and write sound files through libsndfile",
@@ -84,7 +80,6 @@ PKGS = [
          homepage="https://github.com/bastibe/python-soundfile",
          copyright=["2013 Bastian Bechtold"],
          license=["BSD (3-clause)"],
-         build=["cffi", "setuptools"],
          requires=["cffi", "numpy", "typing_extensions", "lib:libsndfile"]),
 ]
 
@@ -96,15 +91,8 @@ LICENSE="{license}"
 REVISION="1"
 SOURCE_URI="{source_uri}"
 CHECKSUM_SHA256="{sha256}"
-{source_dir}
-ARCHITECTURES="any"
 
-PROVIDES="
-\t$portName = $portVersion
-\t"
-REQUIRES="
-\thaiku
-\t"
+ARCHITECTURES="any"
 
 BUILD_REQUIRES="
 \thaiku_devel
@@ -121,13 +109,14 @@ for pythonVersion in ${{PYTHON_VERSIONS[@]}}; do
 \teval "PROVIDES_$pythonPackage=\\"
 \t\t${{portName}}_python$pythonVersion = $portVersion
 \t\t${{portName}}_$pythonPackage = $portVersion
-\t\t\\""
+{commands}\t\t\\""
 \teval "REQUIRES_$pythonPackage=\\"
 \t\thaiku
 {requires}\t\tcmd:python$pythonVersion
 \t\t\\""
 \tBUILD_REQUIRES+="
-{build_requires}\t\t"
+\t\tinstaller_$pythonPackage
+\t\t"
 \tBUILD_PREREQUIRES+="
 \t\tcmd:python$pythonVersion
 \t\t"
@@ -140,26 +129,17 @@ INSTALL()
 
 \t\tpython=python$pythonVersion
 
-{install}
+\t\t$python -m installer -p $prefix {wheel}
+
 \t\tpackageEntries $pythonPackage \\
-\t\t\t$prefix/lib/python*
+\t\t\t$prefix/lib/python*{bin_dir}
 \tdone
 }}
 """
 
-SDIST_INSTALL = """\t\t$python -m build --wheel --no-isolation
-\t\t$python -m installer -p $prefix dist/*.whl
-"""
-
-WHEEL_INSTALL = """\t\t$python -m installer -p $prefix {wheel}
-"""
-
-
-def pypi_file(name, version, kind):
+def pypi_file(name, version):
     with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=40) as r:
         meta = json.load(r)
-    if kind == "sdist":
-        return next(u for u in meta["urls"] if u["packagetype"] == "sdist")
     return next(u for u in meta["urls"] if u["packagetype"] == "bdist_wheel"
                 and u["filename"].endswith("-none-any.whl"))
 
@@ -183,29 +163,19 @@ def wrap(text, width=76):
 
 
 def recipe(p):
-    wheel = p.get("wheel", False)
-    f = pypi_file(p["pypi"], p["version"], "wheel" if wheel else "sdist")
+    f = pypi_file(p["pypi"], p["version"])
     filename = f["filename"].replace(p["version"], "$portVersion")
-    # PyPI's stable paths: /packages/source/<initial>/<project>/<file> for
-    # sources, /packages/<python tag>/<initial>/<project>/<file> for wheels.
-    if wheel:
-        tag = f["filename"].split("-")[-3]
-        uri = f"https://files.pythonhosted.org/packages/{tag}/{p['pypi'][0]}/{p['pypi']}/{filename}#noarchive"
-    else:
-        uri = f"https://files.pythonhosted.org/packages/source/{p['pypi'][0]}/{p['pypi']}/{filename}"
+    # PyPI's stable path for a wheel: /packages/<python tag>/<initial>/<project>/<file>.
+    tag = f["filename"].split("-")[-3]
+    uri = f"https://files.pythonhosted.org/packages/{tag}/{p['pypi'][0]}/{p['pypi']}/{filename}#noarchive"
     sha = checked_sha256(uri.split("#")[0].replace("$portVersion", p["version"]), f["digests"]["sha256"])
-    top = f["filename"][: -len(".tar.gz")] if f["filename"].endswith(".tar.gz") else None
-    source_dir = ""
-    if top and top != f"{p['port']}-{p['version']}":
-        source_dir = f'SOURCE_DIR="{top.replace(p["version"], "$portVersion")}"\n'
 
     python_deps = sorted(r for r in p["requires"] if ":" not in r)
     other_deps = sorted(r for r in p["requires"] if ":" in r)
     requires = "".join(f"\t\t{r}_$pythonPackage\n" for r in python_deps)
     requires += "".join(f"\t\t{r}\n" for r in other_deps)
-    build = ["installer"] if wheel else sorted(set(["build", "installer"] + p["build"]))
-    build_requires = "".join(f"\t\t{b}_$pythonPackage\n" for b in build)
-    install = (WHEEL_INSTALL.format(wheel=filename.split("#")[0]) if wheel else SDIST_INSTALL)
+    # Commands the wheel installs go with the package: cmd:gtts_cli for gtts-cli.
+    commands = "".join(f"\t\tcmd:{c.replace('-', '_')} = $portVersion\n" for c in p.get("commands", []))
     return HEADER.format(
         summary=p["summary"],
         description=wrap(p["description"]),
@@ -214,10 +184,10 @@ def recipe(p):
         license="\n\t".join(p["license"]),
         source_uri=uri,
         sha256=sha,
-        source_dir=source_dir,
         requires=requires,
-        build_requires=build_requires,
-        install=install,
+        commands=commands,
+        wheel=filename,
+        bin_dir=" \\\n\t\t\t$binDir" if p.get("commands") else "",
     )
 
 
@@ -231,8 +201,7 @@ def main():
                 os.remove(os.path.join(d, old))
         with open(os.path.join(d, f"{p['port']}-{p['version']}.recipe"), "w") as f:
             f.write(recipe(p))
-        print(f"{p['port']:14s} {p['version']:9s} {'wheel' if p.get('wheel') else 'sdist':6s} "
-              f"{', '.join(p['license'])}")
+        print(f"{p['port']:14s} {p['version']:9s} {', '.join(p['license'])}")
 
 
 main()

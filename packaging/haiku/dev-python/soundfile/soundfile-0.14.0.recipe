@@ -6,17 +6,10 @@ HOMEPAGE="https://github.com/bastibe/python-soundfile"
 COPYRIGHT="2013 Bastian Bechtold"
 LICENSE="BSD (3-clause)"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/source/s/soundfile/soundfile-$portVersion.tar.gz"
-CHECKSUM_SHA256="ba1c1a2d618bca5c406647c83b89f07cc8810fa506a50622a6993ba130c1de11"
+SOURCE_URI="https://files.pythonhosted.org/packages/py2.py3/s/soundfile/soundfile-$portVersion-py2.py3-none-any.whl#noarchive"
+CHECKSUM_SHA256="8ba81ae3a89fd5ab3bef8a8eb481fbbe794e806309675a89b4df48b8d31908a8"
 
 ARCHITECTURES="any"
-
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku
-	"
 
 BUILD_REQUIRES="
 	haiku_devel
@@ -43,10 +36,7 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 		cmd:python$pythonVersion
 		\""
 	BUILD_REQUIRES+="
-		build_$pythonPackage
-		cffi_$pythonPackage
 		installer_$pythonPackage
-		setuptools_$pythonPackage
 		"
 	BUILD_PREREQUIRES+="
 		cmd:python$pythonVersion
@@ -60,8 +50,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m build --wheel --no-isolation
-		$python -m installer -p $prefix dist/*.whl
+		$python -m installer -p $prefix soundfile-$portVersion-py2.py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

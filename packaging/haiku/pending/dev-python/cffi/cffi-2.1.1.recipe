@@ -12,13 +12,6 @@ PATCHES="cffi-$portVersion.patchset"
 ARCHITECTURES="all !x86_gcc2"
 SECONDARY_ARCHITECTURES="x86"
 
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku$secondaryArchSuffix
-	"
-
 BUILD_REQUIRES="
 	haiku${secondaryArchSuffix}_devel
 	devel:libffi$secondaryArchSuffix
@@ -28,6 +21,7 @@ BUILD_PREREQUIRES="
 	"
 
 PYTHON_VERSIONS=(3.10 3.14)
+defaultVersion=3.14
 
 for i in "${!PYTHON_VERSIONS[@]}"; do
 	pythonVersion=${PYTHON_VERSIONS[$i]}
@@ -46,7 +40,15 @@ for i in "${!PYTHON_VERSIONS[@]}"; do
 
 	eval "PROVIDES_${pythonPackage}+=\"
 		${portName}_$pythonPackage = $portVersion
+		cmd:cffi_gen_src_$pythonVersion = $portVersion
 		\""
+
+	# Provide non-suffixed cmd only for the default Python version
+	if [ $pythonVersion = $defaultVersion ]; then
+		eval "PROVIDES_${pythonPackage}+=\"
+			cmd:cffi_gen_src = $portVersion
+			\""
+	fi
 
 	if [ "$targetArchitecture" = x86_gcc2 ]; then
 		eval "PROVIDES_${pythonPackage}+=\"
@@ -55,7 +57,7 @@ for i in "${!PYTHON_VERSIONS[@]}"; do
 	fi
 
 	eval "REQUIRES_$pythonPackage=\"
-		haiku
+		haiku$secondaryArchSuffix
 		pycparser_$pythonPackage
 		cmd:python$pythonVersion
 		lib:libffi$secondaryArchSuffix
@@ -95,8 +97,21 @@ INSTALL()
 		$python setup.py build install \
 			--root=/ --prefix=$prefix
 
+		# Version suffix all the scripts
+		for f in $binDir/*; do
+			mv $f $f-$pythonVersion
+		done
+
+		# And provide suffix-less symlinks for the default version
+		if [ $pythonVersion = $defaultVersion ]; then
+			for f in $binDir/*; do
+				ln -sr $f ${f%-$pythonVersion}
+			done
+		fi
+
 		packageEntries $pythonPackage \
-			$prefix/lib/python*
+			$prefix/lib/python* \
+			$binDir
 	done
 }
 

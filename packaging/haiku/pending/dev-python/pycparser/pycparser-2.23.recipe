@@ -1,23 +1,15 @@
-SUMMARY="A Python library for creating 'editable wheels'"
-DESCRIPTION="This library supports the building of wheels which, when installed, will expose \
-packages in a local directory on 'sys.path' in 'editable mode'. In other words, changes to the \
-package source will be reflected in the package visible to Python, without needing a reinstall."
-HOMEPAGE="https://github.com/pfmoore/editables"
-COPYRIGHT="2020 Paul Moore"
-LICENSE="MIT"
-REVISION="3"
-SOURCE_URI="$HOMEPAGE/archive/refs/tags/$portVersion.tar.gz"
-CHECKSUM_SHA256="42f7240164af1e028ccb7b60e72f54bbd8b639e9409595fbeffac5d3fb610643"
-SOURCE_FILENAME="editables-$portVersion.tar.gz"
+SUMMARY="A C parser and AST generator written in Python"
+DESCRIPTION="pycparser is a parser for the C language, written in pure Python. \
+It is designed to be easily integrated into applications that need to parse C \
+source code."
+HOMEPAGE="https://github.com/eliben/pycparser"
+COPYRIGHT="2008-2022 Eli Bendersky"
+LICENSE="BSD (3-clause)"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/p/pycparser/pycparser-$portVersion-py3-none-any.whl#noarchive"
+CHECKSUM_SHA256="e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934"
 
 ARCHITECTURES="any"
-
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku
-	"
 
 BUILD_REQUIRES="
 	haiku_devel
@@ -39,15 +31,19 @@ for pythonVersion in ${PYTHON_VERSIONS[@]}; do
 			\""
 	fi
 
+	# We need to provide the "dotless" package name too for now (to avoid having
+	# to change '_$pythonPackage' in each BUILD_REQUIRES/REQUIRES of all recipes).
 	eval "PROVIDES_$pythonPackage+=\"
 		${portName}_$pythonPackage = $portVersion
 		\""
+
 	eval "REQUIRES_$pythonPackage=\"
 		haiku
 		cmd:python$pythonVersion
 		\""
+
 	BUILD_REQUIRES+="
-		setuptools_$pythonPackage
+		installer_$pythonPackage
 		"
 	BUILD_PREREQUIRES+="
 		cmd:python$pythonVersion
@@ -60,14 +56,8 @@ INSTALL()
 		pythonPackage=python${pythonVersion//.}
 
 		python=python$pythonVersion
-		installLocation=$prefix/lib/$python/vendor-packages/
-		export PYTHONPATH=$installLocation:$PYTHONPATH
 
-		mkdir -p $installLocation
-		rm -rf build
-
-		$python setup.py build install \
-			--root=/ --prefix=$prefix
+		$python -m installer -p $prefix pycparser-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

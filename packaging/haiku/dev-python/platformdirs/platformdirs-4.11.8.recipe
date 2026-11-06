@@ -11,13 +11,6 @@ CHECKSUM_SHA256="52f2f181bbfde907966932cc8312d967d02976422d66d537ea16092b8e29108
 
 ARCHITECTURES="any"
 
-PROVIDES="
-	$portName = $portVersion
-	"
-REQUIRES="
-	haiku
-	"
-
 BUILD_REQUIRES="
 	haiku_devel
 	"

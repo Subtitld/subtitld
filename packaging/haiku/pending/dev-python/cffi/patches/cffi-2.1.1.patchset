@@ -1,13 +1,8 @@
-From 8b1910c28ffe5da0231a00ddbab42c47ad3a1c9b Mon Sep 17 00:00:00 2001
+From 360de547b03def1c2216988e068b2afda362c838 Mon Sep 17 00:00:00 2001
 From: Begasus <begasus@gmail.com>
 Date: Mon, 3 Feb 2025 13:55:59 +0100
-Subject: [PATCH] Fix tests
+Subject: Fix tests
 
----
- testing/cffi0/test_ownlib.py    | 2 +-
- testing/cffi0/test_parsing.py   | 2 +-
- testing/cffi1/test_re_python.py | 2 +-
- 3 files changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/testing/cffi0/test_ownlib.py b/testing/cffi0/test_ownlib.py
 index d185681..d864a2c 100644
@@ -49,5 +44,5 @@ index fbca325..c832837 100644
      ffi1 = FFI()
      ffi1.cdef("""void *dlopen(const char *filename, int flags);
 -- 
-2.53.0
+2.54.0
 
