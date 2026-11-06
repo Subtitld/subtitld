@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import shutil
 import sys
 import time
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.request import Request, urlopen
 
+from subtitld import __version__
 from subtitld.modules import session
 from subtitld.modules.net import https_context
 
@@ -113,6 +115,71 @@ def _download_for_platform(release: dict) -> dict | None:
         if dl.get('platform') == plat:
             return dl
     return None
+
+
+# ---------------------------------------------------------------------------
+# What this Subtitld can use
+# ---------------------------------------------------------------------------
+# A release with no `min_subtitld` runs anywhere: the catalog's own default.
+DEFAULT_MIN_SUBTITLD = '0.6.0'
+
+
+def _version_parts(text) -> tuple[int, ...] | None:
+    """`26.10` → (26, 10); None when any dotted part doesn't start with a
+    number."""
+    parts = []
+    for part in str(text).strip().split('.'):
+        match = re.match(r'\d+', part)
+        if not match:
+            return None
+        parts.append(int(match.group()))
+    return tuple(parts)
+
+
+def subtitld_is_new_enough(minimum, running: str | None = None) -> bool:
+    """Whether Subtitld `running` (this one by default) satisfies a release's
+    `min_subtitld`. Development builds (0.0.0…) always do, as for
+    subtitld.cc; so does anything that doesn't read as a version."""
+    running = running or __version__
+    if running.startswith('0.0.0'):
+        return True
+    have, need = _version_parts(running), _version_parts(minimum or DEFAULT_MIN_SUBTITLD)
+    if have is None or need is None:
+        return True
+    width = max(len(have), len(need))
+    return have + (0,) * (width - len(have)) >= need + (0,) * (width - len(need))
+
+
+def supported_tasks() -> set[str]:
+    """The primary tasks this Subtitld has an add-on provider for."""
+    from subtitld.modules.addons.manager import ADDON_PROVIDER_CLASSES
+    return set(ADDON_PROVIDER_CLASSES)
+
+
+def task_supported(entry: dict) -> bool:
+    tasks = entry.get('tasks') or []
+    return bool(tasks) and tasks[0] in supported_tasks()
+
+
+def compatible_release(entry: dict, running: str | None = None) -> dict | None:
+    """The newest release of a catalog entry that this Subtitld is new enough
+    for (releases are listed newest first), or None."""
+    for release in entry.get('releases') or []:
+        if subtitld_is_new_enough(release.get('min_subtitld'), running):
+            return release
+    return None
+
+
+def compatible_entry(entry: dict, running: str | None = None) -> dict | None:
+    """The catalog entry as this Subtitld can install it: its
+    `latest_version` is the newest release it may run. None when it can run
+    none, or the add-on's task is one it has no provider for."""
+    if not task_supported(entry):
+        return None
+    release = compatible_release(entry, running)
+    if release is None:
+        return None
+    return {**entry, 'latest_version': release.get('version')}
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +272,12 @@ def download_and_install(catalog_entry: dict,
             break
     if target_release is None:
         raise ValueError(f'no release {release_version!r} for {addon_id}')
+    if not task_supported(catalog_entry):
+        raise ValueError(f'{addon_id} is for a task this Subtitld does not support: '
+                         f'{(catalog_entry.get("tasks") or [None])[0]!r}')
+    minimum = target_release.get('min_subtitld')
+    if not subtitld_is_new_enough(minimum):
+        raise ValueError(f'{addon_id} {release_version} needs Subtitld {minimum} or newer')
 
     download = _download_for_platform(target_release)
     if download is None:

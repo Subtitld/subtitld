@@ -388,6 +388,12 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
             addon_id = entry.get('id') or ''
             if not addon_id:
                 continue
+            # Only what this Subtitld can run: an add-on for a task it has no
+            # provider for, or whose every release needs a newer Subtitld, is
+            # not offered (an installed one keeps its row, with no update).
+            entry = installer.compatible_entry(entry)
+            if entry is None:
+                continue
             existing = by_id.get(addon_id)
             if existing is None:
                 by_id[addon_id] = _Row(
