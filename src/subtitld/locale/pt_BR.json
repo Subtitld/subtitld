@@ -441,7 +441,7 @@
     "picture_ocr.read": "Ler",
     "picture_ocr.reading": "Lendo as legendas…",
     "picture_ocr.failed": "Não foi possível ler as legendas: {error}",
-    "picture_ocr.no_addon": "As legendas em {filepath} são imagens, não texto. Para abri-las, instale o complemento Tesseract OCR no painel de Complementos: ele lê o texto delas. Depois abra o arquivo de novo.",
+    "picture_ocr.no_addon": "As legendas em {filepath} são imagens, não texto. Para abri-las, instale um complemento de OCR, como o Tesseract OCR ou o PP-OCRv5, no painel de Complementos: ele lê o texto delas. Depois abra o arquivo de novo.",
     "top_bar.export": "Exportar…",
     "top_bar.quick_export": "Exportar novamente para {path}",
     "panel_scope.label": "Escopo",

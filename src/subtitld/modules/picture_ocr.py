@@ -2,7 +2,7 @@
 
 Opening a DVD VobSub (.idx/.sub) or a Blu-ray PGS (.sup), or reading a
 picture track of a video, Subtitld decodes each subtitle into a picture
-(vobsub, pgs), and an add-on serving `ocr.recognize` (Tesseract) reads the
+(vobsub, pgs), and an add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the
 text in it. `OCRJob` runs the whole of it off the main thread:
 
 1. decode the pictures, in a thread (0-10 %);

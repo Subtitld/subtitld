@@ -342,7 +342,7 @@
     "picture_ocr.read": "Číst",
     "picture_ocr.reading": "Čtení titulků…",
     "picture_ocr.failed": "Titulky se nepodařilo přečíst: {error}",
-    "picture_ocr.no_addon": "Titulky v {filepath} jsou obrázky, ne text. Chcete-li je otevřít, nainstalujte doplněk Tesseract OCR z panelu Doplňky: přečte jejich text. Potom soubor otevřete znovu.",
+    "picture_ocr.no_addon": "Titulky v {filepath} jsou obrázky, ne text. Chcete-li je otevřít, nainstalujte z panelu Doplňky doplněk pro OCR, například Tesseract OCR nebo PP-OCRv5: přečte jejich text. Potom soubor otevřete znovu.",
     "import_panel.subtitles_pictures_ocr": "obrázky, čte {engine}",
     "top_bar.export": "Exportovat…",
     "top_bar.quick_export": "Znovu exportovat do {path}",

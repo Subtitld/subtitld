@@ -342,7 +342,7 @@
     "picture_ocr.read": "Leer",
     "picture_ocr.reading": "Leyendo los subtítulos…",
     "picture_ocr.failed": "No se pudieron leer los subtítulos: {error}",
-    "picture_ocr.no_addon": "Los subtítulos de {filepath} son imágenes, no texto. Para abrirlos, instala el complemento Tesseract OCR desde el panel de Complementos: lee su texto. Después vuelve a abrir el archivo.",
+    "picture_ocr.no_addon": "Los subtítulos de {filepath} son imágenes, no texto. Para abrirlos, instala un complemento de OCR, como Tesseract OCR o PP-OCRv5, desde el panel de Complementos: lee su texto. Después vuelve a abrir el archivo.",
     "import_panel.subtitles_pictures_ocr": "imágenes, leídas por {engine}",
     "top_bar.export": "Exportar…",
     "top_bar.quick_export": "Volver a exportar a {path}",

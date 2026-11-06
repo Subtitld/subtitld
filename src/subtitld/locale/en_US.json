@@ -441,7 +441,7 @@
     "picture_ocr.read": "Read",
     "picture_ocr.reading": "Reading the subtitles…",
     "picture_ocr.failed": "The subtitles could not be read: {error}",
-    "picture_ocr.no_addon": "The subtitles in {filepath} are pictures, not text. To open them, install the Tesseract OCR add-on from the Add-ons panel: it reads their text. Then open the file again.",
+    "picture_ocr.no_addon": "The subtitles in {filepath} are pictures, not text. To open them, install an OCR add-on, such as Tesseract OCR or PP-OCRv5, from the Add-ons panel: it reads their text. Then open the file again.",
     "top_bar.export": "Export…",
     "top_bar.quick_export": "Re-export to {path}",
     "panel_scope.label": "Scope",

@@ -342,7 +342,7 @@
     "picture_ocr.read": "Lesen",
     "picture_ocr.reading": "Untertitel werden gelesen…",
     "picture_ocr.failed": "Die Untertitel konnten nicht gelesen werden: {error}",
-    "picture_ocr.no_addon": "Die Untertitel in {filepath} sind Bilder, kein Text. Um sie zu öffnen, installieren Sie das Add-on Tesseract OCR im Bereich Add-ons: Es liest ihren Text. Öffnen Sie die Datei dann erneut.",
+    "picture_ocr.no_addon": "Die Untertitel in {filepath} sind Bilder, kein Text. Um sie zu öffnen, installieren Sie im Bereich Add-ons ein OCR-Add-on, etwa Tesseract OCR oder PP-OCRv5: Es liest ihren Text. Öffnen Sie die Datei dann erneut.",
     "import_panel.subtitles_pictures_ocr": "Bilder, gelesen von {engine}",
     "top_bar.export": "Exportieren…",
     "top_bar.quick_export": "Erneut nach {path} exportieren",

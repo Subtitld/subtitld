@@ -342,7 +342,7 @@
     "picture_ocr.read": "Đọc",
     "picture_ocr.reading": "Đang đọc phụ đề…",
     "picture_ocr.failed": "Không đọc được phụ đề: {error}",
-    "picture_ocr.no_addon": "Phụ đề trong {filepath} là hình ảnh, không phải văn bản. Để mở, hãy cài tiện ích Tesseract OCR từ bảng Tiện ích: tiện ích này đọc chữ của phụ đề. Sau đó mở lại tệp.",
+    "picture_ocr.no_addon": "Phụ đề trong {filepath} là hình ảnh, không phải văn bản. Để mở, hãy cài một tiện ích OCR, như Tesseract OCR hoặc PP-OCRv5, từ bảng Tiện ích: tiện ích này đọc chữ của phụ đề. Sau đó mở lại tệp.",
     "import_panel.subtitles_pictures_ocr": "hình ảnh, do {engine} đọc",
     "top_bar.export": "Xuất…",
     "top_bar.quick_export": "Xuất lại vào {path}",

@@ -342,7 +342,7 @@
     "picture_ocr.read": "Lezen",
     "picture_ocr.reading": "Ondertitels lezen…",
     "picture_ocr.failed": "De ondertitels konden niet worden gelezen: {error}",
-    "picture_ocr.no_addon": "De ondertitels in {filepath} zijn afbeeldingen, geen tekst. Installeer de add-on Tesseract OCR via het paneel Add-ons om ze te openen: die leest hun tekst. Open het bestand daarna opnieuw.",
+    "picture_ocr.no_addon": "De ondertitels in {filepath} zijn afbeeldingen, geen tekst. Installeer via het paneel Add-ons een OCR-add-on, zoals Tesseract OCR of PP-OCRv5, om ze te openen: die leest hun tekst. Open het bestand daarna opnieuw.",
     "import_panel.subtitles_pictures_ocr": "afbeeldingen, gelezen door {engine}",
     "top_bar.export": "Exporteren…",
     "top_bar.quick_export": "Opnieuw exporteren naar {path}",

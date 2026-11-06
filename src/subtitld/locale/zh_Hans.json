@@ -342,7 +342,7 @@
     "picture_ocr.read": "读取",
     "picture_ocr.reading": "正在读取字幕…",
     "picture_ocr.failed": "无法读取字幕：{error}",
-    "picture_ocr.no_addon": "{filepath} 中的字幕是图片而不是文字。要打开它们，请在附加组件面板中安装 Tesseract OCR 附加组件：它会识别其中的文字。然后重新打开该文件。",
+    "picture_ocr.no_addon": "{filepath} 中的字幕是图片而不是文字。要打开它们，请在附加组件面板中安装 OCR 附加组件（如 Tesseract OCR 或 PP-OCRv5）：它会识别其中的文字。然后重新打开该文件。",
     "import_panel.subtitles_pictures_ocr": "图片，由 {engine} 识别",
     "top_bar.export": "导出…",
     "top_bar.quick_export": "重新导出到 {path}",

@@ -342,7 +342,7 @@
     "picture_ocr.read": "Lire",
     "picture_ocr.reading": "Lecture des sous-titres…",
     "picture_ocr.failed": "Impossible de lire les sous-titres : {error}",
-    "picture_ocr.no_addon": "Les sous-titres de {filepath} sont des images, pas du texte. Pour les ouvrir, installez le module Tesseract OCR depuis le panneau Modules : il lit leur texte. Ouvrez ensuite le fichier à nouveau.",
+    "picture_ocr.no_addon": "Les sous-titres de {filepath} sont des images, pas du texte. Pour les ouvrir, installez un module d'OCR, comme Tesseract OCR ou PP-OCRv5, depuis le panneau Modules : il lit leur texte. Ouvrez ensuite le fichier à nouveau.",
     "import_panel.subtitles_pictures_ocr": "images, lues par {engine}",
     "top_bar.export": "Exporter…",
     "top_bar.quick_export": "Réexporter vers {path}",

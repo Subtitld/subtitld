@@ -342,7 +342,7 @@
     "picture_ocr.read": "Odczytaj",
     "picture_ocr.reading": "Odczytywanie napisów…",
     "picture_ocr.failed": "Nie udało się odczytać napisów: {error}",
-    "picture_ocr.no_addon": "Napisy w {filepath} są obrazami, nie tekstem. Aby je otworzyć, zainstaluj dodatek Tesseract OCR z panelu Dodatki: odczyta ich tekst. Następnie otwórz plik ponownie.",
+    "picture_ocr.no_addon": "Napisy w {filepath} są obrazami, nie tekstem. Aby je otworzyć, zainstaluj z panelu Dodatki dodatek OCR, na przykład Tesseract OCR lub PP-OCRv5: odczyta ich tekst. Następnie otwórz plik ponownie.",
     "import_panel.subtitles_pictures_ocr": "obrazy, odczytywane przez {engine}",
     "top_bar.export": "Eksportuj…",
     "top_bar.quick_export": "Eksportuj ponownie do {path}",

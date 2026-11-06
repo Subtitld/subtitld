@@ -342,7 +342,7 @@
     "picture_ocr.read": "読み取る",
     "picture_ocr.reading": "字幕を読み取っています…",
     "picture_ocr.failed": "字幕を読み取れませんでした: {error}",
-    "picture_ocr.no_addon": "{filepath} の字幕はテキストではなく画像です。開くには、アドオン パネルから Tesseract OCR アドオンをインストールしてください。字幕の文字を読み取ります。その後、もう一度ファイルを開いてください。",
+    "picture_ocr.no_addon": "{filepath} の字幕はテキストではなく画像です。開くには、アドオン パネルから OCR アドオン（Tesseract OCR や PP-OCRv5 など）をインストールしてください。字幕の文字を読み取ります。その後、もう一度ファイルを開いてください。",
     "import_panel.subtitles_pictures_ocr": "画像、{engine} で読み取り",
     "top_bar.export": "エクスポート…",
     "top_bar.quick_export": "{path} に再エクスポート",

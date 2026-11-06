@@ -342,7 +342,7 @@
     "picture_ocr.read": "Baca",
     "picture_ocr.reading": "Membaca subtitle…",
     "picture_ocr.failed": "Subtitle tidak dapat dibaca: {error}",
-    "picture_ocr.no_addon": "Subtitle di {filepath} berupa gambar, bukan teks. Untuk membukanya, pasang add-on Tesseract OCR dari panel Add-on: add-on itu membaca teksnya. Lalu buka berkas itu lagi.",
+    "picture_ocr.no_addon": "Subtitle di {filepath} berupa gambar, bukan teks. Untuk membukanya, pasang add-on OCR, misalnya Tesseract OCR atau PP-OCRv5, dari panel Add-on: add-on itu membaca teksnya. Lalu buka berkas itu lagi.",
     "import_panel.subtitles_pictures_ocr": "gambar, dibaca oleh {engine}",
     "top_bar.export": "Ekspor…",
     "top_bar.quick_export": "Ekspor ulang ke {path}",
