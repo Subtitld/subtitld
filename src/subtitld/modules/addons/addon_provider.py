@@ -954,13 +954,16 @@ class AddonVideoLipsyncProvider(_AddonProviderMixin, VideoLipsyncProvider):
 
 
 class AddonOCRProvider(_AddonProviderMixin, OCRProvider):
-    """Text recognition backed by a subprocess add-on (Tesseract).
+    """Text recognition backed by a subprocess add-on (Tesseract, PP-OCRv5).
 
     Protocol for ``ocr.recognize``::
 
-        request:  {images: [{path}], language, options}
-        partial:  {index, text, confidence}        # one per picture, any order
-        result:   {texts: [...], confidences: [...]}
+        request:  {images: [{id, path}], language, options}   # id: the index
+        partial:  {index or id, text, confidence?}             # one per picture
+        result:   {texts: [text or {id, text}], confidences?: [...]}
+
+    An add-on that gives no confidence (PP-OCRv5) is taken as sure of its
+    text, so only the pictures it reads as nothing are read again.
     """
 
     def __init__(self, addon_id: str, manifest: dict, exe_path: str | Path,
@@ -977,7 +980,7 @@ class AddonOCRProvider(_AddonProviderMixin, OCRProvider):
             return
 
         params = {
-            'images': [{'path': str(path)} for path in image_paths],
+            'images': [{'id': str(number), 'path': str(path)} for number, path in enumerate(image_paths)],
             'language': language or '',
             'options': self._saved_options(options),
         }
@@ -995,11 +998,12 @@ class AddonOCRProvider(_AddonProviderMixin, OCRProvider):
             if req is not self._active_request or not isinstance(data, dict):
                 return
             try:
-                index = int(data.get('index'))
+                index = int(data['index'] if 'index' in data else data.get('id'))
             except (TypeError, ValueError):
                 return
             if 0 <= index < count:
-                self.partial.emit(index, str(data.get('text') or ''), float(data.get('confidence') or 0.0))
+                confidence = data.get('confidence')
+                self.partial.emit(index, str(data.get('text') or ''), 1.0 if confidence is None else float(confidence))
 
         def on_result(data: dict) -> None:
             if req is not self._active_request:
@@ -1009,10 +1013,11 @@ class AddonOCRProvider(_AddonProviderMixin, OCRProvider):
             if not isinstance(texts, list) or len(texts) != count:
                 self.error.emit(f'{self._addon_id} returned {len(texts or [])} texts for {count} pictures')
                 return
+            texts = [str((t.get('text') if isinstance(t, dict) else t) or '') for t in texts]
             confidences = data.get('confidences')
             if not isinstance(confidences, list) or len(confidences) != count:
-                confidences = [0.0] * count
-            self.finished.emit([str(t or '') for t in texts], [float(c or 0.0) for c in confidences])
+                confidences = [1.0] * count
+            self.finished.emit(texts, [float(c or 0.0) for c in confidences])
 
         def on_error(code: str, message: str) -> None:
             if req is not self._active_request:

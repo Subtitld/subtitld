@@ -230,7 +230,7 @@ provider.finished.connect(lambda *a: heard.append(('finished',) + a))
 provider.error.connect(lambda *a: heard.append(('error',) + a))
 provider.recognize(['/a.pgm', '/b.pgm'], 'pt-br')
 check('the request', process.requests[0][0:1] + (process.requests[0][1]['images'], process.requests[0][1]['language']),
-      ('ocr.recognize', [{'path': '/a.pgm'}, {'path': '/b.pgm'}], 'pt-br'))
+      ('ocr.recognize', [{'id': '0', 'path': '/a.pgm'}, {'id': '1', 'path': '/b.pgm'}], 'pt-br'))
 first = process.last
 first.partial.emit({'index': 1, 'text': 'B', 'confidence': 0.8})
 first.result.emit({'texts': ['A', 'B'], 'confidences': [0.9, 0.8]})
@@ -246,6 +246,14 @@ process.last.result.emit({'texts': ['A', 'extra'], 'confidences': [1, 1]})
 app.processEvents()
 check('a cancelled request is not heard; a wrong count is an error',
       (process.cancelled, heard), (['r1'], [('error', 'tesseract returned 2 texts for 1 pictures')]))
+heard.clear()
+# PP-OCRv5's frames: ids, {id, text} entries, no confidence (taken as sure).
+provider.recognize(['/a.pgm', '/b.pgm'], 'de')
+process.last.partial.emit({'id': '1', 'text': 'Zwei'})
+process.last.result.emit({'texts': [{'id': '0', 'text': 'Eins'}, {'id': '1', 'text': 'Zwei'}], 'script': 'latin'})
+app.processEvents()
+check('an add-on with ids and no confidences', heard,
+      [('partial', 1, 'Zwei', 1.0), ('finished', ['Eins', 'Zwei'], [1.0, 1.0])])
 
 print('in a video')
 MKVMERGE = shutil.which('mkvmerge')
