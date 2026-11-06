@@ -32,9 +32,11 @@ from subtitld.modules.addons.process import AddonProcess, DEFAULT_IDLE_GC_SEC
 from subtitld.modules.addons.provider import (
     ASRProvider,
     AudioSeparatorProvider,
+    OCRProvider,
     TASK_ASR_TRANSCRIBE,
     TASK_ASR_STREAM,
     TASK_AUDIO_SEPARATE,
+    TASK_OCR_RECOGNIZE,
     TASK_TTS_SYNTHESIZE,
     TASK_TRANSLATE,
     TASK_VIDEO_LIPSYNC,
@@ -949,3 +951,82 @@ class AddonVideoLipsyncProvider(_AddonProviderMixin, VideoLipsyncProvider):
         if self._active_request is None or self._process is None:
             return
         self._process.cancel(self._active_request.id)
+
+
+class AddonOCRProvider(_AddonProviderMixin, OCRProvider):
+    """Text recognition backed by a subprocess add-on (Tesseract).
+
+    Protocol for ``ocr.recognize``::
+
+        request:  {images: [{path}], language, options}
+        partial:  {index, text, confidence}        # one per picture, any order
+        result:   {texts: [...], confidences: [...]}
+    """
+
+    def __init__(self, addon_id: str, manifest: dict, exe_path: str | Path,
+                 parent: QObject | None = None):
+        OCRProvider.__init__(self, parent)
+        _AddonProviderMixin.__init__(self, addon_id, manifest, exe_path)
+        self._active_request = None
+
+    def recognize(self, image_paths: list[str], language: str, options: dict | None = None) -> None:
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.error.emit(str(exc))
+            return
+
+        params = {
+            'images': [{'path': str(path)} for path in image_paths],
+            'language': language or '',
+            'options': self._saved_options(options),
+        }
+        req = proc.request(TASK_OCR_RECOGNIZE, params)
+        self._active_request = req
+        count = len(image_paths)
+
+        # Frames of a request cancelled or replaced since are not heard: the
+        # provider is shared, and they would land in the next job.
+        def on_progress(value: float, message: str) -> None:
+            if req is self._active_request:
+                self.progress.emit(float(value), str(message))
+
+        def on_partial(data: dict) -> None:
+            if req is not self._active_request or not isinstance(data, dict):
+                return
+            try:
+                index = int(data.get('index'))
+            except (TypeError, ValueError):
+                return
+            if 0 <= index < count:
+                self.partial.emit(index, str(data.get('text') or ''), float(data.get('confidence') or 0.0))
+
+        def on_result(data: dict) -> None:
+            if req is not self._active_request:
+                return
+            self._active_request = None
+            texts = data.get('texts') if isinstance(data, dict) else None
+            if not isinstance(texts, list) or len(texts) != count:
+                self.error.emit(f'{self._addon_id} returned {len(texts or [])} texts for {count} pictures')
+                return
+            confidences = data.get('confidences')
+            if not isinstance(confidences, list) or len(confidences) != count:
+                confidences = [0.0] * count
+            self.finished.emit([str(t or '') for t in texts], [float(c or 0.0) for c in confidences])
+
+        def on_error(code: str, message: str) -> None:
+            if req is not self._active_request:
+                return
+            self._active_request = None
+            self.error.emit(f'[{code}] {message}')
+
+        req.progress.connect(on_progress, Qt.QueuedConnection)
+        req.partial.connect(on_partial, Qt.QueuedConnection)
+        req.result.connect(on_result, Qt.QueuedConnection)
+        req.error.connect(on_error, Qt.QueuedConnection)
+
+    def cancel(self) -> None:
+        req, self._active_request = self._active_request, None
+        if req is None or self._process is None:
+            return
+        self._process.cancel(req.id)

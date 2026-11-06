@@ -49,8 +49,14 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (VobSub's .sub), not text: nothing is wrong with it, but
-    there is nothing in it to edit."""
+    pictures (a VobSub's .idx or .sub, a PGS .sup), not text: nothing is
+    wrong with it, but only an OCR add-on can make text of it
+    (picture_ocr). `path` is the file, `kind` 'vobsub' or 'pgs'."""
+
+    def __init__(self, path, kind='vobsub'):
+        super().__init__(path)
+        self.path = path
+        self.kind = kind
 # `signals.SIGNALS` MUST be imported at module-load time, NOT lazily
 # from inside the background extractor's `run()`. SIGNALS is a QObject
 # singleton; its thread affinity is whichever thread imports the module
@@ -692,7 +698,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 data = sub_file.read()
             sub_kind = microdvd.kind(data)
             if sub_kind == 'vobsub':
-                raise PictureSubtitlesError(subtitle_file)
+                raise PictureSubtitlesError(subtitle_file, 'vobsub')
             if sub_kind == 'subviewer':
                 subtitle_format = 'SBV'
                 segments_list = sbv.parse(srt.decode(data))
@@ -701,6 +707,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
                 if declared:
                     session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=declared)
+
+        elif subtitle_file.lower().endswith(('.idx', '.sup')):
+            # DVD's VobSub index and Blu-ray's PGS: pictures, for an OCR add-on.
+            raise PictureSubtitlesError(subtitle_file, 'pgs' if subtitle_file.lower().endswith('.sup') else 'vobsub')
 
         elif subtitle_file.lower().endswith(('.stl')):
             # EBU STL: its language for the project's, its frame rate, display

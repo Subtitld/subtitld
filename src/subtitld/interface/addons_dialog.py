@@ -47,6 +47,7 @@ from subtitld.modules.addons import schema as addon_schema
 from subtitld.modules.addons.provider import (
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
+    TASK_OCR_RECOGNIZE,
     TASK_TRANSLATE,
     TASK_TTS_SYNTHESIZE,
 )
@@ -210,6 +211,7 @@ _TASK_TRANSLATION_KEYS: dict[str, str] = {
     'asr.transcribe': 'addons_dialog.task_name.asr.transcribe',
     'translate.text': 'addons_dialog.task_name.translate.text',
     'audio.separate': 'addons_dialog.task_name.audio.separate',
+    'ocr.recognize': 'addons_dialog.task_name.ocr.recognize',
 }
 
 
@@ -1289,7 +1291,8 @@ class AddonsPanel(QWidget):
         self._task_group = QButtonGroup(self)
         self._task_group.setExclusive(True)
         self._task_pills: dict[object, QPushButton] = {}  # value -> pill, key None for "any"
-        for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_AUDIO_SEPARATE, TASK_TRANSLATE):
+        for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_AUDIO_SEPARATE, TASK_TRANSLATE,
+                      TASK_OCR_RECOGNIZE):
             pill = _make_pill('')
             pill.blockSignals(True)
             self._task_group.addButton(pill)
@@ -1816,6 +1819,7 @@ class AddonsPanel(QWidget):
         self._task_pills[TASK_ASR_TRANSCRIBE].setText(_('addons_dialog.filter.task.asr'))
         self._task_pills[TASK_AUDIO_SEPARATE].setText(_('addons_dialog.filter.task.separation'))
         self._task_pills[TASK_TRANSLATE].setText(_('addons_dialog.filter.task.translate'))
+        self._task_pills[TASK_OCR_RECOGNIZE].setText(_('addons_dialog.filter.task.ocr'))
 
         # Language filter — only the "Any" entry needs translation; the rest
         # of the rows are raw BCP-47 tags. We rebuild the combobox so the
