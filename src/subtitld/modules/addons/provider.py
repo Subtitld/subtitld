@@ -25,6 +25,7 @@ TASK_ASR_TRANSCRIBE = 'asr.transcribe'
 TASK_ASR_STREAM = 'asr.stream'
 TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
+TASK_OCR_RECOGNIZE = 'ocr.recognize'
 
 # Engines in the transcription picker that bring subtitles in from elsewhere
 # (a file, the video's own closed captions or subtitle tracks) rather than
@@ -328,6 +329,46 @@ class AudioSeparatorProvider(Provider):
 
     def cancel(self) -> None:
         """Best-effort cancellation. Default is a no-op."""
+
+
+class OCRProvider(Provider):
+    """Text recognition: the text in pictures of subtitles.
+
+    Opening a DVD VobSub or a Blu-ray PGS, or a picture track of a video,
+    Subtitld decodes each subtitle into a picture and asks one of these for
+    its text (picture_ocr.OCRJob). The pictures are 8-bit grayscale PGM
+    files, dark text on a light background, one per subtitle.
+
+    Signals
+    -------
+    partial(index: int, text: str, confidence: float)
+        One picture read: its index in the request, its text ('' when
+        nothing could be read) and the engine's confidence, 0-1. In any
+        order.
+    finished(texts: list, confidences: list)
+        Every picture read, in the request's order. Exactly once.
+    error(message: str)
+        Terminal failure; no `finished` follows.
+    progress(value: float, message: str)
+        0..1, with a free-form message (a language model downloading).
+    """
+
+    partial = Signal(int, str, float)
+    finished = Signal(list, list)
+    error = Signal(str)
+    progress = Signal(float, str)
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_OCR_RECOGNIZE]
+
+    def recognize(self, image_paths: list[str], language: str, options: dict | None = None) -> None:
+        """Read the pictures at `image_paths`, subtitles in `language` (a
+        BCP-47 tag or a disc's ISO 639 code; '' when unknown)."""
+        raise NotImplementedError
+
+    def cancel(self) -> None:
+        """Best-effort cancellation; `error` with a cancelled message follows."""
 
 
 class TranslationProvider(Provider):

@@ -25,6 +25,8 @@ Code lives at `/home/jonata/Projetos/subtitld`. Key dirs:
 
 **Tasks v0:** `tts.synthesize`, `asr.transcribe`. `translation.translate` declared but not implemented.
 
+**`ocr.recognize`** (Tesseract add-on, `addon-tesseract`): Subtitld decodes picture subtitles itself (`modules/vobsub.py`, `modules/pgs.py`, the PGS/VobSub tracks of videos in `video_subtitles.extract_pictures`) and sends one 8-bit grayscale PGM per subtitle, dark text on light: `{images: [{path}], language, options}` → a `partial` `{index, text, confidence}` per picture, then `result` `{texts, confidences}`. `modules/picture_ocr.OCRJob` runs it and reads the low-confidence pictures again with the opposite polarity.
+
 **Manifest** (`manifest.json` inside each add-on zip): `id`, `version`, `executable`, `protocol`, `platforms`, `tasks[]`, `voices[]`/`languages[]`, `models[]` (url + sha256 + bundled/download), `config_schema` (renders Configure UI declaratively), `compute` (`cpu` | `gpu_preferred` | `gpu_required` | `remote`) + `accelerators[]` (`cuda`, `mps`): what it runs on, for the panel's hardware chip and "Runs on this computer" filter; the host checks this computer's cards in `modules/hardware.py`, and the catalog entry carries the same two fields for add-ons not installed yet (see `modules/addons/compute.py`).
 
 **Catalog.** `https://subtitld.org/addons/catalog.json` — `addons[].releases[].downloads[]` by platform with sha256. Hosted via the `addons-catalog` repo with an `addons.yml` source-of-truth; CI assembles the JSON.

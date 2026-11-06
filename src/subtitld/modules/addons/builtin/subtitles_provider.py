@@ -9,7 +9,9 @@ opening the video already probed (session.VIDEO['subtitle_tracks']).
 
 `transcribe` takes the video's path, not an audio file's, and options
 {'track': the track's stream index, 'codec': its codec, 'duration': the
-video's, for progress}. FFmpeg writes the track to a file of its own in
+video's, for progress, 'language': what a picture track is read as}. A
+PGS or VobSub track is read by an OCR add-on (picture_ocr.OCRJob); the
+others as follows. FFmpeg writes the track to a file of its own in
 a thread (video_subtitles.extract): `progress` as it goes. The file is
 then read as Subtitld opens such a file, on the main thread, since that
 reader touches the session: `transcript_finished` with the subtitles, or
@@ -91,6 +93,7 @@ class SubtitlesProvider(ASRProvider):
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._extractor = None
+        self._ocr_job = None
 
     @property
     def id(self) -> str:  # noqa: A003
@@ -116,6 +119,9 @@ class SubtitlesProvider(ASRProvider):
         """Read the subtitle track `options['track']` of the video at `audio_path`."""
         self.cancel()
         options = options or {}
+        if str(options.get('codec') or '') in video_subtitles.READABLE_PICTURE_CODECS:
+            self._read_pictures(audio_path, options, language)
+            return
         extractor = _Extractor(audio_path, int(options.get('track', 0)), str(options.get('codec') or ''),
                                float(options.get('duration') or 0))
         extractor.moved.connect(lambda share: self.progress.emit(share, ''))
@@ -142,7 +148,35 @@ class SubtitlesProvider(ASRProvider):
             if os.path.isfile(path):
                 os.remove(path)
 
+    def _read_pictures(self, video, options, language):
+        from subtitld.modules import picture_ocr
+        engine = picture_ocr.ocr_provider()
+        if engine is None:
+            self.error.emit('No OCR add-on is installed to read subtitles drawn as pictures.')
+            return
+        job = picture_ocr.OCRJob.for_track(video, int(options.get('track', 0)), str(options['codec']),
+                                           str(options.get('language') or language or ''), engine)
+        job.progress.connect(lambda share, _message: self.progress.emit(share, ''))
+        job.finished.connect(lambda segments, _info: self._pictures_read(job, segments))
+        job.failed.connect(lambda message: self._pictures_failed(job, message))
+        self._ocr_job = job
+        self.transcript_started.emit()
+        job.start()
+
+    def _pictures_read(self, job, segments):
+        if job is self._ocr_job:
+            self._ocr_job = None
+            self.transcript_finished.emit(segments)
+
+    def _pictures_failed(self, job, message):
+        if job is self._ocr_job:
+            self._ocr_job = None
+            self.error.emit(message)
+
     def cancel(self) -> None:
+        if self._ocr_job is not None:
+            self._ocr_job.cancel()
+            self._ocr_job = None
         if self._extractor is not None:
             self._extractor.stop()
             self._extractor.wait(2000)
