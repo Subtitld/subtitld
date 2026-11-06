@@ -1,4 +1,7 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy
+import html
+import re
+
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent
 
@@ -35,6 +38,18 @@ def _widget_outer_extent(widget):
         geom = screen.availableGeometry()
         return max(w, geom.width()), max(h, geom.height())
     return max(w, 1920), max(h, 1080)
+
+
+def name_icon_buttons(root):
+    """A button that shows only an icon has no text for a screen reader to
+    read out: name each one after its tooltip, without the tooltip's markup.
+    Run again after the tooltips change (a new interface language)."""
+    for button in root.findChildren(QAbstractButton):
+        if button.text().strip():
+            continue
+        tip = ' '.join(html.unescape(re.sub(r'<[^>]+>', ' ', button.toolTip())).split())
+        if tip:
+            button.setAccessibleName(tip)
 
 
 def animate_element(animation, duration=1000, effect='fadein'):

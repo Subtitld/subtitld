@@ -354,6 +354,13 @@ class Window(_MainWindowBase):
         self.confirm_exit_dialog.main_label.setText(_('confirm_exit_dialog.text'))
         self.confirm_exit_dialog.accept_button.setText(_('confirm_exit_dialog.save_button'))
         self.confirm_exit_dialog.reject_button.setText(_('confirm_exit_dialog.dont_save_button'))
+        title_bar = getattr(self, 'titleBar', None)
+        for name, key in (('minBtn', 'title_bar.minimize'), ('maxBtn', 'title_bar.maximize'), ('closeBtn', 'title_bar.close')):
+            button = getattr(title_bar, name, None)
+            if button is not None:
+                button.setToolTip(_(key))
+        # Icon-only buttons are named after their tooltips, in this language.
+        utils.name_icon_buttons(self)
         
 
     def closeEvent(self, event):

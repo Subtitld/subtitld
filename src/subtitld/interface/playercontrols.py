@@ -3328,6 +3328,8 @@ def translate(self):
     self.send_text_to_next_subtitle_and_slice_button.setToolTip(_('playercontrols.send_text_to_next_subtitle_and_slice'))
     self.slice_selected_subtitle_button.setToolTip(_('playercontrols.slice_selected_subtitle'))
     self.merge_next_selected_subtitle_button.setToolTip(_('playercontrols.merge_next_selected_subtitle'))
+    self.merge_back_selected_subtitle_button.setToolTip(_('playercontrols.merge_back_selected_subtitle'))
+    self.playercontrols_handle_button.setToolTip(_('playercontrols.resize_handle'))
     self.last_end_to_current_position_button.setToolTip(_('playercontrols.last_end_to_current_position'))
     self.last_start_to_current_position_button.setToolTip(_('playercontrols.last_start_to_current_position'))
     self.last_start_last_end_to_current_position_button.setToolTip(_('playercontrols.last_start_last_end_to_current_position'))

@@ -1031,19 +1031,23 @@ class speakers_list_item(QWidget):
             button.setVisible(visible)
             if tooltip:
                 button.setToolTip(tooltip)
+                button.setAccessibleName(tooltip)
             button.clicked.connect(handler)
             actions.layout().addWidget(button)
             return button
 
-        widget.rename_button = _action('rename', lambda: rename_button_clicked(widget))
-        widget.change_color_button = _action('change_color', lambda: change_color_button_clicked(widget))
+        widget.rename_button = _action('rename', lambda: rename_button_clicked(widget),
+                                       tooltip=_('left_panel_speakers.rename_tooltip'))
+        widget.change_color_button = _action('change_color', lambda: change_color_button_clicked(widget),
+                                             tooltip=_('left_panel_speakers.change_color_tooltip'))
         widget.change_image_button = _action('change_image', lambda: change_image_button_clicked(widget),
                                              tooltip=_('left_panel_speakers.change_image_tooltip'))
         widget.visibility_button = _action('visibility', lambda: toggle_visibility_button_clicked(widget),
                                            checkable=True, visible=True,
                                            tooltip=_('left_panel_speakers.toggle_visibility_tooltip'))
         widget.export_button = _action('export', lambda: export_button_clicked(widget))
-        widget.remove_button = _action('remove', lambda: remove_button_clicked(widget))
+        widget.remove_button = _action('remove', lambda: remove_button_clicked(widget),
+                                       tooltip=_('left_panel_speakers.remove_tooltip'))
 
         # --- Options container: collapsible sections -----------------------
         widget.options = QWidget()
