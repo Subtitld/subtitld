@@ -806,11 +806,16 @@ microphones:**
 - snap: Ubuntu 22.04's `libopus0` (1.3.1); Flatpak: the KDE runtime's
   (1.5.2); AUR: `opus`; Haiku: `lib:libopus`. Every setting used exists
   since Opus 1.1.
-- `opus.available()` now also checks that a setting reaches libopus
-  (`opus_encoder_ctl` is variadic, which ctypes may pass wrongly on Apple
-  Silicon): the bitrate has to read back as set, or voice is off. The macOS
-  and Windows CI jobs require it to hold with the library they built;
-  `collab-check.py` (snap, Flatpak, AUR, Haiku) encodes and decodes a tone.
+- `opus_encoder_ctl` is variadic, and on Apple Silicon ctypes passes it
+  wrongly: in CI libopus refused the bitrate (`opus_encoder_ctl(4002)
+  failed`). So the macOS build links `packaging/libdatachannel/opus-ctl.c`
+  into libopus (static libopus and the two functions in one
+  `libopus.0.dylib`): `subtitld_opus_encoder_set`/`_get` take a fixed
+  argument, and opus.py uses them where they exist. `opus.available()`
+  checks a setting reads back as set, or voice is off; the macOS and
+  Windows CI jobs require it with the library they built; `collab-check.py`
+  (snap, Flatpak, AUR, Haiku) encodes and decodes a tone. Tested both ways
+  on Linux (system libopus; a libopus built like macOS's).
 
 ### Why push-to-talk
 
