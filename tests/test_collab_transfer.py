@@ -7,7 +7,7 @@ Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import faulthandler, hashlib, os, sys, tempfile, time
+import faulthandler, hashlib, os, shutil, sys, tempfile, threading, time
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 faulthandler.dump_traceback_later(170, exit=True)
@@ -35,6 +35,9 @@ if not rtc.available():
 
 folder = tempfile.mkdtemp(dir=os.environ.get('TMPDIR'))
 managers, sharing = {}, {}
+# Sending waits while this is clear (on the sender's own thread, as a slow disk would make it).
+sending = threading.Event()
+sending.set()
 
 
 def manager(name, files=()):
@@ -43,6 +46,7 @@ def manager(name, files=()):
     offered = dict(files)
 
     def shareable(file_hash):
+        sending.wait(60)
         return offered.get(file_hash) if sharing[name] else None
 
     def holders(file_hash):
@@ -123,7 +127,20 @@ dan_done = []
 dan.bridge.finished.connect(lambda file_hash, path: dan_done.append(path))
 bob_before, cai_before = bob.bytes_sent, cai.bytes_sent
 dan_target = os.path.join(folder, 'dan', 'original.mkv')
-dan.download(video_media, dan_target)
+# A link's set-up ends with a DTLS handshake that, when its first message is lost, waits a second (or more) to
+# send it again; on loopback the whole file comes in that time. So nothing is sent until both links are open:
+# the file is not all handed to the first one, as it isn't on a real network, where sending takes far longer.
+sending.clear()
+dan_download = dan.download(video_media, dan_target)
+
+
+def asked():
+    with dan_download.lock:
+        return sorted({link.peer for link, _started in dan_download.in_flight.values()})
+
+
+check('both are asked for part of it', wait(lambda: asked() == ['bob', 'cai'], tick=dan.tick), True)
+sending.set()
 check('it comes', wait(lambda: dan_done, tick=dan.tick), True)
 check('intact', same(video, dan_target), True)
 check('both sent part of it', (bob.bytes_sent > bob_before, cai.bytes_sent > cai_before), (True, True))
@@ -157,6 +174,8 @@ check('intact', same(video, fay_target), True)
 
 for made, _owned in managers.values():
     made.close()
+shutil.rmtree(folder, ignore_errors=True)
+shutil.rmtree(_xdg, ignore_errors=True)
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL PASS')
 sys.exit(1 if fails else 0)
