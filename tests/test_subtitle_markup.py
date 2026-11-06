@@ -92,6 +92,8 @@ check('a reading with nothing to read is the text it is',
 check('Markdown keeps the tags, and reads them back as the ruby they were',
       (markup.to_markdown(RUBY), markup.from_markdown(markup.to_markdown(RUBY))),
       ('<ruby>漢字<rt>かんじ</rt></ruby>を*読*む', RUBY))
+check('left out for a format with nowhere to put a reading',
+      markup.from_spans(markup.without_readings(markup.spans(RUBY))), '漢字を<i>読</i>む')
 check('text with no ruby is written exactly as before',
       markup.from_spans(markup.spans('a <i>b <b>c</b></i> d')), 'a <i>b <b>c</b></i> d')
 

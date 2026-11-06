@@ -19,6 +19,10 @@ from subtitld.interface.translation import _
 from subtitld.modules import history, markup
 
 FLAGS = ('italic', 'bold', 'underline', 'strike')
+# A reading and what it reads have no look of their own to go by, so the
+# format carries which of the two a run is; without it an edit would leave
+# the reading loose in the text it reads.
+_RUBY_ROLE = QTextFormat.UserProperty + 1
 
 
 def _char_format(style):
@@ -31,6 +35,11 @@ def _char_format(style):
     fmt.setFontStrikeOut(style.strike)
     if style.color:
         fmt.setForeground(QColor(style.color))
+    if style.ruby:
+        fmt.setProperty(_RUBY_ROLE, style.ruby)
+        if style.ruby == 'text':
+            # Raised and smaller, where ruby draws it above.
+            fmt.setVerticalAlignment(QTextCharFormat.AlignSuperScript)
     return fmt
 
 
@@ -38,8 +47,9 @@ def _style(fmt):
     color = ''
     if fmt.hasProperty(QTextFormat.ForegroundBrush) and fmt.foreground().style() != Qt.NoBrush:
         color = fmt.foreground().color().name()
+    role = fmt.property(_RUBY_ROLE)
     return markup.Style(fmt.fontItalic(), fmt.fontWeight() >= QFont.DemiBold, fmt.fontUnderline(),
-                        fmt.fontStrikeOut(), color)
+                        fmt.fontStrikeOut(), color, role if role in markup.RUBY_ROLES else '')
 
 
 def set_text(textedit, text):
@@ -81,7 +91,8 @@ def runs(textedit, start=0, end=None):
             before = next((s for r, s in reversed(found[:index]) if s is not None), markup.PLAIN)
             after = next((s for r, s in found[index + 1:] if s is not None), markup.PLAIN)
             found[index] = (run, markup.Style(*(a and b for a, b in zip(before[:4], after[:4])),
-                                              before.color if before.color == after.color else ''))
+                                              before.color if before.color == after.color else '',
+                                              before.ruby if before.ruby == after.ruby else ''))
     return found
 
 

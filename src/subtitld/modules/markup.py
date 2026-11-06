@@ -66,6 +66,8 @@ class Style(NamedTuple):
 
 PLAIN = Style()
 _FLAGS = {'i': 'italic', 'b': 'bold', 'u': 'underline', 's': 'strike'}
+# What a run can be inside a ruby: what is read, and its reading.
+RUBY_ROLES = ('base', 'text')
 # <ruby> opens a container, and what it holds is the base until <rt>.
 _RUBY = {'ruby': 'base', 'rt': 'text'}
 
@@ -209,6 +211,13 @@ def ruby_groups(runs):
             groups.append(['ruby', [], []])
         groups[-1][1 if role == 'base' else 2].append((run, style._replace(ruby='')))
     return groups
+
+
+def without_readings(runs):
+    """`runs` with the readings left out and their bases ordinary text, for
+    a format with nowhere to put a reading. `plain`'s rule: a reading is a
+    way of writing the text, not more of it."""
+    return [(run, style._replace(ruby='')) for run, style in runs if style.ruby != 'text']
 
 
 def plain(text):

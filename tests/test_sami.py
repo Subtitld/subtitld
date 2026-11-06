@@ -183,6 +183,9 @@ check('two languages and Source lines: an empty Source line ends a speaker, firs
 check('#Source in the style sheet', '#Source {' in two, True)
 check('read back: speakers, the translation', [(s['start'], s.get('speaker'), s.get('translations')) for s in sami.parse(two)[0]], [
     (1.0, 'Thom', {'pt-BR': 'Você é um <i>idiota</i>,\nCelia.'}), (2.5, 'Celia', None), (5.0, None, {'pt-BR': 'Sem falante'})])
+check('a reading left out, the text it reads kept, as SAMI has nowhere for one',
+      sami.write([('en-us', 'English', [{'start': 1, 'end': 2, 'text': '<ruby>東京<rt>とう</rt></ruby> is big'}])]
+      ).split('<P Class=ENUSCC>')[1].split('\n')[0], '東京 is big')
 check('class names, one each', [sami.class_name(tag, taken) for tag, taken in (('en-us', ()), ('ko', ()), ('en-us', ('ENUSCC',)))],
       ['ENUSCC', 'KOCC', 'ENUSCC2'])
 

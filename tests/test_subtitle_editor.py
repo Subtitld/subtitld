@@ -137,6 +137,16 @@ editor.setTextCursor(QTextCursor(editor.document()))
 bar.clear_button.click()
 check('clear: all of it, the position too', ste.text(editor), 'Hello world')
 
+print('a reading stays a reading')
+ruby = QTextEdit()
+ste.set_text(ruby, '<ruby>東京<rt>とうきょう</rt></ruby> is big')
+check('shown and read back as it was', ste.text(ruby),
+      '<ruby>東京<rt>とうきょう</rt></ruby> is big')
+check('the reading drawn raised, where ruby draws it above',
+      ste.runs(ruby)[1][1].ruby, 'text')
+ste.set_text(ruby, 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
+check('with the formatting inside it', ste.text(ruby), 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
