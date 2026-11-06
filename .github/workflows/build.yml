@@ -279,8 +279,8 @@ jobs:
         with:
           path: packaging/libdatachannel/dist/windows-x64
           key: libdatachannel-windows-${{ hashFiles('packaging/libdatachannel/build-windows.ps1') }}
-      - name: Build libdatachannel
-        # Live co-editing's direct links; the spec bundles it.
+      - name: Build libdatachannel and libopus
+        # Live co-editing's direct links and its voice call; the spec bundles them.
         if: steps.libdatachannel.outputs.cache-hit != 'true'
         run: pwsh packaging/libdatachannel/build-windows.ps1
       - name: Build with PyInstaller
@@ -289,6 +289,12 @@ jobs:
           pip install pyinstaller .
           pyinstaller subtitld-windows.spec --clean --noconfirm
           if (-not (Test-Path dist\Subtitld\datachannel.dll)) { throw 'libdatachannel is not in the bundle' }
+          if (-not (Test-Path dist\Subtitld\opus.dll)) { throw 'libopus is not in the bundle' }
+          # The voice call's codec works through ctypes here (its settings reach it: modules/opus.py).
+          $env:SUBTITLD_LIBOPUS = "$PWD\packaging\libdatachannel\dist\windows-x64\opus.dll"
+          $env:PYTHONPATH = "$PWD\src"
+          python -c "from subtitld.modules import opus; import sys; print('libopus works:', opus.available()); sys.exit(0 if opus.available() else 1)"
+          if ($LASTEXITCODE) { throw 'libopus does not work through ctypes on Windows' }
           & dist\Subtitld\ffmpeg.exe -hide_banner -version | Select-Object -First 1
       - name: Thumbnail provider (.usfx in Explorer)
         # Into the app's folder, so the portable build, the installer and the
@@ -375,8 +381,8 @@ jobs:
         with:
           path: packaging/libdatachannel/dist/macos-arm64
           key: libdatachannel-macos-${{ hashFiles('packaging/libdatachannel/build-macos.sh') }}
-      - name: Build libdatachannel
-        # Live co-editing's direct links; the spec bundles it.
+      - name: Build libdatachannel and libopus
+        # Live co-editing's direct links and its voice call; the spec bundles them.
         if: steps.libdatachannel.outputs.cache-hit != 'true'
         run: |
           brew install ninja
@@ -386,6 +392,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller .
           pyinstaller subtitld-macos.spec --clean --noconfirm
+      - name: The voice call's codec works through ctypes
+        # opus_encoder_ctl is variadic, which ctypes may pass wrongly on Apple Silicon: modules/opus.py checks a
+        # setting reads back as it was set, and turns voice off otherwise. Here that has to hold.
+        env:
+          SUBTITLD_LIBOPUS: packaging/libdatachannel/dist/macos-arm64/libopus.0.dylib
+          PYTHONPATH: src
+        run: python -c "from subtitld.modules import opus; import sys; print('libopus works:', opus.available()); sys.exit(0 if opus.available() else 1)"
       - name: Check the bundle
         run: |
           app=dist/Subtitld.app
@@ -394,6 +407,13 @@ jobs:
           "$ff" -hide_banner -version | head -1
           dc=$(find "$app" -name libdatachannel.dylib | head -1)
           [ -n "$dc" ] || { echo "::error::libdatachannel is not in the bundle"; exit 1; }
+          op=$(find "$app" -name libopus.0.dylib | head -1)
+          [ -n "$op" ] || { echo "::error::libopus is not in the bundle"; exit 1; }
+          if otool -L "$op" | grep -q /opt/homebrew; then
+            otool -L "$op"
+            echo "::error::the bundled libopus links to Homebrew libraries"
+            exit 1
+          fi
           if otool -L "$dc" | grep -q /opt/homebrew; then
             otool -L "$dc"
             echo "::error::the bundled libdatachannel links to Homebrew libraries"

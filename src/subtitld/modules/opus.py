@@ -25,6 +25,7 @@ BITRATE = 32000
 
 _APPLICATION_VOIP = 2048
 _SET_BITRATE = 4002
+_GET_BITRATE = 4003
 _SET_COMPLEXITY = 4010
 _SET_INBAND_FEC = 4012
 _SET_PACKET_LOSS_PERC = 4014
@@ -94,8 +95,30 @@ def library():
         return None
 
 
+_works = None
+
+
 def available():
-    return library() is not None
+    """Whether libopus is here and works: opus_encoder_ctl takes its value as a variadic argument, which ctypes
+    passes rightly on some platforms only (Apple Silicon is the doubtful one), so an encoder set up here has to
+    read its bitrate back as it was set."""
+    global _works
+    if _works is None:
+        _works = False
+        if library() is not None:
+            try:
+                encoder = Encoder()
+                value = ctypes.c_int32()
+                if _lib.opus_encoder_ctl(ctypes.c_void_p(encoder.state), ctypes.c_int(_GET_BITRATE),
+                                         ctypes.byref(value)) == 0 and value.value == BITRATE:
+                    _works = True
+                else:
+                    log.warning('opus: settings do not reach libopus through ctypes here (bitrate %s): no voice',
+                                value.value)
+                encoder.close()
+            except Exception as error:  # noqa: BLE001
+                log.warning('opus: libopus does not work here: %s', error)
+    return _works
 
 
 def _ctl(lib, encoder, request, value):

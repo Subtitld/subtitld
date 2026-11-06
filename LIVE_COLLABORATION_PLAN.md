@@ -794,9 +794,23 @@ microphones:**
 - Tested: two calls in one process over real links (push-to-talk gates the
   frames, latch, who speaks, leaving), and the card (join, presence, key,
   button, latch, speaking and ducking, the note, leaving).
-- Left: a try with real microphones and speakers; libopus in the AppImage,
-  Windows and macOS builds and in the snap, AUR and Haiku packages; the
-  macOS check of `opus_encoder_ctl` through ctypes.
+- Left: a try with real microphones and speakers.
+
+**libopus in the packages (2026-11-06):**
+
+- AppImage, Windows, macOS: Opus 1.6.1 from Xiph's release tarball (checked
+  by SHA-256), built as a shared library by libdatachannel's scripts
+  (`packaging/libdatachannel/build-*`), without its neural extras (DRED,
+  OSCE), and bundled next to the app by the specs; its licence (BSD) joins
+  libdatachannel's. The Linux build needs glibc 2.14 at most.
+- snap: Ubuntu 22.04's `libopus0` (1.3.1); Flatpak: the KDE runtime's
+  (1.5.2); AUR: `opus`; Haiku: `lib:libopus`. Every setting used exists
+  since Opus 1.1.
+- `opus.available()` now also checks that a setting reaches libopus
+  (`opus_encoder_ctl` is variadic, which ctypes may pass wrongly on Apple
+  Silicon): the bitrate has to read back as set, or voice is off. The macOS
+  and Windows CI jobs require it to hold with the library they built;
+  `collab-check.py` (snap, Flatpak, AUR, Haiku) encodes and decodes a tone.
 
 ### Why push-to-talk
 

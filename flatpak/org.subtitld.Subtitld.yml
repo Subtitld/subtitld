@@ -40,6 +40,7 @@ modules:
         url: https://files.portaudio.com/archives/pa_stable_v190700_20210406.tgz
         sha256: 47efbf42c77c19a05d22e627d42873e991ec0c1357219c0d74ce6a2948cb2def
 
+  # libopus, the voice call's codec, comes with the KDE runtime.
   # libdatachannel, for live co-editing's direct links between collaborators
   # (media goes from one Subtitld to another, never through a server). Data
   # channels only, with the runtime's OpenSSL.

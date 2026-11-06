@@ -72,8 +72,9 @@ REQUIRES="
 	# Optional for pyside6 on Haiku, but the preview panel needs it.
 	lib:libQt6Multimedia
 	lib:libQt6MultimediaWidgets
-	# Live co-editing: the link to subtitld.cc, and libdatachannel's TLS.
+	# Live co-editing: the link to subtitld.cc, the voice call's codec, and libdatachannel's TLS.
 	lib:libQt6WebSockets
+	lib:libopus
 	lib:libssl
 	lib:libcrypto
 	cmd:ffmpeg

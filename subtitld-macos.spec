@@ -27,6 +27,11 @@ if os.path.isfile(os.path.join(libdatachannel_dir, 'libdatachannel.dylib')):
     libdatachannel_datas.append((os.path.join(libdatachannel_dir, 'licenses'), 'licenses/libdatachannel'))
 else:
     print('WARNING: no libdatachannel in', libdatachannel_dir, '- live co-editing will not send media')
+# libopus, for the voice call (built with libdatachannel, its licence among libdatachannel's): next to the app too.
+if os.path.isfile(os.path.join(libdatachannel_dir, 'libopus.0.dylib')):
+    binaries_list.append((os.path.join(libdatachannel_dir, 'libopus.0.dylib'), '.'))
+else:
+    print('WARNING: no libopus in', libdatachannel_dir, '- the voice call will be off')
 
 a = Analysis(
     ['src/subtitld/__main__.py'],
