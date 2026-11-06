@@ -277,6 +277,32 @@ check('italics inside a ruby, and the shear with them',
       ttml.write([{'start': 1, 'end': 2, 'text': '<ruby><i>A</i><rt>a</rt></ruby>'}], 'ja', profile='imsc1.1'), True)
 check('a file with no ruby is written exactly as before', ttml.write(segments, 'pt-br', agents=True), written)
 
+print('placed more finely than the nine places')
+from subtitld.modules import position                                    # noqa: E402
+placed = [{'start': 1, 'end': 2, 'text': 'Plain'},
+          {'start': 3, 'end': 4, 'text': '{\\an8}High', 'position': {'v': '5%'}},
+          {'start': 5, 'end': 6, 'text': 'Lifted', 'position': {'v': '30%'}},
+          {'start': 7, 'end': 8, 'text': '{\\an4}Side', 'position': {'h': '3%'}}]
+placed_written = ttml.write(placed, 'en')
+check('a region for each place, the plain one as it always was',
+      [line.split('"')[1] + ' ' + line.split('tts:origin="')[1].split('"')[0] + ' ' + line.split('tts:extent="')[1].split('"')[0]
+       for line in placed_written.splitlines() if '<region ' in line],
+      ['top 10% 5% 80% 85%', 'left 3% 10% 87% 80%', 'bottom 10% 10% 80% 80%', 'bottom-2 10% 10% 80% 60%'])
+check('and every subtitle comes back exactly as it went in',
+      [(s['text'], s.get('position')) for s in ttml.parse(placed_written)],
+      [(s['text'], s.get('position')) for s in placed])
+check('a file that places its subtitles itself keeps that', [(s['text'], s.get('position')) for s in ttml.parse(doc(
+    '<p begin="1s" end="2s" region="r">Over here</p>',
+    head='<layout><region xml:id="r" tts:origin="30% 20%" tts:extent="50% 30%" '
+         'tts:displayAlign="after" tts:textAlign="center"/></layout>'))],
+      [('Over here', {'h': '5%', 'v': '50%'})])
+check('a region where a subtitle would sit anyway says nothing', [s.get('position') for s in ttml.parse(doc(
+    '<p begin="1s" end="2s" region="r">Ordinary</p>',
+    head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 80%" '
+         'tts:displayAlign="after" tts:textAlign="center"/></layout>'))], [None])
+check('TTML has no rotation, so a turned subtitle is written flat',
+      'rotate' in ttml.write([{'start': 1, 'end': 2, 'text': 'Turned', 'position': {'rotate': {'z': 45}}}], 'en'), False)
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))

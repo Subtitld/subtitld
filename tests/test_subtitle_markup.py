@@ -142,9 +142,11 @@ renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
 renderer.set_size(640, 360)
 
 
-def render(text):
+def render(text, place=None):
     """The subtitle as the preview draws it: its layer over a black frame."""
     segment = {'start': 0.0, 'end': 1.0, 'text': text}
+    if place:
+        segment['position'] = place
     key = renderer._job(segment, 0.0, *renderer._style())[0]
     for _i in range(1500):
         renderer.layers([segment], 0.0)
@@ -172,6 +174,14 @@ check('plain text is drawn', lit_rows(plain_image) is not None, True)
 check('italic is drawn, and not as the plain', (lit_rows(italic_image) is not None, plain_image != italic_image), (True, True))
 check('the same place as plain text', abs(lit_rows(plain_image)[1] - lit_rows(italic_image)[1]) <= 2, True)
 check('no tag drawn as text', render('<i></i>') == render(''), True)
+plain_place, lifted = lit_rows(render('Lift me')), lit_rows(render('Lift me', {'v': '40%'}))
+check('a vertical margin lifts the subtitle off the bottom',
+      lifted is not None and plain_place is not None and lifted[1] < plain_place[1] - 50, True)
+check('a subtitle with no margins is drawn exactly where it was',
+      lit_rows(render('Lift me', None)) == plain_place, True)
+turned = render('Lift me', {'rotate': {'z': 90}})
+check('a rotation turns it: a line of text becomes a column',
+      (lambda rows: rows is not None and rows[1] - rows[0] > plain_place[1] - plain_place[0] + 40)(lit_rows(turned)), True)
 base_only, with_reading = lit_rows(render('AB')), lit_rows(render('<ruby>AB<rt>cd</rt></ruby>'))
 check('a ruby draws its reading above the text it reads',
       with_reading is not None and base_only is not None and with_reading[0] < base_only[0], True)

@@ -65,7 +65,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from subtitld.modules import export_options, markup
+from subtitld.modules import export_options, markup, position
 from subtitld.modules.srt import decode
 
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
@@ -294,8 +294,15 @@ def _look(props):
         _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''))
 
 
-def _keypad(props, frame):
+def _keypad(props, frame, geometry=True):
     """Where a subtitle sits (7 8 9 top ... 1 2 3 bottom), from its region.
+
+    Without `geometry` the region's own displayAlign and textAlign say it
+    and where the region sits does not: a file that says both means them,
+    and how far in the region stands is the subtitle's margins (_margins),
+    not another place. Reading a lifted subtitle as "the middle, lifted
+    less" would put it in the same spot on the picture but change what the
+    subtitle says about itself.
     With no displayAlign the text goes to the bottom of the region, and
     with no textAlign to its middle, as players show them. In a region
     with no place of its own, "start", textAlign's default, is taken as
@@ -307,7 +314,7 @@ def _keypad(props, frame):
     if align == 'start' and not (origin and extent):
         align = 'center'
     horizontal = 0 if align in ('left', 'start') else 2 if align in ('right', 'end') else 1
-    if origin and extent:
+    if origin and extent and geometry:
         # The middle of the line nearest the edge the text is put against:
         # half a cell in from it.
         half_line = min(50 / frame.cells[1], extent[1] / 2)
@@ -319,6 +326,64 @@ def _keypad(props, frame):
         row = {'before': 2, 'center': 1}.get(display, 0)
         column = horizontal
     return (1, 4, 7)[row] + column
+
+
+# Where a subtitle sits when it says nothing: the title-safe area Subtitld
+# has always written, a tenth of the picture in from each edge, and no
+# offset from the middle for a subtitle aligned to it.
+_SAFE = 10.0
+_NUDGE = 0.25                                   # % a margin must differ by to be one
+
+
+def _default_margin(place):
+    """The margin an alignment has when a subtitle gives none: from an edge
+    it is the safe area, from the middle it is no offset at all."""
+    return 0.0 if place == 1 else _SAFE
+
+
+def _box(keypad, horizontal, vertical):
+    """(origin, extent) in % for the nine places and a subtitle's margins
+    (None where it gives none).
+
+    The region's aligned edge stands the margin in from the picture's, and
+    its other edge stays at the safe area; a middle alignment is moved off
+    the middle by it, right and down. With no margins this is the box
+    Subtitld has always written: 10% in on every side.
+    """
+    column, row = (keypad - 1) % 3, (keypad - 1) // 3   # 0 left/bottom, 1 centre/middle, 2 right/top
+    across = _default_margin(column) if horizontal is None else horizontal
+    down = _default_margin(row) if vertical is None else vertical
+    if column == 0:                                     # left
+        x, width = across, 100.0 - _SAFE - across
+    elif column == 2:                                   # right
+        x, width = _SAFE, 100.0 - across - _SAFE
+    else:
+        x, width = _SAFE + across, 100.0 - 2 * _SAFE
+    if row == 0:                                        # bottom
+        y, height = _SAFE, 100.0 - down - _SAFE
+    elif row == 2:                                      # top
+        y, height = down, 100.0 - _SAFE - down
+    else:
+        y, height = _SAFE + down, 100.0 - 2 * _SAFE
+    return (x, y), (max(1.0, width), max(1.0, height))
+
+
+def _margins(keypad, origin, extent):
+    """(horizontal, vertical) in % for a region, None where it sits where a
+    subtitle that says nothing would. The inverse of _box."""
+    column, row = (keypad - 1) % 3, (keypad - 1) // 3
+    (x, y), (width, height) = origin, extent
+    across = x if column == 0 else 100.0 - (x + width) if column == 2 else x + width / 2 - 50.0
+    down = 100.0 - (y + height) if row == 0 else y if row == 2 else y + height / 2 - 50.0
+    return tuple(None if abs(margin - _default_margin(place)) < _NUDGE else round(margin, 3)
+                 for margin, place in ((across, column), (down, row)))
+
+
+def _percent(value):
+    """A margin as USF writes it: '12.5%', or '' for none."""
+    if value is None:
+        return ''
+    return f'{int(value)}%' if float(value).is_integer() else f'{round(float(value), 3)}%'
 
 
 def _agents(root):
@@ -392,12 +457,23 @@ def _document(text):
         body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
-        keypad = _keypad(p_props, frame)
+        # A file that states both alignments means them; one that leaves
+        # them out is read by where its region sits, as before.
+        stated = p_props.get('displayAlign') is not None and p_props.get('textAlign') is not None
+        keypad = _keypad(p_props, frame, geometry=not stated)
         segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
                    'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + body}
         speaker = agent[0] or outer_agent
         if speaker:
             segment['speaker'] = agents.get(speaker, speaker)
+        # Where the region puts it, beyond the nine places: a file that
+        # places its subtitles itself keeps that through to the project.
+        region_origin = frame.percent(p_props.get('origin'))
+        region_extent = frame.percent(p_props.get('extent'))
+        if region_origin and region_extent:
+            across, down = _margins(keypad, region_origin, region_extent)
+            if across is not None or down is not None:
+                position.store(segment, position.Place(h=_percent(across), v=_percent(down)))
         segments.append(segment)
 
     def walk(element, base, limit, props, region, preserve, agent):
@@ -646,7 +722,19 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         if not markup.plain(rest).strip():
             continue
         keypad = markup.alignment(lead)
-        region = places.setdefault(keypad, markup.POSITION_NAMES[keypad])
+        placed = position.of(segment)
+        spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v))
+        if spot not in places:
+            # One region for each place used. A subtitle placed more finely
+            # than the nine takes a region of its own, named after the place
+            # it starts from, numbered only where that name is taken.
+            name = markup.POSITION_NAMES[keypad]
+            taken = set(places.values())
+            if name in taken:
+                name = next(f'{name}-{number}' for number in range(2, len(taken) + 3)
+                            if f'{name}-{number}' not in taken)
+            places[spot] = name
+        region = places[spot]
         start = float(segment.get('start', 0))
         end = max(start, float(segment.get('end', start)))
         attrs = f'begin="{format_time(start)}" end="{format_time(end)}" region="{region}"'
@@ -670,10 +758,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     if metadata:
         head += ['    <metadata>', *metadata, '    </metadata>']
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
-    for keypad in sorted(places, key=lambda keypad: (-((keypad - 1) // 3), keypad)):
+    for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0)):
+        keypad, across, down = spot
         display = ('after', 'center', 'before')[(keypad - 1) // 3]
         align = ('left', 'center', 'right')[(keypad - 1) % 3]
-        head.append(f'      <region xml:id="{places[keypad]}" tts:origin="10% 10%" tts:extent="80% 80%" '
+        (x, y), (width, height) = _box(keypad, across, down)
+        head.append(f'      <region xml:id="{places[spot]}" '
+                    f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
                     f'tts:displayAlign="{display}" tts:textAlign="{align}"/>')
     head += ['    </layout>', '  </head>']
     return '\n'.join([

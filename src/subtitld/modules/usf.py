@@ -31,6 +31,7 @@ import os
 from bs4 import BeautifulSoup, NavigableString
 
 from subtitld.modules import markup
+from subtitld.modules import position as subtitld_position
 
 
 # subtitld.cc names where a file came from in its own namespace:
@@ -251,8 +252,15 @@ class USFReader():
                 if look['color'] == '#ffffff':
                     look['color'] = ''
             position = style.find('position')
-            if position is not None and position.get('alignment'):
-                look['alignment'] = position.get('alignment')
+            if position is not None:
+                if position.get('alignment'):
+                    look['alignment'] = position.get('alignment')
+                # The margins, what they are measured against and the
+                # rotations the style places its texts by, which a text of
+                # its own may say again.
+                placed = subtitld_position.from_usf(position.attrs)
+                if placed.any():
+                    look['place'] = placed
             self._styles[name] = {key: value for key, value in look.items() if value}
             if name == 'Default':
                 continue
@@ -362,14 +370,21 @@ class USFReader():
         # Its texts, each formatted by the named style it uses unless that
         # style is its speaker's, as Subtitld names them (that one gives the
         # speaker's colour, not the text's).
-        texts, speaker = [], None
+        texts, speaker, places = [], None, []
         for text_tag in element.find_all(['text', 'karaoke'], recursive=False):
             speaker = speaker or text_tag.attrs.get('speaker')
             style_name = text_tag.attrs.get('style')
             style = self._styles.get(style_name) if style_name and style_name != text_tag.attrs.get('speaker') else None
             texts.append(_extract_inline_text(text_tag, style))
+            # The text's own margins and rotations, else those of the style
+            # it uses, as its alignment is taken.
+            placed = subtitld_position.from_usf(text_tag.attrs)
+            places.append(placed if placed.any() else (style or {}).get('place'))
         # One place for them all: the first text's.
         lead = markup.split_lead(texts[0])[0] if texts else ''
+        placed = next((place for place in places if place and place.any()), None)
+        if placed:
+            subtitld_position.store(subtitle, placed)
         subtitle['text'] = lead + '\n'.join(markup.split_lead(text)[1] for text in texts if text)
         subtitle['speaker'] = speaker or 'A'
         if not dubs:
@@ -580,7 +595,8 @@ class USFWriter():
                 text_tag['style'] = speaker
 
         text_value = subtitle.get('text', '') if text_override is None else text_override
-        self._append_text_with_breaks(usf, text_tag, text_value)
+        # A translation sits where the subtitle it translates does.
+        self._append_text_with_breaks(usf, text_tag, text_value, subtitld_position.of(subtitle))
         new_sub.append(text_tag)
 
         if include_dubs:
@@ -624,16 +640,20 @@ class USFWriter():
 
         return new_sub
 
-    def _append_text_with_breaks(self, usf, text_tag, value):
+    def _append_text_with_breaks(self, usf, text_tag, value, place=None):
         """The text into `text_tag` as USF writes it: formatting as inline
-        elements, line breaks as <br/>, the position as "alignment". Other
-        override codes it starts with stay as they are written."""
+        elements, line breaks as <br/>, the position as "alignment" and, for
+        a subtitle placed more finely than the nine places, USF's margins,
+        relative-to and rotations beside it. Other override codes it starts
+        with stay as they are written."""
         if not value:
             return
         lead, rest = markup.split_lead(str(value))
         keypad = markup.alignment(lead)
         if keypad != 2:
             text_tag['alignment'] = markup.KEYPAD_NAMES[keypad]
+        for name, attribute in subtitld_position.to_usf(place or subtitld_position.NOWHERE).items():
+            text_tag[name] = attribute
         other = markup.with_alignment(lead, 2)
         if other:
             text_tag.append(NavigableString(other))
