@@ -18,7 +18,7 @@ HOMEPAGE="https://github.com/python/typing_extensions"
 COPYRIGHT="2023 Guido van Rossum and others"
 LICENSE="Python"
 REVISION="3"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/t/typing-extensions/typing_extensions-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"
 
 ARCHITECTURES="any"
@@ -69,7 +69,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix typing_extensions-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

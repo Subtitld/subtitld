@@ -6,7 +6,7 @@ HOMEPAGE="https://github.com/tox-dev/platformdirs"
 COPYRIGHT="2010-202x The platformdirs developers"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/p/platformdirs/platformdirs-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="52f2f181bbfde907966932cc8312d967d02976422d66d537ea16092b8e291081"
 
 ARCHITECTURES="any"
@@ -46,7 +46,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix platformdirs-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

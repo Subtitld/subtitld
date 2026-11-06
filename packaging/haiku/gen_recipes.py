@@ -164,11 +164,19 @@ def wrap(text, width=76):
 
 def recipe(p):
     f = pypi_file(p["pypi"], p["version"])
-    filename = f["filename"].replace(p["version"], "$portVersion")
-    # PyPI's stable path for a wheel: /packages/<python tag>/<initial>/<project>/<file>.
-    tag = f["filename"].split("-")[-3]
-    uri = f"https://files.pythonhosted.org/packages/{tag}/{p['pypi'][0]}/{p['pypi']}/{filename}#noarchive"
-    sha = checked_sha256(uri.split("#")[0].replace("$portVersion", p["version"]), f["digests"]["sha256"])
+    # PyPI's stable path for a wheel: /packages/<python tag>/<initial>/<project>/<file>,
+    # written as HaikuPorts' other wheel recipes write it when the wheel is named
+    # after the port.
+    if f["filename"] == f"{p['port']}-{p['version']}-py3-none-any.whl":
+        filename = "$portName-$portVersion-py3-none-any.whl"
+        uri = f"https://files.pythonhosted.org/packages/py3/${{portName:0:1}}/$portName/{filename}#noarchive"
+    else:
+        filename = f["filename"].replace(p["version"], "$portVersion")
+        tag = f["filename"].split("-")[-3]
+        uri = f"https://files.pythonhosted.org/packages/{tag}/{p['pypi'][0]}/{p['pypi']}/{filename}#noarchive"
+    url = (uri.split("#")[0].replace("${portName:0:1}", p["port"][0])
+           .replace("$portName", p["port"]).replace("$portVersion", p["version"]))
+    sha = checked_sha256(url, f["digests"]["sha256"])
 
     python_deps = sorted(r for r in p["requires"] if ":" not in r)
     other_deps = sorted(r for r in p["requires"] if ":" in r)

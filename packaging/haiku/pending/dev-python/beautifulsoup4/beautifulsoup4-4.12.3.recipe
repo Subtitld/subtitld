@@ -14,7 +14,7 @@ COPYRIGHT="2004-2015 Leonard Richardson
 	2006-2013 James Graham and other contributors"
 LICENSE="MIT"
 REVISION="3"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/b/beautifulsoup4/beautifulsoup4-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="b80878c9f40111313e55da8ba20bdba06d8fa3969fc68304167741bbf9e082ed"
 
 ARCHITECTURES="any"
@@ -66,7 +66,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix beautifulsoup4-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

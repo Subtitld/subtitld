@@ -6,7 +6,7 @@ HOMEPAGE="https://github.com/spatialaudio/python-sounddevice"
 COPYRIGHT="2015-2025 Matthias Geier"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/s/sounddevice/sounddevice-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="de099612311ad81e55d31ccbd83f43ea6bf4d87b48f9b6ea55a1fbcde0eee4e0"
 
 ARCHITECTURES="any"
@@ -48,7 +48,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix sounddevice-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

@@ -6,7 +6,7 @@ HOMEPAGE="https://github.com/tkarabela/pysubs2"
 COPYRIGHT="2014-2026 Tomas Karabela"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/p/pysubs2/pysubs2-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="eb5d8872b7f87208070dd6f0d85fc110b7ad6cc2a7ec422f5b12363e9194e4e4"
 
 ARCHITECTURES="any"
@@ -47,7 +47,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix pysubs2-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python* \

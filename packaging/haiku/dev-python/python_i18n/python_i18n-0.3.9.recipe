@@ -6,7 +6,7 @@ HOMEPAGE="https://github.com/tuvistavie/python-i18n"
 COPYRIGHT="2012 Daniel Perez"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/p/python-i18n/python_i18n-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="bda5b8d889ebd51973e22e53746417bd32783c9bd6780fd27cadbb733915651d"
 
 ARCHITECTURES="any"
@@ -46,7 +46,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix python_i18n-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

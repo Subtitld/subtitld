@@ -6,7 +6,7 @@ HOMEPAGE="https://github.com/eliben/pycparser"
 COPYRIGHT="2008-2022 Eli Bendersky"
 LICENSE="BSD (3-clause)"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/p/pycparser/pycparser-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934"
 
 ARCHITECTURES="any"
@@ -57,7 +57,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix pycparser-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

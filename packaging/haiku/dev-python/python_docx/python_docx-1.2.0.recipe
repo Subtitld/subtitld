@@ -5,7 +5,7 @@ HOMEPAGE="https://github.com/python-openxml/python-docx"
 COPYRIGHT="2013 Steve Canny"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/p/python-docx/python_docx-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7"
 
 ARCHITECTURES="any"
@@ -47,7 +47,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix python_docx-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*

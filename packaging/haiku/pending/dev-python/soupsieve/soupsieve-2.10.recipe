@@ -8,7 +8,7 @@ HOMEPAGE="https://github.com/facelessuser/soupsieve"
 COPYRIGHT="2018-2026 Isaac Muse"
 LICENSE="MIT"
 REVISION="1"
-SOURCE_URI="https://files.pythonhosted.org/packages/py3/s/soupsieve/soupsieve-$portVersion-py3-none-any.whl#noarchive"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
 CHECKSUM_SHA256="8596eb8967d744174820280fa62b4542a2e955bfaccca73ed8a13c6eb8e9b502"
 
 ARCHITECTURES="any"
@@ -59,7 +59,7 @@ INSTALL()
 
 		python=python$pythonVersion
 
-		$python -m installer -p $prefix soupsieve-$portVersion-py3-none-any.whl
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
 
 		packageEntries $pythonPackage \
 			$prefix/lib/python*
