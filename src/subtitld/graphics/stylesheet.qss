@@ -6,7 +6,7 @@ QPushButton {
     font-family: 'Montserrat';
     font-size: 11px;
     font-weight: 700;
-    color: #b8cee0;
+    color: #cddbe7;
     text-transform: uppercase;
 }
 
@@ -79,7 +79,7 @@ QLabel#cloud_status_dot[state="low"] {
 }
 
 QLabel#cloud_status_label {
-    color: rgba(184, 206, 224, 0.65);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-weight: 700;
     font-size: 9px;
@@ -107,7 +107,7 @@ QWidget#cloud_usage_header_band {
 }
 
 QLabel#cloud_wlabel {
-    color: rgba(184, 206, 224, 0.55);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-weight: 700;
     font-size: 9px;
@@ -115,7 +115,7 @@ QLabel#cloud_wlabel {
 }
 
 QLabel#cloud_subtle_label {
-    color: rgba(184, 206, 224, 0.4);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-weight: 700;
     font-size: 9px;
@@ -136,7 +136,7 @@ QLabel#cloud_usage_file {
 }
 
 QLabel#cloud_usage_duration {
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-size: 11px;
 }
@@ -163,7 +163,7 @@ QLabel#cloud_empty_title {
 }
 
 QLabel#cloud_empty_body {
-    color: rgba(184, 206, 224, 0.7);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-size: 11px;
 }
@@ -188,7 +188,7 @@ QLineEdit#cloud_key_field {
 QPushButton#cloud_link_button {
     background: transparent;
     border: 0;
-    color: rgba(184, 206, 224, 0.55);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-weight: 700;
     font-size: 10px;
@@ -219,7 +219,7 @@ QLabel[class='widget_label']::disabled {
 
 QLabel[class='units_label'] {
     font-size: 9px;
-    color: #80b8cee0;
+    color: #b8b8cee0;
     padding: 0 4px;
 }
 
@@ -263,7 +263,7 @@ QWidget#scope_footer_divider {
    bar so an open (checked) chip + bar read as one connected shape. */
 QPushButton#transcription_scope_chip {
     background: #1e2832;
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     border: 0;
     border-top-left-radius: 3px;
     border-top-right-radius: 3px;
@@ -437,7 +437,7 @@ QLabel[class='metadata_field_label'] {
     font-family: 'Montserrat';
     font-size: 9px;
     font-weight: 700;
-    color: #80b8cee0;
+    color: #ccb8cee0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding-top: 1px;
@@ -450,7 +450,7 @@ QLabel[class='metadata_field_value'] {
 }
 
 QLabel[class='metadata_field_value'][empty='true'] {
-    color: #66b8cee0;
+    color: #ccb8cee0;
     font-style: italic;
 }
 
@@ -565,7 +565,7 @@ QComboBox[class='filter_pill'] QAbstractItemView {
 QLabel[class='addons_empty_state'] {
     font-family: 'Montserrat';
     font-size: 12px;
-    color: #66b8cee0;
+    color: #b8b8cee0;
     background: transparent;
     padding: 24px;
 }
@@ -1239,7 +1239,7 @@ QGroupBox::title {
 
 #start_screen_open_label {
     font-size: 10px;
-    color:rgb(106, 116, 131);
+    color:rgba(184, 206, 224, 0.72);
     qproperty-alignment: "AlignVCenter | AlignRight";
     qproperty-wordWrap: true;
     text-transform: uppercase;
@@ -1257,7 +1257,7 @@ QGroupBox::title {
 #start_screen_recent_label,
 #start_screen_adver_label {
     font-size: 10px;
-    color:rgb(106, 116, 131);
+    color:rgba(184, 206, 224, 0.72);
     text-transform: uppercase;
 }
 
@@ -1267,11 +1267,11 @@ QGroupBox::title {
 }
 
 #start_screen_recent_listwidget::item QLabel {
-    color: #80ffffff;
+    color: #b8ffffff;
 }
 
 #start_screen_recent_listwidget::item QLabel[class=age] {
-    color: #80ffffff;
+    color: #b8ffffff;
     background-color: #52000000;
     padding: 2px;
     border-radius: 3px;
@@ -1282,19 +1282,19 @@ QGroupBox::title {
 
 #start_screen_recent_listwidget::item:selected {
     background:#33b8cee0;
-    color:rgb(106, 116, 131);
+    color:rgba(184, 206, 224, 0.72);
 }
 
 #start_screen_recent_alert {
     font-size: 14px;
-    color: rgb(106, 116, 131);
+    color: rgba(184, 206, 224, 0.72);
     qproperty-alignment: "AlignCenter";
     padding: 40px;
 }
 
 #start_screen_adver_label_details {
     font-size: 14px;
-    color:rgb(106, 116, 131);
+    color:rgba(184, 206, 224, 0.72);
     qproperty-alignment: "AlignTop | AlignLeft";
     qproperty-wordWrap: true;
 }
@@ -1331,7 +1331,7 @@ QTabBar {
 
 QTabBar::tab {
     background: transparent;
-    color: #80b8cee0;
+    color: #b8b8cee0;
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
@@ -1537,7 +1537,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #subtitles_panel_empty_state_label,
 #left_panel_dubbing_no_subtitle_label {
-    color: #50b8cee0;
+    color: #b8b8cee0;
     font-size: 11px;
 }
 
@@ -1645,7 +1645,7 @@ QMenu#subtitle_formatting_menu::separator {
 #left_panel_subtitleslist_bottom_panel QLabel[class="properties_timing_labels"] {
     font-size: 9px;
     font-weight: 700;
-    color: #23ffffff;
+    color: #b8ffffff;
     text-transform: uppercase;
     padding: 2px;
 }
@@ -1689,7 +1689,7 @@ QMenu#subtitle_formatting_menu::separator {
 #playercontrols_timecode_label {
     font-size: 14px;
     font-weight: 700;
-    color: rgba(106, 116, 131,100);
+    color: rgba(184, 206, 224, 0.72);
     font-family: "Ubuntu Mono", monospace;
 }
 
@@ -1742,7 +1742,7 @@ QMenu#subtitle_formatting_menu::separator {
     padding: 6;
     font-size: 10px;
     font-weight: 700;
-    color: #B8C6E0;    
+    color: #cddbe7;
 }
 
 #playercontrols_widget_bottom_line {
@@ -2657,7 +2657,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #speaker_card_stats {
     font-size: 10px;
-    color: #ccb8cee0;
+    color: #e8f1f8;
     background-color: transparent;
 }
 
@@ -3311,12 +3311,12 @@ QGroupBox[class="videoproperties_card"]::title {
 #videoproperties_status_title {
     font-size: 11px;
     font-weight: 700;
-    color: #80b8cee0;
+    color: #b8b8cee0;
 }
 
 #videoproperties_status_detail {
     font-size: 11px;
-    color: #80b8cee0;
+    color: #b8b8cee0;
 }
 
 QProgressBar#videoproperties_progress {
@@ -3377,7 +3377,7 @@ QPushButton#videoproperties_delete_button:pressed {
 
 #keyboard_panel_tabwidget QTabBar::tab {
     background: transparent;
-    color: #80b8cee0;
+    color: #b8b8cee0;
     font-family: 'Montserrat';
     font-size: 9px;
     font-weight: 700;
@@ -3405,7 +3405,7 @@ QPushButton#videoproperties_delete_button:pressed {
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.72px;
-    color: #80b8cee0;
+    color: #b8b8cee0;
 }
 
 /* The capture area's title is the same type in the brighter ink. */
@@ -3459,7 +3459,7 @@ QPushButton#videoproperties_delete_button:pressed {
     font-size: 10px;
     font-weight: 400;
     letter-spacing: 0.8px;
-    color: #80b8cee0;
+    color: #b8b8cee0;
 }
 
 /* Small keycap — a key on a list row. The 3px bottom border is the key's
@@ -3469,7 +3469,7 @@ QPushButton#videoproperties_delete_button:pressed {
     font-family: 'Montserrat';
     font-size: 10px;
     font-weight: 600;
-    color: #b8cee0;
+    color: #f2f7fb;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
     border: 1px solid #566f84;
     border-bottom: 3px solid #1a232b;
@@ -3483,7 +3483,7 @@ QPushButton#videoproperties_delete_button:pressed {
     font-family: 'Montserrat';
     font-size: 10px;
     font-weight: 400;
-    color: #80b8cee0;
+    color: #b8b8cee0;
 }
 
 /* Capture area: the selected command's shortcut, big. */
@@ -3520,7 +3520,7 @@ QPushButton#videoproperties_delete_button:pressed {
     font-family: 'Montserrat';
     font-size: 14px;
     font-weight: 700;
-    color: #80b8cee0;
+    color: #b8b8cee0;
 }
 
 /* "Press a key combination…" stands in for the keycaps while listening,
@@ -3539,7 +3539,7 @@ QPushButton#videoproperties_delete_button:pressed {
     font-family: 'Montserrat';
     font-size: 10px;
     font-weight: 400;
-    color: #80b8cee0;
+    color: #b8b8cee0;
     min-height: 14px;
 }
 
@@ -3554,7 +3554,7 @@ QPushButton#videoproperties_delete_button:pressed {
     border: 1px solid #20000000;
     border-radius: 2px;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
-    color: #b8cee0;
+    color: #cddbe7;
 }
 
 #left_panel_keyboard QPushButton[class~="shortcut_action"]:hover {
@@ -3571,12 +3571,12 @@ QPushButton#videoproperties_delete_button:pressed {
 }
 
 #left_panel_keyboard QPushButton[class~="primary"] {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7a8494, stop:1 #6a7483);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #5f6978, stop:1 #535c6a);
     color: #ffffff;
 }
 
 #left_panel_keyboard QPushButton[class~="primary"]:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8a94a4, stop:1 #7a8494);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6a7483, stop:1 #5f6978);
 }
 
 #left_panel_keyboard QPushButton[class~="secondary"] {
@@ -3596,7 +3596,7 @@ QPushButton#videoproperties_delete_button:pressed {
 
 QPushButton#plaintext_panel_format_button {
     background: #1e2832;
-    color: rgba(184, 206, 224, 0.55);
+    color: rgba(184, 206, 224, 0.72);
     border: 0;
     border-radius: 0;
     padding: 3px 10px;
@@ -3685,7 +3685,7 @@ QWidget#plaintext_panel_status[state="checking"] QLabel#plaintext_panel_status_i
 
 QLabel#plaintext_panel_status_label,
 QLabel#plaintext_panel_position_label {
-    color: rgba(184, 206, 224, 0.7);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 10px;
 }
 
@@ -3730,7 +3730,7 @@ QWidget#plaintext_panel_options {
    strip, so an open strip and its chip read as one connected shape. */
 QPushButton#plaintext_panel_options_chip {
     background: #1e2832;
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     border: 0;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
@@ -3781,13 +3781,13 @@ QWidget#vtimeline_panel_status {
 }
 
 QLabel#vtimeline_panel_position_label {
-    color: rgba(184, 206, 224, 0.7);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Ubuntu Mono', monospace;
     font-size: 11px;
 }
 
 QLabel#vtimeline_panel_selected_label {
-    color: rgba(184, 206, 224, 0.5);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 10px;
 }
 
@@ -3932,7 +3932,7 @@ QPushButton#audio_fx_icon_button {
     border-radius: 3px;
     padding: 0;
     min-width: 0;
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 9px;
 }
 
@@ -3958,7 +3958,7 @@ QPushButton#audio_fx_range_chip {
     min-height: 18px;
     max-height: 18px;
     padding: 0 8px;
-    color: rgba(184, 206, 224, 0.7);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Ubuntu Mono', monospace;
     font-size: 10px;
 }
@@ -3976,7 +3976,7 @@ QPushButton#audio_fx_range_chip:checked {
 
 QPushButton#audio_fx_band_button {
     background: #121a20;
-    color: rgba(184, 206, 224, 0.55);
+    color: rgba(184, 206, 224, 0.72);
     border: 0;
     border-radius: 0;
     padding: 4px 8px;
@@ -4050,12 +4050,12 @@ QPushButton#audio_fx_add_slot::menu-indicator {
 
 /* ---- Autosave panel ---- */
 QLabel#autosave_card_last {
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 10px;
 }
 
 QLabel#autosave_card_description {
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 11px;
 }
 
@@ -4081,7 +4081,7 @@ QPushButton#autosave_backup_now_button:hover {
 
 QPushButton#autosave_filter_button {
     background: #121a20;
-    color: rgba(184, 206, 224, 0.55);
+    color: rgba(184, 206, 224, 0.72);
     border: 0;
     border-radius: 0;
     padding: 3px 9px;
@@ -4133,7 +4133,7 @@ QLabel#autosave_empty_label {
     border: 1px dashed rgba(184, 206, 224, 0.2);
     border-radius: 3px;
     padding: 24px 18px;
-    color: rgba(184, 206, 224, 0.6);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 11px;
 }
 
@@ -4158,7 +4158,7 @@ QLabel#subtitldcc_card_title {
 
 QLabel#subtitldcc_kicker,
 QLabel#subtitldcc_wlabel {
-    color: rgba(184, 206, 224, 0.55);
+    color: rgba(184, 206, 224, 0.72);
     font-family: 'Montserrat';
     font-weight: 700;
     font-size: 9px;
@@ -4194,7 +4194,7 @@ QLabel#subtitldcc_result_title {
 }
 
 QLabel#subtitldcc_result_details {
-    color: rgba(184, 206, 224, 0.7);
+    color: rgba(184, 206, 224, 0.72);
     font-size: 10px;
 }
 
@@ -4225,7 +4225,7 @@ QPushButton#subtitldcc_star {
     border: 0;
     padding: 0px 1px;
     font-size: 16px;
-    color: rgba(184, 206, 224, 0.3);
+    color: rgba(184, 206, 224, 0.72);
 }
 QPushButton#subtitldcc_star:hover {
     color: rgba(245, 197, 66, 0.7);

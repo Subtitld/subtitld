@@ -487,7 +487,7 @@ class VerticalTimeline(QWidget):
         return bool(cfg.get('show_onset_markers', False)) and not _is_playing(self.window_ref)
 
     def _paint_ruler(self, painter, cfg, top_time, bottom_time, ruler, grid_span):
-        text_color = QColor(cfg.get('time_text_color', '#806a7483'))
+        text_color = QColor(cfg.get('time_text_color', '#b8b8cee0'))
         tick_color = QColor(text_color)
         tick_color.setAlphaF(min(1.0, tick_color.alphaF() * 0.8))
         step = next((s for s in LABEL_STEPS if s * self.pps >= LABEL_SPACING), LABEL_STEPS[-1])

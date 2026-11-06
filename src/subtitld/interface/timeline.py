@@ -870,7 +870,7 @@ class Timeline(QWidget):
         timeline_cfg = session.CONFIG.get('timeline', {})
         show_grid = timeline_cfg.get('show_grid', False)
         grid_type = timeline_cfg.get('grid_type', False)
-        text_color = QColor(timeline_cfg.get('time_text_color', '#806a7483'))
+        text_color = QColor(timeline_cfg.get('time_text_color', '#b8b8cee0'))
 
         for sec in range(sec_start, sec_end):
             xpos = sec * wpp
