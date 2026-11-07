@@ -935,8 +935,7 @@ def load(self):
         self.preview_panel_player._audio_device.original_track = self.preview_panel_player._audio_device.generate_track()
         self.preview_panel_player._audio_device.original_track.add_clip(clip)
         self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.original_track)
-        self.preview_panel_player._audio_output = None
-        # widget._media_player.setAudioOutput(widget._audio_output)
+        self.preview_panel_player.hand_sound_to_engine()
 
     self.music_voice_separation_thread = MusicAudioExtractorThread(parent=self)
     self.music_voice_separation_thread.response.connect(lambda response: music_voice_separation_thread_finished(response))

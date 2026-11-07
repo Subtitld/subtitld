@@ -8,10 +8,20 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
                                              not drawn
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
+    <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
 
 Anything else that looks like a tag ("<3", "a < b", WebVTT's <v Name>) is
 text. Tags may nest and may be left open (they run to the end); a closing
 tag with nothing to close is dropped.
+
+A ruby is written the way HTML and WebVTT write one, which is also what
+the preview draws, and it is what IMSC 1.1 calls a container holding a
+base and its text: `Style.ruby` says which of the two a run is, so a
+reading stays attached to what it reads through every read and write.
+`plain` leaves readings out — they are a way of writing the text, not more
+of it — so counting, speaking and translating a subtitle see what it says.
+The plain-text panel's Markdown has no way to write a ruby and keeps the
+tags themselves, which read back as the ruby they were.
 
 The text is read here for each use: `plain` to count, speak and translate
 it; `spans` and `to_html` to draw it; `to_ass` for ASS, which writes
@@ -24,7 +34,7 @@ import re
 from typing import NamedTuple
 
 _TOKEN = re.compile(
-    r'<\s*(?P<close>/?)\s*(?P<tag>[ibus])\s*>'
+    r'<\s*(?P<close>/?)\s*(?P<tag>ruby|rt|[ibus])\s*>'
     r'|<\s*font\b(?P<font>[^>]*)>'
     r'|<\s*/\s*font\s*>'
     r'|\{(?P<override>\\[^{}]*)\}',
@@ -48,6 +58,7 @@ class Style(NamedTuple):
     underline: bool = False
     strike: bool = False
     color: str = ''          # '#rrggbb', or '' for the default
+    ruby: str = ''           # '' ordinary text, 'base' read, 'text' its reading
 
     def any(self):
         return self != PLAIN
@@ -55,6 +66,10 @@ class Style(NamedTuple):
 
 PLAIN = Style()
 _FLAGS = {'i': 'italic', 'b': 'bold', 'u': 'underline', 's': 'strike'}
+# What a run can be inside a ruby: what is read, and its reading.
+RUBY_ROLES = ('base', 'text')
+# <ruby> opens a container, and what it holds is the base until <rt>.
+_RUBY = {'ruby': 'base', 'rt': 'text'}
 
 
 def has_markup(text):
@@ -129,6 +144,8 @@ class _Reader:
             if name == 'font':
                 if color:
                     self.style = self.style._replace(color=color)
+            elif name in _RUBY:
+                self.style = self.style._replace(ruby=_RUBY[name])
             else:
                 self.style = self.style._replace(**{_FLAGS[name]: True})
         elif kind == 'close':
@@ -139,6 +156,10 @@ class _Reader:
                     del self.open[index]
                     if name == 'font':
                         self.style = self.style._replace(color=previous.color)
+                    elif name in _RUBY:
+                        # </rt> leaves the container, so what follows is its
+                        # base again; </ruby> leaves the ruby altogether.
+                        self.style = self.style._replace(ruby=previous.ruby)
                     else:
                         self.style = self.style._replace(**{_FLAGS[name]: getattr(previous, _FLAGS[name])})
                     break
@@ -173,18 +194,56 @@ def spans(text):
     return runs
 
 
+def ruby_groups(runs):
+    """The runs in order as ['plain', runs] and ['ruby', base, text] groups.
+    A base after a reading starts the next ruby; the runs inside a group
+    carry no role of their own any more."""
+    groups = []
+    for run, style in runs:
+        role = style.ruby if style.ruby in _RUBY.values() else ''
+        if not role:
+            if groups and groups[-1][0] == 'plain':
+                groups[-1][1].append((run, style))
+            else:
+                groups.append(['plain', [(run, style)]])
+            continue
+        if not groups or groups[-1][0] != 'ruby' or (role == 'base' and groups[-1][2]):
+            groups.append(['ruby', [], []])
+        groups[-1][1 if role == 'base' else 2].append((run, style._replace(ruby='')))
+    return groups
+
+
+def without_readings(runs):
+    """`runs` with the readings left out and their bases ordinary text, for
+    a format with nowhere to put a reading. `plain`'s rule: a reading is a
+    way of writing the text, not more of it."""
+    return [(run, style._replace(ruby='')) for run, style in runs if style.ruby != 'text']
+
+
 def plain(text):
-    """The text as it reads: without its tags and override codes."""
+    """The text as it reads: without its tags and override codes, and
+    without a ruby's readings, which say how the text is read, not what
+    it says."""
     if not has_markup(text):
         return text or ''
-    return ''.join(run for run, _style in spans(text))
+    out = []
+    for group in ruby_groups(spans(text)):
+        if group[0] == 'plain':
+            out.extend(run for run, _style in group[1])
+            continue
+        # A reading with nothing to read is the text itself, as from_spans
+        # writes it back: a lone <rt> is not a ruby.
+        base = ''.join(run for run, _style in group[1])
+        out.append(base or ''.join(run for run, _style in group[2]))
+    return ''.join(out)
 
 
 def to_html(text, colors=True):
-    """The text as the HTML subset Qt's rich text draws. Without `colors`,
-    every run takes the default colour (for a shadow)."""
-    parts = []
-    for run, style in spans(text):
+    """The text as HTML: the subset Qt's rich text draws, and the ruby the
+    preview's renderer draws (Qt shows a reading beside its base instead,
+    which is as near as its rich text goes). Without `colors`, every run
+    takes the default colour (for a shadow)."""
+    def chunk_of(run, style):
         chunk = html.escape(run, quote=False).replace('\n', '<br/>')
         if style.strike:
             chunk = f'<s>{chunk}</s>'
@@ -196,7 +255,16 @@ def to_html(text, colors=True):
             chunk = f'<i>{chunk}</i>'
         if colors and style.color:
             chunk = f'<span style="color:{style.color}">{chunk}</span>'
-        parts.append(chunk)
+        return chunk
+
+    parts = []
+    for group in ruby_groups(spans(text)):
+        if group[0] == 'plain':
+            parts.extend(chunk_of(run, style) for run, style in group[1])
+            continue
+        base = ''.join(chunk_of(run, style) for run, style in group[1])
+        reading = ''.join(chunk_of(run, style) for run, style in group[2])
+        parts.append(f'<ruby>{base}<rt>{reading}</rt></ruby>' if base and reading else base + reading)
     return ''.join(parts)
 
 
@@ -218,11 +286,14 @@ def _ass_changes(before, after):
 
 def to_ass(text):
     """The text as ASS writes it: tags as override codes, the overrides it
-    already has kept, line breaks as \\N."""
+    already has kept, line breaks as \\N. ASS has no ruby, so a reading is
+    left out rather than run into the text it reads."""
     reader = _Reader()
     out = []
     for token, written in _written_tokens(text):
         if token[0] == 'text':
+            if reader.style.ruby == 'text':
+                continue
             out.append(token[1].replace('\n', '\\N'))
         elif token[0] == 'override':
             out.append(written)
@@ -247,8 +318,8 @@ def _open_tag(name, value):
     return f'<font color="{value}">' if name == 'font' else f'<{name}>'
 
 
-def from_spans(runs):
-    """Text with tags for [(text, Style)] runs: well nested, a tag opened
+def _nested(runs):
+    """Text with tags for runs of one stretch: well nested, a tag opened
     once for as long as its style lasts."""
     out = []
     stack = []                                  # [(name, value)], outermost first
@@ -268,6 +339,21 @@ def from_spans(runs):
         out.append(run)
     for name, _value in reversed(stack):
         out.append(f'</{name}>')
+    return ''.join(out)
+
+
+def from_spans(runs):
+    """Text with tags for [(text, Style)] runs. A ruby is written around
+    its own runs, so the formatting inside it is closed before it ends; a
+    base with no reading, or a reading with no base, is written as the text
+    it is."""
+    out = []
+    for group in ruby_groups(runs):
+        if group[0] == 'plain':
+            out.append(_nested(group[1]))
+            continue
+        base, reading = _nested(group[1]), _nested(group[2])
+        out.append(f'<ruby>{base}<rt>{reading}</rt></ruby>' if base and reading else base + reading)
     return ''.join(out)
 
 
@@ -437,6 +523,10 @@ def _md_pieces(text):
             rest = _STYLE_CODE.sub('', token[1])
             if rest:
                 pieces.append(('{' + rest + '}', reader.style, True))
+        elif token[1] in _RUBY:
+            # Markdown has no ruby: the tags are kept as they are written,
+            # and read back as the ruby they were.
+            pieces.append((written, reader.style, True))
         reader.step(token, written)
     return pieces
 

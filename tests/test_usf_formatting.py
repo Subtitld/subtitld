@@ -1,6 +1,7 @@
 """Formatting in USF as its specification (1.1) writes it: inline <i>, <b>,
-<u> and <font color>, <br/> between lines, and the position as the <text>
-element's "alignment"; read back into the tags Subtitld keeps.
+<u> and <font color>, <br/> between lines, a reading as <ruby> and <rt>,
+and the position as the <text> element's "alignment"; read back into the
+tags Subtitld keeps.
 
 Pure module — no Qt.
 
@@ -76,6 +77,50 @@ print('a project an older Subtitld wrote (tags as text)')
 older = USFWriter().write([{'start': 0, 'end': 1, 'text': 'x', 'speaker': 'A'}], speakers={}, language='en-us').replace(
     '>x</text>', '>&lt;i&gt;Italic&lt;/i&gt; still</text>')
 check('reads as tags', read_back(older), ['<i>Italic</i> still'])
+
+print('placed more finely than the nine places')
+from subtitld.modules import position                                    # noqa: E402
+placed = {'start': 0, 'end': 1, 'text': '{\\an8}Up', 'speaker': 'A',
+          'position': {'h': '10%', 'v': '20%', 'relative_to': 'window', 'rotate': {'z': 45}}}
+written = USFWriter().write([placed], speakers={}, language='en-us')
+check('USF writes its own <position> attributes beside the alignment',
+      sorted(part for part in written.split('<text ')[1].split('>')[0].split() if '=' in part),
+      ['alignment="TopCenter"', 'horizontal-margin="10%"', 'relative-to="Window"',
+       'rotate-z="45"', 'speaker="A"', 'vertical-margin="20%"'])
+read_place = USFReader().read(written)[0]
+check('and reads them back as they were', (read_place['text'], read_place.get('position')),
+      ('{\\an8}Up', {'h': '10%', 'v': '20%', 'relative_to': 'window', 'rotate': {'z': 45.0}}))
+plain_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}], speakers={}, language='en-us')
+check('a subtitle that says nothing adds nothing to the file',
+      ('margin' in plain_usf or 'rotate' in plain_usf or 'relative-to' in plain_usf), False)
+check('and reads back with no position at all', 'position' in USFReader().read(plain_usf)[0], False)
+styled = plain_usf.replace('<styles/>',
+                           '<styles><style name="Narrator"><position alignment="TopCenter" vertical-margin="15%"/>'
+                           '</style></styles>').replace('<text ', '<text style="Narrator" ')
+check("a style's position places a text that uses it",
+      [(s['text'], s.get('position')) for s in USFReader().read(styled)], [('{\\an8}Plain', {'v': '15%'})])
+
+print('a reading above the text')
+readings = [
+    '<ruby>東京<rt>とうきょう</rt></ruby> is big',
+    'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here',
+    '<ruby>東<rt>と</rt></ruby><ruby>京<rt>きょう</rt></ruby>',
+    '<ruby>東京</ruby> no reading',
+]
+content, elements = text_elements(readings)
+check('a ruby as <ruby> and <rt>, as XHTML writes one', elements[0],
+      '<text speaker="A"><ruby>東京<rt>とうきょう</rt></ruby> is big</text>')
+check('the formatting inside it kept, and closed before the ruby ends', elements[1],
+      '<text speaker="A">A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here</text>')
+check('one ruby for each reading', elements[2],
+      '<text speaker="A"><ruby>東<rt>と</rt></ruby><ruby>京<rt>きょう</rt></ruby></text>')
+check('a base with no reading is the text it is', elements[3], '<text speaker="A">東京 no reading</text>')
+check('read back, each reading still with what it reads', read_back(content), [
+    '<ruby>東京<rt>とうきょう</rt></ruby> is big',
+    'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here',
+    '<ruby>東<rt>と</rt></ruby><ruby>京<rt>きょう</rt></ruby>',
+    '東京 no reading',
+])
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

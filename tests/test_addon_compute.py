@@ -167,11 +167,14 @@ manifests = [
 ]
 catalog = {'addons': [
     {'id': 'old-one', 'display_name': 'Old one', 'tasks': ['asr.transcribe'],
-     'compute': 'gpu_preferred', 'accelerators': ['cuda'], 'latest_version': '1'},
+     'compute': 'gpu_preferred', 'accelerators': ['cuda'], 'latest_version': '1',
+     'releases': [{'version': '1'}]},
     {'id': 'big-gpu', 'display_name': 'Big GPU', 'tasks': ['video.lipsync'],
-     'compute': 'gpu_required', 'accelerators': ['cuda'], 'latest_version': '1'},
+     'compute': 'gpu_required', 'accelerators': ['cuda'], 'latest_version': '1',
+     'releases': [{'version': '1'}]},
     {'id': 'cloudy', 'display_name': 'Cloudy', 'tasks': ['asr.transcribe'],
-     'compute': 'remote', 'latest_version': '1'},
+     'compute': 'remote', 'latest_version': '1',
+     'releases': [{'version': '1'}]},
 ]}
 installer.list_installed = lambda: manifests
 installer.fetch_catalog = lambda force_refresh=False, **_kwargs: catalog

@@ -6,7 +6,7 @@
 #   docker run --rm -v "$PWD":/w -w /w ubuntu:24.04 \
 #       bash .github/scripts/smoke-appimage.sh Subtitld-*.AppImage
 #
-# Works in Debian/Ubuntu and Fedora images.
+# Works in Debian/Ubuntu (22.04 on) and Fedora images.
 set -euo pipefail
 
 appimage=$(realpath "$1")
@@ -23,8 +23,11 @@ fi
 if command -v apt-get > /dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
+    # Ubuntu 22.04's names, before 24.04 renamed them for 64-bit time.
+    t64=t64
+    apt-cache show libasound2t64 > /dev/null 2>&1 || t64=
     apt-get install -y -qq xvfb xauth libegl1 libgl1 libfontconfig1 libdbus-1-3 libx11-xcb1 \
-        libxkbcommon0 libpulse0 libglib2.0-0t64 libasound2t64 weston > /dev/null
+        libxkbcommon0 libpulse0 libglib2.0-0$t64 libasound2$t64 weston > /dev/null
 else
     dnf install -y -q xorg-x11-server-Xvfb xorg-x11-xauth mesa-libEGL mesa-libGL fontconfig \
         dbus-libs libX11-xcb libxkbcommon pulseaudio-libs glib2 alsa-lib which weston > /dev/null
@@ -51,11 +54,26 @@ for lib in libdatachannel.so PySide6/Qt/lib/libQt6WebSockets.so.6; do
 done
 SMOKE_LOG=/tmp/smoke.log bash "$here/smoke.sh" 25 xvfb-run -a /tmp/squashfs-root/AppRun
 
+# The preview's picture: a few seconds of AV1, the format of most YouTube
+# downloads, which PySide6's own FFmpeg shows only with a GPU's help (none
+# here), and of H.264, made with the AppImage's ffmpeg and played with its Qt.
+internal=/tmp/squashfs-root/usr/bin/subtitld/_internal
+clip() {
+    LD_LIBRARY_PATH=$internal "$internal/ffmpeg" -hide_banner -loglevel error -y \
+        -f lavfi -i testsrc2=size=320x180:rate=25 -t 4 "$@"
+}
+clip -c:v libaom-av1 -cpu-used 8 -row-mt 1 /tmp/av1.mkv
+clip -c:v libx264 -pix_fmt yuv420p /tmp/h264.mp4
+QT_QPA_PLATFORM=offscreen /tmp/squashfs-root/AppRun --video-check /tmp/av1.mkv /tmp/h264.mp4
+
 # And on Wayland, with weston as a headless desktop. A window Qt cannot make
 # there leaves the app running, so its output is checked as well.
 export XDG_RUNTIME_DIR=/tmp/smoke/run
 mkdir -p -m 700 "$XDG_RUNTIME_DIR"
-weston --backend=headless --socket=wayland-1 --idle-time=0 > /tmp/weston.log 2>&1 &
+# Weston 9 (Ubuntu 22.04) names its backends by file.
+backend=headless
+weston --version | grep -q 'weston [0-9]\.' && backend=headless-backend.so
+weston --backend=$backend --socket=wayland-1 --idle-time=0 > /tmp/weston.log 2>&1 &
 for i in $(seq 40); do [ -S "$XDG_RUNTIME_DIR/wayland-1" ] && break; sleep 0.5; done
 WAYLAND_DISPLAY=wayland-1 SMOKE_LOG=/tmp/smoke-wayland.log \
     SMOKE_FAIL_ON='Could not create a shell surface|Failed to load (client buffer|shell) integration|wl-shell. is a deprecated' \

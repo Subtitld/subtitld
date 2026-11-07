@@ -4,8 +4,8 @@ A haikuports recipe tree for Subtitld and the Python packages it needs that
 Haiku does not package yet.
 
     media-video/subtitld/subtitld-26.10.recipe   the application
-    media-video/subtitld/additional-files/       its launcher, resources and icon
-    dev-python/<name>/<name>-<version>.recipe    9 dependencies
+    media-video/subtitld/additional-files/       its attributes, file type and icon
+    dev-python/<name>/<name>-<version>.recipe    7 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
     haikudepot/                                  HaikuDepot's listing: screenshots, texts
 
@@ -13,14 +13,14 @@ Haiku does not package yet.
 
 Subtitld is Python, but on Haiku it looks and behaves like a native app:
 
-* `/boot/system/apps/Subtitld` is a small native program (`launcher.c`) that
-  runs Subtitld inside the system's Python rather than starting the
-  interpreter. The running application is therefore Subtitld, and Deskbar
-  shows its name and icon, not Python's.
-* It carries Subtitld's signature (`application/x-vnd.qt6-Subtitld`, the one
-  Qt gives an application on Haiku), version and
-  vector icon as resources (`subtitld.rdef.in`), so Tracker, the Deskbar
-  menu and HaikuDepot show the icon. HaikuDepot's server takes an app's icon
+* `/boot/system/apps/Subtitld` is Subtitld's own Python script, typed as an
+  application and carrying Subtitld's signature
+  (`application/x-vnd.qt6-Subtitld`, the one Qt gives an application on
+  Haiku), version and vector icon as attributes (`subtitld.rdef.in`, compiled
+  with `rc` and written with `resattr`, as frescobaldi's recipe does). Started
+  from Deskbar or Tracker, it shows there as Subtitld, with its icon; started
+  by its path from a Terminal, as python3.14. Tracker, the Deskbar menu and
+  HaikuDepot show the icon. HaikuDepot's server takes an app's icon
   from its package when the package holds a single application with one.
 * The icon, `subtitld.hvif`, is generated from `packaging/branding/icon.svg`
   by `packaging/branding/render-icons.py`, along with the resources: the
@@ -53,9 +53,14 @@ ports, with the app's recipe named after the tag (`subtitld-26.10.recipe` for
 
 ## Dependencies
 
-Already in haikuports, so no recipe needed: pyside6, numpy, scipy, lxml, cffi,
-pillow, requests, aiohttp, certifi, chardet, beautifulsoup4, click, soupsieve,
-typing_extensions, opencv_python3.10.
+For Python 3.14, already in haikuports: pyside6, numpy, lxml, requests,
+certifi, chardet. Given a 3.14 version in a pull request of their own, and kept
+in `pending/` until it is merged: typing_extensions, click (8.1.8), pycparser
+(2.23), soupsieve (2.10), beautifulsoup4 and cffi (2.1.1). Left out on Haiku,
+as Subtitld runs without them: OpenCV and scipy (no 3.14 build there; face
+detection needs MediaPipe anyway, which Haiku lacks) and edge-tts (aiohttp and
+its own dependencies have none either), so Edge's voices are not offered
+there.
 
 Also required at runtime: **`cmd:ffmpeg`**, which comes from the `ffmpeg_tools`
 package — *not* `ffmpeg`, which ships libraries only. Subtitld shells out to the
@@ -73,11 +78,11 @@ Dropped on Haiku:
 
 ## How the dependencies are built
 
-As haikuports builds its own Python packages: from PyPI's source archive with
-`build` and `installer` (like its requests and beautifulsoup4), for eight of
-the nine. `platformdirs` takes its version from git through hatch-vcs, which
-Haiku does not package, so its recipe installs the pure-Python wheel with
-`installer` instead (`#noarchive`), as haikuports' typing_extensions does.
+As haikuports packages its pure-Python modules now (iniconfig, certifi): PyPI's
+wheel, repackaged with `installer` (`#noarchive`), so nothing is built and no
+build backend is needed. Each recipe makes the Python 3.14 package alone, with
+no empty base package; the commands a wheel installs (`gtts-cli`, `pysubs2`) go
+with it.
 
 `gen_recipes.py` writes them: each archive's checksum comes from PyPI and is
 checked against the download, and each recipe's copyright and license lines
@@ -101,12 +106,12 @@ up.
 
 haikuports takes contributions as pull requests against
 <https://github.com/haikuports/haikuports>, from a branch of your fork. Each
-package is its own commit, as in `tabulate, new recipe`. Run
+package is its own commit, as in `pysubs2, new recipe`. Run
 `haikuporter --lint` before opening the PR. Its template asks you to confirm
 that you built the recipes on your own Haiku machine and that their license
 and copyright lines are right.
 The dependency recipes are independently useful and can go first; several
-(`platformdirs`, `tabulate`, `soundfile`, `sounddevice`) are common enough
+(`platformdirs`, `soundfile`, `sounddevice`) are common enough
 that other ports will want them.
 
 ## Known rough edges

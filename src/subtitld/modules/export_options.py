@@ -47,6 +47,9 @@ And for a format of its own:
     look         ASS and TTML: their style 'clean' (white, a black
                  outline) or as Subtitld's 'preview' draws (modules.ass,
                  modules.ttml)
+    profile      TTML and DFXP: the profile the file declares itself to be,
+                 a value of modules.ttml.PROFILES ('ttml1', 'imsc1',
+                 'imsc1.1', 'ebu-tt-d')
 """
 
 from subtitld.modules import markup

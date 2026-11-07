@@ -505,7 +505,7 @@ def _rows(text):
     the keypad it sits at."""
     lead, rest = markup.split_lead(text)
     rows, line = [], []
-    for run, style in markup.spans(rest) + [('\n', markup.PLAIN)]:
+    for run, style in markup.without_readings(markup.spans(rest)) + [('\n', markup.PLAIN)]:
         for char in run:
             if char == '\n':
                 while line and line[0][0] == ' ':

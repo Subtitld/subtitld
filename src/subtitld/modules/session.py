@@ -139,6 +139,14 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'BCC': {'description': 'Bilibili BCC Subtitle format', 'extensions': ['bcc']},
 }
 
+# Subtitles drawn as pictures, which open through an OCR add-on
+# (modules.picture_ocr) and are never saved as such. A VobSub's .sub is in
+# the list above, as MicroDVD's, whose extension it shares.
+LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
+    'VOBSUB': {'description': 'DVD VobSub subtitles (pictures)', 'extensions': ['idx']},
+    'PGS': {'description': 'Blu-ray PGS subtitles (pictures)', 'extensions': ['sup']},
+}
+
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
     'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
     'DOCX': {'description': 'Microsoft Word document (docx)', 'extensions': ['docx']},
@@ -152,7 +160,8 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
     'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
-    'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']}
+    'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']},
+    'CSV': {'description': 'CSV table', 'extensions': ['csv']},
 }
 
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {

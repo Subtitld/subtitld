@@ -12,6 +12,7 @@ from PySide6.QtGui import QFontDatabase
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.modules import csv_export
 from subtitld.modules import export_options
 from subtitld.modules import mcc
 from subtitld.modules import session
@@ -20,7 +21,7 @@ from subtitld.modules import session
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
-DOCUMENT_FORMATS = ['TXT', 'KDENLIVE']
+DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
 
 
 class _SubtitlesPanel(QWidget):
@@ -473,27 +474,48 @@ class _AudioPanel(QWidget):
 
 
 class _DocumentsPanel(QWidget):
+    """The documents tab: the format and, for CSV, which table to write
+    (modules.csv_export)."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
 
         self.format_combo = utils.LabeledComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         self.format_combo.addItems(DOCUMENT_FORMATS)
+        self.format_combo.combobox.currentIndexChanged.connect(self._refresh_options)
         self.layout().addWidget(self.format_combo)
 
-        note = QLabel(_('export_dialog.documents_placeholder'))
-        note.setWordWrap(True)
-        self.layout().addWidget(note)
+        self.csv_type_combo = utils.LabeledComboBox()
+        self.csv_type_combo.setLabel(_('export_dialog.csv_type'))
+        for csv_type in csv_export.TYPES:
+            self.csv_type_combo.combobox.addItem(_(f'export_dialog.csv_{csv_type}'), csv_type)
+        self.layout().addWidget(self.csv_type_combo)
+
+        self.note = QLabel(_('export_dialog.documents_placeholder'))
+        self.note.setWordWrap(True)
+        self.layout().addWidget(self.note)
 
         self.layout().addStretch()
+        self._refresh_options()
+
+    def _refresh_options(self, *_args):
+        is_csv = self.format_combo.currentText() == 'CSV'
+        self.csv_type_combo.setVisible(is_csv)
+        self.note.setVisible(not is_csv)
 
     def get_config(self):
-        return {
+        fmt = self.format_combo.currentText()
+        config = {
             'category': 'documents',
-            'format': self.format_combo.currentText(),
+            'format': fmt,
         }
+        if fmt == 'CSV':
+            config['options'] = {'csv_type': self.csv_type_combo.combobox.currentData()}
+        return config
 
 
 class _VideoPanel(QWidget):

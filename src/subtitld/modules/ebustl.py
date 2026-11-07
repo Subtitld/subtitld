@@ -304,7 +304,7 @@ def _lines(text):
     against a word in its style, so that no code comes between them."""
     lead, rest = markup.split_lead(text)
     lines = [[]]
-    for run, style in markup.spans(rest):
+    for run, style in markup.without_readings(markup.spans(rest)):
         for index, part in enumerate(run.split('\n')):
             if index:
                 lines.append([])

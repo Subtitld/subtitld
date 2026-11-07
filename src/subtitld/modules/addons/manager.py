@@ -30,6 +30,7 @@ from subtitld.modules.addons import registry
 from subtitld.modules.addons.addon_provider import (
     AddonASRProvider,
     AddonAudioSeparatorProvider,
+    AddonOCRProvider,
     AddonTranslationProvider,
     AddonTTSProvider,
     AddonVideoLipsyncProvider,
@@ -41,6 +42,7 @@ from subtitld.modules.addons.provider import (
     SOURCE_ENGINES,
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
+    TASK_OCR_RECOGNIZE,
     TASK_TRANSLATE,
     TASK_TTS_SYNTHESIZE,
     TASK_VIDEO_LIPSYNC,
@@ -54,6 +56,19 @@ _PLATFORM_KEYS = {
     'linux': 'linux',
     'darwin': 'macos',
     'win32': 'windows',
+}
+
+
+# The provider class for an add-on, by its primary task (`tasks[0]`). An
+# add-on whose primary task is not here is skipped; the add-ons dialog and
+# the installer read this too, so they don't offer what would be skipped.
+ADDON_PROVIDER_CLASSES = {
+    TASK_TTS_SYNTHESIZE: AddonTTSProvider,
+    TASK_ASR_TRANSCRIBE: AddonASRProvider,
+    TASK_TRANSLATE: AddonTranslationProvider,
+    TASK_AUDIO_SEPARATE: AddonAudioSeparatorProvider,
+    TASK_VIDEO_LIPSYNC: AddonVideoLipsyncProvider,
+    TASK_OCR_RECOGNIZE: AddonOCRProvider,
 }
 
 
@@ -224,21 +239,12 @@ class AddonManager(QObject):
             # that one task. Multi-capability is tracked in the open-issues
             # list of the plan.
             primary = tasks[0]
-            provider: Provider
-            if primary == TASK_TTS_SYNTHESIZE:
-                provider = AddonTTSProvider(addon_id, manifest, exe_path)
-            elif primary == TASK_ASR_TRANSCRIBE:
-                provider = AddonASRProvider(addon_id, manifest, exe_path)
-            elif primary == TASK_TRANSLATE:
-                provider = AddonTranslationProvider(addon_id, manifest, exe_path)
-            elif primary == TASK_AUDIO_SEPARATE:
-                provider = AddonAudioSeparatorProvider(addon_id, manifest, exe_path)
-            elif primary == TASK_VIDEO_LIPSYNC:
-                provider = AddonVideoLipsyncProvider(addon_id, manifest, exe_path)
-            else:
+            provider_class = ADDON_PROVIDER_CLASSES.get(primary)
+            if provider_class is None:
                 log.warning('AddonManager: %s primary task %r not supported',
                             addon_id, primary)
                 continue
+            provider: Provider = provider_class(addon_id, manifest, exe_path)
 
             self.register(provider)
             registered.append(addon_id)

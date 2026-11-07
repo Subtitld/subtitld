@@ -2,7 +2,10 @@ import colorsys
 import hashlib
 import logging
 
-import cv2
+try:
+    import cv2
+except Exception:  # optional, like MediaPipe: not packaged on some platforms (e.g. Haiku)
+    cv2 = None
 import numpy as np
 
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
@@ -44,6 +47,8 @@ class FaceExtractorThread(QThread):
         # MediaPipe is absent on platforms it does not ship for, and 0.10.30
         # to 0.10.32 cannot run the face model (see modules/face_detection).
         try:
+            if cv2 is None:
+                raise FaceDetectionUnavailable('OpenCV is not installed')
             face_detector = FaceDetector()
         except FaceDetectionUnavailable as e:
             self.error.emit(f"Face detection is unavailable: {e}.")

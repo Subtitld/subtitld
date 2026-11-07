@@ -42,7 +42,7 @@ from collections import OrderedDict
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTimer, Signal, qVersion
 from PySide6.QtGui import QImage
 
-from subtitld.modules import markup, session, subtitle_styles
+from subtitld.modules import markup, position, session, subtitle_styles
 
 HOST_SCRIPT = session.PATH_SUBTITLD / 'subtitle_styles' / 'host.js'
 DISK_CACHE = session.PATH_SUBTITLD_USER_CACHE / 'subtitle_layers.sqlite'
@@ -347,10 +347,15 @@ class SubtitleRenderer(QObject):
                 session.CONFIG.get('videoplayer', {}).get('safe_margin_title_y', 10) / 100)
         width, height = self.size
         duration = int(round((end - start) * 1000))
-        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None)
+        # Where it sits beyond the nine places: margins in from the edge it
+        # is aligned to, and the degrees it is turned by (modules.position).
+        placed = position.of(segment)
+        place = {'h': position.as_percent(placed.h), 'v': position.as_percent(placed.v),
+                 'rotate': list(placed.rotate)} if placed.any() else None
+        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None, place)
         page = {'html': markup.to_html(text) if text.strip() else None, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
-                'offset': offset, 'duration': duration, 'pad': PAD}
+                'offset': offset, 'duration': duration, 'pad': PAD, 'place': place}
         return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
 
     def layers(self, segments, at):
