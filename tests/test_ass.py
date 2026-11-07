@@ -170,6 +170,20 @@ check('not for SRT', (panel.ass_options.isHidden(), 'look' in panel.get_config()
 again = _SubtitlesPanel()
 check('remembered', again.look_combo.combobox.currentData(), 'preview')
 
+print('placed more finely than the nine places')
+import pysubs2                                                           # noqa: E402
+placed = [{'start': 1, 'end': 2, 'text': 'Plain'},
+          {'start': 3, 'end': 4, 'text': '{\\an8}High', 'position': {'v': '5%', 'rotate': {'z': 45}}},
+          {'start': 5, 'end': 6, 'text': '{\\an4}Side', 'position': {'h': '5%'}}]
+written = ass.write(placed, 1920, 1080)
+lines = [line.split(',', 9) for line in written.splitlines() if line.startswith('Dialogue')]
+check('margins as the event\'s own, rotation as an override code',
+      [(line[5], line[6], line[7], line[9]) for line in lines],
+      [('0', '0', '0', 'Plain'), ('0', '0', '54', '{\\frz45}{\\an8}High'), ('96', '0', '0', '{\\an4}Side')])
+back = ass.segments_of(pysubs2.SSAFile.from_string(written))
+check('read back as they were', [(s['text'], s.get('position')) for s in back],
+      [('Plain', None), ('{\\an8}High', {'v': '5%', 'rotate': {'z': 45.0}}), ('{\\an4}Side', {'h': '5%'})])
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -22,7 +22,7 @@ Reading forgives, as HTML does:
   the color, font-style, font-weight and text-decoration the style sheet
   (P, the class) or a style="..." gives, become formatting tags; <BR>
   breaks a line; other whitespace, &nbsp; too, is one space; a ruby's
-  reading (<RT>) is left out;
+  reading (<RT>) is left out, as it is on the way out too;
 - a Source paragraph (<P Class=ENCC ID=Source>) is the speaker of the
   captions after it in its class, until another one;
 - the subtitles come sorted by start.
@@ -351,10 +351,12 @@ def _html(text):
 
 def _caption(text):
     """A subtitle's text as SAMI: its formatting as tags in capitals, line
-    breaks as <BR>, without the place on the picture SAMI has none for."""
+    breaks as <BR>, without the place on the picture SAMI has none for, nor
+    the readings it has nowhere to put either."""
     _lead, rest = markup.split_lead(text)
     rest = '\n'.join(line.strip() for line in rest.split('\n') if line.strip())
-    runs = [(_html(run).replace('\n', '<BR>'), style) for run, style in markup.spans(rest)]
+    runs = [(_html(run).replace('\n', '<BR>'), style)
+             for run, style in markup.without_readings(markup.spans(rest))]
     return re.sub(r'<(/?)(font|[ibus])\b', lambda m: f'<{m.group(1)}{m.group(2).upper()}', markup.from_spans(runs))
 
 

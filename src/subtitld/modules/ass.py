@@ -32,12 +32,13 @@ import re
 
 import pysubs2
 
-from subtitld.modules import markup
+from subtitld.modules import markup, position
 from subtitld.modules.srt import decode
 
 _BLOCK = re.compile(r'\{([^{}]*)\}')
 _CODE = re.compile(r'\\(?:(?P<flag>[ibus])(?P<value>\d+)|(?P<cn>1?c)(?:&H(?P<bgr>[0-9a-fA-F]{1,8})&?)?(?![\w])|'
-                   r'(?P<reset>r)(?P<style>[^\\]*)|an(?P<an>\d)|a(?P<a>\d{1,2})(?!\w)|p(?P<p>\d+))')
+                   r'(?P<reset>r)(?P<style>[^\\]*)|an(?P<an>\d)|a(?P<a>\d{1,2})(?!\w)|p(?P<p>\d+)|'
+                   r'fr(?P<axis>[xyz])(?P<turn>-?\d+(?:\.\d+)?))')
 _LEGACY_ALIGN = {1: 1, 2: 2, 3: 3, 5: 7, 6: 8, 7: 9, 9: 4, 10: 5, 11: 6}
 _TO_LEGACY = {value: key for key, value in _LEGACY_ALIGN.items()}
 
@@ -59,12 +60,14 @@ def _style_look(style):
 
 
 def _text(event, styles, wrap):
-    """(text with tags, keypad) for an event, or None for a drawing."""
+    """((text with tags, its place as a code), the rotations the line is
+    turned by) for an event, or None for a drawing."""
     base, keypad = _style_look(styles.get(event.style) or styles.get('Default'))
     style = base
     keypad_set = None
     drawing = False
     runs = []
+    turns = {}
     position = 0
 
     def add(text):
@@ -100,6 +103,11 @@ def _text(event, styles, wrap):
                 keypad_set = _LEGACY_ALIGN[int(code.group('a'))]
             elif code.group('p') is not None:
                 drawing = int(code.group('p')) > 0
+            elif code.group('axis'):
+                # A rotation the whole line is turned by; one inside the
+                # text turns the rest of it, which Subtitld cannot keep,
+                # so the first is the subtitle's.
+                turns.setdefault(code.group('axis'), float(code.group('turn')))
     add(event.text[position:])
 
     # Line breaks trimmed of the spaces around them, none doubled, none at the ends.
@@ -119,7 +127,26 @@ def _text(event, styles, wrap):
     if not markup.plain(text).strip():
         return None
     keypad = keypad_set or keypad
-    return (markup.with_alignment('', keypad) if keypad != 2 else '') + text
+    return (markup.with_alignment('', keypad) if keypad != 2 else '') + text, turns
+
+
+def _play_res(subfile):
+    """The picture a script's lengths are counted in."""
+    def number(key, fallback):
+        try:
+            return int(float(str(subfile.info.get(key, '')).strip() or fallback)) or fallback
+        except ValueError:
+            return fallback
+    return number('PlayResX', 1920), number('PlayResY', 1080)
+
+
+def _as_percent(pixels, size):
+    """A margin in pixels of the script as the percentage USF writes, or
+    '' for none."""
+    if not pixels or not size:
+        return ''
+    percent = round(float(pixels) * 100.0 / float(size), 3)
+    return f'{int(percent)}%' if float(percent).is_integer() else f'{percent}%'
 
 
 def segments_of(subfile):
@@ -128,17 +155,29 @@ def segments_of(subfile):
         wrap = int(str(subfile.info.get('WrapStyle', '0')).strip() or 0)
     except ValueError:
         wrap = 0
+    width, height = _play_res(subfile)
     segments = []
     for event in subfile.events:
         if event.is_comment:
             continue
-        text = _text(event, subfile.styles, wrap)
-        if text is None:
+        read_text = _text(event, subfile.styles, wrap)
+        if read_text is None:
             continue
+        text, turns = read_text
         start = round(event.start / 1000, 3)
         segment = {'start': start, 'end': max(start, round(event.end / 1000, 3)), 'text': text}
         if (event.name or '').strip():
             segment['speaker'] = event.name.strip()
+        # An event's own margins stand it off the edge it is aligned to;
+        # 0 means the style's, which is where a subtitle sits by default.
+        keypad = markup.alignment(text)
+        across = (event.marginl if (keypad - 1) % 3 == 0 else
+                  event.marginr if (keypad - 1) % 3 == 2 else 0)
+        placed = position.Place(
+            h=_as_percent(across, width), v=_as_percent(event.marginv, height),
+            rotate=tuple(float(turns.get(axis) or 0) for axis in position.AXES))
+        if placed.any():
+            position.store(segment, placed)
         segments.append(segment)
     segments.sort(key=lambda segment: segment['start'])
     return segments
@@ -193,6 +232,10 @@ def default_style(height, look='clean', preview=None):
     return style
 
 
+def _turn(degrees):
+    return str(int(degrees)) if float(degrees).is_integer() else str(float(degrees))
+
+
 def write(segments, width=None, height=None, fmt='ass', look='clean', preview=None):
     """ASS (or, with fmt 'ssa', SSA v4) text for `segments`."""
     width, height = int(width or 1920), int(height or 1080)
@@ -211,10 +254,29 @@ def write(segments, width=None, height=None, fmt='ass', look='clean', preview=No
         if fmt == 'ssa':
             # SSA places a line with its own numbers: \a6 is top centre.
             text = re.sub(r'\\an(\d)', lambda m: f'\\a{_TO_LEGACY.get(int(m.group(1)), 2)}', text)
+        placed = position.of(segment)
+        turned = ''.join(f'\\fr{axis}{_turn(degrees)}'
+                         for axis, degrees in zip(position.AXES, placed.rotate) if degrees)
+        if turned:
+            text = '{' + turned + '}' + text
         start = float(segment.get('start', 0))
         end = max(start, float(segment.get('end', start)))
-        subfile.append(pysubs2.SSAEvent(start=int(round(start * 1000)), end=int(round(end * 1000)), text=text,
-                                        name=str(segment.get('speaker') or '').strip()))
+        event = pysubs2.SSAEvent(start=int(round(start * 1000)), end=int(round(end * 1000)), text=text,
+                                 name=str(segment.get('speaker') or '').strip())
+        # Margins stand the line off the edge it is aligned to. ASS centres
+        # a line between its left and right margins, so a subtitle nudged
+        # off the middle has nowhere to say so and keeps the style's.
+        keypad = markup.alignment(lead)
+        across, down = position.as_percent(placed.h), position.as_percent(placed.v)
+        if down is not None:
+            event.marginv = max(0, int(round(down * height / 100.0)))
+        if across is not None and (keypad - 1) % 3 != 1:
+            pixels = max(0, int(round(across * width / 100.0)))
+            if (keypad - 1) % 3 == 0:
+                event.marginl = pixels
+            else:
+                event.marginr = pixels
+        subfile.append(event)
     return subfile.to_string(fmt)
 
 

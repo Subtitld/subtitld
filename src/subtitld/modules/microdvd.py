@@ -158,7 +158,7 @@ def _encode(text):
     style as codes where MicroDVD can say it."""
     _lead, rest = markup.split_lead(text)
     lines = [[]]
-    for run, style in markup.spans(rest):
+    for run, style in markup.without_readings(markup.spans(rest)):
         for index, part in enumerate(run.replace('|', '¦').split('\n')):
             if index:
                 lines.append([])

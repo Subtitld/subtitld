@@ -1455,7 +1455,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       else language,
                       agents=options.get('speakers') == 'voice',
                       look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
-                      preview=subtitle_styles.preview_look())
+                      preview=subtitle_styles.preview_look(),
+                      profile=options.get('profile') if options.get('profile') in ttml.PROFILES else 'ttml1')
 
         elif subtitle_format == 'SAMI':
             # A class for each language written: the original's, the

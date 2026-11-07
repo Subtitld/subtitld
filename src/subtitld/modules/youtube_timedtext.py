@@ -140,7 +140,7 @@ def write(segments):
     pens, positions, paragraphs = {}, {}, []
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         lead, rest = markup.split_lead(str(segment.get('text') or ''))
-        runs = [(text, style) for text, style in markup.spans(rest) if text]
+        runs = [(text, style) for text, style in markup.without_readings(markup.spans(rest)) if text]
         if not ''.join(text for text, _style in runs).strip():
             continue
         start = round(float(segment.get('start', 0)) * 1000)

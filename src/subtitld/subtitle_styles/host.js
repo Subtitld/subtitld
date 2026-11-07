@@ -64,9 +64,31 @@
     const width = 1080 * job.aspect, scale = innerWidth / width;
     stage.style.width = `${width}px`;
     stage.style.transform = `scale(${scale})`;
+    // Where the subtitle sits: the title-safe area, unless it carries
+    // margins of its own (modules.position). A margin is measured from the
+    // picture's edge, so it takes the safe area's place on that side; from
+    // the middle it moves the whole band instead.
+    const inset = {
+      left: job.safe[0] * width, right: job.safe[0] * width,
+      top: job.safe[1] * 1080, bottom: job.safe[1] * 1080,
+    };
+    const place = job.place || {};
+    const column = (job.align - 1) % 3, row = Math.floor((job.align - 1) / 3);
+    if (place.h !== null && place.h !== undefined) {
+      const across = place.h / 100 * width;
+      if (column === 0) inset.left = across;
+      else if (column === 2) inset.right = across;
+      else { inset.left += across; inset.right -= across; }
+    }
+    if (place.v !== null && place.v !== undefined) {
+      const down = place.v / 100 * 1080;
+      if (row === 0) inset.bottom = down;
+      else if (row === 2) inset.top = down;
+      else { inset.top += down; inset.bottom -= down; }
+    }
     Object.assign(safe.style, {
-      left: `${job.safe[0] * width}px`, right: `${job.safe[0] * width}px`,
-      top: `${job.safe[1] * 1080}px`, bottom: `${job.safe[1] * 1080}px`,
+      left: `${inset.left}px`, right: `${inset.right}px`,
+      top: `${inset.top}px`, bottom: `${inset.bottom}px`,
     });
     safe.dataset.align = String(job.align);
     safe.innerHTML = '';
@@ -74,6 +96,12 @@
       const cue = document.createElement('div');
       cue.className = 'cue';
       cue.innerHTML = job.html;
+      const [turnX, turnY, turnZ] = place.rotate || [0, 0, 0];
+      if (turnX || turnY || turnZ) {
+        // Counter-clockwise, as USF and ASS both count: the screen's y
+        // axis runs the other way, so x and z are negated.
+        cue.style.transform = `perspective(1000px) rotateX(${-turnX}deg) rotateY(${turnY}deg) rotateZ(${-turnZ}deg)`;
+      }
       safe.append(cue);
     }
 

@@ -137,6 +137,52 @@ editor.setTextCursor(QTextCursor(editor.document()))
 bar.clear_button.click()
 check('clear: all of it, the position too', ste.text(editor), 'Hello world')
 
+print('placed finely: margins and a turn')
+from subtitld.modules import position
+check('dragged up from the bottom: a vertical margin from the bottom',
+      position.dragged(position.NOWHERE, 2, 0, -0.1), position.Place(v='20%'))
+check('dragged right at the top right: in from the right edge',
+      position.dragged(position.NOWHERE, 9, 0.04, 0.05), position.Place(h='6%', v='15%'))
+check('in the middle: off the middle, kept on the picture',
+      position.dragged(position.NOWHERE, 5, 0.8, 0), position.Place(h='50%'))
+check('a margin of its own moves from where it is',
+      position.dragged(position.Place(v='30%', rotate=(0.0, 0.0, 10.0)), 2, 0, 0.05), position.Place(v='25%', rotate=(0.0, 0.0, 10.0)))
+check('what it sits by without one: the title-safe area', position.margins(position.NOWHERE, 7, (0.05, 0.1)), (5.0, 10.0))
+
+held = {'text': 'Hello', 'start': 0, 'end': 1}
+placed = loaded('Hello')
+placed_bar = ste.FormattingBar(placed, segment=lambda: held)
+placed_bar._show_place()
+check('the menu shows where it sits now', [placed_bar.place_spins[k].value() for k in ('horizontal', 'vertical', 'rotation')],
+      [0.0, 10.0, 0.0])
+check('centred across: either side of the middle', (placed_bar.place_spins['horizontal'].minimum(), placed_bar.place_spins['horizontal'].maximum()), (-50.0, 50.0))
+steps = len(history.ALL_HISTORY)
+placed_bar.place_spins['vertical'].setValue(25)
+placed_bar.place_spins['rotation'].setValue(15)
+check('a margin and a turn kept on the subtitle', held.get('position'), {'v': '25%', 'rotate': {'z': 15.0}})
+check('one undo step for the menu', len(history.ALL_HISTORY) - steps, 1)
+check('the position button lit', placed_bar.position_button.icon().isNull(), False)
+placed_bar._pick_position(8)
+check('one of the nine places: the margins go, the turn stays', (ste.text(placed), held.get('position')), ('{\\an8}Hello', {'rotate': {'z': 15.0}}))
+placed_bar._show_place()
+placed_bar.place_spins['horizontal'].setValue(-12.5)
+placed_bar._reset_place()
+check('reset: back to the place, unturned', 'position' in held, False)
+placed_bar.place_spins['vertical'].setValue(30)
+placed_bar.clear_button.click()
+check('clear takes the position too', ('position' in held, ste.text(placed)), (False, 'Hello'))
+check('without a subtitle the numbers are not offered', (ste.FormattingBar(loaded('x'))._show_place(), ), (None,))
+
+print('a reading stays a reading')
+ruby = QTextEdit()
+ste.set_text(ruby, '<ruby>東京<rt>とうきょう</rt></ruby> is big')
+check('shown and read back as it was', ste.text(ruby),
+      '<ruby>東京<rt>とうきょう</rt></ruby> is big')
+check('the reading drawn raised, where ruby draws it above',
+      ste.runs(ruby)[1][1].ruby, 'text')
+ste.set_text(ruby, 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
+check('with the formatting inside it', ste.text(ruby), 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

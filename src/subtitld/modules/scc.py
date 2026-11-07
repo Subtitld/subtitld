@@ -498,7 +498,7 @@ def _text_lines(text):
     each, and the keypad it sits at."""
     lead, rest = markup.split_lead(text)
     lines, cells = [], []
-    for run, style in markup.spans(rest) + [('\n', markup.PLAIN)]:
+    for run, style in markup.without_readings(markup.spans(rest)) + [('\n', markup.PLAIN)]:
         look = _look(style)
         for char in run:
             if char == '\n':

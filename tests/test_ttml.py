@@ -225,6 +225,106 @@ check('read back, the box changes nothing', [s['text'] for s in ttml.parse(previ
       '{\\an8}<font color="#ffd700">Gold <b>bold</b> & <u>under</u> <s>struck</s></font>')
 check('without the box: none', 'box' in ttml.write(segments, look='preview', preview={'backgroundbox_enabled': False}), False)
 
+print('the profile a file declares')
+check('nothing declared by default, as Subtitld has always written it',
+      ('ttp:profile' in clean, 'contentProfiles' in clean, 'cellResolution' in clean), (False, False, False))
+imsc1 = ttml.write(segments, 'en', profile='imsc1')
+check("IMSC 1.0.1: its Text Profile in ttp:profile, the grid written down",
+      (f'ttp:profile="{ttml._IMSC1_TEXT}"' in imsc1, 'ttp:cellResolution="32 15"' in imsc1), (True, True))
+imsc11 = ttml.write(segments, 'en', profile='imsc1.1')
+check('IMSC 1.1: in ttp:contentProfiles, where 1.1 moved it',
+      (f'ttp:contentProfiles="{ttml._IMSC11_TEXT}"' in imsc11, 'ttp:profile=' in imsc11), (True, False))
+ebu = ttml.write(segments, 'en', profile='ebu-tt-d')
+check('EBU-TT-D: its URN in metadata, its namespace, and no contentProfiles', (
+    f'<ebuttm:conformsToStandard>{ttml._EBUTTD_STANDARD}</ebuttm:conformsToStandard>' in ebu,
+    f'xmlns:ebuttm="{ttml._EBUTTM_NS}"' in ebu, 'contentProfiles' in ebu), (True, True, False))
+check('agents still written beside it', ttml.write(segments, 'en', agents=True, profile='ebu-tt-d').count('<ttm:agent '), 2)
+check('an unknown profile is plain TTML 1', 'Profiles' in ttml.write(segments, 'en', profile='nonsense'), False)
+check('all of them read back the same', [len(ttml.parse(written)) for written in (imsc1, imsc11, ebu)], [5, 5, 5])
+
+japanese = [{'start': 1, 'end': 2, 'text': '<i>こんにちは</i>'}]
+ja = ttml.write(japanese, 'ja', profile='imsc1.1')
+check('Japanese in an IMSC profile: italics as a shear, no fontStyle',
+      (f'tts:shear="{ttml._SHEAR}"' in ja, 'fontStyle' in ja), (True, False))
+check('and they read back as italics', [s['text'] for s in ttml.parse(ja)], ['<i>こんにちは</i>'])
+check('English keeps fontStyle; so does plain TTML 1 in Japanese',
+      ('tts:fontStyle="italic"' in ttml.write(japanese, 'en', profile='imsc1.1'),
+       'tts:fontStyle="italic"' in ttml.write(japanese, 'ja')), (True, True))
+check('a shear read on its own is italics',
+      cues(doc('<p begin="1s" end="2s"><span tts:shear="16.67%">Slanted</span></p>')), [(1.0, 2.0, '<i>Slanted</i>')])
+check('a shear of zero stands the text up again',
+      cues(doc('<p begin="1s" end="2s" tts:shear="16.67%">A<span tts:shear="0%">B</span></p>')), [(1.0, 2.0, '<i>A</i>B')])
+
+print('ruby, the reading above the text')
+RUBY = '<ruby>漢字<rt>かんじ</rt></ruby>を読む'
+ruby_written = ttml.write([{'start': 1, 'end': 2, 'text': RUBY}], 'ja', profile='imsc1.1')
+check('written as IMSC writes one: a container holding the base and its text',
+      [line.split('>', 1)[1].rsplit('</p>', 1)[0] for line in ruby_written.splitlines() if '<p ' in line],
+      ['<span tts:ruby="container"><span tts:ruby="base">漢字</span>'
+       '<span tts:ruby="text">かんじ</span></span>を読む'])
+check('and read back as it was', [s['text'] for s in ttml.parse(ruby_written)], [RUBY])
+check('the containers of a file written elsewhere', cues(doc(
+    '<p begin="1s" end="2s"><span tts:ruby="container"><span tts:ruby="base">東京</span>'
+    '<span tts:ruby="text">とうきょう</span></span>へ</p>')),
+      [(1.0, 2.0, '<ruby>東京<rt>とうきょう</rt></ruby>へ')])
+check('a delimiter is punctuation a player draws, not words of the subtitle', cues(doc(
+    '<p begin="1s" end="2s"><span tts:ruby="container"><span tts:ruby="base">A</span>'
+    '<span tts:ruby="delimiter">(</span><span tts:ruby="text">a</span>'
+    '<span tts:ruby="delimiter">)</span></span></p>')),
+      [(1.0, 2.0, '<ruby>A<rt>a</rt></ruby>')])
+check('italics inside a ruby, and the shear with them',
+      '<span tts:ruby="base"><span tts:shear="16.67%">A</span></span>' in
+      ttml.write([{'start': 1, 'end': 2, 'text': '<ruby><i>A</i><rt>a</rt></ruby>'}], 'ja', profile='imsc1.1'), True)
+check('a file with no ruby is written exactly as before', ttml.write(segments, 'pt-br', agents=True), written)
+
+print('placed more finely than the nine places')
+from subtitld.modules import position                                    # noqa: E402
+placed = [{'start': 1, 'end': 2, 'text': 'Plain'},
+          {'start': 3, 'end': 4, 'text': '{\\an8}High', 'position': {'v': '5%'}},
+          {'start': 5, 'end': 6, 'text': 'Lifted', 'position': {'v': '30%'}},
+          {'start': 7, 'end': 8, 'text': '{\\an4}Side', 'position': {'h': '3%'}}]
+placed_written = ttml.write(placed, 'en')
+check('a region for each place, the plain one as it always was',
+      [line.split('"')[1] + ' ' + line.split('tts:origin="')[1].split('"')[0] + ' ' + line.split('tts:extent="')[1].split('"')[0]
+       for line in placed_written.splitlines() if '<region ' in line],
+      ['top 10% 5% 80% 85%', 'left 3% 10% 87% 80%', 'bottom 10% 10% 80% 80%', 'bottom-2 10% 10% 80% 60%'])
+check('and every subtitle comes back exactly as it went in',
+      [(s['text'], s.get('position')) for s in ttml.parse(placed_written)],
+      [(s['text'], s.get('position')) for s in placed])
+check('a file that places its subtitles itself keeps that', [(s['text'], s.get('position')) for s in ttml.parse(doc(
+    '<p begin="1s" end="2s" region="r">Over here</p>',
+    head='<layout><region xml:id="r" tts:origin="30% 20%" tts:extent="50% 30%" '
+         'tts:displayAlign="after" tts:textAlign="center"/></layout>'))],
+      [('Over here', {'h': '5%', 'v': '50%'})])
+check('a region where a subtitle would sit anyway says nothing', [s.get('position') for s in ttml.parse(doc(
+    '<p begin="1s" end="2s" region="r">Ordinary</p>',
+    head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 80%" '
+         'tts:displayAlign="after" tts:textAlign="center"/></layout>'))], [None])
+check('TTML has no rotation, so a turned subtitle is written flat',
+      'rotate' in ttml.write([{'start': 1, 'end': 2, 'text': 'Turned', 'position': {'rotate': {'z': 45}}}], 'en'), False)
+
+print('checking a file against its profile')
+check('what Subtitld writes passes its own check',
+      (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
+check('the wrong declaration is found', ttml.check(imsc1, 'imsc1.1'),
+      [f"ttp:contentProfiles does not name IMSC 1.1's Text Profile ({ttml._IMSC11_TEXT})"])
+check('a file with no language', ttml.check(doc('<p begin="1s" end="2s">Hi</p>'), 'ttml1')[0].startswith('<tt> has no xml:lang'), True)
+check('a region a subtitle names but the file has not',
+      ttml.check(doc('<p begin="1s" end="2s" region="nope">Hi</p>', attrs=' xml:lang="en"'), 'ttml1'),
+      ['Subtitles name regions the file does not have: nope'])
+image = doc('<p begin="1s" end="2s" smpte:backgroundImage="card.png"/>',
+            attrs=' xml:lang="en" xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt"')
+check('pictures in a text profile', ttml.check(image, 'imsc1.1')[-1].startswith('1 element(s) carry smpte:backgroundImage'), True)
+check('EBU-TT-D with a profile attribute it may not have',
+      ttml.check(doc('<p begin="1s" end="2s">Hi</p>', attrs=' xml:lang="en" ttp:contentProfiles="x"'), 'ebu-tt-d'),
+      ['No ebuttm:conformsToStandard: EBU-TT-D is declared in metadata, not in a ttp: attribute',
+       'ttp:contentProfiles is prohibited in EBU-TT-D'])
+check('a cell grid that is not two numbers',
+      ttml.check(doc('<p begin="1s" end="2s">Hi</p>', attrs=' xml:lang="en" ttp:cellResolution="32"'), 'ttml1'),
+      ["ttp:cellResolution is '32': it is two whole numbers above zero"])
+check('text that is not XML at all', ttml.check('not xml', 'ttml1')[0].startswith('Not XML that can be read'), True)
+check('XML that is not TTML', ttml.check('<html><body/></html>', 'ttml1'), ['The document is <html>, not <tt>'])
+
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 for name, text, encoding in (('in.ttml', AGENTS, 'utf-8'), ('in.dfxp', OLD, 'utf-8'), ('in.itt', ITT, 'utf-8'),

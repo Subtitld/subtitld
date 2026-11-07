@@ -22,7 +22,9 @@ Reading:
   div, p and span, each element's being the styles its style="..." names
   (and the ones they name) and then its own tts:* attributes. Italic (or
   oblique), bold, underline, line-through and a colour other than white
-  become formatting tags;
+  become formatting tags; so does a tts:shear, which is how IMSC 1.1
+  writes italics for Japanese (Netflix's profile asks for it there, and a
+  file written that way has no fontStyle to find);
 - where the subtitle sits, from its region: the point tts:displayAlign
   and tts:textAlign put the text at in the region's tts:origin and
   tts:extent (in %, px or cells), or, without those, the two alone
@@ -40,6 +42,22 @@ spans with tts:fontStyle, tts:fontWeight, tts:textDecoration and
 tts:color, line breaks as <br/>, and, when asked, each speaker as a
 ttm:agent. Its one style is white with a black outline, or the look of
 Subtitld's preview: its font, colour and box.
+
+`profile` says which of TTML's profiles the file declares itself to be, so
+a service that checks what it is given accepts it (PROFILES):
+
+    'ttml1'     TTML 1 with nothing declared, as Subtitld has always
+                written it
+    'imsc1'     IMSC 1.0.1's Text Profile, declared in ttp:profile
+    'imsc1.1'   IMSC 1.1's Text Profile, declared in ttp:contentProfiles,
+                which is where 1.1 moved it
+    'ebu-tt-d'  EBU-TT-D, declared in ebuttm:conformsToStandard, the way
+                the EBU's own spec asks for and which forbids
+                ttp:contentProfiles
+
+A profile also sets what the file may hold, and `check` reads a file back
+to say where it breaks the rules this module knows (it is a useful set of
+checks, not a conformance certificate).
 """
 
 import html.entities
@@ -47,20 +65,44 @@ import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from subtitld.modules import export_options, markup
+from subtitld.modules import export_options, markup, position
 from subtitld.modules.srt import decode
 
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
 _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
-_STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent')
+_STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
+                 'shear', 'ruby')
+
+# tts:ruby says what part of a ruby a span is. Only the two that hold text
+# are a run of their own; the containers around them hold no text, and a
+# delimiter is punctuation a player draws, not the subtitle's words.
+_RUBY_ROLES = {'base': 'base', 'text': 'text'}
 _RGB = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
 _DECLARED = re.compile(rb'\s*<\?xml[^>]*?encoding\s*=\s*["\']([\w.:-]+)["\']')
 _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
 _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
+
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
+
+# What each profile is called where it is declared. IMSC 1.0.1 names the
+# profile it conforms to in ttp:profile; 1.1 moved that to
+# ttp:contentProfiles (ttp:profile there says what a processor must do, not
+# what the document is); EBU-TT-D has its own URN, in metadata, and
+# forbids ttp:contentProfiles.
+_IMSC1_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1/text'
+_IMSC11_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1.1/text'
+_EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
+_EBUTTM_NS = 'urn:ebu:tt:metadata'
+
+# Japanese subtitles write italics as a shear: IMSC 1.1 has tts:shear, and
+# Netflix's Japanese profile asks for it in place of tts:fontStyle, which
+# it prohibits. 16.67% is the slant their guide gives.
+_SHEAR = '16.67%'
+_PERCENT = re.compile(r'^(-?\d+(?:\.\d+)?)%$')
 
 
 def _local(name):
@@ -232,19 +274,35 @@ class _Styles:
         return props
 
 
+def _sheared(value):
+    """Whether a tts:shear slants the text: a percentage other than zero.
+    A span that sets it back to 0% stands the text up again, as one with
+    tts:fontStyle="normal" does."""
+    percent = _PERCENT.match((value or '').strip())
+    return bool(percent) and float(percent.group(1)) != 0
+
+
 def _look(props):
     decoration = (props.get('textDecoration') or '').split()
     color = _color(props.get('color'))
     return markup.Style(
-        (props.get('fontStyle') or '') in ('italic', 'oblique'),
+        (props.get('fontStyle') or '') in ('italic', 'oblique') or _sheared(props.get('shear')),
         (props.get('fontWeight') or '') == 'bold',
         'underline' in decoration,
         'lineThrough' in decoration,
-        '' if color == '#ffffff' else color)
+        '' if color == '#ffffff' else color,
+        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''))
 
 
-def _keypad(props, frame):
+def _keypad(props, frame, geometry=True):
     """Where a subtitle sits (7 8 9 top ... 1 2 3 bottom), from its region.
+
+    Without `geometry` the region's own displayAlign and textAlign say it
+    and where the region sits does not: a file that says both means them,
+    and how far in the region stands is the subtitle's margins (_margins),
+    not another place. Reading a lifted subtitle as "the middle, lifted
+    less" would put it in the same spot on the picture but change what the
+    subtitle says about itself.
     With no displayAlign the text goes to the bottom of the region, and
     with no textAlign to its middle, as players show them. In a region
     with no place of its own, "start", textAlign's default, is taken as
@@ -256,7 +314,7 @@ def _keypad(props, frame):
     if align == 'start' and not (origin and extent):
         align = 'center'
     horizontal = 0 if align in ('left', 'start') else 2 if align in ('right', 'end') else 1
-    if origin and extent:
+    if origin and extent and geometry:
         # The middle of the line nearest the edge the text is put against:
         # half a cell in from it.
         half_line = min(50 / frame.cells[1], extent[1] / 2)
@@ -268,6 +326,64 @@ def _keypad(props, frame):
         row = {'before': 2, 'center': 1}.get(display, 0)
         column = horizontal
     return (1, 4, 7)[row] + column
+
+
+# Where a subtitle sits when it says nothing: the title-safe area Subtitld
+# has always written, a tenth of the picture in from each edge, and no
+# offset from the middle for a subtitle aligned to it.
+_SAFE = 10.0
+_NUDGE = 0.25                                   # % a margin must differ by to be one
+
+
+def _default_margin(place):
+    """The margin an alignment has when a subtitle gives none: from an edge
+    it is the safe area, from the middle it is no offset at all."""
+    return 0.0 if place == 1 else _SAFE
+
+
+def _box(keypad, horizontal, vertical):
+    """(origin, extent) in % for the nine places and a subtitle's margins
+    (None where it gives none).
+
+    The region's aligned edge stands the margin in from the picture's, and
+    its other edge stays at the safe area; a middle alignment is moved off
+    the middle by it, right and down. With no margins this is the box
+    Subtitld has always written: 10% in on every side.
+    """
+    column, row = (keypad - 1) % 3, (keypad - 1) // 3   # 0 left/bottom, 1 centre/middle, 2 right/top
+    across = _default_margin(column) if horizontal is None else horizontal
+    down = _default_margin(row) if vertical is None else vertical
+    if column == 0:                                     # left
+        x, width = across, 100.0 - _SAFE - across
+    elif column == 2:                                   # right
+        x, width = _SAFE, 100.0 - across - _SAFE
+    else:
+        x, width = _SAFE + across, 100.0 - 2 * _SAFE
+    if row == 0:                                        # bottom
+        y, height = _SAFE, 100.0 - down - _SAFE
+    elif row == 2:                                      # top
+        y, height = down, 100.0 - _SAFE - down
+    else:
+        y, height = _SAFE + down, 100.0 - 2 * _SAFE
+    return (x, y), (max(1.0, width), max(1.0, height))
+
+
+def _margins(keypad, origin, extent):
+    """(horizontal, vertical) in % for a region, None where it sits where a
+    subtitle that says nothing would. The inverse of _box."""
+    column, row = (keypad - 1) % 3, (keypad - 1) // 3
+    (x, y), (width, height) = origin, extent
+    across = x if column == 0 else 100.0 - (x + width) if column == 2 else x + width / 2 - 50.0
+    down = 100.0 - (y + height) if row == 0 else y if row == 2 else y + height / 2 - 50.0
+    return tuple(None if abs(margin - _default_margin(place)) < _NUDGE else round(margin, 3)
+                 for margin, place in ((across, column), (down, row)))
+
+
+def _percent(value):
+    """A margin as USF writes it: '12.5%', or '' for none."""
+    if value is None:
+        return ''
+    return f'{int(value)}%' if float(value).is_integer() else f'{round(float(value), 3)}%'
 
 
 def _agents(root):
@@ -290,6 +406,10 @@ def _preserving(element, preserve):
 def _runs(element, styles, props, preserve, out, agent):
     """Collect `element`'s text into `out` as [(text, Style)]; the first
     ttm:agent met goes in `agent`."""
+    if (props.get('ruby') or '').strip() == 'delimiter':
+        # Brackets a player draws around a reading. They are not words of
+        # the subtitle, and taking them for words would cut the ruby in two.
+        return
     preserve = _preserving(element, preserve)
     if agent[0] is None and _attr(element, 'agent'):
         agent[0] = _attr(element, 'agent').split()[0]
@@ -337,12 +457,23 @@ def _document(text):
         body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
-        keypad = _keypad(p_props, frame)
+        # A file that states both alignments means them; one that leaves
+        # them out is read by where its region sits, as before.
+        stated = p_props.get('displayAlign') is not None and p_props.get('textAlign') is not None
+        keypad = _keypad(p_props, frame, geometry=not stated)
         segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
                    'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + body}
         speaker = agent[0] or outer_agent
         if speaker:
             segment['speaker'] = agents.get(speaker, speaker)
+        # Where the region puts it, beyond the nine places: a file that
+        # places its subtitles itself keeps that through to the project.
+        region_origin = frame.percent(p_props.get('origin'))
+        region_extent = frame.percent(p_props.get('extent'))
+        if region_origin and region_extent:
+            across, down = _margins(keypad, region_origin, region_extent)
+            if across is not None or down is not None:
+                position.store(segment, position.Place(h=_percent(across), v=_percent(down)))
         segments.append(segment)
 
     def walk(element, base, limit, props, region, preserve, agent):
@@ -387,6 +518,68 @@ def read(path):
         return _document(_text_of(ttml_file.read()))
 
 
+def check(text, profile='imsc1.1'):
+    """What breaks `profile`'s rules in TTML text: ["what is wrong", ...],
+    empty when this finds nothing.
+
+    A useful set of checks, not a conformance certificate: it holds the
+    rules that are written down plainly and that a file Subtitld wrote or
+    read can actually break — the declaration itself, the language, a
+    region a subtitle names but the file does not have, images in a text
+    profile, and what EBU-TT-D asks for. A service's own validator still
+    has the last word.
+    """
+    profile = profile if profile in PROFILES else 'ttml1'
+    try:
+        root = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', _ENTITY.sub(_entity, (text or '').lstrip('﻿'))))
+    except ET.ParseError as error:
+        return [f'Not XML that can be read: {error}']
+    if _local(root.tag) != 'tt':
+        return [f'The document is <{_local(root.tag)}>, not <tt>']
+
+    problems = []
+    if not (root.get(_XML_NS + 'lang') or '').strip():
+        problems.append('<tt> has no xml:lang: every profile asks a file to say what language it is in')
+
+    declared_profile = _attr(root, 'profile') or ''
+    content_profiles = (_attr(root, 'contentProfiles') or '').split()
+    standards = [(element.text or '').strip() for element in root.iter()
+                 if _local(element.tag) == 'conformsToStandard']
+    if profile == 'imsc1' and declared_profile != _IMSC1_TEXT:
+        problems.append(f'ttp:profile does not name IMSC 1.0.1\'s Text Profile ({_IMSC1_TEXT})')
+    if profile == 'imsc1.1' and _IMSC11_TEXT not in content_profiles:
+        problems.append(f'ttp:contentProfiles does not name IMSC 1.1\'s Text Profile ({_IMSC11_TEXT})')
+    if profile == 'ebu-tt-d':
+        if not any(standard.startswith('urn:ebu:tt:distribution') for standard in standards):
+            problems.append('No ebuttm:conformsToStandard: EBU-TT-D is declared in metadata, not in a ttp: attribute')
+        if content_profiles:
+            problems.append('ttp:contentProfiles is prohibited in EBU-TT-D')
+        if (_attr(root, 'timeBase') or 'media') != 'media':
+            problems.append('EBU-TT-D asks for ttp:timeBase="media"')
+
+    cells = (_attr(root, 'cellResolution') or '').split()
+    if cells:
+        try:
+            if len(cells) != 2 or not all(int(cell) > 0 for cell in cells):
+                raise ValueError
+        except ValueError:
+            problems.append(f'ttp:cellResolution is {" ".join(cells)!r}: it is two whole numbers above zero')
+
+    if profile in ('imsc1', 'imsc1.1'):
+        images = [element for element in root.iter() if _attr(element, 'backgroundImage')]
+        if images:
+            problems.append(f'{len(images)} element(s) carry smpte:backgroundImage: '
+                            'pictures belong to the Image Profile, not the Text Profile')
+
+    regions = {_xml_id(element) for element in root.iter()
+               if _local(element.tag) == 'region' and _xml_id(element)}
+    missing = sorted({element.get('region') for element in root.iter()
+                      if element.get('region') and element.get('region') not in regions})
+    if missing:
+        problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    return problems
+
+
 def format_time(seconds):
     """TTML clock time for `seconds`: "HH:MM:SS.mmm"."""
     total = max(0, int(round(float(seconds) * 1000)))
@@ -405,16 +598,17 @@ def _rgba(value, default):
     return '#' + value
 
 
-def _open_span(tags, style):
+def _open_span(tags, style, shear=False):
     """A <span> for the formatting `tags` ({(name, value)}) open together;
     its textDecoration names all the run's, so none an outer span set is
-    lost, whatever a player makes of a nested one."""
+    lost, whatever a player makes of a nested one. With `shear`, italics
+    are written as a slant instead (see _SHEAR)."""
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
         attrs.append(f'tts:color="{names["font"]}"')
     if 'i' in names:
-        attrs.append('tts:fontStyle="italic"')
+        attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:
         attrs.append('tts:fontWeight="bold"')
     if 'u' in names or 's' in names:
@@ -423,12 +617,12 @@ def _open_span(tags, style):
     return f'<span {" ".join(attrs)}>'
 
 
-def _content(text):
-    """A subtitle's text as TTML: spans for its formatting, nested as its
-    tags are, <br/> between lines."""
+def _nested_content(runs, shear=False):
+    """Runs of one stretch as TTML: spans for their formatting, nested as
+    the tags are, <br/> between lines."""
     out = []
     stack = []                                  # [frozenset of tags], one per open span
-    for run, style in markup.spans(text):
+    for run, style in runs:
         if not run:
             continue
         wanted = set(markup.tags_for(style))
@@ -439,10 +633,28 @@ def _content(text):
         del stack[keep:]
         new = wanted.difference(*stack)
         if new:
-            out.append(_open_span(new, style))
+            out.append(_open_span(new, style, shear))
             stack.append(frozenset(new))
         out.append('<br/>'.join(escape(part) for part in run.split('\n')))
     out.extend('</span>' for _span in stack)
+    return ''.join(out)
+
+
+def _content(text, shear=False):
+    """A subtitle's text as TTML. A ruby is a container span holding the
+    base and its text, which is how IMSC 1.1 writes one."""
+    out = []
+    for group in markup.ruby_groups(markup.spans(text)):
+        if group[0] == 'plain':
+            out.append(_nested_content(group[1], shear))
+            continue
+        base = _nested_content(group[1], shear)
+        reading = _nested_content(group[2], shear)
+        if not (base and reading):
+            out.append(base + reading)
+            continue
+        out.append(f'<span tts:ruby="container"><span tts:ruby="base">{base}</span>'
+                   f'<span tts:ruby="text">{reading}</span></span>')
     return ''.join(out)
 
 
@@ -462,10 +674,43 @@ def _styles(look, preview):
     return styles, 'box'
 
 
-def write(segments, language='en', agents=False, look='clean', preview=None):
+def _japanese(language):
+    return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
+
+
+def _root_attributes(profile, language):
+    """What <tt> carries: the namespaces and parameters, and the profile
+    the file declares itself to be."""
+    namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
+                  'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
+                  'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
+                  'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"']
+    if profile == 'ebu-tt-d':
+        namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
+    attrs = ['ttp:timeBase="media"']
+    if profile == 'imsc1':
+        attrs.append(f'ttp:profile="{_IMSC1_TEXT}"')
+    elif profile == 'imsc1.1':
+        attrs.append(f'ttp:contentProfiles="{_IMSC11_TEXT}"')
+    if profile != 'ttml1':
+        # What the percentages in this file are measured against. It is
+        # TTML's default, but EBU-TT-D asks for it in writing and a file
+        # that says so cannot be read against another grid by mistake.
+        attrs.append('ttp:cellResolution="32 15"')
+    attrs.append(f'xml:lang={quoteattr(export_options.language_tag(language))}')
+    return ' '.join(namespaces + attrs)
+
+
+def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1'):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
-    `preview`, CONFIG['videoplayer'])."""
+    `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
+
+    A Japanese file in an IMSC profile writes its italics as tts:shear:
+    that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
+    profile prohibits tts:fontStyle outright."""
+    profile = profile if profile in PROFILES else 'ttml1'
+    shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     cues = []
     places = {}
     speakers = {}
@@ -477,37 +722,54 @@ def write(segments, language='en', agents=False, look='clean', preview=None):
         if not markup.plain(rest).strip():
             continue
         keypad = markup.alignment(lead)
-        region = places.setdefault(keypad, markup.POSITION_NAMES[keypad])
+        placed = position.of(segment)
+        spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v))
+        if spot not in places:
+            # One region for each place used. A subtitle placed more finely
+            # than the nine takes a region of its own, named after the place
+            # it starts from, numbered only where that name is taken.
+            name = markup.POSITION_NAMES[keypad]
+            taken = set(places.values())
+            if name in taken:
+                name = next(f'{name}-{number}' for number in range(2, len(taken) + 3)
+                            if f'{name}-{number}' not in taken)
+            places[spot] = name
+        region = places[spot]
         start = float(segment.get('start', 0))
         end = max(start, float(segment.get('end', start)))
         attrs = f'begin="{format_time(start)}" end="{format_time(end)}" region="{region}"'
         speaker = str(segment.get('speaker') or '').strip()
         if agents and speaker:
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
-        content = _content(rest)
+        content = _content(rest, shear)
         if box:
             content = f'<span style="{box}">{content}</span>'
         cues.append(f'      <p {attrs}>{content}</p>')
 
     head = ['  <head>']
-    if speakers:
-        head.append('    <metadata>')
-        for name, agent_id in speakers.items():
-            head.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
+    metadata = []
+    if profile == 'ebu-tt-d':
+        metadata.append(f'      <ebuttm:documentMetadata>'
+                        f'<ebuttm:conformsToStandard>{_EBUTTD_STANDARD}</ebuttm:conformsToStandard>'
+                        f'</ebuttm:documentMetadata>')
+    for name, agent_id in speakers.items():
+        metadata.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
                         f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
-        head.append('    </metadata>')
+    if metadata:
+        head += ['    <metadata>', *metadata, '    </metadata>']
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
-    for keypad in sorted(places, key=lambda keypad: (-((keypad - 1) // 3), keypad)):
+    for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0)):
+        keypad, across, down = spot
         display = ('after', 'center', 'before')[(keypad - 1) // 3]
         align = ('left', 'center', 'right')[(keypad - 1) % 3]
-        head.append(f'      <region xml:id="{places[keypad]}" tts:origin="10% 10%" tts:extent="80% 80%" '
+        (x, y), (width, height) = _box(keypad, across, down)
+        head.append(f'      <region xml:id="{places[spot]}" '
+                    f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
                     f'tts:displayAlign="{display}" tts:textAlign="{align}"/>')
     head += ['    </layout>', '  </head>']
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" '
-        'xmlns:ttp="http://www.w3.org/ns/ttml#parameter" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" '
-        f'ttp:timeBase="media" xml:lang={quoteattr(export_options.language_tag(language))}>',
+        f'<tt {_root_attributes(profile, language)}>',
         *head,
         '  <body style="text">',
         '    <div>',
@@ -518,7 +780,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None):
         ''])
 
 
-def save(path, segments, language='en', agents=False, look='clean', preview=None):
+def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1'):
     """Write `segments` to `path` as TTML, in UTF-8."""
     with open(path, 'w', encoding='utf-8', newline='\n') as ttml_file:
-        ttml_file.write(write(segments, language, agents, look, preview))
+        ttml_file.write(write(segments, language, agents, look, preview, profile))
