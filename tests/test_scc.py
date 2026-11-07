@@ -291,6 +291,59 @@ check('a place no subtitle asks for leaves the words it is written in alone',
       scc.write([{'start': 1.0, 'end': 3.0, 'text': 'Where it always went', 'position': {}}]), True)
 
 
+print('a background behind the text')
+
+
+def _shown(*written):
+    """What a caption built from `written` says, its leading codes aside."""
+    text = doc(('00:00:00;00', ' '.join((RCL, ENM, pac(15, 0)) + written + (EOC,))), ('00:00:02;00', EDM))
+    found = scc.parse(text)
+    return markup.split_lead(found[0]['text'])[1] if found else ''
+
+
+check('read off a background code, which shows as a space',
+      _shown(code(0x10, 0x20), chars('On white')),
+      '<font background="#ffffff">On white</font>')
+check('each of its seven colours, opaque and half seen through',
+      [_shown(code(0x10, second), chars('x')) for second in (0x22, 0x23, 0x28, 0x2C)],
+      ['<font background="#00ff00">x</font>', '<font background="#00ff0080">x</font>',
+       '<font background="#ff0000">x</font>', '<font background="#ff00ff">x</font>'])
+check('black is what text sits on anyway, so it says nothing of its own',
+      _shown(code(0x10, 0x2E), chars('Plain')), 'Plain')
+check('transparent, which 0x17 0x2D asks for too',
+      [_shown(written, chars('x')) for written in (code(0x10, 0x2F), code(0x17, 0x2D))],
+      ['<font background="#00000000">x</font>'] * 2)
+check('0x17 0x2E and 0x2F are still a black foreground, underlined by the second',
+      [markup.spans(_shown(written, chars('x'))) for written in (code(0x17, 0x2E), code(0x17, 0x2F))],
+      [markup.spans('<font color="#000000">x</font>'), markup.spans('<u><font color="#000000">x</font></u>')])
+check('a mid-row code leaves the background alone, saying nothing about it',
+      _shown(code(0x10, 0x28), chars('red box '), code(0x11, 0x26), chars('still red')),
+      '<font background="#ff0000">red box </font>'
+      '<font color="#00ffff" background="#ff0000">still red</font>')
+
+
+def _written_back(text, mode='pop'):
+    back = scc.parse(scc.write([{'start': 1.0, 'end': 3.0, 'text': text}], mode=mode))
+    return markup.spans(back[0]['text']) if back else []
+
+
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <font color="#ffff00" background="#0000ff">yellow on blue</font> plain'
+    check(f'{_mode}: written as a code of its own and read back, colour and all',
+          _written_back(_asked, _mode), markup.spans(_asked))
+check('half seen through, and asked to be seen through altogether',
+      [_written_back(f'<font background="{shade}">x</font>') for shade in ('#00ff0080', '#00000000')],
+      [markup.spans(f'<font background="{shade}">x</font>') for shade in ('#00ff0080', '#00000000')])
+check('a colour CEA-608 has not: the nearest of its seven',
+      _written_back('<font background="#2200cc">x</font>'),
+      markup.spans('<font background="#0000ff">x</font>'))
+check('a background on one caption is not on the next',
+      [subtitle['text'] for subtitle in scc.parse(scc.write(
+          [{'start': 1.0, 'end': 3.0, 'text': '<font background="#ffffff">On white</font>'},
+           {'start': 4.0, 'end': 6.0, 'text': 'No box at all'}]))],
+      ['<font background="#ffffff">On white</font>', 'No box at all'])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

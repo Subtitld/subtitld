@@ -16,7 +16,10 @@ of 32 columns:
   state; roll-up ones, line after line as in live captions, one subtitle a
   line, from its first character to the next line's;
 - italics, underline and colours (white, green, blue, cyan, red, yellow,
-  magenta) become formatting tags; where the caption sits on the screen,
+  magenta) become formatting tags, and so does the background the text
+  sits on, in the same seven colours, opaque, half seen through or
+  transparent; black is what text sits on anyway, so it says nothing of
+  its own; where the caption sits on the screen,
   its rows and columns, one of the nine places, and the margins it sits by
   where those rows and columns are not where the nine places alone put
   text (modules.position);
@@ -75,6 +78,15 @@ _SPECIAL = dict(zip(range(0x30, 0x40), '®°½¿™¢£♪à èâêîôû'))
 _EXTENDED = {0x12: dict(zip(range(0x20, 0x40), 'ÁÉÓÚÜü‘¡*’—©℠•“”ÀÂÇÈÊËëÎÏïÔÙùÛ«»')),
              0x13: dict(zip(range(0x20, 0x40), 'ÃãÍÌìÒòÕõ{}\\^_¦~ÄäÖöß¥¤|ÅåØø┌┐└┘'))}
 _COLORS = ('', '#00ff00', '#0000ff', '#00ffff', '#ff0000', '#ffff00', '#ff00ff')    # white first
+# What a background code says, by its second byte: the same seven colours,
+# each opaque and semi-transparent, then black and none at all. Black is
+# what text sits on when nothing says otherwise, so it reads as no
+# background of its own, as white reads as no colour of its own.
+_BACKGROUNDS = {0x2E: '', 0x2F: '#00000000'}
+for _index, _shade in enumerate(('#ffffff',) + _COLORS[1:]):
+    _BACKGROUNDS[0x20 + _index * 2] = _shade
+    _BACKGROUNDS[0x21 + _index * 2] = _shade + '80'                 # semi-transparent
+_BACKGROUND_CODES = {shade: second for second, shade in sorted(_BACKGROUNDS.items(), reverse=True)}
 # The first byte of a PAC and the second's base, by row.
 _PAC_ROWS = {1: (0x11, 0x40), 2: (0x11, 0x60), 3: (0x12, 0x40), 4: (0x12, 0x60), 5: (0x15, 0x40), 6: (0x15, 0x60),
              7: (0x16, 0x40), 8: (0x16, 0x60), 9: (0x17, 0x40), 10: (0x17, 0x60), 11: (0x10, 0x40), 12: (0x13, 0x40),
@@ -325,9 +337,13 @@ class _Decoder:
             self._put(frame, _EXTENDED[first][second])
         elif first == 0x17 and 0x21 <= second <= 0x23:
             self.column = min(self.column + second - 0x20, _COLUMNS)
+        elif first == 0x10 and 0x20 <= second <= 0x2F:
+            self._background(frame, _BACKGROUNDS[second])
+        elif first == 0x17 and second == 0x2D:
+            self._background(frame, '#00000000')
         elif first == 0x17 and second in (0x2E, 0x2F):
             self._put(frame, ' ', attribute=True)
-            self.style = markup.Style(False, False, bool(second & 1), False, '#000000')
+            self.style = self.style._replace(italic=False, underline=bool(second & 1), color='#000000')
         elif 0x40 <= second <= 0x7F and (first, second & 0x60) in _ROW_OF_PAC:
             self._pac(frame, _ROW_OF_PAC[(first, second & 0x60)], second & 0x1F)
 
@@ -344,6 +360,8 @@ class _Decoder:
                         self.displayed[target] = cells
         self.row = row
         underline = bool(attribute & 1)
+        # A PAC gives its row the look it names and no background: one is
+        # asked for by a code of its own, after it.
         if attribute >= 0x10:
             self.column = ((attribute - 0x10) >> 1) * 4
             self.style = markup.Style(False, False, underline, False, '')
@@ -352,13 +370,20 @@ class _Decoder:
             look = attribute >> 1
             self.style = markup.Style(look == 7, False, underline, False, _COLORS[look] if look < 7 else '')
 
+    def _background(self, frame, shade):
+        """A background code: it shows as a space, as a mid-row code does,
+        and what follows sits on `shade`."""
+        self._put(frame, ' ', attribute=True)
+        self.style = self.style._replace(background=shade)
+
     def _mid_row(self, frame, second):
+        """A mid-row code: what follows takes the colour or italics it
+        names, on the background it already sits on — a mid-row code says
+        nothing about that."""
         self._put(frame, ' ', attribute=True)
         look, underline = (second - 0x20) >> 1, bool(second & 1)
-        if look == 7:
-            self.style = markup.Style(True, False, underline, False, '')
-        else:
-            self.style = markup.Style(False, False, underline, False, _COLORS[look])
+        self.style = self.style._replace(italic=look == 7, bold=False, underline=underline, strike=False,
+                                         color='' if look == 7 else _COLORS[look])
 
     def _command(self, frame, second):
         if second == _RCL:
@@ -506,20 +531,37 @@ def _cells(char):
     return [('?', [('basic', 0x3F)])]
 
 
-_PLAIN = (False, False, 0)                         # (italic, underline, colour index)
+_PLAIN = (False, False, 0, 0x2E)                   # (italic, underline, colour index, background code)
+_PALETTE = [(255, 255, 255), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 0), (255, 255, 0), (255, 0, 255)]
+
+
+def _nearest(color):
+    """The index in _PALETTE of the nearest colour CEA-608 has."""
+    rgb = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
+    return min(range(len(_PALETTE)), key=lambda index: sum((a - b) ** 2 for a, b in zip(rgb, _PALETTE[index])))
+
+
+def _background_code(background):
+    """The second byte of the background code for a Style's background: the
+    nearest of CEA-608's seven colours, kept opaque or semi-transparent as
+    the background asks, black where it asks for none and transparent where
+    it asks to be seen through."""
+    if not background:
+        return 0x2E                                # black, what text sits on by default
+    alpha = int(background[7:9], 16) if len(background) == 9 else 255
+    if alpha < 0x40:
+        return 0x2F                                # transparent
+    return 0x20 + _nearest(background) * 2 + (1 if alpha < 0xC0 else 0)
 
 
 def _look(style):
-    """(italic, underline, colour index) CEA-608 can show for a Style:
-    italics are white, a colour the nearest of its seven."""
+    """(italic, underline, colour index, background code) CEA-608 can show
+    for a Style: italics are white, a colour the nearest of its seven, and
+    the background one of its own."""
+    background = _background_code(style.background)
     if style.italic:
-        return True, style.underline, 0
-    color = 0
-    if style.color:
-        rgb = tuple(int(style.color[i:i + 2], 16) for i in (1, 3, 5))
-        palette = [(255, 255, 255), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 0), (255, 255, 0), (255, 0, 255)]
-        color = min(range(len(palette)), key=lambda i: sum((a - b) ** 2 for a, b in zip(rgb, palette[i])))
-    return False, style.underline, color
+        return True, style.underline, 0, background
+    return False, style.underline, _nearest(style.color) if style.color else 0, background
 
 
 def _wrap(cells):
@@ -575,28 +617,38 @@ def _punctuated(line):
 
 
 def _mid_row(look):
-    italic, underline, color = look
+    italic, underline, color, _background = look
     return 0x11, (0x2E if italic else 0x20 + color * 2) + int(underline)
 
 
 def _row(row, line, column):
     """The tokens, ('b', byte) or ('c', first, second), that write `line`
-    at `row` from `column`: a PAC (and a tab offset) there, mid-row codes
-    where the style changes, put in place of a space where there is one."""
+    at `row` from `column`: a PAC (and a tab offset) there, a background
+    code and mid-row codes where the look changes, each put in place of a
+    space where there is one.
+
+    A PAC can give a row its colour, italics and underline, but a
+    background is only ever a code of its own, so a line that asks for one
+    leaves room for it.
+    """
     first_look = line[0][1]
     pac_first, pac_base = _PAC_ROWS[row]
     tokens = []
-    if first_look != _PLAIN and column == 0:
-        # At column 0 a PAC gives the row its colour, or italics.
-        italic, underline, color = first_look
+    front, background = first_look[:3], first_look[3]
+    coded = (0 if background == _PLAIN[3] else 1)
+    if front != _PLAIN[:3] and column == 0 and not coded:
+        italic, underline, color = front
         tokens.append(('c', pac_first, pac_base + (7 if italic else color) * 2 + int(underline)))
     else:
-        # Else the code before the text takes the column before it.
-        start = column - 1 if first_look != _PLAIN else column
+        # Else the codes before the text take the columns before it.
+        coded += 0 if front == _PLAIN[:3] else 1
+        start = max(column - coded, 0)
         tokens.append(('c', pac_first, pac_base + 0x10 + (start // 4) * 2))
         if start % 4:
             tokens.append(('c', 0x17, 0x20 + start % 4))
-        if first_look != _PLAIN:
+        if background != _PLAIN[3]:
+            tokens.append(('c', 0x10, background))
+        if front != _PLAIN[:3]:
             tokens.append(('c', *_mid_row(first_look)))
     current = first_look
     for shown, look, units in line:
@@ -607,7 +659,10 @@ def _row(row, line, column):
         if look != current:
             if tokens[-1] == ('b', 0x20):
                 tokens.pop()
-            tokens.append(('c', *_mid_row(look)))
+            if look[3] != current[3]:
+                tokens.append(('c', 0x10, look[3]))
+            if look[:3] != current[:3]:
+                tokens.append(('c', *_mid_row(look)))
             current = look
         tokens.extend(('b', unit[1]) if unit[0] == 'basic' else ('c', unit[1], unit[2]) for unit in units)
     return tokens
@@ -694,14 +749,19 @@ def _at_column(line, keypad, place):
     return max(0, min(_COLUMNS - width, start))
 
 
+def _paints(token):
+    """Whether a token puts something on screen: a character, or one of the
+    codes that shows as a space — a mid-row code or a background code. Each
+    takes a column, so a decoder sees the caption begin there."""
+    return token[0] == 'b' or (token[1] in (0x10, 0x11) and 0x20 <= token[2] <= 0x2F)
+
+
 def _lead(tokens):
     """How many words the codes before the first character take: what a
-    typed caption is sent ahead by, so its text lands on its own frame. A
-    mid-row code ends the lead as a character does — it takes a column on
-    screen, so a decoder sees the caption begin there."""
+    typed caption is sent ahead by, so its text lands on its own frame."""
     before = []
     for token in tokens:
-        if token[0] == 'b' or (token[1] == 0x11 and 0x20 <= token[2] <= 0x2F):
+        if _paints(token):
             break
         before.append(token)
     return len(_words(before))
@@ -755,8 +815,7 @@ def _paint(text, channel=1, place=position.NOWHERE):
     tokens = [('c', 0x14, _RDC)]
     for index, line in enumerate(lines):
         tokens.extend(_row(first_row + index, line, _at_column(line, keypad, place)))
-    painting = next((index for index, token in enumerate(tokens)
-                     if token[0] == 'b' or (token[1] == 0x11 and 0x20 <= token[2] <= 0x2F)), len(tokens))
+    painting = next((index for index, token in enumerate(tokens) if _paints(token)), len(tokens))
     tokens.insert(painting, ('c', 0x14, _EDM))
     return _words(tokens, channel), _lead(tokens)
 

@@ -35,8 +35,10 @@ anchored by percentages of the screen, so 4:3 and 16:9 decoders put it
 alike: at the corner, edge or middle the subtitle's nine-place code names,
 and that far in — the margins the subtitle itself gives (modules.position),
 else the title-safe tenth. Nothing is rounded on the way: a margin is a
-percentage of the picture and so is an anchor. The pen's background is
-black, as CEA-608's is. Characters CEA-708 lacks become their letter
+percentage of the picture and so is an anchor. The pen sits on the
+background its run asks for, with the opacity it asks for, else on solid
+black as a CEA-608 pen does — which is why a pen on solid black is read as
+having no background of its own. Characters CEA-708 lacks become their letter
 without accents, or a 16-bit character.
 """
 
@@ -65,6 +67,33 @@ def _color(value):
     """'#rrggbb' for a 708 colour (two bits a component), '' for white."""
     rgb = (_LEVELS[(value >> 4) & 3], _LEVELS[(value >> 2) & 3], _LEVELS[value & 3])
     return '' if rgb == (255, 255, 255) else '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+
+# How opaque a colour is, by the two bits above it: solid, flashing,
+# half-way, and not at all. A flashing background is drawn as it is solid.
+_OPACITY = (255, 255, 0x80, 0x00)
+
+
+def _background(value):
+    """'#rrggbb', or '#rrggbbaa' where it is not solid, for a 708 pen
+    background. Solid black is what a caption's pen sits on when nothing
+    says otherwise, so it reads as no background of its own."""
+    rgb = (_LEVELS[(value >> 4) & 3], _LEVELS[(value >> 2) & 3], _LEVELS[value & 3])
+    alpha = _OPACITY[(value >> 6) & 3]
+    if rgb == (0, 0, 0) and alpha == 255:
+        return ''
+    return '#{:02x}{:02x}{:02x}'.format(*rgb) + ('' if alpha == 255 else f'{alpha:02x}')
+
+
+def _pen_background(background):
+    """The pen colour byte for a Style's background: each component to two
+    bits, and the opacity it asks for."""
+    if not background:
+        return 0x00                              # solid black, what a pen sits on
+    rgb = tuple(int(background[at:at + 2], 16) for at in (1, 3, 5))
+    alpha = int(background[7:9], 16) if len(background) == 9 else 255
+    opacity = 3 if alpha < 0x40 else 2 if alpha < 0xC0 else 0
+    return opacity << 6 | (round(rgb[0] / 85) << 4) | (round(rgb[1] / 85) << 2) | round(rgb[2] / 85)
 
 
 class _Window:
@@ -374,7 +403,8 @@ class _Service:
         elif code == 0x91:                                   # SetPenColor
             window = self._window()
             if window is not None:
-                window.style = window.style._replace(color=_color(parameters[0] & 0x3F))
+                window.style = window.style._replace(color=_color(parameters[0] & 0x3F),
+                                                     background=_background(parameters[1]))
         elif code == 0x92:                                   # SetPenLocation
             window = self._window()
             if window is not None:
@@ -561,12 +591,14 @@ def _rows(text):
 
 def _pen(style):
     """SetPenAttributes and SetPenColor for a Style: standard size,
-    italics, underline, its colour (two bits a component) on black."""
+    italics, underline, its colour (two bits a component) on the background
+    it asks for, else on black as CEA-608's pen sits."""
     rgb = (255, 255, 255)
     if style.color:
         rgb = tuple(int(style.color[i:i + 2], 16) for i in (1, 3, 5))
     color = (round(rgb[0] / 85) << 4) | (round(rgb[1] / 85) << 2) | round(rgb[2] / 85)
-    return [[0x90, 0x05, (0x80 if style.italic else 0) | (0x40 if style.underline else 0)], [0x91, color, 0x00, 0x00]]
+    return [[0x90, 0x05, (0x80 if style.italic else 0) | (0x40 if style.underline else 0)],
+            [0x91, color, _pen_background(style.background), 0x00]]
 
 
 def _anchor(keypad, place):
@@ -614,7 +646,8 @@ def _typed(rows, pen, first_row=0):
             units.append([0x0D])                                        # CR: the next row
         elif first_row:
             units.append([0x92, first_row, 0])                          # SetPenLocation
-        looks = [markup.Style(style.italic, False, style.underline, False, style.color) for _char_, style in row]
+        looks = [markup.Style(style.italic, False, style.underline, False, style.color, '', style.background)
+                 for _char_, style in row]
         for column, (char, _style) in enumerate(row):
             look = looks[column]
             if char == ' ':
@@ -622,7 +655,8 @@ def _typed(rows, pen, first_row=0):
                 before = next((looks[i] for i in range(column - 1, -1, -1) if row[i][0] != ' '), markup.PLAIN)
                 after = next((looks[i] for i in range(column + 1, len(row)) if row[i][0] != ' '), markup.PLAIN)
                 look = markup.Style(before.italic and after.italic, False, before.underline and after.underline, False,
-                                    before.color if before.color == after.color else '')
+                                    before.color if before.color == after.color else '', '',
+                                    before.background if before.background == after.background else '')
             if look != pen:
                 units.extend(_pen(look))
                 pen = look

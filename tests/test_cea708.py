@@ -12,7 +12,7 @@ instead silently tests stale code.
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from subtitld.modules import cea708, position
+from subtitld.modules import cea708, markup, position
 
 fails = []
 RATE = 30000 / 1001
@@ -252,6 +252,33 @@ for _mode in ('pop', 'roll2', 'paint'):
 _read = cea708.decode(sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)
 check('captions where the nine places alone put them say nothing more',
       [subtitle.get('position') for subtitle in _read], [None, None])
+
+
+print('a background behind the pen')
+
+
+def _pen_bytes(text):
+    """The SetPenColor a caption writes for its first run."""
+    units = cea708._load(text, 0)
+    return next(unit for unit in units if unit[0] == 0x91)
+
+
+check('solid black is what a pen sits on, as a CEA-608 one does: nothing says otherwise',
+      _pen_bytes('Plain')[2], 0x00)
+check('a colour to two bits a component, solid',
+      _pen_bytes('<font background="#0000ff">On blue</font>')[2], 0b00_00_00_11)
+check('half seen through, and asked to be seen through altogether',
+      (_pen_bytes('<font background="#00ff0080">x</font>')[2] >> 6,
+       _pen_bytes('<font background="#00000000">x</font>')[2] >> 6), (2, 3))
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <font color="#ffff00" background="#0000ff">yellow on blue</font> plain'
+    _read = cea708.decode(sorted(cea708.frames_for(
+        {1: [(_asked, 30, None)]}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: written into the pen and read back, colour and all',
+          markup.spans(_read[0]['text']), markup.spans(_asked))
+_read = cea708.decode(sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)
+check('captions that ask for no background say nothing about one',
+      [subtitle['text'] for subtitle in _read], ['First line', 'Second line'])
 
 
 print()
