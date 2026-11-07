@@ -155,7 +155,8 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
     'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
-    'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']}
+    'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']},
+    'CSV': {'description': 'CSV table', 'extensions': ['csv']},
 }
 
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {
