@@ -768,7 +768,11 @@ def _packets(units, service=1):
         blocks_out.append(block)
     out, packet = [], []
     for block in blocks_out:
-        data = [service << 5 | len(block)] + block
+        # A block header holds a service number of three bits. The services
+        # above the sixth are named by an extended service number instead:
+        # the header says 7, and the byte after it says which one.
+        data = ([service << 5 | len(block)] if service < 7 else
+                [7 << 5 | len(block), service & 0x3F]) + block
         if len(packet) + len(data) > 127:
             out.append(packet)
             packet = []

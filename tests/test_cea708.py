@@ -315,6 +315,24 @@ check('an edge colour with no edge to draw says nothing',
       ['First line', 'Second line'])
 
 
+print('the services above the sixth')
+check('named by an extended service number, written and read back',
+      [(cea708.services(sorted(cea708.frames_for({number: [(f'In {number}', 30, None)]}, 18).items())),
+        [subtitle['text'] for subtitle in cea708.decode(
+            sorted(cea708.frames_for({number: [(f'In {number}', 30, None)]}, 18).items()), RATE, number)])
+       for number in (6, 7, 8, 63)],
+      [([6], ['In 6']), ([7], ['In 7']), ([8], ['In 8']), ([63], ['In 63'])])
+_mixed = sorted(cea708.frames_for({1: [('Main', 30, None)], 20: [('Twentieth', 30, None)]}, 18).items())
+check('one of each in a channel, each read on its own',
+      (cea708.services(_mixed), [s['text'] for s in cea708.decode(_mixed, RATE, 1)],
+       [s['text'] for s in cea708.decode(_mixed, RATE, 20)]),
+      ([1, 20], ['Main'], ['Twentieth']))
+check('the header says 7 and the byte after it says which',
+      [(packet[1] >> 5, packet[2] & 0x3F) for _frame, packet in
+       cea708.packets(sorted(cea708.frames_for({20: [('x', 30, None)]}, 18).items()))][:1],
+      [(7, 20)])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
