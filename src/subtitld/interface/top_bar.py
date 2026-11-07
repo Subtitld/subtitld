@@ -553,6 +553,9 @@ def toppanel_export_button_clicked(self):
 
     if category == 'subtitles' and 'options' in config:
         session.FORMAT['options'] = config['options']
+    elif category == 'documents' and 'options' in config:
+        # Added to what the subtitles were opened with (a frame rate...).
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **config['options'])
 
     def _on_save_done(path, success, error):
         if success:

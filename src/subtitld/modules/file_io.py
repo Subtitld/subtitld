@@ -18,6 +18,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
 from subtitld.modules import collab_state
+from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
 from subtitld.modules import ebustl
 from subtitld.modules import timecode
@@ -1539,6 +1540,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                                        language=SUBTITLE.get('language'))
             open(final_file, mode='w', encoding='utf-8').write(text)
 
+        elif subtitle_format == 'CSV':
+            # A table of the times, of the type the Documents tab chose
+            # (modules.csv_export: Audition's markers).
+            csv_export.save(final_file, SUBTITLE['segments'],
+                            options.get('csv_type') if options.get('csv_type') in csv_export.TYPES else csv_export.AUDITION_MARKERS)
 
         elif subtitle_format in ['USF']:
             options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}

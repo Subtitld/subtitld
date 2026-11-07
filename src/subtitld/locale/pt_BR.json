@@ -524,6 +524,8 @@
     "export_dialog.category_video": "Vídeo",
     "export_dialog.category_documents": "Documentos",
     "export_dialog.documents_placeholder": "As opções de exportação de documentos serão adicionadas aqui.",
+    "export_dialog.csv_type": "Tipo",
+    "export_dialog.csv_audition_markers": "Marcadores do Audition",
     "export_dialog.processing": "Exportando {fmt}…",
     "export_dialog.processing_generic": "Exportando…",
     "export_dialog.export_failed": "Falha na exportação: {error}",
