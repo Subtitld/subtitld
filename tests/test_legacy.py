@@ -116,6 +116,25 @@ check('turbotitle', legacy.kind('0:00:00.80,0:00:02.28,Narrator Hello\n'), 'turb
 check('zerog', legacy.kind('% Zero G 1.0\nE 1 0:00:01.00 0:00:03.00 DEFAULT ~ Hello\n'), 'zerog')
 check('realtext', legacy.kind('<window><time begin="1"/>Hello<clear/></window>'), 'realtext')
 check('an SRT is none of them', legacy.kind('1\n00:00:01,000 --> 00:00:03,000\nHello\n'), '')
+# A sniffer that claims a file belonging to another format is worse than
+# one that claims nothing: .txt, .sub and .stl all reach it.
+OTHERS = {
+    'WebVTT': 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello\n',
+    'ASS': '[Script Info]\nTitle: x\n[V4+ Styles]\n[Events]\n'
+           'Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello\n',
+    'SSA': '[Script Info]\n[V4 Styles]\n[Events]\n'
+           'Dialogue: Marked=0,0:00:01.00,0:00:03.00,Default,,0000,0000,0000,,Hello\n',
+    'SAMI': '<SAMI>\n<BODY>\n<SYNC Start=1000><P Class=ENUSCC>Hello\n</BODY>\n</SAMI>\n',
+    'TTML': "<tt xmlns='http://www.w3.org/ns/ttml'><body><div>"
+            "<p begin='1s' end='3s'>Hello</p></div></body></tt>",
+    'SBV': '0:00:01.000,0:00:03.000\nHello\n',
+    'MicroDVD': '{25}{75}Hello\n',
+    'SCC': 'Scenarist_SCC V1.0\n\n00:00:01;00\t942c 942c 9420\n',
+    'YouTube srv3': '<timedtext format="3"><body><p t="1000" d="2000">Hello</p></body></timedtext>',
+    'JSON': '{"segments": [{"start": 1.0, "end": 3.0, "text": "Hello"}]}',
+}
+for other, text in OTHERS.items():
+    check(f'{other} is left to its own reader', legacy.kind(text), '')
 check('plain text is none of them', legacy.kind('Just some notes\nabout nothing\n'), '')
 
 print('.stl is three formats: the bytes say which')

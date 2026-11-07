@@ -156,6 +156,7 @@ _RTF_DESTINATION = re.compile(r'\{\\(?:\*|fonttbl|colortbl|stylesheet|info|pict|
 _RTF_WORD = re.compile(r'\\([a-zA-Z]+)(-?\d+)? ?')
 _RTF_HEX = re.compile(r"\\'([0-9a-fA-F]{2})")
 _RTF_ESCAPE = re.compile(r'\\([\\{}])')
+_CAPTION_BYTES = re.compile(r'^\d{2}\s')
 _MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
 _RT_TIME = re.compile(r'<time\b[^>]*\bbegin\s*=\s*["\']?([^"\'>\s]+)', re.I)
@@ -1305,7 +1306,14 @@ def kind(data):
         if _SBT_TIME.match(line) and _SBT_TIME.match(lines[position + 1]) \
                 and not _SBT_TIME.match(lines[position + 2]):
             return 'sbt'
-    clocks = sum(1 for line in lines if _CLOCK.match(line))
+    if head.lstrip().lower().startswith('scenarist_scc'):
+        return ''                   # CEA-608 captions, read by modules.scc
+    # A clock and a separator is TMPlayer or VPlayer — and is also every
+    # line of an SCC file, whose drop-frame timecode ends in ";FF" and
+    # whose text is caption bytes. A line whose text begins with two
+    # digits and a space is that, not a subtitle.
+    clocks = sum(1 for line in lines
+                 if (clock := _CLOCK.match(line)) and not _CAPTION_BYTES.match(clock.group(5)))
     if clocks and clocks >= max(1, len(lines) // 2):
         return 'vplayer'
     # MPSub without a header: "<gap> <duration>" over the text, twice.
