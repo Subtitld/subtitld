@@ -93,6 +93,7 @@ EXTENSIONS = {
     'qttext': 'txt',
     'captionate': 'xml',
     'cmml': 'cmml',
+    'smiltext': 'smil',
     'sst': 'sst',
     'ssts': 'ssts',
 }
@@ -101,7 +102,7 @@ EXTENSIONS = {
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
             'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
             'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts',
-            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml')
+            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml', 'smiltext')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -118,7 +119,7 @@ SESSION_FORMATS = {
     'SASAMI': 'sasami', 'XOMBIE': 'xombie', 'MACSUB': 'macsub',
     'SST': 'sst', 'SSTS': 'ssts', 'DKS': 'dks', 'POWERDIVX': 'powerdivx',
     'DVDSS': 'dvdss', 'QTTEXT': 'qttext', 'CAPTIONATE': 'captionate',
-    'CMML': 'cmml',
+    'CMML': 'cmml', 'SMILTEXT': 'smiltext',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -577,6 +578,108 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
         lines.append(f'<time begin="{stamp(segment.get("start", 0))}"/>{body}'
                      f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
     lines.append('</window>')
+    return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# ------------------------------------------------------------- smilText
+
+
+_SMIL_METRIC = {'h': 3600.0, 'min': 60.0, 's': 1.0, 'ms': 0.001}
+_SMIL_CLOCK = re.compile(r'^\s*(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:\.(\d+))?\s*$')
+_SMIL_COUNT = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*(ms|min|h|s)?\s*$')
+
+
+def _smil_seconds(value):
+    """A SMIL clock: "1:02:03.4", "02:33", "2min", "500ms", or seconds."""
+    raw = str(value or '').strip()
+    clock = _SMIL_CLOCK.match(raw)
+    if clock:
+        hours, minutes, seconds, fraction = clock.groups()
+        total = (int(hours) if hours else 0) * 3600 + int(minutes) * 60 + int(seconds)
+        return _rounded(total + (int(fraction) / 10 ** len(fraction) if fraction else 0))
+    count = _SMIL_COUNT.match(raw)
+    if count:
+        return _rounded(float(count.group(1)) * _SMIL_METRIC[count.group(2) or 's'])
+    return 0.0
+
+
+def _local(tag):
+    return str(tag).rsplit('}', 1)[-1].lower()
+
+
+def _parse_smiltext(text, fps=DEFAULT_FPS):
+    """SMIL's timed text: a stream of words punctuated by markers.
+
+    smilText has no end times at all. <tev> reveals more text and <clear>
+    empties the screen first; each marker's fragment runs until the next
+    one. `begin` counts from the start of the element and `next` from the
+    marker before it, and a `begin` that would go backwards does not: the
+    marker becomes active as soon as the fragment before it does.
+    """
+    try:
+        root = ElementTree.fromstring(text.strip())
+    except ElementTree.ParseError as error:
+        raise ValueError(f'not a smilText document: {error}') from error
+    holder = root if _local(root.tag) == 'smiltext' else next(
+        (node for node in root.iter() if _local(node.tag) == 'smiltext'), None)
+    if holder is None:
+        raise ValueError('no smilText element in this document')
+    replace = (holder.get('textMode') or '').strip().lower() == 'replace'
+
+    def words(element):
+        return re.sub(r'\s+', ' ', ''.join(element.itertext()) if element is not None else '')
+
+    # The fragments, in document order: the text before the first marker,
+    # then each marker and the text that follows it.
+    fragments = [{'at': 0.0, 'clears': True, 'text': words(None) + (holder.text or '')}]
+    cursor = 0.0
+    for node in holder:
+        kind = _local(node.tag)
+        if kind in ('tev', 'clear'):
+            if node.get('begin') is not None:
+                cursor = max(cursor, _smil_seconds(node.get('begin')))
+            elif node.get('next') is not None:
+                cursor = _rounded(cursor + _smil_seconds(node.get('next')))
+            fragments.append({'at': cursor, 'clears': kind == 'clear', 'text': node.tail or ''})
+        elif kind == 'br':
+            fragments[-1]['text'] += '\n' + (node.tail or '')
+        else:
+            fragments[-1]['text'] += ('\n' if kind in ('p', 'div') else '') + \
+                ''.join(node.itertext()) + (node.tail or '')
+
+    segments = []
+    shown = ''
+    for position, fragment in enumerate(fragments):
+        piece = '\n'.join(line.strip() for line in fragment['text'].split('\n')).strip()
+        # Append is the format's default, and nothing is inserted between
+        # the pieces: a space has to come from the source's own whitespace.
+        shown = piece if (fragment['clears'] or replace) else f'{shown} {piece}'.strip()
+        body = _lines_of(shown)
+        if not body:
+            continue
+        following = fragments[position + 1]['at'] if position + 1 < len(fragments) else None
+        segments.append({'start': fragment['at'], 'end': following, 'text': body})
+    total = _smil_seconds(holder.get('dur')) if holder.get('dur') else None
+    for segment in segments:
+        if segment['end'] is None and total:
+            segment['end'] = total
+    return _ends_at_next(_ordered(segments))
+
+
+def _write_smiltext(segments, fps=DEFAULT_FPS):
+    """Each subtitle cleared before the next, which is how a subtitle file
+    in this format is written: the reveal model's other half, appending,
+    is for text that grows on screen."""
+    last = max((float(segment.get('end', 0)) for segment in segments), default=0.0)
+    lines = [f'<smilText xmlns="http://www.w3.org/ns/smil" dur="{last:g}s">']
+    for segment in _ordered(segments):
+        text_of = markup.plain(str(segment.get('text') or '')).strip()
+        if not text_of:
+            continue
+        body = '<br/>'.join(_escaped(line.strip()) for line in text_of.split('\n') if line.strip())
+        lines.append(f'  <clear begin="{float(segment.get("start", 0)):g}s"/>{body}')
+        lines.append(f'  <clear begin="{float(segment.get("end", 0)):g}s"/>')
+    lines.append('</smilText>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
 
 
@@ -1619,6 +1722,7 @@ _PARSERS = {
     'qttext': _parse_qttext,
     'captionate': _parse_captionate,
     'cmml': _parse_cmml,
+    'smiltext': _parse_smiltext,
     'sst': _parse_sst,
     'ssts': _parse_ssts,
 }
@@ -1650,6 +1754,7 @@ _WRITERS = {
     'qttext': _write_qttext,
     'captionate': _write_captionate,
     'cmml': _write_cmml,
+    'smiltext': _write_smiltext,
     'sst': _write_sst,
     'ssts': _write_ssts,
 }
@@ -1669,6 +1774,8 @@ def kind(data):
     lowered = head[:600].lower()
     if '<captionate' in lowered:
         return 'captionate'
+    if '<smiltext' in lowered or '<tev' in lowered or '<clear' in lowered:
+        return 'smiltext'
     if '<cmml' in lowered or 'annodex.net/cmml' in lowered:
         return 'cmml'
     if _QT_MARK.search(head[:400]):

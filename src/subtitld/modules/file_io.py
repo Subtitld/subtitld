@@ -710,6 +710,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if language:
                 session.SUBTITLE['language'] = language
 
+        elif subtitle_file.lower().endswith('.smi') and legacy.kind(_text_of(subtitle_file)) == 'smiltext':
+            # SMIL and SAMI both answer to .smi, and only one of them is
+            # Microsoft's.
+            subtitle_format = 'SMILTEXT'
+            try:
+                segments_list = legacy.parse(_text_of(subtitle_file), 'smiltext')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
         elif subtitle_file.lower().endswith(('.smi', '.sami')):
             # Every language the file holds: the first the subtitles', the
             # others their translations.
@@ -778,7 +787,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
                                              '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
                                              '.scr', '.mac', '.sst', '.ssts',
-                                             '.dks', '.psb', '.cmml')):
+                                             '.dks', '.psb', '.cmml', '.smil')):
             # The player era: the extension narrows it, the bytes decide it.
             try:
                 segments_list, found = legacy.read(subtitle_file, session.VIDEO.get('framerate'))

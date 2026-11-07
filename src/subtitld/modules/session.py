@@ -168,6 +168,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'QTTEXT': {'description': 'QuickTime QTtext format', 'extensions': ['txt']},
     'CAPTIONATE': {'description': 'Captionate XML format', 'extensions': ['xml']},
     'CMML': {'description': 'Continuous Media Markup Language', 'extensions': ['cmml']},
+    'SMILTEXT': {'description': 'SMIL smilText format', 'extensions': ['smil']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on

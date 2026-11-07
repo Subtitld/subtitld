@@ -302,6 +302,26 @@ try:
 except ValueError as error:
     check('CMML inside Ogg says why it cannot be read', 'Ogg' in str(error), True)
 
+print('smilText: a reveal model, and no end times anywhere in it')
+SPEC = ('<smilText xmlns="http://www.w3.org/ns/smil" dur="12s">\n'
+        "     Willemijn's 11th Birthday Party\n     <tev begin=\"5s\"/>\n"
+        '     was held six weeks late.\n     <tev next="5s"/>\n     (Again!)\n</smilText>')
+# The Recommendation's own example: appending is the default, so each
+# fragment adds to what is already on screen rather than replacing it.
+check('text grows as the markers pass', cues(SPEC, 'smiltext'),
+      [(0.0, 5.0, "Willemijn's 11th Birthday Party"),
+       (5.0, 10.0, "Willemijn's 11th Birthday Party was held six weeks late."),
+       (10.0, 12.0, "Willemijn's 11th Birthday Party was held six weeks late. (Again!)")])
+check('"next" counts from the marker before it, "begin" from the start',
+      [c[0] for c in cues(SPEC, 'smiltext')], [0.0, 5.0, 10.0])
+check('a clear per caption, which is how subtitles use it',
+      cues('<smilText dur="6s"><clear begin="0s"/>First<clear begin="2s"/>Second'
+           '<clear begin="4s"/></smilText>', 'smiltext'),
+      [(0.0, 2.0, 'First'), (2.0, 4.0, 'Second')])
+check('its metrics: 2min is two minutes, 500ms half a second',
+      [c[0] for c in cues('<smilText><clear begin="2min"/>a<clear begin="500ms"/>b'
+                          '<clear begin="3min"/></smilText>', 'smiltext')], [120.0, 120.0])
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
