@@ -463,12 +463,31 @@ written_look = ttml.write([{'start': 1, 'end': 2, 'text': 'Styled', 'look': LOOK
                            {'start': 3, 'end': 4, 'text': 'Alike', 'look': LOOK},
                            {'start': 5, 'end': 6, 'text': 'Plain'}], 'en', profile='imsc1.1')
 check('a style of its own for each look, shared by the subtitles that look alike',
-      (written_look.count('<style xml:id="look'), written_look.count(' style="look1"')), (1, 2))
+      (written_look.count('<style xml:id="look1"'), written_look.count(' style="look1"')), (1, 2))
+check('and the box on a span around the words, where TTML paints it behind them',
+      (written_look.count('<style xml:id="lookbox1"'), written_look.count('<span style="lookbox1">')), (1, 2))
 check('in cells, so the file does not depend on anybody\'s picture',
       ('tts:fontSize="1.5c"' in written_look, 'ebutts:linePadding="0.36c"' in written_look,
        f'xmlns:ebutts="{ttml._EBUTTS_NS}"' in written_look), (True, True, True))
+# A box says the gaps between its lines are filled, because that is how
+# Subtitld drew it: behind the whole subtitle, lines and gaps alike.
+BOXED = dict(LOOK, fill_line_gap=True)
 check('and read back as it was, every side and every shadow',
-      [s.get('look') for s in ttml.parse(written_look)], [LOOK, LOOK, None])
+      [s.get('look') for s in ttml.parse(written_look)], [BOXED, BOXED, None])
+check('and again the second time round, so a file does not drift',
+      [s.get('look') for s in ttml.parse(ttml.write(ttml.parse(written_look), 'en', profile='imsc1.1'))],
+      [BOXED, BOXED, None])
+check('a length across the picture is read against the shape the file says it has',
+      [round(ttml.parse(
+          HEAD.format(attrs=shape) + '<head/><body><p begin="1s" end="2s" ebutts:linePadding="1c">Padded</p>'
+          '</body></tt>'.replace('<body>', '<body>'))[0]['look']['line_padding'], 3)
+       for shape in (EBUTTS, EBUTTS + ' ttp:displayAspectRatio="4 3"',
+                     EBUTTS + ' tts:extent="1920px 1080px"')],
+      [5.556, 4.167, 5.556])
+check('itts:fillLineGap as the file said it, when it said it',
+      [s['look'].get('fill_line_gap') for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" itts:fillLineGap="false" tts:backgroundColor="black">Gapped</p>',
+          attrs=f' xmlns:itts="{ttml._ITTS_NS}"'))], [False])
 check('what <body> says is the document\'s look, what a paragraph says is its own',
       [s.get('look') for s in ttml.parse(
           HEAD.format(attrs='') + '<head/><body tts:fontSize="200%"><div>'
@@ -486,6 +505,28 @@ check('nowhere in an EBU-TT-D file are the three its spec does not use',
        for word in ('textOutline', 'textShadow', 'tts:opacity')], [False, False, False])
 check('a file nothing styled is written exactly as it was before',
       ttml.write([{'start': 1, 'end': 2, 'text': 'Plain'}], 'en').count('<style'), 1)
+
+print("the part of the picture a file says must stay visible")
+check('an active area is placed as tts:position is: the offsets are what room is left',
+      ([round(part, 4) for part in ttml._active_area('50% 50% 80% 80%')],
+       [round(part, 4) for part in ttml._active_area('0% 100% 90% 90%')],
+       ttml._active_area('50% 50%'), ttml._active_area('50% 50% 80% 120%')),
+      ([10.0, 10.0, 80.0, 80.0], [0.0, 10.0, 90.0, 90.0], None, None))
+ACTIVE = ' xmlns:ittp="http://www.w3.org/ns/ttml/profile/imsc1#parameter" ittp:activeArea="50% 50% 80% 80%"'
+check('a region outside it is one a player may crop away, and is said so',
+      [problem for problem in ttml.check(doc(
+          '<p begin="1s" end="2s" region="low">Down there</p>',
+          head='<layout><region xml:id="low" tts:origin="5% 92%" tts:extent="90% 6%"/></layout>',
+          attrs=ACTIVE), 'ttml1') if 'active area' in problem],
+      ['Regions fall outside the active area the file states (50% 50% 80% 80%): low'])
+check('one inside it is not',
+      [problem for problem in ttml.check(doc(
+          '<p begin="1s" end="2s" region="fine">Safe</p>',
+          head='<layout><region xml:id="fine" tts:origin="20% 20%" tts:extent="60% 60%"/></layout>',
+          attrs=ACTIVE), 'ttml1') if 'active area' in problem], [])
+check('and a file that states no area is not asked to',
+      [problem for problem in ttml.check(doc('<p begin="1s" end="2s">Plain</p>'), 'ttml1')
+       if 'active area' in problem], [])
 
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',

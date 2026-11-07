@@ -27,13 +27,16 @@ styles' settings are.
                     so a box does not touch the letters)
     row_align       where the shorter lines of a block sit: 'start',
                     'center' or 'end'
+    fill_line_gap   whether the box behind each line reaches the next, so a
+                    subtitle of two lines is one block and not two stripes
+                    (IMSC's itts:fillLineGap)
 
 `css` turns one into the inline CSS the renderer draws it with, in pixels
 of a 1080-tall picture, which is the stage host.js lays the subtitle on.
 """
 
 KEYS = ('font', 'size', 'line_height', 'background', 'padding', 'outline', 'shadow', 'wrap',
-        'opacity', 'line_padding', 'row_align')
+        'opacity', 'line_padding', 'row_align', 'fill_line_gap')
 
 # The picture the renderer's stage is: a look's percentages are of its height.
 PICTURE_HEIGHT = 1080.0
@@ -113,6 +116,10 @@ def css(look):
         out['padding-right'] = _px(look['line_padding'])
     if look.get('row_align') in _ROW_ALIGN:
         out['text-align'] = _ROW_ALIGN[look['row_align']]
+    # fill_line_gap is not drawn: the box goes behind the whole cue here, so
+    # it already reaches from one line to the next and a file asking for
+    # that gets it. It is kept so the file can say so again, and so a file
+    # that asked for the gaps is not written back as one that did not.
     return out
 
 

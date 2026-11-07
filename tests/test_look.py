@@ -58,6 +58,11 @@ check('a subtitle a file only part shows', look.css({'opacity': 0.6}), {'opacity
 check('no wrapping is pre, wrapping is pre-wrap',
       (look.css({'wrap': 'nowrap'}), look.css({'wrap': 'wrap'})),
       ({'white-space': 'pre'}, {'white-space': 'pre-wrap'}))
+check('a filled line gap draws nothing of its own: the box is behind the whole cue already, '
+      'lines and gaps alike',
+      (look.css({'fill_line_gap': True}), look.css({'fill_line_gap': False})), ({}, {}))
+check('and a look may say no to it as well as yes, so a file is not written back saying yes',
+      look.store({}, {'fill_line_gap': False}), {'fill_line_gap': False})
 check('a look that says nothing draws nothing', (look.css({}), look.css(None)), ({}, {}))
 check('and as one attribute', look.style_attribute({'size': 5.0, 'font': 'Arial'}),
       'font-family: Arial; font-size: 54px')

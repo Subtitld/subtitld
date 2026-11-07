@@ -80,7 +80,7 @@ _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
                  'fontFamily', 'fontSize', 'lineHeight', 'backgroundColor', 'padding', 'textOutline', 'textShadow',
-                 'wrapOption', 'linePadding', 'multiRowAlign')
+                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -196,6 +196,24 @@ class _Clock:
         return None
 
 
+def _active_area(value):
+    """IMSC's ittp:activeArea as (x, y, width, height) in % of the picture,
+    or None where the file states none.
+
+    It is the part of the picture the author means to stay visible, the way
+    broadcast's AFD does: where a player crops, this is what it must keep.
+    Its offsets are shares of the room left over, as tts:position's are, so
+    "50% 50% 80% 80%" is an area 80% of the picture, centred.
+    """
+    parts = [_PERCENT.match(part) for part in (value or '').split()]
+    if len(parts) != 4 or not all(parts):
+        return None
+    left, top, width, height = (float(part.group(1)) for part in parts)
+    if not all(0 <= amount <= 100 for amount in (left, top, width, height)):
+        return None
+    return left * (1 - width / 100), top * (1 - height / 100), width, height
+
+
 class _Frame:
     """Turns a region's lengths into percentages of the picture."""
 
@@ -208,6 +226,17 @@ class _Frame:
         except ValueError:
             cells = ()
         self.cells = cells if len(cells) == 2 and all(cells) else (32.0, 15.0)
+        # How wide the picture is for how tall: from its size in pixels,
+        # else from what the file says it will be shown at, else widescreen.
+        shape = [part for part in (_attr(root, 'displayAspectRatio') or '').split()]
+        self.aspect = 16 / 9
+        if self.pixels and self.pixels[1]:
+            self.aspect = self.pixels[0] / self.pixels[1]
+        elif len(shape) == 2:
+            try:
+                self.aspect = float(shape[0]) / float(shape[1])
+            except (ValueError, ZeroDivisionError):
+                pass
 
     def length(self, value, axis):
         """One length in % of the picture along `axis` (0 across, 1 down),
@@ -412,21 +441,24 @@ def _across(frame, value, size):
     tall and as wide as the aspect ratio makes it, so a look keeps one
     measure for both directions."""
     percent = _of_size(frame, value, size, axis=0)
-    if percent is None:
-        return None
-    aspect = frame.pixels[0] / frame.pixels[1] if frame.pixels and frame.pixels[1] else 16 / 9
-    return percent * aspect
+    return None if percent is None else percent * frame.aspect
 
 
-def _of_file(frame, props, sizes, opacity):
+def _of_file(frame, props, sizes, opacity, size_own=True):
     """The look the file gives a subtitle: what it says about how the
     subtitle should be drawn, as modules.look holds it. Only what the file
-    states — a look says nothing of its own."""
+    states — a look says nothing of its own.
+
+    `sizes` is the whole chain of font sizes down to this subtitle, which
+    every percentage here is measured against; `size_own` says whether any
+    of it was stated below <body>, and so whether the size is the
+    subtitle's own or the document's.
+    """
     size = _font_size(frame, sizes)
     found = {}
     if props.get('fontFamily'):
         found['font'] = _font_family(props['fontFamily'])
-    if sizes:
+    if sizes and size_own:
         found['size'] = size
     height = (props.get('lineHeight') or '').strip()
     if height:
@@ -450,6 +482,10 @@ def _of_file(frame, props, sizes, opacity):
         found['line_padding'] = _across(frame, props['linePadding'], size)
     if (props.get('multiRowAlign') or '').strip() in ('start', 'center', 'end'):
         found['row_align'] = props['multiRowAlign'].strip()
+    # IMSC's own: whether the box behind each line reaches the next one.
+    gap = (props.get('fillLineGap') or '').strip().lower()
+    if gap in ('true', 'false'):
+        found['fill_line_gap'] = gap == 'true'
     return found
 
 
@@ -764,7 +800,6 @@ def _document(text):
     body = next((element for element in root.iter() if _local(element.tag) == 'body'), None)
     base_props = styles.of(body, {}) if body is not None else {}
     base_sizes = (base_props['fontSize'],) if base_props.get('fontSize') else ()
-    base_look = _of_file(frame, base_props, base_sizes, None)
 
     def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
         region_props = styles.of(regions[region], {}) if region in regions else {}
@@ -810,8 +845,23 @@ def _document(text):
         # of font sizes, then the ones holding the paragraph, then its own.
         stated = tuple(value for value in
                        ((region_props.get('fontSize'),) + sizes + (styles.of(element, {}).get('fontSize'),)) if value)
-        styling = _of_file(frame, p_props, stated, region_props.get('opacity'))
-        subtitld_look.store(segment, {key: value for key, value in styling.items() if base_look.get(key) != value})
+        # What the subtitle says about itself is what it states beyond
+        # the document: the attributes themselves, not the sizes they work
+        # out to, or a paragraph that only sets its own size would inherit
+        # the document's outline as an outline of its own.
+        own_props = {key: value for key, value in p_props.items() if base_props.get(key) != value}
+        # A box a file puts on a span hugs the words, which is how Subtitld
+        # draws one; on the paragraph TTML paints a band the width of the
+        # region. Both become the subtitle's one box, the span's first.
+        for inner in element.iter():
+            if inner is element or _local(inner.tag) != 'span':
+                continue
+            inner_props = styles.of(inner, {})
+            for key in ('backgroundColor', 'padding'):
+                if inner_props.get(key):
+                    own_props.setdefault(key, inner_props[key])
+        subtitld_look.store(segment, _of_file(frame, own_props, stated, region_props.get('opacity'),
+                                              size_own=tuple(stated) != tuple(base_sizes)))
         # Where the region puts it, beyond the nine places: a file that
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
@@ -927,19 +977,33 @@ def check(text, profile='imsc1.1'):
             problems.append(f'{len(images)} element(s) carry smpte:backgroundImage: '
                             'pictures belong to the Image Profile, not the Text Profile')
 
-    outside = []
+    boxes = []
     for element in root.iter():
         if _local(element.tag) != 'region':
             continue
         box = [_LENGTH.match(part) for part in
                ((_attr(element, 'origin') or '') + ' ' + (_attr(element, 'extent') or '')).split()]
         if len(box) == 4 and all(part and part.group(2) == '%' for part in box):
-            start = [float(box[axis].group(1)) for axis in (0, 1)]
-            size = [float(box[2 + axis].group(1)) for axis in (0, 1)]
-            if any(start[axis] < 0 or start[axis] + size[axis] > 100 for axis in (0, 1)):
-                outside.append(_xml_id(element) or '(unnamed)')
+            boxes.append((_xml_id(element) or '(unnamed)',
+                          [float(box[axis].group(1)) for axis in (0, 1)],
+                          [float(box[2 + axis].group(1)) for axis in (0, 1)]))
+    outside = [name for name, start, size in boxes
+               if any(start[axis] < 0 or start[axis] + size[axis] > 100 for axis in (0, 1))]
     if outside:
         problems.append(f'Regions reach outside the picture: {", ".join(outside)}')
+
+    # The area the file says must stay visible should hold the subtitles:
+    # a region outside it is one a player may crop away.
+    active = _active_area(_attr(root, 'activeArea'))
+    if active:
+        at = (active[0], active[1])
+        span = (active[2], active[3])
+        strayed = [name for name, start, size in boxes
+                   if any(start[axis] < at[axis] - 0.5
+                          or start[axis] + size[axis] > at[axis] + span[axis] + 0.5 for axis in (0, 1))]
+        if strayed:
+            problems.append(f'Regions fall outside the active area the file states '
+                            f'({_attr(root, "activeArea")}): {", ".join(strayed)}')
 
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
@@ -1079,16 +1143,27 @@ def _ttml_family(value):
     return ', '.join(families)
 
 
-def _look_attributes(styling, profile='ttml1'):
+def _look_attributes(styling, profile='ttml1', inline=False):
     """A look as the TTML attributes that state it, for one <style> of its
     own. Lengths go out in cells, the measure they were read in, so a look
     that came from a file goes back as it came.
+
+    Two styles, because TTML paints a background where it is stated: the
+    box and its padding go on a span around the text, where they hug the
+    words as the preview draws them (`inline`), and everything else on the
+    paragraph, where it is inherited by the text inside it.
 
     EBU-TT-D's spec names tts:textOutline and tts:opacity among the
     attributes it does not use, so a file written for it says neither.
     """
     ebu = profile == 'ebu-tt-d'
     out = []
+    if inline:
+        if styling.get('background'):
+            out.append(f'tts:backgroundColor="{_rgba(styling["background"], "#ff000000")}"')
+        if styling.get('padding'):
+            out.append('tts:padding="' + ' '.join(_cells(side) for side in styling['padding']) + '"')
+        return ' '.join(out)
     if styling.get('font'):
         out.append(f'tts:fontFamily={quoteattr(_ttml_family(styling["font"]))}')
     if styling.get('size') is not None:
@@ -1096,10 +1171,6 @@ def _look_attributes(styling, profile='ttml1'):
     height = styling.get('line_height')
     if height is not None:
         out.append(f'tts:lineHeight="{"normal" if height == "normal" else _cells(height)}"')
-    if styling.get('background'):
-        out.append(f'tts:backgroundColor="{_rgba(styling["background"], "#ff000000")}"')
-    if styling.get('padding'):
-        out.append('tts:padding="' + ' '.join(_cells(side) for side in styling['padding']) + '"')
     outline = styling.get('outline') or {}
     if outline.get('width') and not ebu:
         parts = [_rgba(outline['color'], '#ff000000')] if outline.get('color') else []
@@ -1124,6 +1195,14 @@ def _look_attributes(styling, profile='ttml1'):
         out.append(f'ebutts:linePadding="{_cells_across(styling["line_padding"])}"')
     if styling.get('row_align'):
         out.append(f'ebutts:multiRowAlign="{styling["row_align"]}"')
+    # Whether the box behind each line reaches the next. A look that says
+    # nothing but brings a box asks for it, because that is how the box was
+    # drawn: behind the whole subtitle, lines and the gaps between them.
+    gap = styling.get('fill_line_gap')
+    if gap is None and styling.get('background'):
+        gap = True
+    if gap is not None and not ebu:
+        out.append(f'itts:fillLineGap="{"true" if gap else "false"}"')
     return ' '.join(out)
 
 
@@ -1131,16 +1210,17 @@ def _japanese(language):
     return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
 
 
-def _root_attributes(profile, language, forced=False, ebu_styling=False):
+def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
     """What <tt> carries: the namespaces and parameters, and the profile
-    the file declares itself to be. `forced` brings IMSC's styling
-    namespace in, for the files that have a forced subtitle to mark, and
-    `ebu_styling` the EBU's, for a look that states one of its two."""
+    the file declares itself to be. `imsc_styling` brings IMSC's styling
+    namespace in, for a forced subtitle to mark or a box that reaches from
+    one line to the next, and `ebu_styling` the EBU's, for a look that
+    states one of its two."""
     namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
                   'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
                   'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
                   'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"']
-    if forced:
+    if imsc_styling:
         namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
     if profile == 'ebu-tt-d':
         namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
@@ -1177,6 +1257,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     # made for each place they sit in: the file keeps the structure even
     # though the project holds a look per subtitle.
     lookings = {}
+    # And one for each box, which goes on a span rather than the paragraph.
+    boxings = {}
     style_lines, box = _styles(look, preview, profile)
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
@@ -1220,8 +1302,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
         content = _content(rest, shear)
-        if box:
-            content = f'<span style="{box}">{content}</span>'
+        # A box the file brought stands in for the style's own, and goes on
+        # a span: on the paragraph TTML paints a band the width of the
+        # region instead of a box around the words.
+        boxing = _look_attributes(styling, profile, inline=True)
+        around = boxings.setdefault(boxing, f'lookbox{len(boxings) + 1}') if boxing else box
+        if around:
+            content = f'<span style="{around}">{content}</span>'
         cues.append(f'      <p {attrs}>{content}</p>')
 
     head = ['  <head>']
@@ -1235,7 +1322,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                         f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
     if metadata:
         head += ['    <metadata>', *metadata, '    </metadata>']
-    style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>' for looking, name in lookings.items()]
+    style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>'
+                                 for looking, name in list(lookings.items()) + list(boxings.items())]
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
     for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0,
                                                  spot[3] if spot[3] is not None else 1)):
@@ -1249,10 +1337,11 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                     f'tts:displayAlign="{display}" tts:textAlign="{align}"{faded}/>')
     head += ['    </layout>', '  </head>']
     forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
+    imsc_styling = forced or any('itts:' in looking for looking in lookings)
     ebu_styling = any('ebutts:' in looking for looking in lookings)
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<tt {_root_attributes(profile, language, forced=forced, ebu_styling=ebu_styling)}>',
+        f'<tt {_root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling)}>',
         *head,
         '  <body style="text">',
         '    <div>',
