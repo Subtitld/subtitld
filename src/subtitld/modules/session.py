@@ -156,6 +156,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'CAPTIONS32': {'description': 'Captions 32 Subtitle format', 'extensions': ['txt']},
     'SUBSONIC': {'description': 'SubSonic Subtitle format', 'extensions': ['sub']},
     'ORESME': {'description': 'Oresme Subtitle format', 'extensions': ['txt']},
+    'JACOSUB': {'description': 'JACOSub Subtitle format', 'extensions': ['jss', 'js']},
+    'SASAMI': {'description': 'Sasami2k Script format', 'extensions': ['s2k']},
+    'XOMBIE': {'description': 'XombieSub Subtitle format', 'extensions': ['xss']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on

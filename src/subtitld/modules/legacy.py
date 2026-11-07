@@ -82,11 +82,15 @@ EXTENSIONS = {
     'captions32': 'txt',
     'subsonic': 'sub',
     'oresme': 'txt',
+    'jacosub': 'jss',
+    'sasami': 's2k',
+    'xombie': 'xss',
 }
 
 # The ones Subtitld writes; RealText is read only.
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
-            'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme')
+            'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
+            'jacosub', 'sasami', 'xombie')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -99,7 +103,8 @@ SESSION_FORMATS = {
     'AQTITLE': 'aqtitle', 'SUBVIEWER1': 'subviewer1', 'SPRUCE': 'spruce',
     'REALTEXT': 'realtext', 'TURBOTITLE': 'turbotitle', 'ZEROG': 'zerog',
     'VIPLAY': 'viplay', 'SBT': 'sbt', 'CAPTIONS32': 'captions32',
-    'SUBSONIC': 'subsonic', 'ORESME': 'oresme',
+    'SUBSONIC': 'subsonic', 'ORESME': 'oresme', 'JACOSUB': 'jacosub',
+    'SASAMI': 'sasami', 'XOMBIE': 'xombie',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -128,6 +133,14 @@ _SUBSONIC = re.compile(r'^\s*\S+\s+(\d+(?:\.\d+)?)\s+\\\s+~:\\(.*)$')
 _SUBSONIC_END = re.compile(r'^\s*\S+\s+(\d+(?:\.\d+)?)\s*$')
 _ORESME = re.compile(r'^(\d{2}):(\d{2}):(\d{2}):(\d{2})((?:\{[^}]*\})*)(.*)$')
 _TAG = re.compile(r'\{([^}]*)\}')
+_JSS = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3})\s+(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3})\s+(\S+)\s+(.*)$')
+_JSS_DIRECTIVE = re.compile(r'^\s*#\s*(\w+)\s*(.*)$')
+_S2K_TIME = re.compile(r'^\s*;\s*Set\.Time\.Start\s*=\s*(\d+)\s*$', re.I)
+_S2K_WIDTH = re.compile(r'^\s*;\s*Env\.Movie\.Width\s*=', re.I)
+_XSS = re.compile(r'^\s*Line\s*=\s*([^,]*),([^,]*),([^,]*),'
+                  r'(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3}),(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3}),'
+                  r'([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$', re.I)
+_XSS_KEY = re.compile(r'^\s*(ScreenHorizontal|ScreenVertical|Style|FontName|version)\s*=', re.I)
 _MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
 _RT_TIME = re.compile(r'<time\b[^>]*\bbegin\s*=\s*["\']?([^"\'>\s]+)', re.I)
@@ -528,6 +541,164 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
 
 
+# -------------------------------------------------------------- JACOSub
+
+
+def _parse_jacosub(text, fps=DEFAULT_FPS):
+    """Times are H:MM:SS.FF, the FF in units of the script's own TIMERES
+    (thirtieths unless it says otherwise), and #SHIFT moves them all."""
+    timeres, shift = 30.0, 0.0
+    segments = []
+    for line in text.split('\n'):
+        directive = _JSS_DIRECTIVE.match(line)
+        if directive:
+            name, value = directive.group(1).upper(), directive.group(2).strip().split()
+            try:
+                if name == 'TIMERES' and value:
+                    timeres = float(value[0]) or 30.0
+                elif name == 'SHIFT' and value:
+                    shift = float(value[0])
+            except ValueError:
+                pass
+            continue
+        match = _JSS.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(10).replace('\\n', '\n').replace('\\N', '\n'))
+        if not body:
+            continue
+        start = _clock_seconds(*match.groups()[0:3]) + (int(match.group(4)) + shift) / timeres
+        end = _clock_seconds(*match.groups()[4:7]) + (int(match.group(8)) + shift) / timeres
+        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _write_jacosub(segments, fps=DEFAULT_FPS):
+    """Written at a TIMERES of 100, so the times are hundredths and need no
+    frame rate to be read back as they were written."""
+    def stamp(seconds):
+        total = max(0, int(round(float(seconds) * 100)))
+        hours, rest = divmod(total, 360000)
+        minutes, rest = divmod(rest, 6000)
+        secs, hundredths = divmod(rest, 100)
+        return f'{hours}:{minutes:02d}:{secs:02d}.{hundredths:02d}'
+
+    lines = ['#TIMERES 100', '']
+    for segment in _ordered(segments):
+        body = _packed(segment, separator='\\n')
+        if not body:
+            continue
+        lines.append(f'{stamp(segment.get("start", 0))} {stamp(segment.get("end", 0))} D {body}')
+    return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# -------------------------------------------------------------- Sasami2k
+
+
+def _parse_sasami(text, fps=DEFAULT_FPS):
+    """A command script: ";Set.Time.Start=" in milliseconds begins a
+    subtitle, every line that is not a command is its text, and the next
+    marker ends it. A marker whose text is blank is there to clear the
+    screen, which is how the format says when a subtitle stops."""
+    marks = []
+    for line in text.split('\n'):
+        time_at = _S2K_TIME.match(line)
+        if time_at:
+            marks.append({'start': _rounded(int(time_at.group(1)) / 1000.0), 'lines': []})
+        elif line.lstrip().startswith((';', '//')):
+            continue
+        elif marks and line.strip():
+            marks[-1]['lines'].append(line.strip())
+    segments = []
+    for position, mark in enumerate(marks):
+        body = _lines_of('\n'.join(mark['lines']))
+        if not body:
+            continue
+        following = marks[position + 1]['start'] if position + 1 < len(marks) else None
+        end = following if following is not None else _rounded(mark['start'] + 2.0)
+        segments.append({'start': mark['start'], 'end': _rounded(max(mark['start'], end)), 'text': body})
+    return _ordered(segments)
+
+
+_S2K_HEAD = (';Env.Movie.Width=320', ';Env.Movie.Height=240', ';Set.Slot=1', ';Set.Time.Delay=15000',
+             ';Set.Alpha.End=256', ';Set.Alpha.Start=256', ';Set.Alpha.Step=-300',
+             ';Set.Font.Style.Bold=0', ';Set.Font.Color=#FFFFFF', ';Set.Font.Outline.Color=#00101010',
+             ';Set.Font.Outline2.Color=#01101010', ';Set.Font.Size=20', ';Set.Font.Face=Tahoma',
+             ';Buffer.Push=1')
+
+
+def _write_sasami(segments, fps=DEFAULT_FPS):
+    lines = list(_S2K_HEAD)
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        rows = [line.strip() for line in text.split('\n') if line.strip()]
+        lines.append(';Buffer.Pop=1')
+        lines.append(f';Set.Time.Start={int(round(float(segment.get("start", 0)) * 1000))}')
+        # Each line is placed itself: the format has no line break, it has
+        # coordinates, stacked upwards from the foot of a 320x240 frame.
+        for number, row in enumerate(rows):
+            height = 221 - 18 * (len(rows) - number)
+            lines.append(';Set.Start.Position.x=160')
+            lines.append(';Set.End.Position.x=160')
+            lines.append(f';Set.Start.Position.y={height}')
+            lines.append(f';Set.End.Position.y={height}')
+            lines.append(row)
+        # A marker with a blank line clears the screen, and so ends the one
+        # above: without it the subtitle would stay until the next.
+        lines.append(';Buffer.Pop=1')
+        lines.append(f';Set.Time.Start={int(round(float(segment.get("end", 0)) * 1000))}')
+        lines.append(';Set.Start.Position.x=160')
+        lines.append(';Set.End.Position.x=160')
+        lines.append(';Set.Start.Position.y=203')
+        lines.append(';Set.End.Position.y=203')
+        lines.append(' ')
+    return '\n'.join(lines) + '\n' if len(lines) > len(_S2K_HEAD) else ''
+
+
+# ---------------------------------------------------------------- Xombie
+
+
+def _parse_xombie(text, fps=DEFAULT_FPS):
+    """An ASS dialect: Line=D rows, times in milliseconds rather than
+    ASS's hundredths, and the actor field where ASS keeps one."""
+    segments = []
+    for line in text.split('\n'):
+        match = _XSS.match(line)
+        if not match or match.group(1).strip().upper() != 'D':
+            continue                # styles, fonts, and row types nothing reads
+        body = _lines_of(match.group(18).replace('\\N', '\n').replace('\\n', '\n'))
+        if not body:
+            continue
+        start = _clock_seconds(*match.groups()[3:6]) + int(match.group(7)) / 1000.0
+        end = _clock_seconds(*match.groups()[7:10]) + int(match.group(11)) / 1000.0
+        segments.append(_named({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body},
+                               match.group(14)))
+    return _ordered(segments)
+
+
+def _write_xombie(segments, fps=DEFAULT_FPS):
+    def stamp(seconds):
+        total = max(0, int(round(float(seconds) * 1000)))
+        hours, rest = divmod(total, 3600000)
+        minutes, rest = divmod(rest, 60000)
+        secs, millis = divmod(rest, 1000)
+        return f'{hours}:{minutes:02d}:{secs:02d}.{millis:03d}'
+
+    lines = ['; XombieSub script', 'version=1.0', 'ScreenHorizontal=1280', 'ScreenVertical=1024',
+             'Style=Default,Default,Arial,48,16777215,16777215,0,0,255,255,255,255,'
+             '0,0,0,0,0,100,100,0,0,0,0,1,2,1,2,30,30,30,1']
+    for number, segment in enumerate(_ordered(segments), start=1):
+        body = _packed(segment, separator='\\N')
+        if not body:
+            continue
+        speaker = str(segment.get('speaker') or '').strip()
+        lines.append(f'Line=D,{number},0,{stamp(segment.get("start", 0))},{stamp(segment.get("end", 0))},'
+                     f'Default,Default,{speaker},0,0,0,{body}')
+    return '\n'.join(lines) + '\n' if len(lines) > 5 else ''
+
+
 # --------------------------------------------------------------- ViPlay
 
 
@@ -845,6 +1016,9 @@ _PARSERS = {
     'captions32': _parse_captions32,
     'subsonic': _parse_subsonic,
     'oresme': _parse_oresme,
+    'jacosub': _parse_jacosub,
+    'sasami': _parse_sasami,
+    'xombie': _parse_xombie,
 }
 
 _WRITERS = {
@@ -864,6 +1038,9 @@ _WRITERS = {
     'captions32': _write_captions32,
     'subsonic': _write_subsonic,
     'oresme': _write_oresme,
+    'jacosub': _write_jacosub,
+    'sasami': _write_sasami,
+    'xombie': _write_xombie,
 }
 
 
@@ -878,6 +1055,8 @@ def kind(data):
     head = text.lstrip('﻿')
     if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
         return 'realtext'
+    if _S2K_WIDTH.match(head.lstrip().split('\n')[0] if head.strip() else ''):
+        return 'sasami'
     if head.lstrip().lower().startswith(_VIPLAY_MAGIC):
         return 'viplay'
     if head.lstrip().lower().startswith('% zero g'):
@@ -892,6 +1071,12 @@ def kind(data):
             return 'subsonic'
         if _ORESME.match(line.rstrip('\r')) and _ORESME.match(line.rstrip('\r')).group(5):
             return 'oresme'
+        if _XSS.match(line):
+            return 'xombie'
+        if _JSS.match(line):
+            return 'jacosub'
+        if _S2K_TIME.match(line):
+            return 'sasami'
         if _TTS.match(line):
             return 'turbotitle'
         if _ZEG.match(line):

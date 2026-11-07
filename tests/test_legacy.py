@@ -167,6 +167,32 @@ check('the broadcast start and the frames', (read_oresme[0]['start'], read_oresm
       (36017.24, 'We view'))
 check('{N} breaks the line', read_oresme[1]['text'], 'Lufa Farms as\nan agrotechnology business')
 
+print('JACOSub: its own TIMERES, thirtieths when it says nothing')
+check('default timeres', cues('0:00:01.15 0:00:03.00 D First cue\n', 'jacosub'), [(1.5, 3.0, 'First cue')])
+check('#TIMERES 100', cues('#TIMERES 100\n0:00:01.50 0:00:03.25 D First cue\n', 'jacosub'),
+      [(1.5, 3.25, 'First cue')])
+check('#SHIFT moves them all', cues('#TIMERES 100\n#SHIFT 100\n0:00:01.00 0:00:03.00 D Cue\n', 'jacosub'),
+      [(2.0, 4.0, 'Cue')])
+check('\\n breaks the line', cues('#TIMERES 100\n0:00:01.00 0:00:03.00 D First\\nsecond\n', 'jacosub'),
+      [(1.0, 3.0, 'First\nsecond')])
+
+print('Sasami2k: a command script, milliseconds, a blank marker to clear')
+S2K = (';Env.Movie.Width=320\n;Set.Font.Face=Tahoma\n;Buffer.Push=1\n'
+       ';Buffer.Pop=1\n;Set.Time.Start=55000\n;Set.Start.Position.y=203\nO PADRINHO II\n'
+       ';Buffer.Pop=1\n;Set.Time.Start=62600\n \n')
+check('commands skipped, the marker ends it', cues(S2K, 'sasami'), [(55.0, 62.6, 'O PADRINHO II')])
+check('its first line names it', legacy.kind(S2K), 'sasami')
+
+print('Xombie: an ASS dialect in milliseconds, with an actor')
+XSS = ('; a comment\nScreenHorizontal=1280\n'
+       'Line=D,1,0,0:00:01.500,0:00:03.250,Default,Default,Alice,0,0,0,Hello\\Nthere\n'
+       'Line=X,2,0,0:00:04.000,0:00:05.000,Default,Default,,0,0,0,not dialogue\n')
+read_xss = legacy.parse(XSS, 'xombie')
+check('only the D rows', len(read_xss), 1)
+check('milliseconds, lines and the actor as the speaker',
+      (read_xss[0]['start'], read_xss[0]['end'], read_xss[0]['text'], read_xss[0].get('speaker')),
+      (1.5, 3.25, 'Hello\nthere', 'Alice'))
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
@@ -204,6 +230,7 @@ ORACLE = [
     ('aqtitle', 'aqtitle', '-->> 25\nFirst cue\n\n-->> 75\nSecond cue\n'),
     ('subviewer1', 'subviewer1', '[00:00:01]\nFirst cue\n[00:00:03]\n\n[00:00:04]\nSecond cue\n[00:00:06]\n'),
     ('spruce', 'stl', '00:00:01:00 , 00:00:03:00 , First cue\n00:00:04:00 , 00:00:06:00 , Second cue\n'),
+    ('jacosub', 'jacosub', '#TIMERES 100\n0:00:01.00 0:00:03.00 D First cue\n0:00:04.00 0:00:06.00 D Second cue\n'),
 ]
 
 
