@@ -326,6 +326,18 @@ check('tts:position is believed over a tts:origin beside it, as TTML2 says',
           head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 20%" '
                'tts:position="center bottom 10%" tts:displayAlign="after" tts:textAlign="center"/></layout>'))],
       [{'v': '8%'}])
+check('a margin that would put the region outside the picture sits it against the edge',
+      [[line for line in ttml.write([{'start': 1, 'end': 2, 'text': text, 'position': place}], 'en').splitlines()
+        if '<region ' in line][0].split('tts:origin="')[1].split('"')[0] + ' '
+       + [line for line in ttml.write([{'start': 1, 'end': 2, 'text': text, 'position': place}], 'en').splitlines()
+          if '<region ' in line][0].split('tts:extent="')[1].split('"')[0]
+       for text, place in ((r'{\an1}Out', {'h': '-3.1%'}), (r'{\an1}Far out', {'h': '-15%'}),
+                           ('Nudged off the middle', {'h': '-3.1%'}))],
+      ['0% 10% 93.1% 80%', '0% 10% 100% 80%', '6.9% 10% 80% 80%'])
+check('and a file whose regions reach outside it says so',
+      ttml.check(ttml.write([{'start': 1, 'end': 2, 'text': 'x'}], 'en').replace('tts:origin="10% 10%"',
+                                                                                'tts:origin="-5% 10%"'), 'ttml1'),
+      ['Regions reach outside the picture: bottom'])
 check('TTML has no rotation, so a turned subtitle is written flat',
       'rotate' in ttml.write([{'start': 1, 'end': 2, 'text': 'Turned', 'position': {'rotate': {'z': 45}}}], 'en'), False)
 

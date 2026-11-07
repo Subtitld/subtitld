@@ -369,7 +369,22 @@ def _box(keypad, horizontal, vertical):
         y, height = down, 100.0 - _SAFE - down
     else:
         y, height = _SAFE + down, 100.0 - 2 * _SAFE
-    return (x, y), (max(1.0, width), max(1.0, height))
+    x, width = _inside(x, width)
+    y, height = _inside(y, height)
+    return (x, y), (width, height)
+
+
+def _inside(start, size):
+    """(start, size) kept inside the picture.
+
+    A margin can be negative: CEA-608 keeps a position but no alignment, so
+    a line indented from the left comes back centred and nudged the other
+    way. Off the middle that moves the band, which is what it means; on an
+    edge it would put the region outside the root container, which no
+    profile allows and no player draws, so it sits against the edge.
+    """
+    size = min(max(1.0, size), 100.0)
+    return max(0.0, min(start, 100.0 - size)), size
 
 
 # A tts:position names an edge and how far from it a region sits.
@@ -650,6 +665,20 @@ def check(text, profile='imsc1.1'):
         if images:
             problems.append(f'{len(images)} element(s) carry smpte:backgroundImage: '
                             'pictures belong to the Image Profile, not the Text Profile')
+
+    outside = []
+    for element in root.iter():
+        if _local(element.tag) != 'region':
+            continue
+        box = [_LENGTH.match(part) for part in
+               ((_attr(element, 'origin') or '') + ' ' + (_attr(element, 'extent') or '')).split()]
+        if len(box) == 4 and all(part and part.group(2) == '%' for part in box):
+            start = [float(box[axis].group(1)) for axis in (0, 1)]
+            size = [float(box[2 + axis].group(1)) for axis in (0, 1)]
+            if any(start[axis] < 0 or start[axis] + size[axis] > 100 for axis in (0, 1)):
+                outside.append(_xml_id(element) or '(unnamed)')
+    if outside:
+        problems.append(f'Regions reach outside the picture: {", ".join(outside)}')
 
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
