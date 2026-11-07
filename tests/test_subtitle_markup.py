@@ -304,6 +304,29 @@ check('the Markdown panel writes it as a span attribute, as it does underline',
       (_md, markup.from_markdown(_md)), ('Plain [flash]{.flash}', 'Plain <blink>flash</blink>'))
 
 
+print('what kind of text a run is')
+check('read off a <font>, and written back',
+      ([style.kind for _run, style in markup.spans(
+          'Said by <font kind="source-id">NARRATOR</font>')],
+       markup.from_spans(markup.spans('Said by <font kind="source-id">NARRATOR</font>'))),
+      (['', 'source-id'], 'Said by <font kind="source-id">NARRATOR</font>'))
+check('every kind CEA-708 names, kept as it is written',
+      [[style.kind for _run, style in markup.spans(f'<font kind="{kind}">x</font>')][0]
+       for kind in markup.KINDS if kind],
+      [kind for kind in markup.KINDS if kind])
+check('one it does not name is no kind at all',
+      markup.from_spans(markup.spans('<font kind="nonsense">x</font>')), 'x')
+check('a kind says nothing about how it is drawn, except the one that does',
+      (markup.to_html('<font kind="lyrics">♪ la ♪</font>'),
+       markup.to_html('Shown <font kind="not-displayed">and not</font> again')),
+      ('♪ la ♪', 'Shown  again'))
+check('what is not drawn is still what the subtitle says, to count and translate',
+      markup.plain('Shown <font kind="not-displayed">and not</font> again'), 'Shown and not again')
+_md = markup.to_markdown('<font kind="sound-effect">[a door]</font>')
+check('the Markdown panel keeps it', (_md, markup.from_markdown(_md)),
+      ('[[a door]]{kind=sound-effect}', '<font kind="sound-effect">[a door]</font>'))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

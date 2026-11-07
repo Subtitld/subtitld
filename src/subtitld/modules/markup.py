@@ -15,6 +15,9 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
     <sup>…</sup>  <sub>…</sub>               raised and lowered text
     <blink>…</blink>                         text that flashes, as broadcast
                                              captions flash a word
+    <font kind="sound-effect">…</font>       what kind of text it is, where
+                                             a file says (a speaker's name,
+                                             lyrics, an expletive …)
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
     <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
@@ -82,6 +85,7 @@ _FONT_EDGE = re.compile(r'''(?<![-\w])edge\s*=\s*["']?\s*([-\w]+)''', re.IGNOREC
 _FONT_EDGE_COLOR = re.compile(r'''edge-colou?r\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
 # A typeface may be several words, so an unquoted one is one word only.
 _FONT_FACE = re.compile(r'''face\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w-]+))''', re.IGNORECASE)
+_FONT_KIND = re.compile(r'''kind\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
 # The colours HTML names that subtitle files use; others are kept, not drawn.
 _NAMED = {
     'white': 'ffffff', 'black': '000000', 'red': 'ff0000', 'lime': '00ff00', 'green': '008000',
@@ -99,6 +103,17 @@ SIZES = ('small', 'large')
 EDGES = ('raised', 'depressed', 'uniform', 'left-shadow', 'right-shadow')
 # Raised and lowered text, as HTML and WebVTT write it.
 OFFSETS = {'sub': 'sub', 'sup': 'super'}
+# What kind of text a run is, which CEA-708's pen says as its text tag:
+# whose words they are or what sort of sound they stand for, in the order
+# the standard numbers them. '' is ordinary dialogue, the first of them, and
+# the three the standard leaves undefined are nothing here either.
+KINDS = ('source-id', 'electronic-voice', 'other-language', 'voiceover', 'audible-translation',
+         'subtitle-translation', 'voice-quality', 'lyrics', 'sound-effect', 'musical-score',
+         'expletive', '', '', '', 'not-displayed')
+# The one kind that changes what is drawn rather than only saying what the
+# words are: the file asks for it not to be shown.
+HIDDEN = 'not-displayed'
+
 # Text that flashes. Both caption standards can ask for it and no other
 # format can say it, so it is written as the tag HTML once had for it.
 FLASH_TAG = 'blink'
@@ -108,7 +123,7 @@ FLASH_CLASS = 'subtitld-flash'
 _OFFSET_TAGS = {role: tag for tag, role in OFFSETS.items()}
 # What a run is drawn in beyond its colours: kept together for the places
 # that carry them all or none.
-_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face')
+_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face', 'kind')
 
 
 class Style(NamedTuple):
@@ -125,6 +140,7 @@ class Style(NamedTuple):
     edge_color: str = ''     # '#rrggbb' that edge is drawn in, '' for black
     face: str = ''           # the typeface it asks for, kept but not drawn
     flash: bool = False      # text that flashes, as a caption flashes a word
+    kind: str = ''           # one of KINDS: what sort of text it is, '' dialogue
 
     def any(self):
         return self != PLAIN
@@ -174,6 +190,7 @@ class Font(NamedTuple):
     edge: str = ''
     edge_color: str = ''
     face: str = ''
+    kind: str = ''
 
     def any(self):
         return self != Font()
@@ -234,8 +251,10 @@ def _tokens(text):
             written = match.group('font')
             found = {name: pattern.search(written) for name, pattern in
                      (('color', _FONT_COLOR), ('background', _FONT_BACKGROUND), ('size', _FONT_SIZE),
-                      ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR), ('face', _FONT_FACE))}
+                      ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR), ('face', _FONT_FACE),
+                      ('kind', _FONT_KIND))}
             edge = (found['edge'].group(1).lower() if found['edge'] else '')
+            kind = (found['kind'].group(1).lower() if found['kind'] else '')
             face = next((part for part in found['face'].groups() if part), '') if found['face'] else ''
             yield ('open', 'font', Font(
                 color=color_hex(found['color'].group(1)) if found['color'] else '',
@@ -243,7 +262,8 @@ def _tokens(text):
                 size=size_percent(found['size'].group(1)) if found['size'] else '',
                 edge=edge if edge in EDGES else '',
                 edge_color=color_hex(found['edge_color'].group(1)) if found['edge_color'] else '',
-                face=face.strip()))
+                face=face.strip(),
+                kind=kind if kind in KINDS else ''))
         elif match.group('override') is not None:
             yield 'override', match.group('override')
         else:
@@ -392,6 +412,10 @@ def to_html(text, colors=True):
     which is as near as its rich text goes). Without `colors`, every run
     takes the default colour (for a shadow)."""
     def chunk_of(run, style):
+        if style.kind == HIDDEN:
+            # The file says this is not to be shown. It stays in the text,
+            # where it can be read and edited; it is only not drawn.
+            return ''
         chunk = html.escape(run, quote=False).replace('\n', '<br/>')
         if style.offset in _OFFSET_TAGS:
             chunk = f'<{_OFFSET_TAGS[style.offset]}>{chunk}</{_OFFSET_TAGS[style.offset]}>'
@@ -488,7 +512,8 @@ TAG_ORDER = ('font', FLASH_TAG, 'sup', 'sub', 'i', 'b', 'u', 's')
 def tags_for(style):
     """The tags a run in `style` sits in: [(name, value)]. A font's value is
     (colour, background), so one tag carries both."""
-    font = Font(style.color, style.background, style.size, style.edge, style.edge_color, style.face)
+    font = Font(style.color, style.background, style.size, style.edge, style.edge_color, style.face,
+                style.kind)
     wanted = [('font', font)] if font.any() else []
     if style.flash:
         wanted.append((FLASH_TAG, True))
@@ -498,7 +523,7 @@ def tags_for(style):
 
 
 _FONT_ATTRIBUTES = (('color', 'color'), ('background', 'background'), ('size', 'size'),
-                    ('edge', 'edge'), ('edge_color', 'edge-color'), ('face', 'face'))
+                    ('edge', 'edge'), ('edge_color', 'edge-color'), ('face', 'face'), ('kind', 'kind'))
 
 
 def _open_tag(name, value):
@@ -763,6 +788,8 @@ def _md_span_attrs(style):
         attrs.append(f'edge-color={style.edge_color}')
     if style.face:
         attrs.append(f'face="{style.face}"')
+    if style.kind:
+        attrs.append(f'kind={style.kind}')
     return ' '.join(attrs)
 
 
@@ -839,7 +866,8 @@ _MD_ATTR = re.compile(
     r'''|(?<![-\w])size\s*=\s*["']?(?P<size>[\d.]+\s*%)["']?'''
     r'''|edge-colou?r\s*=\s*["']?(?P<edgecolor>[#\w]+)["']?'''
     r'''|(?<![-\w])edge\s*=\s*["']?(?P<edge>[-\w]+)["']?'''
-    r'''|face\s*=\s*(?:"(?P<facequoted>[^"]*)"|(?P<face>[\w-]+))''')
+    r'''|face\s*=\s*(?:"(?P<facequoted>[^"]*)"|(?P<face>[\w-]+))'''
+    r'''|kind\s*=\s*["']?(?P<kind>[-\w]+)["']?''')
 
 
 def _md_span_style(attrs):
@@ -868,6 +896,9 @@ def _md_span_style(attrs):
                 change['edge'] = match.group('edge').lower()
         elif match.group('facequoted') or match.group('face'):
             change['face'] = (match.group('facequoted') or match.group('face')).strip()
+        elif match.group('kind'):
+            if match.group('kind').lower() in KINDS:
+                change['kind'] = match.group('kind').lower()
         else:
             color = color_hex(match.group('fore') or match.group('css'))
             if color:

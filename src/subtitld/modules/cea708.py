@@ -44,8 +44,9 @@ having no background of its own, and an edge drawn in black as having no
 colour of its own. A run's size, its place against the line and its edge
 go out with it, and come back; the font and the text tag a pen may also
 carries name the typeface — one of the eight it has words for, which a run
-keeps as its face — and what kind of speech it is, which a subtitle here
-has nowhere to put. Characters CEA-708 lacks become their letter
+keeps as its face — and the text tag, what sort of text the run is (a
+speaker's name, lyrics, a sound effect, an expletive, or text not to be
+shown at all), which a run keeps as its kind. Characters CEA-708 lacks become their letter
 without accents, or a 16-bit character.
 """
 
@@ -100,6 +101,9 @@ _EDGE_CODES = {edge: code for code, edge in _PEN_EDGES.items()}
 # draws by default, the rest are the ones CEA-708 names (markup.FACES).
 _FONT_TAGS = {code: name for code, name in enumerate(('',) + markup.FACES)}
 _FACE_CODES = {name: code for code, name in _FONT_TAGS.items() if name}
+# The text tag: what sort of text a run is, which a pen says in four bits.
+_TEXT_TAGS = {code: name for code, name in enumerate(('',) + markup.KINDS)}
+_KIND_CODES = {name: code for code, name in _TEXT_TAGS.items() if name}
 
 
 def _background(value):
@@ -444,7 +448,8 @@ class _Service:
                     size=_PEN_SIZES.get(parameters[0] & 0x03, ''),
                     offset=_PEN_OFFSETS.get((parameters[0] >> 2) & 0x03, ''),
                     edge=_PEN_EDGES.get((parameters[1] >> 3) & 0x07, ''),
-                    face=_FONT_TAGS.get(parameters[1] & 0x07, '')))
+                    face=_FONT_TAGS.get(parameters[1] & 0x07, ''),
+                    kind=_TEXT_TAGS.get((parameters[0] >> 4) & 0x0F, '')))
         elif code == 0x91:                                   # SetPenColor
             window = self._window()
             if window is not None:
@@ -648,7 +653,8 @@ def _pen(style):
     and its colour (two bits a component) on the background it asks for,
     else on black as CEA-608's pen sits."""
     attributes = (_SIZE_CODES.get(style.size, 1)
-                  | _OFFSET_CODES.get(style.offset, 1) << 2)
+                  | _OFFSET_CODES.get(style.offset, 1) << 2
+                  | _KIND_CODES.get(style.kind, 0) << 4)
     # A typeface it does not name is whatever the decoder draws anyway; the
     # face stays in the text for the formats that can carry any of them.
     face = _FACE_CODES.get(style.face.strip().lower(), 0)

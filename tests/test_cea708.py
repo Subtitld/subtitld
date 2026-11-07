@@ -360,6 +360,26 @@ check('a caption that asks for none says nothing about it',
       ['First line', 'Second line'])
 
 
+print('what kind of text a pen says it is')
+check('the text tag, in the four bits above the size and the offset',
+      [next(unit for unit in cea708._load(f'<font kind="{kind}">x</font>', 0)
+            if unit[0] == 0x90)[1] >> 4
+       for kind in ('source-id', 'lyrics', 'expletive', 'not-displayed')],
+      [1, 8, 11, 15])
+check('dialogue is the tag that says nothing, and what a run says by default',
+      next(unit for unit in cea708._load('Plain', 0) if unit[0] == 0x90)[1] >> 4, 0)
+check('every kind written and read back',
+      [cea708.decode(sorted(cea708.frames_for(
+          {1: [(f'<font kind="{kind}">x</font>', 30, None)]}, 18).items()), RATE, 1)[0]['text']
+       for kind in markup.KINDS if kind],
+      [f'<font kind="{kind}">x</font>' for kind in markup.KINDS if kind])
+check('beside dialogue in one caption',
+      cea708.decode(sorted(cea708.frames_for(
+          {1: [('Dialog <font kind="sound-effect">[a door]</font> more', 30, None)]}, 18).items()),
+          RATE, 1)[0]['text'],
+      'Dialog <font kind="sound-effect">[a door]</font> more')
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -27,7 +27,7 @@ _RUBY_ROLE = QTextFormat.UserProperty + 1
 # A size, an edge and the colour it is drawn in have no look of their own in
 # the editor either: it keeps them so an edit does not drop them.
 _PEN = {field: QTextFormat.UserProperty + 2 + index
-        for index, field in enumerate(('size', 'offset', 'edge', 'edge_color', 'face'))}
+        for index, field in enumerate(('size', 'offset', 'edge', 'edge_color', 'face', 'kind'))}
 # A text editor has no way to show text flashing, so it is kept as a
 # property and left to the preview to draw.
 _FLASH = QTextFormat.UserProperty + 8

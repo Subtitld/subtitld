@@ -16,7 +16,8 @@ of 32 columns:
   state; roll-up ones, line after line as in live captions, one subtitle a
   line, from its first character to the next line's;
 - italics, underline, colours (white, green, blue, cyan, red, yellow,
-  magenta) and a flash become formatting tags, and so does the background
+  magenta) and a flash become formatting tags (CEA-608 says nothing about
+  what sort of text a run is, which CEA-708 does: see modules.cea708), and so does the background
   the text sits on, in the same seven colours, opaque, half seen through or
   transparent; black is what text sits on anyway, so it says nothing of
   its own; where the caption sits on the screen,
