@@ -72,14 +72,16 @@ _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
 _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
-_STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'shear', 'ruby')
+_STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'backgroundColor', 'textAlign',
+                 'displayAlign', 'origin', 'extent', 'shear', 'ruby')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
 # delimiter is punctuation a player draws, not the subtitle's words.
 _RUBY_ROLES = {'base': 'base', 'text': 'text'}
 _RGB = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
+# The same, with the opacity TTML writes as a fourth part (0-255, or 0-1).
+_RGBA = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)')
 _DECLARED = re.compile(rb'\s*<\?xml[^>]*?encoding\s*=\s*["\']([\w.:-]+)["\']')
 _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
 _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
@@ -233,6 +235,20 @@ def _color(value):
     return markup.color_hex(value)
 
 
+def _background(value):
+    """'#rrggbb', or '#rrggbbaa' where it is not opaque, for a TTML
+    backgroundColor: the alpha a run's background keeps, unlike a colour's,
+    since a caption's box is often only partly opaque."""
+    value = (value or '').strip()
+    rgb = _RGBA.match(value)
+    if rgb:
+        parts = [min(255, int(part)) for part in rgb.groups()[:3]]
+        alpha = rgb.group(4)
+        opacity = 255 if alpha is None else min(255, int(round(float(alpha) * (1 if '.' in alpha else 1 / 255) * 255)))
+        return '#' + ''.join(f'{part:02x}' for part in parts) + ('' if opacity == 255 else f'{opacity:02x}')
+    return markup.background_hex(value)
+
+
 def _properties(element):
     """The element's own tts:* properties this module reads, after those of
     the <style> elements inside it (a region's)."""
@@ -291,7 +307,8 @@ def _look(props):
         'underline' in decoration,
         'lineThrough' in decoration,
         '' if color == '#ffffff' else color,
-        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''))
+        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''),
+        _background(props.get('backgroundColor')))
 
 
 def _keypad(props, frame, geometry=True):
@@ -403,6 +420,21 @@ def _preserving(element, preserve):
     return (element.get(_XML_NS + 'space') or ('preserve' if preserve else 'default')) == 'preserve'
 
 
+def _whole_background(element, styles, props):
+    """The background a whole paragraph sits on: the box Subtitld draws
+    behind a subtitle, which is a style template's setting and not a run's
+    own background (modules.markup). It is what the paragraph itself sets,
+    or what a lone span wrapping all of it does, as this module writes the
+    box; a background on only some of the runs is theirs.
+    """
+    background = _background(props.get('backgroundColor'))
+    children = list(element)
+    if len(children) == 1 and _local(children[0].tag) == 'span' and \
+            not (element.text or '').strip() and not (children[0].tail or '').strip():
+        return _background(styles.of(children[0], props).get('backgroundColor')) or background
+    return background
+
+
 def _runs(element, styles, props, preserve, out, agent):
     """Collect `element`'s text into `out` as [(text, Style)]; the first
     ttm:agent met goes in `agent`."""
@@ -454,6 +486,9 @@ def _document(text):
         p_props = styles.of(element, dict(region_props, **props))
         runs, agent = [], [None]
         _runs(element, styles, p_props, preserve, runs, agent)
+        box = _whole_background(element, styles, p_props)
+        runs = [(run, style._replace(background='') if box and style.background == box else style)
+                for run, style in runs]
         body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
@@ -606,7 +641,11 @@ def _open_span(tags, style, shear=False):
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
-        attrs.append(f'tts:color="{names["font"]}"')
+        color, background = names['font']
+        if color:
+            attrs.append(f'tts:color="{color}"')
+        if background:
+            attrs.append(f'tts:backgroundColor="{background}"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:

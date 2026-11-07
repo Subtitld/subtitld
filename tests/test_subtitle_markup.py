@@ -195,6 +195,46 @@ check('a colour is drawn in it', any(QColor(coloured.pixel(x, y)).green() > 200 
 
 renderer.close()
 
+print('a background behind a run')
+check('read off a <font>, beside the colour',
+      [(run, style.color, style.background) for run, style in
+       markup.spans('<font color="#ffffff" background="#000000cc">White on a box</font>')],
+      [('White on a box', '#ffffff', '#000000cc')])
+check('"transparent" is a background made invisible, not none at all',
+      markup.background_hex('transparent'), '#00000000')
+check('short hex, with and without an opacity',
+      (markup.background_hex('#f00'), markup.background_hex('#f008'), markup.background_hex('nonsense')),
+      ('#ff0000', '#ff000088', ''))
+check('written back as one tag carrying both',
+      markup.from_spans([('White on a box', markup.Style(color='#ffffff', background='#000000cc'))]),
+      '<font color="#ffffff" background="#000000cc">White on a box</font>')
+check('a background alone needs no colour',
+      markup.from_spans([('On a box', markup.Style(background='#00ff00'))]),
+      '<font background="#00ff00">On a box</font>')
+check('drawn with an opacity as rgba(), which eight hex digits are not',
+      markup.to_html('<font background="#000000cc">On a box</font>'),
+      '<span style="background-color:rgba(0, 0, 0, 0.8)">On a box</span>')
+check('and opaque as it is written',
+      markup.to_html('<font background="#00ff00">On a box</font>'),
+      '<span style="background-color:#00ff00">On a box</span>')
+check('what it reads is the text alone', markup.plain('<font background="#00ff00">On a box</font>'), 'On a box')
+check('the names a file may give the attribute',
+      [[style.background for _run, style in markup.spans(f'<font {written}>x</font>')]
+       for written in ('background="#0f0"', 'bgcolor="#0f0"', 'back-color="#0f0"', 'background-color="#0f0"')],
+      [['#00ff00']] * 4)
+check('a colour attribute is still only the colour, not a background-color',
+      [(style.color, style.background) for _run, style in
+       markup.spans('<font background-color="#00ff00">x</font>')], [('', '#00ff00')])
+check('ASS has no background of its own: left out, as a reading is',
+      markup.to_ass('<font color="#ff0000" background="#00ff00">Red on green</font>'),
+      '{\\c&H0000FF&}Red on green{\\c}')
+_md = markup.to_markdown('plain <font background="#000000cc"><i>on a box</i></font> after')
+check('the Markdown panel writes it as a span attribute, and reads it back',
+      (_md, markup.from_markdown(_md)),
+      ('plain [*on a box*]{background=#000000cc} after',
+       'plain <font background="#000000cc"><i>on a box</i></font> after'))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

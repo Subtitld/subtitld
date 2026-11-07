@@ -6,6 +6,8 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
     <i>…</i>  <b>…</b>  <u>…</u>  <s>…</s>   italic, bold, underline, strikeout
     <font color="#rrggbb">…</font>           colour; a face or size is kept,
                                              not drawn
+    <font background="#rrggbbaa">…</font>    a background behind the text,
+                                             with an opacity if it says one
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
     <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
@@ -13,6 +15,15 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
 Anything else that looks like a tag ("<3", "a < b", WebVTT's <v Name>) is
 text. Tags may nest and may be left open (they run to the end); a closing
 tag with nothing to close is dropped.
+
+A background is the box a run of text sits on, which broadcast captions
+draw behind every character and TTML writes as tts:backgroundColor. It is
+written as a <font> attribute, beside the colour, since the two go together
+and a player that does not know it ignores it. Its value is "#rrggbb", or
+"#rrggbbaa" where it says how opaque it is ("#00000000" being a background
+asked for and then made invisible, as CEA-608's transparent code says).
+This is a run's own background: the box the preview draws behind a whole
+subtitle is a style template's setting (modules.subtitle_styles), not this.
 
 A ruby is written the way HTML and WebVTT write one, which is also what
 the preview draws, and it is what IMSC 1.1 calls a container holding a
@@ -39,8 +50,12 @@ _TOKEN = re.compile(
     r'|<\s*/\s*font\s*>'
     r'|\{(?P<override>\\[^{}]*)\}',
     re.IGNORECASE)
-_FONT_COLOR = re.compile(r'''color\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
+_FONT_COLOR = re.compile(r'''(?<![-\w])color\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
+# The names a file may give the same attribute: HTML's, SAMI's and USF's.
+_FONT_BACKGROUND = re.compile(r'''(?:background(?:-color)?|bgcolor|back-color)\s*=\s*["']?\s*([#\w]+)''',
+                              re.IGNORECASE)
 _HEX = re.compile(r'#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$')
+_HEX_ALPHA = re.compile(r'#?([0-9a-fA-F]{8}|[0-9a-fA-F]{4})$')
 # The colours HTML names that subtitle files use; others are kept, not drawn.
 _NAMED = {
     'white': 'ffffff', 'black': '000000', 'red': 'ff0000', 'lime': '00ff00', 'green': '008000',
@@ -59,6 +74,7 @@ class Style(NamedTuple):
     strike: bool = False
     color: str = ''          # '#rrggbb', or '' for the default
     ruby: str = ''           # '' ordinary text, 'base' read, 'text' its reading
+    background: str = ''     # '#rrggbb' or '#rrggbbaa' behind the text, '' for none
 
     def any(self):
         return self != PLAIN
@@ -92,8 +108,35 @@ def color_hex(value):
     return '#' + digits
 
 
+def background_hex(value):
+    """'#rrggbb', or '#rrggbbaa' where it says how opaque it is, for a
+    background as a file writes it; '' when it is not a colour. "transparent"
+    is a background made invisible, which is not the same as none at all."""
+    value = (value or '').strip().lower()
+    if value == 'transparent':
+        return '#00000000'
+    match = _HEX_ALPHA.match(value)
+    if match:
+        digits = match.group(1)
+        if len(digits) == 4:
+            digits = ''.join(c * 2 for c in digits)
+        return '#' + digits
+    return color_hex(value)
+
+
+def css_color(value):
+    """A colour as CSS takes it: '#rrggbb', or rgba() where it carries an
+    opacity, which Qt's rich text reads and eight hex digits are not."""
+    digits = (value or '').lstrip('#')
+    if len(digits) != 8:
+        return value or ''
+    red, green, blue, alpha = (int(digits[at:at + 2], 16) for at in (0, 2, 4, 6))
+    return f'rgba({red}, {green}, {blue}, {round(alpha / 255, 3)})'
+
+
 def _tokens(text):
-    """('text', str) | ('open', name, color) | ('close', name) | ('override', codes)"""
+    """('text', str) | ('open', name, value) | ('close', name) | ('override',
+    codes). A font's value is (colour, background), another tag's is ''."""
     position = 0
     for match in _TOKEN.finditer(text or ''):
         if match.start() > position:
@@ -103,8 +146,10 @@ def _tokens(text):
             name = match.group('tag').lower()
             yield ('close', name) if match.group('close') else ('open', name, '')
         elif match.group('font') is not None:
-            found = _FONT_COLOR.search(match.group('font'))
-            yield 'open', 'font', color_hex(found.group(1)) if found else ''
+            color = _FONT_COLOR.search(match.group('font'))
+            background = _FONT_BACKGROUND.search(match.group('font'))
+            yield ('open', 'font', (color_hex(color.group(1)) if color else '',
+                                    background_hex(background.group(1)) if background else ''))
         elif match.group('override') is not None:
             yield 'override', match.group('override')
         else:
@@ -139,11 +184,14 @@ class _Reader:
     def step(self, token, written=''):
         kind = token[0]
         if kind == 'open':
-            name, color = token[1], token[2]
-            self.open.append((name, color, self.style, written))
+            name, value = token[1], token[2]
+            self.open.append((name, value, self.style, written))
             if name == 'font':
+                color, background = value or ('', '')
                 if color:
                     self.style = self.style._replace(color=color)
+                if background:
+                    self.style = self.style._replace(background=background)
             elif name in _RUBY:
                 self.style = self.style._replace(ruby=_RUBY[name])
             else:
@@ -155,7 +203,7 @@ class _Reader:
                     previous = self.open[index][2]
                     del self.open[index]
                     if name == 'font':
-                        self.style = self.style._replace(color=previous.color)
+                        self.style = self.style._replace(color=previous.color, background=previous.background)
                     elif name in _RUBY:
                         # </rt> leaves the container, so what follows is its
                         # base again; </ruby> leaves the ruby altogether.
@@ -253,8 +301,10 @@ def to_html(text, colors=True):
             chunk = f'<b>{chunk}</b>'
         if style.italic:
             chunk = f'<i>{chunk}</i>'
-        if colors and style.color:
-            chunk = f'<span style="color:{style.color}">{chunk}</span>'
+        looks = ([f'color:{style.color}'] if colors and style.color else []) + \
+               ([f'background-color:{css_color(style.background)}'] if style.background else [])
+        if looks:
+            chunk = f'<span style="{";".join(looks)}">{chunk}</span>'
         return chunk
 
     parts = []
@@ -309,13 +359,18 @@ TAG_ORDER = ('font', 'i', 'b', 'u', 's')      # outermost first, when opened tog
 
 
 def tags_for(style):
-    """The tags a run in `style` sits in: [(name, value)]."""
-    wanted = [('font', style.color)] if style.color else []
+    """The tags a run in `style` sits in: [(name, value)]. A font's value is
+    (colour, background), so one tag carries both."""
+    wanted = [('font', (style.color, style.background))] if style.color or style.background else []
     return wanted + [(name, True) for name in ('i', 'b', 'u', 's') if getattr(style, _FLAGS[name])]
 
 
 def _open_tag(name, value):
-    return f'<font color="{value}">' if name == 'font' else f'<{name}>'
+    if name != 'font':
+        return f'<{name}>'
+    color, background = value
+    attributes = (f' color="{color}"' if color else '') + (f' background="{background}"' if background else '')
+    return f'<font{attributes}>'
 
 
 def _nested(runs):
@@ -466,6 +521,7 @@ def rebalance(left, right):
 #
 #     *italic*  **bold**  ***both***  ~~strikeout~~ (GitHub's)
 #     [underlined]{.underline}  [coloured]{color=#ff0000}   (Pandoc's spans)
+#     [on a box]{background=#000000ff}
 #
 # read as CommonMark reads emphasis (a delimiter opens before a word and
 # closes after one, "*sigh*" written as text is "\*sigh\*"), and a backslash
@@ -558,6 +614,8 @@ def _md_span_attrs(style):
         attrs.append('.underline')
     if style.color:
         attrs.append(f'color={style.color}')
+    if style.background:
+        attrs.append(f'background={style.background}')
     return ' '.join(attrs)
 
 
@@ -626,7 +684,11 @@ def _md_bracket_end(source, start):
     return -1
 
 
-_MD_ATTR = re.compile(r'''\.underline\b|color\s*=\s*["']?([#\w]+)["']?|style\s*=\s*["'][^"']*?color\s*:\s*([#\w]+)[^"']*["']''')
+_MD_ATTR = re.compile(
+    r'''\.underline\b'''
+    r'''|(?:background(?:-color)?|bgcolor)\s*=\s*["']?(?P<back>[#\w]+)["']?'''
+    r'''|(?<![-\w])color\s*=\s*["']?(?P<fore>[#\w]+)["']?'''
+    r'''|style\s*=\s*["'][^"']*?(?<![-\w])color\s*:\s*(?P<css>[#\w]+)[^"']*["']''')
 
 
 def _md_span_style(attrs):
@@ -636,8 +698,12 @@ def _md_span_style(attrs):
     for match in _MD_ATTR.finditer(attrs):
         if match.group(0).startswith('.underline'):
             change['underline'] = True
+        elif match.group('back'):
+            background = background_hex(match.group('back'))
+            if background:
+                change['background'] = background
         else:
-            color = color_hex(match.group(1) or match.group(2))
+            color = color_hex(match.group('fore') or match.group('css'))
             if color:
                 change['color'] = color
     return change or None

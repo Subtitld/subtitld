@@ -91,6 +91,31 @@ def _usf_color(value):
     return markup.color_hex(value)
 
 
+def _usf_background(value):
+    """'#rrggbb', or '#rrggbbaa' where it is not opaque, for a USF
+    back-color ("#AARRGGBB", "#RRGGBB" or a name), or ''. A background keeps
+    the alpha a colour drops: a caption's box is often partly see-through."""
+    value = str(value or '').strip()
+    if value.startswith('#') and len(value) == 9:
+        alpha, value = value[1:3].lower(), '#' + value[3:]
+        found = markup.color_hex(value)
+        return found + ('' if not found or alpha == 'ff' else alpha)
+    return markup.background_hex(value)
+
+
+def _font_attributes(value):
+    """A <font>'s attributes for a run's (colour, background): USF writes a
+    colour as #RRGGBB and a background as #AARRGGBB, the alpha first."""
+    color, background = value
+    attributes = {}
+    if color:
+        attributes['color'] = color
+    if background:
+        digits = background.lstrip('#')
+        attributes['back-color'] = '#' + (digits[6:8] + digits[:6] if len(digits) == 8 else 'ff' + digits)
+    return attributes
+
+
 def _inline_text(tag):
     """The text of an element as tags: its inline formatting kept, <br/> a line break."""
     parts = []
@@ -105,8 +130,11 @@ def _inline_text(tag):
             # Its colour, and the italic, weight and underline USF's plans
             # give it and some tools write.
             opening, closing = '', ''
-            if _usf_color(child.get('color')):
-                opening, closing = f'<font color="{_usf_color(child.get("color"))}">', '</font>'
+            color, background = _usf_color(child.get('color')), _usf_background(child.get('back-color'))
+            if color or background:
+                attributes = (f' color="{color}"' if color else '') + \
+                             (f' background="{background}"' if background else '')
+                opening, closing = f'<font{attributes}>', '</font>'
             for name, on in (('i', _yes(child.get('italic'))), ('b', _bold(child)), ('u', _yes(child.get('underline')))):
                 if on:
                     opening, closing = opening + f'<{name}>', f'</{name}>' + closing
@@ -689,7 +717,8 @@ class USFWriter():
             del stack[keep:]
             kept = [item for item, _element in stack]
             for item in sorted((item for item in wanted if item not in kept), key=lambda item: markup.TAG_ORDER.index(item[0])):
-                element = usf.new_tag('font', attrs={'color': item[1]}) if item[0] == 'font' else usf.new_tag(item[0])
+                element = usf.new_tag('font', attrs=_font_attributes(item[1])) if item[0] == 'font' \
+                    else usf.new_tag(item[0])
                 (stack[-1][1] if stack else parent).append(element)
                 stack.append((item, element))
             inner = stack[-1][1] if stack else parent

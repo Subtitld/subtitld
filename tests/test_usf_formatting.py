@@ -122,6 +122,20 @@ check('read back, each reading still with what it reads', read_back(content), [
     '東京 no reading',
 ])
 
+print('a background behind a run')
+_boxed = {'start': 0, 'end': 1, 'speaker': 'A',
+          'text': 'Plain <font color="#ffd700" background="#000000cc">on a box</font>'}
+_written = USFWriter().write([_boxed], speakers={}, language='en-us')
+check('written as USF writes one: back-color, the alpha first',
+      'back-color="#cc000000"' in _written, True)
+check('read back as it went in', USFReader().read(_written)[0]['text'], _boxed['text'])
+check('an opaque one needs no alpha of its own to come back',
+      USFReader().read(USFWriter().write(
+          [{'start': 0, 'end': 1, 'speaker': 'A', 'text': '<font background="#00ff00">Green box</font>'}],
+          speakers={}, language='en-us'))[0]['text'],
+      '<font background="#00ff00">Green box</font>')
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
