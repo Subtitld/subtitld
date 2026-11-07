@@ -55,6 +55,7 @@ file, so a wrong guess shifts them whole, as MicroDVD does.
 """
 
 import re
+import xml.etree.ElementTree as ElementTree
 
 from subtitld.modules import markup
 from subtitld.modules.srt import decode
@@ -90,6 +91,8 @@ EXTENSIONS = {
     'powerdivx': 'psb',
     'dvdss': 'txt',
     'qttext': 'txt',
+    'captionate': 'xml',
+    'cmml': 'cmml',
     'sst': 'sst',
     'ssts': 'ssts',
 }
@@ -98,7 +101,7 @@ EXTENSIONS = {
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
             'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
             'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts',
-            'dks', 'powerdivx', 'dvdss', 'qttext')
+            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -114,7 +117,8 @@ SESSION_FORMATS = {
     'SUBSONIC': 'subsonic', 'ORESME': 'oresme', 'JACOSUB': 'jacosub',
     'SASAMI': 'sasami', 'XOMBIE': 'xombie', 'MACSUB': 'macsub',
     'SST': 'sst', 'SSTS': 'ssts', 'DKS': 'dks', 'POWERDIVX': 'powerdivx',
-    'DVDSS': 'dvdss', 'QTTEXT': 'qttext',
+    'DVDSS': 'dvdss', 'QTTEXT': 'qttext', 'CAPTIONATE': 'captionate',
+    'CMML': 'cmml',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -180,6 +184,12 @@ _RT_CLEAR = re.compile(r'<clear\s*/?>', re.I)
 # so it cannot eat what the keeping just wrote.
 _RT_KEEP = re.compile(r'<(/?)([biu])\b[^>]*>', re.I)
 _RT_DROP = re.compile(r'<(?!/?[biu]\b)[^>]*>', re.I)
+
+
+def _escaped(text):
+    """Text as XML takes it."""
+    return (str(text).replace('&', '&amp;').replace('<', '&lt;')
+            .replace('>', '&gt;').replace('"', '&quot;'))
 
 
 def _rounded(seconds):
@@ -568,6 +578,191 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
                      f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
     lines.append('</window>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# ----------------------------------------------------------- Captionate
+
+
+def _captionate_seconds(value, timeformat):
+    """A Captionate time, in whichever of its four shapes the file declared.
+
+    The shape cannot be read off the value: "00:00:44:53" is legal under a
+    declaration of frames and under one of milliseconds, and means
+    different things. Only <timeformat> says, and when it is absent the
+    times are milliseconds.
+    """
+    raw = str(value or '').strip()
+    if not raw:
+        return 0.0
+    if ':' not in raw:
+        try:
+            return _rounded(float(raw) / (1.0 if timeformat == 's' else 1000.0))
+        except ValueError:
+            return 0.0
+    parts = raw.split(':')
+    try:
+        numbers = [int(part) for part in parts]
+    except ValueError:
+        return 0.0
+    seconds = numbers[0] * 3600 + numbers[1] * 60 + numbers[2] if len(numbers) >= 3 else 0
+    if len(numbers) < 4:
+        return _rounded(seconds)
+    last = numbers[3]
+    if timeformat.endswith('ms'):
+        return _rounded(seconds + last / 1000.0)
+    # Declared as frames at 30, but real files written by Manitu's own
+    # converter carry values past 29 — those are hundredths, and reading
+    # them as frames would push a subtitle more than two seconds late.
+    return _rounded(seconds + (last / 100.0 if last >= 30 else last / 30.0))
+
+
+def _captionate_text(element):
+    """A track's text, its <br/> a line break however it was written."""
+    pieces = []
+    for node in element.iter():
+        tag = node.tag.rsplit('}', 1)[-1].lower()
+        if tag == 'br':
+            pieces.append('\n')
+        elif node is not element and node.text:
+            pieces.append(node.text)
+        if node is not element and node.tail:
+            pieces.append(node.tail)
+    body = (element.text or '') + ''.join(pieces)
+    body = body.replace('&lt;br/&gt;', '\n').replace('&lt;br /&gt;', '\n')
+    return _lines_of(body)
+
+
+def _parse_captionate(text, fps=DEFAULT_FPS):
+    try:
+        root = ElementTree.fromstring(text.strip())
+    except ElementTree.ParseError as error:
+        raise ValueError(f'not a Captionate file: {error}') from error
+    timeformat = ''
+    for node in root:
+        if node.tag.rsplit('}', 1)[-1].lower() == 'timeformat':
+            timeformat = (node.text or '').strip().lower()
+    marks = []
+    for node in root.iter():
+        if node.tag.rsplit('}', 1)[-1].lower() != 'caption':
+            continue
+        tracks = [child for child in node.iter()
+                  if child.tag.rsplit('}', 1)[-1].lower().startswith('track')
+                  and child.tag.rsplit('}', 1)[-1].lower() != 'trackinfo']
+        body = _captionate_text(tracks[0]) if tracks else ''
+        marks.append({'start': _captionate_seconds(node.get('time'), timeformat), 'text': body})
+    segments = []
+    for position, mark in enumerate(marks):
+        if not mark['text']:
+            continue                # an empty caption ends the one before
+        following = marks[position + 1]['start'] if position + 1 < len(marks) else None
+        end = following if following is not None else _rounded(mark['start'] + 2.0)
+        segments.append({'start': mark['start'], 'end': _rounded(max(mark['start'], end)),
+                         'text': mark['text']})
+    return _ordered(segments)
+
+
+def _write_captionate(segments, fps=DEFAULT_FPS):
+    """Written in milliseconds, which the format takes as its default and
+    which no reader can misread as frames."""
+    lines = ['<captionate>', '  <timeformat>ms</timeformat>',
+             '  <captioninfo>', '    <trackinfo>', '      <track>',
+             '        <displayname>Default</displayname>', '        <type>Caption</type>',
+             '        <languagecode />', '        <targetwpm>140</targetwpm>',
+             '        <stringdata />', '      </track>', '    </trackinfo>',
+             '    <speakerinfo></speakerinfo>', '  </captioninfo>', '  <captions>']
+    for segment in _ordered(segments):
+        text_of = markup.plain(str(segment.get('text') or '')).strip()
+        if not text_of:
+            continue
+        body = '<br />'.join(_escaped(line.strip()) for line in text_of.split('\n') if line.strip())
+        lines.append(f'    <caption time="{int(round(float(segment.get("start", 0)) * 1000))}">')
+        lines.append('      <tracks>')
+        lines.append(f'        <track0>{body}</track0>')
+        lines.append('      </tracks>')
+        lines.append('    </caption>')
+        lines.append(f'    <caption time="{int(round(float(segment.get("end", 0)) * 1000))}" />')
+    lines.append('  </captions>')
+    lines.append('</captionate>')
+    return '\n'.join(lines) + '\n' if len(lines) > 17 else ''
+
+
+# ----------------------------------------------------------------- CMML
+
+
+def _npt_seconds(value):
+    """CMML's npt time: seconds, or minutes and seconds, or all three."""
+    raw = str(value or '').strip()
+    if ':' in raw and raw.split(':', 1)[0].lower() in ('npt', 'clock', 'smpte'):
+        raw = raw.split(':', 1)[1] if raw.lower().startswith('npt:') else raw
+    if raw.lower().startswith('npt:'):
+        raw = raw[4:]
+    total = 0.0
+    try:
+        for part in raw.split(':'):
+            total = total * 60 + float(part)
+    except ValueError:
+        return 0.0
+    return _rounded(total)
+
+
+def _parse_cmml(text, fps=DEFAULT_FPS):
+    """Clips on a track, each running to the next unless it says where it
+    ends. Times count from the stream's basetime, which is why a file whose
+    basetime is not zero reads late without it."""
+    if text.lstrip().startswith('OggS'):
+        raise ValueError('this is CMML inside an Ogg stream, which carries its times '
+                         'in the stream rather than in the clips')
+    try:
+        root = ElementTree.fromstring(text.strip())
+    except ElementTree.ParseError as error:
+        raise ValueError(f'not a CMML file: {error}') from error
+    basetime = 0.0
+    for node in root.iter():
+        if node.tag.rsplit('}', 1)[-1].lower() == 'stream':
+            basetime = _npt_seconds(node.get('basetime') or node.get('timebase') or '0')
+    tracks = {}
+    for node in root.iter():
+        if node.tag.rsplit('}', 1)[-1].lower() != 'clip':
+            continue
+        described = [child for child in node
+                     if child.tag.rsplit('}', 1)[-1].lower() in ('desc', 'caption', 'body')]
+        body = _lines_of('\n'.join(''.join(child.itertext()) for child in described))
+        tracks.setdefault(node.get('track') or 'default', []).append({
+            'start': _rounded(_npt_seconds(node.get('start')) - basetime),
+            'end': _rounded(_npt_seconds(node.get('end')) - basetime) if node.get('end') else None,
+            'text': body})
+    segments = []
+    for clips in tracks.values():
+        for position, clip in enumerate(clips):
+            if not clip['text']:
+                continue            # a clip with nothing in it ends the one before
+            end = clip['end']
+            if end is None:
+                end = next((later['start'] for later in clips[position + 1:]), None)
+            segments.append({'start': clip['start'], 'end': end, 'text': clip['text']})
+    return _ends_at_next(_ordered(segments))
+
+
+def _write_cmml(segments, fps=DEFAULT_FPS):
+    def stamp(seconds):
+        total = max(0.0, float(seconds))
+        hours, rest = divmod(int(total), 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'npt:{hours}:{minutes:02d}:{secs:02d}.{int(round((total - int(total)) * 1000)):03d}'
+
+    lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<cmml>',
+             '  <stream basetime="0">', '  </stream>', '  <head>', '    <title></title>', '  </head>']
+    for number, segment in enumerate(_ordered(segments), start=1):
+        text_of = markup.plain(str(segment.get('text') or '')).strip()
+        if not text_of:
+            continue
+        body = _escaped(' '.join(line.strip() for line in text_of.split('\n') if line.strip()))
+        lines.append(f'  <clip id="c{number}" start="{stamp(segment.get("start", 0))}" '
+                     f'end="{stamp(segment.get("end", 0))}">')
+        lines.append(f'    <desc>{body}</desc>')
+        lines.append('  </clip>')
+    lines.append('</cmml>')
+    return '\n'.join(lines) + '\n' if len(lines) > 8 else ''
 
 
 # ------------------------------------------------------------------ DKS
@@ -1422,6 +1617,8 @@ _PARSERS = {
     'powerdivx': _parse_powerdivx,
     'dvdss': _parse_dvdss,
     'qttext': _parse_qttext,
+    'captionate': _parse_captionate,
+    'cmml': _parse_cmml,
     'sst': _parse_sst,
     'ssts': _parse_ssts,
 }
@@ -1451,6 +1648,8 @@ _WRITERS = {
     'powerdivx': _write_powerdivx,
     'dvdss': _write_dvdss,
     'qttext': _write_qttext,
+    'captionate': _write_captionate,
+    'cmml': _write_cmml,
     'sst': _write_sst,
     'ssts': _write_ssts,
 }
@@ -1467,6 +1666,11 @@ def kind(data):
     head = text.lstrip('﻿')
     if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
         return 'realtext'
+    lowered = head[:600].lower()
+    if '<captionate' in lowered:
+        return 'captionate'
+    if '<cmml' in lowered or 'annodex.net/cmml' in lowered:
+        return 'cmml'
     if _QT_MARK.search(head[:400]):
         return 'qttext'
     if head.lstrip().upper().startswith('SST '):

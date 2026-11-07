@@ -166,6 +166,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'POWERDIVX': {'description': 'Power DivX Subtitle format', 'extensions': ['psb']},
     'DVDSS': {'description': 'DVD Subtitle System format', 'extensions': ['txt']},
     'QTTEXT': {'description': 'QuickTime QTtext format', 'extensions': ['txt']},
+    'CAPTIONATE': {'description': 'Captionate XML format', 'extensions': ['xml']},
+    'CMML': {'description': 'Continuous Media Markup Language', 'extensions': ['cmml']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on

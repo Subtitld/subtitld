@@ -269,6 +269,39 @@ check('{timeStamps:relative} adds each to the last',
                           '[00:00:01.000]\nFirst\n[00:00:02.000]\nSecond\n[00:00:01.000]\n', 'qttext')],
       [1.0, 3.0])
 
+print('Captionate: only <timeformat> says what the fourth field means')
+CAPT = ('<captionate>\n  <timeformat>hh:mm:ss:ff/30</timeformat>\n  <captions>\n'
+        '    <caption time="00:00:00:00"><tracks><track0>W-C-A-G<br />SHARKY</track0></tracks></caption>\n'
+        '    <caption time="00:00:10:00" />\n'
+        '    <caption time="00:00:44:53"><tracks><track0>later</track0></tracks></caption>\n'
+        '    <caption time="00:00:46:00" />\n  </captions>\n</captionate>\n')
+check('frames, <br /> and the empty caption that ends one', cues(CAPT, 'captionate'),
+      [(0.0, 10.0, 'W-C-A-G\nSHARKY'), (44.53, 46.0, 'later')])
+check('with no <timeformat> the times are milliseconds',
+      [c[0] for c in cues('<captionate><captions>'
+                          '<caption time="0"><tracks><track0>zero</track0></tracks></caption>'
+                          '<caption time="35270"><tracks><track0>later</track0></tracks></caption>'
+                          '</captions></captionate>', 'captionate')], [0.0, 35.27])
+
+print('CMML: a clip runs to the next unless it says where it ends')
+CMML = ('<?xml version="1.0"?>\n<cmml lang="en">\n'
+        '<stream basetime="0"><import src="fish.ogg" start="0"/></stream>\n'
+        '<head><title>Fish</title></head>\n'
+        '<clip id="intro" start="0"><desc>This is the introduction.</desc></clip>\n'
+        '<clip id="dolphin" start="npt:3.5" end="npt:0:05:05.9"><desc>A dolphin.</desc></clip>\n'
+        '</cmml>\n')
+check('the implied end and the explicit one', cues(CMML, 'cmml'),
+      [(0.0, 3.5, 'This is the introduction.'), (3.5, 305.9, 'A dolphin.')])
+check('basetime is taken off the times',
+      [c[0] for c in cues('<cmml><stream basetime="10"/>'
+                          '<clip start="npt:12"><desc>one</desc></clip>'
+                          '<clip start="npt:15"><desc>two</desc></clip></cmml>', 'cmml')], [2.0, 5.0])
+try:
+    legacy.parse('OggS\x00\x02 cmml inside an ogg stream', 'cmml')
+    check('CMML inside Ogg says why it cannot be read', None, 'ValueError')
+except ValueError as error:
+    check('CMML inside Ogg says why it cannot be read', 'Ogg' in str(error), True)
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
@@ -277,10 +310,11 @@ for fmt in legacy.WRITABLE:
     back = legacy.parse(written, fmt)
     # TurboTitle holds one subtitle a line and has no way to write a line
     # break, so its two lines come back as one. Everything else keeps them.
-    # TurboTitle and SubSonic hold one subtitle a line and have no way to
-    # write a line break, so two lines come back as one. The rest keep them.
-    want_text = ['First line second line', 'Second cue'] if fmt in ('turbotitle', 'subsonic') \
-        else ['First line\nsecond line', 'Second cue']
+    # TurboTitle and SubSonic hold one subtitle a line, and CMML's <desc>
+    # takes text and nothing else: none of the three can write a line
+    # break, so two lines come back as one. The rest keep them.
+    want_text = ['First line second line', 'Second cue'] \
+        if fmt in ('turbotitle', 'subsonic', 'cmml') else ['First line\nsecond line', 'Second cue']
     # The clock formats write whole seconds and carry no end time.
     want_starts = [1.0, 4.0]
     check(f'{fmt}: cues', len(back), 2)

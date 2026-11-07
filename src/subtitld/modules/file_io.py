@@ -687,6 +687,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
 
+        elif subtitle_file.lower().endswith('.xml') and legacy.kind(_text_of(subtitle_file)) == 'captionate':
+            # Captionate's XML, from the Flash era: its own root element,
+            # and nothing a TTML reader would make sense of.
+            subtitle_format = 'CAPTIONATE'
+            try:
+                segments_list = legacy.parse(_text_of(subtitle_file), 'captionate')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
             subtitle_format = 'DFXP' if subtitle_file.lower().endswith('.dfxp') else 'TTML'
@@ -769,7 +778,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
                                              '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
                                              '.scr', '.mac', '.sst', '.ssts',
-                                             '.dks', '.psb')):
+                                             '.dks', '.psb', '.cmml')):
             # The player era: the extension narrows it, the bytes decide it.
             try:
                 segments_list, found = legacy.read(subtitle_file, session.VIDEO.get('framerate'))
