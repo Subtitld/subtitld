@@ -8,11 +8,33 @@ APP_DIR="Subtitld.AppDir"
 if [ ! -f packaging/libdatachannel/dist/linux-x86_64/libdatachannel.so ]; then
     bash packaging/libdatachannel/build-linux.sh
 fi
+# FFmpeg with dav1d, to take the place of PySide6's (below): built once as well.
+if [ ! -f packaging/qt-ffmpeg/dist/linux-x86_64/VERSION ]; then
+    bash packaging/qt-ffmpeg/build-linux.sh
+fi
 
 # Install dependencies and build with PyInstaller
 pip install .
 pip install pyinstaller
 pyinstaller subtitld.spec --clean
+
+# PySide6's FFmpeg shows AV1 videos (most YouTube downloads) only with a GPU's
+# help, which the AppImage cannot count on: out, and in its place the same
+# FFmpeg built with dav1d (packaging/qt-ffmpeg), as in the snap. dav1d goes
+# beside the app's other libraries, its licence and FFmpeg's in licenses/.
+QT_FFMPEG=packaging/qt-ffmpeg/dist/linux-x86_64
+INTERNAL=dist/subtitld/_internal
+for lib in "$QT_FFMPEG"/libav*.so.* "$QT_FFMPEG"/libsw*.so.*; do
+    name=$(basename "$lib")
+    if [ ! -f "$INTERNAL/PySide6/Qt/lib/$name" ]; then
+        echo "PySide6 has no $name: packaging/qt-ffmpeg builds another FFmpeg than PySide6's" >&2
+        exit 1
+    fi
+    cp "$lib" "$INTERNAL/PySide6/Qt/lib/$name"
+done
+cp "$QT_FFMPEG"/libdav1d.so.* "$INTERNAL/"
+mkdir -p "$INTERNAL/licenses/ffmpeg"
+cp "$QT_FFMPEG"/licenses/* "$QT_FFMPEG/VERSION" "$INTERNAL/licenses/ffmpeg/"
 
 # Create AppDir structure
 mkdir -p $APP_DIR/usr/{bin,share/applications,share/icons/hicolor/256x256/apps}
