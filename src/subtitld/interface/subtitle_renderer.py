@@ -355,16 +355,19 @@ class SubtitleRenderer(QObject):
         # Which way the writing runs: a subtitle read from a file that says
         # so (TTML's tts:direction), else the page's own.
         direction = segment.get('direction') if segment.get('direction') in ('ltr', 'rtl') else None
+        # And how a run of the other direction sits inside the line, where
+        # the file forces it (TTML's tts:unicodeBidi).
+        bidi = segment.get('bidi') if segment.get('bidi') in ('embed', 'override', 'isolate') else None
         # What the file it came from says it should look like, as CSS over
         # the style's own rules (modules.look). What the file is silent
         # about the style still draws.
         styling = subtitld_look.css(subtitld_look.of(segment)) or None
         key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None,
-                      place, direction, styling)
+                      place, direction, bidi, styling)
         page = {'html': markup.to_html(text) if text.strip() else None, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
                 'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': direction,
-                'look': styling}
+                'bidi': bidi, 'look': styling}
         return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
 
     def layers(self, segments, at):

@@ -362,6 +362,23 @@ check('and the left edge where it does not',
                'tts:displayAlign="after" tts:textAlign="start"/></layout>'))],
       ['{\\an1}Hello'])
 
+print('bidi: how a run of the other direction sits in the line')
+bidi = [{'start': 1, 'end': 2, 'text': 'Forced', 'direction': 'rtl', 'bidi': 'override'},
+        {'start': 3, 'end': 4, 'text': 'Apart', 'bidi': 'isolate'}, {'start': 5, 'end': 6, 'text': 'Ordinary'}]
+bidi_written = ttml.write(bidi, 'en', profile='imsc1.1')
+check('tts:unicodeBidi in TTML\'s words, read back in Subtitld\'s',
+      (bidi_written.count('tts:unicodeBidi'), 'tts:unicodeBidi="bidiOverride"' in bidi_written,
+       [s.get('bidi') for s in ttml.parse(bidi_written)]),
+      (2, True, ['override', 'isolate', None]))
+check('EBU-TT-D has no isolate in its schema, so it says nothing of one',
+      [word in ttml.write(bidi, 'en', profile='ebu-tt-d') for word in ('bidiOverride', 'isolate')],
+      [True, False])
+check('TTML does not inherit it, so a div saying it is not the paragraph saying it',
+      [s.get('bidi') for s in ttml.parse(doc(
+          '<div tts:unicodeBidi="bidiOverride"><p begin="1s" end="2s">Inside</p>'
+          '<p begin="3s" end="4s" tts:unicodeBidi="embed">Its own</p></div>'))],
+      [None, 'embed'])
+
 print('forced: shown with subtitles off')
 forced = [{'start': 1, 'end': 2, 'text': 'A sign on the wall', 'forced': True}, {'start': 3, 'end': 4, 'text': 'Ordinary'}]
 forced_written = ttml.write(forced, 'en', profile='imsc1.1')
@@ -528,6 +545,13 @@ check('and a file that states no area is not asked to',
       [problem for problem in ttml.check(doc('<p begin="1s" end="2s">Plain</p>'), 'ttml1')
        if 'active area' in problem], [])
 
+check('the 1.0.1 spelling of the shape is read as the 1.1 one is',
+      round(ttml.parse(
+          HEAD.format(attrs=EBUTTS + ' xmlns:ittp="http://www.w3.org/ns/ttml/profile/imsc1#parameter"'
+                            ' ittp:aspectRatio="4 3"')
+          + '<head/><body><p begin="1s" end="2s" ebutts:linePadding="1c">Padded</p></body></tt>'
+      )[0]['look']['line_padding'], 3), 4.167)
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
@@ -549,6 +573,32 @@ check('a cell grid that is not two numbers',
       ["ttp:cellResolution is '32': it is two whole numbers above zero"])
 check('text that is not XML at all', ttml.check('not xml', 'ttml1')[0].startswith('Not XML that can be read'), True)
 check('XML that is not TTML', ttml.check('<html><body/></html>', 'ttml1'), ['The document is <html>, not <tt>'])
+
+check('a file that measures in pixels has to say how big its picture is',
+      [problem for problem in ttml.check(doc('<p begin="1s" end="2s" tts:fontSize="24px">Sized</p>'), 'imsc1.1')
+       if 'px' in problem],
+      ['Lengths in px, but <tt> has no tts:extent: a file that measures in pixels '
+       'has to say how big its picture is'])
+check('and is not asked again once it has',
+      [problem for problem in ttml.check(doc('<p begin="1s" end="2s" tts:fontSize="24px">Sized</p>',
+                                             attrs=' tts:extent="1920px 1080px"'), 'imsc1.1')
+       if 'px' in problem], [])
+check('at most four regions on screen at once',
+      [problem for problem in ttml.check(doc(
+          ''.join(f'<p begin="1s" end="2s" region="r{number}">Line</p>' for number in range(5)),
+          head='<layout>' + ''.join(
+              f'<region xml:id="r{number}" tts:origin="10% {10 + number * 15}%" tts:extent="80% 10%"/>'
+              for number in range(5)) + '</layout>'), 'imsc1.1') if 'on screen' in problem],
+      ['5 regions are on screen at once: IMSC allows at most four'])
+check('and four is not too many, nor five that never share a moment',
+      [[problem for problem in ttml.check(doc(
+          ''.join(f'<p begin="{start}s" end="{start + 1}s" region="r{number}">Line</p>'
+                  for number, start in enumerate(starts)),
+          head='<layout>' + ''.join(
+              f'<region xml:id="r{number}" tts:origin="10% {10 + number * 15}%" tts:extent="80% 10%"/>'
+              for number in range(5)) + '</layout>'), 'imsc1.1') if 'on screen' in problem]
+       for starts in ([1, 1, 1, 1], [1, 2, 3, 4, 5])],
+      [[], []])
 
 print('through file_io')
 folder = Path(tempfile.mkdtemp())

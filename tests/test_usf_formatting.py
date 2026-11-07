@@ -148,6 +148,20 @@ check('a project with nothing hidden says nothing',
       'hidden' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
                                     speakers={}, language='en-us'), False)
 
+print('which way the writing runs, and what is forced inside it')
+bidi_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'مرحبا', 'speaker': 'A',
+                               'direction': 'rtl', 'bidi': 'override'},
+                              {'start': 2, 'end': 3, 'text': 'Ordinary', 'speaker': 'A'}],
+                             speakers={}, language='ar')
+check('both on the subtitle, in Subtitld\'s namespace',
+      ('subtitldcc:direction="rtl"' in bidi_usf, 'subtitldcc:bidi="override"' in bidi_usf), (True, True))
+check('read back as they were',
+      [(s.get('direction'), s.get('bidi')) for s in USFReader().read(bidi_usf)],
+      [('rtl', 'override'), (None, None)])
+check('a project that says neither stays as it was',
+      ('direction' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                        speakers={}, language='en-us')), False)
+
 print('the look the subtitle\'s own file gave it')
 LOOK = {'size': 10.0, 'background': '#c8000000', 'padding': [1.0, 2.0, 1.0, 2.0],
         'outline': {'color': '#ff000000', 'width': 0.5}, 'shadow': [{'x': 0.2, 'y': 0.2}]}

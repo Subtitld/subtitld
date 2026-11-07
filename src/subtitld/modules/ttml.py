@@ -80,12 +80,17 @@ _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
                  'fontFamily', 'fontSize', 'lineHeight', 'backgroundColor', 'padding', 'textOutline', 'textShadow',
-                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap')
+                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap', 'unicodeBidi')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
 # delimiter is punctuation a player draws, not the subtitle's words.
 _RUBY_ROLES = {'base': 'base', 'text': 'text'}
+# How a run of another direction sits inside the line: left as the
+# characters' own directions make it, embedded as its own run, or forced
+# whatever the characters say. Subtitld's words for TTML's.
+_BIDI = {'embed': 'embed', 'bidiOverride': 'override', 'isolate': 'isolate'}
+_BIDI_OUT = {value: key for key, value in _BIDI.items()}
 _RGB = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
 _DECLARED = re.compile(rb'\s*<\?xml[^>]*?encoding\s*=\s*["\']([\w.:-]+)["\']')
 _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
@@ -214,6 +219,43 @@ def _active_area(value):
     return left * (1 - width / 100), top * (1 - height / 100), width, height
 
 
+def _span_of(element, base, limit, clock):
+    """(start, stop) for an element: its times count from `base`, where its
+    container began, and it is over by `limit`, where that container ends.
+    It ends at its own end, after its dur, or with what holds it."""
+    begin = clock.seconds(element.get('begin'))
+    end = clock.seconds(element.get('end'))
+    duration = clock.seconds(element.get('dur'))
+    start = base + (begin or 0)
+    stop = base + end if end is not None else start + duration if duration is not None else limit
+    if limit is not None and stop is not None:
+        stop = min(stop, limit)
+    return start, stop
+
+
+def _timed_regions(root, clock):
+    """[(start, stop, region)] for every paragraph: what the checks need to
+    ask how much is on screen at once."""
+    found = []
+
+    def walk(element, base, limit, region):
+        region = element.get('region') or region
+        start, stop = _span_of(element, base, limit, clock)
+        if _local(element.tag) == 'p':
+            found.append((start, stop, region))
+            return stop
+        sequential = element.get('timeContainer') == 'seq'
+        for child in element:
+            if _local(child.tag) in ('body', 'div', 'p'):
+                child_stop = walk(child, start, stop, region)
+                if sequential and child_stop is not None:
+                    start = child_stop
+        return stop
+
+    walk(root, 0.0, None, None)
+    return found
+
+
 class _Frame:
     """Turns a region's lengths into percentages of the picture."""
 
@@ -228,7 +270,10 @@ class _Frame:
         self.cells = cells if len(cells) == 2 and all(cells) else (32.0, 15.0)
         # How wide the picture is for how tall: from its size in pixels,
         # else from what the file says it will be shown at, else widescreen.
-        shape = [part for part in (_attr(root, 'displayAspectRatio') or '').split()]
+        # ttp:displayAspectRatio, or ittp:aspectRatio, which is what IMSC
+        # 1.0.1 files say and 1.1 deprecated in its favour. Same two
+        # numbers either way.
+        shape = ((_attr(root, 'displayAspectRatio') or _attr(root, 'aspectRatio') or '').split())
         self.aspect = 16 / 9
         if self.pixels and self.pixels[1]:
             self.aspect = self.pixels[0] / self.pixels[1]
@@ -825,6 +870,11 @@ def _document(text):
         # lands and which end "start" is.
         if p_props.get('direction') in ('ltr', 'rtl'):
             segment['direction'] = p_props['direction']
+        # And how another direction sits inside the line. TTML does not
+        # inherit this one, so it is read off the paragraph itself.
+        bidi = _BIDI.get((styles.of(element, {}).get('unicodeBidi') or '').strip())
+        if bidi:
+            segment['bidi'] = bidi
         # Forced: shown even where a viewer asked for no subtitles, for the
         # line of another language a film translates on screen.
         if str(p_props.get('forcedDisplay') or '').strip().lower() == 'true':
@@ -882,13 +932,7 @@ def _document(text):
         its end, when it has one."""
         name = _local(element.tag)
         region = element.get('region') or region
-        begin = clock.seconds(element.get('begin'))
-        end = clock.seconds(element.get('end'))
-        duration = clock.seconds(element.get('dur'))
-        start = base + (begin or 0)
-        stop = base + end if end is not None else start + duration if duration is not None else limit
-        if limit is not None and stop is not None:
-            stop = min(stop, limit)
+        start, stop = _span_of(element, base, limit, clock)
         if name == 'p':
             paragraph(element, start, stop, props, region, preserve, agent, unshown, sizes)
             return stop
@@ -1004,6 +1048,32 @@ def check(text, profile='imsc1.1'):
         if strayed:
             problems.append(f'Regions fall outside the active area the file states '
                             f'({_attr(root, "activeArea")}): {", ".join(strayed)}')
+
+    # IMSC asks a file that measures anything in pixels to say how big its
+    # picture is, without which the length cannot be resolved at all — this
+    # module drops such a length, so the file loses what it said.
+    if profile != 'ttml1':
+        pixels = any(length and length.group(2) == 'px'
+                     for element in root.iter() for value in element.attrib.values()
+                     for length in (_LENGTH.match(part) for part in str(value).split()))
+        if pixels and not (_attr(root, 'extent') or '').strip():
+            problems.append('Lengths in px, but <tt> has no tts:extent: a file that measures in pixels '
+                            'has to say how big its picture is')
+
+    # No more than four regions on screen at once, and a file states its
+    # shape once: either the 1.1 way or the 1.0.1 way, never both.
+    if profile in ('imsc1', 'imsc1.1'):
+        shown = _timed_regions(root, _Clock(root))
+        crowded = 0
+        for moment in sorted({start for start, _stop, _region in shown if start is not None}):
+            crowded = max(crowded, len({region for start, stop, region in shown
+                                        if region and start is not None and stop is not None
+                                        and start <= moment < stop}))
+        if crowded > 4:
+            problems.append(f'{crowded} regions are on screen at once: IMSC allows at most four')
+        if _attr(root, 'aspectRatio') and _attr(root, 'displayAspectRatio'):
+            problems.append('ittp:aspectRatio and ttp:displayAspectRatio are both present: '
+                            'a file says its shape one way or the other, not both')
 
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
@@ -1292,6 +1362,10 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
         if segment.get('direction') in ('ltr', 'rtl'):
             attrs += f' tts:direction="{segment["direction"]}"'
+        # EBU-TT-D's schema has normal, embed and bidiOverride, and no
+        # isolate, so a file written for it says nothing of an isolate.
+        if segment.get('bidi') in _BIDI_OUT and not (profile == 'ebu-tt-d' and segment['bidi'] == 'isolate'):
+            attrs += f' tts:unicodeBidi="{_BIDI_OUT[segment["bidi"]]}"'
         if segment.get('forced') and profile != 'ebu-tt-d':
             attrs += ' itts:forcedDisplay="true"'
         # EBU-TT-D's spec lists tts:display among the attributes it does not

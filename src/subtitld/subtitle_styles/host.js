@@ -104,6 +104,10 @@
       // (modules.look): inline, so it wins over the style's own rules for
       // the properties it names and leaves the style the rest.
       for (const [name, value] of Object.entries(job.look || {})) cue.style.setProperty(name, value);
+      // How a run of the other direction sits inside the line, where the
+      // file forces it: embedded as its own run, isolated from what is
+      // around it, or whatever the characters themselves say overruled.
+      if (job.bidi) cue.style.unicodeBidi = job.bidi === 'override' ? 'bidi-override' : job.bidi;
       const [turnX, turnY, turnZ] = place.rotate || [0, 0, 0];
       if (turnX || turnY || turnZ) {
         // Counter-clockwise, as USF and ASS both count: the screen's y

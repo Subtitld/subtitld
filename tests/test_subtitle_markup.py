@@ -144,7 +144,7 @@ renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
 renderer.set_size(640, 360)
 
 
-def render(text, place=None, direction=None, look=None):
+def render(text, place=None, direction=None, look=None, bidi=None):
     """The subtitle as the preview draws it: its layer over a black frame."""
     segment = {'start': 0.0, 'end': 1.0, 'text': text}
     if place:
@@ -153,6 +153,8 @@ def render(text, place=None, direction=None, look=None):
         segment['direction'] = direction
     if look:
         segment['look'] = look
+    if bidi:
+        segment['bidi'] = bidi
     key = renderer._job(segment, 0.0, *renderer._style())[0]
     for _i in range(1500):
         renderer.layers([segment], 0.0)
@@ -198,6 +200,10 @@ check('right to left puts a line\'s punctuation at its other end',
 check('with nothing neutral to move, the drawing is the same',
       (render('hello', direction='rtl') == render('hello'), render('hello!', direction='ltr') == render('hello!')),
       (True, True))
+check('an override lays the letters the way the line runs, whatever they say themselves',
+      render('abc', direction='rtl', bidi='override') != render('abc', direction='rtl'), True)
+check('and a subtitle that forces nothing is drawn exactly as before',
+      render('abc', direction='rtl', bidi=None) == render('abc', direction='rtl'), True)
 small, large = lit_rows(render('Size', look={'size': 4})), lit_rows(render('Size', look={'size': 16}))
 check("the look the file came with is drawn, not the style's size",
       small is not None and large is not None and (large[1] - large[0]) > 2 * (small[1] - small[0]), True)
