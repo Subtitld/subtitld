@@ -352,10 +352,14 @@ class SubtitleRenderer(QObject):
         placed = position.of(segment)
         place = {'h': position.as_percent(placed.h), 'v': position.as_percent(placed.v),
                  'rotate': list(placed.rotate)} if placed.any() else None
-        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None, place)
+        # Which way the writing runs: a subtitle read from a file that says
+        # so (TTML's tts:direction), else the page's own.
+        direction = segment.get('direction') if segment.get('direction') in ('ltr', 'rtl') else None
+        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None,
+                      place, direction)
         page = {'html': markup.to_html(text) if text.strip() else None, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
-                'offset': offset, 'duration': duration, 'pad': PAD, 'place': place}
+                'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': direction}
         return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
 
     def layers(self, segments, at):

@@ -144,11 +144,13 @@ renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
 renderer.set_size(640, 360)
 
 
-def render(text, place=None):
+def render(text, place=None, direction=None):
     """The subtitle as the preview draws it: its layer over a black frame."""
     segment = {'start': 0.0, 'end': 1.0, 'text': text}
     if place:
         segment['position'] = place
+    if direction:
+        segment['direction'] = direction
     key = renderer._job(segment, 0.0, *renderer._style())[0]
     for _i in range(1500):
         renderer.layers([segment], 0.0)
@@ -189,6 +191,11 @@ check('a ruby draws its reading above the text it reads',
       with_reading is not None and base_only is not None and with_reading[0] < base_only[0], True)
 top = lit_rows(render('{\\an8}<b>Top</b>'))
 check('{\\an8} draws at the top', top is not None and top[0] < 100, True)
+check('right to left puts a line\'s punctuation at its other end',
+      render('hello!', direction='rtl') != render('hello!'), True)
+check('with nothing neutral to move, the drawing is the same',
+      (render('hello', direction='rtl') == render('hello'), render('hello!', direction='ltr') == render('hello!')),
+      (True, True))
 coloured = render('<font color="#00ff00">green</font>')
 check('a colour is drawn in it', any(QColor(coloured.pixel(x, y)).green() > 200 and QColor(coloured.pixel(x, y)).red() < 80
                                      for x in range(0, 640, 2) for y in range(200, 360, 2)), True)

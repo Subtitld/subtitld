@@ -75,7 +75,7 @@ _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'position', 'shear', 'ruby')
+                 'position', 'direction', 'shear', 'ruby')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -317,7 +317,11 @@ def _keypad(props, frame, geometry=True):
     origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
     if align == 'start' and not (origin and extent):
         align = 'center'
-    horizontal = 0 if align in ('left', 'start') else 2 if align in ('right', 'end') else 1
+    # "start" and "end" are the near and the far edge of the writing, which
+    # right-to-left swaps; "left" and "right" are themselves either way.
+    near, far = (2, 0) if props.get('direction') == 'rtl' else (0, 2)
+    horizontal = 0 if align == 'left' else 2 if align == 'right' else \
+        near if align == 'start' else far if align == 'end' else 1
     if origin and extent and geometry:
         # The middle of the line nearest the edge the text is put against:
         # half a cell in from it.
@@ -556,6 +560,11 @@ def _document(text):
         speaker = agent[0] or outer_agent
         if speaker:
             segment['speaker'] = agents.get(speaker, speaker)
+        # Which way the writing runs, where the file says: Arabic and Hebrew
+        # read right to left, and that decides where a line's punctuation
+        # lands and which end "start" is.
+        if p_props.get('direction') in ('ltr', 'rtl'):
+            segment['direction'] = p_props['direction']
         # Where the region puts it, beyond the nine places: a file that
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
@@ -850,6 +859,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         speaker = str(segment.get('speaker') or '').strip()
         if agents and speaker:
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
+        if segment.get('direction') in ('ltr', 'rtl'):
+            attrs += f' tts:direction="{segment["direction"]}"'
         content = _content(rest, shear)
         if box:
             content = f'<span style="{box}">{content}</span>'

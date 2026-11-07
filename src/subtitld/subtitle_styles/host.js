@@ -91,6 +91,10 @@
       top: `${inset.top}px`, bottom: `${inset.bottom}px`,
     });
     safe.dataset.align = String(job.align);
+    // Which way the writing runs. Arabic and Hebrew read right to left, and
+    // a cue's base direction decides where its punctuation lands and which
+    // end "start" is; the characters' own direction does the rest.
+    safe.style.direction = job.direction || '';
     safe.innerHTML = '';
     if (job.html !== null) {
       const cue = document.createElement('div');

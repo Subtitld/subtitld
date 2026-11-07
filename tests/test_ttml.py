@@ -341,6 +341,27 @@ check('and a file whose regions reach outside it says so',
 check('TTML has no rotation, so a turned subtitle is written flat',
       'rotate' in ttml.write([{'start': 1, 'end': 2, 'text': 'Turned', 'position': {'rotate': {'z': 45}}}], 'en'), False)
 
+print('which way the writing runs')
+rtl = [{'start': 1, 'end': 2, 'text': 'مرحبا بالعالم', 'direction': 'rtl'}, {'start': 3, 'end': 4, 'text': 'Plain'}]
+rtl_written = ttml.write(rtl, 'ar')
+check('tts:direction on the subtitle that says so, and on no other',
+      [line.strip().split('region="bottom"')[1].split('>')[0].strip() for line in rtl_written.splitlines() if '<p ' in line],
+      ['tts:direction="rtl"', ''])
+check('and read back as it was', [(s['text'], s.get('direction')) for s in ttml.parse(rtl_written)],
+      [(s['text'], s.get('direction')) for s in rtl])
+check('"start" is the right edge where the writing runs that way',
+      [(s['text'], s.get('direction')) for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" region="r">مرحبا</p>',
+          head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 80%" '
+               'tts:displayAlign="after" tts:textAlign="start" tts:direction="rtl"/></layout>'))],
+      [('{\\an3}مرحبا', 'rtl')])
+check('and the left edge where it does not',
+      [s['text'] for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" region="r">Hello</p>',
+          head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 80%" '
+               'tts:displayAlign="after" tts:textAlign="start"/></layout>'))],
+      ['{\\an1}Hello'])
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
