@@ -4,8 +4,10 @@ Subtitld keeps a subtitle's text as it is written, and that text may carry
 the formatting tags SRT files use, which players such as VLC and mpv honour:
 
     <i>…</i>  <b>…</b>  <u>…</u>  <s>…</s>   italic, bold, underline, strikeout
-    <font color="#rrggbb">…</font>           colour; a face or size is kept,
-                                             not drawn
+    <font color="#rrggbb">…</font>           colour
+    <font face="Arial">…</font>              the typeface it asks for, kept
+                                             but not drawn: the style
+                                             template says what it is set in
     <font background="#rrggbbaa">…</font>    a background behind the text,
                                              with an opacity if it says one
     <font size="80%">…</font>                its size against the normal one
@@ -38,6 +40,13 @@ A ruby is written the way HTML and WebVTT write one, which is also what
 the preview draws, and it is what IMSC 1.1 calls a container holding a
 base and its text: `Style.ruby` says which of the two a run is, so a
 reading stays attached to what it reads through every read and write.
+A face is kept as it is written and not drawn: a subtitle is set in what
+its style template says, and a file that asks for Helvetica still asks for
+it after a read and a write. A <font>'s size, on the other hand, is read
+as a proportion of the size the subtitle is drawn at when it gives one
+("80%"); a bare HTML font size ("3") says nothing about a proportion and
+is left behind.
+
 `plain` leaves readings out — they are a way of writing the text, not more
 of it — so counting, speaking and translating a subtitle see what it says.
 The plain-text panel's Markdown has no way to write a ruby and keeps the
@@ -69,6 +78,8 @@ _PERCENT = re.compile(r'^(\d+(?:\.\d+)?)\s*%$')
 _FONT_SIZE = re.compile(r'''(?<![-\w])size\s*=\s*["']?\s*([\d.]+\s*%?)''', re.IGNORECASE)
 _FONT_EDGE = re.compile(r'''(?<![-\w])edge\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
 _FONT_EDGE_COLOR = re.compile(r'''edge-colou?r\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
+# A typeface may be several words, so an unquoted one is one word only.
+_FONT_FACE = re.compile(r'''face\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w-]+))''', re.IGNORECASE)
 # The colours HTML names that subtitle files use; others are kept, not drawn.
 _NAMED = {
     'white': 'ffffff', 'black': '000000', 'red': 'ff0000', 'lime': '00ff00', 'green': '008000',
@@ -89,7 +100,7 @@ OFFSETS = {'sub': 'sub', 'sup': 'super'}
 _OFFSET_TAGS = {role: tag for tag, role in OFFSETS.items()}
 # What a run is drawn in beyond its colours: kept together for the places
 # that carry them all or none.
-_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color')
+_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face')
 
 
 class Style(NamedTuple):
@@ -104,6 +115,7 @@ class Style(NamedTuple):
     offset: str = ''         # '' on the line, 'super' raised, 'sub' lowered
     edge: str = ''           # one of EDGES drawn around the text, '' for none
     edge_color: str = ''     # '#rrggbb' that edge is drawn in, '' for black
+    face: str = ''           # the typeface it asks for, kept but not drawn
 
     def any(self):
         return self != PLAIN
@@ -137,6 +149,12 @@ def color_hex(value):
     return '#' + digits
 
 
+# The eight typefaces CEA-708 names, which is as near as a caption comes to
+# asking for one. A face read from a file is kept as it is written.
+FACES = ('monospaced serif', 'proportional serif', 'monospaced sans-serif', 'proportional sans-serif',
+         'casual', 'cursive', 'small capitals')
+
+
 class Font(NamedTuple):
     """What one <font> tag says about a run: everything a Style holds that
     the tag carries, so one tag opens and closes for all of it."""
@@ -146,6 +164,7 @@ class Font(NamedTuple):
     size: str = ''
     edge: str = ''
     edge_color: str = ''
+    face: str = ''
 
     def any(self):
         return self != Font()
@@ -206,14 +225,16 @@ def _tokens(text):
             written = match.group('font')
             found = {name: pattern.search(written) for name, pattern in
                      (('color', _FONT_COLOR), ('background', _FONT_BACKGROUND), ('size', _FONT_SIZE),
-                      ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR))}
+                      ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR), ('face', _FONT_FACE))}
             edge = (found['edge'].group(1).lower() if found['edge'] else '')
+            face = next((part for part in found['face'].groups() if part), '') if found['face'] else ''
             yield ('open', 'font', Font(
                 color=color_hex(found['color'].group(1)) if found['color'] else '',
                 background=background_hex(found['background'].group(1)) if found['background'] else '',
                 size=size_percent(found['size'].group(1)) if found['size'] else '',
                 edge=edge if edge in EDGES else '',
-                edge_color=color_hex(found['edge_color'].group(1)) if found['edge_color'] else ''))
+                edge_color=color_hex(found['edge_color'].group(1)) if found['edge_color'] else '',
+                face=face.strip()))
         elif match.group('override') is not None:
             yield 'override', match.group('override')
         else:
@@ -449,7 +470,7 @@ TAG_ORDER = ('font', 'sup', 'sub', 'i', 'b', 'u', 's')      # outermost first, w
 def tags_for(style):
     """The tags a run in `style` sits in: [(name, value)]. A font's value is
     (colour, background), so one tag carries both."""
-    font = Font(style.color, style.background, style.size, style.edge, style.edge_color)
+    font = Font(style.color, style.background, style.size, style.edge, style.edge_color, style.face)
     wanted = [('font', font)] if font.any() else []
     if style.offset in _OFFSET_TAGS:
         wanted.append((_OFFSET_TAGS[style.offset], True))
@@ -457,7 +478,7 @@ def tags_for(style):
 
 
 _FONT_ATTRIBUTES = (('color', 'color'), ('background', 'background'), ('size', 'size'),
-                    ('edge', 'edge'), ('edge_color', 'edge-color'))
+                    ('edge', 'edge'), ('edge_color', 'edge-color'), ('face', 'face'))
 
 
 def _open_tag(name, value):
@@ -717,6 +738,8 @@ def _md_span_attrs(style):
         attrs.append(f'edge={style.edge}')
     if style.edge_color:
         attrs.append(f'edge-color={style.edge_color}')
+    if style.face:
+        attrs.append(f'face="{style.face}"')
     return ' '.join(attrs)
 
 
@@ -792,7 +815,8 @@ _MD_ATTR = re.compile(
     r'''|style\s*=\s*["'][^"']*?(?<![-\w])color\s*:\s*(?P<css>[#\w]+)[^"']*["']'''
     r'''|(?<![-\w])size\s*=\s*["']?(?P<size>[\d.]+\s*%)["']?'''
     r'''|edge-colou?r\s*=\s*["']?(?P<edgecolor>[#\w]+)["']?'''
-    r'''|(?<![-\w])edge\s*=\s*["']?(?P<edge>[-\w]+)["']?''')
+    r'''|(?<![-\w])edge\s*=\s*["']?(?P<edge>[-\w]+)["']?'''
+    r'''|face\s*=\s*(?:"(?P<facequoted>[^"]*)"|(?P<face>[\w-]+))''')
 
 
 def _md_span_style(attrs):
@@ -817,6 +841,8 @@ def _md_span_style(attrs):
         elif match.group('edge'):
             if match.group('edge').lower() in EDGES:
                 change['edge'] = match.group('edge').lower()
+        elif match.group('facequoted') or match.group('face'):
+            change['face'] = (match.group('facequoted') or match.group('face')).strip()
         else:
             color = color_hex(match.group('fore') or match.group('css'))
             if color:

@@ -270,6 +270,25 @@ check('a text cut in two keeps them open on both halves',
       ('<font size="80%" edge="uniform">one </font>', '<font size="80%" edge="uniform">two</font>'))
 
 
+print('a typeface, kept but not drawn')
+check('read off a <font>, quoted or not, several words or one',
+      [style.face for _run, style in markup.spans(
+          '<font face="Arial Black">a</font><font face=Courier>b</font>')],
+      ['Arial Black', 'Courier'])
+check('written back as it was asked for',
+      markup.from_spans([('x', markup.Style(color='#ff0000', face='Arial'))]),
+      '<font color="#ff0000" face="Arial">x</font>')
+check('not drawn: a subtitle is set in what its style template says',
+      markup.to_html('<font face="Arial">x</font>'), 'x')
+check('a bare HTML font size says nothing about a proportion and is left behind',
+      (markup.from_spans(markup.spans('<font size="3">x</font>')),
+       [style.size for _run, style in markup.spans('<font size="80%">x</font>')]),
+      ('x', ['80%']))
+_md = markup.to_markdown('<font face="Arial Black">x</font>')
+check('the Markdown panel keeps it too', (_md, markup.from_markdown(_md)),
+      ('[x]{face="Arial Black"}', '<font face="Arial Black">x</font>'))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

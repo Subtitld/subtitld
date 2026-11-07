@@ -333,6 +333,19 @@ check('the header says 7 and the byte after it says which',
       [(7, 20)])
 
 
+print('the typeface a pen asks for')
+check('each of the eight CEA-708 names, written and read back',
+      [cea708.decode(sorted(cea708.frames_for(
+          {1: [(f'<font face="{face}">x</font>', 30, None)]}, 18).items()), RATE, 1)[0]['text']
+       for face in markup.FACES],
+      [f'<font face="{face}">x</font>' for face in markup.FACES])
+check('one it does not name is whatever the decoder draws anyway',
+      cea708.decode(sorted(cea708.frames_for(
+          {1: [('<font face="Arial">x</font>', 30, None)]}, 18).items()), RATE, 1)[0]['text'], 'x')
+check('the default takes the tag that says nothing',
+      next(unit for unit in cea708._load('Plain', 0) if unit[0] == 0x90)[2] & 0x07, 0)
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

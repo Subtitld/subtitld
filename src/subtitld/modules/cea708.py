@@ -43,8 +43,9 @@ black as a CEA-608 pen does — which is why a pen on solid black is read as
 having no background of its own, and an edge drawn in black as having no
 colour of its own. A run's size, its place against the line and its edge
 go out with it, and come back; the font and the text tag a pen may also
-carry say which typeface and what kind of speech it is, neither of which a
-subtitle here has anywhere to keep. Characters CEA-708 lacks become their letter
+carries name the typeface — one of the eight it has words for, which a run
+keeps as its face — and what kind of speech it is, which a subtitle here
+has nowhere to put. Characters CEA-708 lacks become their letter
 without accents, or a 16-bit character.
 """
 
@@ -87,6 +88,10 @@ _PEN_OFFSETS = {0: 'sub', 1: '', 2: 'super'}
 _OFFSET_CODES = {offset: code for code, offset in _PEN_OFFSETS.items()}
 _PEN_EDGES = {0: '', 1: 'raised', 2: 'depressed', 3: 'uniform', 4: 'left-shadow', 5: 'right-shadow'}
 _EDGE_CODES = {edge: code for code, edge in _PEN_EDGES.items()}
+# The eight typefaces a pen may ask for: the first is whatever the decoder
+# draws by default, the rest are the ones CEA-708 names (markup.FACES).
+_FONT_TAGS = {code: name for code, name in enumerate(('',) + markup.FACES)}
+_FACE_CODES = {name: code for code, name in _FONT_TAGS.items() if name}
 
 
 def _background(value):
@@ -430,7 +435,8 @@ class _Service:
                     italic=bool(parameters[1] & 0x80), underline=bool(parameters[1] & 0x40),
                     size=_PEN_SIZES.get(parameters[0] & 0x03, ''),
                     offset=_PEN_OFFSETS.get((parameters[0] >> 2) & 0x03, ''),
-                    edge=_PEN_EDGES.get((parameters[1] >> 3) & 0x07, '')))
+                    edge=_PEN_EDGES.get((parameters[1] >> 3) & 0x07, ''),
+                    face=_FONT_TAGS.get(parameters[1] & 0x07, '')))
         elif code == 0x91:                                   # SetPenColor
             window = self._window()
             if window is not None:
@@ -634,8 +640,12 @@ def _pen(style):
     else on black as CEA-608's pen sits."""
     attributes = (_SIZE_CODES.get(style.size, 1)
                   | _OFFSET_CODES.get(style.offset, 1) << 2)
+    # A typeface it does not name is whatever the decoder draws anyway; the
+    # face stays in the text for the formats that can carry any of them.
+    face = _FACE_CODES.get(style.face.strip().lower(), 0)
     edge = _EDGE_CODES.get(style.edge, 0) << 3
-    return [[0x90, attributes, edge | (0x80 if style.italic else 0) | (0x40 if style.underline else 0)],
+    return [[0x90, attributes,
+             edge | face | (0x80 if style.italic else 0) | (0x40 if style.underline else 0)],
             [0x91, _two_bits(style.color), _pen_background(style.background),
              _two_bits(style.edge_color, (0, 0, 0))]]
 
