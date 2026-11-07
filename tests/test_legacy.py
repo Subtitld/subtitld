@@ -204,6 +204,46 @@ else:
         pairs = [(t[1], o[1]) for t, o in zip(theirs, ours) if t[1] < 86400]
         check(f'{fmt}: same ends', all(abs(a - b) < 0.051 for a, b in pairs), True)
 
+# --------------------------------------------------------------------------
+# Through the app: opening and saving each one as a user does
+# --------------------------------------------------------------------------
+print('through file_io')
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from subtitld.modules import file_io, session
+
+folder = Path(tempfile.mkdtemp())
+WRITTEN = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
+           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
+
+for name, fmt in sorted(legacy.SESSION_FORMATS.items()):
+    path = folder / f'sub.{legacy.EXTENSIONS[fmt]}'
+    session.SUBTITLE['segments'] = [dict(segment) for segment in WRITTEN]
+    session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/tears.mov'}
+    session.FORMAT = {}
+    file_io.save_file(str(path), name)
+    session.SUBTITLE['segments'] = []
+    opened, found = file_io.process_subtitles_file(str(path))
+    check(f'{name}: saved and opened again', (found, len(opened)), (name, 2))
+
+print('the extensions three formats share')
+# A .sub is MicroDVD, SubViewer 2, MPSub or SubViewer 1, and only the
+# bytes say which. A .stl is EBU STL, Spruce, or a 3D model.
+(folder / 'micro.sub').write_text('{25}{75}MicroDVD here\n', encoding='utf-8')
+check('.sub: MicroDVD', file_io.process_subtitles_file(str(folder / 'micro.sub'))[1], 'SUB')
+(folder / 'mp.sub').write_text('FORMAT=TIME\n\n0 3\nMPSub here\n', encoding='utf-8')
+check('.sub: MPSub', file_io.process_subtitles_file(str(folder / 'mp.sub'))[1], 'MPSUB')
+(folder / 'sv1.sub').write_text('[00:00:01]\nSubViewer 1 here\n[00:00:03]\n', encoding='utf-8')
+check('.sub: SubViewer 1', file_io.process_subtitles_file(str(folder / 'sv1.sub'))[1], 'SUBVIEWER1')
+(folder / 'spruce.stl').write_text('00:00:01:00 , 00:00:03:00 , Spruce here\n', encoding='utf-8')
+check('.stl: Spruce', file_io.process_subtitles_file(str(folder / 'spruce.stl'))[1], 'SPRUCE')
+(folder / 'model.stl').write_bytes(b'solid cube\nfacet normal 0 0 1\n' * 100)
+try:
+    file_io.process_subtitles_file(str(folder / 'model.stl'))
+    check('.stl: a 3D model still says what it is not', None, 'CorruptedProjectFileError')
+except file_io.CorruptedProjectFileError as error:
+    check('.stl: a 3D model still says what it is not', str(error).startswith('Not an EBU STL file'), True)
+
 print()
 print('FAILURES: ' + ', '.join(fails) if fails else 'all good')
 sys.exit(1 if fails else 0)

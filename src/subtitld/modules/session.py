@@ -137,6 +137,20 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
     'JSON': {'description': 'JSON format', 'extensions': ['json', 'json3']},
     'BCC': {'description': 'Bilibili BCC Subtitle format', 'extensions': ['bcc']},
+    # The player era (modules.legacy). These come after the formats above
+    # on purpose: three of them share .sub, .stl and .txt with a format
+    # already here, and the first entry to claim an extension keeps it.
+    # What a file actually holds is decided by its bytes, in file_io.
+    'MPL2': {'description': 'MPL2 Subtitle format', 'extensions': ['mpl', 'mpl2']},
+    'PJS': {'description': 'Phoenix Japanimation Society format', 'extensions': ['pjs']},
+    'MPSUB': {'description': 'MPlayer MPsub format', 'extensions': ['sub']},
+    'VPLAYER': {'description': 'VPlayer and TMPlayer format', 'extensions': ['txt']},
+    'AQTITLE': {'description': 'AQTitle Subtitle format', 'extensions': ['aqt']},
+    'SUBVIEWER1': {'description': 'SubViewer 1.0 Subtitle format', 'extensions': ['sub']},
+    'SPRUCE': {'description': 'Spruce Subtitle File format', 'extensions': ['stl']},
+    'REALTEXT': {'description': 'RealText Subtitle format', 'extensions': ['rt']},
+    'TURBOTITLE': {'description': 'TurboTitle Subtitle format', 'extensions': ['tts']},
+    'ZEROG': {'description': 'ZeroG Subtitle format', 'extensions': ['zeg']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on
