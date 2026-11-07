@@ -95,6 +95,7 @@ EXTENSIONS = {
     'cmml': 'cmml',
     'smiltext': 'smil',
     'ssf': 'ssf',
+    'texml': 'xml',
     'sst': 'sst',
     'ssts': 'ssts',
 }
@@ -103,7 +104,7 @@ EXTENSIONS = {
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
             'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
             'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts',
-            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml', 'smiltext', 'ssf')
+            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml', 'smiltext', 'ssf', 'texml')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -120,7 +121,7 @@ SESSION_FORMATS = {
     'SASAMI': 'sasami', 'XOMBIE': 'xombie', 'MACSUB': 'macsub',
     'SST': 'sst', 'SSTS': 'ssts', 'DKS': 'dks', 'POWERDIVX': 'powerdivx',
     'DVDSS': 'dvdss', 'QTTEXT': 'qttext', 'CAPTIONATE': 'captionate',
-    'CMML': 'cmml', 'SMILTEXT': 'smiltext', 'SSF': 'ssf',
+    'CMML': 'cmml', 'SMILTEXT': 'smiltext', 'SSF': 'ssf', 'TEXML': 'texml',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -579,6 +580,151 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
         lines.append(f'<time begin="{stamp(segment.get("start", 0))}"/>{body}'
                      f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
     lines.append('</window>')
+    return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# ---------------------------------------------------------------- TeXML
+
+
+_TEXML_PROPERTY = re.compile(r'\{\s*([A-Za-z-]+)\s*:\s*([^}]*?)\s*\}')
+TEXML_SCALE = 600               # what the format assumes when it says nothing
+
+
+def _texml_style(text):
+    """The italic, bold and underline a <style> block asks for."""
+    properties = {name.lower(): value.strip().lower() for name, value in _TEXML_PROPERTY.findall(text or '')}
+    return (properties.get('font-style') == 'italic',
+            properties.get('font-weight') == 'bold',
+            properties.get('text-decoration') == 'underline')
+
+
+def _texml_tagged(body, style):
+    italic, bold, underline = style
+    for flag, tag in ((italic, 'i'), (bold, 'b'), (underline, 'u')):
+        if flag and body:
+            body = f'<{tag}>{body}</{tag}>'
+    return body
+
+
+def _parse_texml(text, fps=DEFAULT_FPS):
+    """QuickTime's XML for a 3GPP timed text track.
+
+    There is no start time anywhere in TeXML: a sample carries only its
+    duration, and a subtitle begins where every sample before it has
+    ended. A gap is a sample with no text, which is why those have to be
+    counted as carefully as the ones that speak.
+
+    Durations count in the track's own timeScale, 600 when the root does
+    not name one — read as milliseconds everything would be stretched by
+    more than half again.
+    """
+    try:
+        root = ElementTree.fromstring(text.strip())
+    except ElementTree.ParseError as error:
+        raise ValueError(f'not a TeXML document: {error}') from error
+    if _local(root.tag) != 'text3gtrack':
+        raise ValueError('not a TeXML document: its root is not <text3GTrack>')
+    try:
+        scale = float(root.get('timeScale') or root.get('timescale') or TEXML_SCALE) or TEXML_SCALE
+    except ValueError:
+        scale = TEXML_SCALE
+    segments = []
+    cursor = 0.0
+    for sample in root.iter():
+        if _local(sample.tag) != 'sample':
+            continue
+        styles = {}
+        for node in sample.iter():
+            if _local(node.tag) == 'style':
+                styles[(node.get('id') or '').strip()] = _texml_style(''.join(node.itertext()))
+        runs = []
+        for node in sample.iter():
+            if _local(node.tag) != 'text':
+                continue
+            # Whitespace inside <text> is the subtitle's own, so the lines
+            # are kept and only the indentation around them goes: a file
+            # that cannot be pretty-printed is still usually written as if
+            # it could.
+            raw = ''.join(node.itertext()).replace('\r\n', '\n')
+            if not raw.strip():
+                continue
+            # Several <text> elements are one subtitle, joined end to end,
+            # each with a style of its own: the break between two lines
+            # comes from a newline inside one of them, never from the join.
+            # The space that separates two runs is kept outside the tags.
+            leading = raw[:len(raw) - len(raw.lstrip(' \t'))]
+            trailing = raw[len(raw.rstrip(' \t')):]
+            style = styles.get((node.get('styleID') or '').strip(), (False, False, False))
+            runs.append(leading + _texml_tagged(raw.strip(' \t'), style) + trailing)
+        try:
+            length = float(sample.get('duration') or 0) / scale
+        except ValueError:
+            length = 0.0
+        if runs:
+            segments.append({'start': _rounded(cursor), 'end': _rounded(cursor + length),
+                             'text': _escape_free(''.join(runs))})
+        cursor += length
+    return _ordered(segments)
+
+
+def _escape_free(body):
+    """The lines of a <text> node, their indentation gone, their breaks kept."""
+    return '\n'.join(line.strip() for line in str(body).replace('\r\n', '\n').split('\n')).strip()
+
+
+def _write_texml(segments, fps=DEFAULT_FPS):
+    """Written at a timeScale of 1000, so a duration is milliseconds, with
+    an empty sample wherever there is a gap: the format has no other way
+    to say that nothing is on screen."""
+    width, height = 640, 480
+    head = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<?quicktime type="application/x-quicktime-tx3g"?>\n'
+            f'<text3GTrack trackWidth="{width}.0" trackHeight="{height}.0" '
+            'language="eng" layer="0" timeScale="1000">')
+    lines = [head]
+
+    def description(styles):
+        rows = ['    <description format="tx3g" horizontalJustification="center" '
+                'verticalJustification="bottom" backgroundColor="0%, 0%, 0%, 0%">',
+                f'      <defaultTextBox x="0" y="0" width="{width}" height="{height}"/>',
+                '      <fontTable><font id="1" name="Sans-Serif"/></fontTable>',
+                '      <sharedStyles>']
+        for number, (italic, bold, underline) in enumerate(styles, start=1):
+            rows.append(f'        <style id="{number}">{{font-table: 1}} {{font-size: 24}} '
+                        f'{{font-style: {"italic" if italic else "normal"}}} '
+                        f'{{font-weight: {"bold" if bold else "normal"}}} '
+                        f'{{text-decoration: {"underline" if underline else "normal"}}} '
+                        '{color: 100%, 100%, 100%, 100%}</style>')
+        rows.append('      </sharedStyles>')
+        rows.append('    </description>')
+        return rows
+
+    def sample(length, styles, body):
+        rows = [f'  <sample duration="{int(round(length * 1000))}" keyframe="true">']
+        rows.extend(description(styles or [(False, False, False)]))
+        rows.append(f'    <sampleData targetEncoding="utf8">{body}</sampleData>')
+        rows.append('  </sample>')
+        return rows
+
+    cursor = 0.0
+    for segment in _ordered(segments):
+        written = str(segment.get('text') or '')
+        if not markup.plain(written).strip():
+            continue
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', start)))
+        if start > cursor + 0.0005:
+            lines.extend(sample(start - cursor, None, ''))
+        runs = [(body, (style.italic, style.bold, style.underline))
+                for body, style in markup.spans(written) if body.strip()]
+        styles, pieces = [], []
+        for body, flags in runs or [(markup.plain(written), (False, False, False))]:
+            if flags not in styles:
+                styles.append(flags)
+            pieces.append(f'<text styleID="{styles.index(flags) + 1}">{_escaped(body)}</text>')
+        lines.extend(sample(end - start, styles, ''.join(pieces)))
+        cursor = end
+    lines.append('</text3GTrack>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
 
 
@@ -1843,6 +1989,7 @@ _PARSERS = {
     'cmml': _parse_cmml,
     'smiltext': _parse_smiltext,
     'ssf': _parse_ssf,
+    'texml': _parse_texml,
     'sst': _parse_sst,
     'ssts': _parse_ssts,
 }
@@ -1876,6 +2023,7 @@ _WRITERS = {
     'cmml': _write_cmml,
     'smiltext': _write_smiltext,
     'ssf': _write_ssf,
+    'texml': _write_texml,
     'sst': _write_sst,
     'ssts': _write_ssts,
 }
@@ -1893,6 +2041,8 @@ def kind(data):
     if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
         return 'realtext'
     lowered = head[:600].lower()
+    if '<text3gtrack' in lowered or 'x-quicktime-tx3g' in lowered or 'x-quicktime-texml' in lowered:
+        return 'texml'
     if '<captionate' in lowered:
         return 'captionate'
     if 'format:' in lowered.replace(' ', '') and '"ssf"' in lowered:

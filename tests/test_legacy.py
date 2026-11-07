@@ -364,6 +364,37 @@ check('"+2s" is two seconds long, not two seconds past midnight',
 check('a definition with no time of its own is left out, not guessed at',
       legacy.parse('file#file {format: "ssf";};\n#style1 {font.size: 20;};\n', 'ssf'), [])
 
+print('TeXML: no start times in it at all, only durations that add up')
+TEXML = ('<?xml version="1.0"?>\n<?quicktime type="application/x-quicktime-tx3g"?>\n'
+         '<text3GTrack trackWidth="640.0" trackHeight="480.0" language="eng" timeScale="1000">\n'
+         '  <sample duration="1500"><description format="tx3g"><defaultTextBox/>'
+         '<fontTable><font id="1" name="S"/></fontTable>'
+         '<sharedStyles><style id="1">{font-style: normal}</style></sharedStyles></description>'
+         '<sampleData targetEncoding="utf8"><text styleID="1">First cue.</text></sampleData></sample>\n'
+         '  <sample duration="500"><description format="tx3g"><defaultTextBox/>'
+         '<fontTable><font id="1" name="S"/></fontTable>'
+         '<sharedStyles><style id="1">{font-size: 24}</style></sharedStyles></description>'
+         '<sampleData targetEncoding="utf8"/></sample>\n'
+         '  <sample duration="2500"><description format="tx3g"><defaultTextBox/>'
+         '<fontTable><font id="1" name="S"/></fontTable>'
+         '<sharedStyles><style id="1">{font-style: normal}</style>'
+         '<style id="2">{font-style: italic}</style></sharedStyles></description>'
+         '<sampleData targetEncoding="utf8"><text styleID="1">Second cue, line one\n'
+         'line two is </text><text styleID="2">italic</text></sampleData></sample>\n'
+         '</text3GTrack>\n')
+# A subtitle begins where every sample before it ended, the silent ones
+# included: the empty sample between these two is what puts the second
+# at two seconds rather than one and a half.
+check('starts are the durations before them', [(c[0], c[1]) for c in cues(TEXML, 'texml')],
+      [(0.0, 1.5), (2.0, 4.5)])
+check('several <text> runs are one subtitle, joined end to end',
+      cues(TEXML, 'texml')[1][2], 'Second cue, line one\nline two is <i>italic</i>')
+check('with no timeScale named, a tick is a six-hundredth of a second',
+      [c[0] for c in cues(TEXML.replace(' timeScale="1000"', ''), 'texml')], [0.0, 3.333])
+check('it is TeXML, not GPAC\'s TTXT', legacy.kind(TEXML), 'texml')
+check('GPAC\'s TTXT is left alone',
+      legacy.kind('<TextStream version="1.1"><TextSample sampleTime="00:00:01.000">Hi</TextSample></TextStream>'), '')
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]

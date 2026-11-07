@@ -687,6 +687,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
 
+        elif subtitle_file.lower().endswith('.xml') and legacy.kind(_text_of(subtitle_file)) == 'texml':
+            # QuickTime's XML for the timed text of a 3GPP track: a
+            # sample a subtitle, and no start times anywhere in it.
+            subtitle_format = 'TEXML'
+            try:
+                segments_list = legacy.parse(_text_of(subtitle_file), 'texml')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
         elif subtitle_file.lower().endswith('.xml') and legacy.kind(_text_of(subtitle_file)) == 'captionate':
             # Captionate's XML, from the Flash era: its own root element,
             # and nothing a TTML reader would make sense of.
@@ -787,7 +796,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
                                              '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
                                              '.scr', '.mac', '.sst', '.ssts',
-                                             '.dks', '.psb', '.cmml', '.smil', '.ssf')):
+                                             '.dks', '.psb', '.cmml', '.smil', '.ssf', '.txml')):
             # The player era: the extension narrows it, the bytes decide it.
             try:
                 segments_list, found = legacy.read(subtitle_file, session.VIDEO.get('framerate'))
