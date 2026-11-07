@@ -184,6 +184,38 @@ back = ass.segments_of(pysubs2.SSAFile.from_string(written))
 check('read back as they were', [(s['text'], s.get('position')) for s in back],
       [('Plain', None), ('{\\an8}High', {'v': '5%', 'rotate': {'z': 45.0}}), ('{\\an4}Side', {'h': '5%'})])
 
+print('v4.00++, the format MPC\'s MP4 splitter writes')
+# Liisachan's own lines, Doom9, March 2006: 25 style fields, 11 event
+# fields, the text after the tenth comma, and no Format: line. The two
+# vertical margins are 20 and 40 here, where hers were equal, so that
+# the one they collapse into can be told from either.
+V4PP = """[Script Info]
+ScriptType: v4.00++
+PlayResX: 640
+PlayResY: 480
+[V4++ Styles]
+Style: RelToScreen,Verdana,40,&H00ffffff,&H0000ffff,&H00000000,&H00000000,0,0,0,0,100,100,0,0.00,1,2,3,2,20,20,20,40,0,0
+[Events]
+Dialogue: 0,0:00:01.00,0:00:06.00,RelToScreen,,0000,0000,0000,0000,,Relative to Screen
+Dialogue: 0,0:00:07.00,0:00:09.00,RelToScreen,Alice,0000,0000,0000,0000,,Second line
+"""
+check('a v4++ script is known by its ScriptType', ass.is_v4plusplus(V4PP), True)
+check('and by its section header alone',
+      ass.is_v4plusplus('[V4++ Styles]\nStyle: x\n'), True)
+check('an ordinary ASS script is not',
+      ass.is_v4plusplus('[Script Info]\nScriptType: v4.00+\n[V4+ Styles]\n'), False)
+folder = Path(tempfile.mkdtemp())
+(folder / 'v4pp.ass').write_text(V4PP, encoding='utf-8')
+read_v4pp = ass.read(str(folder / 'v4pp.ass'))
+# The text sits after the tenth comma here and the ninth in ASS: read it
+# as ASS and every subtitle would begin with a stray "0000,".
+check('its events read, text and speaker in place',
+      [(s['start'], s['end'], s['text'], s.get('speaker')) for s in read_v4pp],
+      [(1.0, 6.0, 'Relative to Screen', None), (7.0, 9.0, 'Second line', 'Alice')])
+# v4++ splits MarginV in two; the one it is the halves of is their mean,
+# which is how VSFilter itself saves a v4++ script down to v4+.
+check('the two vertical margins become the one', '20,20,30,0' in ass._from_v4plusplus(V4PP), True)
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

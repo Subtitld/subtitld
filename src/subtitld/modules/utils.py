@@ -51,13 +51,19 @@ def convert_ffmpeg_timecode_to_seconds(timecode):
 
 
 def get_subtitle_format(subtitle_filepath):
-    subtitle_format = False
+    """The format an extension names, False when none does.
+
+    The first entry to claim an extension keeps it: .sub is MicroDVD and
+    .stl is EBU STL, as they were before the player-era formats joined
+    the list sharing those extensions. Which format a file really holds
+    is a question for its bytes, and file_io asks it there.
+    """
     if subtitle_filepath:
         for formt in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
             for ext in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[formt]['extensions']:
                 if subtitle_filepath.endswith(ext):
-                    subtitle_format = formt
-    return subtitle_format
+                    return formt
+    return False
 
 
 def get_format_from_extension(extension):
