@@ -30,16 +30,19 @@ Writing gives service 1 pop-on captions, in step with the CEA-608 ones the
 SCC module writes: each is loaded into a hidden window (two in turn) in
 the frames before it shows, after the last one showed, its rows and
 styles as the text has them, and shown in the frame the CEA-608 caption
-is, the one before deleted in the same packet, or at its end. Windows are placed by percentages of the
-screen (anchor point and position from the subtitle's place), so 4:3 and
-16:9 decoders put them alike; the pen's background is black, as CEA-608's
-is. Characters CEA-708 lacks become their letter without accents, or a
-16-bit character.
+is, the one before deleted in the same packet, or at its end. A window is
+anchored by percentages of the screen, so 4:3 and 16:9 decoders put it
+alike: at the corner, edge or middle the subtitle's nine-place code names,
+and that far in — the margins the subtitle itself gives (modules.position),
+else the title-safe tenth. Nothing is rounded on the way: a margin is a
+percentage of the picture and so is an anchor. The pen's background is
+black, as CEA-608's is. Characters CEA-708 lacks become their letter
+without accents, or a 16-bit character.
 """
 
 import unicodedata
 
-from subtitld.modules import markup
+from subtitld.modules import markup, position
 
 LAST_DURATION = 4.0                      # seconds a caption still shown at the end lasts
 _COLUMNS = 32                            # a row's columns, as 4:3 decoders show them
@@ -84,9 +87,15 @@ class _Window:
         return any(char.strip() for row in self.cells.values() for char, _style in row.values())
 
 
-def _keypad(window, rows, first, last):
-    """Where text in `rows` (and, left-justified, columns `first` to `last`)
-    sits on the screen: one of the nine places."""
+def _placed(window, rows, first, last):
+    """(one of the nine places, the Place beyond it) for text in `rows` and
+    columns `first` to `last`: where on the screen the window puts it.
+
+    A window is anchored by percentages of the picture, which is what a
+    margin is a percentage of, so what is left over after the nine places
+    is read straight off the window's own geometry. A window exactly where
+    the nine places alone would put it leaves NOWHERE behind.
+    """
     point_column, point_row = window.anchor_point % 3, min(window.anchor_point // 3, 2)
     if window.relative:
         x, y = window.anchor_h / 100, window.anchor_v / 100
@@ -97,23 +106,47 @@ def _keypad(window, rows, first, last):
         width = window.columns * 5 / grid
     height = window.rows / 15
     left, top = x - point_column * width / 2, y - point_row * height / 2
-    middle = top + ((rows[0] + rows[-1]) / 2 + 0.5) / window.rows * height
-    vertical = 2 if middle < 1 / 3 else 0 if middle > 2 / 3 else 1
+    if window.relative:
+        # A window placed by percentages is anchored at the edge its text is
+        # read from, which says where it sits better than its own middle.
+        vertical = 2 - point_row
+    else:
+        middle = top + ((rows[0] + rows[-1]) / 2 + 0.5) / window.rows * height
+        vertical = 2 if middle < 1 / 3 else 0 if middle > 2 / 3 else 1
+    span = (last - first + 1) / window.columns * width
+    if window.justify == _CENTER:
+        text_left = left + (width - span) / 2
+    elif window.justify == _RIGHT:
+        text_left = left + width - span
+    else:
+        text_left = left + first / window.columns * width
     if window.relative and _SIDE.get(window.justify) == point_column:
         horizontal = point_column
     else:
-        if window.justify == _CENTER:
-            centre = left + width / 2
-        elif window.justify == _RIGHT:
-            centre = left + width - (last - first + 1) / 2 / window.columns * width
-        else:
-            centre = left + (first + last + 1) / 2 / window.columns * width
+        centre = text_left + span / 2
         horizontal = 0 if centre < 0.4 else 2 if centre > 0.6 else 1
-    return (1, 4, 7)[vertical] + horizontal
+    text_top = top + rows[0] / window.rows * height
+    text_bottom = top + (rows[-1] + 1) / window.rows * height
+    down = (1 - text_bottom, (text_top + text_bottom) / 2 - 0.5, text_top)[vertical]
+    across = (text_left, text_left + span / 2 - 0.5, 1 - text_left - span)[horizontal]
+    return (1, 4, 7)[vertical] + horizontal, _beyond(across * 100, down * 100, vertical, horizontal)
+
+
+def _beyond(across, down, vertical, horizontal):
+    """The Place two margins say, against the title-safe tenth the nine
+    places alone put text at: nothing where they agree to within half a
+    percent of the picture, which is finer than a window is anchored."""
+    place = position.NOWHERE
+    if abs(down - (0.0 if vertical == 1 else 10.0)) > 0.5:
+        place = place._replace(v=position.percent(down))
+    if abs(across - (0.0 if horizontal == 1 else 10.0)) > 0.5:
+        place = place._replace(h=position.percent(across))
+    return place
 
 
 def _render(window, rows=None):
-    """(text with tags, keypad) for what a window holds, or ('', 2)."""
+    """(text with tags, keypad, where it sits beyond it) for what a window
+    holds, or ('', 2, NOWHERE)."""
     lines, used, edges = [], [], []
     for row in sorted(rows if rows is not None else window.cells):
         cells = window.cells.get(row, {})
@@ -125,21 +158,22 @@ def _render(window, rows=None):
         used.append(row)
         edges.append((first, last))
     if not lines:
-        return '', 2
+        return '', 2, position.NOWHERE
     runs = []
     for index, line in enumerate(lines):
         if index:
             runs.append(('\n', markup.PLAIN))
-        for position, (char, style) in enumerate(line):
+        for column, (char, style) in enumerate(line):
             if char == ' ':
                 # A space between two styles has what both have.
-                before = next((s for c, s in reversed(line[:position]) if c != ' '), markup.PLAIN)
-                after = next((s for c, s in line[position + 1:] if c != ' '), markup.PLAIN)
+                before = next((s for c, s in reversed(line[:column]) if c != ' '), markup.PLAIN)
+                after = next((s for c, s in line[column + 1:] if c != ' '), markup.PLAIN)
                 style = markup.Style(*((a if a == b else '') if isinstance(a, str) else a and b
                                        for a, b in zip(before, after)))
             runs.append((char, style))
-    keypad = _keypad(window, used, min(first for first, _last in edges), max(last for _first, last in edges))
-    return markup.tidy(runs), keypad
+    keypad, place = _placed(window, used, min(first for first, _last in edges),
+                            max(last for _first, last in edges))
+    return markup.tidy(runs), keypad, place
 
 
 class _Service:
@@ -158,19 +192,19 @@ class _Service:
     # What windows show becomes subtitles.
     def _show(self, seconds, window, extend=False):
         """The window, on screen, shows what it holds now."""
-        text, keypad = _render(window)
+        text, keypad, place = _render(window)
         old = window.shown
         if old and text == old['body']:
             return
         if extend and old and text:
             old_lines, new_lines = markup.plain(old['body']).split('\n'), markup.plain(text).split('\n')
             if len(new_lines) >= len(old_lines) and all(new.startswith(o) for o, new in zip(old_lines, new_lines)):
-                old['body'], old['keypad'] = text, keypad
+                old['body'], old['keypad'], old['place'] = text, keypad, place
                 return
         self._close(seconds, old)
         window.shown = None
         if text:
-            window.shown = {'start': seconds, 'end': None, 'body': text, 'keypad': keypad}
+            window.shown = {'start': seconds, 'end': None, 'body': text, 'keypad': keypad, 'place': place}
             self.subtitles.append(window.shown)
 
     def _hide(self, seconds, window):
@@ -182,12 +216,16 @@ class _Service:
         """The line written on screen so far is a subtitle; with `close`,
         the window's lines end at `seconds`."""
         if window.line is not None:
-            text, keypad = _render(window, [window.line['row']])
+            text, keypad, place = _render(window, [window.line['row']])
             if text:
-                # Lines written on screen start at its left: only their row
-                # says where they are.
+                # Lines written on screen start at the window's left,
+                # whatever their length, so their own columns say nothing
+                # about where they are: a window placed by percentages is
+                # taken at its word, any other read as centred.
+                if not window.relative:
+                    keypad, place = (keypad - 1) // 3 * 3 + 2, place._replace(h='')
                 subtitle = {'start': window.line['start'], 'end': None, 'body': text,
-                            'keypad': (keypad - 1) // 3 * 3 + 2}
+                            'keypad': keypad, 'place': place}
                 self.subtitles.append(subtitle)
                 window.live.append(subtitle)
             window.line = None
@@ -453,8 +491,10 @@ def decode(batches, rate, service=1):
         if not subtitle.get('body'):
             continue
         keypad = subtitle['keypad']
-        segments.append({'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
-                         'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']})
+        segments.append(position.store(
+            {'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
+             'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']},
+            subtitle.get('place') or position.NOWHERE))
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     return segments
 
@@ -529,16 +569,35 @@ def _pen(style):
     return [[0x90, 0x05, (0x80 if style.italic else 0) | (0x40 if style.underline else 0)], [0x91, color, 0x00, 0x00]]
 
 
-def _define(window, keypad, rows, columns, visible):
+def _anchor(keypad, place):
+    """(% of the screen down, % across) a window at `keypad` is anchored
+    at: `place`'s own margins from the edge it is aligned to, else the
+    title-safe tenth the nine places alone put it at.
+
+    CEA-708 places a window by percentages of the picture, which is what a
+    margin is a percentage of, so a place maps straight onto one.
+    """
+    across, down = position.margins(place, keypad)
+    vertical, horizontal = (keypad - 1) // 3, (keypad - 1) % 3          # 0 bottom ... 2 top; 0 left ...
+    return (_within(((100 - down), (50 + down), down)[vertical]),
+            _within((across, 50 + across, 100 - across)[horizontal]))
+
+
+def _within(percent):
+    return max(0, min(100, int(round(percent))))
+
+
+def _define(window, keypad, rows, columns, visible, place=position.NOWHERE):
     """DefineWindow and SetWindowAttributes for a window of `rows` rows and
-    `columns` columns at `keypad`, placed by percentages of the screen so
-    4:3 and 16:9 decoders put it alike."""
+    `columns` columns where `keypad` and `place` put it, placed by
+    percentages of the screen so 4:3 and 16:9 decoders put it alike."""
     vertical, horizontal = (keypad - 1) // 3, (keypad - 1) % 3          # 0 bottom ... 2 top; 0 left ...
     anchor_point = (2 - vertical) * 3 + horizontal
+    anchor_v, anchor_h = _anchor(keypad, place)
     return [[0x98 + window,
              0x38 if visible else 0x18,                                 # visible or not; rows and columns locked
-             0x80 | (90, 50, 10)[vertical],                             # relative: % of the screen's height
-             (10, 50, 90)[horizontal],
+             0x80 | anchor_v,                                           # relative: % of the screen's height
+             anchor_h,
              anchor_point << 4 | (rows - 1),
              columns - 1,
              0x09],                                                     # window and pen style 1
@@ -556,12 +615,12 @@ def _typed(rows, pen, first_row=0):
         elif first_row:
             units.append([0x92, first_row, 0])                          # SetPenLocation
         looks = [markup.Style(style.italic, False, style.underline, False, style.color) for _char_, style in row]
-        for position, (char, _style) in enumerate(row):
-            look = looks[position]
+        for column, (char, _style) in enumerate(row):
+            look = looks[column]
             if char == ' ':
                 # A space between two styles has what both have.
-                before = next((looks[i] for i in range(position - 1, -1, -1) if row[i][0] != ' '), markup.PLAIN)
-                after = next((looks[i] for i in range(position + 1, len(row)) if row[i][0] != ' '), markup.PLAIN)
+                before = next((looks[i] for i in range(column - 1, -1, -1) if row[i][0] != ' '), markup.PLAIN)
+                after = next((looks[i] for i in range(column + 1, len(row)) if row[i][0] != ' '), markup.PLAIN)
                 look = markup.Style(before.italic and after.italic, False, before.underline and after.underline, False,
                                     before.color if before.color == after.color else '')
             if look != pen:
@@ -571,13 +630,13 @@ def _typed(rows, pen, first_row=0):
     return units, pen
 
 
-def _load(text, window):
+def _load(text, window, place=position.NOWHERE):
     """The commands that load a subtitle into a hidden window."""
     rows, keypad = _rows(text)
     if not rows:
         return []
     columns = max(len(row) for row in rows)
-    units = _define(window, keypad, len(rows), columns, visible=False)
+    units = _define(window, keypad, len(rows), columns, False, place)
     units.insert(1, [0x88, 1 << window])                                # ClearWindows
     pen = None
     for index, row in enumerate(rows):
@@ -587,7 +646,7 @@ def _load(text, window):
     return units
 
 
-def _roll(text, window, count, define):
+def _roll(text, window, count, define, place=position.NOWHERE):
     """The commands that type a subtitle as roll-up lines in a window of
     `count` rows, on screen as they are typed: the window defined the first
     time, then each line after a CR has rolled the ones before it up."""
@@ -596,7 +655,7 @@ def _roll(text, window, count, define):
         return []
     units = []
     if define:
-        units = _define(window, keypad, count, _COLUMNS, visible=True)
+        units = _define(window, keypad, count, _COLUMNS, True, place)
         units.append([0x88, 1 << window])                               # ClearWindows
         units.append([0x92, count - 1, 0])                              # the pen on the base row
     else:
@@ -609,7 +668,7 @@ def _roll(text, window, count, define):
     return units
 
 
-def _paint(text, window):
+def _paint(text, window, place=position.NOWHERE):
     """The commands that paint a subtitle onto the screen as it is typed:
     the window defined where the subtitle sits, visible and empty, then its
     text."""
@@ -617,7 +676,7 @@ def _paint(text, window):
     if not rows:
         return []
     columns = max(len(row) for row in rows)
-    units = _define(window, keypad, len(rows), columns, visible=True)
+    units = _define(window, keypad, len(rows), columns, True, place)
     units.insert(1, [0x88, 1 << window])                                # ClearWindows
     units.append([0x92, 0, 0])
     written, _pen_ = _typed(rows, None)
@@ -657,11 +716,14 @@ def _queue(shows, capacity, service, mode):
     queue = []                                   # (frame, order, packets)
     rows = int(mode[4]) if mode.startswith('roll') else 0
     visible, defined = None, False
-    for index, (text, shown, cleared) in enumerate(shows):
+    for index, show in enumerate(shows):
+        # A show says where its subtitle sits where it has somewhere to say.
+        text, shown, cleared = show[:3]
+        place = show[3] if len(show) > 3 else position.NOWHERE
         last = index == len(shows) - 1
         if rows:
             # One window of its own, defined once: its lines roll up in it.
-            units = _roll(text, 0, rows, not defined)
+            units = _roll(text, 0, rows, not defined, place)
             if not units:
                 continue
             if not defined:
@@ -673,7 +735,7 @@ def _queue(shows, capacity, service, mode):
             continue
         window = index % 2
         if mode == 'paint':
-            units = _paint(text, window)
+            units = _paint(text, window, place)
             if not units:
                 continue
             # The one before it goes as this one is defined, so that only
@@ -685,7 +747,7 @@ def _queue(shows, capacity, service, mode):
                 queue.append((cleared, 0, _packets([[0x8C, 1 << window]], service)))
                 visible = None
             continue
-        units = _load(text, window)
+        units = _load(text, window, place)
         if not units:
             continue
         if not queue:

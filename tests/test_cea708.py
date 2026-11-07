@@ -12,7 +12,7 @@ instead silently tests stale code.
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from subtitld.modules import cea708
+from subtitld.modules import cea708, position
 
 fails = []
 RATE = 30000 / 1001
@@ -209,6 +209,49 @@ check('two services in one channel, each read on its own',
       (cea708.services(batches), [s['text'] for s in cea708.decode(batches, RATE, 1)],
        [s['text'] for s in cea708.decode(batches, RATE, 3)]),
       ([1, 3], ['First line', 'Second line'], ['Primera linea']))
+
+
+print('placed by hand')
+
+
+def _window_of(text, place, mode='pop'):
+    """The DefineWindow a caption of `mode` writes, as its bytes."""
+    shows = [(text, 30, None, place)]
+    frames = cea708.frames_for({1: shows}, 18, mode)
+    data = [byte for _frame, triplets in sorted(frames.items())
+            for _type, first, second in triplets for byte in (first, second)]
+    start = next(index for index, byte in enumerate(data) if 0x98 <= byte <= 0x9F)
+    return data[start:start + 7]
+
+
+_plain = _window_of('Where it always went', position.NOWHERE)
+check('no place of its own: anchored at the bottom middle, as it always was',
+      (_plain[2], _plain[3]), (0x80 | 90, 50))
+_corner_plain = _window_of('{\\an1}Hard against the corner', position.NOWHERE)
+check('and at a corner, the title-safe tenth in from both edges',
+      (_corner_plain[2], _corner_plain[3]), (0x80 | 90, 10))
+_lifted = _window_of('Clear of a lower third', position.Place(v='30%'))
+check('lifted 30%: the anchor says exactly that, with nothing rounded',
+      (_lifted[2], _lifted[3]), (0x80 | 70, 50))
+_corner = _window_of('{\\an7}In from the corner', position.Place(h='20%', v='15%'))
+check('in from a corner: both margins straight into the anchor, and the corner it hangs from',
+      (_corner[2], _corner[3], _corner[4] >> 4), (0x80 | 15, 20, 0))
+_pixels = _window_of('Said in pixels', position.Place(v='108'))
+check('a margin in pixels of a 1080-tall picture is a tenth of it',
+      _pixels[2], 0x80 | 90)
+_turned = _window_of('Turned about', position.Place(v='30%', rotate=(0.0, 0.0, 45.0)))
+check('a rotation is nothing CEA-708 can draw: the place it leaves is still kept',
+      _turned[2], 0x80 | 70)
+
+for _mode in ('pop', 'roll2', 'paint'):
+    _shows = [('{\\an1}Hard against the corner', 30, None, position.Place(h='40%'))]
+    _read = cea708.decode(sorted(cea708.frames_for({1: _shows}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: read back where it was placed, off the left edge',
+          (_read[0]['text'], _read[0].get('position')),
+          ('{\\an1}Hard against the corner', {'h': '40%'}))
+_read = cea708.decode(sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)
+check('captions where the nine places alone put them say nothing more',
+      [subtitle.get('position') for subtitle in _read], [None, None])
 
 
 print()

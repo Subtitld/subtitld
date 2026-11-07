@@ -17,7 +17,9 @@ of 32 columns:
   line, from its first character to the next line's;
 - italics, underline and colours (white, green, blue, cyan, red, yellow,
   magenta) become formatting tags; where the caption sits on the screen,
-  its rows and columns, one of the nine places;
+  its rows and columns, one of the nine places, and the margins it sits by
+  where those rows and columns are not where the nine places alone put
+  text (modules.position);
 - the spaces the codes that change a style take up on screen are not kept
   where they would double a space or stand before punctuation;
 - timecodes with ";" are drop-frame, with ":" non-drop-frame;
@@ -52,7 +54,7 @@ becomes its letter without accents, or "?".
 import re
 import unicodedata
 
-from subtitld.modules import markup
+from subtitld.modules import markup, position
 from subtitld.modules.srt import decode
 
 LAST_DURATION = 4.0                      # seconds a caption still shown at the end lasts
@@ -123,7 +125,8 @@ def _blank():
 
 
 def _render(memory, rows=None):
-    """(text with tags, keypad) for what a memory shows, or ('', 2)."""
+    """(text with tags, keypad, where it sits beyond it) for what a memory
+    shows, or ('', 2, NOWHERE)."""
     lines, edges, used = [], [], []
     for row in rows or range(1, _ROWS + 1):
         cells = memory[row]
@@ -154,7 +157,7 @@ def _render(memory, rows=None):
         edges.append((first, last))
         used.append(row)
     if not lines:
-        return '', 2
+        return '', 2, position.NOWHERE
     runs = []
     for index, line in enumerate(lines):
         if index:
@@ -163,9 +166,33 @@ def _render(memory, rows=None):
     text = markup.tidy(runs)
     middle_row = (used[0] + used[-1]) / 2
     vertical = 2 if middle_row <= 5 else 0 if middle_row >= 10 else 1
-    centre = (min(first for first, _last in edges) + max(last for _first, last in edges) + 1) / 2
+    left = min(first for first, _last in edges)
+    right = max(last for _first, last in edges)
+    centre = (left + right + 1) / 2
     horizontal = 0 if centre < 12 else 2 if centre > 20 else 1
-    return text, (1, 4, 7)[vertical] + horizontal
+    return text, (1, 4, 7)[vertical] + horizontal, _place(used, left, right, vertical, horizontal)
+
+
+def _place(used, left, right, vertical, horizontal):
+    """Where a caption sits beyond its keypad: NOWHERE when its rows and
+    columns are where the nine places alone put text.
+
+    The fifteen rows and thirty-two columns are taken as spanning the
+    picture, as they are when captions are written, and a margin out by
+    half a row or column or less is that rounding, not a place of its own.
+    """
+    down = ((_ROWS - used[-1]) / _ROWS,
+            (used[0] - 1 + used[-1]) / 2 / _ROWS - 0.5,
+            (used[0] - 1) / _ROWS)[vertical]
+    across = (left / _COLUMNS,
+              (left + right + 1) / 2 / _COLUMNS - 0.5,
+              (_COLUMNS - right - 1) / _COLUMNS)[horizontal]
+    place = position.NOWHERE
+    if abs(down * _ROWS) > 0.5:
+        place = place._replace(v=position.percent(down * 100))
+    if abs(across * _COLUMNS) > 0.5:
+        place = place._replace(h=position.percent(across * 100))
+    return place
 
 
 class _Decoder:
@@ -198,29 +225,31 @@ class _Decoder:
 
     def _show(self, frame, rows=None, extend=False):
         """The screen changed at `frame`: the caption it shows replaces the last."""
-        text, keypad = _render(self.displayed, rows)
+        text, keypad, place = _render(self.displayed, rows)
         if self.current and text == self.current['body']:
             return
         old_lines, new_lines = markup.plain(self.current['body'] if self.current else '').split('\n'), \
             markup.plain(text).split('\n')
         if extend and self.current and text and len(new_lines) >= len(old_lines) and all(
                 new.startswith(old) for old, new in zip(old_lines, new_lines)):
-            self.current['body'], self.current['keypad'] = text, keypad
+            self.current['body'], self.current['keypad'], self.current['place'] = text, keypad, place
             return
         self._close(frame)
         if text:
-            self.current = {'start': self._seconds(frame), 'end': None, 'body': text, 'keypad': keypad}
+            self.current = {'start': self._seconds(frame), 'end': None, 'body': text,
+                            'keypad': keypad, 'place': place}
             self.subtitles.append(self.current)
 
     def _end_line(self, frame, close=False):
         """The roll-up line written so far is a subtitle; with `close`, so is
         its end, at `frame`."""
         if self.line and self.line['start'] is not None:
-            text, keypad = _render(self.displayed, [self.row])
+            text, keypad, place = _render(self.displayed, [self.row])
             if text:
                 # Roll-up lines start at the left edge, whatever their
                 # length: only their row says where they are.
-                self.line.update(body=text, keypad=(keypad - 1) // 3 * 3 + 2)
+                self.line.update(body=text, keypad=(keypad - 1) // 3 * 3 + 2,
+                                 place=place._replace(h=''))
                 self.subtitles.append(self.line)
         if close:
             for subtitle in self.subtitles:
@@ -426,8 +455,10 @@ def decode_pairs(batches, rate=_RATE, channel=None):
     segments = []
     for subtitle in subtitles:
         keypad = subtitle['keypad']
-        segments.append({'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
-                         'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']})
+        segments.append(position.store(
+            {'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
+             'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']},
+            subtitle.get('place') or position.NOWHERE))
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     return segments
 
@@ -621,6 +652,48 @@ def _column(line, keypad):
     return 0 if keypad % 3 == 1 else _COLUMNS - width if keypad % 3 == 0 else (_COLUMNS - width) // 2
 
 
+def _at_row(lines, keypad, place):
+    """The row the first of `lines` goes on: where `place`'s vertical margin
+    puts it, else where `keypad` alone does.
+
+    A margin is a percentage of the picture, and the fifteen rows are taken
+    as spanning it: a decoder draws the grid inside the title-safe area
+    itself, so there is nothing to inset here.
+    """
+    down = position.as_percent(place.v) if place.v else None
+    if down is None:
+        return _stacked(lines, keypad)
+    count = len(lines)
+    rows = int(round(down * _ROWS / 100))
+    side = (keypad - 1) // 3                   # 0 bottom, 1 middle, 2 top
+    if side == 2:
+        first = 1 + rows
+    elif side == 0:
+        first = _ROWS - rows - count + 1
+    else:
+        first = 8 + rows - count // 2
+    return max(1, min(_ROWS - count + 1, first))
+
+
+def _at_column(line, keypad, place):
+    """The column `line` starts at: where `place`'s horizontal margin puts
+    it, else where `keypad` alone does. The thirty-two columns are taken as
+    spanning the picture, as the rows are."""
+    across = position.as_percent(place.h) if place.h else None
+    if across is None:
+        return _column(line, keypad)
+    width = len(line)
+    columns = int(round(across * _COLUMNS / 100))
+    side = (keypad - 1) % 3                    # 0 left, 1 centre, 2 right
+    if side == 0:
+        start = columns
+    elif side == 2:
+        start = _COLUMNS - columns - width
+    else:
+        start = (_COLUMNS - width) // 2 + columns
+    return max(0, min(_COLUMNS - width, start))
+
+
 def _lead(tokens):
     """How many words the codes before the first character take: what a
     typed caption is sent ahead by, so its text lands on its own frame. A
@@ -634,20 +707,20 @@ def _lead(tokens):
     return len(_words(before))
 
 
-def _load(text, channel=1):
+def _load(text, channel=1, place=position.NOWHERE):
     """(the words that load a subtitle as a pop-on caption, before its EOC;
     0, since its EOC says when it shows)."""
     lines, keypad = _text_lines(text)
     if not lines:
         return [], 0
-    first_row = _stacked(lines, keypad)
+    first_row = _at_row(lines, keypad, place)
     tokens = [('c', 0x14, _RCL), ('c', 0x14, _ENM)]
     for index, line in enumerate(lines):
-        tokens.extend(_row(first_row + index, line, _column(line, keypad)))
+        tokens.extend(_row(first_row + index, line, _at_column(line, keypad, place)))
     return _words(tokens, channel), 0
 
 
-def _roll(text, rows, channel=1):
+def _roll(text, rows, channel=1, place=position.NOWHERE):
     """(the words that type a subtitle as roll-up lines in a window of
     `rows` rows: the mode, then each line on the base row after a CR has
     rolled the ones before it up; the words its first character comes
@@ -656,16 +729,19 @@ def _roll(text, rows, channel=1):
     if not lines:
         return [], 0
     # The base row is the window's last: at the bottom row 15, in the
-    # middle row 8, at the top the window's own height.
+    # middle row 8, at the top the window's own height — or where a vertical
+    # margin puts the window, counted from the same edge.
     base = rows if keypad >= 7 else 8 if keypad >= 4 else _ROWS
+    if place.v:
+        base = _at_row([None] * rows, keypad, place) + rows - 1
     tokens = [('c', 0x14, (_RU2, _RU3, _RU4)[rows - 2])]
     for line in lines:
         tokens.append(('c', 0x14, _CR))
-        tokens.extend(_row(base, line, _column(line, keypad)))
+        tokens.extend(_row(base, line, _at_column(line, keypad, place)))
     return _words(tokens, channel), _lead(tokens)
 
 
-def _paint(text, channel=1):
+def _paint(text, channel=1, place=position.NOWHERE):
     """(the words that paint a subtitle onto the screen as it is typed: the
     mode, the first row's place, the screen erased, then the text; the words
     its first character comes after).
@@ -675,10 +751,10 @@ def _paint(text, channel=1):
     lines, keypad = _text_lines(text)
     if not lines:
         return [], 0
-    first_row = _stacked(lines, keypad)
+    first_row = _at_row(lines, keypad, place)
     tokens = [('c', 0x14, _RDC)]
     for index, line in enumerate(lines):
-        tokens.extend(_row(first_row + index, line, _column(line, keypad)))
+        tokens.extend(_row(first_row + index, line, _at_column(line, keypad, place)))
     painting = next((index for index, token in enumerate(tokens)
                      if token[0] == 'b' or (token[1] == 0x11 and 0x20 <= token[2] <= 0x2F)), len(tokens))
     tokens.insert(painting, ('c', 0x14, _EDM))
@@ -707,7 +783,8 @@ def write(segments, drop_frame=True, speaker_changes=False, mode='pop', channel=
 
 def _captions(segments, rate, speaker_changes, build):
     """[[frame it starts, frame it ends, its words from `build`, its text,
-    the words before its first character]] for `segments`, by start."""
+    the words before its first character, where it sits]] for `segments`,
+    by start."""
     captions = []
     speaker = ''
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
@@ -718,10 +795,12 @@ def _captions(segments, rate, speaker_changes, build):
                 lead, rest = markup.split_lead(text)
                 text = lead + '>> ' + rest.lstrip()
             speaker = said_by
-        words, lead = build(text)
+        place = position.of(segment)
+        words, lead = build(text, place)
         if words:
             start = round(float(segment.get('start', 0)) * rate)
-            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words, text, lead])
+            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)),
+                             words, text, lead, place])
     return captions
 
 
@@ -735,7 +814,7 @@ def _typed(captions, channel, rolling):
     edm = _word(_chan(0x14, channel), _EDM)
     frames, breaks, shows = {}, set(), []
     free = 0
-    for index, (start, end, words, text, lead) in enumerate(captions):
+    for index, (start, end, words, text, lead, place) in enumerate(captions):
         first = max(start - lead, free)
         for offset, word in enumerate(words):
             frames[first + offset] = word
@@ -752,30 +831,30 @@ def _typed(captions, channel, rolling):
                     clear += 1
                 frames[clear] = frames[clear + 1] = edm
                 breaks.add(clear)
-        shows.append((text, first + lead, clear))
+        shows.append((text, first + lead, clear, place))
     return frames, breaks, shows
 
 
 def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel=1):
     """({frame: word}, the frames a line starts at, [(text, frame shown,
-    frame cleared or None when the next replaces it)]) for `segments` as
-    captions of `mode` in channel `channel`, a word a frame at `rate` frames
-    a second."""
+    frame cleared or None when the next replaces it, where it sits)]) for
+    `segments` as captions of `mode` in channel `channel`, a word a frame at
+    `rate` frames a second."""
     mode = mode if mode in MODES else 'pop'
     channel = 2 if channel == 2 else 1
     if mode.startswith('roll'):
         rows = int(mode[4])
         return _typed(_captions(segments, rate, speaker_changes,
-                                lambda text: _roll(text, rows, channel)), channel, rolling=True)
+                                lambda text, place: _roll(text, rows, channel, place)), channel, rolling=True)
     if mode == 'paint':
         return _typed(_captions(segments, rate, speaker_changes,
-                                lambda text: _paint(text, channel)), channel, rolling=False)
+                                lambda text, place: _paint(text, channel, place)), channel, rolling=False)
     eoc, edm = _word(_chan(0x14, channel), _EOC), _word(_chan(0x14, channel), _EDM)
-    captions = _captions(segments, rate, speaker_changes, lambda text: _load(text, channel))
+    captions = _captions(segments, rate, speaker_changes, lambda text, place: _load(text, channel, place))
 
     frames, breaks, shows = {}, set(), []          # frame: word; the frames a line starts at
     loaded_from = 0                                # the first frame the next load may use
-    for index, (start, end, words, text, _lead_) in enumerate(captions):
+    for index, (start, end, words, text, _lead_, place) in enumerate(captions):
         # Loaded after the last one was shown (until then the memory it
         # loads into holds that one), shown on its frame, or as soon after
         # as there is time to load it.
@@ -800,7 +879,7 @@ def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel
             breaks.add(clear)
         else:
             clear = None
-        shows.append((text, shown, clear))
+        shows.append((text, shown, clear, place))
     return frames, breaks, shows
 
 

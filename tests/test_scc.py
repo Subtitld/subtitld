@@ -2,7 +2,8 @@
 caption decoder does (pop-on, roll-up and paint-on captions, PAC and
 mid-row styles, special and extended characters, codes sent twice, the
 second channel, backspace and delete to end of row), writing pop-on
-captions shown on their frames, and the export's options.
+captions shown on their frames, placing a subtitle on the fifteen rows and
+thirty-two columns, and the export's options.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -17,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, scc, session
+from subtitld.modules import file_io, markup, position, scc, session
 
 fails = []
 
@@ -231,6 +232,64 @@ panel._refresh_options()
 check('not for SRT', (panel.scc_options.isHidden(), panel.caption_options.isHidden(),
                       'timecode' in panel.get_config()['options'],
                       'caption_mode' in panel.get_config()['options']), (True, True, False, False))
+
+print('placed by hand')
+
+
+def _spot(segment, safe=0.0):
+    """(left, top) of a subtitle's text, fractions of the picture: what its
+    nine-place code and its own place together say. `safe` is the margin the
+    nine places alone leave, a tenth where a renderer keeps text in the
+    title-safe area and none on CEA-608's own grid."""
+    lead, rest = markup.split_lead(str(segment.get('text') or ''))
+    keypad = markup.alignment(lead)
+    lines = markup.plain(rest).split('\n')
+    span, block = max(len(line) for line in lines) / 32, len(lines) / 15
+    place = position.of(segment)
+    across, down = position.as_percent(place.h), position.as_percent(place.v)
+    across = (0.0 if keypad % 3 == 2 else safe) if across is None else across
+    down = (0.0 if 3 < keypad < 7 else safe) if down is None else down
+    return ((across / 100, 0.5 + across / 100 - span / 2, 1 - across / 100 - span)[(keypad - 1) % 3],
+            (1 - down / 100 - block, 0.5 + down / 100 - block / 2, down / 100)[(keypad - 1) // 3])
+
+
+def _near(one, other):
+    """Whether two spots are the same to within half a row and half a
+    column, which is as finely as CEA-608 places anything."""
+    return abs(one[0] - other[0]) <= 1 / 64 + 0.002 and abs(one[1] - other[1]) <= 1 / 30 + 0.002
+
+
+def _round_trip(text, place, mode='pop'):
+    asked = {'start': 1.0, 'end': 3.0, 'text': text}
+    if place:
+        asked['position'] = place
+    back = scc.parse(scc.write([asked], mode=mode))
+    return asked, (back[0] if back else {})
+
+
+_asked, _got = _round_trip('Where it always went', None)
+check('a subtitle with no place of its own is written where it always was',
+      (_got.get('text'), _got.get('position')), ('Where it always went', None))
+_asked, _got = _round_trip('Two lines of it\nlifted together', {'v': '20%'})
+check('lifted clear of a lower third: the rows it is written on say so',
+      (_got.get('position'), _near(_spot(_got), _spot(_asked))), ({'v': '20%'}, True))
+_asked, _got = _round_trip('{\\an7}In from the corner', {'h': '20%', 'v': '15%'})
+check('in from a corner: the same spot, which CEA-608 says in its own way',
+      (_near(_spot(_got), _spot(_asked)), _got.get('position')),
+      (True, {'h': '-3.1%', 'v': '13.3%'}))
+_asked, _got = _round_trip('{\\an3}Over on the right', {'h': '25%'})
+check('a quarter in from the right edge', _near(_spot(_got), _spot(_asked)), True)
+_asked, _got = _round_trip('{\\an5}Under the middle', {'v': '10%'})
+check('a tenth below the middle, as near as fifteen rows come',
+      _near(_spot(_got), _spot(_asked)), True)
+_asked, _got = _round_trip('Clear of a lower third', {'v': '30%'}, mode='paint')
+check('painted on where it is placed too', _near(_spot(_got), _spot(_asked)), True)
+_asked, _got = _round_trip('Rolled up, lifted', {'v': '20%'}, mode='roll2')
+check('a roll-up window lifted with its caption', _got.get('position'), {'v': '20%'})
+check('a place no subtitle asks for leaves the words it is written in alone',
+      scc.write([{'start': 1.0, 'end': 3.0, 'text': 'Where it always went'}]) ==
+      scc.write([{'start': 1.0, 'end': 3.0, 'text': 'Where it always went', 'position': {}}]), True)
+
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

@@ -287,6 +287,27 @@ check('not for SCC', (panel.mcc_options.isHidden(), 'mcc_rate' in panel.get_conf
                       [panel.caption_channel_combo.combobox.itemData(index)
                        for index in range(panel.caption_channel_combo.combobox.count())]), (True, False, False, [1, 2]))
 
+print('a placed subtitle, all the way through a file')
+_placed = [{'start': 1.0, 'end': 3.0, 'text': '{\\an7}In from the corner',
+            'position': {'h': '20%', 'v': '15%'}},
+           {'start': 4.0, 'end': 6.0, 'text': 'Where it always went'}]
+_text = mcc.write(_placed, 30000 / 1001)
+_back, _settings = mcc.parse(_text)
+check('CEA-708 carries it exactly, and says nothing of a subtitle that asks for nothing',
+      [(subtitle['text'], subtitle.get('position')) for subtitle in _back],
+      [('{\\an7}In from the corner', {'h': '20%', 'v': '15%'}),
+       ('Where it always went', None)])
+_six, _track = closed_captions.decode(
+    [(frame, triplets) for frame, triplets in
+     [(mcc._frame(*(int(part) for part in match.groups()[:4]), 30, True),
+       mcc._cc_data(mcc._expand(match.group(5)))[0])
+      for match in (mcc._LINE.match(line) for line in _text.split('\n')) if match]
+     if triplets], 30000 / 1001, track='cc1')
+check('CEA-608 beside it puts it on the nearest of its own rows and columns',
+      (_six[0]['text'], _six[0].get('position')),
+      ('{\\an8}In from the corner', {'h': '-3.1%', 'v': '13.3%'}))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
