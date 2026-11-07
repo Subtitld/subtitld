@@ -281,6 +281,40 @@ check('captions that ask for no background say nothing about one',
       [subtitle['text'] for subtitle in _read], ['First line', 'Second line'])
 
 
+print('the size, place and edge of a pen')
+
+
+def _attrs(text):
+    """The SetPenAttributes a caption writes for its first run."""
+    return next(unit for unit in cea708._load(text, 0) if unit[0] == 0x90)
+
+
+check('standard size, on the line, no edge: what it always wrote',
+      _attrs('Plain')[1:], [0x05, 0x00])
+check('the three sizes, by their two bits',
+      [_attrs(f'<font size="{size}">x</font>')[1] & 0x03 for size in ('80%', '100%', '120%')], [0, 1, 2])
+check('lowered, on the line and raised',
+      [(_attrs(written)[1] >> 2) & 0x03 for written in ('<sub>x</sub>', 'x', '<sup>x</sup>')], [0, 1, 2])
+check('each edge CEA-708 names, by its three bits',
+      [(_attrs(f'<font edge="{edge}">x</font>')[2] >> 3) & 0x07
+       for edge in ('raised', 'depressed', 'uniform', 'left-shadow', 'right-shadow')], [1, 2, 3, 4, 5])
+check('the colour the edge is drawn in goes in the pen colour, black by default',
+      [next(unit for unit in cea708._load(written, 0) if unit[0] == 0x91)[3]
+       for written in ('<font edge="uniform">x</font>',
+                       '<font edge="uniform" edge-color="#ff0000">x</font>')],
+      [0x00, 0b11_00_00])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = ('Plain <font size="80%" edge="raised" edge-color="#ff0000">small and raised</font> '
+              'then <sup>up</sup>')
+    _read = cea708.decode(sorted(cea708.frames_for({1: [(_asked, 30, None)]}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: written into the pen and read back, every part of it',
+          markup.spans(_read[0]['text']), markup.spans(_asked))
+check('an edge colour with no edge to draw says nothing',
+      [subtitle.get('text') for subtitle in cea708.decode(
+          sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)],
+      ['First line', 'Second line'])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

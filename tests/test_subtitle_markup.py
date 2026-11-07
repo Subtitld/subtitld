@@ -235,6 +235,41 @@ check('the Markdown panel writes it as a span attribute, and reads it back',
        'plain <font background="#000000cc"><i>on a box</i></font> after'))
 
 
+print('the size, place and edge a run is drawn with')
+check('a size as a proportion of the one it is drawn at; a bare number says none',
+      (markup.size_percent('80%'), markup.size_percent('120 %'), markup.size_percent('100%'),
+       markup.size_percent('3'), markup.size_percent('')),
+      ('80%', '120%', '', '', ''))
+check('raised and lowered text, as HTML writes it',
+      [(run, style.offset) for run, style in markup.spans('Plain <sup>up</sup> and <sub>down</sub>')],
+      [('Plain ', ''), ('up', 'super'), (' and ', ''), ('down', 'sub')])
+check('an edge and the colour it is drawn in',
+      [(style.edge, style.edge_color) for _run, style in
+       markup.spans('<font edge="raised" edge-color="#ff0000">Raised</font>')],
+      [('raised', '#ff0000')])
+check('an edge CEA-708 does not name is no edge at all',
+      [style.edge for _run, style in markup.spans('<font edge="engraved">x</font>')], [''])
+check('written back as one tag, and the raised text as its own',
+      markup.from_spans([('up', markup.Style(offset='super', size='80%', edge='uniform'))]),
+      '<font size="80%" edge="uniform"><sup>up</sup></font>')
+check('drawn as a size, a raised span and a shadow',
+      markup.to_html('<font size="80%" edge="uniform" edge-color="#ff0000"><sup>x</sup></font>'),
+      '<span style="font-size:80%;text-shadow:-0.06em 0em 0 #ff0000, 0.06em 0em 0 #ff0000, '
+      '0em -0.06em 0 #ff0000, 0em 0.06em 0 #ff0000"><sup>x</sup></span>')
+check('an edge with no colour of its own is drawn in black',
+      'text-shadow:-0.08em 0.08em 0 #000000' in markup.to_html('<font edge="left-shadow">x</font>'), True)
+check('what it reads is the text alone',
+      markup.plain('<font size="80%" edge="uniform">Small</font> <sup>and up</sup>'), 'Small and up')
+_md = markup.to_markdown('<font size="80%" edge="uniform" edge-color="#ff0000">x</font>')
+check('the Markdown panel writes them as span attributes, and reads them back',
+      (_md, markup.from_markdown(_md)),
+      ('[x]{size=80% edge=uniform edge-color=#ff0000}',
+       '<font size="80%" edge="uniform" edge-color="#ff0000">x</font>'))
+check('a text cut in two keeps them open on both halves',
+      markup.rebalance('<font size="80%" edge="uniform">one ', 'two</font>'),
+      ('<font size="80%" edge="uniform">one </font>', '<font size="80%" edge="uniform">two</font>'))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -106,12 +106,11 @@ def _usf_background(value):
 def _font_attributes(value):
     """A <font>'s attributes for a run's (colour, background): USF writes a
     colour as #RRGGBB and a background as #AARRGGBB, the alpha first."""
-    color, background = value
     attributes = {}
-    if color:
-        attributes['color'] = color
-    if background:
-        digits = background.lstrip('#')
+    if value.color:
+        attributes['color'] = value.color
+    if value.background:
+        digits = value.background.lstrip('#')
         attributes['back-color'] = '#' + (digits[6:8] + digits[:6] if len(digits) == 8 else 'ff' + digits)
     return attributes
 

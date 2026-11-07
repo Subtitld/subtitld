@@ -8,7 +8,9 @@ a stream of packets that holds up to 63 services, each its own captions
 (service 1 the main ones, the others often another language). A service is
 a run of commands and characters: define a window (where it sits, its
 anchor, its rows and columns), set the pen (italics, underline, colours),
-write text, then show, hide, clear or delete windows.
+write text (its size, where it sits against the line, the edge around it,
+its italics, underline and colours), then show, hide, clear or delete
+windows.
 
 Decoding follows a decoder's windows:
 
@@ -38,7 +40,11 @@ else the title-safe tenth. Nothing is rounded on the way: a margin is a
 percentage of the picture and so is an anchor. The pen sits on the
 background its run asks for, with the opacity it asks for, else on solid
 black as a CEA-608 pen does — which is why a pen on solid black is read as
-having no background of its own. Characters CEA-708 lacks become their letter
+having no background of its own, and an edge drawn in black as having no
+colour of its own. A run's size, its place against the line and its edge
+go out with it, and come back; the font and the text tag a pen may also
+carry say which typeface and what kind of speech it is, neither of which a
+subtitle here has anywhere to keep. Characters CEA-708 lacks become their letter
 without accents, or a 16-bit character.
 """
 
@@ -72,6 +78,15 @@ def _color(value):
 # How opaque a colour is, by the two bits above it: solid, flashing,
 # half-way, and not at all. A flashing background is drawn as it is solid.
 _OPACITY = (255, 255, 0x80, 0x00)
+# The three sizes a pen has, as a proportion of the one a subtitle is drawn
+# at; standard says nothing of its own.
+_PEN_SIZES = {0: '80%', 1: '', 2: '120%'}
+_SIZE_CODES = {size: code for code, size in _PEN_SIZES.items()}
+# Where a pen sits against the line, and the edge it draws.
+_PEN_OFFSETS = {0: 'sub', 1: '', 2: 'super'}
+_OFFSET_CODES = {offset: code for code, offset in _PEN_OFFSETS.items()}
+_PEN_EDGES = {0: '', 1: 'raised', 2: 'depressed', 3: 'uniform', 4: 'left-shadow', 5: 'right-shadow'}
+_EDGE_CODES = {edge: code for code, edge in _PEN_EDGES.items()}
 
 
 def _background(value):
@@ -83,6 +98,19 @@ def _background(value):
     if rgb == (0, 0, 0) and alpha == 255:
         return ''
     return '#{:02x}{:02x}{:02x}'.format(*rgb) + ('' if alpha == 255 else f'{alpha:02x}')
+
+
+def _edge_color(value):
+    """'#rrggbb' for the colour an edge is drawn in, '' for black, which is
+    what an edge is drawn in when nothing says otherwise."""
+    rgb = (_LEVELS[(value >> 4) & 3], _LEVELS[(value >> 2) & 3], _LEVELS[value & 3])
+    return '' if rgb == (0, 0, 0) else '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+
+def _settled(style):
+    """A pen with no edge has no colour for one: a decoder is told the edge
+    colour whether an edge is drawn or not."""
+    return style if style.edge else style._replace(edge_color='')
 
 
 def _pen_background(background):
@@ -398,13 +426,17 @@ class _Service:
         elif code == 0x90:                                   # SetPenAttributes
             window = self._window()
             if window is not None:
-                window.style = window.style._replace(italic=bool(parameters[1] & 0x80),
-                                                     underline=bool(parameters[1] & 0x40))
+                window.style = _settled(window.style._replace(
+                    italic=bool(parameters[1] & 0x80), underline=bool(parameters[1] & 0x40),
+                    size=_PEN_SIZES.get(parameters[0] & 0x03, ''),
+                    offset=_PEN_OFFSETS.get((parameters[0] >> 2) & 0x03, ''),
+                    edge=_PEN_EDGES.get((parameters[1] >> 3) & 0x07, '')))
         elif code == 0x91:                                   # SetPenColor
             window = self._window()
             if window is not None:
-                window.style = window.style._replace(color=_color(parameters[0] & 0x3F),
-                                                     background=_background(parameters[1]))
+                window.style = _settled(window.style._replace(color=_color(parameters[0] & 0x3F),
+                                                              background=_background(parameters[1]),
+                                                              edge_color=_edge_color(parameters[2] & 0x3F)))
         elif code == 0x92:                                   # SetPenLocation
             window = self._window()
             if window is not None:
@@ -589,16 +621,23 @@ def _rows(text):
     return rows[:_ROWS], markup.alignment(lead)
 
 
+def _two_bits(color, default=(255, 255, 255)):
+    """A colour as a pen writes it: each component to two bits."""
+    rgb = tuple(int(color[at:at + 2], 16) for at in (1, 3, 5)) if color else default
+    return (round(rgb[0] / 85) << 4) | (round(rgb[1] / 85) << 2) | round(rgb[2] / 85)
+
+
 def _pen(style):
-    """SetPenAttributes and SetPenColor for a Style: standard size,
-    italics, underline, its colour (two bits a component) on the background
-    it asks for, else on black as CEA-608's pen sits."""
-    rgb = (255, 255, 255)
-    if style.color:
-        rgb = tuple(int(style.color[i:i + 2], 16) for i in (1, 3, 5))
-    color = (round(rgb[0] / 85) << 4) | (round(rgb[1] / 85) << 2) | round(rgb[2] / 85)
-    return [[0x90, 0x05, (0x80 if style.italic else 0) | (0x40 if style.underline else 0)],
-            [0x91, color, _pen_background(style.background), 0x00]]
+    """SetPenAttributes and SetPenColor for a Style: the size, the place
+    against the line and the edge it asks for, its italics and underline,
+    and its colour (two bits a component) on the background it asks for,
+    else on black as CEA-608's pen sits."""
+    attributes = (_SIZE_CODES.get(style.size, 1)
+                  | _OFFSET_CODES.get(style.offset, 1) << 2)
+    edge = _EDGE_CODES.get(style.edge, 0) << 3
+    return [[0x90, attributes, edge | (0x80 if style.italic else 0) | (0x40 if style.underline else 0)],
+            [0x91, _two_bits(style.color), _pen_background(style.background),
+             _two_bits(style.edge_color, (0, 0, 0))]]
 
 
 def _anchor(keypad, place):
@@ -646,17 +685,15 @@ def _typed(rows, pen, first_row=0):
             units.append([0x0D])                                        # CR: the next row
         elif first_row:
             units.append([0x92, first_row, 0])                          # SetPenLocation
-        looks = [markup.Style(style.italic, False, style.underline, False, style.color, '', style.background)
-                 for _char_, style in row]
+        looks = [style._replace(bold=False, strike=False, ruby='') for _char_, style in row]
         for column, (char, _style) in enumerate(row):
             look = looks[column]
             if char == ' ':
                 # A space between two styles has what both have.
                 before = next((looks[i] for i in range(column - 1, -1, -1) if row[i][0] != ' '), markup.PLAIN)
                 after = next((looks[i] for i in range(column + 1, len(row)) if row[i][0] != ' '), markup.PLAIN)
-                look = markup.Style(before.italic and after.italic, False, before.underline and after.underline, False,
-                                    before.color if before.color == after.color else '', '',
-                                    before.background if before.background == after.background else '')
+                look = markup.Style(*((a if a == b else '') if isinstance(a, str) else a and b
+                                      for a, b in zip(before, after)))._replace(bold=False, strike=False, ruby='')
             if look != pen:
                 units.extend(_pen(look))
                 pen = look

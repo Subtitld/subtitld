@@ -8,6 +8,9 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
                                              not drawn
     <font background="#rrggbbaa">…</font>    a background behind the text,
                                              with an opacity if it says one
+    <font size="80%">…</font>                its size against the normal one
+    <font edge="uniform" edge-color="#000">  the edge drawn around it
+    <sup>…</sup>  <sub>…</sub>               raised and lowered text
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
     <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
@@ -15,6 +18,12 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
 Anything else that looks like a tag ("<3", "a < b", WebVTT's <v Name>) is
 text. Tags may nest and may be left open (they run to the end); a closing
 tag with nothing to close is dropped.
+
+Beyond its colour, a run may say its size against the one the subtitle is
+drawn at, whether it sits on the line or above or below it, and the edge
+drawn around its letters and the colour of that edge. CEA-708's pen says
+all of them; TTML has a font size and an outline. Nothing else does, so
+they are left out where they cannot go.
 
 A background is the box a run of text sits on, which broadcast captions
 draw behind every character and TTML writes as tts:backgroundColor. It is
@@ -45,7 +54,7 @@ import re
 from typing import NamedTuple
 
 _TOKEN = re.compile(
-    r'<\s*(?P<close>/?)\s*(?P<tag>ruby|rt|[ibus])\s*>'
+    r'<\s*(?P<close>/?)\s*(?P<tag>ruby|rt|sub|sup|[ibus])\s*>'
     r'|<\s*font\b(?P<font>[^>]*)>'
     r'|<\s*/\s*font\s*>'
     r'|\{(?P<override>\\[^{}]*)\}',
@@ -56,6 +65,10 @@ _FONT_BACKGROUND = re.compile(r'''(?:background(?:-color)?|bgcolor|back-color)\s
                               re.IGNORECASE)
 _HEX = re.compile(r'#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$')
 _HEX_ALPHA = re.compile(r'#?([0-9a-fA-F]{8}|[0-9a-fA-F]{4})$')
+_PERCENT = re.compile(r'^(\d+(?:\.\d+)?)\s*%$')
+_FONT_SIZE = re.compile(r'''(?<![-\w])size\s*=\s*["']?\s*([\d.]+\s*%?)''', re.IGNORECASE)
+_FONT_EDGE = re.compile(r'''(?<![-\w])edge\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
+_FONT_EDGE_COLOR = re.compile(r'''edge-colou?r\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
 # The colours HTML names that subtitle files use; others are kept, not drawn.
 _NAMED = {
     'white': 'ffffff', 'black': '000000', 'red': 'ff0000', 'lime': '00ff00', 'green': '008000',
@@ -67,6 +80,18 @@ _ASS_CODE = re.compile(r'\\(?:(?P<flag>[ibus])(?P<value>\d+)|1?c&H(?P<bgr>[0-9a-
 _ALIGN = re.compile(r'\\an?\d+')
 
 
+# What a run's size is written against: the size the subtitle is drawn at.
+SIZES = ('small', 'large')
+# The edges CEA-708 names and CSS can draw: a bevel, an outline, a shadow.
+EDGES = ('raised', 'depressed', 'uniform', 'left-shadow', 'right-shadow')
+# Raised and lowered text, as HTML and WebVTT write it.
+OFFSETS = {'sub': 'sub', 'sup': 'super'}
+_OFFSET_TAGS = {role: tag for tag, role in OFFSETS.items()}
+# What a run is drawn in beyond its colours: kept together for the places
+# that carry them all or none.
+_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color')
+
+
 class Style(NamedTuple):
     italic: bool = False
     bold: bool = False
@@ -75,6 +100,10 @@ class Style(NamedTuple):
     color: str = ''          # '#rrggbb', or '' for the default
     ruby: str = ''           # '' ordinary text, 'base' read, 'text' its reading
     background: str = ''     # '#rrggbb' or '#rrggbbaa' behind the text, '' for none
+    size: str = ''           # '80%' of the size it is drawn at, '' for all of it
+    offset: str = ''         # '' on the line, 'super' raised, 'sub' lowered
+    edge: str = ''           # one of EDGES drawn around the text, '' for none
+    edge_color: str = ''     # '#rrggbb' that edge is drawn in, '' for black
 
     def any(self):
         return self != PLAIN
@@ -106,6 +135,34 @@ def color_hex(value):
     if len(digits) == 3:
         digits = ''.join(c * 2 for c in digits)
     return '#' + digits
+
+
+class Font(NamedTuple):
+    """What one <font> tag says about a run: everything a Style holds that
+    the tag carries, so one tag opens and closes for all of it."""
+
+    color: str = ''
+    background: str = ''
+    size: str = ''
+    edge: str = ''
+    edge_color: str = ''
+
+    def any(self):
+        return self != Font()
+
+
+def size_percent(value):
+    """A size as a percentage of the one the subtitle is drawn at ('80%'),
+    or '' when it says none. A bare number is an HTML font size, which says
+    nothing about a proportion, and is kept as it is written, not drawn."""
+    found = _PERCENT.match(str(value or '').strip())
+    if not found or float(found.group(1)) <= 0 or float(found.group(1)) == 100:
+        return ''
+    return _number(float(found.group(1))) + '%'
+
+
+def _number(value):
+    return str(int(value)) if float(value).is_integer() else str(round(float(value), 2))
 
 
 def background_hex(value):
@@ -146,10 +203,17 @@ def _tokens(text):
             name = match.group('tag').lower()
             yield ('close', name) if match.group('close') else ('open', name, '')
         elif match.group('font') is not None:
-            color = _FONT_COLOR.search(match.group('font'))
-            background = _FONT_BACKGROUND.search(match.group('font'))
-            yield ('open', 'font', (color_hex(color.group(1)) if color else '',
-                                    background_hex(background.group(1)) if background else ''))
+            written = match.group('font')
+            found = {name: pattern.search(written) for name, pattern in
+                     (('color', _FONT_COLOR), ('background', _FONT_BACKGROUND), ('size', _FONT_SIZE),
+                      ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR))}
+            edge = (found['edge'].group(1).lower() if found['edge'] else '')
+            yield ('open', 'font', Font(
+                color=color_hex(found['color'].group(1)) if found['color'] else '',
+                background=background_hex(found['background'].group(1)) if found['background'] else '',
+                size=size_percent(found['size'].group(1)) if found['size'] else '',
+                edge=edge if edge in EDGES else '',
+                edge_color=color_hex(found['edge_color'].group(1)) if found['edge_color'] else ''))
         elif match.group('override') is not None:
             yield 'override', match.group('override')
         else:
@@ -187,13 +251,12 @@ class _Reader:
             name, value = token[1], token[2]
             self.open.append((name, value, self.style, written))
             if name == 'font':
-                color, background = value or ('', '')
-                if color:
-                    self.style = self.style._replace(color=color)
-                if background:
-                    self.style = self.style._replace(background=background)
+                said = {field: held for field, held in (value or Font())._asdict().items() if held}
+                self.style = self.style._replace(**said)
             elif name in _RUBY:
                 self.style = self.style._replace(ruby=_RUBY[name])
+            elif name in OFFSETS:
+                self.style = self.style._replace(offset=OFFSETS[name])
             else:
                 self.style = self.style._replace(**{_FLAGS[name]: True})
         elif kind == 'close':
@@ -203,7 +266,10 @@ class _Reader:
                     previous = self.open[index][2]
                     del self.open[index]
                     if name == 'font':
-                        self.style = self.style._replace(color=previous.color, background=previous.background)
+                        self.style = self.style._replace(**{field: getattr(previous, field)
+                                                            for field in Font()._fields})
+                    elif name in OFFSETS:
+                        self.style = self.style._replace(offset=previous.offset)
                     elif name in _RUBY:
                         # </rt> leaves the container, so what follows is its
                         # base again; </ruby> leaves the ruby altogether.
@@ -293,6 +359,8 @@ def to_html(text, colors=True):
     takes the default colour (for a shadow)."""
     def chunk_of(run, style):
         chunk = html.escape(run, quote=False).replace('\n', '<br/>')
+        if style.offset in _OFFSET_TAGS:
+            chunk = f'<{_OFFSET_TAGS[style.offset]}>{chunk}</{_OFFSET_TAGS[style.offset]}>'
         if style.strike:
             chunk = f'<s>{chunk}</s>'
         if style.underline:
@@ -302,7 +370,9 @@ def to_html(text, colors=True):
         if style.italic:
             chunk = f'<i>{chunk}</i>'
         looks = ([f'color:{style.color}'] if colors and style.color else []) + \
-               ([f'background-color:{css_color(style.background)}'] if style.background else [])
+               ([f'background-color:{css_color(style.background)}'] if style.background else []) + \
+               ([f'font-size:{style.size}'] if style.size else []) + \
+               ([f'text-shadow:{_shadow(style)}'] if colors and style.edge else [])
         if looks:
             chunk = f'<span style="{";".join(looks)}">{chunk}</span>'
         return chunk
@@ -316,6 +386,24 @@ def to_html(text, colors=True):
         reading = ''.join(chunk_of(run, style) for run, style in group[2])
         parts.append(f'<ruby>{base}<rt>{reading}</rt></ruby>' if base and reading else base + reading)
     return ''.join(parts)
+
+
+# How each edge is drawn: offsets in em, around the text for an outline and
+# a bevel, to one side for a shadow. CEA-708 names them; CSS draws them.
+_SHADOWS = {
+    'uniform': ((-0.06, 0), (0.06, 0), (0, -0.06), (0, 0.06)),
+    'raised': ((-0.06, -0.06),),
+    'depressed': ((0.06, 0.06),),
+    'left-shadow': ((-0.08, 0.08),),
+    'right-shadow': ((0.08, 0.08),),
+}
+
+
+def _shadow(style):
+    """A CSS text-shadow for a Style's edge, in the colour it asks for,
+    else black."""
+    color = style.edge_color or '#000000'
+    return ', '.join(f'{across}em {down}em 0 {color}' for across, down in _SHADOWS.get(style.edge, ()))
 
 
 def _ass_colour(color):
@@ -355,21 +443,28 @@ def to_ass(text):
     return ''.join(out)
 
 
-TAG_ORDER = ('font', 'i', 'b', 'u', 's')      # outermost first, when opened together
+TAG_ORDER = ('font', 'sup', 'sub', 'i', 'b', 'u', 's')      # outermost first, when opened together
 
 
 def tags_for(style):
     """The tags a run in `style` sits in: [(name, value)]. A font's value is
     (colour, background), so one tag carries both."""
-    wanted = [('font', (style.color, style.background))] if style.color or style.background else []
+    font = Font(style.color, style.background, style.size, style.edge, style.edge_color)
+    wanted = [('font', font)] if font.any() else []
+    if style.offset in _OFFSET_TAGS:
+        wanted.append((_OFFSET_TAGS[style.offset], True))
     return wanted + [(name, True) for name in ('i', 'b', 'u', 's') if getattr(style, _FLAGS[name])]
+
+
+_FONT_ATTRIBUTES = (('color', 'color'), ('background', 'background'), ('size', 'size'),
+                    ('edge', 'edge'), ('edge_color', 'edge-color'))
 
 
 def _open_tag(name, value):
     if name != 'font':
         return f'<{name}>'
-    color, background = value
-    attributes = (f' color="{color}"' if color else '') + (f' background="{background}"' if background else '')
+    attributes = ''.join(f' {written}="{getattr(value, field)}"' for field, written in _FONT_ATTRIBUTES
+                         if getattr(value, field))
     return f'<font{attributes}>'
 
 
@@ -616,6 +711,12 @@ def _md_span_attrs(style):
         attrs.append(f'color={style.color}')
     if style.background:
         attrs.append(f'background={style.background}')
+    if style.size:
+        attrs.append(f'size={style.size}')
+    if style.edge:
+        attrs.append(f'edge={style.edge}')
+    if style.edge_color:
+        attrs.append(f'edge-color={style.edge_color}')
     return ' '.join(attrs)
 
 
@@ -688,7 +789,10 @@ _MD_ATTR = re.compile(
     r'''\.underline\b'''
     r'''|(?:background(?:-color)?|bgcolor)\s*=\s*["']?(?P<back>[#\w]+)["']?'''
     r'''|(?<![-\w])color\s*=\s*["']?(?P<fore>[#\w]+)["']?'''
-    r'''|style\s*=\s*["'][^"']*?(?<![-\w])color\s*:\s*(?P<css>[#\w]+)[^"']*["']''')
+    r'''|style\s*=\s*["'][^"']*?(?<![-\w])color\s*:\s*(?P<css>[#\w]+)[^"']*["']'''
+    r'''|(?<![-\w])size\s*=\s*["']?(?P<size>[\d.]+\s*%)["']?'''
+    r'''|edge-colou?r\s*=\s*["']?(?P<edgecolor>[#\w]+)["']?'''
+    r'''|(?<![-\w])edge\s*=\s*["']?(?P<edge>[-\w]+)["']?''')
 
 
 def _md_span_style(attrs):
@@ -702,6 +806,17 @@ def _md_span_style(attrs):
             background = background_hex(match.group('back'))
             if background:
                 change['background'] = background
+        elif match.group('size'):
+            size = size_percent(match.group('size'))
+            if size:
+                change['size'] = size
+        elif match.group('edgecolor'):
+            edge_color = color_hex(match.group('edgecolor'))
+            if edge_color:
+                change['edge_color'] = edge_color
+        elif match.group('edge'):
+            if match.group('edge').lower() in EDGES:
+                change['edge'] = match.group('edge').lower()
         else:
             color = color_hex(match.group('fore') or match.group('css'))
             if color:

@@ -415,6 +415,26 @@ check('rgba() with its opacity, as TTML may write one',
       ['Plain <font background="#ff000080">half</font>'])
 
 
+print('a size and an edge')
+_drawn = [{'start': 1.0, 'end': 2.0,
+           'text': 'Plain <font size="80%" edge="uniform" edge-color="#ff0000">small, outlined</font>'}]
+_written = ttml.write(_drawn, 'en')
+check('written as TTML says them',
+      ('tts:fontSize="80%"' in _written, 'tts:textOutline="#ff0000 4%"' in _written), (True, True))
+check('read back, the outline as the edge TTML can draw',
+      [s['text'] for s in ttml.parse(_written)],
+      ['Plain <font size="80%" edge="uniform" edge-color="#ff0000">small, outlined</font>'])
+check('the outline every subtitle is drawn with is no run\'s own edge',
+      [s['text'] for s in ttml.parse(ttml.write([{'start': 1.0, 'end': 2.0, 'text': 'Plain'}], 'en'))],
+      ['Plain'])
+check('a size given across and down takes the one that is a proportion',
+      [s['text'] for s in ttml.parse(
+          '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>'
+          '<p begin="1s" end="2s">Plain <span tts:fontSize="100% 80%">small</span></p>'
+          '</div></body></tt>')],
+      ['Plain <font size="80%">small</font>'])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

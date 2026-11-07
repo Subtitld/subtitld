@@ -24,6 +24,10 @@ FLAGS = ('italic', 'bold', 'underline', 'strike')
 # format carries which of the two a run is; without it an edit would leave
 # the reading loose in the text it reads.
 _RUBY_ROLE = QTextFormat.UserProperty + 1
+# A size, an edge and the colour it is drawn in have no look of their own in
+# the editor either: it keeps them so an edit does not drop them.
+_PEN = {field: QTextFormat.UserProperty + 2 + index
+        for index, field in enumerate(('size', 'offset', 'edge', 'edge_color'))}
 
 
 def _char_format(style):
@@ -38,6 +42,13 @@ def _char_format(style):
         fmt.setForeground(QColor(style.color))
     if style.background:
         fmt.setBackground(QColor(style.background))
+    for field, held in _PEN.items():
+        if getattr(style, field):
+            fmt.setProperty(held, getattr(style, field))
+    if style.offset == 'super':
+        fmt.setVerticalAlignment(QTextCharFormat.AlignSuperScript)
+    elif style.offset == 'sub':
+        fmt.setVerticalAlignment(QTextCharFormat.AlignSubScript)
     if style.ruby:
         fmt.setProperty(_RUBY_ROLE, style.ruby)
         if style.ruby == 'text':
@@ -54,8 +65,10 @@ def _style(fmt):
         shade = fmt.background().color()
         background = shade.name() if shade.alpha() == 255 else shade.name(QColor.HexArgb)
     role = fmt.property(_RUBY_ROLE)
+    pen = {field: fmt.property(held) or '' for field, held in _PEN.items()}
     return markup.Style(fmt.fontItalic(), fmt.fontWeight() >= QFont.DemiBold, fmt.fontUnderline(),
-                        fmt.fontStrikeOut(), color, role if role in markup.RUBY_ROLES else '', background)
+                        fmt.fontStrikeOut(), color, role if role in markup.RUBY_ROLES else '', background,
+                        **pen)
 
 
 def set_text(textedit, text):
@@ -99,7 +112,10 @@ def runs(textedit, start=0, end=None):
             found[index] = (run, markup.Style(*(a and b for a, b in zip(before[:4], after[:4])),
                                               before.color if before.color == after.color else '',
                                               before.ruby if before.ruby == after.ruby else '',
-                                              before.background if before.background == after.background else ''))
+                                              before.background if before.background == after.background else '',
+                                              **{field: getattr(before, field)
+                                                 if getattr(before, field) == getattr(after, field) else ''
+                                                 for field in markup._PEN_FIELDS}))
     return found
 
 
