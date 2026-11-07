@@ -278,6 +278,7 @@ check('italics inside a ruby, and the shear with them',
 check('a file with no ruby is written exactly as before', ttml.write(segments, 'pt-br', agents=True), written)
 
 print('placed more finely than the nine places')
+import xml.etree.ElementTree as ET                                       # noqa: E402
 from subtitld.modules import position                                    # noqa: E402
 placed = [{'start': 1, 'end': 2, 'text': 'Plain'},
           {'start': 3, 'end': 4, 'text': '{\\an8}High', 'position': {'v': '5%'}},
@@ -300,6 +301,31 @@ check('a region where a subtitle would sit anyway says nothing', [s.get('positio
     '<p begin="1s" end="2s" region="r">Ordinary</p>',
     head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 80%" '
          'tts:displayAlign="after" tts:textAlign="center"/></layout>'))], [None])
+check('a region placed by tts:position, as CSS places a background',
+      [(s['text'], s.get('position')) for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" region="low">Lifted</p><p begin="3s" end="4s" region="high">Up</p>'
+          '<p begin="5s" end="6s" region="box">Ordinary</p>',
+          head='<layout>'
+               '<region xml:id="low" tts:extent="80% 20%" tts:position="center bottom 10%" '
+               'tts:displayAlign="after" tts:textAlign="center"/>'
+               '<region xml:id="high" tts:extent="80% 20%" tts:position="center top" '
+               'tts:displayAlign="before" tts:textAlign="center"/>'
+               '<region xml:id="box" tts:extent="80% 80%" tts:position="center" '
+               'tts:displayAlign="after" tts:textAlign="center"/>'
+               '</layout>'))],
+      [('Lifted', {'v': '8%'}), ('{\\an8}Up', {'v': '0%'}), ('Ordinary', None)])
+check('its percentages are of the room left over, its lengths themselves',
+      [ttml._position_origin(ttml._Frame(ET.fromstring('<tt xmlns="http://www.w3.org/ns/ttml" '
+                                                       'xmlns:tts="http://www.w3.org/ns/ttml#styling" '
+                                                       'tts:extent="1920px 1080px"/>')), value, (80.0, 20.0))
+       for value in ('center', 'left top', 'top left', '50% 80%', 'right 0%', '192px bottom', 'junk')],
+      [(10.0, 40.0), (0.0, 0.0), (0.0, 0.0), (10.0, 64.0), (20.0, 0.0), (10.0, 80.0), None])
+check('tts:position is believed over a tts:origin beside it, as TTML2 says',
+      [s.get('position') for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" region="r">Here</p>',
+          head='<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 20%" '
+               'tts:position="center bottom 10%" tts:displayAlign="after" tts:textAlign="center"/></layout>'))],
+      [{'v': '8%'}])
 check('TTML has no rotation, so a turned subtitle is written flat',
       'rotate' in ttml.write([{'start': 1, 'end': 2, 'text': 'Turned', 'position': {'rotate': {'z': 45}}}], 'en'), False)
 
@@ -382,10 +408,22 @@ for fmt in ('TTML', 'DFXP'):
                                                    panel.look_combo.combobox.itemText(1).endswith('(font, colour, box)')),
           (('As agents (ttm:agent)', 'voice'), False, True))
 panel.look_combo.combobox.setCurrentIndex(1)
-check('chosen', {key: panel.get_config()['options'].get(key) for key in ('speakers', 'look')}, {'speakers': 'voice', 'look': 'preview'})
+check('the profiles offered, TTML 1 first',
+      ([panel.profile_combo.combobox.itemData(i) for i in range(panel.profile_combo.combobox.count())],
+       panel.profile_combo.isHidden()),
+      (list(ttml.PROFILES), False))
+panel.profile_combo.combobox.setCurrentIndex(2)
+check('chosen', {key: panel.get_config()['options'].get(key) for key in ('speakers', 'look', 'profile')},
+      {'speakers': 'voice', 'look': 'preview', 'profile': 'imsc1.1'})
+check('and what the dialog chose is what the file declares',
+      ttml._IMSC11_TEXT in ttml.write([{'start': 1, 'end': 2, 'text': 'Hi'}], 'en',
+                                      profile=panel.get_config()['options']['profile']), True)
 panel.format_combo.setCurrentText('ASS')
 panel._refresh_options()
-check('ASS: its own words for the look', panel.look_combo.combobox.itemText(1).endswith('(font, colour, shadow, box)'), True)
+check('ASS: its own words for the look, and no profile to declare',
+      (panel.look_combo.combobox.itemText(1).endswith('(font, colour, shadow, box)'), panel.profile_combo.isHidden()),
+      (True, True))
+check('nor does ASS carry one', 'profile' in panel.get_config()['options'], False)
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

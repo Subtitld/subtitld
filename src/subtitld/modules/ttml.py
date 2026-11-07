@@ -28,7 +28,9 @@ Reading:
 - where the subtitle sits, from its region: the point tts:displayAlign
   and tts:textAlign put the text at in the region's tts:origin and
   tts:extent (in %, px or cells), or, without those, the two alone
-  (with textAlign's default, start, as the middle: see _keypad);
+  (with textAlign's default, start, as the middle: see _keypad). A region
+  may say where it is as tts:position instead, which IMSC 1.1 permits and
+  a document uses in place of tts:origin, never beside it;
 - <br/> breaks a line; other whitespace collapses to a space, unless
   xml:space="preserve";
 - the ttm:agent of a paragraph (or of a span in it, or of its div) is its
@@ -73,7 +75,7 @@ _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'shear', 'ruby')
+                 'position', 'shear', 'ruby')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -199,26 +201,28 @@ class _Frame:
             cells = ()
         self.cells = cells if len(cells) == 2 and all(cells) else (32.0, 15.0)
 
+    def length(self, value, axis):
+        """One length in % of the picture along `axis` (0 across, 1 down),
+        or None when it is not a length this can measure."""
+        length = _LENGTH.match((value or '').strip())
+        if not length:
+            return None
+        amount, unit = float(length.group(1)), length.group(2)
+        if unit == '%':
+            return amount
+        if unit == 'c':
+            return amount * 100 / self.cells[axis]
+        if self.pixels and self.pixels[axis]:
+            return amount * 100 / self.pixels[axis]
+        return None
+
     def percent(self, value):
         """(x, y) in % of the picture for a pair of lengths, or None."""
         parts = (value or '').split()
         if len(parts) != 2:
             return None
-        result = []
-        for axis, part in enumerate(parts):
-            length = _LENGTH.match(part)
-            if not length:
-                return None
-            amount, unit = float(length.group(1)), length.group(2)
-            if unit == '%':
-                result.append(amount)
-            elif unit == 'c':
-                result.append(amount * 100 / self.cells[axis])
-            elif self.pixels and self.pixels[axis]:
-                result.append(amount * 100 / self.pixels[axis])
-            else:
-                return None
-        return tuple(result)
+        result = [self.length(part, axis) for axis, part in enumerate(parts)]
+        return tuple(result) if all(part is not None for part in result) else None
 
 
 def _color(value):
@@ -368,6 +372,77 @@ def _box(keypad, horizontal, vertical):
     return (x, y), (max(1.0, width), max(1.0, height))
 
 
+# A tts:position names an edge and how far from it a region sits.
+_EDGES = {'left': (0, 'start'), 'right': (0, 'end'), 'top': (1, 'start'), 'bottom': (1, 'end')}
+
+
+def _position(value):
+    """{axis: (edge, offset)} for a tts:position, or None when it is not one.
+
+    TTML2 writes it as CSS writes a background's place: an edge keyword, a
+    length or percentage, or both, for each axis, in any order. An edge
+    takes a distance of its own only in the three- and four-part forms,
+    since "left 10%" is the two-part one, the left edge and a tenth down.
+    What one part leaves unsaid is centred.
+    """
+    tokens = [token.lower() for token in (value or '').split()]
+    if not 1 <= len(tokens) <= 4:
+        return None
+    parts, index = [], 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if token in _EDGES:
+            axis, edge = _EDGES[token]
+            offset = '0%'
+            if len(tokens) > 2 and index < len(tokens) and _LENGTH.match(tokens[index]):
+                offset, index = tokens[index], index + 1
+            parts.append((axis, edge, offset))
+        elif token == 'center':
+            parts.append((None, 'start', '50%'))
+        elif _LENGTH.match(token):
+            parts.append((None, 'start', token))
+        else:
+            return None
+    found = {axis: (edge, offset) for axis, edge, offset in parts if axis is not None}
+    for axis, edge, offset in parts:
+        if axis is not None:
+            continue
+        free = next((free for free in (0, 1) if free not in found), None)
+        if free is None:
+            return None
+        found[free] = (edge, offset)
+    for axis in (0, 1):
+        found.setdefault(axis, ('start', '50%'))
+    return found
+
+
+def _position_origin(frame, value, extent):
+    """(x, y) in % of the picture for a region placed by tts:position, given
+    its extent in %, or None.
+
+    A percentage is of the room left over, the picture less the region, so
+    "center" is the middle whatever the region measures and "bottom 10%"
+    leaves a tenth of that room below it. A length is itself.
+    """
+    found = _position(value)
+    if not found or not extent:
+        return None
+    origin = []
+    for axis, size in enumerate(extent):
+        edge, offset = found[axis]
+        room = 100.0 - size
+        length = _LENGTH.match(offset)
+        if length and length.group(2) == '%':
+            away = room * float(length.group(1)) / 100.0
+        else:
+            away = frame.length(offset, axis)
+            if away is None:
+                return None
+        origin.append(away if edge == 'start' else room - away)
+    return tuple(origin)
+
+
 def _margins(keypad, origin, extent):
     """(horizontal, vertical) in % for a region, None where it sits where a
     subtitle that says nothing would. The inverse of _box."""
@@ -470,6 +545,11 @@ def _document(text):
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
         region_extent = frame.percent(p_props.get('extent'))
+        if region_extent and p_props.get('position'):
+            # A region placed the other way: TTML2 ignores tts:origin where
+            # a tts:position is given, and IMSC asks a document for one of
+            # the two, never both.
+            region_origin = _position_origin(frame, p_props.get('position'), region_extent) or region_origin
         if region_origin and region_extent:
             across, down = _margins(keypad, region_origin, region_extent)
             if across is not None or down is not None:
