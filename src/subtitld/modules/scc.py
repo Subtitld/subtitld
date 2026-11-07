@@ -15,9 +15,9 @@ of 32 columns:
   ones, painted on screen, from their first characters to their last
   state; roll-up ones, line after line as in live captions, one subtitle a
   line, from its first character to the next line's;
-- italics, underline and colours (white, green, blue, cyan, red, yellow,
-  magenta) become formatting tags, and so does the background the text
-  sits on, in the same seven colours, opaque, half seen through or
+- italics, underline, colours (white, green, blue, cyan, red, yellow,
+  magenta) and a flash become formatting tags, and so does the background
+  the text sits on, in the same seven colours, opaque, half seen through or
   transparent; black is what text sits on anyway, so it says nothing of
   its own; where the caption sits on the screen,
   its rows and columns, one of the nine places, and the margins it sits by
@@ -92,8 +92,8 @@ _PAC_ROWS = {1: (0x11, 0x40), 2: (0x11, 0x60), 3: (0x12, 0x40), 4: (0x12, 0x60),
              7: (0x16, 0x40), 8: (0x16, 0x60), 9: (0x17, 0x40), 10: (0x17, 0x60), 11: (0x10, 0x40), 12: (0x13, 0x40),
              13: (0x13, 0x60), 14: (0x14, 0x40), 15: (0x14, 0x60)}
 _ROW_OF_PAC = {pac: row for row, pac in _PAC_ROWS.items()}
-_RCL, _BS, _DER, _RU2, _RU3, _RU4, _RDC, _TR, _RTD, _EDM, _CR, _ENM, _EOC = (
-    0x20, 0x21, 0x24, 0x25, 0x26, 0x27, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F)
+_RCL, _BS, _DER, _FON, _RU2, _RU3, _RU4, _RDC, _TR, _RTD, _EDM, _CR, _ENM, _EOC = (
+    0x20, 0x21, 0x24, 0x28, 0x25, 0x26, 0x27, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F)
 _OPENING = '([{¿¡“‘«'
 _CLOSING = ',.;:!?)]}’”»…'
 
@@ -360,8 +360,8 @@ class _Decoder:
                         self.displayed[target] = cells
         self.row = row
         underline = bool(attribute & 1)
-        # A PAC gives its row the look it names and no background: one is
-        # asked for by a code of its own, after it.
+        # A PAC gives its row the look it names, and neither a background nor
+        # a flash: each is asked for by a code of its own, after it.
         if attribute >= 0x10:
             self.column = ((attribute - 0x10) >> 1) * 4
             self.style = markup.Style(False, False, underline, False, '')
@@ -383,7 +383,7 @@ class _Decoder:
         self._put(frame, ' ', attribute=True)
         look, underline = (second - 0x20) >> 1, bool(second & 1)
         self.style = self.style._replace(italic=look == 7, bold=False, underline=underline, strike=False,
-                                         color='' if look == 7 else _COLORS[look])
+                                         color='' if look == 7 else _COLORS[look], flash=False)
 
     def _command(self, frame, second):
         if second == _RCL:
@@ -431,6 +431,10 @@ class _Decoder:
                     self.displayed[top - 1] = [None] * _COLUMNS
                 self.displayed[self.row] = [None] * _COLUMNS
                 self.column = 0
+        elif second == _FON:
+            # Flash On: what follows flashes, until a PAC or a mid-row code
+            # says what the row or the words after it look like.
+            self.style = self.style._replace(flash=True)
         elif second == _BS:
             self.column = max(self.column - 1, 0)
             self._memory()[self.row][min(self.column, _COLUMNS - 1)] = None
@@ -531,7 +535,8 @@ def _cells(char):
     return [('?', [('basic', 0x3F)])]
 
 
-_PLAIN = (False, False, 0, 0x2E)                   # (italic, underline, colour index, background code)
+# (italic, underline, colour index, background code, flashing)
+_PLAIN = (False, False, 0, 0x2E, False)
 _PALETTE = [(255, 255, 255), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 0), (255, 255, 0), (255, 0, 255)]
 
 
@@ -555,13 +560,13 @@ def _background_code(background):
 
 
 def _look(style):
-    """(italic, underline, colour index, background code) CEA-608 can show
-    for a Style: italics are white, a colour the nearest of its seven, and
-    the background one of its own."""
+    """(italic, underline, colour index, background code, flashing) CEA-608
+    can show for a Style: italics are white, a colour the nearest of its
+    seven, the background one of its own, and a flash its own code."""
     background = _background_code(style.background)
     if style.italic:
-        return True, style.underline, 0, background
-    return False, style.underline, _nearest(style.color) if style.color else 0, background
+        return True, style.underline, 0, background, style.flash
+    return (False, style.underline, _nearest(style.color) if style.color else 0, background, style.flash)
 
 
 def _wrap(cells):
@@ -617,7 +622,7 @@ def _punctuated(line):
 
 
 def _mid_row(look):
-    italic, underline, color, _background = look
+    italic, underline, color, _background, _flash = look
     return 0x11, (0x2E if italic else 0x20 + color * 2) + int(underline)
 
 
@@ -650,6 +655,10 @@ def _row(row, line, column):
             tokens.append(('c', 0x10, background))
         if front != _PLAIN[:3]:
             tokens.append(('c', *_mid_row(first_look)))
+    # A PAC and a mid-row code both turn a flash off, so it is asked for
+    # after them.
+    if first_look[4]:
+        tokens.append(('c', 0x14, _FON))
     current = first_look
     for shown, look, units in line:
         if shown == ' ':
@@ -657,12 +666,21 @@ def _row(row, line, column):
                 tokens.append(('b', 0x20))
             continue
         if look != current:
-            if tokens[-1] == ('b', 0x20):
-                tokens.pop()
+            changes = []
             if look[3] != current[3]:
-                tokens.append(('c', 0x10, look[3]))
-            if look[:3] != current[:3]:
-                tokens.append(('c', *_mid_row(look)))
+                changes.append(('c', 0x10, look[3]))
+            # CEA-608 has no code that only ends a flash: a mid-row code
+            # does, along with saying the colour and the italics.
+            cleared = look[:3] != current[:3] or (current[4] and not look[4])
+            if cleared:
+                changes.append(('c', *_mid_row(look)))
+            if look[4] and (cleared or not current[4]):
+                changes.append(('c', 0x14, _FON))
+            # Only a code that shows as a space takes the space before it:
+            # Flash On takes no column at all.
+            if tokens[-1] == ('b', 0x20) and any(_paints(change) for change in changes):
+                tokens.pop()
+            tokens.extend(changes)
             current = look
         tokens.extend(('b', unit[1]) if unit[0] == 'basic' else ('c', unit[1], unit[2]) for unit in units)
     return tokens

@@ -346,6 +346,20 @@ check('the default takes the tag that says nothing',
       next(unit for unit in cea708._load('Plain', 0) if unit[0] == 0x90)[2] & 0x07, 0)
 
 
+print('text that flashes')
+check('a pen says it in how opaque its own colour is',
+      [next(unit for unit in cea708._load(written, 0) if unit[0] == 0x91)[1] >> 6
+       for written in ('x', '<blink>x</blink>')], [0, 1])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <blink>flash</blink> then plain'
+    _read = cea708.decode(sorted(cea708.frames_for({1: [(_asked, 30, None)]}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: written into the pen and read back', markup.spans(_read[0]['text']), markup.spans(_asked))
+check('a caption that asks for none says nothing about it',
+      [subtitle['text'] for subtitle in cea708.decode(
+          sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)],
+      ['First line', 'Second line'])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

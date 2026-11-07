@@ -13,6 +13,8 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
     <font size="80%">…</font>                its size against the normal one
     <font edge="uniform" edge-color="#000">  the edge drawn around it
     <sup>…</sup>  <sub>…</sub>               raised and lowered text
+    <blink>…</blink>                         text that flashes, as broadcast
+                                             captions flash a word
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
     <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
@@ -63,7 +65,7 @@ import re
 from typing import NamedTuple
 
 _TOKEN = re.compile(
-    r'<\s*(?P<close>/?)\s*(?P<tag>ruby|rt|sub|sup|[ibus])\s*>'
+    r'<\s*(?P<close>/?)\s*(?P<tag>ruby|rt|blink|sub|sup|[ibus])\s*>'
     r'|<\s*font\b(?P<font>[^>]*)>'
     r'|<\s*/\s*font\s*>'
     r'|\{(?P<override>\\[^{}]*)\}',
@@ -97,6 +99,12 @@ SIZES = ('small', 'large')
 EDGES = ('raised', 'depressed', 'uniform', 'left-shadow', 'right-shadow')
 # Raised and lowered text, as HTML and WebVTT write it.
 OFFSETS = {'sub': 'sub', 'sup': 'super'}
+# Text that flashes. Both caption standards can ask for it and no other
+# format can say it, so it is written as the tag HTML once had for it.
+FLASH_TAG = 'blink'
+# The class the preview's page draws it by (subtitle_styles/host.js), since
+# a flash is an animation and a tag's own style cannot hold one.
+FLASH_CLASS = 'subtitld-flash'
 _OFFSET_TAGS = {role: tag for tag, role in OFFSETS.items()}
 # What a run is drawn in beyond its colours: kept together for the places
 # that carry them all or none.
@@ -116,6 +124,7 @@ class Style(NamedTuple):
     edge: str = ''           # one of EDGES drawn around the text, '' for none
     edge_color: str = ''     # '#rrggbb' that edge is drawn in, '' for black
     face: str = ''           # the typeface it asks for, kept but not drawn
+    flash: bool = False      # text that flashes, as a caption flashes a word
 
     def any(self):
         return self != PLAIN
@@ -278,6 +287,8 @@ class _Reader:
                 self.style = self.style._replace(ruby=_RUBY[name])
             elif name in OFFSETS:
                 self.style = self.style._replace(offset=OFFSETS[name])
+            elif name == FLASH_TAG:
+                self.style = self.style._replace(flash=True)
             else:
                 self.style = self.style._replace(**{_FLAGS[name]: True})
         elif kind == 'close':
@@ -291,6 +302,8 @@ class _Reader:
                                                             for field in Font()._fields})
                     elif name in OFFSETS:
                         self.style = self.style._replace(offset=previous.offset)
+                    elif name == FLASH_TAG:
+                        self.style = self.style._replace(flash=previous.flash)
                     elif name in _RUBY:
                         # </rt> leaves the container, so what follows is its
                         # base again; </ruby> leaves the ruby altogether.
@@ -382,6 +395,10 @@ def to_html(text, colors=True):
         chunk = html.escape(run, quote=False).replace('\n', '<br/>')
         if style.offset in _OFFSET_TAGS:
             chunk = f'<{_OFFSET_TAGS[style.offset]}>{chunk}</{_OFFSET_TAGS[style.offset]}>'
+        if style.flash:
+            # An animation cannot go in a style attribute: the page it is
+            # drawn on gives the class its keyframes.
+            chunk = f'<span class="{FLASH_CLASS}">{chunk}</span>'
         if style.strike:
             chunk = f'<s>{chunk}</s>'
         if style.underline:
@@ -464,7 +481,8 @@ def to_ass(text):
     return ''.join(out)
 
 
-TAG_ORDER = ('font', 'sup', 'sub', 'i', 'b', 'u', 's')      # outermost first, when opened together
+# Outermost first, when opened together.
+TAG_ORDER = ('font', FLASH_TAG, 'sup', 'sub', 'i', 'b', 'u', 's')
 
 
 def tags_for(style):
@@ -472,6 +490,8 @@ def tags_for(style):
     (colour, background), so one tag carries both."""
     font = Font(style.color, style.background, style.size, style.edge, style.edge_color, style.face)
     wanted = [('font', font)] if font.any() else []
+    if style.flash:
+        wanted.append((FLASH_TAG, True))
     if style.offset in _OFFSET_TAGS:
         wanted.append((_OFFSET_TAGS[style.offset], True))
     return wanted + [(name, True) for name in ('i', 'b', 'u', 's') if getattr(style, _FLAGS[name])]
@@ -637,6 +657,7 @@ def rebalance(left, right):
 #
 #     *italic*  **bold**  ***both***  ~~strikeout~~ (GitHub's)
 #     [underlined]{.underline}  [coloured]{color=#ff0000}   (Pandoc's spans)
+#     [flashing]{.flash}
 #     [on a box]{background=#000000ff}
 #
 # read as CommonMark reads emphasis (a delimiter opens before a word and
@@ -728,6 +749,8 @@ def _md_span_attrs(style):
     attrs = []
     if style.underline:
         attrs.append('.underline')
+    if style.flash:
+        attrs.append('.flash')
     if style.color:
         attrs.append(f'color={style.color}')
     if style.background:
@@ -809,7 +832,7 @@ def _md_bracket_end(source, start):
 
 
 _MD_ATTR = re.compile(
-    r'''\.underline\b'''
+    r'''\.underline\b|(?P<flash>\.flash)\b'''
     r'''|(?:background(?:-color)?|bgcolor)\s*=\s*["']?(?P<back>[#\w]+)["']?'''
     r'''|(?<![-\w])color\s*=\s*["']?(?P<fore>[#\w]+)["']?'''
     r'''|style\s*=\s*["'][^"']*?(?<![-\w])color\s*:\s*(?P<css>[#\w]+)[^"']*["']'''
@@ -826,6 +849,8 @@ def _md_span_style(attrs):
     for match in _MD_ATTR.finditer(attrs):
         if match.group(0).startswith('.underline'):
             change['underline'] = True
+        elif match.group('flash'):
+            change['flash'] = True
         elif match.group('back'):
             background = background_hex(match.group('back'))
             if background:

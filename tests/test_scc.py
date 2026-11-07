@@ -50,6 +50,7 @@ def cues(text):
     return [(s['start'], s['end'], s['text']) for s in scc.parse(text)]
 
 
+_FON_ = scc._FON
 RCL, ENM, EOC, EDM = code(0x14, 0x20), code(0x14, 0x2E), code(0x14, 0x2F), code(0x14, 0x2C)
 RU2, CR, RDC, BS, DER = code(0x14, 0x25), code(0x14, 0x2D), code(0x14, 0x29), code(0x14, 0x21), code(0x14, 0x24)
 
@@ -342,6 +343,25 @@ check('a background on one caption is not on the next',
           [{'start': 1.0, 'end': 3.0, 'text': '<font background="#ffffff">On white</font>'},
            {'start': 4.0, 'end': 6.0, 'text': 'No box at all'}]))],
       ['<font background="#ffffff">On white</font>', 'No box at all'])
+
+
+print('text that flashes')
+check('read off a Flash On code', _shown(code(0x14, _FON_), chars('Flashing')), '<blink>Flashing</blink>')
+check('a mid-row code ends it, since CEA-608 has no code that only does',
+      _shown(code(0x14, _FON_), chars('flash '), code(0x11, 0x26), chars('and not')),
+      '<blink>flash</blink> <font color="#00ffff">and not</font>')
+check('a PAC ends it too, so the next row does not flash',
+      [markup.split_lead(subtitle['text'])[1] for subtitle in scc.parse(doc(
+          ('00:00:00;00', ' '.join((RCL, ENM, pac(14, 0), code(0x14, _FON_), chars('flashing'),
+                                    pac(15, 0), chars('not'), EOC))),
+          ('00:00:02;00', EDM)))],
+      ['<blink>flashing</blink>\nnot'])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <blink>flash</blink> then plain'
+    check(f'{_mode}: written and read back, the space before it kept',
+          _written_back(_asked, _mode), markup.spans(_asked))
+check('a flash takes no column of its own, unlike the codes that show as a space',
+      _written_back('<blink>Flashing</blink>'), markup.spans('<blink>Flashing</blink>'))
 
 
 print()

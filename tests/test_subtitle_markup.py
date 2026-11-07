@@ -289,6 +289,21 @@ check('the Markdown panel keeps it too', (_md, markup.from_markdown(_md)),
       ('[x]{face="Arial Black"}', '<font face="Arial Black">x</font>'))
 
 
+print('text that flashes')
+check('read off a <blink>, and written back as one',
+      ([(run, style.flash) for run, style in markup.spans('Plain <blink>flash</blink> after')],
+       markup.from_spans(markup.spans('Plain <blink>flash</blink> after'))),
+      ([('Plain ', False), ('flash', True), (' after', False)], 'Plain <blink>flash</blink> after'))
+check('drawn by the class the page gives the keyframes to',
+      markup.to_html('<blink>x</blink>'), f'<span class="{markup.FLASH_CLASS}">x</span>')
+check('what it reads is the text alone', markup.plain('<blink>x</blink>'), 'x')
+check('ASS cannot say it: left out, as a reading is',
+      markup.to_ass('<blink>Flashing</blink>'), 'Flashing')
+_md = markup.to_markdown('Plain <blink>flash</blink>')
+check('the Markdown panel writes it as a span attribute, as it does underline',
+      (_md, markup.from_markdown(_md)), ('Plain [flash]{.flash}', 'Plain <blink>flash</blink>'))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

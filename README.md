@@ -124,7 +124,7 @@ Some models are for non-commercial use only; each add-on's page says which.
 | | |
 |---|---|
 | **Open and save** | SubRip (`.srt`) · WebVTT (`.vtt`) · SubStation Alpha (`.ass`, `.ssa`) · TTML (`.ttml`) · DFXP (`.dfxp`) · iTunes Timed Text (`.itt`) · SAMI (`.smi`, `.sami`) · EBU STL (`.stl`) · Scenarist (`.scc`) · MacCaption (`.mcc`) · MicroDVD (`.sub`) · SBV (`.sbv`) · YouTube timed text (`.srv3`, `.ytt`) · Bilibili (`.bcc`) · JSON · Universal Subtitle Format (`.usf`) |
-| **Closed captions** | CEA-608 and CEA-708 read out of a video's own frames, a caption track of its own, or an MXF's ancillary data; written as pop-on, roll-up or paint-on captions in any channel, where each subtitle is placed, on the background it asks for and with the size, raised or lowered text and edge CEA-708's pen can draw, and as a CEA-708 service for a second language |
+| **Closed captions** | CEA-608 and CEA-708 read out of a video's own frames, a caption track of its own, or an MXF's ancillary data; written as pop-on, roll-up or paint-on captions in any channel, where each subtitle is placed, on the background it asks for and with the size, raised or lowered text, edge and flash the two standards can ask for, and as a CEA-708 service for a second language |
 | **Projects** | `.usfx`: the subtitles bundled with the speakers' faces and dubs, and, if you choose, the waveform and the video |
 | **Transcripts** | Import from `.txt`, `.docx` and `.srt` |
 | **Video** | MP4, MKV, MOV, WebM, MPEG, Ogg and M4V, through FFmpeg; written out with its captions inside it as QuickTime (a caption track) or MXF (ancillary data, as Premiere and Avid write it) |

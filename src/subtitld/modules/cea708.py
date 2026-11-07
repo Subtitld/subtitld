@@ -9,8 +9,8 @@ a stream of packets that holds up to 63 services, each its own captions
 a run of commands and characters: define a window (where it sits, its
 anchor, its rows and columns), set the pen (italics, underline, colours),
 write text (its size, where it sits against the line, the edge around it,
-its italics, underline and colours), then show, hide, clear or delete
-windows.
+its italics, underline, colours, and whether it flashes), then show, hide,
+clear or delete windows.
 
 Decoding follows a decoder's windows:
 
@@ -70,6 +70,11 @@ _LEFT, _RIGHT, _CENTER = 0, 1, 2
 _SIDE = {_LEFT: 0, _CENTER: 1, _RIGHT: 2}          # justification: the anchor column it matches
 
 
+def _flashing(value):
+    """Whether a pen colour's opacity says the text flashes."""
+    return (value >> 6) & 3 == _FLASH
+
+
 def _color(value):
     """'#rrggbb' for a 708 colour (two bits a component), '' for white."""
     rgb = (_LEVELS[(value >> 4) & 3], _LEVELS[(value >> 2) & 3], _LEVELS[value & 3])
@@ -79,6 +84,9 @@ def _color(value):
 # How opaque a colour is, by the two bits above it: solid, flashing,
 # half-way, and not at all. A flashing background is drawn as it is solid.
 _OPACITY = (255, 255, 0x80, 0x00)
+# A pen's own colour says the text flashes the same way; a background that
+# flashes is drawn as a solid one, since only the text can be asked to.
+_FLASH = 1
 # The three sizes a pen has, as a proportion of the one a subtitle is drawn
 # at; standard says nothing of its own.
 _PEN_SIZES = {0: '80%', 1: '', 2: '120%'}
@@ -441,6 +449,7 @@ class _Service:
             window = self._window()
             if window is not None:
                 window.style = _settled(window.style._replace(color=_color(parameters[0] & 0x3F),
+                                                              flash=_flashing(parameters[0]),
                                                               background=_background(parameters[1]),
                                                               edge_color=_edge_color(parameters[2] & 0x3F)))
         elif code == 0x92:                                   # SetPenLocation
@@ -644,10 +653,11 @@ def _pen(style):
     # face stays in the text for the formats that can carry any of them.
     face = _FACE_CODES.get(style.face.strip().lower(), 0)
     edge = _EDGE_CODES.get(style.edge, 0) << 3
+    # Text that flashes says so in how opaque its own colour is.
     return [[0x90, attributes,
              edge | face | (0x80 if style.italic else 0) | (0x40 if style.underline else 0)],
-            [0x91, _two_bits(style.color), _pen_background(style.background),
-             _two_bits(style.edge_color, (0, 0, 0))]]
+            [0x91, (1 << 6 if style.flash else 0) | _two_bits(style.color),
+             _pen_background(style.background), _two_bits(style.edge_color, (0, 0, 0))]]
 
 
 def _anchor(keypad, place):

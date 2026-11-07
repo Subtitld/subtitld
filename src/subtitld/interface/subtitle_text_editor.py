@@ -28,6 +28,9 @@ _RUBY_ROLE = QTextFormat.UserProperty + 1
 # the editor either: it keeps them so an edit does not drop them.
 _PEN = {field: QTextFormat.UserProperty + 2 + index
         for index, field in enumerate(('size', 'offset', 'edge', 'edge_color', 'face'))}
+# A text editor has no way to show text flashing, so it is kept as a
+# property and left to the preview to draw.
+_FLASH = QTextFormat.UserProperty + 8
 
 
 def _char_format(style):
@@ -49,6 +52,8 @@ def _char_format(style):
         fmt.setVerticalAlignment(QTextCharFormat.AlignSuperScript)
     elif style.offset == 'sub':
         fmt.setVerticalAlignment(QTextCharFormat.AlignSubScript)
+    if style.flash:
+        fmt.setProperty(_FLASH, True)
     if style.ruby:
         fmt.setProperty(_RUBY_ROLE, style.ruby)
         if style.ruby == 'text':
@@ -68,7 +73,7 @@ def _style(fmt):
     pen = {field: fmt.property(held) or '' for field, held in _PEN.items()}
     return markup.Style(fmt.fontItalic(), fmt.fontWeight() >= QFont.DemiBold, fmt.fontUnderline(),
                         fmt.fontStrikeOut(), color, role if role in markup.RUBY_ROLES else '', background,
-                        **pen)
+                        flash=bool(fmt.property(_FLASH)), **pen)
 
 
 def set_text(textedit, text):
@@ -113,6 +118,7 @@ def runs(textedit, start=0, end=None):
                                               before.color if before.color == after.color else '',
                                               before.ruby if before.ruby == after.ruby else '',
                                               before.background if before.background == after.background else '',
+                                              flash=before.flash and after.flash,
                                               **{field: getattr(before, field)
                                                  if getattr(before, field) == getattr(after, field) else ''
                                                  for field in markup._PEN_FIELDS}))
