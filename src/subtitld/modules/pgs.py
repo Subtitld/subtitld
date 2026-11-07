@@ -113,14 +113,18 @@ def parse(data):
                 if i + 8 > len(payload):
                     break
                 object_id = payload[i] << 8 | payload[i + 1]
-                cropped = payload[i + 3] & 0x80          # 0x40 is "forced"
+                cropped = payload[i + 3] & 0x80
+                # Forced: shown even where a viewer asked for no subtitles,
+                # for the sign or the line of another language a film
+                # translates on screen.
+                forced = bool(payload[i + 3] & 0x40)
                 x, y = payload[i + 4] << 8 | payload[i + 5], payload[i + 6] << 8 | payload[i + 7]
                 crop = None
                 i += 8
                 if cropped and i + 8 <= len(payload):
                     crop = tuple(payload[i + k] << 8 | payload[i + k + 1] for k in (0, 2, 4, 6))
                     i += 8
-                placed.append((object_id, x, y, crop))
+                placed.append((object_id, x, y, crop, forced))
             pending = (pts, payload[9], placed)
         elif kind == PDS and len(payload) >= 2:
             palette = palettes.setdefault(payload[0], {})
@@ -152,7 +156,8 @@ def parse(data):
 
 def _compose(placed, objects, palette, screen, when):
     drawn = []
-    for object_id, x, y, crop in placed:
+    forced = any(item[4] for item in placed)
+    for object_id, x, y, crop, _forced in placed:
         if object_id not in objects:
             continue
         width, height, data = objects[object_id]
@@ -180,7 +185,7 @@ def _compose(placed, objects, palette, screen, when):
             start = (y - top + row) * width + (x - left)
             canvas[start:start + w] = indices[row * w:(row + 1) * w]
     colours = [palette.get(v, (0, 0, 0, 0)) for v in range(256)]
-    picture = Picture(when, None, left, top, width, height, bytes(canvas), colours)
+    picture = Picture(when, None, left, top, width, height, bytes(canvas), colours, forced)
     picture.screen_width, picture.screen_height = screen
     return picture
 

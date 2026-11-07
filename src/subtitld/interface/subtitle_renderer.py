@@ -42,7 +42,7 @@ from collections import OrderedDict
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTimer, Signal, qVersion
 from PySide6.QtGui import QImage
 
-from subtitld.modules import markup, position, session, subtitle_styles
+from subtitld.modules import look as subtitld_look, markup, position, session, subtitle_styles
 
 HOST_SCRIPT = session.PATH_SUBTITLD / 'subtitle_styles' / 'host.js'
 DISK_CACHE = session.PATH_SUBTITLD_USER_CACHE / 'subtitle_layers.sqlite'
@@ -352,10 +352,19 @@ class SubtitleRenderer(QObject):
         placed = position.of(segment)
         place = {'h': position.as_percent(placed.h), 'v': position.as_percent(placed.v),
                  'rotate': list(placed.rotate)} if placed.any() else None
-        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None, place)
+        # Which way the writing runs: a subtitle read from a file that says
+        # so (TTML's tts:direction), else the page's own.
+        direction = segment.get('direction') if segment.get('direction') in ('ltr', 'rtl') else None
+        # What the file it came from says it should look like, as CSS over
+        # the style's own rules (modules.look). What the file is silent
+        # about the style still draws.
+        styling = subtitld_look.css(subtitld_look.of(segment)) or None
+        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None,
+                      place, direction, styling)
         page = {'html': markup.to_html(text) if text.strip() else None, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
-                'offset': offset, 'duration': duration, 'pad': PAD, 'place': place}
+                'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': direction,
+                'look': styling}
         return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
 
     def layers(self, segments, at):
