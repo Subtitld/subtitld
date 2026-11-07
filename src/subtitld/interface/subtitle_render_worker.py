@@ -85,6 +85,18 @@ def bundled_font_faces(folder):
     return '\n'.join(rules)
 
 
+def nothing_drawn(data, html):
+    """Whether a capture has nothing of a cue that was to have text in it:
+    Chromium has a cue laid out before it can draw it (a font of the style's
+    still loading draws no glyph at all), and the strip under the stage draws
+    meanwhile, so nothing but the pixels says a capture is early. A cue with
+    no text of its own draws nothing by rights.
+
+    `data` is premultiplied ARGB32, where a pixel drawn over nothing is four
+    zero bytes whichever way round they go."""
+    return bool(data) and bool(html) and not max(data)
+
+
 def _read_stamp(image, height):
     number = 0
     for k in range(16):
@@ -240,20 +252,26 @@ def main():
             if answer.get('id') != job['id'] & 0xffff:
                 return                     # an answer to a job before (one dropped by a reload)
             image = self.view.grab().toImage()
-            if (answer.get('view') != [width, height + STRIP] or _read_stamp(image, height) != job['id'] & 0xffff) \
-                    and self.tries < 5:
+            rect = answer.get('rect')
+            crop = data = None
+            if rect is not None:
+                x, y, w, h = rect
+                crop = image.copy(QRect(x, y, w, h)).convertToFormat(QImage.Format_ARGB32_Premultiplied)
+                data = bytes(crop.constBits())[:crop.width() * crop.height() * 4]
+            # The capture has to be this job's frame, at the view's size,
+            # and a cue with text has to be in it. A style that draws
+            # nothing visible is taken at its word in the end, rather than
+            # rendered over and over.
+            if (answer.get('view') != [width, height + STRIP] or _read_stamp(image, height) != job['id'] & 0xffff
+                    or nothing_drawn(data, job['page'].get('html'))) and self.tries < 5:
                 # Captured before Chromium drew the job, or at another size: again.
                 self.tries += 1
                 self.run()
                 return
             self.job = None
-            rect = answer.get('rect')
             if rect is None:
                 send({'id': job['id'], 'rect': None})
             else:
-                x, y, w, h = rect
-                crop = image.copy(QRect(x, y, w, h)).convertToFormat(QImage.Format_ARGB32_Premultiplied)
-                data = bytes(crop.constBits())[:crop.width() * crop.height() * 4]
                 send({'id': job['id'], 'rect': rect, 'w': crop.width(), 'h': crop.height(), 'bytes': len(data)},
                      data)
             self.worker.schedule()
