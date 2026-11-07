@@ -235,6 +235,40 @@ check('six fields, hundredths, "~" between lines', cues(SSTS, 'ssts'),
       [(55.0, 62.6, 'O PADRINHO II\nsegunda')])
 check('the header row is not a subtitle', len(legacy.parse(SSTS, 'ssts')), 1)
 
+print('DKS: whole seconds, "[br]", a bare timestamp to close')
+DKS = ('[00:00:07]THERE IS A PLACE ON EARTH WHERE IT[br]IS STILL THE MORNING OF LIFE...\n'
+       '[00:00:12]\n[00:00:13]AND THE GREAT HERDS RUN FREE.[br]SO WHAT?!\n[00:00:15]\n')
+check('the two cues of GStreamer\'s own fixture', [(c[0], c[1]) for c in cues(DKS, 'dks')],
+      [(7.0, 12.0), (13.0, 15.0)])
+check('[br] breaks the line', cues(DKS, 'dks')[0][2].split('\n')[1], 'IS STILL THE MORNING OF LIFE...')
+check('a file written back to back keeps every cue',
+      [(c[0], c[1]) for c in cues('[00:00:01]one\n[00:00:03]two\n[00:00:05]three\n', 'dks')],
+      [(1.0, 3.0), (3.0, 5.0), (5.0, 8.0)])
+
+print('Power DivX: the hour is written one digit as often as two')
+check('both forms read', cues('{00:00:01}{00:00:03}- Hall\u00e5!\n'
+                             '{0:01:37}{0:01:40}Drama Club|second line\n', 'powerdivx'),
+      [(1.0, 3.0, '- Hall\u00e5!'), (97.0, 100.0, 'Drama Club\nsecond line')])
+
+print('DVD Subtitle System: frames, a space between, "//" between lines')
+check('at 25 fps', cues('00:03:15:22 00:03:23:10 This is line one.//This is line two.\n', 'dvdss'),
+      [(195.88, 203.4, 'This is line one.\nThis is line two.')])
+
+print('QTtext: the fraction counts units of {timeScale}, not decimals')
+check('at a scale of 100, ".30" is three tenths',
+      cues('{QTtext} {timeScale:100} {timeStamps:absolute}\n[00:00:09.30]\nFirst\n[00:00:12.00]\n', 'qttext'),
+      [(9.3, 12.0, 'First')])
+check('at a scale of 30, ".15" is half a second',
+      cues('{QTtext} {timescale: 30}\n[00:00:05.15]\nFirst\n[00:00:07.00]\n', 'qttext'),
+      [(5.5, 7.0, 'First')])
+check('with no scale named, the fraction is milliseconds',
+      cues('{QTtext}\n[00:00:01.500]\nFirst\n[00:00:03.000]\n', 'qttext'),
+      [(1.5, 3.0, 'First')])
+check('{timeStamps:relative} adds each to the last',
+      [c[0] for c in cues('{QTtext} {timeScale:1000} {timeStamps:relative}\n'
+                          '[00:00:01.000]\nFirst\n[00:00:02.000]\nSecond\n[00:00:01.000]\n', 'qttext')],
+      [1.0, 3.0])
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]

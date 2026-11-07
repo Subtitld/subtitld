@@ -86,6 +86,10 @@ EXTENSIONS = {
     'sasami': 's2k',
     'xombie': 'xss',
     'macsub': 'scr',
+    'dks': 'dks',
+    'powerdivx': 'psb',
+    'dvdss': 'txt',
+    'qttext': 'txt',
     'sst': 'sst',
     'ssts': 'ssts',
 }
@@ -93,7 +97,8 @@ EXTENSIONS = {
 # The ones Subtitld writes; RealText is read only.
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
             'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
-            'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts')
+            'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts',
+            'dks', 'powerdivx', 'dvdss', 'qttext')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -108,7 +113,8 @@ SESSION_FORMATS = {
     'VIPLAY': 'viplay', 'SBT': 'sbt', 'CAPTIONS32': 'captions32',
     'SUBSONIC': 'subsonic', 'ORESME': 'oresme', 'JACOSUB': 'jacosub',
     'SASAMI': 'sasami', 'XOMBIE': 'xombie', 'MACSUB': 'macsub',
-    'SST': 'sst', 'SSTS': 'ssts',
+    'SST': 'sst', 'SSTS': 'ssts', 'DKS': 'dks', 'POWERDIVX': 'powerdivx',
+    'DVDSS': 'dvdss', 'QTTEXT': 'qttext',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -156,6 +162,13 @@ _RTF_DESTINATION = re.compile(r'\{\\(?:\*|fonttbl|colortbl|stylesheet|info|pict|
 _RTF_WORD = re.compile(r'\\([a-zA-Z]+)(-?\d+)? ?')
 _RTF_HEX = re.compile(r"\\'([0-9a-fA-F]{2})")
 _RTF_ESCAPE = re.compile(r'\\([\\{}])')
+_DKS = re.compile(r'^\s*\[\s*(\d+)\s*:\s*(\d+)\s*:\s*(\d+)\s*\](.*)$')
+_PSB = re.compile(r'^\s*\{\s*(\d+)\s*:\s*(\d+)\s*:\s*(\d+)\s*\}\s*'
+                  r'\{\s*(\d+)\s*:\s*(\d+)\s*:\s*(\d+)\s*\}\s*(.*)$')
+_DVDSS = re.compile(r'^\s*(\d{2}):(\d{2}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2}):(\d{2}):(\d{2})\s+(.*)$')
+_QT_MARK = re.compile(r'\{\s*qttext\s*\}', re.I)
+_QT_TIME = re.compile(r'^\s*\[(\d{1,3}):(\d{1,2}):(\d{1,2})(?:\.(\d+))?\]\s*(.*)$')
+_QT_DESC = re.compile(r'\{\s*([A-Za-z\-]+)\s*(?::\s*([^}]*))?\}')
 _CAPTION_BYTES = re.compile(r'^\d{2}\s')
 _MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
@@ -555,6 +568,194 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
                      f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
     lines.append('</window>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# ------------------------------------------------------------------ DKS
+
+
+def _parse_dks(text, fps=DEFAULT_FPS):
+    """"[00:00:07]text" begins a subtitle and "[00:00:12]" alone ends it.
+
+    Whole seconds, "[br]" between lines. A timestamp carrying text also
+    closes the one before, so a file written back to back with no closing
+    lines reads right: pairing them strictly would lose every second one.
+    """
+    segments = []
+    for line in text.split('\n'):
+        match = _DKS.match(line)
+        if not match:
+            continue
+        seconds = _clock_seconds(*match.groups()[0:3])
+        if segments and segments[-1]['end'] is None:
+            segments[-1]['end'] = seconds
+        body = _lines_of(match.group(4))
+        if body:
+            segments.append({'start': seconds, 'end': None, 'text': body})
+    return _ends_at_next(_ordered([s for s in segments if s['text']]))
+
+
+def _write_dks(segments, fps=DEFAULT_FPS):
+    def mark(seconds):
+        total = max(0, int(float(seconds)))
+        hours, rest = divmod(total, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'[{hours:02d}:{minutes:02d}:{secs:02d}]'
+
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment, separator='[br]')
+        if not body:
+            continue
+        lines.append(f'{mark(segment.get("start", 0))}{body}')
+        lines.append(mark(segment.get('end', 0)))
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# ------------------------------------------------------------ Power DivX
+
+
+def _parse_powerdivx(text, fps=DEFAULT_FPS):
+    """"{00:00:01}{00:00:03}text", whole seconds, "|" between lines. The
+    hour is written with one digit as often as two, so neither is required."""
+    segments = []
+    for line in text.split('\n'):
+        match = _PSB.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(7))
+        if not body:
+            continue
+        start = _clock_seconds(*match.groups()[0:3])
+        end = _clock_seconds(*match.groups()[3:6])
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _write_powerdivx(segments, fps=DEFAULT_FPS):
+    def mark(seconds):
+        total = max(0, int(float(seconds)))
+        hours, rest = divmod(total, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'{{{hours:02d}:{minutes:02d}:{secs:02d}}}'
+
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment)
+        if not body:
+            continue
+        lines.append(f'{mark(segment.get("start", 0))}{mark(segment.get("end", 0))}{body}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# ------------------------------------------------- DVD Subtitle System
+
+
+def _parse_dvdss(text, fps=DEFAULT_FPS):
+    """Two timecodes with frames, a space between them, "//" between lines."""
+    rate = float(fps or DEFAULT_FPS)
+    segments = []
+    for line in text.split('\n'):
+        match = _DVDSS.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(9).replace('//', '\n'))
+        if not body:
+            continue
+        start = _clock_seconds(*match.groups()[0:4], frames=True, fps=rate)
+        end = _clock_seconds(*match.groups()[4:8], frames=True, fps=rate)
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _write_dvdss(segments, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+
+    def mark(seconds):
+        total = max(0.0, float(seconds))
+        whole = int(total)
+        frames = min(int(round((total - whole) * rate)), int(round(rate)) - 1)
+        hours, rest = divmod(whole, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}'
+
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment, separator='//')
+        if not body:
+            continue
+        lines.append(f'{mark(segment.get("start", 0))} {mark(segment.get("end", 0))} {body}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# ---------------------------------------------------------------- QTtext
+
+
+def _parse_qttext(text, fps=DEFAULT_FPS):
+    """QuickTime's text track, as its descriptors describe it.
+
+    The fraction of a timestamp is NOT a decimal: it counts units of the
+    track's own {timeScale}, 1000 when the file does not say. And with
+    {timeStamps:relative} each one is added to the time reached so far
+    rather than read from the start of the movie. Read either wrong and
+    every subtitle after the first lands somewhere else.
+    """
+    scale, relative = 1000.0, False
+    segments = []
+    pending = None
+    cursor = 0.0
+    for line in text.split('\n'):
+        for key, value in _QT_DESC.findall(line):
+            name, setting = key.lower(), (value or '').strip().lower()
+            if name == 'timescale':
+                try:
+                    scale = float(setting) or 1000.0
+                except ValueError:
+                    scale = 1000.0
+            elif name == 'timestamps':
+                relative = setting == 'relative'
+        stamp = _QT_TIME.match(_QT_DESC.sub('', line).strip() or line)
+        if stamp:
+            seconds = _clock_seconds(*stamp.groups()[0:3])
+            if stamp.group(4):
+                seconds += int(stamp.group(4)) / scale
+            cursor = _rounded(cursor + seconds) if relative else _rounded(seconds)
+            if pending is not None:
+                pending['end'] = cursor
+            pending = {'start': cursor, 'end': None, 'text': ''}
+            segments.append(pending)
+            rest = _lines_of(stamp.group(5))
+            if rest:
+                pending['text'] = rest
+            continue
+        body = _QT_DESC.sub('', line).strip()
+        if pending is not None and body:
+            pending['text'] = f'{pending["text"]}\n{body}'.strip() if pending['text'] else body
+    return _ends_at_next(_ordered([s for s in segments if s['text']]))
+
+
+def _write_qttext(segments, fps=DEFAULT_FPS):
+    """Written at a time scale of 1000, so the fraction is milliseconds,
+    and absolute, so nothing depends on what came before."""
+    def mark(seconds):
+        total = max(0, int(round(float(seconds) * 1000)))
+        hours, rest = divmod(total, 3600000)
+        minutes, rest = divmod(rest, 60000)
+        secs, millis = divmod(rest, 1000)
+        return f'[{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}]'
+
+    lines = ['{QTtext}{timeScale:1000}{timeStamps:absolute}{language:0}']
+    last = 0.0
+    for segment in _ordered(segments):
+        text_of = markup.plain(str(segment.get('text') or '')).strip()
+        if not text_of:
+            continue
+        lines.append(mark(segment.get('start', 0)))
+        lines.extend(line.strip() for line in text_of.split('\n') if line.strip())
+        last = max(last, float(segment.get('end', 0)))
+        lines.append(mark(segment.get('end', 0)))
+        lines.append('')            # an empty subtitle: the screen is cleared
+    # The file ends at the movie's end time, as QuickTime's own guides ask.
+    return '\n'.join(lines) + '\n' if len(lines) > 1 else ''
 
 
 # --------------------------------------------------------------- MacSUB
@@ -1217,6 +1418,10 @@ _PARSERS = {
     'sasami': _parse_sasami,
     'xombie': _parse_xombie,
     'macsub': _parse_macsub,
+    'dks': _parse_dks,
+    'powerdivx': _parse_powerdivx,
+    'dvdss': _parse_dvdss,
+    'qttext': _parse_qttext,
     'sst': _parse_sst,
     'ssts': _parse_ssts,
 }
@@ -1242,6 +1447,10 @@ _WRITERS = {
     'sasami': _write_sasami,
     'xombie': _write_xombie,
     'macsub': _write_macsub,
+    'dks': _write_dks,
+    'powerdivx': _write_powerdivx,
+    'dvdss': _write_dvdss,
+    'qttext': _write_qttext,
     'sst': _write_sst,
     'ssts': _write_ssts,
 }
@@ -1258,6 +1467,8 @@ def kind(data):
     head = text.lstrip('﻿')
     if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
         return 'realtext'
+    if _QT_MARK.search(head[:400]):
+        return 'qttext'
     if head.lstrip().upper().startswith('SST '):
         return 'ssts' if '[TITLES]' in head[:200].upper() else 'sst'
     if _S2K_WIDTH.match(head.lstrip().split('\n')[0] if head.strip() else ''):
@@ -1276,6 +1487,12 @@ def kind(data):
             return 'subsonic'
         if _ORESME.match(line.rstrip('\r')) and _ORESME.match(line.rstrip('\r')).group(5):
             return 'oresme'
+        if _PSB.match(line):
+            return 'powerdivx'
+        if _DVDSS.match(line):
+            return 'dvdss'
+        if _DKS.match(line) and _DKS.match(line).group(4).strip():
+            return 'dks'
         if _MACSUB.match(line):
             return 'macsub'
         if _XSS.match(line):

@@ -162,6 +162,10 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'MACSUB': {'description': 'MacSubtitler Subtitle format', 'extensions': ['scr', 'mac']},
     'SST': {'description': 'Stream SubText Player format', 'extensions': ['sst']},
     'SSTS': {'description': 'Stream SubText Script format', 'extensions': ['ssts']},
+    'DKS': {'description': 'DKS Subtitle format', 'extensions': ['dks']},
+    'POWERDIVX': {'description': 'Power DivX Subtitle format', 'extensions': ['psb']},
+    'DVDSS': {'description': 'DVD Subtitle System format', 'extensions': ['txt']},
+    'QTTEXT': {'description': 'QuickTime QTtext format', 'extensions': ['txt']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on
