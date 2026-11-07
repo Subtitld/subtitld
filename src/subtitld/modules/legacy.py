@@ -1,0 +1,658 @@
+"""The player-era subtitle formats (.mpl, .pjs, .aqt, .rt ...): read what the
+players of the 1990s and 2000s left behind, write the ones worth writing.
+
+Every one of these is a line of times and a line of text, and nearly every
+one of them is a different idea of what a time is: tenths of a second in
+MPL2 and PJS, frames in AQTitle and Spruce, seconds since the subtitle
+before in MPSub, a clock with no end time at all in VPlayer. They are kept
+together here because they are too small for a module each, and because
+telling them apart is the harder half of reading them: five of them share
+.txt and three share .sub, so the extension decides nothing and `kind`
+decides everything.
+
+What is read, and written:
+
+- **MPL2** (.mpl, .txt): "[12][35]text", tenths of a second, "|" between
+  lines. Read and written.
+- **PJS** (.pjs): "12,35,\"text\"", tenths of a second as well, the text in
+  quotes. Read and written. Its numbers look like frames and are not.
+- **MPSub** (.sub): a FORMAT= header, then "<gap> <duration>" and the text.
+  Both counted from the END of the subtitle before, in seconds when the
+  header says TIME, in frames when it names a rate. Read and written, in
+  time, which needs no rate to be right.
+- **VPlayer** and **TMPlayer** (.txt): "00:00:12:text" and its variants
+  ("=" or ";" for the colon, a comma inside the clock). No end times: a
+  subtitle runs to the next one, and the last for `TAIL`. Read and written.
+- **AQTitle** (.aqt): "-->> 25" and the text under it, counted in frames at
+  the video's rate; the next marker ends the subtitle. Read and written.
+- **SubViewer 1** (.sub): "[00:00:01]", the text, "[00:00:03]". Read and
+  written. SubViewer 2 is another format, and Subtitld reads it as SBV.
+- **Spruce** (.stl): "00:00:01:00 , 00:00:03:00 , text", frames after the
+  seconds, "|" between lines. Read and written. **Not EBU STL**, which is
+  binary and shares the extension: `kind` separates them, and so must
+  anything else that opens a .stl.
+- **RealText** (.rt): RealPlayer's HTML, "<time begin=...>" and the text
+  until the next time or a <clear/>. Read only: nothing plays it now, and
+  writing it would be writing for no one.
+- **TurboTitle** (.tts): "0:00:00.80,0:00:02.28,Narrator The line", the
+  Amiga laserdisc-era format, hundredths of a second, the name of whoever
+  speaks between the times and the text. Read and written. Its "~" is a
+  blank name, and a script still being timed carries "9:59:59.99" for
+  both times: those lines are not subtitles yet and are left out.
+- **ZeroG** (.zeg): "E 1 0:00:01.00 0:00:03.00 DEFAULT Narrator The line",
+  a DOS subtitler's format, hundredths again, "\\n" between lines, with S
+  lines for its styles. Read and written; the styles are not read, as
+  nothing in Subtitld would show them.
+
+The name field of TurboTitle and ZeroG becomes the subtitle's speaker,
+which is what it meant, even though neither player drew it.
+
+Times are seconds in Subtitld. Reading rounds to the millisecond, as the
+other formats here do. The frame-counted formats take the video's rate, or
+25 where there is no video — the rate they were written at is not in the
+file, so a wrong guess shifts them whole, as MicroDVD does.
+"""
+
+import re
+
+from subtitld.modules import markup
+from subtitld.modules.srt import decode
+
+# A subtitle with no end time, and no subtitle after it, lasts this long.
+TAIL = 3.0
+DEFAULT_FPS = 25.0
+
+# The extensions each format is written to. A format may be read from any
+# file: `kind` looks at the bytes, not at the name.
+EXTENSIONS = {
+    'mpl2': 'mpl',
+    'pjs': 'pjs',
+    'mpsub': 'sub',
+    'vplayer': 'txt',
+    'tmplayer': 'txt',
+    'aqtitle': 'aqt',
+    'subviewer1': 'sub',
+    'spruce': 'stl',
+    'realtext': 'rt',
+    'turbotitle': 'tts',
+    'zerog': 'zeg',
+}
+
+# The ones Subtitld writes; RealText is read only.
+WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
+            'turbotitle', 'zerog')
+
+# A TurboTitle script being timed carries this for both times.
+_UNTIMED = 9 * 3600 + 59 * 60 + 59.99
+
+_MPL2 = re.compile(r'^\s*\[(\d+)\]\[(\d+)\](.*)$')
+_PJS = re.compile(r'^\s*(\d+)\s*,\s*(\d+)\s*,\s*"(.*)"\s*$')
+_AQT = re.compile(r'^\s*-->>\s*(\d+)\s*$')
+_SUBVIEWER1 = re.compile(r'^\s*\[(\d{1,3}):(\d{1,2}):(\d{1,2})(?:[.,](\d+))?\]\s*$')
+_SPRUCE = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})[:.](\d{1,3})\s*,\s*'
+                     r'(\d{1,3}):(\d{2}):(\d{2})[:.](\d{1,3})\s*,\s*(.*)$')
+# VPlayer and TMPlayer are the same shape: a clock, a separator, the text.
+# The separator is what the players differed on, so all of them are taken.
+_CLOCK = re.compile(r'^\s*(\d{1,3}):(\d{1,2})[:,.](\d{1,2})(?:[:,.](\d{1,3}))?\s*[:=;]\s?(.*)$')
+_TTS = re.compile(r'^\s*(\d):(\d{2}):(\d{2})\.(\d{2})\s*,\s*(\d):(\d{2}):(\d{2})\.(\d{2})\s*,\s*(\S+)(?:[ \t](.*))?$')
+_ZEG = re.compile(r'^\s*E\s+\d+\s+(\d):(\d{2}):(\d{2})\.(\d{2})\s+(\d):(\d{2}):(\d{2})\.(\d{2})\s+'
+                  r'(\S+)(?:\s+(\S+))?(?:[ \t](.*))?$')
+_MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
+_MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
+_RT_TIME = re.compile(r'<time\b[^>]*\bbegin\s*=\s*["\']?([^"\'>\s]+)', re.I)
+_RT_END = re.compile(r'<time\b[^>]*\bend\s*=\s*["\']?([^"\'>\s]+)', re.I)
+_RT_CLEAR = re.compile(r'<clear\s*/?>', re.I)
+# Bold, italic and underline are Subtitld's own tags and stay; every other
+# tag goes. The dropping runs FIRST, with the three kept out of its reach,
+# so it cannot eat what the keeping just wrote.
+_RT_KEEP = re.compile(r'<(/?)([biu])\b[^>]*>', re.I)
+_RT_DROP = re.compile(r'<(?!/?[biu]\b)[^>]*>', re.I)
+
+
+def _rounded(seconds):
+    return round(max(0.0, float(seconds)), 3)
+
+
+def _clock_seconds(hours, minutes, seconds, fraction=None, frames=False, fps=DEFAULT_FPS):
+    """Seconds for a clock, its last field centiseconds or frames."""
+    value = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+    if fraction:
+        value += int(fraction) / float(fps) if frames else int(fraction) / 10 ** len(fraction)
+    return _rounded(value)
+
+
+def _lines_of(text):
+    """The text of a subtitle, its "|" and "[br]" as line breaks, trimmed."""
+    body = text.replace('[br]', '\n').replace('|', '\n').replace('\\N', '\n')
+    return '\n'.join(line.strip() for line in body.split('\n') if line.strip())
+
+
+def _packed(segment, separator='|'):
+    """A subtitle's text on one line, as the one-line formats write it."""
+    text = markup.plain(str(segment.get('text') or '')).replace('\r\n', '\n').replace('\r', '\n')
+    return separator.join(line.strip() for line in text.split('\n') if line.strip())
+
+
+def _ordered(segments):
+    """By start, and by end where there is one: the formats with no end
+    time are sorted before `_ends_at_next` gives them one."""
+    def key(segment):
+        start = float(segment.get('start', 0))
+        end = segment.get('end')
+        return start, float(end) if end is not None else start
+    return sorted(segments, key=key)
+
+
+def _ends_at_next(segments):
+    """Give every subtitle with no end the start of the one after it.
+
+    VPlayer, TMPlayer and AQTitle only say when a subtitle begins. A
+    decoder shows each until the next, and the last one for a moment.
+    """
+    for index, segment in enumerate(segments):
+        if segment.get('end') is None:
+            following = segments[index + 1]['start'] if index + 1 < len(segments) else None
+            segment['end'] = following if following is not None else _rounded(segment['start'] + TAIL)
+    return segments
+
+
+# ---------------------------------------------------------------- MPL2
+
+
+def _parse_mpl2(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _MPL2.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(3))
+        if not body:
+            continue
+        start, end = int(match.group(1)) / 10.0, int(match.group(2)) / 10.0
+        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
+    return segments
+
+
+def _write_mpl2(segments, fps=DEFAULT_FPS):
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment)
+        if not body:
+            continue
+        start = int(round(float(segment.get('start', 0)) * 10))
+        end = max(start, int(round(float(segment.get('end', 0)) * 10)))
+        lines.append(f'[{start}][{end}]{body}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# ----------------------------------------------------------------- PJS
+
+
+def _parse_pjs(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _PJS.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(3))
+        if not body:
+            continue
+        start, end = int(match.group(1)) / 10.0, int(match.group(2)) / 10.0
+        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
+    return segments
+
+
+def _write_pjs(segments, fps=DEFAULT_FPS):
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment).replace('"', "'")
+        if not body:
+            continue
+        start = int(round(float(segment.get('start', 0)) * 10))
+        end = max(start, int(round(float(segment.get('end', 0)) * 10)))
+        lines.append(f'{start},{end},"{body}"')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# --------------------------------------------------------------- MPSub
+
+
+def _parse_mpsub(text, fps=DEFAULT_FPS):
+    """MPSub counts from the end of the subtitle before, in seconds or frames."""
+    rate = None                     # None while the header says TIME
+    lines = text.split('\n')
+    segments = []
+    cursor = 0.0
+    index = 0
+    while index < len(lines):
+        header = _MPSUB_HEADER.match(lines[index])
+        if header:
+            declared = header.group(1).strip().upper()
+            if declared != 'TIME':
+                try:
+                    rate = float(declared)
+                except ValueError:
+                    rate = None
+            index += 1
+            continue
+        times = _MPSUB_TIMES.match(lines[index])
+        if not times:
+            index += 1
+            continue
+        body = []
+        index += 1
+        while index < len(lines) and lines[index].strip():
+            body.append(lines[index].strip())
+            index += 1
+        gap, length = float(times.group(1)), float(times.group(2))
+        if rate:
+            gap, length = gap / rate, length / rate
+        start = cursor + gap
+        cursor = start + length
+        text_of = _lines_of('\n'.join(body))
+        if text_of:
+            segments.append({'start': _rounded(start), 'end': _rounded(cursor), 'text': text_of})
+    return segments
+
+
+def _write_mpsub(segments, fps=DEFAULT_FPS):
+    """Written in seconds: a rate the file cannot be sure of is a rate that
+    shifts it, and TIME is right at any rate."""
+    blocks = []
+    cursor = 0.0
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', start)))
+        blocks.append(f'{round(max(0.0, start - cursor), 2)} {round(end - start, 2)}\n'
+                      + '\n'.join(line.strip() for line in text.split('\n') if line.strip()))
+        cursor = end
+    return 'FORMAT=TIME\n\n' + '\n\n'.join(blocks) + '\n' if blocks else 'FORMAT=TIME\n'
+
+
+# ------------------------------------------------- VPlayer and TMPlayer
+
+
+def _parse_clock(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _CLOCK.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(5))
+        if not body:
+            continue
+        start = _clock_seconds(match.group(1), match.group(2), match.group(3), match.group(4))
+        segments.append({'start': start, 'end': None, 'text': body})
+    return _ends_at_next(_ordered(segments))
+
+
+def _write_clock(segments, fps=DEFAULT_FPS, separator=':'):
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment)
+        if not body:
+            continue
+        total = int(float(segment.get('start', 0)))
+        hours, rest = divmod(total, 3600)
+        minutes, seconds = divmod(rest, 60)
+        lines.append(f'{hours:02d}:{minutes:02d}:{seconds:02d}{separator}{body}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# ------------------------------------------------------------- AQTitle
+
+
+def _parse_aqtitle(text, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+    lines = text.split('\n')
+    segments = []
+    index = 0
+    while index < len(lines):
+        match = _AQT.match(lines[index])
+        if not match:
+            index += 1
+            continue
+        body = []
+        index += 1
+        while index < len(lines) and not _AQT.match(lines[index]):
+            if lines[index].strip():
+                body.append(lines[index].strip())
+            index += 1
+        text_of = _lines_of('\n'.join(body))
+        if text_of:
+            segments.append({'start': _rounded(int(match.group(1)) / rate), 'end': None, 'text': text_of})
+    return _ends_at_next(_ordered(segments))
+
+
+def _write_aqtitle(segments, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+    blocks = []
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        frame = int(round(float(segment.get('start', 0)) * rate))
+        blocks.append(f'-->> {frame}\n' + '\n'.join(line.strip() for line in text.split('\n') if line.strip()))
+    return '\n\n'.join(blocks) + '\n' if blocks else ''
+
+
+# --------------------------------------------------------- SubViewer 1
+
+
+def _parse_subviewer1(text, fps=DEFAULT_FPS):
+    lines = text.split('\n')
+    marks = [(index, match) for index, line in enumerate(lines) if (match := _SUBVIEWER1.match(line))]
+    segments = []
+    for position, (index, match) in enumerate(marks):
+        if position + 1 >= len(marks):
+            break
+        following, next_match = marks[position + 1]
+        body = _lines_of('\n'.join(lines[index + 1:following]))
+        if not body:
+            continue                # the closing mark of the subtitle before
+        start = _clock_seconds(*match.groups())
+        end = _clock_seconds(*next_match.groups())
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return segments
+
+
+def _write_subviewer1(segments, fps=DEFAULT_FPS):
+    def mark(seconds):
+        total = int(float(seconds))
+        hours, rest = divmod(total, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'[{hours:02d}:{minutes:02d}:{secs:02d}]'
+
+    blocks = []
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        body = '\n'.join(line.strip() for line in text.split('\n') if line.strip())
+        blocks.append(f'{mark(segment.get("start", 0))}\n{body}\n{mark(segment.get("end", 0))}')
+    return '\n\n'.join(blocks) + '\n' if blocks else ''
+
+
+# ---------------------------------------------------------------- Spruce
+
+
+def _parse_spruce(text, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+    segments = []
+    for line in text.split('\n'):
+        if line.lstrip().startswith(('$', '//')):
+            continue                # Spruce's settings and comments
+        match = _SPRUCE.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(9))
+        if not body:
+            continue
+        start = _clock_seconds(*match.groups()[0:4], frames=True, fps=rate)
+        end = _clock_seconds(*match.groups()[4:8], frames=True, fps=rate)
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return segments
+
+
+def _write_spruce(segments, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+
+    def stamp(seconds):
+        total = max(0.0, float(seconds))
+        whole = int(total)
+        frames = int(round((total - whole) * rate))
+        if frames >= int(round(rate)):
+            whole, frames = whole + 1, 0
+        hours, rest = divmod(whole, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}'
+
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment)
+        if not body:
+            continue
+        lines.append(f'{stamp(segment.get("start", 0))} , {stamp(segment.get("end", 0))} , {body}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# -------------------------------------------------------------- RealText
+
+
+def _rt_seconds(value):
+    """RealText's time: "1.5", "00:00:01.5", "1:01.5" and the rest."""
+    value = str(value or '').strip()
+    if not value:
+        return 0.0
+    parts = value.split(':')
+    try:
+        numbers = [float(part.replace(',', '.')) for part in parts]
+    except ValueError:
+        return 0.0
+    total = 0.0
+    for number in numbers:
+        total = total * 60 + number
+    return _rounded(total)
+
+
+def _rt_text(chunk):
+    """RealText's markup as Subtitld's: its b, i and u kept, the rest dropped."""
+    body = re.sub(r'<br\s*/?>', '\n', chunk, flags=re.I)
+    body = _RT_DROP.sub('', body)
+    body = _RT_KEEP.sub(lambda m: f'<{m.group(1)}{m.group(2).lower()}>', body)
+    body = (body.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
+            .replace('&quot;', '"').replace('&amp;', '&'))
+    return '\n'.join(line.strip() for line in body.split('\n') if line.strip())
+
+
+def _parse_realtext(text, fps=DEFAULT_FPS):
+    """Each <time> begins a subtitle; the next one, or a <clear/>, ends it."""
+    pieces = re.split(r'(<time\b[^>]*>|<clear\s*/?>)', text, flags=re.I)
+    segments = []
+    pending = None
+    for piece in pieces:
+        if not piece:
+            continue
+        if _RT_CLEAR.match(piece):
+            # <clear/> ends the text on screen but carries no time of its
+            # own: the subtitle runs to the next <time>, as a player shows it.
+            pending = None
+            continue
+        time_tag = _RT_TIME.search(piece) if piece.lstrip().lower().startswith('<time') else None
+        if time_tag:
+            start = _rt_seconds(time_tag.group(1))
+            end_tag = _RT_END.search(piece)
+            pending = {'start': start, 'end': _rt_seconds(end_tag.group(1)) if end_tag else None, 'text': ''}
+            segments.append(pending)
+            continue
+        if pending is not None and not pending['text']:
+            pending['text'] = _rt_text(piece)
+    segments = [segment for segment in segments if segment['text']]
+    return _ends_at_next(_ordered(segments))
+
+
+# ----------------------------------------------------------- TurboTitle
+
+
+def _hundredths(hours, minutes, seconds, fraction):
+    return _rounded(int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(fraction) / 100.0)
+
+
+def _named(segment, name):
+    """The name field as the subtitle's speaker; "~" is a blank field."""
+    name = str(name or '').strip()
+    if name and name != '~':
+        segment['speaker'] = name
+    return segment
+
+
+def _parse_turbotitle(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _TTS.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(10) or '')
+        if not body:
+            continue                # a line kept only to hold its timing
+        start = _hundredths(*match.groups()[0:4])
+        end = _hundredths(*match.groups()[4:8])
+        if start >= _UNTIMED and end >= _UNTIMED:
+            continue                # a script still being timed
+        segments.append(_named({'start': start, 'end': _rounded(max(start, end)), 'text': body}, match.group(9)))
+    return _ordered(segments)
+
+
+def _stamp_hundredths(seconds):
+    total = max(0, int(round(float(seconds) * 100)))
+    hours, rest = divmod(total, 360000)
+    minutes, rest = divmod(rest, 6000)
+    secs, hundredths = divmod(rest, 100)
+    return f'{min(hours, 9)}:{minutes:02d}:{secs:02d}.{hundredths:02d}'
+
+
+def _write_turbotitle(segments, fps=DEFAULT_FPS):
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment, separator=' ')
+        if not body:
+            continue
+        name = str(segment.get('speaker') or '').strip().replace(' ', '_') or '~'
+        lines.append(f'{_stamp_hundredths(segment.get("start", 0))},'
+                     f'{_stamp_hundredths(segment.get("end", 0))},{name} {body}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# --------------------------------------------------------------- ZeroG
+
+
+def _parse_zerog(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _ZEG.match(line)
+        if not match:
+            continue                # S styles, T titles, % and # comments
+        body = _lines_of((match.group(11) or '').replace('\\n', '\n'))
+        if not body:
+            continue
+        start = _hundredths(*match.groups()[0:4])
+        end = _hundredths(*match.groups()[4:8])
+        segments.append(_named({'start': start, 'end': _rounded(max(start, end)), 'text': body}, match.group(10)))
+    return _ordered(segments)
+
+
+def _write_zerog(segments, fps=DEFAULT_FPS):
+    lines = ['% Zero G 1.0']
+    for segment in _ordered(segments):
+        body = _packed(segment, separator='\\n')
+        if not body:
+            continue
+        name = str(segment.get('speaker') or '').strip().replace(' ', '_') or '~'
+        lines.append(f'E 1 {_stamp_hundredths(segment.get("start", 0))} '
+                     f'{_stamp_hundredths(segment.get("end", 0))} DEFAULT {name} {body}')
+    return '\n'.join(lines) + '\n' if len(lines) > 1 else ''
+
+
+# ------------------------------------------------------------ the module
+
+
+_PARSERS = {
+    'mpl2': _parse_mpl2,
+    'pjs': _parse_pjs,
+    'mpsub': _parse_mpsub,
+    'vplayer': _parse_clock,
+    'tmplayer': _parse_clock,
+    'aqtitle': _parse_aqtitle,
+    'subviewer1': _parse_subviewer1,
+    'spruce': _parse_spruce,
+    'realtext': _parse_realtext,
+    'turbotitle': _parse_turbotitle,
+    'zerog': _parse_zerog,
+}
+
+_WRITERS = {
+    'mpl2': _write_mpl2,
+    'pjs': _write_pjs,
+    'mpsub': _write_mpsub,
+    'vplayer': _write_clock,
+    'tmplayer': lambda segments, fps=DEFAULT_FPS: _write_clock(segments, fps, separator=':'),
+    'aqtitle': _write_aqtitle,
+    'subviewer1': _write_subviewer1,
+    'spruce': _write_spruce,
+    'turbotitle': _write_turbotitle,
+    'zerog': _write_zerog,
+}
+
+
+def kind(data):
+    """Which of these formats `data` is, '' when it is none of them.
+
+    Takes bytes or text. The tests run from the most particular shape to
+    the least: .txt is five of these formats and .sub is three, so a
+    reader that trusted the extension would read the wrong one.
+    """
+    text = decode(data) if isinstance(data, (bytes, bytearray)) else str(data or '')
+    head = text.lstrip('﻿')
+    if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
+        return 'realtext'
+    if head.lstrip().lower().startswith('% zero g'):
+        return 'zerog'
+    lines = [line for line in head.split('\n') if line.strip()][:60]
+    for line in lines:
+        if _TTS.match(line):
+            return 'turbotitle'
+        if _ZEG.match(line):
+            return 'zerog'
+        if _SPRUCE.match(line):
+            return 'spruce'
+        if _MPL2.match(line):
+            return 'mpl2'
+        if _PJS.match(line):
+            return 'pjs'
+        if _AQT.match(line):
+            return 'aqtitle'
+    if any(_MPSUB_HEADER.match(line) for line in lines[:5]):
+        return 'mpsub'
+    # SubViewer 1 is marks alone on their lines, around their text.
+    if sum(1 for line in lines if _SUBVIEWER1.match(line)) >= 2:
+        return 'subviewer1'
+    clocks = sum(1 for line in lines if _CLOCK.match(line))
+    if clocks and clocks >= max(1, len(lines) // 2):
+        return 'vplayer'
+    # MPSub without a header: "<gap> <duration>" over the text, twice.
+    if sum(1 for line in lines if _MPSUB_TIMES.match(line)) >= 2 and len(lines) > 3:
+        return 'mpsub'
+    return ''
+
+
+def parse(text, fmt, fps=DEFAULT_FPS):
+    """The subtitles in `text`, read as `fmt`: [{'start', 'end', 'text'}]."""
+    if fmt not in _PARSERS:
+        raise ValueError(f'unknown subtitle format {fmt!r}')
+    return _PARSERS[fmt](text, fps or DEFAULT_FPS)
+
+
+def read(path, fps=None):
+    """The subtitles in the file at `path`, and the format they were in."""
+    with open(path, 'rb') as legacy_file:
+        data = legacy_file.read()
+    fmt = kind(data)
+    if not fmt:
+        raise ValueError('not a subtitle file of the player era')
+    return parse(decode(data), fmt, fps or DEFAULT_FPS), fmt
+
+
+def write(segments, fmt, fps=DEFAULT_FPS):
+    """`segments` as `fmt` text."""
+    if fmt not in _WRITERS:
+        raise ValueError(f'{fmt!r} is read only' if fmt in _PARSERS else f'unknown subtitle format {fmt!r}')
+    return _WRITERS[fmt](segments, fps or DEFAULT_FPS)
+
+
+def save(path, segments, fmt, fps=DEFAULT_FPS, encoding='utf-8', line_end='\n'):
+    """Write `segments` to `path` as `fmt`."""
+    with open(path, 'w', encoding=encoding, newline=line_end) as legacy_file:
+        legacy_file.write(write(segments, fmt, fps))
