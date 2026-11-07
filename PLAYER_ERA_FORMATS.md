@@ -187,15 +187,15 @@ disassembling a 1992 m68k binary.
 
 ## What was implemented, and what was not
 
-`src/subtitld/modules/legacy.py` reads and writes **30** of these formats;
-`ass.py` reads a 31st (v4.00++). The grammars above, and the ones that came
+`src/subtitld/modules/legacy.py` reads and writes **31** of these formats;
+`ass.py` reads a 32nd (v4.00++). The grammars above, and the ones that came
 with documentation of their own, are all implemented:
 
 MPL2 · PJS · MPSub · VPlayer and TMPlayer · AQTitle · SubViewer 1 · Spruce ·
 RealText · TurboTitle · ZeroG · ViPlay · SBT · Captions 32 · SubSonic ·
 Oresme · JACOSub · Sasami2k · Xombie · MacSUB · Stream SubText player and
 script · DKS · Power DivX · DVD Subtitle System · QTtext · Captionate XML ·
-CMML · smilText · SSF — plus ASS v4.00++ in `ass.py`.
+CMML · smilText · SSF · TeXML — plus ASS v4.00++ in `ass.py`.
 
 **Left out on purpose:**
 
@@ -207,6 +207,11 @@ CMML · smilText · SSF — plus ASS v4.00++ in `ass.py`.
   route left is disassembling a 1992 m68k binary.
 - **SView** — exists in no implementation anywhere and is almost certainly a
   garbled reference to SubViewer.
+
+**One with no reference writer:** GPAC reads TeXML but cannot write it, and
+QuickTime Pro, the only program that ever wrote it, is gone. The reader is
+built from Apple's own DTD and the writer is checked by round trip alone,
+which is worth knowing before trusting it with a delivery.
 
 **A different kind of work:** Ogg Kate, Ogg Writ, OggText/Annodex, OGM text,
 ASF script commands and Captionate's embedded FLV form are not sidecar files
