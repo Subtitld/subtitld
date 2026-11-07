@@ -184,3 +184,37 @@ The tool, its source and every sample are gone. Confirmed to have existed
 read it, but no grammar survives anywhere, Sconv never supported it, and no
 `.pan` subtitle file exists in any archive. The only path left would be
 disassembling a 1992 m68k binary.
+
+## What was implemented, and what was not
+
+`src/subtitld/modules/legacy.py` reads and writes **30** of these formats;
+`ass.py` reads a 31st (v4.00++). The grammars above, and the ones that came
+with documentation of their own, are all implemented:
+
+MPL2 · PJS · MPSub · VPlayer and TMPlayer · AQTitle · SubViewer 1 · Spruce ·
+RealText · TurboTitle · ZeroG · ViPlay · SBT · Captions 32 · SubSonic ·
+Oresme · JACOSub · Sasami2k · Xombie · MacSUB · Stream SubText player and
+script · DKS · Power DivX · DVD Subtitle System · QTtext · Captionate XML ·
+CMML · smilText · SSF — plus ASS v4.00++ in `ass.py`.
+
+**Left out on purpose:**
+
+- **SubCreator** — no file written by it survives to check against, and its
+  fraction field is one digit in Subtitle Workshop's reader and three in the
+  only sample anyone quotes. A reader built on the wrong guess mistimes every
+  subtitle by up to nine tenths of a second, so it waits for a real file.
+- **Panimator** — the tool, its source and every sample are gone. The only
+  route left is disassembling a 1992 m68k binary.
+- **SView** — exists in no implementation anywhere and is almost certainly a
+  garbled reference to SubViewer.
+
+**A different kind of work:** Ogg Kate, Ogg Writ, OggText/Annodex, OGM text,
+ASF script commands and Captionate's embedded FLV form are not sidecar files
+at all — the subtitles live inside a media stream, so reading them is
+demuxing rather than parsing. FFmpeg has no decoder for four of the six.
+
+**Two names that mislead:** "SubRip 0.9" is not an early SubRip output, it is
+SubViewer 1.0 under MPlayer's name for it, and MPlayer's SubRip and SubViewer
+labels are transposed relative to everyone else's. "PowerDivX / DVD Subtitle
+System" runs together three unrelated formats: Power DivX (`.psb`), DVD
+Subtitle System (`.txt`) and DVDSubtitle (`.sub`).
