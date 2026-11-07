@@ -12,6 +12,7 @@ from subtitld.interface.addons_dialog import AddonsPanel
 from subtitld.interface.cloud_dashboard import CloudDashboardPanel
 from subtitld.interface import translation
 from subtitld.interface.translation import _
+from subtitld.modules import legacy
 from subtitld.modules import session
 from subtitld.modules.config import Config
 
@@ -239,6 +240,14 @@ def load(self):
     self.global_subtitlesvideo_save_as_combobox = QComboBox(parent=self.left_panel_global_tab_general)
     self.global_subtitlesvideo_save_as_combobox.setProperty('class', 'button')
     self.global_subtitlesvideo_save_as_combobox.addItems(list_of_subtitle_extensions)
+    # A line before the player-era formats: there are twenty of them, they
+    # are all dead, and nobody looking for SRT should have to read past
+    # them. The chosen format is read from the text, so a separator — which
+    # cannot be picked — changes nothing else.
+    first_legacy = next((index for index, name in enumerate(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS)
+                         if name in legacy.SESSION_FORMATS), None)
+    if first_legacy is not None:
+        self.global_subtitlesvideo_save_as_combobox.insertSeparator(first_legacy)
     self.global_subtitlesvideo_save_as_combobox.activated.connect(lambda: global_subtitlesvideo_save_as_combobox_activated(self))
     self.global_panel_general_save_as_line.addWidget(self.global_subtitlesvideo_save_as_combobox, 0, Qt.AlignLeft)
 

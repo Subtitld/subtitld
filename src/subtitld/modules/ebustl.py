@@ -186,6 +186,17 @@ def _frames(hours, minutes, seconds, frames, nominal):
     return ((hours * 60 + minutes) * 60 + seconds) * nominal + frames
 
 
+def is_stl(data):
+    """True when `data` begins as EBU STL does.
+
+    Three unrelated formats are written to .stl — this one, Spruce's text
+    script and Avid's — so whatever opens a .stl has to look at the bytes.
+    EBU STL is binary and names its frame rate at the fourth byte of the
+    GSI block, which the other two never do.
+    """
+    return len(data) >= GSI_SIZE and data[3:11].decode('ascii', 'replace') in _RATES
+
+
 def parse(data):
     """(subtitles, {'language', 'fps', 'display', 'start'}) in EBU STL
     bytes. Raises ValueError for bytes that are not EBU STL."""

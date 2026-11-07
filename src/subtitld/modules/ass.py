@@ -183,10 +183,77 @@ def segments_of(subfile):
     return segments
 
 
+def is_v4plusplus(text):
+    """Whether this is SSA v4.00++, the format MPC's splitter writes for
+    the timed text of an MP4 and nothing else ever wrote to disk.
+
+    Either signal is enough, as VSFilter takes either: a ScriptType whose
+    last six characters are "4.00++", or the section header that goes
+    with it.
+    """
+    for line in text.split('\n')[:80]:
+        bare = line.strip().lower()
+        if bare.startswith('scripttype:') and bare.rstrip()[-6:] == '4.00++':
+            return True
+        if bare.replace(' ', '') == '[v4++styles]':
+            return True
+    return False
+
+
+def _from_v4plusplus(text):
+    """v4.00++ as v4.00+, which is how VSFilter itself saves it down.
+
+    v4++ splits MarginV into a top and a bottom margin and adds
+    RelativeTo at the end, so its style lines carry 25 fields and its
+    events 11 where v4+ has 23 and 10. The two margins become the one
+    they are the halves of; RelativeTo goes, having nowhere to live.
+    Format lines are ignored in v4++ and both readers count commas, so
+    the fields are taken by position.
+    """
+    out = []
+    for line in text.split('\n'):
+        bare = line.strip().lower()
+        if bare.replace(' ', '') == '[v4++styles]':
+            out.append('[V4+ Styles]')
+            continue
+        if bare.startswith('scripttype:'):
+            out.append('ScriptType: v4.00+')
+            continue
+        if bare.startswith('format:'):
+            continue                # meaningless here, and wrong for v4+
+        keyword, _, rest = line.partition(':')
+        name = keyword.strip().lower()
+        if name == 'style':
+            fields = rest.split(',')
+            if len(fields) >= 25:
+                top, bottom = _margin(fields[21]), _margin(fields[22])
+                fields = fields[:21] + [str((top + bottom) // 2)] + [fields[23]]
+            out.append(f'Style:{",".join(fields)}')
+            continue
+        if name in ('dialogue', 'comment'):
+            fields = rest.split(',', 10)
+            if len(fields) >= 11:
+                top, bottom = _margin(fields[6]), _margin(fields[7])
+                fields = fields[:6] + [str((top + bottom) // 2)] + fields[8:]
+            out.append(f'{keyword.strip()}:{",".join(fields)}')
+            continue
+        out.append(line)
+    return '\n'.join(out)
+
+
+def _margin(value):
+    try:
+        return int(str(value).strip() or 0)
+    except ValueError:
+        return 0
+
+
 def read(path):
     """The subtitles in the .ass or .ssa file at `path`."""
     with open(path, 'rb') as ass_file:
         text = decode(ass_file.read())
+    if is_v4plusplus(text):
+        text = _from_v4plusplus(text)
     return segments_of(pysubs2.SSAFile.from_string(text))
 
 
