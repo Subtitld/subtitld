@@ -75,7 +75,7 @@ _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'position', 'direction', 'shear', 'ruby')
+                 'position', 'direction', 'forcedDisplay', 'shear', 'ruby')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -99,6 +99,8 @@ _IMSC1_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1/text'
 _IMSC11_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1.1/text'
 _EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
 _EBUTTM_NS = 'urn:ebu:tt:metadata'
+# IMSC's own styling namespace, which itts:forcedDisplay belongs to.
+_ITTS_NS = 'http://www.w3.org/ns/ttml/profile/imsc1#styling'
 
 # Japanese subtitles write italics as a shear: IMSC 1.1 has tts:shear, and
 # Netflix's Japanese profile asks for it in place of tts:fontStyle, which
@@ -565,6 +567,10 @@ def _document(text):
         # lands and which end "start" is.
         if p_props.get('direction') in ('ltr', 'rtl'):
             segment['direction'] = p_props['direction']
+        # Forced: shown even where a viewer asked for no subtitles, for the
+        # line of another language a film translates on screen.
+        if str(p_props.get('forcedDisplay') or '').strip().lower() == 'true':
+            segment['forced'] = True
         # Where the region puts it, beyond the nine places: a file that
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
@@ -796,13 +802,16 @@ def _japanese(language):
     return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
 
 
-def _root_attributes(profile, language):
+def _root_attributes(profile, language, forced=False):
     """What <tt> carries: the namespaces and parameters, and the profile
-    the file declares itself to be."""
+    the file declares itself to be. `forced` brings IMSC's styling
+    namespace in, for the files that have a forced subtitle to mark."""
     namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
                   'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
                   'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
                   'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"']
+    if forced:
+        namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
     if profile == 'ebu-tt-d':
         namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
     attrs = ['ttp:timeBase="media"']
@@ -861,6 +870,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
         if segment.get('direction') in ('ltr', 'rtl'):
             attrs += f' tts:direction="{segment["direction"]}"'
+        if segment.get('forced') and profile != 'ebu-tt-d':
+            attrs += ' itts:forcedDisplay="true"'
         content = _content(rest, shear)
         if box:
             content = f'<span style="{box}">{content}</span>'
@@ -889,7 +900,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     head += ['    </layout>', '  </head>']
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<tt {_root_attributes(profile, language)}>',
+        f'<tt {_root_attributes(profile, language, forced=any(segment.get("forced") for segment in segments) and profile != "ebu-tt-d")}>',
         *head,
         '  <body style="text">',
         '    <div>',

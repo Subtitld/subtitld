@@ -131,15 +131,17 @@ def _pes(payload, pts=None, track=0):
     return bytes([0, 0, 1, 0xBD, len(body) >> 8, len(body) & 255]) + body
 
 
-def write_vobsub(stem, cues, language='en', size=(720, 480)):
-    """cues: [(start, end, text, at_top)]. Writes stem.idx and stem.sub."""
+def write_vobsub(stem, cues, language='en', size=(720, 480), forced=()):
+    """cues: [(start, end, text, at_top)]. Writes stem.idx and stem.sub.
+    `forced` holds the indexes of the cues a player shows with subtitles
+    off."""
     data = bytearray()
     entries = []
-    for start, end, text, at_top in cues:
+    for number, (start, end, text, at_top) in enumerate(cues):
         width, height, indices = draw(text)
         x = (size[0] - width) // 2
         y = 30 if at_top else size[1] - height - 30
-        unit = spu(width, height, indices, x, y, end - start)
+        unit = spu(width, height, indices, x, y, end - start, forced=number in forced)
         entries.append((start, len(data)))
         first = True
         while unit:
@@ -190,8 +192,9 @@ def _segment(pts, kind, payload):
     return b'PG' + p.to_bytes(4, 'big') + b'\x00\x00\x00\x00' + bytes([kind]) + len(payload).to_bytes(2, 'big') + payload
 
 
-def write_pgs(path, cues, size=(1920, 1080)):
-    """cues: [(start, end, text, at_top)]. Writes a .sup."""
+def write_pgs(path, cues, size=(1920, 1080), forced=()):
+    """cues: [(start, end, text, at_top)]. Writes a .sup. `forced` holds the
+    indexes of the cues a player shows with subtitles off."""
     data = bytearray()
     # Palette: 1 fill, 2 edge, 3 outline, as BT.709 YCbCr.
     palette = bytes([0, 2]) + bytes([1, 219, 128, 128, 255, 2, 126, 128, 128, 255, 3, 30, 128, 128, 255])
@@ -202,7 +205,7 @@ def write_pgs(path, cues, size=(1920, 1080)):
         rle = _pgs_rle(width, height, indices)
         pcs = size[0].to_bytes(2, 'big') + size[1].to_bytes(2, 'big') + bytes([0x10]) + \
             (number * 2).to_bytes(2, 'big') + bytes([0x80, 0, 0, 1]) + \
-            bytes([0, 0, 0, 0]) + x.to_bytes(2, 'big') + y.to_bytes(2, 'big')
+            bytes([0, 0, 0, 0x40 if number in forced else 0]) + x.to_bytes(2, 'big') + y.to_bytes(2, 'big')
         wds = bytes([1, 0]) + x.to_bytes(2, 'big') + y.to_bytes(2, 'big') + width.to_bytes(2, 'big') + \
             height.to_bytes(2, 'big')
         ods = bytes([0, 0, 0, 0xC0]) + (len(rle) + 4).to_bytes(3, 'big') + width.to_bytes(2, 'big') + \

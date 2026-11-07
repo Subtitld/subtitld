@@ -362,6 +362,22 @@ check('and the left edge where it does not',
                'tts:displayAlign="after" tts:textAlign="start"/></layout>'))],
       ['{\\an1}Hello'])
 
+print('forced: shown with subtitles off')
+forced = [{'start': 1, 'end': 2, 'text': 'A sign on the wall', 'forced': True}, {'start': 3, 'end': 4, 'text': 'Ordinary'}]
+forced_written = ttml.write(forced, 'en', profile='imsc1.1')
+check("itts:forcedDisplay on the one that says so, in IMSC's own namespace",
+      (' itts:forcedDisplay="true"' in forced_written, forced_written.count('forcedDisplay'),
+       f'xmlns:itts="{ttml._ITTS_NS}"' in forced_written),
+      (True, 1, True))
+check('read back as it was', [(s['text'], s.get('forced')) for s in ttml.parse(forced_written)],
+      [(s['text'], s.get('forced')) for s in forced])
+check('inherited, as the profile says', [s.get('forced') for s in ttml.parse(doc(
+    '<div itts:forcedDisplay="true"><p begin="1s" end="2s">Inside</p></div>',
+    attrs=f' xmlns:itts="{ttml._ITTS_NS}"'))], [True])
+check('a file with nothing forced says nothing, and EBU-TT-D never does',
+      ('forcedDisplay' in ttml.write([{'start': 1, 'end': 2, 'text': 'x'}], 'en'),
+       'forcedDisplay' in ttml.write(forced, 'en', profile='ebu-tt-d')), (False, False))
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))

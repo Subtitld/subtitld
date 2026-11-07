@@ -122,6 +122,19 @@ check('read back, each reading still with what it reads', read_back(content), [
     '東京 no reading',
 ])
 
+print('forced: shown with subtitles off')
+forced_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'A sign', 'speaker': 'A', 'forced': True},
+                                {'start': 2, 'end': 3, 'text': 'Ordinary', 'speaker': 'A'}],
+                               speakers={}, language='en-us')
+check("on the subtitle, in Subtitld's namespace, since USF has no word for it",
+      ('subtitldcc:forced="true"' in forced_usf, forced_usf.count('subtitldcc:forced'),
+       'xmlns:subtitldcc' in forced_usf), (True, 1, True))
+check('read back as it was', [(s['text'], s.get('forced')) for s in USFReader().read(forced_usf)],
+      [('A sign', True), ('Ordinary', None)])
+check('a project with nothing forced says nothing',
+      'forced' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                    speakers={}, language='en-us'), False)
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
