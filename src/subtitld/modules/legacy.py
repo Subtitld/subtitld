@@ -77,11 +77,16 @@ EXTENSIONS = {
     'realtext': 'rt',
     'turbotitle': 'tts',
     'zerog': 'zeg',
+    'viplay': 'vsf',
+    'sbt': 'sbt',
+    'captions32': 'txt',
+    'subsonic': 'sub',
+    'oresme': 'txt',
 }
 
 # The ones Subtitld writes; RealText is read only.
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
-            'realtext', 'turbotitle', 'zerog')
+            'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -93,6 +98,8 @@ SESSION_FORMATS = {
     'MPL2': 'mpl2', 'PJS': 'pjs', 'MPSUB': 'mpsub', 'VPLAYER': 'vplayer',
     'AQTITLE': 'aqtitle', 'SUBVIEWER1': 'subviewer1', 'SPRUCE': 'spruce',
     'REALTEXT': 'realtext', 'TURBOTITLE': 'turbotitle', 'ZEROG': 'zerog',
+    'VIPLAY': 'viplay', 'SBT': 'sbt', 'CAPTIONS32': 'captions32',
+    'SUBSONIC': 'subsonic', 'ORESME': 'oresme',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -108,6 +115,19 @@ _CLOCK = re.compile(r'^\s*(\d{1,3}):(\d{1,2})[:,.](\d{1,2})(?:[:,.](\d{1,3}))?\s
 _TTS = re.compile(r'^\s*(\d):(\d{2}):(\d{2})\.(\d{2})\s*,\s*(\d):(\d{2}):(\d{2})\.(\d{2})\s*,\s*(\S+)(?:[ \t](.*))?$')
 _ZEG = re.compile(r'^\s*E\s+\d+\s+(\d):(\d{2}):(\d{2})\.(\d{2})\s+(\d):(\d{2}):(\d{2})\.(\d{2})\s+'
                   r'(\S+)(?:\s+(\S+))?(?:[ \t](.*))?$')
+_VIPLAY_MAGIC = '{* viplay subtitle file *}'
+_VIPLAY = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-\s*'
+                     r'(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})\s*=(.*)$')
+_SBT_TIME = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})(?:[.,:](\d{1,3}))?\s*$')
+# Captions 32 writes the same times as Spruce, in the same order, with the
+# same commas. What tells them apart is that its columns are fixed: the
+# text is two fields of 33 characters with a "|" between them, and Spruce's
+# text is free. The width is in the pattern so the two cannot be confused.
+_CAPTIONS32 = re.compile(r'^(\d{2}):(\d{2}):(\d{2}):(\d{2}) , (\d{2}):(\d{2}):(\d{2}):(\d{2}) , (.{33})\|(.*)$')
+_SUBSONIC = re.compile(r'^\s*\S+\s+(\d+(?:\.\d+)?)\s+\\\s+~:\\(.*)$')
+_SUBSONIC_END = re.compile(r'^\s*\S+\s+(\d+(?:\.\d+)?)\s*$')
+_ORESME = re.compile(r'^(\d{2}):(\d{2}):(\d{2}):(\d{2})((?:\{[^}]*\})*)(.*)$')
+_TAG = re.compile(r'\{([^}]*)\}')
 _MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
 _RT_TIME = re.compile(r'<time\b[^>]*\bbegin\s*=\s*["\']?([^"\'>\s]+)', re.I)
@@ -508,6 +528,221 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
 
 
+# --------------------------------------------------------------- ViPlay
+
+
+def _parse_viplay(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _VIPLAY.match(line)
+        if not match:
+            continue                # the magic line, and anything else
+        body = _lines_of(match.group(9))
+        if not body:
+            continue
+        start = _clock_seconds(*match.groups()[0:4])
+        end = _clock_seconds(*match.groups()[4:8])
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _stamp_millis(seconds, separator=','):
+    total = max(0, int(round(float(seconds) * 1000)))
+    hours, rest = divmod(total, 3600000)
+    minutes, rest = divmod(rest, 60000)
+    secs, millis = divmod(rest, 1000)
+    return f'{hours:02d}:{minutes:02d}:{secs:02d}{separator}{millis:03d}'
+
+
+def _write_viplay(segments, fps=DEFAULT_FPS):
+    # ViPlay is by the author of Subtitle Workshop and takes its tags, which
+    # are Subtitld's own, so the formatting goes through as it is.
+    lines = ['{* VIPLAY SUBTITLE FILE *}']
+    for segment in _ordered(segments):
+        body = '|'.join(line.strip() for line in str(segment.get('text') or '')
+                        .replace('\r\n', '\n').split('\n') if line.strip())
+        if not markup.plain(body).strip():
+            continue
+        lines.append(f'{_stamp_millis(segment.get("start", 0))}-'
+                     f'{_stamp_millis(segment.get("end", 0))}={body}')
+    return '\n'.join(lines) + '\n' if len(lines) > 1 else ''
+
+
+# ------------------------------------------------------------------ SBT
+
+
+def _parse_sbt(text, fps=DEFAULT_FPS):
+    """Start, end, then the text: always two lines of it, the first empty
+    when the subtitle has only one."""
+    lines = text.split('\n')
+    segments = []
+    index = 0
+    while index + 1 < len(lines):
+        start_at, end_at = _SBT_TIME.match(lines[index]), _SBT_TIME.match(lines[index + 1])
+        if not (start_at and end_at):
+            index += 1
+            continue
+        body = []
+        index += 2
+        while index < len(lines) and not (_SBT_TIME.match(lines[index])
+                                          and index + 1 < len(lines) and _SBT_TIME.match(lines[index + 1])):
+            body.append(lines[index])
+            index += 1
+        text_of = _lines_of('\n'.join(body))
+        if not text_of:
+            continue
+        start = _clock_seconds(*start_at.groups())
+        end = _clock_seconds(*end_at.groups())
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': text_of})
+    return _ordered(segments)
+
+
+def _write_sbt(segments, fps=DEFAULT_FPS):
+    def stamp(seconds):
+        total = max(0, int(float(seconds)))
+        hours, rest = divmod(total, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}'
+
+    blocks = []
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        rows = [line.strip() for line in text.split('\n') if line.strip()]
+        # The format holds exactly two lines: one line of text is written
+        # under an empty one, and more than two are folded into the second.
+        rows = [''] + rows if len(rows) == 1 else [rows[0], ' '.join(rows[1:])]
+        blocks.append(f'{stamp(segment.get("start", 0))}\n{stamp(segment.get("end", 0))}\n' + '\n'.join(rows))
+    return '\n'.join(blocks) + '\n' if blocks else ''
+
+
+# ---------------------------------------------------------- Captions 32
+
+
+def _parse_captions32(text, fps=DEFAULT_FPS):
+    segments = []
+    for line in text.split('\n'):
+        match = _CAPTIONS32.match(line.rstrip('\r'))
+        if not match:
+            continue
+        body = _lines_of(f'{match.group(9)}\n{match.group(10)}')
+        if not body:
+            continue
+        start = _hundredths(*match.groups()[0:4])
+        end = _hundredths(*match.groups()[4:8])
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _write_captions32(segments, fps=DEFAULT_FPS):
+    """Fixed columns: two lines of 33 characters with a "|" between them."""
+    def stamp(seconds):
+        total = max(0, int(round(float(seconds) * 100)))
+        hours, rest = divmod(total, 360000)
+        minutes, rest = divmod(rest, 6000)
+        secs, hundredths = divmod(rest, 100)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}:{hundredths:02d}'
+
+    lines = []
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        rows = [line.strip()[:33] for line in text.split('\n') if line.strip()][:2]
+        first = rows[0].ljust(33)
+        second = (rows[1] if len(rows) > 1 else '').ljust(33)
+        lines.append(f'{stamp(segment.get("start", 0))} , {stamp(segment.get("end", 0))} , {first}|{second}')
+    return '\n'.join(line.rstrip() + '\n' for line in lines) if lines else ''
+
+
+# -------------------------------------------------------------- SubSonic
+
+
+def _parse_subsonic(text, fps=DEFAULT_FPS):
+    """Seconds with two decimals that wrap every 256, which is how the
+    format counts and not a mistake in the file: the reader follows the
+    wrap by watching the numbers fall."""
+    times, wraps, previous = [], 0, None
+    for line in text.split('\n'):
+        match = _SUBSONIC.match(line) or _SUBSONIC_END.match(line)
+        if not match:
+            continue
+        raw = float(match.group(1))
+        if previous is not None and raw < previous:
+            wraps += 1
+        previous = raw
+        body = _SUBSONIC.match(line)
+        times.append((_rounded(raw + 256 * wraps), _lines_of(body.group(2)) if body else None))
+    segments = []
+    for position, (seconds, body) in enumerate(times):
+        if body is None:
+            continue                # a line that only ends the one before
+        following = times[position + 1][0] if position + 1 < len(times) else None
+        end = following if following is not None else _rounded(seconds + 2.0)
+        segments.append({'start': seconds, 'end': _rounded(max(seconds, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _write_subsonic(segments, fps=DEFAULT_FPS):
+    lines = []
+    for segment in _ordered(segments):
+        body = _packed(segment, separator=' ')
+        if not body:
+            continue
+        lines.append(f'1 {float(segment.get("start", 0)) % 256:.2f} \\ ~:\\{body}')
+        lines.append(f'1 {float(segment.get("end", 0)) % 256:.2f}')
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+# ---------------------------------------------------------------- Oresme
+
+
+def _parse_oresme(text, fps=DEFAULT_FPS):
+    """A timecode in frames, a run of {tags}, the text; no end times."""
+    rate = float(fps or DEFAULT_FPS)
+    segments = []
+    for line in text.split('\n'):
+        match = _ORESME.match(line.rstrip('\r'))
+        if not match:
+            continue
+        body = _lines_of(_TAG.sub(lambda tag: '\n' if tag.group(1).upper() == 'N' else '', match.group(6)))
+        start = _clock_seconds(*match.groups()[0:4], frames=True, fps=rate)
+        # A row with no text clears the screen, and so ends the one before.
+        segments.append({'start': start, 'end': None, 'text': body})
+    kept = []
+    for position, segment in enumerate(segments):
+        if not segment['text']:
+            continue
+        following = next((later['start'] for later in segments[position + 1:]), None)
+        segment['end'] = following if following is not None else None
+        kept.append(segment)
+    return _ends_at_next(_ordered(kept))
+
+
+def _write_oresme(segments, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+    tags = '{Bottom}{Open Caption}{Center}{White}{Font Arial GVP Bold}'
+
+    def stamp(seconds):
+        total = max(0.0, float(seconds))
+        whole = int(total)
+        frames = min(int(round((total - whole) * rate)), int(round(rate)) - 1)
+        hours, rest = divmod(whole, 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}'
+
+    lines = ['00:00:00:00{BC}{W2710}']
+    for segment in _ordered(segments):
+        body = _packed(segment, separator='{N}')
+        if not body:
+            continue
+        lines.append(f'{stamp(segment.get("start", 0))}{tags}{body}')
+        # The row that clears the screen is what gives the subtitle its end.
+        lines.append(f'{stamp(segment.get("end", 0))}{tags}')
+    return '\n'.join(lines) + '\n' if len(lines) > 1 else ''
+
+
 # ----------------------------------------------------------- TurboTitle
 
 
@@ -605,6 +840,11 @@ _PARSERS = {
     'realtext': _parse_realtext,
     'turbotitle': _parse_turbotitle,
     'zerog': _parse_zerog,
+    'viplay': _parse_viplay,
+    'sbt': _parse_sbt,
+    'captions32': _parse_captions32,
+    'subsonic': _parse_subsonic,
+    'oresme': _parse_oresme,
 }
 
 _WRITERS = {
@@ -619,6 +859,11 @@ _WRITERS = {
     'realtext': _write_realtext,
     'turbotitle': _write_turbotitle,
     'zerog': _write_zerog,
+    'viplay': _write_viplay,
+    'sbt': _write_sbt,
+    'captions32': _write_captions32,
+    'subsonic': _write_subsonic,
+    'oresme': _write_oresme,
 }
 
 
@@ -633,10 +878,20 @@ def kind(data):
     head = text.lstrip('﻿')
     if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
         return 'realtext'
+    if head.lstrip().lower().startswith(_VIPLAY_MAGIC):
+        return 'viplay'
     if head.lstrip().lower().startswith('% zero g'):
         return 'zerog'
     lines = [line for line in head.split('\n') if line.strip()][:60]
     for line in lines:
+        if _CAPTIONS32.match(line.rstrip('\r')):
+            return 'captions32'
+        if _VIPLAY.match(line):
+            return 'viplay'
+        if _SUBSONIC.match(line):
+            return 'subsonic'
+        if _ORESME.match(line.rstrip('\r')) and _ORESME.match(line.rstrip('\r')).group(5):
+            return 'oresme'
         if _TTS.match(line):
             return 'turbotitle'
         if _ZEG.match(line):
@@ -654,6 +909,11 @@ def kind(data):
     # SubViewer 1 is marks alone on their lines, around their text.
     if sum(1 for line in lines if _SUBVIEWER1.match(line)) >= 2:
         return 'subviewer1'
+    # SBT is times on their own lines, two of them, over the text.
+    for position, line in enumerate(lines[:-2]):
+        if _SBT_TIME.match(line) and _SBT_TIME.match(lines[position + 1]) \
+                and not _SBT_TIME.match(lines[position + 2]):
+            return 'sbt'
     clocks = sum(1 for line in lines if _CLOCK.match(line))
     if clocks and clocks >= max(1, len(lines) // 2):
         return 'vplayer'

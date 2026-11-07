@@ -151,6 +151,11 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'REALTEXT': {'description': 'RealText Subtitle format', 'extensions': ['rt']},
     'TURBOTITLE': {'description': 'TurboTitle Subtitle format', 'extensions': ['tts']},
     'ZEROG': {'description': 'ZeroG Subtitle format', 'extensions': ['zeg']},
+    'VIPLAY': {'description': 'ViPlay Subtitle File format', 'extensions': ['vsf']},
+    'SBT': {'description': 'SBT Subtitle format', 'extensions': ['sbt']},
+    'CAPTIONS32': {'description': 'Captions 32 Subtitle format', 'extensions': ['txt']},
+    'SUBSONIC': {'description': 'SubSonic Subtitle format', 'extensions': ['sub']},
+    'ORESME': {'description': 'Oresme Subtitle format', 'extensions': ['txt']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on

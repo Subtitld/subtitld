@@ -128,6 +128,45 @@ check('EBU STL is not one of these', legacy.kind(_gsi), '')
 # --------------------------------------------------------------------------
 # Round trips, with the losses each format forces
 # --------------------------------------------------------------------------
+print('ViPlay: its magic line, milliseconds, "|" between lines')
+VSF = ('{* VIPLAY SUBTITLE FILE *}\n'
+       '00:00:55,000-00:01:02,600=O PADRINHO II\n'
+       '00:01:26,600-00:01:29,000=<u><b><i>O padrinho nasceu com o nome|de Vito Andolini,\n')
+check('cues, with the tags kept', cues(VSF, 'viplay'),
+      [(55.0, 62.6, 'O PADRINHO II'),
+       (86.6, 89.0, '<u><b><i>O padrinho nasceu com o nome\nde Vito Andolini,')])
+
+print('SBT: two time lines, then always two lines of text')
+SBT = ('00:00:55\n00:01:02\n\nO PADRINHO II\n'
+       '00:01:26\n00:01:29\nO padrinho nasceu com o nome\nde Vito Andolini,\n')
+check('the empty line of a one-line subtitle', cues(SBT, 'sbt'),
+      [(55.0, 62.0, 'O PADRINHO II'),
+       (86.0, 89.0, 'O padrinho nasceu com o nome\nde Vito Andolini,')])
+
+print('Captions 32: fixed columns, and not Spruce')
+C32 = '00:01:26:60 , 00:01:29:00 , O padrinho nasceu com o nome     |de Vito Andolini,                \n'
+check('hundredths and the two fields', cues(C32, 'captions32'),
+      [(86.6, 89.0, 'O padrinho nasceu com o nome\nde Vito Andolini,')])
+check('it is Captions 32, not Spruce', legacy.kind(C32), 'captions32')
+check('and Spruce is still Spruce', legacy.kind('00:00:01:00 , 00:00:03:00 , Free|text\n'), 'spruce')
+
+print('SubSonic: seconds that wrap every 256')
+SUBSONIC = '1 55.00 \\ ~:\\O PADRINHO II\n1 62.60\n1 86.60 \\ ~:\\de Vito Andolini,\n1 89.00\n'
+check('two cues, ended by the lines between', cues(SUBSONIC, 'subsonic'),
+      [(55.0, 62.6, 'O PADRINHO II'), (86.6, 89.0, 'de Vito Andolini,')])
+# The numbers fall where the count wraps; the times must keep climbing.
+check('past 256 seconds', [s['start'] for s in legacy.parse(
+      '1 250.00 \\ ~:\\before\n1 252.00\n1 10.00 \\ ~:\\after\n1 12.00\n', 'subsonic')], [250.0, 266.0])
+
+print('Oresme: frames, braces for tags, {N} for a line break')
+ORESME = ('00:00:00:00{BC}{W2710}\n'
+          '10:00:17:06{Bottom}{Open Caption}{Center}{White}{Font Arial GVP Bold}We view\n'
+          '10:00:19:06{Bottom}{Open Caption}{Center}{White}{Font Arial GVP Bold}Lufa Farms as{N}an agrotechnology business\n')
+read_oresme = legacy.parse(ORESME, 'oresme')
+check('the broadcast start and the frames', (read_oresme[0]['start'], read_oresme[0]['text']),
+      (36017.24, 'We view'))
+check('{N} breaks the line', read_oresme[1]['text'], 'Lufa Farms as\nan agrotechnology business')
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
@@ -136,7 +175,9 @@ for fmt in legacy.WRITABLE:
     back = legacy.parse(written, fmt)
     # TurboTitle holds one subtitle a line and has no way to write a line
     # break, so its two lines come back as one. Everything else keeps them.
-    want_text = ['First line second line', 'Second cue'] if fmt == 'turbotitle' \
+    # TurboTitle and SubSonic hold one subtitle a line and have no way to
+    # write a line break, so two lines come back as one. The rest keep them.
+    want_text = ['First line second line', 'Second cue'] if fmt in ('turbotitle', 'subsonic') \
         else ['First line\nsecond line', 'Second cue']
     # The clock formats write whole seconds and carry no end time.
     want_starts = [1.0, 4.0]

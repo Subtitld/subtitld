@@ -734,7 +734,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if sub_kind == 'subviewer':
                 subtitle_format = 'SBV'
                 segments_list = sbv.parse(srt.decode(data))
-            elif legacy.kind(data) in ('mpsub', 'subviewer1'):
+            elif legacy.kind(data) in ('mpsub', 'subviewer1', 'subsonic'):
                 # MPSub and SubViewer 1 are .sub as well, and neither is
                 # MicroDVD: counted in frames, the text would come out at
                 # the wrong times and the right ones would look plausible.
@@ -766,7 +766,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = legacy.SESSION_IDS[found]
             segments_list = legacy.parse(text, found, session.VIDEO.get('framerate'))
 
-        elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg')):
+        elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
+                                             '.vsf', '.sbt')):
             # The player era: the extension narrows it, the bytes decide it.
             try:
                 segments_list, found = legacy.read(subtitle_file, session.VIDEO.get('framerate'))
