@@ -380,6 +380,45 @@ check('beside dialogue in one caption',
       'Dialog <font kind="sound-effect">[a door]</font> more')
 
 
+print("what a window says about itself")
+
+
+def _window_kept(held, mode='pop'):
+    shows = [('Caption text', 30, None, position.NOWHERE, held)]
+    read = cea708.decode(sorted(cea708.frames_for({1: shows}, 18, mode).items()), RATE, 1)
+    return read[0].get('caption_window') if read else '(nothing read)'
+
+
+check('a window Subtitld writes itself asks for nothing out of the ordinary',
+      _window_kept(None), None)
+check('the bytes it writes for one are the ones it always wrote',
+      [unit for unit in cea708._load('Plain', 0) if unit[0] == 0x97][0],
+      [0x97, 0xC0, 0x00, 0x0C | cea708._CENTER, 0x00])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = {'fill': '#0055aa', 'border': 'raised', 'border_color': '#ffffff',
+              'print_direction': 'rtl', 'scroll_direction': 'ltr', 'word_wrap': True,
+              'effect': 'wipe', 'effect_direction': 'btt', 'effect_speed': 9, 'priority': 2}
+    check(f'{_mode}: all of it written and read back', _window_kept(_asked, _mode), _asked)
+check('a box solid black, which a pen on solid black is not',
+      (_window_kept({'fill': '#000000'}), _window_kept({'fill': '#0000ff80'})),
+      ({'fill': '#000000'}, {'fill': '#0000ff80'}))
+check('a border with nothing to draw has no colour of its own',
+      _window_kept({'border_color': '#ff0000'}), None)
+check('a colour CEA-708 cannot say to two bits a component: the nearest it can',
+      _window_kept({'fill': '#003366'}), {'fill': '#005555'})
+check('the ordinary directions say nothing, and a named one says itself',
+      (_window_kept({'print_direction': 'ltr', 'scroll_direction': 'btt'}),
+       _window_kept({'print_direction': 'ttb'})),
+      (None, {'print_direction': 'ttb'}))
+check('what a window holds, read off a subtitle and put back on one',
+      (cea708.window_of({'caption_window': {'fill': '#000000', 'effect': 'fade'}}),
+       cea708.window_of({}), cea708.store_window({'text': 'x'}, cea708.NOWINDOW)),
+      (cea708.Window(fill='#000000', effect='fade'), cea708.NOWINDOW, {'text': 'x'}))
+check('a kind of thing it does not know is nothing',
+      cea708.window_of({'caption_window': {'effect': 'explode', 'priority': 99, 'fill': 'nonsense'}}),
+      cea708.Window(priority=7))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

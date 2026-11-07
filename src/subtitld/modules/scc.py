@@ -861,8 +861,8 @@ def write(segments, drop_frame=True, speaker_changes=False, mode='pop', channel=
 
 def _captions(segments, rate, speaker_changes, build):
     """[[frame it starts, frame it ends, its words from `build`, its text,
-    the words before its first character, where it sits]] for `segments`,
-    by start."""
+    the words before its first character, where it sits, what its CEA-708
+    window says]] for `segments`, by start."""
     captions = []
     speaker = ''
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
@@ -874,11 +874,14 @@ def _captions(segments, rate, speaker_changes, build):
                 text = lead + '>> ' + rest.lstrip()
             speaker = said_by
         place = position.of(segment)
+        # What CEA-708 says about its window rides along unread: CEA-608 has
+        # no windows (modules.cea708).
+        pane = segment.get('caption_window')
         words, lead = build(text, place)
         if words:
             start = round(float(segment.get('start', 0)) * rate)
             captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)),
-                             words, text, lead, place])
+                             words, text, lead, place, pane])
     return captions
 
 
@@ -892,7 +895,7 @@ def _typed(captions, channel, rolling):
     edm = _word(_chan(0x14, channel), _EDM)
     frames, breaks, shows = {}, set(), []
     free = 0
-    for index, (start, end, words, text, lead, place) in enumerate(captions):
+    for index, (start, end, words, text, lead, place, pane) in enumerate(captions):
         first = max(start - lead, free)
         for offset, word in enumerate(words):
             frames[first + offset] = word
@@ -909,15 +912,15 @@ def _typed(captions, channel, rolling):
                     clear += 1
                 frames[clear] = frames[clear + 1] = edm
                 breaks.add(clear)
-        shows.append((text, first + lead, clear, place))
+        shows.append((text, first + lead, clear, place, pane))
     return frames, breaks, shows
 
 
 def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel=1):
     """({frame: word}, the frames a line starts at, [(text, frame shown,
-    frame cleared or None when the next replaces it, where it sits)]) for
-    `segments` as captions of `mode` in channel `channel`, a word a frame at
-    `rate` frames a second."""
+    frame cleared or None when the next replaces it, where it sits, what its
+    CEA-708 window says)]) for `segments` as captions of `mode` in channel
+    `channel`, a word a frame at `rate` frames a second."""
     mode = mode if mode in MODES else 'pop'
     channel = 2 if channel == 2 else 1
     if mode.startswith('roll'):
@@ -932,7 +935,7 @@ def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel
 
     frames, breaks, shows = {}, set(), []          # frame: word; the frames a line starts at
     loaded_from = 0                                # the first frame the next load may use
-    for index, (start, end, words, text, _lead_, place) in enumerate(captions):
+    for index, (start, end, words, text, _lead_, place, pane) in enumerate(captions):
         # Loaded after the last one was shown (until then the memory it
         # loads into holds that one), shown on its frame, or as soon after
         # as there is time to load it.
@@ -957,7 +960,7 @@ def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel
             breaks.add(clear)
         else:
             clear = None
-        shows.append((text, shown, clear, place))
+        shows.append((text, shown, clear, place, pane))
     return frames, breaks, shows
 
 

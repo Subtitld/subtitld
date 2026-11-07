@@ -308,6 +308,16 @@ check('CEA-608 beside it puts it on the nearest of its own rows and columns',
       ('{\\an8}In from the corner', {'h': '-3.1%', 'v': '13.3%'}))
 
 
+print('a window carried through a file')
+_held = {'fill': '#000000', 'border': 'uniform', 'print_direction': 'ttb', 'priority': 3}
+_back, _settings = mcc.parse(mcc.write(
+    [{'start': 1.0, 'end': 3.0, 'text': 'Through a file', 'caption_window': _held},
+     {'start': 4.0, 'end': 6.0, 'text': 'Asking for nothing'}], 30000 / 1001))
+check('CEA-708 says it in its window, and says nothing for a caption that asks for nothing',
+      [(subtitle['text'], subtitle.get('caption_window')) for subtitle in _back],
+      [('Through a file', _held), ('Asking for nothing', None)])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -51,10 +51,95 @@ without accents, or a 16-bit character.
 """
 
 import unicodedata
+from typing import NamedTuple
 
 from subtitld.modules import markup, position
 
 LAST_DURATION = 4.0                      # seconds a caption still shown at the end lasts
+
+# -- A caption's window -------------------------------------------------------
+#
+# CEA-708 paints into windows: a window is the box, and the pen writes the
+# text in it (markup.Style carries what the pen says). A window has a look
+# and a manner of its own, which Subtitld draws none of — a subtitle's box,
+# its outline and the way it arrives are a style template's settings
+# (modules.subtitle_styles), and there can be only one owner of those. What
+# a file says about its windows is kept all the same, so a caption file read
+# and written again says what it said:
+#
+#     segment['caption_window'] = {'fill': '#000000', 'border': 'uniform',
+#                                  'print_direction': 'ttb', 'effect': 'fade'}
+#
+# Every key is optional, and a window that asks for nothing out of the
+# ordinary has no 'caption_window' at all: what Subtitld writes itself is
+# what counts as ordinary, so a file of its own making keeps the key away.
+
+DIRECTIONS = ('ltr', 'rtl', 'ttb', 'btt')          # left to right, right to left, down, up
+EFFECTS = ('snap', 'fade', 'wipe')                 # how a caption arrives
+BORDERS = ('',) + markup.EDGES                     # the same five a pen's edge has
+
+
+class Window(NamedTuple):
+    """What a window says about itself, beyond where it sits and how big it
+    is. The defaults are what Subtitld writes, so they say nothing."""
+
+    fill: str = ''                       # '#rrggbb(aa)' behind the whole caption, '' see-through
+    border: str = ''                     # one of BORDERS around it
+    border_color: str = ''               # '#rrggbb' that border is drawn in
+    print_direction: str = ''            # one of DIRECTIONS, '' left to right
+    scroll_direction: str = ''           # one of DIRECTIONS, '' bottom to top, as roll-up goes
+    word_wrap: bool = False              # whether the decoder may break the lines itself
+    effect: str = ''                     # one of EFFECTS, '' snapping on
+    effect_direction: str = ''           # one of DIRECTIONS a fade or a wipe goes
+    effect_speed: int = 0                # as CEA-708 counts it, half a second a step
+    priority: int = 0                    # 0 first, 7 last, where windows overlap
+
+    def any(self):
+        return self != NOWINDOW
+
+
+NOWINDOW = Window()
+_FIELD_VOCABULARY = {'border': BORDERS, 'print_direction': DIRECTIONS, 'scroll_direction': DIRECTIONS,
+                     'effect': EFFECTS, 'effect_direction': DIRECTIONS}
+
+
+def window_of(segment):
+    """The Window a subtitle holds; NOWINDOW when it holds none."""
+    return window_from(segment.get('caption_window') if isinstance(segment, dict) else None)
+
+
+def window_from(held):
+    """The Window a 'caption_window' says, as the SCC module hands it on
+    without reading it (it is CEA-708's window, not CEA-608's business)."""
+    if not isinstance(held, dict):
+        return NOWINDOW
+    said = {}
+    for field, default in zip(Window._fields, NOWINDOW):
+        value = held.get(field)
+        if value is None:
+            continue
+        if field in _FIELD_VOCABULARY:
+            text = str(value).strip().lower()
+            if text in _FIELD_VOCABULARY[field] and text:
+                said[field] = text
+        elif isinstance(default, bool):
+            said[field] = bool(value)
+        elif isinstance(default, int):
+            said[field] = max(0, min(15, int(value))) if field == 'effect_speed' else max(0, min(7, int(value)))
+        elif markup.background_hex(value):
+            said[field] = markup.background_hex(value) if field == 'fill' else markup.color_hex(value)
+    return NOWINDOW._replace(**{field: value for field, value in said.items() if value})
+
+
+def store_window(segment, window):
+    """Put `window` on a subtitle, or take its 'caption_window' away when it
+    says nothing out of the ordinary. Returns the subtitle."""
+    held = {field: value for field, value in zip(Window._fields, window) if value}
+    if held:
+        segment['caption_window'] = held
+    else:
+        segment.pop('caption_window', None)
+    return segment
 _COLUMNS = 32                            # a row's columns, as 4:3 decoders show them
 _ROWS = 15
 _LEVELS = (0x00, 0x55, 0xAA, 0xFF)       # the four levels of each colour component
@@ -124,6 +209,28 @@ def _edge_color(value):
     return '' if rgb == (0, 0, 0) else '#{:02x}{:02x}{:02x}'.format(*rgb)
 
 
+def _fill(value):
+    """'#rrggbb', or '#rrggbbaa' where it is not solid, for a window's fill;
+    '' for a box that cannot be seen, which is the one Subtitld writes.
+
+    A pen's background and a window's fill are the same bits with different
+    defaults: a pen sits on solid black unless it says otherwise, while a
+    window is see-through, so solid black is a box a window really asked
+    for and says so.
+    """
+    alpha = _OPACITY[(value >> 6) & 3]
+    if not alpha:
+        return ''
+    rgb = (_LEVELS[(value >> 4) & 3], _LEVELS[(value >> 2) & 3], _LEVELS[value & 3])
+    return '#{:02x}{:02x}{:02x}'.format(*rgb) + ('' if alpha == 255 else f'{alpha:02x}')
+
+
+def _direction(value, ordinary):
+    """One of DIRECTIONS, or '' where it is the one a caption goes in
+    anyway."""
+    return '' if value == ordinary else DIRECTIONS[value]
+
+
 def _settled(style):
     """A pen with no edge has no colour for one: a decoder is told the edge
     colour whether an edge is drawn or not."""
@@ -150,6 +257,7 @@ class _Window:
         self.anchor_v = self.anchor_h = self.anchor_point = 0
         self.rows, self.columns = 1, _COLUMNS
         self.justify = _LEFT
+        self.look = NOWINDOW                     # what it says about itself
         self.cells = {}                          # row: {column: (char, Style)}
         self.pen_row = self.pen_column = 0
         self.style = markup.PLAIN
@@ -278,7 +386,8 @@ class _Service:
         self._close(seconds, old)
         window.shown = None
         if text:
-            window.shown = {'start': seconds, 'end': None, 'body': text, 'keypad': keypad, 'place': place}
+            window.shown = {'start': seconds, 'end': None, 'body': text, 'keypad': keypad, 'place': place,
+                            'window': window.look}
             self.subtitles.append(window.shown)
 
     def _hide(self, seconds, window):
@@ -299,7 +408,7 @@ class _Service:
                 if not window.relative:
                     keypad, place = (keypad - 1) // 3 * 3 + 2, place._replace(h='')
                 subtitle = {'start': window.line['start'], 'end': None, 'body': text,
-                            'keypad': keypad, 'place': place}
+                            'keypad': keypad, 'place': place, 'window': window.look}
                 self.subtitles.append(subtitle)
                 window.live.append(subtitle)
             window.line = None
@@ -467,6 +576,18 @@ class _Service:
             window = self._window()
             if window is not None:
                 window.justify = parameters[2] & 0x03
+                window.look = window.look._replace(
+                    fill=_fill(parameters[0]),
+                    border=BORDERS[min((parameters[2] >> 7) << 2 | (parameters[1] >> 6), len(BORDERS) - 1)],
+                    border_color=_edge_color(parameters[1] & 0x3F),
+                    print_direction=_direction((parameters[2] >> 4) & 0x03, 0),
+                    scroll_direction=_direction((parameters[2] >> 2) & 0x03, 3),
+                    word_wrap=bool(parameters[2] & 0x40),
+                    effect=EFFECTS[parameters[3] & 0x03] if parameters[3] & 0x03 else '',
+                    effect_direction=_direction((parameters[3] >> 2) & 0x03, 0),
+                    effect_speed=(parameters[3] >> 4) & 0x0F)
+                if not window.look.border:
+                    window.look = window.look._replace(border_color='')
         elif code >= 0x98:                                   # DefineWindow 0-7
             self._define(seconds, code - 0x98, parameters)
 
@@ -487,6 +608,7 @@ class _Service:
             window.cells = {row - drop: cells for row, cells in window.cells.items() if row >= drop}
             window.pen_row = max(window.pen_row - drop, 0)
         window.rows, window.columns = rows, (parameters[4] & 0x3F) + 1
+        window.look = window.look._replace(priority=parameters[0] & 0x07)
         style = (parameters[5] >> 3) & 0x07
         if new or style:
             window.justify = _STYLE_JUSTIFY.get(style or 1, _LEFT)
@@ -573,10 +695,10 @@ def decode(batches, rate, service=1):
         if not subtitle.get('body'):
             continue
         keypad = subtitle['keypad']
-        segments.append(position.store(
+        segments.append(store_window(position.store(
             {'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
              'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']},
-            subtitle.get('place') or position.NOWHERE))
+            subtitle.get('place') or position.NOWHERE), subtitle.get('window') or NOWINDOW))
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     return segments
 
@@ -684,7 +806,23 @@ def _within(percent):
     return max(0, min(100, int(round(percent))))
 
 
-def _define(window, keypad, rows, columns, visible, place=position.NOWHERE):
+def _attributes(look, horizontal):
+    """The SetWindowAttributes bytes for a Window: what it asks for, else
+    a see-through box with no border, rolling up, snapping on."""
+    border = BORDERS.index(look.border) if look.border in BORDERS else 0
+    print_way = DIRECTIONS.index(look.print_direction) if look.print_direction in DIRECTIONS else 0
+    scroll_way = DIRECTIONS.index(look.scroll_direction) if look.scroll_direction in DIRECTIONS else 3
+    effect = EFFECTS.index(look.effect) if look.effect in EFFECTS else 0
+    effect_way = DIRECTIONS.index(look.effect_direction) if look.effect_direction in DIRECTIONS else 0
+    return [0x97,
+            _pen_background(look.fill) if look.fill else 0xC0,
+            (border & 0x03) << 6 | _two_bits(look.border_color, (0, 0, 0)),
+            (border >> 2) << 7 | (0x40 if look.word_wrap else 0) | print_way << 4 | scroll_way << 2
+            | (_LEFT, _CENTER, _RIGHT)[horizontal],
+            (look.effect_speed & 0x0F) << 4 | effect_way << 2 | effect]
+
+
+def _define(window, keypad, rows, columns, visible, place=position.NOWHERE, look=NOWINDOW):
     """DefineWindow and SetWindowAttributes for a window of `rows` rows and
     `columns` columns where `keypad` and `place` put it, placed by
     percentages of the screen so 4:3 and 16:9 decoders put it alike."""
@@ -692,14 +830,13 @@ def _define(window, keypad, rows, columns, visible, place=position.NOWHERE):
     anchor_point = (2 - vertical) * 3 + horizontal
     anchor_v, anchor_h = _anchor(keypad, place)
     return [[0x98 + window,
-             0x38 if visible else 0x18,                                 # visible or not; rows and columns locked
+             (0x20 if visible else 0) | 0x18 | (look.priority & 0x07),   # visible; rows and columns locked
              0x80 | anchor_v,                                           # relative: % of the screen's height
              anchor_h,
              anchor_point << 4 | (rows - 1),
              columns - 1,
              0x09],                                                     # window and pen style 1
-            # Transparent fill, bottom-to-top scroll, the place's justification.
-            [0x97, 0xC0, 0x00, 0x0C | (_LEFT, _CENTER, _RIGHT)[horizontal], 0x00]]
+            _attributes(look, horizontal)]
 
 
 def _typed(rows, pen, first_row=0):
@@ -727,13 +864,13 @@ def _typed(rows, pen, first_row=0):
     return units, pen
 
 
-def _load(text, window, place=position.NOWHERE):
+def _load(text, window, place=position.NOWHERE, look=NOWINDOW):
     """The commands that load a subtitle into a hidden window."""
     rows, keypad = _rows(text)
     if not rows:
         return []
     columns = max(len(row) for row in rows)
-    units = _define(window, keypad, len(rows), columns, False, place)
+    units = _define(window, keypad, len(rows), columns, False, place, look)
     units.insert(1, [0x88, 1 << window])                                # ClearWindows
     pen = None
     for index, row in enumerate(rows):
@@ -743,7 +880,7 @@ def _load(text, window, place=position.NOWHERE):
     return units
 
 
-def _roll(text, window, count, define, place=position.NOWHERE):
+def _roll(text, window, count, define, place=position.NOWHERE, look=NOWINDOW):
     """The commands that type a subtitle as roll-up lines in a window of
     `count` rows, on screen as they are typed: the window defined the first
     time, then each line after a CR has rolled the ones before it up."""
@@ -752,7 +889,7 @@ def _roll(text, window, count, define, place=position.NOWHERE):
         return []
     units = []
     if define:
-        units = _define(window, keypad, count, _COLUMNS, True, place)
+        units = _define(window, keypad, count, _COLUMNS, True, place, look)
         units.append([0x88, 1 << window])                               # ClearWindows
         units.append([0x92, count - 1, 0])                              # the pen on the base row
     else:
@@ -765,7 +902,7 @@ def _roll(text, window, count, define, place=position.NOWHERE):
     return units
 
 
-def _paint(text, window, place=position.NOWHERE):
+def _paint(text, window, place=position.NOWHERE, look=NOWINDOW):
     """The commands that paint a subtitle onto the screen as it is typed:
     the window defined where the subtitle sits, visible and empty, then its
     text."""
@@ -773,7 +910,7 @@ def _paint(text, window, place=position.NOWHERE):
     if not rows:
         return []
     columns = max(len(row) for row in rows)
-    units = _define(window, keypad, len(rows), columns, True, place)
+    units = _define(window, keypad, len(rows), columns, True, place, look)
     units.insert(1, [0x88, 1 << window])                                # ClearWindows
     units.append([0x92, 0, 0])
     written, _pen_ = _typed(rows, None)
@@ -820,11 +957,12 @@ def _queue(shows, capacity, service, mode):
     for index, show in enumerate(shows):
         # A show says where its subtitle sits where it has somewhere to say.
         text, shown, cleared = show[:3]
-        place = show[3] if len(show) > 3 else position.NOWHERE
+        place = (show[3] if len(show) > 3 else None) or position.NOWHERE
+        look = window_from(show[4]) if len(show) > 4 else NOWINDOW
         last = index == len(shows) - 1
         if rows:
             # One window of its own, defined once: its lines roll up in it.
-            units = _roll(text, 0, rows, not defined, place)
+            units = _roll(text, 0, rows, not defined, place, look)
             if not units:
                 continue
             if not defined:
@@ -836,7 +974,7 @@ def _queue(shows, capacity, service, mode):
             continue
         window = index % 2
         if mode == 'paint':
-            units = _paint(text, window, place)
+            units = _paint(text, window, place, look)
             if not units:
                 continue
             # The one before it goes as this one is defined, so that only
@@ -848,7 +986,7 @@ def _queue(shows, capacity, service, mode):
                 queue.append((cleared, 0, _packets([[0x8C, 1 << window]], service)))
                 visible = None
             continue
-        units = _load(text, window, place)
+        units = _load(text, window, place, look)
         if not units:
             continue
         if not queue:
