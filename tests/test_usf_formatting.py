@@ -135,6 +135,19 @@ check('a project with nothing forced says nothing',
       'forced' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
                                     speakers={}, language='en-us'), False)
 
+print('hidden: what the file says a player should not draw')
+hidden_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'Not for the viewer', 'speaker': 'A', 'hidden': True},
+                                {'start': 2, 'end': 3, 'text': 'Ordinary', 'speaker': 'A'}],
+                               speakers={}, language='en-us')
+check("on the subtitle, in Subtitld's namespace, as forced is",
+      ('subtitldcc:hidden="true"' in hidden_usf, hidden_usf.count('subtitldcc:hidden'),
+       'xmlns:subtitldcc' in hidden_usf), (True, 1, True))
+check('read back as it was', [(s['text'], s.get('hidden')) for s in USFReader().read(hidden_usf)],
+      [('Not for the viewer', True), ('Ordinary', None)])
+check('a project with nothing hidden says nothing',
+      'hidden' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                    speakers={}, language='en-us'), False)
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

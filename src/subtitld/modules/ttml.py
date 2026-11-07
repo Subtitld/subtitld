@@ -35,6 +35,9 @@ Reading:
   xml:space="preserve";
 - the ttm:agent of a paragraph (or of a span in it, or of its div) is its
   speaker, named by the agent's ttm:name;
+- a subtitle a player would draw nothing of — tts:display="none" on it
+  or on what holds it, tts:visibility="hidden", a region at tts:opacity 0
+  — is read like any other and marked hidden, not left out;
 - the document's xml:lang is the subtitles' language;
 - the subtitles come sorted by start.
 
@@ -75,7 +78,7 @@ _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'position', 'direction', 'forcedDisplay', 'shear', 'ruby')
+                 'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -237,6 +240,30 @@ def _color(value):
     if value.startswith('#') and len(value) == 9:
         value = value[:7]
     return markup.color_hex(value)
+
+
+def _alpha(value):
+    """A tts:opacity as a number, or None when it is not one: TTML writes it
+    as a real number, TTML2 also as a percentage."""
+    value = (value or '').strip()
+    try:
+        return float(value[:-1]) / 100 if value.endswith('%') else float(value)
+    except ValueError:
+        return None
+
+
+def _unshown(props, inherited=False):
+    """Whether a player would draw nothing of this: tts:display="none" or
+    a tts:visibility of "hidden".
+
+    `inherited` carries display="none" from an element holding this one,
+    which leaves everything inside it out of the layout however the inner
+    elements style themselves; visibility is inherited the ordinary way,
+    so an inner element saying "visible" does show.
+    """
+    return bool(inherited
+                or str(props.get('display') or '').strip() == 'none'
+                or str(props.get('visibility') or '').strip() == 'hidden')
 
 
 def _properties(element):
@@ -543,7 +570,7 @@ def _document(text):
     agents = _agents(root)
     segments = []
 
-    def paragraph(element, start, stop, props, region, preserve, outer_agent):
+    def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False):
         region_props = styles.of(regions[region], {}) if region in regions else {}
         # The region's styles first: what the body, div or paragraph says
         # goes over them.
@@ -571,6 +598,17 @@ def _document(text):
         # line of another language a film translates on screen.
         if str(p_props.get('forcedDisplay') or '').strip().lower() == 'true':
             segment['forced'] = True
+        # Only a region can be made transparent — tts:opacity applies to
+        # nothing else — and a region that is not presented takes its
+        # subtitles with it, whatever the body or the div says.
+        region_unshown = (str(region_props.get('display') or '').strip() == 'none'
+                          or _alpha(region_props.get('opacity')) == 0)
+        # A subtitle a player would draw nothing of: a hidden alternate
+        # track, a line an authoring tool left in, a region at opacity 0.
+        # It is kept and marked, not dropped — it is part of the file, and
+        # a round trip puts it back the way it came.
+        if _unshown(p_props, unshown or region_unshown):
+            segment['hidden'] = True
         # Where the region puts it, beyond the nine places: a file that
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
@@ -586,7 +624,7 @@ def _document(text):
                 position.store(segment, position.Place(h=_percent(across), v=_percent(down)))
         segments.append(segment)
 
-    def walk(element, base, limit, props, region, preserve, agent):
+    def walk(element, base, limit, props, region, preserve, agent, unshown=False):
         """Read `element`, its times counted from `base`, over by `limit`;
         its end, when it has one."""
         name = _local(element.tag)
@@ -599,14 +637,15 @@ def _document(text):
         if limit is not None and stop is not None:
             stop = min(stop, limit)
         if name == 'p':
-            paragraph(element, start, stop, props, region, preserve, agent)
+            paragraph(element, start, stop, props, region, preserve, agent, unshown)
             return stop
         inner = styles.of(element, props) if name != 'tt' else props
+        unshown = unshown or str(inner.get('display') or '').strip() == 'none'
         agent = (_attr(element, 'agent') or '').split()[0] if _attr(element, 'agent') else agent
         sequential = element.get('timeContainer') == 'seq'
         for child in element:
             if _local(child.tag) in ('body', 'div', 'p'):
-                child_stop = walk(child, start, stop, inner, region, _preserving(element, preserve), agent)
+                child_stop = walk(child, start, stop, inner, region, _preserving(element, preserve), agent, unshown)
                 if sequential and child_stop is not None:
                     start = child_stop
         return stop
@@ -872,6 +911,10 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             attrs += f' tts:direction="{segment["direction"]}"'
         if segment.get('forced') and profile != 'ebu-tt-d':
             attrs += ' itts:forcedDisplay="true"'
+        # EBU-TT-D's spec lists tts:display among the attributes it does not
+        # use, so there a hidden subtitle is written as an ordinary one.
+        if segment.get('hidden') and profile != 'ebu-tt-d':
+            attrs += ' tts:display="none"'
         content = _content(rest, shear)
         if box:
             content = f'<span style="{box}">{content}</span>'

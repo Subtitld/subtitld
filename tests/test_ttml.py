@@ -378,6 +378,45 @@ check('a file with nothing forced says nothing, and EBU-TT-D never does',
       ('forcedDisplay' in ttml.write([{'start': 1, 'end': 2, 'text': 'x'}], 'en'),
        'forcedDisplay' in ttml.write(forced, 'en', profile='ebu-tt-d')), (False, False))
 
+print('hidden: what a player would draw nothing of')
+hidden = [{'start': 1, 'end': 2, 'text': 'Not for the viewer', 'hidden': True},
+          {'start': 3, 'end': 4, 'text': 'Ordinary'}]
+hidden_written = ttml.write(hidden, 'en', profile='imsc1.1')
+check('tts:display="none" on the one that says so',
+      (' tts:display="none"' in hidden_written, hidden_written.count('tts:display="none"')), (True, 1))
+check('read back as it was', [(s['text'], s.get('hidden')) for s in ttml.parse(hidden_written)],
+      [(s['text'], s.get('hidden')) for s in hidden])
+check('a file with nothing hidden says nothing, and EBU-TT-D never does',
+      ('tts:display="none"' in ttml.write([{'start': 1, 'end': 2, 'text': 'x'}], 'en'),
+       'tts:display="none"' in ttml.write(hidden, 'en', profile='ebu-tt-d')), (False, False))
+check('display="none" takes everything inside it, say what the inside says',
+      [(s['text'], s.get('hidden')) for s in ttml.parse(doc(
+          '<div tts:display="none"><p begin="1s" end="2s">Inside</p>'
+          '<p begin="3s" end="4s" tts:display="auto">Says auto</p></div>'))],
+      [('Inside', True), ('Says auto', True)])
+check('visibility is inherited, so the inside can say visible and show',
+      [(s['text'], s.get('hidden')) for s in ttml.parse(doc(
+          '<div tts:visibility="hidden"><p begin="1s" end="2s">Hidden</p>'
+          '<p begin="3s" end="4s" tts:visibility="visible">Shown</p></div>'))],
+      [('Hidden', True), ('Shown', None)])
+check('a region at opacity 0 hides its subtitles, one part way does not',
+      [(s['text'], s.get('hidden')) for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" region="gone">Clear</p><p begin="3s" end="4s" region="faint">Faint</p>',
+          head='<layout><region xml:id="gone" tts:opacity="0"/>'
+               '<region xml:id="faint" tts:opacity="0.5"/></layout>'))],
+      [('Clear', True), ('Faint', None)])
+check('a region that is not presented takes its subtitles with it',
+      [s.get('hidden') for s in ttml.parse(doc(
+          '<div tts:display="auto"><p begin="1s" end="2s" region="off">Gone</p></div>',
+          head='<layout><region xml:id="off" tts:display="none"/></layout>'))], [True])
+check('opacity anywhere but a region is not an opacity at all',
+      [s.get('hidden') for s in ttml.parse(doc(
+          '<div tts:opacity="0"><p begin="1s" end="2s">Still here</p></div>'))], [None])
+check('an opacity that is not a number is not a hidden subtitle',
+      [s.get('hidden') for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" region="odd">Still here</p>',
+          head='<layout><region xml:id="odd" tts:opacity="opaque"/></layout>'))], [None])
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
