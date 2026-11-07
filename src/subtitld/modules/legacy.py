@@ -32,8 +32,9 @@ What is read, and written:
   binary and shares the extension: `kind` separates them, and so must
   anything else that opens a .stl.
 - **RealText** (.rt): RealPlayer's HTML, "<time begin=...>" and the text
-  until the next time or a <clear/>. Read only: nothing plays it now, and
-  writing it would be writing for no one.
+  until the next time or a <clear/>. Read and written, though nothing has
+  played it in twenty years: a format Subtitld reads and cannot write back
+  is a trap for anyone who opens one to fix a typo.
 - **TurboTitle** (.tts): "0:00:00.80,0:00:02.28,Narrator The line", the
   Amiga laserdisc-era format, hundredths of a second, the name of whoever
   speaks between the times and the text. Read and written. Its "~" is a
@@ -80,10 +81,20 @@ EXTENSIONS = {
 
 # The ones Subtitld writes; RealText is read only.
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
-            'turbotitle', 'zerog')
+            'realtext', 'turbotitle', 'zerog')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
+
+# What the session calls each of these formats, and back. TMPlayer and
+# VPlayer are one entry: they differ only in the character between the
+# clock and the text, which is no difference to anyone choosing a format.
+SESSION_FORMATS = {
+    'MPL2': 'mpl2', 'PJS': 'pjs', 'MPSUB': 'mpsub', 'VPLAYER': 'vplayer',
+    'AQTITLE': 'aqtitle', 'SUBVIEWER1': 'subviewer1', 'SPRUCE': 'spruce',
+    'REALTEXT': 'realtext', 'TURBOTITLE': 'turbotitle', 'ZEROG': 'zerog',
+}
+SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
 _MPL2 = re.compile(r'^\s*\[(\d+)\]\[(\d+)\](.*)$')
 _PJS = re.compile(r'^\s*(\d+)\s*,\s*(\d+)\s*,\s*"(.*)"\s*$')
@@ -474,6 +485,29 @@ def _parse_realtext(text, fps=DEFAULT_FPS):
     return _ends_at_next(_ordered(segments))
 
 
+def _write_realtext(segments, fps=DEFAULT_FPS):
+    """A <window> of <time> tags, each subtitle cleared before the next."""
+    def stamp(seconds):
+        total = max(0.0, float(seconds))
+        hours, rest = divmod(int(total), 3600)
+        minutes, secs = divmod(rest, 60)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}.{int(round((total - int(total)) * 10))}'
+
+    lines = ['<window type="generic">']
+    for segment in _ordered(segments):
+        text = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
+        if not markup.plain(text).strip():
+            continue
+        # RealText's b, i and u are Subtitld's own, so the tags go through
+        # as they are; a bare & would not, and becomes an entity.
+        body = re.sub(r'&(?![A-Za-z#][A-Za-z0-9]*;)', '&amp;', text)
+        body = '<br/>'.join(line.strip() for line in body.split('\n') if line.strip())
+        lines.append(f'<time begin="{stamp(segment.get("start", 0))}"/>{body}'
+                     f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
+    lines.append('</window>')
+    return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
 # ----------------------------------------------------------- TurboTitle
 
 
@@ -582,6 +616,7 @@ _WRITERS = {
     'aqtitle': _write_aqtitle,
     'subviewer1': _write_subviewer1,
     'spruce': _write_spruce,
+    'realtext': _write_realtext,
     'turbotitle': _write_turbotitle,
     'zerog': _write_zerog,
 }
