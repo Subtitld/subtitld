@@ -322,6 +322,48 @@ check('its metrics: 2min is two minutes, 500ms half a second',
       [c[0] for c in cues('<smilText><clear begin="2min"/>a<clear begin="500ms"/>b'
                           '<clear begin="3min"/></smilText>', 'smiltext')], [120.0, 120.0])
 
+print('SSF: a little language, read for the subtitles in it')
+SSF = '''/*
+	This file is the direct translation of demo.ssa
+*/
+
+file#file
+{
+	format: "ssf";
+	version: 1;
+};
+
+#notes
+{
+	style: MainB;
+};
+
+subtitle : notes
+{
+	time {start: 00:00:00.000; stop: 00:00:05.000;};
+
+	@ {
+		Subtitler filter for VirtualDub\\n
+		Demonstration script
+	};
+};
+
+subtitle
+{
+	time.start: 00:00:10.000;
+	time.stop: +2s;
+	@ {Ten seconds in};
+};
+'''
+check('its comments, its named definitions and its blocks', cues(SSF, 'ssf'),
+      [(0.0, 5.0, 'Subtitler filter for VirtualDub\nDemonstration script'),
+       (10.0, 12.0, 'Ten seconds in')])
+# A signed stop is a duration from this subtitle's own start, not a time.
+check('"+2s" is two seconds long, not two seconds past midnight',
+      cues(SSF, 'ssf')[1][1] - cues(SSF, 'ssf')[1][0], 2.0)
+check('a definition with no time of its own is left out, not guessed at',
+      legacy.parse('file#file {format: "ssf";};\n#style1 {font.size: 20;};\n', 'ssf'), [])
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]

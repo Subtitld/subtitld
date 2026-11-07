@@ -787,7 +787,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
                                              '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
                                              '.scr', '.mac', '.sst', '.ssts',
-                                             '.dks', '.psb', '.cmml', '.smil')):
+                                             '.dks', '.psb', '.cmml', '.smil', '.ssf')):
             # The player era: the extension narrows it, the bytes decide it.
             try:
                 segments_list, found = legacy.read(subtitle_file, session.VIDEO.get('framerate'))

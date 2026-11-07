@@ -94,6 +94,7 @@ EXTENSIONS = {
     'captionate': 'xml',
     'cmml': 'cmml',
     'smiltext': 'smil',
+    'ssf': 'ssf',
     'sst': 'sst',
     'ssts': 'ssts',
 }
@@ -102,7 +103,7 @@ EXTENSIONS = {
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
             'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
             'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts',
-            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml', 'smiltext')
+            'dks', 'powerdivx', 'dvdss', 'qttext', 'captionate', 'cmml', 'smiltext', 'ssf')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -119,7 +120,7 @@ SESSION_FORMATS = {
     'SASAMI': 'sasami', 'XOMBIE': 'xombie', 'MACSUB': 'macsub',
     'SST': 'sst', 'SSTS': 'ssts', 'DKS': 'dks', 'POWERDIVX': 'powerdivx',
     'DVDSS': 'dvdss', 'QTTEXT': 'qttext', 'CAPTIONATE': 'captionate',
-    'CMML': 'cmml', 'SMILTEXT': 'smiltext',
+    'CMML': 'cmml', 'SMILTEXT': 'smiltext', 'SSF': 'ssf',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -579,6 +580,124 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
                      f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
     lines.append('</window>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# ------------------------------------------------------------------ SSF
+
+
+_SSF_COMMENT = re.compile(r'/\*.*?\*/|//[^\n]*', re.S)
+_SSF_SUBTITLE = re.compile(r'(?<![\w.])subtitle\s*(?:#\s*\w+\s*)?(?::[^;{]*)?\{')
+_SSF_TIME_FIELD = re.compile(r'\btime\s*\.\s*(start|stop)\s*[:=]\s*([^;}]+)')
+_SSF_TIME_BLOCK = re.compile(r'\btime\s*[:=]?\s*\{([^{}]*)\}')
+_SSF_INNER = re.compile(r'\b(start|stop)\s*[:=]\s*([^;}]+)')
+_SSF_SCALE = re.compile(r'\btime\s*\.\s*scale\s*[:=]\s*([\d.]+)')
+_SSF_VALUE = re.compile(r'^([+-]?)\s*(?:(\d+):(\d+):(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(ms|h|m|s)?)$')
+_SSF_UNITS = {'h': 3600.0, 'm': 60.0, 's': 1.0, 'ms': 0.001}
+
+
+def _ssf_balanced(text, opened):
+    """The body of the block whose "{" is at `opened`, and where it ends."""
+    depth, index = 0, opened
+    while index < len(text):
+        if text[index] == '{':
+            depth += 1
+        elif text[index] == '}':
+            depth -= 1
+            if depth == 0:
+                return text[opened + 1:index], index + 1
+        index += 1
+    return text[opened + 1:], len(text)
+
+
+def _ssf_time(value, scale):
+    """(seconds, relative). A bare number counts in `time.scale` units."""
+    match = _SSF_VALUE.match(str(value or '').strip().strip('"\''))
+    if not match:
+        return None, False
+    sign, hours, minutes, seconds, number, unit = match.groups()
+    if hours is not None:
+        total = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    elif unit:
+        total = float(number) * _SSF_UNITS[unit]
+    else:
+        total = float(number) * scale
+    return _rounded(total), sign == '+'
+
+
+def _ssf_text(body):
+    """The words of an "@" block: whitespace compressed, "\\n" a break."""
+    opened = body.find('{')
+    if opened < 0:
+        return ''
+    inner, _ = _ssf_balanced(body, opened)
+    inner = re.sub(r'\[[^\]]*\]', '', inner)        # inline style references
+    inner = re.sub(r'(?<!\\)\\h', ' ', inner)
+    pieces = re.split(r'(?<!\\)\\n', inner)
+    lines = [re.sub(r'\s+', ' ', piece).strip() for piece in pieces]
+    lines = [line.replace('\\{', '{').replace('\\}', '}').replace('\\\\', '\\') for line in lines]
+    return '\n'.join(line for line in lines if line)
+
+
+def _parse_ssf(text, fps=DEFAULT_FPS):
+    """Gabest's Structured Subtitle Format: read what can be read of it.
+
+    SSF is a little language with prototype inheritance, not a list of
+    subtitles, and a subtitle may take its times from a definition
+    elsewhere in the file. What is read here is the common shape: a
+    `subtitle` block carrying its own time.start, time.stop and "@" text,
+    with "+" meaning "after the one before" for a start and "after this
+    start" for a stop. A block that gives no time of its own is LEFT OUT
+    rather than guessed at: the spec says a subtitle needs a start, a
+    stop and an "@" to be shown, and inventing the two missing ones would
+    put text on screen at a time nobody asked for.
+    """
+    body = _SSF_COMMENT.sub(' ', text)
+    scale_at = _SSF_SCALE.search(body)
+    scale = float(scale_at.group(1)) if scale_at else 1.0
+    segments = []
+    cursor = 0.0
+    index = 0
+    while True:
+        found = _SSF_SUBTITLE.search(body, index)
+        if not found:
+            break
+        block, index = _ssf_balanced(body, found.end() - 1)
+        times = dict(_SSF_TIME_FIELD.findall(block))
+        for inner in _SSF_TIME_BLOCK.findall(block):
+            times.update(dict(_SSF_INNER.findall(inner)))
+        start, start_relative = _ssf_time(times.get('start'), scale)
+        stop, stop_relative = _ssf_time(times.get('stop'), scale)
+        written = _ssf_text(block[block.find('@'):]) if '@' in block else ''
+        if start is None or stop is None or not written:
+            continue                # a definition, not a subtitle
+        start = _rounded(cursor + start) if start_relative else start
+        stop = _rounded(start + stop) if stop_relative else stop
+        cursor = start
+        segments.append({'start': start, 'end': _rounded(max(start, stop)), 'text': written})
+    return _ordered(segments)
+
+
+def _write_ssf(segments, fps=DEFAULT_FPS):
+    """Absolute times and nothing inherited, which is the plainest thing
+    the format allows: a reader that resolves no prototypes still gets
+    every subtitle. Written with a byte order mark, which SSF requires."""
+    def stamp(seconds):
+        total = max(0, int(round(float(seconds) * 1000)))
+        hours, rest = divmod(total, 3600000)
+        minutes, rest = divmod(rest, 60000)
+        secs, millis = divmod(rest, 1000)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}'
+
+    blocks = ['file#file\n{\n\tformat: "ssf";\n\tversion: 1;\n};']
+    for segment in _ordered(segments):
+        text_of = markup.plain(str(segment.get('text') or '')).strip()
+        if not text_of:
+            continue
+        body = '\\n'.join(line.strip().replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
+                          for line in text_of.split('\n') if line.strip())
+        blocks.append(f'subtitle\n{{\n\ttime {{start: {stamp(segment.get("start", 0))}; '
+                      f'stop: {stamp(segment.get("end", 0))};}};\n\n\t@ {{{body}}};\n}};')
+    return '\n\n'.join(blocks) + '\n' if len(blocks) > 1 else ''
 
 
 # ------------------------------------------------------------- smilText
@@ -1723,6 +1842,7 @@ _PARSERS = {
     'captionate': _parse_captionate,
     'cmml': _parse_cmml,
     'smiltext': _parse_smiltext,
+    'ssf': _parse_ssf,
     'sst': _parse_sst,
     'ssts': _parse_ssts,
 }
@@ -1755,6 +1875,7 @@ _WRITERS = {
     'captionate': _write_captionate,
     'cmml': _write_cmml,
     'smiltext': _write_smiltext,
+    'ssf': _write_ssf,
     'sst': _write_sst,
     'ssts': _write_ssts,
 }
@@ -1774,6 +1895,8 @@ def kind(data):
     lowered = head[:600].lower()
     if '<captionate' in lowered:
         return 'captionate'
+    if 'format:' in lowered.replace(' ', '') and '"ssf"' in lowered:
+        return 'ssf'
     if '<smiltext' in lowered or '<tev' in lowered or '<clear' in lowered:
         return 'smiltext'
     if '<cmml' in lowered or 'annodex.net/cmml' in lowered:
@@ -1876,5 +1999,7 @@ def write(segments, fmt, fps=DEFAULT_FPS):
 
 def save(path, segments, fmt, fps=DEFAULT_FPS, encoding='utf-8', line_end='\n'):
     """Write `segments` to `path` as `fmt`."""
+    if fmt == 'ssf' and encoding == 'utf-8':
+        encoding = 'utf-8-sig'      # SSF's own reader refuses a file with no BOM
     with open(path, 'w', encoding=encoding, newline=line_end) as legacy_file:
         legacy_file.write(write(segments, fmt, fps))

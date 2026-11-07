@@ -169,6 +169,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'CAPTIONATE': {'description': 'Captionate XML format', 'extensions': ['xml']},
     'CMML': {'description': 'Continuous Media Markup Language', 'extensions': ['cmml']},
     'SMILTEXT': {'description': 'SMIL smilText format', 'extensions': ['smil']},
+    'SSF': {'description': 'Structured Subtitle Format', 'extensions': ['ssf']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on
