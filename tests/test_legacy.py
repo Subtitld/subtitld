@@ -193,6 +193,29 @@ check('milliseconds, lines and the actor as the speaker',
       (read_xss[0]['start'], read_xss[0]['end'], read_xss[0]['text'], read_xss[0].get('speaker')),
       (1.5, 3.25, 'Hello\nthere', 'Alice'))
 
+print('MacSUB: "/550" is 55 seconds, and tenths are all it keeps')
+MAC = '/550\nO PADRINHO II\n/626\n]rem=a comment of its own\n/866\nprimeira\\nsegunda\n/890\n'
+check('cues, comments left out, \\n broken', cues(MAC, 'macsub'),
+      [(55.0, 62.6, 'O PADRINHO II'), (86.6, 89.0, 'primeira\nsegunda')])
+check('a subtitle with no time of its own starts where the last ended',
+      cues('/100\nfirst\n/200\nsecond\n/300\n', 'macsub'),
+      [(10.0, 20.0, 'first'), (20.0, 30.0, 'second')])
+
+print('Stream SubText: the player export, and the project titles')
+SST = ('SST 2.0.73\n;\n[PROPERTIES]\nTitle=x\n[SCRIPT]\n'
+       '55000\t62600\t{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 Arial;}}~'
+       '{\\colortbl ;\\red255\\green255\\blue255;}~\\fs24 O PADRINHO II\\par segunda~}~\n')
+check('milliseconds, and the RTF read for its words alone', cues(SST, 'sst'),
+      [(55.0, 62.6, 'O PADRINHO II\nsegunda')])
+check('its font and colour tables stay out of the subtitle',
+      'Arial' in legacy.parse(SST, 'sst')[0]['text'], False)
+SSTS = ('SST 2.0.66\n[TITLES]\nfps=25.00\n'
+        'LINE\tCHAPTER\tTIME-IN\tTIME-OUT\tTEXT\tSTYLE\n'
+        '1\t\t00:00:55.00\t00:01:02.60\tO PADRINHO II~segunda\tDefault\n')
+check('six fields, hundredths, "~" between lines', cues(SSTS, 'ssts'),
+      [(55.0, 62.6, 'O PADRINHO II\nsegunda')])
+check('the header row is not a subtitle', len(legacy.parse(SSTS, 'ssts')), 1)
+
 print('round trips')
 SAMPLE = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
           {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]

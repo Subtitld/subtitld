@@ -159,6 +159,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'JACOSUB': {'description': 'JACOSub Subtitle format', 'extensions': ['jss', 'js']},
     'SASAMI': {'description': 'Sasami2k Script format', 'extensions': ['s2k']},
     'XOMBIE': {'description': 'XombieSub Subtitle format', 'extensions': ['xss']},
+    'MACSUB': {'description': 'MacSubtitler Subtitle format', 'extensions': ['scr', 'mac']},
+    'SST': {'description': 'Stream SubText Player format', 'extensions': ['sst']},
+    'SSTS': {'description': 'Stream SubText Script format', 'extensions': ['ssts']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on

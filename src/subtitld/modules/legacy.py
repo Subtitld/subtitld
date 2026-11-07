@@ -85,12 +85,15 @@ EXTENSIONS = {
     'jacosub': 'jss',
     'sasami': 's2k',
     'xombie': 'xss',
+    'macsub': 'scr',
+    'sst': 'sst',
+    'ssts': 'ssts',
 }
 
 # The ones Subtitld writes; RealText is read only.
 WRITABLE = ('mpl2', 'pjs', 'mpsub', 'vplayer', 'tmplayer', 'aqtitle', 'subviewer1', 'spruce',
             'realtext', 'turbotitle', 'zerog', 'viplay', 'sbt', 'captions32', 'subsonic', 'oresme',
-            'jacosub', 'sasami', 'xombie')
+            'jacosub', 'sasami', 'xombie', 'macsub', 'sst', 'ssts')
 
 # A TurboTitle script being timed carries this for both times.
 _UNTIMED = 9 * 3600 + 59 * 60 + 59.99
@@ -104,7 +107,8 @@ SESSION_FORMATS = {
     'REALTEXT': 'realtext', 'TURBOTITLE': 'turbotitle', 'ZEROG': 'zerog',
     'VIPLAY': 'viplay', 'SBT': 'sbt', 'CAPTIONS32': 'captions32',
     'SUBSONIC': 'subsonic', 'ORESME': 'oresme', 'JACOSUB': 'jacosub',
-    'SASAMI': 'sasami', 'XOMBIE': 'xombie',
+    'SASAMI': 'sasami', 'XOMBIE': 'xombie', 'MACSUB': 'macsub',
+    'SST': 'sst', 'SSTS': 'ssts',
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
@@ -141,6 +145,17 @@ _XSS = re.compile(r'^\s*Line\s*=\s*([^,]*),([^,]*),([^,]*),'
                   r'(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3}),(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3}),'
                   r'([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$', re.I)
 _XSS_KEY = re.compile(r'^\s*(ScreenHorizontal|ScreenVertical|Style|FontName|version)\s*=', re.I)
+_MACSUB = re.compile(r'^\s*/(\d+)\s*$')
+_SST_SCRIPT = re.compile(r'^\s*(\d+)\t(\d+)\t(.*)$')
+_SSTS = re.compile(r'^\s*(\d+)\t([^\t]*)\t(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,2})\t'
+                   r'(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,2})\t([^\t]*)\t(.*)$')
+# A group that only describes the document — its fonts, its colours, the
+# program that wrote it — and holds none of the subtitle.
+_RTF_DESTINATION = re.compile(r'\{\\(?:\*|fonttbl|colortbl|stylesheet|info|pict|generator|'
+                              r'listtable|listoverridetable|rsidtbl|themedata|datastore)\b')
+_RTF_WORD = re.compile(r'\\([a-zA-Z]+)(-?\d+)? ?')
+_RTF_HEX = re.compile(r"\\'([0-9a-fA-F]{2})")
+_RTF_ESCAPE = re.compile(r'\\([\\{}])')
 _MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
 _RT_TIME = re.compile(r'<time\b[^>]*\bbegin\s*=\s*["\']?([^"\'>\s]+)', re.I)
@@ -539,6 +554,187 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
                      f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
     lines.append('</window>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
+
+
+# --------------------------------------------------------------- MacSUB
+
+
+def _parse_macsub(text, fps=DEFAULT_FPS):
+    """"/550" is 55 seconds: MacSubtitler counts tenths. A subtitle is a
+    time, its text, and the time it ends; a subtitle that gives no time of
+    its own begins where the one before ended."""
+    lines = [line for line in text.split('\n') if not line.lstrip().startswith(']')]
+    segments = []
+    cursor = None
+    index = 0
+    while index < len(lines):
+        mark = _MACSUB.match(lines[index])
+        start = int(mark.group(1)) / 10.0 if mark else cursor
+        if mark:
+            index += 1
+        if start is None:
+            index += 1
+            continue
+        body = []
+        while index < len(lines) and not _MACSUB.match(lines[index]):
+            if lines[index].strip():
+                body.append(lines[index].strip())
+            index += 1
+        end = None
+        if index < len(lines):
+            end = int(_MACSUB.match(lines[index]).group(1)) / 10.0
+            index += 1
+        cursor = end
+        text_of = _lines_of('\n'.join(body).replace('\\n', '\n'))
+        if text_of:
+            segments.append({'start': _rounded(start),
+                             'end': _rounded(max(start, end)) if end is not None else None,
+                             'text': text_of})
+    return _ends_at_next(_ordered(segments))
+
+
+def _write_macsub(segments, fps=DEFAULT_FPS):
+    blocks = []
+    for segment in _ordered(segments):
+        body = _packed(segment, separator='\\n')
+        if not body:
+            continue
+        blocks.append(f'/{int(round(float(segment.get("start", 0)) * 10))}\n{body}\n'
+                      f'/{int(round(float(segment.get("end", 0)) * 10))}')
+    return '\n'.join(blocks) + '\n' if blocks else ''
+
+
+# -------------------------------------------------------- Stream SubText
+
+
+def _rtf_text(blob):
+    """The words in an RTF document, which is how .sst holds a subtitle.
+
+    Walked rather than matched: a font or colour table is a group of its
+    own, and a reader that only strips control words leaves "Arial;" in
+    the subtitle. Those groups are skipped whole, braces and all.
+    """
+    out = []
+    depth = 0
+    skipping = None
+    index = 0
+    while index < len(blob):
+        char = blob[index]
+        if char == '{':
+            depth += 1
+            start = _RTF_DESTINATION.match(blob, index)
+            if skipping is None and start:
+                skipping = depth
+            index += 1
+        elif char == '}':
+            if skipping == depth:
+                skipping = None
+            depth -= 1
+            index += 1
+        elif char == '\\':
+            escaped = _RTF_ESCAPE.match(blob, index)
+            hexed = _RTF_HEX.match(blob, index)
+            word = _RTF_WORD.match(blob, index)
+            if escaped:
+                if skipping is None:
+                    out.append(escaped.group(1))
+                index = escaped.end()
+            elif hexed:
+                if skipping is None:
+                    out.append(bytes([int(hexed.group(1), 16)]).decode('cp1252', 'replace'))
+                index = hexed.end()
+            elif word:
+                if skipping is None and word.group(1) in ('par', 'line'):
+                    out.append('\n')
+                index = word.end()
+            else:
+                index += 1
+        else:
+            if skipping is None:
+                out.append(char)
+            index += 1
+    return _lines_of(''.join(out))
+
+
+def _parse_sst(text, fps=DEFAULT_FPS):
+    """The player's export: milliseconds, then an RTF document a subtitle
+    with "~" where its newlines were."""
+    segments = []
+    inside = False
+    for line in text.split('\n'):
+        if line.strip().lower().startswith('['):
+            inside = line.strip().lower().startswith('[script]')
+            continue
+        if not inside:
+            continue
+        match = _SST_SCRIPT.match(line)
+        if not match:
+            continue
+        body = _rtf_text(match.group(3).replace('~', '\n'))
+        if not body:
+            continue
+        start, end = int(match.group(1)) / 1000.0, int(match.group(2)) / 1000.0
+        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+_SST_HEAD = ('SST 2.0.73', ';', ';This is a subtitles file.', ';',
+             '[PROPERTIES]', 'Title=', 'Author=', 'Width=640', 'Height=480', 'FrameRate=25.000',
+             '[SCRIPT]')
+
+
+def _write_sst(segments, fps=DEFAULT_FPS):
+    lines = list(_SST_HEAD)
+    for segment in _ordered(segments):
+        text = markup.plain(str(segment.get('text') or '')).strip()
+        if not text:
+            continue
+        rows = [line.strip() for line in text.split('\n') if line.strip()]
+        body = ('{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 Arial;}}~'
+                + '\\par ~'.join(row.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
+                                 for row in rows) + '~}~')
+        lines.append(f'{int(round(float(segment.get("start", 0)) * 1000))}\t'
+                     f'{int(round(float(segment.get("end", 0)) * 1000))}\t{body}')
+    return '\n'.join(lines) + '\n' if len(lines) > len(_SST_HEAD) else ''
+
+
+def _parse_ssts(text, fps=DEFAULT_FPS):
+    """The project's titles: six tab-separated fields, hundredths, "~"
+    between lines. The style is the LAST field, whatever Subtitle Workshop
+    writes: the file's own header row says so, and so does the .sstt
+    beside it."""
+    segments = []
+    for line in text.split('\n'):
+        match = _SSTS.match(line)
+        if not match:
+            continue
+        body = _lines_of(match.group(11).replace('~', '\n'))
+        if not body:
+            continue
+        start = _hundredths(*match.groups()[2:6])
+        end = _hundredths(*match.groups()[6:10])
+        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+    return _ordered(segments)
+
+
+def _write_ssts(segments, fps=DEFAULT_FPS):
+    rate = float(fps or DEFAULT_FPS)
+    lines = ['SST 2.0.73', '[TITLES]', f'fps={rate:.2f}', 'LINE\tCHAPTER\tTIME-IN\tTIME-OUT\tTEXT\tSTYLE']
+
+    def stamp(seconds):
+        total = max(0, int(round(float(seconds) * 100)))
+        hours, rest = divmod(total, 360000)
+        minutes, rest = divmod(rest, 6000)
+        secs, hundredths = divmod(rest, 100)
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}.{hundredths:02d}'
+
+    for number, segment in enumerate(_ordered(segments), start=1):
+        body = _packed(segment, separator='~')
+        if not body:
+            continue
+        lines.append(f'{number}\t\t{stamp(segment.get("start", 0))}\t{stamp(segment.get("end", 0))}\t'
+                     f'{body}\tDefault')
+    return '\n'.join(lines) + '\n' if len(lines) > 4 else ''
 
 
 # -------------------------------------------------------------- JACOSub
@@ -1019,6 +1215,9 @@ _PARSERS = {
     'jacosub': _parse_jacosub,
     'sasami': _parse_sasami,
     'xombie': _parse_xombie,
+    'macsub': _parse_macsub,
+    'sst': _parse_sst,
+    'ssts': _parse_ssts,
 }
 
 _WRITERS = {
@@ -1041,6 +1240,9 @@ _WRITERS = {
     'jacosub': _write_jacosub,
     'sasami': _write_sasami,
     'xombie': _write_xombie,
+    'macsub': _write_macsub,
+    'sst': _write_sst,
+    'ssts': _write_ssts,
 }
 
 
@@ -1055,6 +1257,8 @@ def kind(data):
     head = text.lstrip('﻿')
     if '<time' in head.lower() and ('<window' in head.lower() or '<clear' in head.lower()):
         return 'realtext'
+    if head.lstrip().upper().startswith('SST '):
+        return 'ssts' if '[TITLES]' in head[:200].upper() else 'sst'
     if _S2K_WIDTH.match(head.lstrip().split('\n')[0] if head.strip() else ''):
         return 'sasami'
     if head.lstrip().lower().startswith(_VIPLAY_MAGIC):
@@ -1071,6 +1275,8 @@ def kind(data):
             return 'subsonic'
         if _ORESME.match(line.rstrip('\r')) and _ORESME.match(line.rstrip('\r')).group(5):
             return 'oresme'
+        if _MACSUB.match(line):
+            return 'macsub'
         if _XSS.match(line):
             return 'xombie'
         if _JSS.match(line):
