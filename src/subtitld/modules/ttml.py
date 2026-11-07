@@ -104,6 +104,7 @@ _IMSC1_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1/text'
 _IMSC11_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1.1/text'
 _EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
 _EBUTTM_NS = 'urn:ebu:tt:metadata'
+_EBUTTS_NS = 'urn:ebu:tt:style'
 # IMSC's own styling namespace, which itts:forcedDisplay belongs to.
 _ITTS_NS = 'http://www.w3.org/ns/ttml/profile/imsc1#styling'
 
@@ -755,6 +756,15 @@ def _document(text):
                if _local(element.tag) == 'region' and _xml_id(element)}
     agents = _agents(root)
     segments = []
+    # What the whole document looks like, from <body>: that is the look the
+    # chosen style is for, and a subtitle's own look is what it says beyond
+    # it. Without this a file's baseline would quietly take over the look
+    # the user picked — Subtitld's own exported files among them, since
+    # they state one style for the whole document.
+    body = next((element for element in root.iter() if _local(element.tag) == 'body'), None)
+    base_props = styles.of(body, {}) if body is not None else {}
+    base_sizes = (base_props['fontSize'],) if base_props.get('fontSize') else ()
+    base_look = _of_file(frame, base_props, base_sizes, None)
 
     def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
         region_props = styles.of(regions[region], {}) if region in regions else {}
@@ -800,7 +810,8 @@ def _document(text):
         # of font sizes, then the ones holding the paragraph, then its own.
         stated = tuple(value for value in
                        ((region_props.get('fontSize'),) + sizes + (styles.of(element, {}).get('fontSize'),)) if value)
-        subtitld_look.store(segment, _of_file(frame, p_props, stated, region_props.get('opacity')))
+        styling = _of_file(frame, p_props, stated, region_props.get('opacity'))
+        subtitld_look.store(segment, {key: value for key, value in styling.items() if base_look.get(key) != value})
         # Where the region puts it, beyond the nine places: a file that
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
@@ -1017,13 +1028,18 @@ def _content(text, shear=False):
     return ''.join(out)
 
 
-def _styles(look, preview):
+def _styles(look, preview, profile='ttml1'):
     """(<style> elements, the id of the box's or None) for `look`. The box
     goes on a span around each subtitle's text: a span's background is
-    behind its text, a paragraph's across its region."""
+    behind its text, a paragraph's across its region.
+
+    EBU-TT-D does not use tts:textOutline, so its files say the rest of the
+    style and leave the outline out.
+    """
     if look != 'preview':
-        return ['<style xml:id="text" tts:fontFamily="proportionalSansSerif" tts:fontSize="100%" '
-                'tts:color="white" tts:textOutline="black 5%"/>'], None
+        outline = '' if profile == 'ebu-tt-d' else ' tts:textOutline="black 5%"'
+        return [f'<style xml:id="text" tts:fontFamily="proportionalSansSerif" tts:fontSize="100%" '
+                f'tts:color="white"{outline}/>'], None
     preview = preview or {}
     styles = [f'<style xml:id="text" tts:fontFamily={quoteattr(str(preview.get("font_family") or "proportionalSansSerif"))} '
               f'tts:fontSize="100%" tts:color="{_rgba(preview.get("color"), "#ffffffff")}"/>']
@@ -1033,14 +1049,93 @@ def _styles(look, preview):
     return styles, 'box'
 
 
+# The grid _root_attributes states, which is also TTML's own default: a
+# look is written in cells of it, so the file does not depend on the size of
+# anybody's picture.
+_WRITE_CELLS = (32.0, 15.0)
+_WRITE_ASPECT = 16 / 9
+# CSS's generic families back to the names TTML has for them.
+_TTML_FAMILIES = {'sans-serif': 'proportionalSansSerif', 'serif': 'proportionalSerif', 'monospace': 'monospace'}
+
+
+def _cells(value):
+    """A look's length (% of the picture's height) in cells down."""
+    return f'{value * _WRITE_CELLS[1] / 100:.4g}c'
+
+
+def _cells_across(value):
+    """The same length counted in cells across, which is what EBU-TT-D's
+    line padding is written in."""
+    return f'{value / _WRITE_ASPECT * _WRITE_CELLS[0] / 100:.4g}c'
+
+
+def _ttml_family(value):
+    """A look's CSS font families as tts:fontFamily writes them."""
+    families = []
+    for part in str(value or '').split(','):
+        name = part.strip().strip('\'"').strip()
+        if name:
+            families.append(_TTML_FAMILIES.get(name, name))
+    return ', '.join(families)
+
+
+def _look_attributes(styling, profile='ttml1'):
+    """A look as the TTML attributes that state it, for one <style> of its
+    own. Lengths go out in cells, the measure they were read in, so a look
+    that came from a file goes back as it came.
+
+    EBU-TT-D's spec names tts:textOutline and tts:opacity among the
+    attributes it does not use, so a file written for it says neither.
+    """
+    ebu = profile == 'ebu-tt-d'
+    out = []
+    if styling.get('font'):
+        out.append(f'tts:fontFamily={quoteattr(_ttml_family(styling["font"]))}')
+    if styling.get('size') is not None:
+        out.append(f'tts:fontSize="{_cells(styling["size"])}"')
+    height = styling.get('line_height')
+    if height is not None:
+        out.append(f'tts:lineHeight="{"normal" if height == "normal" else _cells(height)}"')
+    if styling.get('background'):
+        out.append(f'tts:backgroundColor="{_rgba(styling["background"], "#ff000000")}"')
+    if styling.get('padding'):
+        out.append('tts:padding="' + ' '.join(_cells(side) for side in styling['padding']) + '"')
+    outline = styling.get('outline') or {}
+    if outline.get('width') and not ebu:
+        parts = [_rgba(outline['color'], '#ff000000')] if outline.get('color') else []
+        parts.append(_cells(outline['width']))
+        if outline.get('blur'):
+            parts.append(_cells(outline['blur']))
+        out.append(f'tts:textOutline="{" ".join(parts)}"')
+    shadows = styling.get('shadow') or []
+    if shadows and not ebu:
+        drawn = []
+        for one in shadows:
+            parts = [_cells(one.get('x') or 0), _cells(one.get('y') or 0)]
+            if one.get('blur'):
+                parts.append(_cells(one['blur']))
+            if one.get('color'):
+                parts.append(_rgba(one['color'], '#ff000000'))
+            drawn.append(' '.join(parts))
+        out.append(f'tts:textShadow="{", ".join(drawn)}"')
+    if styling.get('wrap'):
+        out.append(f'tts:wrapOption="{"wrap" if styling["wrap"] == "wrap" else "noWrap"}"')
+    if styling.get('line_padding'):
+        out.append(f'ebutts:linePadding="{_cells_across(styling["line_padding"])}"')
+    if styling.get('row_align'):
+        out.append(f'ebutts:multiRowAlign="{styling["row_align"]}"')
+    return ' '.join(out)
+
+
 def _japanese(language):
     return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
 
 
-def _root_attributes(profile, language, forced=False):
+def _root_attributes(profile, language, forced=False, ebu_styling=False):
     """What <tt> carries: the namespaces and parameters, and the profile
     the file declares itself to be. `forced` brings IMSC's styling
-    namespace in, for the files that have a forced subtitle to mark."""
+    namespace in, for the files that have a forced subtitle to mark, and
+    `ebu_styling` the EBU's, for a look that states one of its two."""
     namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
                   'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
                   'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
@@ -1049,6 +1144,8 @@ def _root_attributes(profile, language, forced=False):
         namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
     if profile == 'ebu-tt-d':
         namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
+    if ebu_styling:
+        namespaces.append(f'xmlns:ebutts="{_EBUTTS_NS}"')
     attrs = ['ttp:timeBase="media"']
     if profile == 'imsc1':
         attrs.append(f'ttp:profile="{_IMSC1_TEXT}"')
@@ -1076,7 +1173,11 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     cues = []
     places = {}
     speakers = {}
-    style_lines, box = _styles(look, preview)
+    # One <style> for each look the subtitles use, the way one region is
+    # made for each place they sit in: the file keeps the structure even
+    # though the project holds a look per subtitle.
+    lookings = {}
+    style_lines, box = _styles(look, preview, profile)
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
         lead, rest = markup.split_lead(raw)
@@ -1085,7 +1186,11 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             continue
         keypad = markup.alignment(lead)
         placed = position.of(segment)
-        spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v))
+        styling = subtitld_look.of(segment)
+        # Opacity belongs to a region, so a subtitle only part shown takes
+        # a region of its own rather than fading the ones beside it.
+        spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v),
+                None if profile == 'ebu-tt-d' else styling.get('opacity'))
         if spot not in places:
             # One region for each place used. A subtitle placed more finely
             # than the nine takes a region of its own, named after the place
@@ -1111,6 +1216,9 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         # use, so there a hidden subtitle is written as an ordinary one.
         if segment.get('hidden') and profile != 'ebu-tt-d':
             attrs += ' tts:display="none"'
+        looking = _look_attributes(styling, profile)
+        if looking:
+            attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
         content = _content(rest, shear)
         if box:
             content = f'<span style="{box}">{content}</span>'
@@ -1127,19 +1235,24 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                         f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
     if metadata:
         head += ['    <metadata>', *metadata, '    </metadata>']
+    style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>' for looking, name in lookings.items()]
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
-    for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0)):
-        keypad, across, down = spot
+    for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0,
+                                                 spot[3] if spot[3] is not None else 1)):
+        keypad, across, down, alpha = spot
         display = ('after', 'center', 'before')[(keypad - 1) // 3]
         align = ('left', 'center', 'right')[(keypad - 1) % 3]
         (x, y), (width, height) = _box(keypad, across, down)
+        faded = f' tts:opacity="{alpha:.4g}"' if alpha is not None else ''
         head.append(f'      <region xml:id="{places[spot]}" '
                     f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
-                    f'tts:displayAlign="{display}" tts:textAlign="{align}"/>')
+                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{faded}/>')
     head += ['    </layout>', '  </head>']
+    forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
+    ebu_styling = any('ebutts:' in looking for looking in lookings)
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<tt {_root_attributes(profile, language, forced=any(segment.get("forced") for segment in segments) and profile != "ebu-tt-d")}>',
+        f'<tt {_root_attributes(profile, language, forced=forced, ebu_styling=ebu_styling)}>',
         *head,
         '  <body style="text">',
         '    <div>',

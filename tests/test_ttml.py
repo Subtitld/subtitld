@@ -455,6 +455,38 @@ check('nothing drawn of it is no look, and no outline either',
       [s.get('look') for s in ttml.parse(doc(
           '<p begin="1s" end="2s" tts:textOutline="none">Bare</p>'))], [None])
 
+LOOK = {'font': 'Arial, sans-serif', 'size': 10.0, 'line_height': 12.0, 'background': '#c8000000',
+        'padding': [1.0, 2.0, 1.0, 2.0], 'outline': {'color': '#ff000000', 'width': 1.0},
+        'shadow': [{'x': 0.2, 'y': 0.2, 'blur': 0.4, 'color': '#80000000'}], 'wrap': 'nowrap',
+        'opacity': 0.6, 'line_padding': 2.0, 'row_align': 'center'}
+written_look = ttml.write([{'start': 1, 'end': 2, 'text': 'Styled', 'look': LOOK},
+                           {'start': 3, 'end': 4, 'text': 'Alike', 'look': LOOK},
+                           {'start': 5, 'end': 6, 'text': 'Plain'}], 'en', profile='imsc1.1')
+check('a style of its own for each look, shared by the subtitles that look alike',
+      (written_look.count('<style xml:id="look'), written_look.count(' style="look1"')), (1, 2))
+check('in cells, so the file does not depend on anybody\'s picture',
+      ('tts:fontSize="1.5c"' in written_look, 'ebutts:linePadding="0.36c"' in written_look,
+       f'xmlns:ebutts="{ttml._EBUTTS_NS}"' in written_look), (True, True, True))
+check('and read back as it was, every side and every shadow',
+      [s.get('look') for s in ttml.parse(written_look)], [LOOK, LOOK, None])
+check('what <body> says is the document\'s look, what a paragraph says is its own',
+      [s.get('look') for s in ttml.parse(
+          HEAD.format(attrs='') + '<head/><body tts:fontSize="200%"><div>'
+          '<p begin="1s" end="2s">Base</p>'
+          '<p begin="3s" end="4s" tts:backgroundColor="#ff0000">Own</p></div></body></tt>')],
+      [None, {'background': '#ffff0000'}])
+check('so the style Subtitld writes for a whole file is nobody\'s look when it is read back',
+      [s.get('look') for s in ttml.parse(ttml.write(
+          [{'start': 1, 'end': 2, 'text': 'One'}, {'start': 3, 'end': 4, 'text': 'Two'}], 'en'))], [None, None])
+check('a subtitle the file only part shows takes a region of its own',
+      (written_look.count('tts:opacity="0.6"'), written_look.count('<region ')), (1, 2))
+check('nowhere in an EBU-TT-D file are the three its spec does not use',
+      [word in ttml.write([{'start': 1, 'end': 2, 'text': 'Styled', 'look': LOOK},
+                           {'start': 3, 'end': 4, 'text': 'Plain'}], 'en', profile='ebu-tt-d')
+       for word in ('textOutline', 'textShadow', 'tts:opacity')], [False, False, False])
+check('a file nothing styled is written exactly as it was before',
+      ttml.write([{'start': 1, 'end': 2, 'text': 'Plain'}], 'en').count('<style'), 1)
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
