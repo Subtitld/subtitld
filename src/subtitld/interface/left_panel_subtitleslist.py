@@ -270,7 +270,8 @@ def load(self):
 
     # Italic, bold, underline, strikeout, colour and position, under the text
     # they format (subtitle_text_editor).
-    self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(self.left_panel_subtitleslist_textedit)
+    self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(
+        self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.get('selected') or None)
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
 

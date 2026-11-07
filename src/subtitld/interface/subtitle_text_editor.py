@@ -13,10 +13,11 @@ nothing is selected, and toggle: italic on a text all italic takes it off.
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap, QTextCharFormat,
                            QTextCursor, QTextFormat)
-from PySide6.QtWidgets import QColorDialog, QGridLayout, QHBoxLayout, QMenu, QPushButton, QWidget, QWidgetAction
+from PySide6.QtWidgets import (QColorDialog, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget,
+                               QWidgetAction)
 
 from subtitld.interface.translation import _
-from subtitld.modules import history, markup
+from subtitld.modules import history, markup, position, session
 
 FLAGS = ('italic', 'bold', 'underline', 'strike')
 # A reading and what it reads have no look of their own to go by, so the
@@ -267,15 +268,21 @@ class FormattingBar(QWidget):
     """The buttons that format the editor's text: italic, bold, underline,
     strikeout (also Ctrl+I, Ctrl+B, Ctrl+U), a colour, the position on the
     screen, and clearing it all. Each is one undo step. `changed` says the
-    text changed without an edit in the editor (the position)."""
+    text changed without an edit in the editor (the position).
+
+    `segment`, when given, says which subtitle the editor holds (a callable,
+    the subtitle or None): the position menu then also sets its margins and
+    rotation (modules.position), which the subtitle keeps beside its text."""
 
     changed = Signal()
 
-    def __init__(self, textedit, parent=None):
+    def __init__(self, textedit, parent=None, segment=None):
         super().__init__(parent)
         self.setObjectName('subtitle_formatting_bar')
         self.setAttribute(Qt.WA_StyledBackground)
         self.textedit = textedit
+        self.segment = segment or (lambda: None)
+        self._place_step = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 6, 4)
         layout.setSpacing(2)
@@ -349,6 +356,35 @@ class FormattingBar(QWidget):
         action = QWidgetAction(self.position_menu)
         action.setDefaultWidget(cells)
         self.position_menu.addAction(action)
+        # Finer than the nine places: margins from the edge it is aligned
+        # to, in percent of the picture, and a turn (also by dragging the
+        # subtitle on the video).
+        fine = QWidget()
+        form = QGridLayout(fine)
+        form.setContentsMargins(8, 2, 8, 6)
+        form.setHorizontalSpacing(6)
+        form.setVerticalSpacing(4)
+        self.place_labels, self.place_spins = {}, {}
+        for row, (key, suffix) in enumerate((('horizontal', ' %'), ('vertical', ' %'), ('rotation', ' °'))):
+            label = QLabel()
+            spin = QDoubleSpinBox()
+            spin.setObjectName(f'subtitle_formatting_place_{key}')
+            spin.setDecimals(1)
+            spin.setSingleStep(0.5 if suffix == ' %' else 1)
+            spin.setSuffix(suffix)
+            spin.setKeyboardTracking(False)
+            spin.valueChanged.connect(lambda _value=0, k=key: self._set_place(k))
+            label.setBuddy(spin)
+            form.addWidget(label, row, 0)
+            form.addWidget(spin, row, 1)
+            self.place_labels[key], self.place_spins[key] = label, spin
+        self.place_spins['rotation'].setRange(-180, 180)
+        self.place_action = QWidgetAction(self.position_menu)
+        self.place_action.setDefaultWidget(fine)
+        self.position_menu.addSeparator()
+        self.position_menu.addAction(self.place_action)
+        self.place_reset_action = self.position_menu.addAction(_('formatting.position_reset'), self._reset_place)
+        self.position_menu.aboutToShow.connect(self._show_place)
         self.position_button.setMenu(self.position_menu)
         layout.addWidget(self.position_button)
 
@@ -394,6 +430,10 @@ class FormattingBar(QWidget):
         self.position_button.setToolTip(_('formatting.position'))
         for key, cell in self.position_cells.items():
             cell.setToolTip(_(f'formatting.position_{_POSITION_KEYS[key]}'))
+        for key, label in self.place_labels.items():
+            label.setText(_(f'formatting.position_{key}'))
+            self.place_spins[key].setToolTip(_(f'formatting.position_{key}_tip'))
+        self.place_reset_action.setText(_('formatting.position_reset'))
         self.clear_button.setToolTip(_('formatting.clear'))
 
     def refresh(self):
@@ -405,7 +445,8 @@ class FormattingBar(QWidget):
         color = colors.pop() if len(colors) == 1 else ''
         self.color_button.setIcon(_color_icon(color))
         keypad = alignment(self.textedit)
-        self.position_button.setIcon(_position_icon(keypad, '#ffffff' if keypad != 2 else '#b8cee0'))
+        placed = keypad != 2 or position.of(self.segment()).any()
+        self.position_button.setIcon(_position_icon(keypad, '#ffffff' if placed else '#b8cee0'))
         for key, cell in self.position_cells.items():
             cell.setChecked(key == keypad)
 
@@ -435,13 +476,82 @@ class FormattingBar(QWidget):
         self.position_menu.close()
         self._step()
         set_alignment(self.textedit, keypad)
+        # One of the nine places, as it is: margins kept would be measured
+        # from another edge now. A turn stays.
+        segment = self.segment()
+        if segment is not None:
+            position.store(segment, position.of(segment)._replace(h='', v=''))
         self.refresh()
         self.changed.emit()
+
+    # --- margins and rotation ----------------------------------------------
+    def _safe(self):
+        player = session.CONFIG.get('videoplayer', {})
+        return player.get('safe_margin_title_x', 10) / 100, player.get('safe_margin_title_y', 10) / 100
+
+    def _show_place(self):
+        """The menu opens: its numbers are the subtitle's, each change from
+        here on in one undo step."""
+        segment = self.segment()
+        self.place_action.setVisible(segment is not None)
+        self.place_reset_action.setVisible(segment is not None)
+        self._place_step = None
+        if segment is None:
+            return
+        keypad, place = alignment(self.textedit), position.of(segment)
+        across, down = position.margins(place, keypad, self._safe())
+        values = {'horizontal': (across, keypad in (2, 5, 8)), 'vertical': (down, keypad in (4, 5, 6)),
+                  'rotation': (place.rotate[2], None)}
+        for key, (value, centred) in values.items():
+            spin = self.place_spins[key]
+            spin.blockSignals(True)
+            if centred is not None:
+                spin.setRange(-50, 50) if centred else spin.setRange(0, 100)
+            spin.setValue(value)
+            spin.blockSignals(False)
+        self.place_reset_action.setEnabled(place.any())
+
+    def _place_undo_step(self):
+        if self._place_step is None or self._place_step is not history.top_snapshot():
+            self._step()
+            self._place_step = history.top_snapshot()
+
+    def _set_place(self, key):
+        segment = self.segment()
+        if segment is None:
+            return
+        self._place_undo_step()
+        place = position.of(segment)
+        value = self.place_spins[key].value()
+        if key == 'horizontal':
+            place = place._replace(h=position.percent(value))
+        elif key == 'vertical':
+            place = place._replace(v=position.percent(value))
+        else:
+            place = place._replace(rotate=place.rotate[:2] + (value,))
+        position.store(segment, place)
+        self.place_reset_action.setEnabled(place.any())
+        self.refresh()
+        session.set_unsaved(True)
+
+    def _reset_place(self):
+        segment = self.segment()
+        if segment is None:
+            return
+        self._place_undo_step()
+        position.store(segment, position.of(segment)._replace(h='', v='', rotate=(0.0, 0.0, 0.0)))
+        self.refresh()
+        session.set_unsaved(True)
 
     def _clear(self):
         self._step()
         clear_formatting(self.textedit)
-        if not self.textedit.textCursor().hasSelection() and alignment(self.textedit) != 2:
-            set_alignment(self.textedit, 2)
-            self.changed.emit()
+        if not self.textedit.textCursor().hasSelection():
+            segment = self.segment()
+            if segment is not None and position.of(segment).any():
+                position.store(segment, position.of(segment)._replace(h='', v='', rotate=(0.0, 0.0, 0.0)))
+                session.set_unsaved(True)
+            if alignment(self.textedit) != 2:
+                set_alignment(self.textedit, 2)
+                self.changed.emit()
         self.refresh()

@@ -2,7 +2,7 @@ import os
 import time
 
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QVBoxLayout, QGraphicsScene, QGraphicsView, QFrame, QGraphicsOpacityEffect, QSizePolicy, QRubberBand
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QRectF, QPoint, QSize, QMargins, QMarginsF, Signal, QTimer, QEvent, QByteArray, QBuffer, QIODevice
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QRectF, QPoint, QPointF, QSize, QMargins, QMarginsF, Signal, QTimer, QEvent, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush, QImage
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaMetaData
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
@@ -11,6 +11,9 @@ from subtitld.interface import subtitle_renderer
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
+from subtitld.modules import history
+from subtitld.modules import markup
+from subtitld.modules import position as subtitle_position
 from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import subtitle_styles
@@ -129,11 +132,27 @@ class PlayerWidget(QWidget):
                     showing = next((item for item in session.SUBTITLE.get('segments') or []
                                     if item['start'] <= at < item['end']), None)
                     painter.setRenderHint(QPainter.SmoothPixmapTransform)
+                    outer._subtitle_hit = None
+                    drag, moved = outer._subtitle_drag, outer._subtitle_moved
                     for area, image in renderer.layers([showing] if showing else [], at):
-                        painter.drawImage(QRectF(video_rect.x() + area.x() * video_rect.width(),
-                                                 video_rect.y() + area.y() * video_rect.height(),
-                                                 area.width() * video_rect.width(),
-                                                 area.height() * video_rect.height()), image)
+                        target = QRectF(video_rect.x() + area.x() * video_rect.width(),
+                                        video_rect.y() + area.y() * video_rect.height(),
+                                        area.width() * video_rect.width(),
+                                        area.height() * video_rect.height())
+                        # Dragged, it follows the pointer; dropped, it stays
+                        # where it was let go until it is drawn there.
+                        if drag is not None and drag['segment'] is showing:
+                            target.translate(drag['delta'])
+                        elif moved is not None and moved['segment'] is showing and moved['image'] is image:
+                            target.translate(moved['delta'])
+                        elif moved is not None:
+                            outer._subtitle_moved = moved = None
+                        painter.drawImage(target, image)
+                        outer._subtitle_hit = {'segment': showing, 'rect': target, 'video': QRectF(video_rect), 'image': image}
+                        if drag is not None:
+                            painter.setPen(QPen(QColor('#b8cee0'), 1, Qt.DashLine))
+                            painter.setBrush(Qt.NoBrush)
+                            painter.drawRect(target)
 
                 title_safe_margin_qrect = video_rect - QMarginsF(
                     (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100) * video_rect.width(),
@@ -186,6 +205,11 @@ class PlayerWidget(QWidget):
                     painter.drawRect(title_safe_margin_qrect)
 
         widget._graphics_video_item = graphicsvideoitem()
+        # The subtitle on screen, where it was drawn (for the pointer to take
+        # it), and one being dragged to a place of its own or just dropped.
+        widget._subtitle_hit = None
+        widget._subtitle_drag = None
+        widget._subtitle_moved = None
         widget._subtitle_renderer = None
         if subtitle_renderer.available():
             widget._subtitle_renderer = subtitle_renderer.SubtitleRenderer(widget)
@@ -215,6 +239,11 @@ class PlayerWidget(QWidget):
         widget._graphics_video_item.videoSink().videoFrameChanged.connect(widget._on_video_frame)
 
         widget.layout().addWidget(widget._graphics_view, 1)
+
+        # The subtitle on screen can be dragged where it should be.
+        viewport = widget._graphics_view.viewport()
+        viewport.setMouseTracking(True)
+        viewport.installEventFilter(widget)
 
         QTimer.singleShot(0, widget._force_resize_update)
     
@@ -488,11 +517,9 @@ class PlayerWidget(QWidget):
         viewport.setFocusPolicy(Qt.StrongFocus)
         viewport.setFocus(Qt.OtherFocusReason)
         viewport.setCursor(Qt.CrossCursor)
-        viewport.installEventFilter(widget)
 
     def _end_face_selection(widget):
         viewport = widget._graphics_view.viewport()
-        viewport.removeEventFilter(widget)
         viewport.unsetCursor()
         prev_policy = getattr(widget, '_face_selection_prev_focus_policy', None)
         if prev_policy is not None:
@@ -574,10 +601,10 @@ class PlayerWidget(QWidget):
         return QRect(top_left, QSize(size, size))
 
     def eventFilter(widget, obj, event):
-        if not getattr(widget, '_face_selection_speaker', None):
-            return super().eventFilter(obj, event)
         if obj is not widget._graphics_view.viewport():
             return super().eventFilter(obj, event)
+        if not getattr(widget, '_face_selection_speaker', None):
+            return widget._subtitle_drag_event(obj, event) or super().eventFilter(obj, event)
 
         etype = event.type()
         if etype == QEvent.MouseButtonPress and event.button() == Qt.RightButton:
@@ -600,6 +627,84 @@ class PlayerWidget(QWidget):
             widget._end_face_selection()
             return True
         return super().eventFilter(obj, event)
+
+    # --- placing the subtitle by dragging it ---------------------------------
+    def _point_on_item(widget, pos):
+        return widget._graphics_video_item.mapFromScene(widget._graphics_view.mapToScene(pos))
+
+    def _draggable(widget, point):
+        """The subtitle under `point` (item coordinates) that can be moved
+        there: shown, paused, and not being typed in by someone else."""
+        hit = widget._subtitle_hit
+        if hit is None or widget._media_player.playbackState() == QMediaPlayer.PlayingState:
+            return None
+        if not hit['rect'].contains(point) or hit['segment'] not in (session.SUBTITLE.get('segments') or []):
+            return None
+        from subtitld.modules import collab_service
+        if collab_service.locked_by(hit['segment'].get('id')):
+            return None
+        return hit
+
+    def _subtitle_drag_event(widget, viewport, event):
+        """Moves the subtitle on screen with the pointer: its margins from
+        the edge it is aligned to, one undo step per drag. Shift keeps it
+        to one axis; a right click lets it go where it was."""
+        etype = event.type()
+        drag = widget._subtitle_drag
+        if etype == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+            point = widget._point_on_item(event.position().toPoint())
+            hit = widget._draggable(point)
+            if hit is None:
+                return False
+            widget._subtitle_drag = {'segment': hit['segment'], 'origin': point, 'delta': QPointF(),
+                                     'video': hit['video'], 'image': hit['image']}
+            viewport.setCursor(Qt.ClosedHandCursor)
+            return True
+        if etype == QEvent.MouseButtonPress and event.button() == Qt.RightButton and drag is not None:
+            widget._subtitle_drag = None
+            viewport.unsetCursor()
+            widget._graphics_video_item.update()
+            return True
+        if etype == QEvent.MouseMove:
+            point = widget._point_on_item(event.position().toPoint())
+            if drag is None:
+                if widget._draggable(point) is not None:
+                    viewport.setCursor(Qt.OpenHandCursor)
+                else:
+                    viewport.unsetCursor()
+                return False
+            delta = point - drag['origin']
+            if event.modifiers() & Qt.ShiftModifier:
+                delta = QPointF(delta.x(), 0) if abs(delta.x()) >= abs(delta.y()) else QPointF(0, delta.y())
+            drag['delta'] = delta
+            widget._graphics_video_item.update()
+            return True
+        if etype == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton and drag is not None:
+            widget._subtitle_drag = None
+            viewport.setCursor(Qt.OpenHandCursor)
+            delta, video = drag['delta'], drag['video']
+            segment = drag['segment']
+            if abs(delta.x()) + abs(delta.y()) < 3 or video.width() <= 0 or video.height() <= 0 \
+                    or segment not in (session.SUBTITLE.get('segments') or []):
+                widget._graphics_video_item.update()
+                return True
+            player = session.CONFIG.get('videoplayer', {})
+            safe = (player.get('safe_margin_title_x', 10) / 100, player.get('safe_margin_title_y', 10) / 100)
+            place = subtitle_position.dragged(subtitle_position.of(segment), markup.alignment(segment.get('text') or ''),
+                                              delta.x() / video.width(), delta.y() / video.height(), safe)
+            widget._subtitle_moved = {'segment': segment, 'image': drag['image'], 'delta': delta}
+            # Should it never be drawn at its new place, it goes back to being drawn as it is.
+            QTimer.singleShot(2000, widget._settle_moved)
+            history.history_append()
+            subtitle_position.store(segment, place)
+            session.set_unsaved(True)
+            return True
+        return False
+
+    def _settle_moved(widget):
+        if widget._subtitle_moved is not None:
+            widget._subtitle_moved = None
+            widget._graphics_video_item.update()
 
     def _apply_face_selection(widget, rect):
         frame = widget._last_video_frame

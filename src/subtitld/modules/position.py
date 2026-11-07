@@ -161,3 +161,57 @@ def to_usf(place):
 def _number(value):
     """A number as a file writes it: 45, not 45.0."""
     return str(int(value)) if float(value).is_integer() else str(float(value))
+
+
+# -- Placing by hand ---------------------------------------------------------
+#
+# The preview moves a subtitle by dragging it, and the formatting bar sets
+# its margins as numbers. Both work in percentages of the picture: of its
+# width across, of its height up and down, as the renderer draws them.
+
+def _column(keypad):
+    """0 left, 1 centre, 2 right."""
+    return (keypad - 1) % 3
+
+
+def _row(keypad):
+    """0 bottom, 1 middle, 2 top."""
+    return (keypad - 1) // 3
+
+
+def margins(place, keypad, safe=(0.1, 0.1)):
+    """(across, up-or-down) percentages a subtitle at `keypad` sits by: its
+    own margins, else where the title-safe area (`safe`, fractions of the
+    width and height) puts it — 0 for a centred axis, which the safe area
+    does not move."""
+    across = as_percent(place.h)
+    if across is None:
+        across = 0.0 if _column(keypad) == 1 else safe[0] * 100
+    down = as_percent(place.v)
+    if down is None:
+        down = 0.0 if _row(keypad) == 1 else safe[1] * 100
+    return across, down
+
+
+def percent(value):
+    """A margin as a file writes it: '12.5%', '0%'."""
+    value = round(float(value), 1)
+    return _number(0.0 if value == 0 else value) + '%'
+
+
+def dragged(place, keypad, dx, dy, safe=(0.1, 0.1)):
+    """`place` moved by `dx` and `dy` (fractions of the picture's width and
+    height, right and down) for a subtitle at `keypad`: the margin on each
+    axis it moved along, from the edge it is aligned to, kept on the
+    picture."""
+    across, down = margins(place, keypad, safe)
+    h, v = place.h, place.v
+    if dx:
+        column = _column(keypad)
+        across += dx * 100 * (-1 if column == 2 else 1)
+        h = percent(max(-50.0, min(50.0, across)) if column == 1 else max(0.0, min(100.0, across)))
+    if dy:
+        row = _row(keypad)
+        down += dy * 100 * (-1 if row == 0 else 1)
+        v = percent(max(-50.0, min(50.0, down)) if row == 1 else max(0.0, min(100.0, down)))
+    return place._replace(h=h, v=v)
