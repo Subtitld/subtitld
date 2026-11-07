@@ -18,7 +18,10 @@ Reading:
   Arabic, Greek or Hebrew set the GSI names; a subtitle's extension
   blocks joined; comments and user data left out;
 - teletext's colours, and the italics and underline of open subtitling,
-  as formatting tags; a line break for any run of CR/LFs; the row
+  as formatting tags; the background a run sits on, which teletext says by
+  handing it the colour the text is in (New Background), black being what
+  a subtitle's box is anyway and so no background of the run's own; a line
+  break for any run of CR/LFs; the row
   (against the rows the GSI says it has) and the justification as one of
   the nine places;
 - the language the GSI's code names, as ISO 639-1.
@@ -31,7 +34,9 @@ Cyrillic, Greek, Arabic or Hebrew; the language's code; the title. For
 teletext (level 1), each line is double height and boxed, as teletext
 subtitle pages show only boxed text, with its colour (the box ends with
 the row, so a row keeps 36 cells for the text); for open subtitles,
-italics, underline and colours as their codes. Rows count up from the
+italics, underline and colours as their codes. A run that asks for a
+background is written teletext's way: the colour it asks for, New
+Background, then the colour the text itself is in. Rows count up from the
 bottom, or down from the top, as the subtitle sits.
 """
 
@@ -99,6 +104,9 @@ _COLORS = {0x00: '#000000', 0x01: '#ff0000', 0x02: '#00ff00', 0x03: '#ffff00', 0
            0x06: '#00ffff', 0x07: ''}
 _CR_LF, _UNUSED = 0x8A, 0x8F
 _ITALIC_ON, _ITALIC_OFF, _UNDERLINE_ON, _UNDERLINE_OFF = 0x80, 0x81, 0x82, 0x83
+# Teletext says a background by handing it the colour the text is in: Black
+# Background puts it back, New Background takes the colour set before it.
+_BLACK_BACKGROUND, _NEW_BACKGROUND = 0x1C, 0x1D
 _DOUBLE_HEIGHT, _START_BOX = 0x0D, 0x0B
 _CLOSING = ',.;:!?)]}’”»…'
 
@@ -157,12 +165,20 @@ def _text(field, decode, teletext):
             if previous != _CR_LF:
                 runs.append(('\n', plain))
             if teletext:
-                style = plain                       # a teletext row starts white
+                style = plain                       # a teletext row starts white, on its box
         else:
             flush()
             before = style
             if byte in _COLORS:
                 style = style._replace(color=_COLORS[byte])
+            elif byte == _NEW_BACKGROUND:
+                # The background takes the colour the text is in, and the
+                # text takes the colour set after it.
+                style = style._replace(background=style.color or '#ffffff')
+            elif byte == _BLACK_BACKGROUND:
+                # Black is what a subtitle's box is anyway: no background
+                # of the run's own.
+                style = style._replace(background='')
             elif byte == _ITALIC_ON:
                 style = style._replace(italic=True)
             elif byte == _ITALIC_OFF:
@@ -172,9 +188,10 @@ def _text(field, decode, teletext):
             elif byte == _UNDERLINE_OFF:
                 style = style._replace(underline=False)
             # A code takes a cell, shown as a space between letters, with what
-            # the styles either side of it share.
-            if index + 1 < len(field) and _is_character(field[index + 1]) and \
-                    previous is not None and _is_character(previous):
+            # the styles either side of it share. A run of codes takes a cell
+            # each; one space stands for the run, as tidy would make it.
+            following = field[index + 1:field.index(_UNUSED, index + 1) if _UNUSED in field[index + 1:] else len(field)]
+            if previous is not None and _is_character(previous) and any(_is_character(byte) for byte in following):
                 runs.append((' ', markup.Style(*((a if a == b else '') if isinstance(a, str) else a and b
                                                  for a, b in zip(before, style)))))
         previous = byte
@@ -323,6 +340,16 @@ def _lines(text):
     return out, markup.alignment(lead)
 
 
+def _background_codes(background, color):
+    """The codes that put `background` behind text in `color`: teletext has
+    no code for a background of its own, so the background takes the colour
+    set before it and the text takes the one set after. Black needs none of
+    that — it is what a subtitle's box is already."""
+    if not background:
+        return [_BLACK_BACKGROUND, color]
+    return [_color_code(background), _NEW_BACKGROUND, color]
+
+
 def _field(lines, encode, teletext):
     """The text field's bytes for the lines of a subtitle."""
     field = bytearray()
@@ -330,17 +357,24 @@ def _field(lines, encode, teletext):
         if number:
             field += bytes([_CR_LF, _CR_LF] if teletext else [_CR_LF])
         color = _color_code(line[0][1].color)
+        background = line[0][1].background
+        opening = _background_codes(background, color) if background else \
+            [color] if teletext or color != 0x07 else []
         if teletext:
-            field += bytes([_DOUBLE_HEIGHT, color, _START_BOX, _START_BOX])
-        elif color != 0x07:
-            field.append(color)
+            field += bytes([_DOUBLE_HEIGHT] + opening + [_START_BOX, _START_BOX])
+        else:
+            field += bytes(opening)
         style = line[0][1]
         if not teletext:
             field += bytes(([_ITALIC_ON] if style.italic else []) + ([_UNDERLINE_ON] if style.underline else []))
         for char, char_style in line:
             if char.strip():
                 codes = []
-                if _color_code(char_style.color) != color:
+                if char_style.background != background:
+                    background = char_style.background
+                    color = _color_code(char_style.color)
+                    codes.extend(_background_codes(background, color))
+                elif _color_code(char_style.color) != color:
                     color = _color_code(char_style.color)
                     codes.append(color)
                 if not teletext:
