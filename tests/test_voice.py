@@ -38,6 +38,14 @@ silence = [len(encoder.encode([0.0] * opus.FRAME)) for _ in range(30)]
 check('silence, once Opus is sure of it, costs almost nothing (DTX)', max(silence[-10:]) <= 3, True)
 check('a lost frame is concealed', len(decoder.decode(None)), opus.FRAME)
 
+real_get = opus._get
+opus._get = lambda *args: 0  # a setting that never reached libopus (as the variadic call does on Apple Silicon)
+opus._works = None
+check("settings that don't reach libopus: no voice", opus.available(), False)
+opus._get = real_get
+opus._works = None
+check('they do here', opus.available(), True)
+
 print('voice packets')
 check('a sequence number and the Opus frame', voice.unpack(voice.packet(70000, b'abc')), (70000 & 0xFFFF, b'abc'))
 check('not a voice packet', (voice.unpack(b'x'), voice.unpack(bytes([9, 0, 1]) + b'abc')), (None, None))

@@ -44,7 +44,7 @@ cd /tmp && "$appimage" --appimage-extract > /dev/null
 
 # Live co-editing's libraries load only once a project is shared, after this test: check here that they are in
 # and find what they need on a bare system.
-for lib in libdatachannel.so PySide6/Qt/lib/libQt6WebSockets.so.6; do
+for lib in libdatachannel.so libopus.so.0 PySide6/Qt/lib/libQt6WebSockets.so.6; do
     path=/tmp/squashfs-root/usr/bin/subtitld/_internal/$lib
     [ -f "$path" ] || { echo "::error::$lib is not in the AppImage"; exit 1; }
     if LD_LIBRARY_PATH=/tmp/squashfs-root/usr/bin/subtitld/_internal/PySide6/Qt/lib ldd "$path" | grep 'not found'; then

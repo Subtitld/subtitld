@@ -1,6 +1,6 @@
-# Build libdatachannel (live co-editing's peer-to-peer media transfer) for the Windows packages: data channels
-# only (no media, no websocket), with Mbed TLS linked in, and the C runtime linked statically, so the DLL needs
-# nothing but Windows.
+# Build libdatachannel (live co-editing's peer-to-peer media transfer) and libopus (its voice call) for the
+# Windows packages: libdatachannel with data channels only (no media, no websocket) and Mbed TLS linked in; both
+# with the C runtime linked statically, so the DLLs need nothing but Windows.
 #
 #   pwsh packaging/libdatachannel/build-windows.ps1     # → packaging/libdatachannel/dist/windows-x64/
 #
@@ -9,6 +9,8 @@ $ErrorActionPreference = 'Stop'
 
 $LIBDATACHANNEL = 'v0.23.2'
 $MBEDTLS = 'v3.6.4'
+$OPUS = '1.6.1'
+$OPUS_SHA256 = '6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1'
 $Out = Join-Path $PSScriptRoot 'dist\windows-x64'
 $Work = Join-Path ([System.IO.Path]::GetTempPath()) "libdatachannel-$([guid]::NewGuid())"
 New-Item -ItemType Directory -Force "$Out\licenses", $Work | Out-Null
@@ -42,7 +44,17 @@ try {
     Copy-Item mbedtls/LICENSE "$Out\licenses\mbedtls.txt"
     Copy-Item libdatachannel/deps/libjuice/LICENSE "$Out\licenses\libjuice.txt"
     Copy-Item libdatachannel/deps/usrsctp/LICENSE.md "$Out\licenses\usrsctp.txt"
-    "libdatachannel $LIBDATACHANNEL, Mbed TLS $MBEDTLS, MSVC x64, static C runtime" | Set-Content "$Out\VERSION"
+    # libopus, for the voice call (see build-linux.sh).
+    Invoke-WebRequest "https://downloads.xiph.org/releases/opus/opus-$OPUS.tar.gz" -OutFile "opus-$OPUS.tar.gz"
+    if ((Get-FileHash "opus-$OPUS.tar.gz" -Algorithm SHA256).Hash -ne $OPUS_SHA256) { throw "opus-$OPUS.tar.gz: wrong checksum" }
+    Run tar -xzf "opus-$OPUS.tar.gz"
+    Run cmake -S "opus-$OPUS" -B opus-build @common -DOPUS_BUILD_SHARED_LIBRARY=ON -DOPUS_BUILD_PROGRAMS=OFF `
+        -DOPUS_BUILD_TESTING=OFF -DOPUS_INSTALL_PKG_CONFIG_MODULE=OFF
+    Run cmake --build opus-build --config Release
+    Copy-Item opus-build/Release/opus.dll "$Out\opus.dll"
+    Copy-Item "opus-$OPUS/COPYING" "$Out\licenses\opus.txt"
+
+    "libdatachannel $LIBDATACHANNEL, Mbed TLS $MBEDTLS, Opus $OPUS, MSVC x64, static C runtime" | Set-Content "$Out\VERSION"
 } finally {
     Pop-Location
     Remove-Item -Recurse -Force $Work -ErrorAction SilentlyContinue
