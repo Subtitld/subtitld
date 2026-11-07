@@ -70,7 +70,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from subtitld.modules import export_options, markup, position
+from subtitld.modules import export_options, look as subtitld_look, markup, position
 from subtitld.modules.srt import decode
 
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
@@ -78,7 +78,9 @@ _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
-                 'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby')
+                 'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
+                 'fontFamily', 'fontSize', 'lineHeight', 'backgroundColor', 'padding', 'textOutline', 'textShadow',
+                 'wrapOption', 'linePadding', 'multiRowAlign')
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -242,6 +244,50 @@ def _color(value):
     return markup.color_hex(value)
 
 
+# TTML names the generic families itself; CSS has its own names for them.
+_GENERIC_FONTS = {'default': '', 'monospace': 'monospace', 'sansSerif': 'sans-serif', 'serif': 'serif',
+                  'monospaceSansSerif': 'monospace', 'monospaceSerif': 'monospace',
+                  'proportionalSansSerif': 'sans-serif', 'proportionalSerif': 'serif'}
+_COLOUR_THEN = re.compile(r'^\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|[a-zA-Z]+)\s+(?=[-\d.])')
+_COLOUR_END = re.compile(r'\s+(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|[a-zA-Z]+)\s*$')
+
+
+def _argb(value):
+    """A TTML colour as "#aarrggbb", the way a look and the styles write
+    one, or '' when it is not a colour."""
+    text = (value or '').strip()
+    alpha = 'ff'
+    rgba = _RGB.match(text)
+    if rgba and text.lower().startswith('rgba('):
+        last = text[:text.rfind(')')].rsplit(',', 1)[-1].strip()
+        try:
+            amount = float(last)
+        except ValueError:
+            amount = 255.0
+        alpha = f'{max(0, min(255, round(amount if amount > 1 else amount * 255))):02x}'
+    elif text.startswith('#') and len(text) == 9:
+        alpha = text[7:9].lower()
+    rgb = _color(text)
+    return f'#{alpha}{rgb[1:]}' if rgb else ''
+
+
+def _font_family(value):
+    """A tts:fontFamily as CSS names families, TTML's generic names turned
+    into CSS's and a name with spaces in it quoted."""
+    families = []
+    for part in (value or '').split(','):
+        name = part.strip().strip('\'"').strip()
+        if not name:
+            continue
+        if name in _GENERIC_FONTS:
+            name = _GENERIC_FONTS[name]
+        elif ' ' in name:
+            name = f'"{name}"'
+        if name and name not in families:
+            families.append(name)
+    return ', '.join(families)
+
+
 def _alpha(value):
     """A tts:opacity as a number, or None when it is not one: TTML writes it
     as a real number, TTML2 also as a percentage."""
@@ -264,6 +310,146 @@ def _unshown(props, inherited=False):
     return bool(inherited
                 or str(props.get('display') or '').strip() == 'none'
                 or str(props.get('visibility') or '').strip() == 'hidden')
+
+
+def _of_size(frame, value, size, axis=1):
+    """A length TTML measures against the font size where it is written as
+    a percentage, and against the picture otherwise, in % of the picture's
+    height either way."""
+    percent = _PERCENT.match((value or '').strip())
+    if percent:
+        return float(percent.group(1)) / 100 * size if size is not None else None
+    return frame.length(value, axis)
+
+
+def _font_size(frame, stated):
+    """The font size in % of the picture's height. TTML counts from the
+    cell a region sits on — the initial size is 1c — and reads every
+    percentage after that as a share of the size before it."""
+    size = 100 / frame.cells[1]
+    for value in stated:
+        # "<horizontal> <vertical>?": the second is the height, and one
+        # length alone is both.
+        parts = (value or '').strip().split()
+        resolved = _of_size(frame, parts[-1], size) if parts else None
+        if resolved is not None:
+            size = resolved
+    return size
+
+
+def _outline(frame, value, size):
+    """tts:textOutline as a look's outline: a colour, a thickness and a
+    blur, the last two measured against the font size. Without a colour
+    the text's own is used, which the renderer already has."""
+    text = (value or '').strip()
+    if not text or text.lower() == 'none':
+        return None
+    colour = ''
+    head = _COLOUR_THEN.match(text)
+    if head:
+        colour = _argb(head.group(1))
+        text = text[head.end():]
+    parts = text.split()
+    width = _of_size(frame, parts[0], size) if parts else None
+    if not width:
+        return None
+    outline = {'width': width}
+    if colour:
+        outline['color'] = colour
+    blur = _of_size(frame, parts[1], size) if len(parts) > 1 else None
+    if blur:
+        outline['blur'] = blur
+    return outline
+
+
+def _shadows(frame, value, size):
+    """tts:textShadow as a look's list of shadows, each measured against
+    the font size: across, down, a blur and a colour."""
+    text = (value or '').strip()
+    if not text or text.lower() == 'none':
+        return None
+    shadows = []
+    for one in re.split(r',(?![^()]*\))', text):
+        colour = ''
+        tail = _COLOUR_END.search(one)
+        if tail:
+            colour = _argb(tail.group(1))
+            one = one[:tail.start()]
+        lengths = [_of_size(frame, part, size) for part in one.split()[:3]]
+        if len(lengths) < 2 or lengths[0] is None or lengths[1] is None:
+            continue
+        shadow = {'x': lengths[0], 'y': lengths[1]}
+        if len(lengths) > 2 and lengths[2]:
+            shadow['blur'] = lengths[2]
+        if colour:
+            shadow['color'] = colour
+        shadows.append(shadow)
+    return shadows or None
+
+
+def _padding(frame, value, size):
+    """tts:padding as a look's [top, right, bottom, left]. TTML writes the
+    sides before, end, after, start, which is the order CSS writes padding
+    in, with the same shorthand for fewer than four."""
+    parts = (value or '').strip().split()
+    if not parts or len(parts) > 4:
+        return None
+    sides = [_of_size(frame, part, size) for part in parts]
+    if any(side is None for side in sides):
+        return None
+    if len(parts) == 1:
+        return sides * 4
+    if len(parts) == 2:
+        return [sides[0], sides[1], sides[0], sides[1]]
+    if len(parts) == 3:
+        return [sides[0], sides[1], sides[2], sides[1]]
+    return sides
+
+
+def _across(frame, value, size):
+    """A length across the picture, in % of its height: the stage is 1080
+    tall and as wide as the aspect ratio makes it, so a look keeps one
+    measure for both directions."""
+    percent = _of_size(frame, value, size, axis=0)
+    if percent is None:
+        return None
+    aspect = frame.pixels[0] / frame.pixels[1] if frame.pixels and frame.pixels[1] else 16 / 9
+    return percent * aspect
+
+
+def _of_file(frame, props, sizes, opacity):
+    """The look the file gives a subtitle: what it says about how the
+    subtitle should be drawn, as modules.look holds it. Only what the file
+    states — a look says nothing of its own."""
+    size = _font_size(frame, sizes)
+    found = {}
+    if props.get('fontFamily'):
+        found['font'] = _font_family(props['fontFamily'])
+    if sizes:
+        found['size'] = size
+    height = (props.get('lineHeight') or '').strip()
+    if height:
+        found['line_height'] = 'normal' if height == 'normal' else _of_size(frame, height, size)
+    if props.get('backgroundColor'):
+        found['background'] = _argb(props['backgroundColor'])
+    found['padding'] = _padding(frame, props.get('padding'), size)
+    found['outline'] = _outline(frame, props.get('textOutline'), size)
+    found['shadow'] = _shadows(frame, props.get('textShadow'), size)
+    wrap = (props.get('wrapOption') or '').strip()
+    if wrap in ('wrap', 'noWrap'):
+        found['wrap'] = 'wrap' if wrap == 'wrap' else 'nowrap'
+    # A region a file only part shows. Nothing of it showing is the
+    # subtitle being hidden, which is read as that instead.
+    alpha = _alpha(opacity)
+    if alpha is not None and 0 < alpha < 1:
+        found['opacity'] = alpha
+    # EBU-TT-D's two: space at both ends of every line, so a box does not
+    # touch the letters, and where the shorter lines of a block sit.
+    if props.get('linePadding'):
+        found['line_padding'] = _across(frame, props['linePadding'], size)
+    if (props.get('multiRowAlign') or '').strip() in ('start', 'center', 'end'):
+        found['row_align'] = props['multiRowAlign'].strip()
+    return found
 
 
 def _properties(element):
@@ -570,7 +756,7 @@ def _document(text):
     agents = _agents(root)
     segments = []
 
-    def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False):
+    def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
         region_props = styles.of(regions[region], {}) if region in regions else {}
         # The region's styles first: what the body, div or paragraph says
         # goes over them.
@@ -609,6 +795,12 @@ def _document(text):
         # a round trip puts it back the way it came.
         if _unshown(p_props, unshown or region_unshown):
             segment['hidden'] = True
+        # What the file says the subtitle should look like, which is drawn
+        # over the chosen style. The region's size comes first in the chain
+        # of font sizes, then the ones holding the paragraph, then its own.
+        stated = tuple(value for value in
+                       ((region_props.get('fontSize'),) + sizes + (styles.of(element, {}).get('fontSize'),)) if value)
+        subtitld_look.store(segment, _of_file(frame, p_props, stated, region_props.get('opacity')))
         # Where the region puts it, beyond the nine places: a file that
         # places its subtitles itself keeps that through to the project.
         region_origin = frame.percent(p_props.get('origin'))
@@ -624,7 +816,7 @@ def _document(text):
                 position.store(segment, position.Place(h=_percent(across), v=_percent(down)))
         segments.append(segment)
 
-    def walk(element, base, limit, props, region, preserve, agent, unshown=False):
+    def walk(element, base, limit, props, region, preserve, agent, unshown=False, sizes=()):
         """Read `element`, its times counted from `base`, over by `limit`;
         its end, when it has one."""
         name = _local(element.tag)
@@ -637,15 +829,19 @@ def _document(text):
         if limit is not None and stop is not None:
             stop = min(stop, limit)
         if name == 'p':
-            paragraph(element, start, stop, props, region, preserve, agent, unshown)
+            paragraph(element, start, stop, props, region, preserve, agent, unshown, sizes)
             return stop
         inner = styles.of(element, props) if name != 'tt' else props
         unshown = unshown or str(inner.get('display') or '').strip() == 'none'
+        own_size = styles.of(element, {}).get('fontSize') if name != 'tt' else None
+        if own_size:
+            sizes = sizes + (own_size,)
         agent = (_attr(element, 'agent') or '').split()[0] if _attr(element, 'agent') else agent
         sequential = element.get('timeContainer') == 'seq'
         for child in element:
             if _local(child.tag) in ('body', 'div', 'p'):
-                child_stop = walk(child, start, stop, inner, region, _preserving(element, preserve), agent, unshown)
+                child_stop = walk(child, start, stop, inner, region, _preserving(element, preserve), agent,
+                                  unshown, sizes)
                 if sequential and child_stop is not None:
                     start = child_stop
         return stop

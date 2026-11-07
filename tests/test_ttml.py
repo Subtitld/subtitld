@@ -417,6 +417,44 @@ check('an opacity that is not a number is not a hidden subtitle',
           '<p begin="1s" end="2s" region="odd">Still here</p>',
           head='<layout><region xml:id="odd" tts:opacity="opaque"/></layout>'))], [None])
 
+print('the look a file brings with it')
+EBUTTS = ' xmlns:ebutts="urn:ebu:tt:style"'
+styled = ttml.parse(doc(
+    '<p begin="1s" end="2s" region="r" style="s">Styled</p><p begin="3s" end="4s">Plain</p>',
+    head='<styling><style xml:id="s" tts:fontFamily="Arial, proportionalSansSerif" tts:fontSize="150%" '
+         'tts:lineHeight="120%" tts:backgroundColor="#000000c8" tts:textOutline="black 10%" '
+         'tts:padding="0.5c" tts:wrapOption="noWrap" ebutts:linePadding="0.5c" '
+         'ebutts:multiRowAlign="center"/></styling>'
+         '<layout><region xml:id="r" tts:origin="10% 10%" tts:extent="80% 80%" tts:opacity="0.6"/></layout>',
+    attrs=EBUTTS))
+check('what the file says about it, in % of the picture and #aarrggbb',
+      {key: styled[0]['look'][key] for key in
+       ('font', 'size', 'line_height', 'background', 'outline', 'wrap', 'opacity', 'row_align')},
+      {'font': 'Arial, sans-serif', 'size': 10.0, 'line_height': 12.0, 'background': '#c8000000',
+       'outline': {'width': 1.0, 'color': '#ff000000'}, 'wrap': 'nowrap', 'opacity': 0.6,
+       'row_align': 'center'})
+check('one padding is all four sides, as CSS reads it too',
+      [round(side, 4) for side in styled[0]['look']['padding']], [3.3333] * 4)
+check('a subtitle the file styles nowhere carries no look at all', 'look' in styled[1], False)
+check('a font size counts from the cell, through every percentage of it',
+      [s['look']['size'] for s in ttml.parse(doc(
+          '<div tts:fontSize="200%"><p begin="1s" end="2s">Twice</p>'
+          '<p begin="3s" end="4s" tts:fontSize="50%">Back</p></div>'))],
+      [100 / 7.5, 100 / 15])
+check('pixels need the picture\'s own size to mean anything',
+      [s['look'].get('size') for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" tts:fontSize="54px">Sized</p>', attrs=' tts:extent="1920px 1080px"'))], [5.0])
+shadowed = ttml.parse(doc('<p begin="1s" end="2s" tts:fontSize="54px" '
+                          'tts:textShadow="2px 2px 3px rgba(0, 0, 0, 0.5)">Shadowed</p>',
+                          attrs=' tts:extent="1920px 1080px"'))[0]['look']['shadow']
+check('a shadow and its colour, measured against the font size',
+      [{key: round(value, 4) if isinstance(value, float) else value for key, value in one.items()}
+       for one in shadowed],
+      [{'x': 0.1852, 'y': 0.1852, 'blur': 0.2778, 'color': '#80000000'}])
+check('nothing drawn of it is no look, and no outline either',
+      [s.get('look') for s in ttml.parse(doc(
+          '<p begin="1s" end="2s" tts:textOutline="none">Bare</p>'))], [None])
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))

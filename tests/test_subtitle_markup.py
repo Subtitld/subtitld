@@ -144,13 +144,15 @@ renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
 renderer.set_size(640, 360)
 
 
-def render(text, place=None, direction=None):
+def render(text, place=None, direction=None, look=None):
     """The subtitle as the preview draws it: its layer over a black frame."""
     segment = {'start': 0.0, 'end': 1.0, 'text': text}
     if place:
         segment['position'] = place
     if direction:
         segment['direction'] = direction
+    if look:
+        segment['look'] = look
     key = renderer._job(segment, 0.0, *renderer._style())[0]
     for _i in range(1500):
         renderer.layers([segment], 0.0)
@@ -196,6 +198,18 @@ check('right to left puts a line\'s punctuation at its other end',
 check('with nothing neutral to move, the drawing is the same',
       (render('hello', direction='rtl') == render('hello'), render('hello!', direction='ltr') == render('hello!')),
       (True, True))
+small, large = lit_rows(render('Size', look={'size': 4})), lit_rows(render('Size', look={'size': 16}))
+check("the look the file came with is drawn, not the style's size",
+      small is not None and large is not None and (large[1] - large[0]) > 2 * (small[1] - small[0]), True)
+boxed = render('Boxed', look={'background': '#ff00ff00'})
+check('its box is drawn behind the text',
+      any(QColor(boxed.pixel(x, y)).green() > 200 and QColor(boxed.pixel(x, y)).red() < 80
+          for x in range(0, 640, 2) for y in range(200, 360, 2)), True)
+check('and the style still draws what the file says nothing about',
+      any(min(QColor(boxed.pixel(x, y)).getRgb()[:3]) > 200 for x in range(0, 640, 2) for y in range(200, 360, 2)),
+      True)
+check('a subtitle with no look of its own is drawn exactly as before',
+      render('Size', look=None) == render('Size'), True)
 coloured = render('<font color="#00ff00">green</font>')
 check('a colour is drawn in it', any(QColor(coloured.pixel(x, y)).green() > 200 and QColor(coloured.pixel(x, y)).red() < 80
                                      for x in range(0, 640, 2) for y in range(200, 360, 2)), True)

@@ -148,6 +148,23 @@ check('a project with nothing hidden says nothing',
       'hidden' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
                                     speakers={}, language='en-us'), False)
 
+print('the look the subtitle\'s own file gave it')
+LOOK = {'size': 10.0, 'background': '#c8000000', 'padding': [1.0, 2.0, 1.0, 2.0],
+        'outline': {'color': '#ff000000', 'width': 0.5}, 'shadow': [{'x': 0.2, 'y': 0.2}]}
+look_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'Styled', 'speaker': 'A', 'look': LOOK},
+                              {'start': 2, 'end': 3, 'text': 'Plain', 'speaker': 'A'}],
+                             speakers={}, language='en-us')
+check('on the subtitle, as JSON, since USF has no word for most of it',
+      ('subtitldcc:look=' in look_usf, look_usf.count('subtitldcc:look'), 'xmlns:subtitldcc' in look_usf),
+      (True, 1, True))
+check('read back exactly, shadows and sides and all',
+      [(s['text'], s.get('look')) for s in USFReader().read(look_usf)], [('Styled', LOOK), ('Plain', None)])
+check('a project nothing styled says nothing',
+      'look' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                  speakers={}, language='en-us'), False)
+check('a look that will not parse is no reason to lose the subtitle',
+      [s['text'] for s in USFReader().read(look_usf.replace('{&quot;background', '{oops'))], ['Styled', 'Plain'])
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
