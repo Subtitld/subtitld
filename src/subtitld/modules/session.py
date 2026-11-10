@@ -137,6 +137,10 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
     'JSON': {'description': 'JSON format', 'extensions': ['json', 'json3']},
     'BCC': {'description': 'Bilibili BCC Subtitle format', 'extensions': ['bcc']},
+    'LRC': {'description': 'LRC Lyrics format', 'extensions': ['lrc']},
+    # UltraStar's songs are .txt, as VPlayer's and its kin's are below; the
+    # bytes tell them apart (file_io).
+    'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

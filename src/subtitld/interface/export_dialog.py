@@ -19,7 +19,7 @@ from subtitld.modules import session
 from subtitld.modules import ttml
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON', 'BCC']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
@@ -84,7 +84,7 @@ class _SubtitlesPanel(QWidget):
         grid.addWidget(self.offset_spin, 2, 0)
         self.layout().addWidget(self.text_options)
 
-        # SRT, SAMI and SUB: for players that need an older encoding or
+        # SRT, SAMI, SUB and LRC: for players that need an older encoding or
         # Windows line ends.
         self.srt_options = QWidget()
         row = QHBoxLayout(self.srt_options)
@@ -304,7 +304,7 @@ class _SubtitlesPanel(QWidget):
         fmt = self.format_combo.currentText()
         self._speaker_choices(fmt)
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
-        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB'))
+        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB', 'LRC'))
         # SAMI writes the original and the translation as two languages.
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
         combo = self.text_combo.combobox
@@ -402,7 +402,7 @@ class _SubtitlesPanel(QWidget):
         if fmt in export_options.TEXT_FORMATS:
             options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting')})
             options['offset'] = self.offset_spin.value()
-        if fmt in ('SRT', 'SAMI', 'SUB'):
+        if fmt in ('SRT', 'SAMI', 'SUB', 'LRC'):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
         if fmt == 'SUB':
             options['fps'] = choices['fps']

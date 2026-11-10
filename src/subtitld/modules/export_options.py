@@ -1,8 +1,10 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, SBV, SUB, BCC, XML); USF, USFX and JSON
-keep the project as it is.
+DFXP, TTML, SAMI, SCC, MCC, STL, SBV, SUB, BCC, XML, LRC, UltraStar and
+the player-era formats); USF, USFX and JSON keep the project as it is.
+Karaoke timing is formatting (modules.karaoke): removing the formatting
+takes the word timing of LRC and UltraStar with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -20,11 +22,11 @@ keep the project as it is.
 
 And for a format of its own:
 
-    encoding     SRT, SAMI and SUB: 'utf-8', 'utf-8-sig' (with a byte
+    encoding     SRT, SAMI, SUB and LRC: 'utf-8', 'utf-8-sig' (with a byte
                  order mark), 'utf-16', 'cp1252' (Western European),
                  'cp1250' (Central European), 'cp1251' (Cyrillic) or
                  'cp949' (Korean)
-    line_ends    SRT, SAMI and SUB: 'lf' or 'crlf'
+    line_ends    SRT, SAMI, SUB and LRC: 'lf' or 'crlf'
     fps          SUB: the frame rate its frame numbers count in
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
@@ -57,6 +59,7 @@ And for a format of its own:
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'BCC', 'XML',
+                'LRC', 'ULTRASTAR',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')

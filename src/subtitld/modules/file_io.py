@@ -25,6 +25,7 @@ from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
 from subtitld.modules import legacy
+from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import plaintext
@@ -39,6 +40,7 @@ from subtitld.modules import waveform
 from subtitld.modules import webvtt
 from subtitld.modules import youtube_timedtext
 from subtitld.modules import usf
+from subtitld.modules import ultrastar
 from subtitld.modules import utils
 from subtitld.modules import video_subtitles
 
@@ -679,6 +681,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = 'VTT'
             segments_list = webvtt.read(subtitle_file)
 
+        elif subtitle_file.lower().endswith('.lrc'):
+            # Lyrics: word stamps as karaoke codes, the ID tags (title,
+            # artist, album ...) as metadata to write back.
+            subtitle_format = 'LRC'
+            try:
+                segments_list, lrc_metadata = lrc.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if lrc_metadata:
+                session.SUBTITLE['metadata'] = lrc_metadata
+
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
             # YouTube's timed text: srv3 (styles and places), or srv1.
@@ -798,6 +811,21 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # binary. Three unrelated formats share this extension.
             subtitle_format = 'SPRUCE'
             segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
+
+        elif subtitle_file.lower().endswith('.txt') and ultrastar.kind(_text_of(subtitle_file)):
+            # An UltraStar song: its syllables as karaoke codes, its notes'
+            # pitches on the subtitles, its title and artist as metadata and
+            # the rest of its headers (BPM, GAP, the audio...) beside them,
+            # so it is written back as it was; its language the project's.
+            subtitle_format = 'ULTRASTAR'
+            try:
+                segments_list, song, headers = ultrastar.parse(_text_of(subtitle_file))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.SUBTITLE['metadata'] = dict(song, ultrastar=headers)
+            code = _language_like_project(dict(headers).get('LANGUAGE'))
+            if code:
+                session.SUBTITLE['language'] = code
 
         elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
             # VPlayer, TMPlayer and their kin wrote .txt, which is also what
@@ -1666,6 +1694,23 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             microdvd.save(final_file, segments, float(options.get('fps') or VIDEO.get('framerate') or 25),
                           encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                           line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'LRC':
+            # Lyrics, with the ID tags the file opened had, in the export's
+            # encoding and line ends.
+            lrc.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
+                     encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'ULTRASTAR':
+            # A song: the headers it was opened with (its BPM and GAP, so no
+            # note moves), else new ones naming the video as its audio, and
+            # the video's name as its title when it has none.
+            metadata = dict(SUBTITLE.get('metadata') or {})
+            video_name = os.path.basename(VIDEO.get('filepath') or '')
+            metadata.setdefault('title', os.path.splitext(video_name or os.path.basename(final_file))[0])
+            ultrastar.save(final_file, segments, metadata=metadata, headers=metadata.get('ultrastar'),
+                           audio=video_name)
 
         elif subtitle_format in legacy.SESSION_FORMATS:
             # The player era. The ones counted in frames (AQTitle, Spruce)
