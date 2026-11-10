@@ -238,6 +238,11 @@ check('emphasis marks and what a ruby says about its reading, kept',
       (read_back(_written), 'subtitldcc:emphasis="filled sesame"' in _written,
        '<ruby subtitldcc:align="space-around" subtitldcc:position="after">' in _written),
       (_annotated, True, True))
+_down = USFWriter().write([{'start': 0, 'end': 1, 'speaker': 'A', 'text': '第<font combine="all">12</font>話',
+                            'writing': 'vertical-rl'}], speakers={}, language='ja')
+check('written down the picture, a number set upright in it, kept',
+      ([(s['text'], s.get('writing')) for s in USFReader().read(_down)], 'subtitldcc:writing="vertical-rl"' in _down),
+      ([('第<font combine="all">12</font>話', 'vertical-rl')], True))
 check('a project with only ordinary formatting declares no namespace',
       'xmlns:subtitldcc' in USFWriter().write([{'start': 0, 'end': 1, 'speaker': 'A', 'text': '<i>plain</i>'}],
                                               speakers={}, language='en-us'), False)

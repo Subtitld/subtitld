@@ -11,7 +11,7 @@ nothing is selected, and toggle: italic on a text all italic takes it off.
 """
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import (QColor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap, QTextCharFormat,
+from PySide6.QtGui import (QActionGroup, QColor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap, QTextCharFormat,
                            QTextCursor, QTextFormat)
 from PySide6.QtWidgets import (QColorDialog, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget,
                                QWidgetAction)
@@ -32,9 +32,10 @@ _PEN = {field: QTextFormat.UserProperty + 2 + index
 # property and left to the preview to draw.
 _FLASH = QTextFormat.UserProperty + 8
 # Nor emphasis marks, nor where a ruby puts its reading and how it spreads
-# it: kept the same way, numbered on from the flash's.
+# it, nor text set upright down a column: kept the same way, numbered on
+# from the flash's.
 _PEN.update({field: QTextFormat.UserProperty + 9 + index
-             for index, field in enumerate(('emphasis', 'ruby_position', 'ruby_align'))})
+             for index, field in enumerate(('emphasis', 'ruby_position', 'ruby_align', 'combine'))})
 
 
 def _char_format(style):
@@ -439,7 +440,8 @@ class FormattingBar(QWidget):
         layout.addWidget(self.position_button)
 
         # What the subtitle is besides its text, kept beside it as its
-        # position is: when it is shown, and the look its file gave it.
+        # position is: when it is shown, which way it is written, and the
+        # look its file gave it.
         self.subtitle_button = QPushButton()
         self.subtitle_button.setObjectName('subtitle_formatting_subtitle')
         self.subtitle_button.setProperty('class', 'subtitle_formatting_button')
@@ -454,6 +456,17 @@ class FormattingBar(QWidget):
         self.hidden_action = self.subtitle_menu.addAction(_('formatting.hidden'))
         self.hidden_action.setCheckable(True)
         self.hidden_action.toggled.connect(lambda on: self._set_shown('hidden', on))
+        self.subtitle_menu.addSeparator()
+        # Which way it is written: across, or down the picture in columns.
+        self.writing_actions = {}
+        self.writing_group = QActionGroup(self.subtitle_menu)
+        for writing, label in (('', 'formatting.writing_across'), ('vertical-rl', 'formatting.writing_vertical_rl'),
+                               ('vertical-lr', 'formatting.writing_vertical_lr')):
+            action = self.subtitle_menu.addAction(_(label))
+            action.setCheckable(True)
+            self.writing_group.addAction(action)
+            action.toggled.connect(lambda on, w=writing: on and self._set_writing(w))
+            self.writing_actions[writing] = action
         self.subtitle_menu.addSeparator()
         self.look_action = self.subtitle_menu.addAction(_('formatting.look_clear'), self._clear_look)
         self.subtitle_menu.aboutToShow.connect(self._show_subtitle)
@@ -526,12 +539,12 @@ class FormattingBar(QWidget):
         for key, cell in self.position_cells.items():
             cell.setChecked(key == keypad)
         # Lit, as the position is when the subtitle is placed, while the
-        # subtitle is anything but ordinary: forced, hidden, or in a look
-        # of its own.
+        # subtitle is anything but ordinary: forced, hidden, written down
+        # the picture, or in a look of its own.
         segment = self.segment()
         self.subtitle_button.setVisible(segment is not None)
         unusual = segment is not None and bool(segment.get('forced') or segment.get('hidden')
-                                               or subtitld_look.of(segment))
+                                               or subtitld_look.of(segment) or position.writing(segment))
         self.subtitle_button.setIcon(_subtitle_icon('#ffffff' if unusual else '#b8cee0'))
 
     def _step(self):
@@ -635,6 +648,10 @@ class FormattingBar(QWidget):
             action.blockSignals(True)
             action.setChecked(bool(segment and segment.get(key)))
             action.blockSignals(False)
+        # The group unchecks the others, and it hears of a check only by its
+        # signal, so this one is not blocked: picking what the subtitle
+        # already is changes nothing (_set_writing).
+        self.writing_actions[position.writing(segment) if segment else ''].setChecked(True)
         self.look_action.setEnabled(bool(segment and subtitld_look.of(segment)))
 
     def _set_shown(self, key, on):
@@ -648,6 +665,20 @@ class FormattingBar(QWidget):
             segment[key] = True
         else:
             segment.pop(key, None)
+        self.refresh()
+        session.set_unsaved(True)
+
+    def _set_writing(self, writing):
+        """Written across (''), or down the picture in columns from the
+        right or from the left (position.WRITING_MODES)."""
+        segment = self.segment()
+        if segment is None or position.writing(segment) == writing:
+            return
+        self._step()
+        if writing:
+            segment['writing'] = writing
+        else:
+            segment.pop('writing', None)
         self.refresh()
         session.set_unsaved(True)
 

@@ -144,7 +144,7 @@ renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
 renderer.set_size(640, 360)
 
 
-def render(text, place=None, direction=None, look=None, bidi=None):
+def render(text, place=None, direction=None, look=None, bidi=None, writing=None):
     """The subtitle as the preview draws it: its layer over a black frame."""
     segment = {'start': 0.0, 'end': 1.0, 'text': text}
     if place:
@@ -155,6 +155,8 @@ def render(text, place=None, direction=None, look=None, bidi=None):
         segment['look'] = look
     if bidi:
         segment['bidi'] = bidi
+    if writing:
+        segment['writing'] = writing
     key = renderer._job(segment, 0.0, *renderer._style())[0]
     for _i in range(1500):
         renderer.layers([segment], 0.0)
@@ -175,6 +177,11 @@ def render(text, place=None, direction=None, look=None, bidi=None):
 def lit_rows(image):
     rows = [y for y in range(image.height()) if any(QColor(image.pixel(x, y)).red() > 128 for x in range(0, image.width(), 2))]
     return (rows[0], rows[-1]) if rows else None
+
+
+def lit_columns(image):
+    columns = [x for x in range(image.width()) if any(QColor(image.pixel(x, y)).red() > 128 for y in range(0, image.height(), 2))]
+    return (columns[0], columns[-1]) if columns else None
 
 
 plain_image, italic_image = render('Hello there'), render('<i>Hello</i> there')
@@ -237,6 +244,19 @@ reserved = lit_rows(render('One\nTwo', look={'ruby_reserve': {'position': 'both'
 check('room kept for readings spaces the lines further apart',
       reserved is not None and two_lines is not None and reserved[1] - reserved[0] > two_lines[1] - two_lines[0] + 10,
       True)
+across, down = render('{\\an6}縦書きの字幕'), render('{\\an6}縦書きの字幕', writing='vertical-rl')
+check('written down the picture, a line becomes a column',
+      (lambda rows, columns: rows[1] - rows[0] > columns[1] - columns[0])(lit_rows(down), lit_columns(down)), True)
+check('and sits where its keypad says, against the right edge',
+      lit_columns(down)[1] > 560 and abs(lit_columns(down)[1] - lit_columns(across)[1]) <= 12, True)
+check('a column from the left is drawn the other way round',
+      render('{\\an6}一行目\n二行目', writing='vertical-lr') != render('{\\an6}一行目\n二行目', writing='vertical-rl'),
+      True)
+check('the digits of a number set upright take one character\'s room down the column',
+      (lambda plain, upright: upright[1] - upright[0] < plain[1] - plain[0] - 4)(
+          lit_rows(render('{\\an6}第<font>2026</font>年', writing='vertical-rl')),
+          lit_rows(render('{\\an6}第<font combine="all">2026</font>年', writing='vertical-rl'))), True)
+check('a subtitle written across is drawn exactly as before', render('Across', writing=None) == render('Across'), True)
 
 renderer.close()
 
@@ -371,6 +391,17 @@ _md = markup.to_markdown('<font kind="sound-effect">[a door]</font>')
 check('the Markdown panel keeps it', (_md, markup.from_markdown(_md)),
       ('[[a door]]{kind=sound-effect}', '<font kind="sound-effect">[a door]</font>'))
 
+
+print('set upright down a column')
+check('read off a <font>, and nothing but all is one',
+      [style.combine for _run, style in markup.spans('<font combine="all">12</font><font combine="none">34</font>')],
+      ['all', ''])
+check('written back as it came, and drawn with text-combine-upright',
+      (markup.from_spans(markup.spans('第<font combine="all">12</font>話')),
+       markup.to_html('<font combine="all">12</font>')),
+      ('第<font combine="all">12</font>話', '<span style="text-combine-upright:all">12</span>'))
+check('the Markdown panel keeps it', markup.from_markdown(markup.to_markdown('第<font combine="all">12</font>話')),
+      '第<font combine="all">12</font>話')
 
 print('emphasis marks')
 check('a fill and a shape, or auto, then where they go if not outside',

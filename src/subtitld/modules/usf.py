@@ -58,6 +58,9 @@ SUBTITLDCC_LOOK = 'subtitldcc:look'
 # tts:unicodeBidi). USF has no word for either.
 SUBTITLDCC_DIRECTION = 'subtitldcc:direction'
 SUBTITLDCC_BIDI = 'subtitldcc:bidi'
+# Written down the picture, in columns (modules.position). USF has no word
+# for it either.
+SUBTITLDCC_WRITING = 'subtitldcc:writing'
 # What the file says about itself. USF's <metadata> has a title, an author
 # and a date, and a <comment> that holds a description; it has no word for
 # a copyright, so that one is Subtitld's.
@@ -89,7 +92,8 @@ _INLINE = ('i', 'b', 'u', 's', 'ruby', 'rt', 'sup', 'sub', markup.FLASH_TAG)
 # dropped them would lose them on every save.
 _FONT_EXTRAS = (('size', 'subtitldcc:size'), ('edge', 'subtitldcc:edge'),
                 ('edge_color', 'subtitldcc:edge-color'), ('face', 'subtitldcc:face'),
-                ('kind', 'subtitldcc:kind'), ('emphasis', 'subtitldcc:emphasis'))
+                ('kind', 'subtitldcc:kind'), ('emphasis', 'subtitldcc:emphasis'),
+                ('combine', 'subtitldcc:combine'))
 # Where a ruby puts its reading and how it spreads it, on the <ruby>.
 _RUBY_EXTRAS = (('position', 'subtitldcc:position'), ('align', 'subtitldcc:align'))
 
@@ -454,6 +458,8 @@ class USFReader():
             subtitle['direction'] = element.attrs[SUBTITLDCC_DIRECTION]
         if element.attrs.get(SUBTITLDCC_BIDI) in ('embed', 'override', 'isolate'):
             subtitle['bidi'] = element.attrs[SUBTITLDCC_BIDI]
+        if element.attrs.get(SUBTITLDCC_WRITING) in subtitld_position.WRITING_MODES:
+            subtitle['writing'] = element.attrs[SUBTITLDCC_WRITING]
         if element.attrs.get(SUBTITLDCC_LOOK):
             try:
                 subtitld_look.store(subtitle, json.loads(element.attrs[SUBTITLDCC_LOOK]))
@@ -603,6 +609,7 @@ class USFWriter():
         if (origin and origin.get('share_id')) or any(subtitle.get('id') or subtitle.get('forced')
                                                       or subtitle.get('hidden') or subtitle.get('look')
                                                       or subtitle.get('direction') or subtitle.get('bidi')
+                                                      or subtitld_position.writing(subtitle)
                                                       for subtitle in subtitles) \
                 or str(metadata.get('copyright') or '').strip():
             usf.find('USFSubtitles')['xmlns:subtitldcc'] = SUBTITLDCC_NAMESPACE
@@ -700,6 +707,8 @@ class USFWriter():
             new_sub[SUBTITLDCC_DIRECTION] = subtitle['direction']
         if text_override is None and subtitle.get('bidi') in ('embed', 'override', 'isolate'):
             new_sub[SUBTITLDCC_BIDI] = subtitle['bidi']
+        if text_override is None and subtitld_position.writing(subtitle):
+            new_sub[SUBTITLDCC_WRITING] = subtitld_position.writing(subtitle)
         if text_override is None and subtitld_look.of(subtitle):
             new_sub[SUBTITLDCC_LOOK] = json.dumps(subtitld_look.of(subtitle), separators=(',', ':'), sort_keys=True)
 

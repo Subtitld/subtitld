@@ -21,6 +21,9 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
     <font emphasis="filled sesame">…</font>  emphasis marks beside each
                                              character, as Japanese and
                                              Chinese stress a word
+    <font combine="all">…</font>             set upright in one character's
+                                             room, as vertical Japanese sets
+                                             a number (tate-chū-yoko)
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
     <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
@@ -61,6 +64,12 @@ filled or open circle, dot or sesame, or "auto", the one the writing asks
 for (a filled circle across, a filled sesame down), before the text or
 after it, outside being the default. Its colour and a quoted mark of its
 own are left out: IMSC's text profile has neither (#textEmphasis-minimal).
+
+A run set upright in one character's room is TTML2's tts:textCombine="all"
+and CSS's text-combine-upright: a number or a short Latin word in a
+subtitle written down the picture (the cue's `writing`) is laid across
+the column instead of along it. In a line written across it means nothing
+and is drawn as the text it is.
 
 A face is kept as it is written and not drawn: a subtitle is set in what
 its style template says, and a file that asks for Helvetica still asks for
@@ -103,6 +112,7 @@ _FONT_EDGE = re.compile(r'''(?<![-\w])edge\s*=\s*["']?\s*([-\w]+)''', re.IGNOREC
 _FONT_EDGE_COLOR = re.compile(r'''edge-colou?r\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
 # A typeface may be several words, so an unquoted one is one word only.
 _FONT_FACE = re.compile(r'''face\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w-]+))''', re.IGNORECASE)
+_FONT_COMBINE = re.compile(r'''combine\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
 _FONT_KIND = re.compile(r'''kind\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
 # Several words, so quoted; one word alone may go without.
 _FONT_EMPHASIS = re.compile(r'''emphasis\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w-]+))''', re.IGNORECASE)
@@ -153,7 +163,10 @@ ANNOTATION_POSITIONS = ('before', 'after')
 RUBY_ALIGNS = ('start', 'end', 'space-around', 'space-between', 'with-base')
 # What a run is drawn in beyond its colours: kept together for the places
 # that carry them all or none.
-_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face', 'kind', 'emphasis', 'ruby_position', 'ruby_align')
+_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face', 'kind', 'emphasis', 'ruby_position', 'ruby_align',
+               'combine')
+# What a run set upright in one character's room is: all of it, or nothing.
+COMBINE = 'all'
 
 
 class Style(NamedTuple):
@@ -174,6 +187,7 @@ class Style(NamedTuple):
     emphasis: str = ''       # its marks ('filled sesame', 'auto after'), '' none
     ruby_position: str = ''  # where the ruby it is in puts its reading, '' outside
     ruby_align: str = ''     # how that reading is spread, '' centred
+    combine: str = ''        # COMBINE: set upright in one character's room down a column
 
     def any(self):
         return self != PLAIN
@@ -225,6 +239,7 @@ class Font(NamedTuple):
     face: str = ''
     kind: str = ''
     emphasis: str = ''
+    combine: str = ''
 
     def any(self):
         return self != Font()
@@ -251,6 +266,13 @@ def emphasis_value(value):
     shape = next((word for word in words if word in EMPHASIS_SHAPES), '')
     where = annotation_position(next((word for word in words if annotation_position(word)), ''))
     return (' '.join(part for part in (fill, shape) if part) or 'auto') + (f' {where}' if where else '')
+
+
+def combine_value(value):
+    """COMBINE for a run TTML or CSS sets upright in one character's room
+    ('all'), '' for anything else ('none', and TTML2's digits, which IMSC
+    leaves out)."""
+    return COMBINE if str(value or '').strip().lower() == COMBINE else ''
 
 
 def annotation_position(value):
@@ -323,7 +345,7 @@ def _tokens(text):
             found = {name: pattern.search(written) for name, pattern in
                      (('color', _FONT_COLOR), ('background', _FONT_BACKGROUND), ('size', _FONT_SIZE),
                       ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR), ('face', _FONT_FACE),
-                      ('kind', _FONT_KIND), ('emphasis', _FONT_EMPHASIS))}
+                      ('kind', _FONT_KIND), ('emphasis', _FONT_EMPHASIS), ('combine', _FONT_COMBINE))}
             edge = (found['edge'].group(1).lower() if found['edge'] else '')
             kind = (found['kind'].group(1).lower() if found['kind'] else '')
             face = next((part for part in found['face'].groups() if part), '') if found['face'] else ''
@@ -336,7 +358,8 @@ def _tokens(text):
                 edge_color=color_hex(found['edge_color'].group(1)) if found['edge_color'] else '',
                 face=face.strip(),
                 kind=kind if kind in KINDS else '',
-                emphasis=emphasis_value(emphasis)))
+                emphasis=emphasis_value(emphasis),
+                combine=combine_value(found['combine'].group(1) if found['combine'] else '')))
         elif match.group('ruby') is not None:
             written = match.group('ruby')
             placed, spread = _RUBY_POSITION.search(written), _RUBY_ALIGN.search(written)
@@ -541,7 +564,8 @@ def to_html(text, colors=True):
                ([f'background-color:{css_color(style.background)}'] if style.background else []) + \
                ([f'font-size:{style.size}'] if style.size else []) + \
                ([f'text-shadow:{_shadow(style)}'] if colors and style.edge else []) + \
-               _emphasis_css(style.emphasis)
+               _emphasis_css(style.emphasis) + \
+               (['text-combine-upright:all'] if style.combine else [])
         if looks:
             chunk = f'<span style="{";".join(looks)}">{chunk}</span>'
         return chunk
@@ -653,7 +677,7 @@ def tags_for(style):
     """The tags a run in `style` sits in: [(name, value)]. A font's value is
     (colour, background), so one tag carries both."""
     font = Font(style.color, style.background, style.size, style.edge, style.edge_color, style.face,
-                style.kind, style.emphasis)
+                style.kind, style.emphasis, style.combine)
     wanted = [('font', font)] if font.any() else []
     if style.flash:
         wanted.append((FLASH_TAG, True))
@@ -664,7 +688,7 @@ def tags_for(style):
 
 _FONT_ATTRIBUTES = (('color', 'color'), ('background', 'background'), ('size', 'size'),
                     ('edge', 'edge'), ('edge_color', 'edge-color'), ('face', 'face'), ('kind', 'kind'),
-                    ('emphasis', 'emphasis'))
+                    ('emphasis', 'emphasis'), ('combine', 'combine'))
 
 
 def _open_tag(name, value):
@@ -934,6 +958,8 @@ def _md_span_attrs(style):
         attrs.append(f'kind={style.kind}')
     if style.emphasis:
         attrs.append(f'emphasis="{style.emphasis}"')
+    if style.combine:
+        attrs.append(f'combine={style.combine}')
     return ' '.join(attrs)
 
 
@@ -1012,7 +1038,8 @@ _MD_ATTR = re.compile(
     r'''|(?<![-\w])edge\s*=\s*["']?(?P<edge>[-\w]+)["']?'''
     r'''|face\s*=\s*(?:"(?P<facequoted>[^"]*)"|(?P<face>[\w-]+))'''
     r'''|kind\s*=\s*["']?(?P<kind>[-\w]+)["']?'''
-    r'''|emphasis\s*=\s*(?:"(?P<emphasisquoted>[^"]*)"|(?P<emphasis>[\w-]+))''')
+    r'''|emphasis\s*=\s*(?:"(?P<emphasisquoted>[^"]*)"|(?P<emphasis>[\w-]+))'''
+    r'''|combine\s*=\s*["']?(?P<combine>[-\w]+)["']?''')
 
 
 def _md_span_style(attrs):
@@ -1048,6 +1075,9 @@ def _md_span_style(attrs):
             emphasis = emphasis_value(match.group('emphasisquoted') or match.group('emphasis'))
             if emphasis:
                 change['emphasis'] = emphasis
+        elif match.group('combine'):
+            if combine_value(match.group('combine')):
+                change['combine'] = COMBINE
         else:
             color = color_hex(match.group('fore') or match.group('css'))
             if color:

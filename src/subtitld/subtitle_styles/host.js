@@ -122,6 +122,14 @@
       // file forces it: embedded as its own run, isolated from what is
       // around it, or whatever the characters themselves say overruled.
       if (job.bidi) cue.style.unicodeBidi = job.bidi === 'override' ? 'bidi-override' : job.bidi;
+      // Written down the picture, in columns. Where it sits is the keypad's
+      // as for any cue — a column on the right is a 6 — and #safe places it
+      // there; inside, its columns line up as the row says: from the top,
+      // on the middle or from the bottom.
+      if (job.writing) {
+        cue.style.writingMode = job.writing;
+        cue.style.textAlign = ['end', 'center', 'start'][row];
+      }
       const [turnX, turnY, turnZ] = place.rotate || [0, 0, 0];
       if (turnX || turnY || turnZ) {
         // Counter-clockwise, as USF and ASS both count: the screen's y

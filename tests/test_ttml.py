@@ -837,6 +837,45 @@ check('and read back the same', [s.get('look') for s in ttml.parse(_back)], [s.g
 check('left out of EBU-TT-D', 'rubyReserve' in ttml.write(_reserved, 'ja', profile='ebu-tt-d'), False)
 
 
+print('written down the picture')
+_vertical = ('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xml:lang="ja">'
+             '<head><layout>'
+             '<region xml:id="right" tts:origin="80% 10%" tts:extent="10% 80%" tts:writingMode="tbrl" '
+             'tts:displayAlign="before" tts:textAlign="start"/>'
+             '<region xml:id="left" tts:origin="10% 10%" tts:extent="80% 80%" tts:writingMode="tblr" '
+             'tts:displayAlign="before"/>'
+             '<region xml:id="arabic" tts:writingMode="rltb"/>'
+             '</layout></head><body><div>'
+             '<p begin="1s" end="2s" region="right">第<span tts:textCombine="all">12</span>話</p>'
+             '<p begin="3s" end="4s" region="left">左から</p>'
+             '<p begin="5s" end="6s" region="arabic">مرحبا</p></div></body></tt>')
+_read = ttml.parse(_vertical)
+check('a region written down makes its subtitles so, placed where it puts them on the picture',
+      [(s['text'], s.get('writing'), s.get('direction')) for s in _read],
+      [('{\\an9}第<font combine="all">12</font>話', 'vertical-rl', None), ('{\\an4}左から', 'vertical-lr', None),
+       ('مرحبا', None, 'rtl')])
+_written = ttml.write(_read, 'ja', profile='imsc1.1')
+check('written in a region of its own, its alignments turned with it',
+      ('tts:displayAlign="before" tts:textAlign="start" tts:writingMode="tbrl"' in _written,
+       'tts:displayAlign="before" tts:textAlign="center" tts:writingMode="tblr"' in _written,
+       '<span tts:textCombine="all">12</span>' in _written), (True, True, True))
+check('read back as it went in', [(s['text'], s.get('writing')) for s in ttml.parse(_written)],
+      [(s['text'], s.get('writing')) for s in _read])
+check('and IMSC 1.1 has nothing to say about it', ttml.check(_written, 'imsc1.1'), [])
+for _profile in ('imsc1', 'ebu-tt-d'):
+    _down = ttml.write(_read, 'ja', profile=_profile)
+    check(f'{_profile} writes down the picture too, with no digits set upright, which is TTML2',
+          ('tts:writingMode="tbrl"' in _down, 'textCombine' in _down, ttml.check(_down, _profile)),
+          (True, False, []))
+check('a subtitle placed down the middle keeps its place through a write',
+      [s['text'] for s in ttml.parse(ttml.write(
+          [{'start': 1, 'end': 2, 'text': t, 'writing': 'vertical-rl'} for t in ('中央', '{\\an5}真ん中', '{\\an1}左下')], 'ja'))],
+      ['中央', '{\\an5}真ん中', '{\\an1}左下'])
+check('a mode other than none and all is named in IMSC 1.1',
+      ttml.check(_written.replace('tts:textCombine="all"', 'tts:textCombine="digits 2"'), 'imsc1.1')[-1],
+      'tts:textCombine="digits 2": IMSC 1.1 allows none and all')
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

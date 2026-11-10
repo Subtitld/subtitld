@@ -195,6 +195,17 @@ check('with no look left there is none to hand back', shown_bar.look_action.isEn
 shown['look'] = {'size': 8.0}
 shown_bar.clear_button.click()
 check("clear formatting takes the file's look too", 'look' in shown, False)
+shown_bar._show_subtitle()
+check('written across, as a subtitle that says nothing is', shown_bar.writing_actions[''].isChecked(), True)
+steps = len(history.ALL_HISTORY)
+shown_bar.writing_actions['vertical-rl'].setChecked(True)
+check('written down the picture: on the subtitle, in one undo step',
+      (shown.get('writing'), len(history.ALL_HISTORY) - steps, shown_bar.writing_actions[''].isChecked()),
+      ('vertical-rl', 1, False))
+shown_bar._show_subtitle()
+check('the menu shows it the next time', shown_bar.writing_actions['vertical-rl'].isChecked(), True)
+shown_bar.writing_actions[''].setChecked(True)
+check('across again: the key goes', 'writing' in shown, False)
 check('without a subtitle the menu is not offered',
       ste.FormattingBar(loaded('x')).subtitle_button.isVisibleTo(None), False)
 

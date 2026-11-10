@@ -27,7 +27,14 @@ Reading:
   file written that way has no fontStyle to find), and TTML2's emphasis
   marks (tts:textEmphasis), and where a ruby puts its reading and how it
   spreads it (tts:rubyPosition, tts:rubyAlign); the room a paragraph keeps
-  for readings (tts:rubyReserve) goes in its look;
+  for readings (tts:rubyReserve) goes in its look; a run set upright in
+  one character's room down a column (tts:textCombine) is markup's too;
+- a region written down the picture (tts:writingMode tbrl, tb or tblr)
+  makes its subtitles written so, the subtitle's 'writing'; its
+  displayAlign then says which side the columns go to and its textAlign
+  how far down, so the keypad is the place on the picture either way. A
+  region written right to left (rltb, rl) is the direction its subtitles
+  run in, where they do not say one of their own;
 - where the subtitle sits, from its region: the point tts:displayAlign
   and tts:textAlign put the text at in the region's tts:origin and
   tts:extent (in %, px or cells), or, without those, the two alone
@@ -50,7 +57,9 @@ Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
 spans with tts:fontStyle, tts:fontWeight, tts:textDecoration and
 tts:color, line breaks as <br/>, and, when asked, each speaker as a
 ttm:agent. Its one style is white with a black outline, or the look of
-Subtitld's preview: its font, colour and box.
+Subtitld's preview: its font, colour and box. A subtitle written down the
+picture gets a region of its own, with tts:writingMode; every profile here
+has vertical writing, IMSC 1.0.1's and EBU-TT-D's included.
 
 `profile` says which of TTML's profiles the file declares itself to be, so
 a service that checks what it is given accepts it (PROFILES):
@@ -85,14 +94,22 @@ _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlig
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
                  'fontFamily', 'fontSize', 'lineHeight', 'backgroundColor', 'padding', 'textOutline', 'textShadow',
                  'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap', 'unicodeBidi',
-                 'textEmphasis', 'rubyPosition', 'rubyAlign', 'rubyReserve')
+                 'textEmphasis', 'rubyPosition', 'rubyAlign', 'rubyReserve', 'writingMode', 'textCombine')
+
+# What tts:writingMode says, as the subtitle's 'writing' (modules.position):
+# down the picture, in columns from the right or from the left. Across, it
+# is no 'writing' at all; across right to left it is a direction.
+_WRITING = {'tbrl': 'vertical-rl', 'tb': 'vertical-rl', 'tblr': 'vertical-lr'}
+_WRITING_OUT = {'vertical-rl': 'tbrl', 'vertical-lr': 'tblr'}
+_RIGHT_TO_LEFT = ('rltb', 'rl')
 
 # TTML's words for how a reading is spread, from markup's (RUBY_ALIGNS).
 _RUBY_ALIGN_OUT = {'start': 'start', 'end': 'end', 'space-around': 'spaceAround',
                    'space-between': 'spaceBetween', 'with-base': 'withBase'}
 # What TTML2 says that TTML 1 does not, which IMSC 1.0.1 and EBU-TT-D are
-# built on: emphasis marks, and where a ruby puts its reading and how.
-_TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve')
+# built on: emphasis marks, where a ruby puts its reading and how, and a
+# run set upright down a column.
+_TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve', 'textCombine')
 # How much of those each profile takes: none in the two built on TTML 1,
 # IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
 # all of it in TTML itself.
@@ -675,7 +692,8 @@ def _look(props):
         # A reading's place and spread are the ruby's: they mean something
         # only on the base and the reading, which carry them for it.
         ruby_position=markup.annotation_position(props.get('rubyPosition')) if role else '',
-        ruby_align=markup.ruby_align_value(props.get('rubyAlign')) if role else '')
+        ruby_align=markup.ruby_align_value(props.get('rubyAlign')) if role else '',
+        combine=markup.combine_value(props.get('textCombine')))
 
 
 def _ruby_reserve(frame, value, size):
@@ -705,9 +723,12 @@ def _keypad(props, frame, geometry=True):
     with no place of its own, "start", textAlign's default, is taken as
     saying nothing too: pycaption writes it on every region, and so did
     Subtitld when it wrote TTML with pycaption."""
+    origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
+    writing = _WRITING.get((props.get('writingMode') or '').strip())
+    if writing:
+        return _keypad_down(props, frame, writing, origin, extent, geometry)
     display = props.get('displayAlign') or 'after'
     align = props.get('textAlign') or 'center'
-    origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
     if align == 'start' and not (origin and extent):
         align = 'center'
     # "start" and "end" are the near and the far edge of the writing, which
@@ -726,6 +747,33 @@ def _keypad(props, frame, geometry=True):
     else:
         row = {'before': 2, 'center': 1}.get(display, 0)
         column = horizontal
+    return (1, 4, 7)[row] + column
+
+
+def _keypad_down(props, frame, writing, origin, extent, geometry):
+    """_keypad for a region written down the picture. Its displayAlign says
+    which side the columns go to — before is where they start, the right
+    for columns from the right — and its textAlign how far down: start at
+    the top, as left is, end at the bottom, as right is. With no
+    displayAlign the columns start where the writing does, TTML's own
+    default: the bottom a line across is put at is a habit of players, and
+    a column has no such habit."""
+    display = props.get('displayAlign') or 'before'
+    align = props.get('textAlign') or 'center'
+    if align == 'start' and not (origin and extent):
+        align = 'center'
+    first, last = (2, 0) if writing == 'vertical-rl' else (0, 2)
+    column = {'before': first, 'center': 1}.get(display, last)
+    row = 2 if align in ('start', 'left') else 0 if align in ('end', 'right') else 1
+    if origin and extent and geometry:
+        # The middle of the column nearest the side the text is put
+        # against, half a cell in from it, a cell being as wide as a line
+        # across is tall.
+        half_column = min(50 / frame.cells[1] / frame.aspect, extent[0] / 2)
+        x = origin[0] + (half_column, extent[0] / 2, extent[0] - half_column)[column]
+        y = origin[1] + extent[1] * (2 - row) / 2
+        column = 0 if x < 34 else 1 if x < 67 else 2
+        row = 2 if y < 34 else 1 if y < 67 else 0
     return (1, 4, 7)[row] + column
 
 
@@ -995,8 +1043,14 @@ def _document(text):
         # Which way the writing runs, where the file says: Arabic and Hebrew
         # read right to left, and that decides where a line's punctuation
         # lands and which end "start" is.
+        writing_mode = (p_props.get('writingMode') or '').strip()
         if p_props.get('direction') in ('ltr', 'rtl'):
             segment['direction'] = p_props['direction']
+        elif writing_mode in _RIGHT_TO_LEFT:
+            segment['direction'] = 'rtl'
+        # Written down the picture, in columns.
+        if writing_mode in _WRITING:
+            segment['writing'] = _WRITING[writing_mode]
         # And how another direction sits inside the line. TTML does not
         # inherit this one, so it is read off the paragraph itself.
         bidi = _BIDI.get((styles.of(element, {}).get('unicodeBidi') or '').strip())
@@ -1232,8 +1286,9 @@ def check(text, profile='imsc1.1'):
             problems.append(f'Font sizes with a width and a height of their own ({", ".join(stretched)}): '
                             'the profile allows one size for both, and the height is what is read')
 
-    # TTML2's emphasis marks and what a ruby says about its reading. IMSC
-    # 1.0.1 and EBU-TT-D are built on TTML 1 and have none of it; IMSC 1.1
+    # TTML2's emphasis marks, what a ruby says about its reading and text
+    # set upright down a column. IMSC 1.0.1 and EBU-TT-D are built on TTML 1
+    # and have none of it; IMSC 1.1
     # has the minimal sets: no colour or mark of its own for an emphasis
     # (#textEmphasis-minimal), no spreading a reading with its base
     # (#rubyAlign-minimal).
@@ -1253,6 +1308,10 @@ def check(text, profile='imsc1.1'):
         if any((_attr(element, 'rubyAlign') or '').strip() == 'withBase' for element in root.iter()):
             problems.append('tts:rubyAlign="withBase": IMSC 1.1 allows start, center, end, '
                             'spaceAround and spaceBetween')
+        combined = sorted({value for element in root.iter() for value in [(_attr(element, 'textCombine') or '').strip()]
+                           if value and value not in ('none', 'all')})
+        if combined:
+            problems.append(f'tts:textCombine="{", ".join(combined)}": IMSC 1.1 allows none and all')
 
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
@@ -1286,7 +1345,8 @@ def _open_span(tags, style, shear=False, annotations='full'):
     its textDecoration names all the run's, so none an outer span set is
     lost, whatever a player makes of a nested one. With `shear`, italics
     are written as a slant instead (see _SHEAR). With `annotations` 'none',
-    what only TTML2 can say (emphasis marks) is left out (see _ANNOTATIONS)."""
+    what only TTML2 can say (emphasis marks, text set upright) is left out
+    (see _ANNOTATIONS)."""
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
@@ -1305,6 +1365,8 @@ def _open_span(tags, style, shear=False, annotations='full'):
             # markup's words are TTML's: a fill and a shape, or auto, and
             # before or after.
             attrs.append(f'tts:textEmphasis="{font.emphasis}"')
+        if font.combine and annotations != 'none':
+            attrs.append(f'tts:textCombine="{font.combine}"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:
@@ -1551,8 +1613,10 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         styling = subtitld_look.of(segment)
         # Opacity belongs to a region, so a subtitle only part shown takes
         # a region of its own rather than fading the ones beside it.
+        # And writing down the picture is a region's, so a subtitle written
+        # in columns takes one of its own too.
         spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v),
-                None if profile == 'ebu-tt-d' else styling.get('opacity'))
+                None if profile == 'ebu-tt-d' else styling.get('opacity'), position.writing(segment))
         if spot not in places:
             # One region for each place used. A subtitle placed more finely
             # than the nine takes a region of its own, named after the place
@@ -1615,15 +1679,25 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                                  for looking, name in list(lookings.items()) + list(boxings.items())]
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
     for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0,
-                                                 spot[3] if spot[3] is not None else 1)):
-        keypad, across, down, alpha = spot
-        display = ('after', 'center', 'before')[(keypad - 1) // 3]
-        align = ('left', 'center', 'right')[(keypad - 1) % 3]
+                                                 spot[3] if spot[3] is not None else 1, spot[4])):
+        keypad, across, down, alpha, writing = spot
+        column, row = (keypad - 1) % 3, (keypad - 1) // 3
+        if writing:
+            # Down the picture the two swap axes: displayAlign says which
+            # side the columns go to, before being the side they start
+            # from, and textAlign how far down (see _keypad_down).
+            first = 2 if writing == 'vertical-rl' else 0
+            display = 'before' if column == first else 'center' if column == 1 else 'after'
+            align = ('end', 'center', 'start')[row]
+        else:
+            display = ('after', 'center', 'before')[row]
+            align = ('left', 'center', 'right')[column]
         (x, y), (width, height) = _box(keypad, across, down)
         faded = f' tts:opacity="{alpha:.4g}"' if alpha is not None else ''
+        written = f' tts:writingMode="{_WRITING_OUT[writing]}"' if writing else ''
         head.append(f'      <region xml:id="{places[spot]}" '
                     f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
-                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{faded}/>')
+                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{written}{faded}/>')
     head += ['    </layout>', '  </head>']
     forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
     imsc_styling = forced or any('itts:' in looking for looking in lookings)
