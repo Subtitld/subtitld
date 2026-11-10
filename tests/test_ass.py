@@ -216,6 +216,61 @@ check('its events read, text and speaker in place',
 # which is how VSFilter itself saves a v4++ script down to v4+.
 check('the two vertical margins become the one', '20,20,30,0' in ass._from_v4plusplus(V4PP), True)
 
+print('the look a line brings with it')
+looks = {s['text']: s.get('look') for s in ass.segments_of(pysubs2.SSAFile.from_string(ASS))}
+check("a Sign line, and one that opens by switching to Sign, look as Sign does beyond Default",
+      (looks['{\\an8}<font color="#ffff00"><b>ROBOTICS LAB</b></font>'],
+       looks['{\\an8}<font color="#ffff00"><b>Restyled as a sign</b></font>']),
+      ({'size': 60 * 100 / 1080}, {'size': 60 * 100 / 1080}))
+check('Default lines, and Thoughts that differs from it only in italics, have none',
+      (looks['Later line'], looks['<i>Thinking </i>out<i> loud</i>']), (None, None))
+HEADER = (ASS.split('[Events]')[0]
+          + '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+
+
+def look_of(line, header=HEADER):
+    return ass.segments_of(pysubs2.SSAFile.from_string(header + line + '\n'))[0].get('look')
+
+
+check('the codes a line opens with: font, size, outline and shadow and their colours',
+      look_of(r'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,'
+              r'{\fnComic Sans MS\fs54\bord4\3c&H0000FF&\shad2\4c&H00FF00&}Coded'),
+      {'font': 'Comic Sans MS', 'size': 5.0, 'outline': {'width': 4 * 100 / 1080, 'color': '#ffff0000'},
+       'shadow': [{'x': 2 * 100 / 1080, 'y': 2 * 100 / 1080, 'color': '#ff00ff00'}]})
+check('one further in changes only part of the line, which a look cannot say',
+      look_of(r'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Start {\fs90}later'), None)
+BOXED = HEADER.replace('Style: Sign,', 'Style: Boxed,Arial,72,&H00FFFFFF,&H000000FF,&H40000000,&H64000000,0,0,0,0,'
+                                       '100,100,0,0,3,10.8,0,2,40,40,50,1\nStyle: Sign,')
+check('an opaque box (BorderStyle 3): its colour, and the outline\'s width as its padding',
+      look_of('Dialogue: 0,0:00:01.00,0:00:02.00,Boxed,,0,0,0,,In a box', BOXED),
+      {'background': '#bf000000', 'padding': [1.0] * 4})
+NO_DEFAULT = HEADER.replace('Style: Default,', 'Style: Main,')
+check('with no Default, the style most lines use is the file\'s own look',
+      [s.get('look') for s in ass.segments_of(pysubs2.SSAFile.from_string(
+          NO_DEFAULT + 'Dialogue: 0,0:00:01.00,0:00:02.00,Main,,0,0,0,,One\n'
+                       'Dialogue: 0,0:00:03.00,0:00:04.00,Main,,0,0,0,,Two\n'
+                       'Dialogue: 0,0:00:05.00,0:00:06.00,Sign,,0,0,0,,Three\n'))],
+      [None, None, {'size': 60 * 100 / 1080}])
+
+LOOK = {'font': 'Comic Sans MS', 'size': 10.0, 'outline': {'width': 0.5, 'color': '#ff0000ff'},
+        'shadow': [{'x': 0.2, 'y': 0.2, 'color': '#80000000'}]}
+BOX = {'size': 8.0, 'background': '#c8000000', 'padding': [1.0] * 4}
+looked = ass.write([{'start': 1, 'end': 2, 'text': 'Styled', 'look': LOOK},
+                    {'start': 3, 'end': 4, 'text': 'Alike', 'look': LOOK},
+                    {'start': 5, 'end': 6, 'text': 'Boxed', 'look': BOX},
+                    {'start': 7, 'end': 8, 'text': 'Plain'},
+                    {'start': 9, 'end': 10, 'text': 'Unsayable', 'look': {'line_height': 12.0}}])
+check('a style for each look, shared by the lines that look alike; the rest stay Default',
+      [line.split(',')[3] for line in looked.split('\n') if line.startswith('Dialogue:')],
+      ['Look1', 'Look1', 'Look2', 'Default', 'Default'])
+check('read back as it was: font, size, outline, shadow, a box and its padding',
+      [s.get('look') for s in ass.segments_of(pysubs2.SSAFile.from_string(looked))],
+      [LOOK, LOOK, BOX, None, None])
+check("a script Subtitld wrote brings no look of its own back, in either of its looks",
+      [[s.get('look') for s in ass.segments_of(pysubs2.SSAFile.from_string(
+          ass.write([{'start': 1, 'end': 2, 'text': 'Plain'}], look=chosen)))] for chosen in ass.LOOKS],
+      [[None], [None]])
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
