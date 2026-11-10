@@ -1,8 +1,9 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup) or a TTML file in
-IMSC's Image Profile, or reading a picture track of a video, Subtitld
-decodes each subtitle into a picture (vobsub, pgs, `imsc_pictures`), and an
+Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a TTML file in
+IMSC's Image Profile or a DCP's subtitles with pictures in them, or reading
+a picture track of a video, Subtitld decodes each subtitle into a picture
+(vobsub, pgs, `imsc_pictures`, `dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
 file's words are better than any reading of them. `OCRJob` runs the whole
@@ -69,6 +70,8 @@ def read_file(path):
     from subtitld.modules import pgs, vobsub
     if str(path).lower().endswith('.sup'):
         return pgs.read(path), ''
+    if str(path).lower().endswith('.xml') and _is_dcp(path):
+        return dcp_pictures(path)
     if str(path).lower().endswith(TTML_EXTENSIONS):
         return imsc_pictures(path)
     found, track = vobsub.read(path)
@@ -106,6 +109,48 @@ def imsc_pictures(path):
             int(round(origin[1] * screen[1] / 100)), width, height, indices, colours, image['forced'],
             screen[0], screen[1], image['alt']))
     return pictures, language
+
+
+def _is_dcp(path):
+    from subtitld.modules import dcp
+    return dcp.is_dcp(path)
+
+
+def dcp_pictures(path):
+    """(pictures, language) of DCP subtitles with pictures in them: each
+    PNG where its <Image> puts it, on the picture the file gives the size
+    of, else a 1920x1080 one. A subtitle the file gives in text is kept as
+    its words, as IMSC's alt text is."""
+    from subtitld.modules import dcp, markup
+    images, segments, settings = dcp.read_images(path)
+    screen = settings['size'] or _IMSC_SCREEN
+    folder = os.path.dirname(os.path.abspath(path))
+    pictures = []
+    for image in images:
+        data = None
+        for name in dcp.image_files(image['href']):
+            try:
+                with open(os.path.join(folder, name), 'rb') as handle:
+                    data = handle.read()
+                break
+            except OSError:
+                continue
+        decoded = png_picture(data) if data else None
+        if decoded is None:
+            continue
+        width, height, indices, colours = decoded
+        x, y = dcp.place_picture(image, width, height, screen)
+        pictures.append(picture_subtitles.Picture(image['start'], image['end'], x, y, width, height, indices,
+                                                  colours, False, screen[0], screen[1], ''))
+    for segment in segments:
+        # One transparent pixel, at the top for a subtitle there, says its words.
+        lead, words = markup.split_lead(segment['text'])
+        top = markup.alignment(lead) >= 7
+        pictures.append(picture_subtitles.Picture(segment['start'], segment['end'], 0, 0 if top else screen[1] - 1,
+                                                  1, 1, b'\x00', [(0, 0, 0, 0)], False, screen[0], screen[1], words))
+    pictures.sort(key=lambda picture: (picture.start, picture.end))
+    from subtitld.modules import file_io
+    return pictures, file_io._language_like_project(settings['language']) or settings['language']
 
 
 def png_picture(data):

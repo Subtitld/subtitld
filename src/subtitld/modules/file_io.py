@@ -17,16 +17,23 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
+from subtitld.modules import avid_subcap
+from subtitld.modules import cavena890
+from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
 from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
+from subtitld.modules import dcp
 from subtitld.modules import ebustl
+from subtitld.modules import fcpxml
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
 from subtitld.modules import legacy
+from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
+from subtitld.modules import pac
 from subtitld.modules import plaintext
 from subtitld.modules import sami
 from subtitld.modules import sbv
@@ -39,6 +46,7 @@ from subtitld.modules import waveform
 from subtitld.modules import webvtt
 from subtitld.modules import youtube_timedtext
 from subtitld.modules import usf
+from subtitld.modules import ultrastar
 from subtitld.modules import utils
 from subtitld.modules import video_subtitles
 
@@ -52,9 +60,10 @@ class CorruptedProjectFileError(Exception):
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
     pictures (a VobSub's .idx or .sub, a PGS .sup, a TTML file in IMSC's
-    Image Profile with pictures it gives no words for), not text: nothing
-    is wrong with it, but only an OCR add-on can make text of it
-    (picture_ocr). `path` is the file, `kind` 'vobsub', 'pgs' or 'imsc'."""
+    Image Profile with pictures it gives no words for, DCP subtitles with
+    <Image>s), not text: nothing is wrong with it, but only an OCR add-on
+    can make text of it (picture_ocr). `path` is the file, `kind`
+    'vobsub', 'pgs', 'imsc' or 'dcp'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -671,13 +680,27 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     # before must not lend its title to the next.
     session.SUBTITLE.pop('metadata', None)
 
-    if subtitle_file and os.path.isfile(subtitle_file):
+    # Final Cut Pro's bundle is a folder with the document in it.
+    if subtitle_file and os.path.isdir(subtitle_file) and subtitle_file.lower().rstrip('/\\').endswith('.fcpxmld'):
+        subtitle_file = subtitle_file.rstrip('/\\')
+    if subtitle_file and (os.path.isfile(subtitle_file) or (os.path.isdir(subtitle_file) and subtitle_file.lower().endswith('.fcpxmld'))):
         if subtitle_file.lower().endswith(('.srt')):
             segments_list = srt.read(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
             segments_list = webvtt.read(subtitle_file)
+
+        elif subtitle_file.lower().endswith('.lrc'):
+            # Lyrics: word stamps as karaoke codes, the ID tags (title,
+            # artist, album ...) as metadata to write back.
+            subtitle_format = 'LRC'
+            try:
+                segments_list, lrc_metadata = lrc.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if lrc_metadata:
+                session.SUBTITLE['metadata'] = lrc_metadata
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
@@ -708,6 +731,48 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list = legacy.parse(_text_of(subtitle_file), 'captionate')
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
+
+        elif subtitle_file.lower().endswith(('.fcpxml', '.fcpxmld')):
+            # Final Cut Pro's captions (its titles, where it has none): the
+            # first language the subtitles', the others their translations,
+            # as SAMI's are; the sequence's frame rate, drop-frame and start
+            # kept to save it again as it was.
+            subtitle_format = 'FCPXML'
+            try:
+                segments_list, fcp_settings = fcpxml.read(subtitle_file)
+            except (OSError, ValueError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            codes = {tag: _known_language(tag) or tag.lower() for tag in fcp_settings['languages']}
+            if fcp_settings['languages'] and _known_language(fcp_settings['languages'][0]):
+                session.SUBTITLE['language'] = _known_language(fcp_settings['languages'][0])
+            for segment in segments_list:
+                if 'translations' in segment:
+                    segment['translations'] = {codes[tag]: text for tag, text in segment['translations'].items()}
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, timeline_start=fcp_settings['start'],
+                                             timecode='drop' if fcp_settings['drop'] else 'non-drop',
+                                             **({'fps': fcp_settings['fps']} if fcp_settings['fps'] else {}))
+
+        elif subtitle_file.lower().endswith('.xml') and dcp.is_dcp(subtitle_file):
+            # A cinema's subtitles, Interop's or SMPTE's: kept in the same
+            # generation, at a SMPTE reel's frame rate, for the next save;
+            # its language the project's, its title what it says of itself.
+            subtitle_format = 'DCP'
+            try:
+                segments_list, dcp_settings = dcp.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            kept = {'dcp_standard': dcp_settings['standard']}
+            if dcp_settings['fps'] in dcp.RATES:
+                kept['dcp_fps'] = dcp_settings['fps']
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+            language = _language_like_project(dcp_settings['language'])
+            if language:
+                session.SUBTITLE['language'] = language
+            if dcp_settings['metadata']:
+                session.SUBTITLE['metadata'] = dcp_settings['metadata']
+            # Subtitles that are pictures are for an OCR add-on, as a disc's are.
+            if dcp.has_images(subtitle_file):
+                raise PictureSubtitlesError(subtitle_file, 'dcp')
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
@@ -799,6 +864,32 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = 'SPRUCE'
             segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
 
+        elif subtitle_file.lower().endswith('.txt') and ultrastar.kind(_text_of(subtitle_file)):
+            # An UltraStar song: its syllables as karaoke codes, its notes'
+            # pitches on the subtitles, its title and artist as metadata and
+            # the rest of its headers (BPM, GAP, the audio...) beside them,
+            # so it is written back as it was; its language the project's.
+            subtitle_format = 'ULTRASTAR'
+            try:
+                segments_list, song, headers = ultrastar.parse(_text_of(subtitle_file))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.SUBTITLE['metadata'] = dict(song, ultrastar=headers)
+            code = _language_like_project(dict(headers).get('LANGUAGE'))
+            if code:
+                session.SUBTITLE['language'] = code
+
+        elif subtitle_file.lower().endswith('.txt') and avid_subcap.is_subcap(_text_of(subtitle_file)):
+            # Avid SubCap, which Media Composer writes as .txt: its times in
+            # frames, at the video's rate (drop-frame when the file is); the
+            # rate, the drop-frame and the hour it counts from kept to save
+            # it again as it was. Its timecode lines would read as DVDSS.
+            subtitle_format = 'AVID'
+            segments_list, subcap_settings = avid_subcap.read(subtitle_file, session.VIDEO.get('framerate'))
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
+                                             timecode='drop' if subcap_settings['drop'] else 'non-drop',
+                                             timeline_start=subcap_settings['start'])
+
         elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
             # VPlayer, TMPlayer and their kin wrote .txt, which is also what
             # a plain transcript is: only a file that reads as one of them
@@ -831,6 +922,48 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = _known_language(stl_settings['language'])
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
                                              display=stl_settings['display'], start=stl_settings['start'])
+
+        elif subtitle_file.lower().endswith('.cap'):
+            # Cheetah CAP: frames that do not say their rate, counted at the
+            # video's, else 25; the rate kept to save it again as it was.
+            subtitle_format = 'CAP'
+            try:
+                segments_list, cap_settings = cheetahcap.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cap_settings['fps'])
+
+        elif subtitle_file.lower().endswith('.890'):
+            # Cavena 890: frames counted at the video's rate, else 25; its
+            # language for the project's, its title the project's, its rate
+            # and programme start kept to save it again as it was.
+            subtitle_format = 'CAVENA890'
+            try:
+                segments_list, cavena_settings = cavena890.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(cavena_settings['language']):
+                session.SUBTITLE['language'] = _known_language(cavena_settings['language'])
+            if cavena_settings['title']:
+                session.SUBTITLE['metadata'] = {'title': cavena_settings['title']}
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cavena_settings['fps'],
+                                             start=cavena_settings['start'])
+
+        elif subtitle_file.lower().endswith(('.pac', '.fpc')):
+            # Screen's PAC and UniPac. Neither says its frame rate, so the
+            # video's, else 25; nor its code page, which is found from the
+            # text. Both kept to save it again as it was, and the language
+            # the file names (or its script does) becomes the project's.
+            subtitle_format = 'FPC' if subtitle_file.lower().endswith('.fpc') else 'PAC'
+            rate = float(session.VIDEO.get('framerate') or 0) or pac.DEFAULT_FPS
+            try:
+                segments_list, pac_settings = pac.read(subtitle_file, fps=rate)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(pac_settings['language']):
+                session.SUBTITLE['language'] = _known_language(pac_settings['language'])
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=rate,
+                                             pac_code_page=pac_settings['code_page'])
 
         elif subtitle_file.lower().endswith(('.mcc')):
             # MacCaption: the CEA-708 captions of its packets, else the CEA-608
@@ -1178,7 +1311,10 @@ def process_video_file(video_file=False):
     # What the Import panel offers to read from the video's own subtitle
     # tracks, from this same probe. Project files keep only the video's
     # path and come here again on open, so older ones get it too.
-    video_metadata['subtitle_tracks'] = video_subtitles.tracks(json_result, language_of=_known_language)
+    # A teletext stream lists its pages in the file's PMT, read at its
+    # start, which the probe does not give.
+    video_metadata['subtitle_tracks'] = video_subtitles.with_teletext_pages(
+        video_subtitles.tracks(json_result, language_of=_known_language), video_file, language_of=_known_language)
     video_metadata['filepath'] = video_file
     video_metadata['scenes'] = []
 
@@ -1650,6 +1786,78 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         else language,
                         title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
+        elif subtitle_format == 'AVID':
+            # Avid SubCap: frames at the export's rate (the video's, else
+            # 25), drop-frame at 29.97 and 59.94 unless it asks otherwise,
+            # from the timeline start it asks; the plain text, in the
+            # export's encoding and line ends.
+            avid_subcap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or avid_subcap.DEFAULT_FPS),
+                             drop=options.get('timecode') != 'non-drop',
+                             start=options.get('timeline_start') if options.get('timeline_start') in avid_subcap.STARTS
+                             else avid_subcap.STARTS[0],
+                             encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                             line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'FCPXML':
+            # A Final Cut Pro project of captions: a role for each language
+            # written (the original and the translation, when the export
+            # asks for both, as two caption languages), on the frames of the
+            # export's rate (the video's), from the timeline start it asks.
+            translation = options.get('language') or ''
+            if options.get('text') == 'both' and translation:
+                tracks = [(language, export_options.prepare(SUBTITLE['segments'], dict(options, text='original'))),
+                          (translation, [segment for segment in export_options.prepare(
+                              SUBTITLE['segments'], dict(options, text='translation'))
+                              if str((segment.get('translations') or {}).get(translation) or '').strip()])]
+            else:
+                tracks = [(translation if options.get('text') == 'translation' and translation else language, segments)]
+            fcpxml.save(final_file, tracks, fps=float(options.get('fps') or VIDEO.get('framerate') or fcpxml.DEFAULT_FPS),
+                        drop=options.get('timecode') != 'non-drop',
+                        start=options.get('timeline_start') if options.get('timeline_start') in fcpxml.STARTS
+                        else fcpxml.STARTS[0],
+                        title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file.rstrip('/\\')))[0],
+                        width=VIDEO.get('width') or 1920, height=VIDEO.get('height') or 1080)
+
+        elif subtitle_format == 'DCP':
+            # Interop or SMPTE as the export asks (the generation of a file
+            # opened, for its next save); a SMPTE reel's frames at the
+            # export's rate, else the video's nearest, else 24; in the
+            # language of the text written, for the film the file was for,
+            # else the video.
+            dcp.save(final_file, segments,
+                     standard=options.get('dcp_standard') if options.get('dcp_standard') in dcp.STANDARDS else dcp.SMPTE,
+                     fps=options.get('dcp_fps') if options.get('dcp_fps') in dcp.RATES else dcp.rate_for(VIDEO.get('framerate')),
+                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                     else language,
+                     title=(SUBTITLE.get('metadata') or {}).get('title')
+                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'CAP':
+            # Frames at the export's rate, or the video's, else 25: the file
+            # does not say which.
+            cheetahcap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'CAVENA890':
+            # In the character table of the text's language; frames at the
+            # export's rate (the video's, else 25), from the programme start
+            # it asks; the project's title, else the video's name.
+            cavena890.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                           language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                           else language,
+                           title=(SUBTITLE.get('metadata') or {}).get('title')
+                           or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
+                           start=options.get('start') if options.get('start') in cavena890.STARTS else cavena890.STARTS[0])
+
+        elif subtitle_format in ('PAC', 'FPC'):
+            # Frames at the export's rate (the video's, else 25); PAC in the
+            # code page it asks for when the text fits it, else the one the
+            # text's language or characters ask for; UniPac in UTF-8.
+            pac.save(final_file, segments,
+                     fps=float(options.get('fps') or VIDEO.get('framerate') or pac.DEFAULT_FPS),
+                     code_page=options.get('pac_code_page') or 'auto', unicode=subtitle_format == 'FPC',
+                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                     else language)
+
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.
             json_subtitles.save_bilibili(final_file, segments)
@@ -1666,6 +1874,23 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             microdvd.save(final_file, segments, float(options.get('fps') or VIDEO.get('framerate') or 25),
                           encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                           line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'LRC':
+            # Lyrics, with the ID tags the file opened had, in the export's
+            # encoding and line ends.
+            lrc.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
+                     encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'ULTRASTAR':
+            # A song: the headers it was opened with (its BPM and GAP, so no
+            # note moves), else new ones naming the video as its audio, and
+            # the video's name as its title when it has none.
+            metadata = dict(SUBTITLE.get('metadata') or {})
+            video_name = os.path.basename(VIDEO.get('filepath') or '')
+            metadata.setdefault('title', os.path.splitext(video_name or os.path.basename(final_file))[0])
+            ultrastar.save(final_file, segments, metadata=metadata, headers=metadata.get('ultrastar'),
+                           audio=video_name)
 
         elif subtitle_format in legacy.SESSION_FORMATS:
             # The player era. The ones counted in frames (AQTitle, Spruce)

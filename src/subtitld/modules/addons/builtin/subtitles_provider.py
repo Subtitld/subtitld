@@ -10,8 +10,10 @@ opening the video already probed (session.VIDEO['subtitle_tracks']).
 `transcribe` takes the video's path, not an audio file's, and options
 {'track': the track's stream index, 'codec': its codec, 'duration': the
 video's, for progress, 'language': what a picture track is read as}. A
-PGS or VobSub track is read by an OCR add-on (picture_ocr.OCRJob); the
-others as follows. FFmpeg writes the track to a file of its own in
+PGS or VobSub track is read by an OCR add-on (picture_ocr.OCRJob); a
+teletext page ('page', of the stream 'pid' of a transport stream) by the
+teletext module, in a thread (video_subtitles.read_teletext), which
+gives the subtitles themselves; the others as follows. FFmpeg writes the track to a file of its own in
 a thread (video_subtitles.extract): `progress` as it goes. The file is
 then read as Subtitld opens such a file, on the main thread, since that
 reader touches the session: `transcript_finished` with the subtitles, or
@@ -60,6 +62,43 @@ class _Extractor(QThread):
             os.remove(target)
             return
         self.extracted.emit(target)
+
+    def stop(self):
+        self.stopped = True
+        if self.process is not None and self.process.poll() is None:
+            self.process.kill()
+
+
+class _TeletextReader(QThread):
+    """Reads a teletext page of a video, off the main thread: a transport
+    stream is read through to its end."""
+    read = Signal(list)
+    failed = Signal(str)
+    moved = Signal(float)
+
+    def __init__(self, path, index, page, pid):
+        super().__init__()
+        self.path, self.index, self.page, self.pid = path, index, page, pid
+        self.process = None
+        self.stopped = False
+
+    def _started(self, process):
+        self.process = process
+        if self.stopped:
+            process.kill()
+
+    def run(self):
+        try:
+            segments = video_subtitles.read_teletext(
+                self.path, self.index, page=self.page, pid=self.pid, ffprobe=session.FFPROBE_EXECUTABLE,
+                startupinfo=session.STARTUPINFO, progress=self.moved.emit, stopped=lambda: self.stopped,
+                started=self._started)
+        except Exception as error:                   # the video unreadable, no teletext, or stopped
+            if not self.stopped:
+                self.failed.emit(str(error))
+            return
+        if not self.stopped:
+            self.read.emit(segments)
 
     def stop(self):
         self.stopped = True
@@ -122,6 +161,9 @@ class SubtitlesProvider(ASRProvider):
         if str(options.get('codec') or '') in video_subtitles.READABLE_PICTURE_CODECS:
             self._read_pictures(audio_path, options, language)
             return
+        if str(options.get('codec') or '') in video_subtitles.TELETEXT_CODECS:
+            self._read_teletext(audio_path, options)
+            return
         extractor = _Extractor(audio_path, int(options.get('track', 0)), str(options.get('codec') or ''),
                                float(options.get('duration') or 0))
         extractor.moved.connect(lambda share: self.progress.emit(share, ''))
@@ -147,6 +189,20 @@ class SubtitlesProvider(ASRProvider):
         finally:
             if os.path.isfile(path):
                 os.remove(path)
+
+    def _read_teletext(self, video, options):
+        reader = _TeletextReader(video, int(options.get('track', 0)), options.get('page'), options.get('pid'))
+        reader.moved.connect(lambda share: self.progress.emit(share, ''))
+        reader.read.connect(self._teletext_read)
+        reader.failed.connect(self.error.emit)
+        self._extractor = reader
+        self.transcript_started.emit()
+        reader.start()
+
+    @Slot(list)
+    def _teletext_read(self, segments):
+        if self.sender() is self._extractor:
+            self.transcript_finished.emit(segments)
 
     def _read_pictures(self, video, options, language):
         from subtitld.modules import picture_ocr

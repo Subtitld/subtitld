@@ -128,6 +128,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SCC': {'description': 'SCC Subtitle format', 'extensions': ['scc']},
     'STL': {'description': 'EBU STL Subtitle format', 'extensions': ['stl']},
     'MCC': {'description': 'MacCaption Subtitle format', 'extensions': ['mcc']},
+    'DCP': {'description': 'DCP Subtitle format (Interop or SMPTE)', 'extensions': ['xml']},
+    'PAC': {'description': 'Screen PAC Subtitle format', 'extensions': ['pac']},
+    'FPC': {'description': 'Screen UniPac Subtitle format', 'extensions': ['fpc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
@@ -137,6 +140,16 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
     'JSON': {'description': 'JSON format', 'extensions': ['json', 'json3']},
     'BCC': {'description': 'Bilibili BCC Subtitle format', 'extensions': ['bcc']},
+    'LRC': {'description': 'LRC Lyrics format', 'extensions': ['lrc']},
+    # UltraStar's songs are .txt, as VPlayer's and its kin's are below; the
+    # bytes tell them apart (file_io).
+    'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
+    # Video editors' own: Avid SubCap's .txt is told from the player-era
+    # .txt formats below by its bytes, in file_io.
+    'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
+    'FCPXML': {'description': 'Final Cut Pro XML captions', 'extensions': ['fcpxml', 'fcpxmld']},
+    'CAP': {'description': 'Cheetah CAP Caption format', 'extensions': ['cap']},
+    'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.
@@ -190,6 +203,11 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MOV': {'description': 'QuickTime video with closed captions', 'extensions': ['mov']},
     'MXF': {'description': 'MXF video with closed captions', 'extensions': ['mxf']},
+    # The subtitles as a track of their own (modules.soft_subtitles).
+    'MP4': {'description': 'MP4 video with a subtitle track', 'extensions': ['mp4', 'm4v']},
+    'MOV TEXT': {'description': 'QuickTime video with a subtitle track', 'extensions': ['mov']},
+    'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
+    'TS': {'description': 'MPEG transport stream with teletext subtitles', 'extensions': ['ts']},
 }
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
