@@ -822,7 +822,9 @@ def voice_join():
     _call = collab_voice.Call(lambda peer, payload: engine.rtc(peer, payload),
                               relays=lambda: collab_transfer.relay_urls(engine.ice))
     try:
-        _call.start(input_device=(session.CONFIG.get('record') or {}).get('device'))
+        # The system's own microphone and speakers (PipeWire or PulseAudio on Linux), not the device picked
+        # for recording dubs: that one can be any input of a sound card, opened directly.
+        _call.start()
     except Exception as error:  # a device that won't open
         log.warning('collab: could not open the audio devices for the call: %s', error)
         _call.stop()
