@@ -1229,5 +1229,17 @@
     "export_dialog.video_codec_mpeg2": "MPEG-2 422, as XDCAM writes",
     "export_dialog.video_codec_prores": "ProRes HQ",
     "export_dialog.video_captions_note_mov": "The picture and sound are copied as they are. A QuickTime caption track holds CEA-608.",
-    "export_dialog.video_captions_note_mxf": "CEA-608 and CEA-708 together, as Premiere and Avid write them. MXF takes neither a long-GOP picture nor sound other than PCM at 48 kHz, so both are re-encoded."
+    "export_dialog.video_captions_note_mxf": "CEA-608 and CEA-708 together, as Premiere and Avid write them. MXF takes neither a long-GOP picture nor sound other than PCM at 48 kHz, so both are re-encoded.",
+    "export_dialog.category_subtitle_track": "Subtitle track",
+    "export_dialog.video_mp4_track": "MP4 (.mp4), timed text",
+    "export_dialog.video_mov_track": "QuickTime (.mov), timed text",
+    "export_dialog.video_mkv_track": "Matroska (.mkv)",
+    "export_dialog.subtitle_codec": "Subtitles as",
+    "export_dialog.subtitle_codec_srt": "SRT, which every player reads",
+    "export_dialog.subtitle_codec_ass": "ASS, with their look and places",
+    "export_dialog.subtitle_tracks_translations": "A track for each translation as well",
+    "export_dialog.subtitle_track_forced": "Forced: shown even with subtitles turned off",
+    "export_dialog.subtitle_track_note_mov_text": "The picture and sound are copied as they are. MP4 timed text keeps bold, italic, underline and colour; where a subtitle sits and the box behind it are the player's.",
+    "export_dialog.subtitle_track_note_srt": "The picture and sound are copied as they are. An SRT track keeps bold, italic, underline and colour, and plays everywhere.",
+    "export_dialog.subtitle_track_note_ass": "The picture and sound are copied as they are. An ASS track keeps where each subtitle sits and the look of the preview."
 }

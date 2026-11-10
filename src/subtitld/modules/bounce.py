@@ -1,5 +1,6 @@
 """Bounce / render dub speeches to audio or video files, and write the
-video out with its subtitles in it as closed captions (embedded_captions)."""
+video out with its subtitles in it: as closed captions (embedded_captions)
+or as subtitle tracks of their own (soft_subtitles)."""
 
 import os
 import shutil
@@ -341,10 +342,14 @@ class CaptionsThread(QThread):
 
     def run(self):
         try:
-            from subtitld.modules import embedded_captions, export_options
+            from subtitld.modules import embedded_captions, export_options, soft_subtitles
             video = (session.VIDEO or {}).get('filepath')
             if not video:
                 raise ValueError('No video loaded to write captions into')
+            if soft_subtitles.is_soft(self._container):
+                self._write_tracks(video)
+                self.captions_finished.emit(self._output_path, True, '')
+                return
             segments = export_options.prepare(session.SUBTITLE.get('segments'), self._options)
             embedded_captions.write_video(
                 video, self._output_path, segments,
@@ -359,6 +364,28 @@ class CaptionsThread(QThread):
             self.captions_finished.emit(self._output_path, True, '')
         except Exception as exc:
             self.captions_finished.emit(self._output_path, False, str(exc))
+
+    def _write_tracks(self, video):
+        """The video written out with the subtitles as a track of their own
+        (soft_subtitles): the project's language, and, when asked, a track
+        for each of its translations, each named by its language."""
+        from subtitld.modules import export_options, soft_subtitles, subtitle_styles
+        segments = session.SUBTITLE.get('segments')
+        names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+        original = str(session.SUBTITLE.get('language') or '')
+        tracks = [{'segments': export_options.prepare(segments, dict(self._options, text='original')),
+                   'language': original, 'title': names.get(original, '')}]
+        if self._options.get('translations'):
+            for language in export_options.translation_languages(segments):
+                tracks.append({'segments': export_options.prepare(segments, dict(self._options, text='translation',
+                                                                                 language=language)),
+                               'language': language, 'title': names.get(language, '')})
+        soft_subtitles.write_video(
+            video, self._output_path, tracks, container=self._container,
+            codec=self._options.get('subtitle_codec'), forced=bool(self._options.get('forced')),
+            width=session.VIDEO.get('width'), height=session.VIDEO.get('height'),
+            look='preview', preview=subtitle_styles.preview_look(),
+            ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
 
 
 def captioned_video_async(output_path, container, options=None, on_done=None, parent=None):

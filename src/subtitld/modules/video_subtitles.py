@@ -18,12 +18,14 @@ Tracks of other codecs (TTML, teletext ...) are left out.
 `extract` writes a text track to a file of its own: ASS and SSA tracks
 as .ass, their styles kept; WebVTT as .vtt, cue settings kept; the
 others as .srt. A track already in its file's format is copied as it is,
-the others converted by FFmpeg. Times count from the video's start, as
+the others converted by FFmpeg (a timed text track without the pixel
+sizes FFmpeg wraps its runs in). Times count from the video's start, as
 FFmpeg counts them by default, the player shows them and the
 closed_captions module reads them.
 """
 
 import os
+import re
 import subprocess
 import tempfile
 
@@ -107,12 +109,34 @@ def extract(path, index, codec, ffmpeg='ffmpeg', folder=None, duration=0.0, star
             errors.seek(0)
             raise RuntimeError(errors.read().decode('utf-8', 'replace').strip()
                                or 'FFmpeg could not read the subtitle track')
+        if codec == 'mov_text':
+            _without_sizes(target)
     except BaseException:
         os.remove(target)
         raise
     finally:
         errors.close()
     return target
+
+
+_BARE_SIZE = re.compile(r'<font\s+size="?\d+"?\s*>', re.IGNORECASE)
+
+
+def _without_sizes(path):
+    """The SRT FFmpeg wrote of a timed text track without the sizes it
+    wraps each run in: a style record says a size in pixels, which FFmpeg
+    writes as an HTML <font size="13"> at every change of style. Such a
+    size says nothing about a proportion, so Subtitld would only carry it
+    along unread."""
+    from subtitld.modules import markup, srt
+    with open(path, encoding='utf-8', errors='replace') as track:
+        if not _BARE_SIZE.search(track.read()):
+            return
+    segments = srt.read(path)
+    for segment in segments:
+        lead, rest = markup.split_lead(segment['text'])
+        segment['text'] = lead + markup.from_spans(markup.spans(rest))
+    srt.save(path, segments)
 
 
 # Picture tracks Subtitld can read through an OCR add-on (picture_ocr).

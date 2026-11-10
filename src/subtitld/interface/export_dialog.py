@@ -18,6 +18,7 @@ from subtitld.modules import export_options
 from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import session
+from subtitld.modules import soft_subtitles
 from subtitld.modules import ttml
 
 
@@ -1028,6 +1029,56 @@ class _VideoPanel(QWidget):
         self._refresh_captions()
         self.video_tabwidget.addTab(self.captions_panel, _('export_dialog.category_captions'))
 
+        # Subtitle track sub-tab -------------------------------------------
+        # The subtitles as a track of their own, which a player lists and
+        # turns on and off: MP4's timed text, or Matroska's SRT or ASS
+        # (soft_subtitles).
+        self.tracks_panel = QWidget()
+        self.tracks_panel.setLayout(QVBoxLayout())
+        self.tracks_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.tracks_panel.layout().setSpacing(10)
+
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.tracks_format_combo = utils.LabeledComboBox()
+        self.tracks_format_combo.setLabel(_('export_dialog.format'))
+        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mp4_track'), 'MP4')
+        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mov_track'), 'MOV TEXT')
+        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mkv_track'), 'MKV')
+        self.tracks_format_combo.activated.connect(self._refresh_tracks)
+        line.addWidget(self.tracks_format_combo, 2)
+        self.tracks_codec_combo = utils.LabeledComboBox()
+        self.tracks_codec_combo.setLabel(_('export_dialog.subtitle_codec'))
+        self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_srt'), 'srt')
+        self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_ass'), 'ass')
+        self.tracks_codec_combo.activated.connect(self._refresh_tracks)
+        line.addWidget(self.tracks_codec_combo, 1)
+        self.tracks_panel.layout().addWidget(row)
+
+        self.tracks_translations = QCheckBox(_('export_dialog.subtitle_tracks_translations'))
+        self._has_translations = bool(export_options.translation_languages(session.SUBTITLE.get('segments')))
+        self.tracks_translations.setVisible(self._has_translations)
+        self.tracks_panel.layout().addWidget(self.tracks_translations)
+        self.tracks_forced = QCheckBox(_('export_dialog.subtitle_track_forced'))
+        self.tracks_panel.layout().addWidget(self.tracks_forced)
+
+        self.tracks_note = QLabel()
+        self.tracks_note.setWordWrap(True)
+        self.tracks_note.setProperty('class', 'widget_label')
+        self.tracks_panel.layout().addWidget(self.tracks_note)
+        self.tracks_panel.layout().addStretch()
+
+        soft = remembered.get('format') in soft_subtitles.CONTAINERS
+        _select(self.tracks_format_combo, remembered.get('format') if soft else 'MP4')
+        _select(self.tracks_codec_combo, remembered.get('subtitle_codec', 'srt'))
+        self.tracks_translations.setChecked(bool(remembered.get('translations')))
+        self.tracks_forced.setChecked(bool(remembered.get('forced')))
+        self._refresh_tracks()
+        self.video_tabwidget.addTab(self.tracks_panel, _('export_dialog.category_subtitle_track'))
+        if soft:
+            self.video_tabwidget.setCurrentWidget(self.tracks_panel)
+
         self.layout().addWidget(self.video_tabwidget, 0)
 
         # Standalone "generate transparent video" button -----------------
@@ -1096,14 +1147,35 @@ class _VideoPanel(QWidget):
         self.captions_note.setText(_('export_dialog.video_captions_note_mxf' if container == 'MXF'
                                      else 'export_dialog.video_captions_note_mov'))
 
+    def _refresh_tracks(self):
+        """What the chosen kind of file does with the subtitles: an MP4's
+        timed text keeps a run's formatting alone; Matroska takes SRT,
+        which every player reads, or ASS, which keeps the look."""
+        container = self.tracks_format_combo.combobox.currentData() or 'MP4'
+        self.tracks_codec_combo.setVisible(container == 'MKV')
+        if container == 'MKV':
+            key = 'export_dialog.subtitle_track_note_' + (self.tracks_codec_combo.combobox.currentData() or 'srt')
+        else:
+            key = 'export_dialog.subtitle_track_note_mov_text'
+        self.tracks_note.setText(_(key))
+
     def get_config(self):
+        if self.video_tabwidget.currentWidget() is self.tracks_panel:
+            container = self.tracks_format_combo.combobox.currentData() or 'MP4'
+            tracks = {
+                'subtitle_codec': self.tracks_codec_combo.combobox.currentData() or 'srt',
+                'translations': self._has_translations and self.tracks_translations.isChecked(),
+                'forced': self.tracks_forced.isChecked(),
+            }
+            session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **tracks, format=container)
+            return {'category': 'video', 'format': container, 'captions': tracks}
         container = self.captions_format_combo.combobox.currentData() or 'MOV'
         captions = {
             'caption_mode': self.captions_mode_combo.combobox.currentData() or 'pop',
             'caption_channel': self.captions_channel_combo.combobox.currentData() or 1,
             'codec': self.captions_codec_combo.combobox.currentData() or 'dnxhr',
         }
-        session.CONFIG['export_video'] = dict(captions, format=container)
+        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **captions, format=container)
         return {'category': 'video', 'format': container, 'captions': captions}
 
 

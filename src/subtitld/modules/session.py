@@ -203,6 +203,10 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MOV': {'description': 'QuickTime video with closed captions', 'extensions': ['mov']},
     'MXF': {'description': 'MXF video with closed captions', 'extensions': ['mxf']},
+    # The subtitles as a track of their own (modules.soft_subtitles).
+    'MP4': {'description': 'MP4 video with a subtitle track', 'extensions': ['mp4', 'm4v']},
+    'MOV TEXT': {'description': 'QuickTime video with a subtitle track', 'extensions': ['mov']},
+    'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
 }
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
