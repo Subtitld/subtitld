@@ -38,7 +38,8 @@ Reading:
 - a subtitle a player would draw nothing of — tts:display="none" on it
   or on what holds it, tts:visibility="hidden", a region at tts:opacity 0
   — is read like any other and marked hidden, not left out;
-- the document's xml:lang is the subtitles' language;
+- the document's xml:lang is the subtitles' language, and its <metadata>'s
+  ttm:title, ttm:desc and ttm:copyright what it says about itself;
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -953,7 +954,25 @@ def _document(text):
 
     walk(root, 0.0, None, {}, None, False, None)
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
-    return segments, (root.get(_XML_NS + 'lang') or '').strip()
+    return segments, (root.get(_XML_NS + 'lang') or '').strip(), _metadata(root)
+
+
+def _metadata(root):
+    """What the file says about itself, from <head>'s <metadata>: its
+    ttm:title, ttm:desc and ttm:copyright, as modules.session keeps them
+    on the subtitle. A file that says none of it gives {}."""
+    into = {'title': 'title', 'desc': 'description', 'copyright': 'copyright'}
+    found = {}
+    # Inside a <metadata> block, so a ttm:desc describing one subtitle is
+    # not read as what the whole document is.
+    for block in root.iter():
+        if _local(block.tag) != 'metadata':
+            continue
+        for element in block:
+            key = into.get(_local(element.tag))
+            if key and (element.text or '').strip():
+                found.setdefault(key, (element.text or '').strip())
+    return found
 
 
 def parse(text):
@@ -961,9 +980,16 @@ def parse(text):
     return _document(text)[0]
 
 
+def read_text(text):
+    """(subtitles, language, metadata) in TTML text, as `read` gives them
+    for a file."""
+    return _document(text)
+
+
 def read(path):
-    """(subtitles, language) in the TTML file at `path`; the language as
-    the file's xml:lang gives it, or ''."""
+    """(subtitles, language, metadata) in the TTML file at `path`: the
+    language as the file's xml:lang gives it, or '', and what the file says
+    about itself (its title, description and copyright)."""
     with open(path, 'rb') as ttml_file:
         return _document(_text_of(ttml_file.read()))
 
@@ -1310,7 +1336,7 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
     return ' '.join(namespaces + attrs)
 
 
-def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1'):
+def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
@@ -1386,16 +1412,21 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         cues.append(f'      <p {attrs}>{content}</p>')
 
     head = ['  <head>']
-    metadata = []
+    meta_lines = []
     if profile == 'ebu-tt-d':
-        metadata.append(f'      <ebuttm:documentMetadata>'
-                        f'<ebuttm:conformsToStandard>{_EBUTTD_STANDARD}</ebuttm:conformsToStandard>'
-                        f'</ebuttm:documentMetadata>')
+        meta_lines.append(f'      <ebuttm:documentMetadata>'
+                          f'<ebuttm:conformsToStandard>{_EBUTTD_STANDARD}</ebuttm:conformsToStandard>'
+                          f'</ebuttm:documentMetadata>')
+    # What the file says about itself, in TTML's own words for it.
+    for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
+        said = str((metadata or {}).get(key) or '').strip()
+        if said:
+            meta_lines.append(f'      <{name}>{escape(said)}</{name}>')
     for name, agent_id in speakers.items():
-        metadata.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
-                        f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
-    if metadata:
-        head += ['    <metadata>', *metadata, '    </metadata>']
+        meta_lines.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
+                          f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
+    if meta_lines:
+        head += ['    <metadata>', *meta_lines, '    </metadata>']
     style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>'
                                  for looking, name in list(lookings.items()) + list(boxings.items())]
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
@@ -1426,7 +1457,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         ''])
 
 
-def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1'):
+def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1',
+         metadata=None):
     """Write `segments` to `path` as TTML, in UTF-8."""
     with open(path, 'w', encoding='utf-8', newline='\n') as ttml_file:
-        ttml_file.write(write(segments, language, agents, look, preview, profile))
+        ttml_file.write(write(segments, language, agents, look, preview, profile, metadata))

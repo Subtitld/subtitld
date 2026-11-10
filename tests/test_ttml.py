@@ -552,6 +552,24 @@ check('the 1.0.1 spelling of the shape is read as the 1.1 one is',
           + '<head/><body><p begin="1s" end="2s" ebutts:linePadding="1c">Padded</p></body></tt>'
       )[0]['look']['line_padding'], 3), 4.167)
 
+print('what the file says about itself')
+META = {'title': 'The Trial', 'description': 'Subtitles for the restored print', 'copyright': '© 2026 Someone'}
+said = doc('<p begin="1s" end="2s">Hello</p>',
+           head='<metadata><ttm:title>The Trial</ttm:title>'
+                '<ttm:desc>Subtitles for the restored print</ttm:desc>'
+                '<ttm:copyright>© 2026 Someone</ttm:copyright></metadata>')
+check('its title, description and copyright, read from <head>', ttml.read_text(said)[2], META)
+check('a file that says none of it says nothing',
+      ttml.read_text(doc('<p begin="1s" end="2s">Hello</p>'))[2], {})
+written_meta = ttml.write([{'start': 1, 'end': 2, 'text': 'Hello'}], 'en', metadata=META)
+check('written in TTML\'s own words for them',
+      [line.strip() for line in written_meta.split('\n') if 'ttm:' in line],
+      ['<ttm:title>The Trial</ttm:title>', '<ttm:desc>Subtitles for the restored print</ttm:desc>',
+       '<ttm:copyright>© 2026 Someone</ttm:copyright>'])
+check('and read back as they were', ttml.read_text(written_meta)[2], META)
+check('a subtitle file told nothing writes no metadata at all',
+      '<metadata>' in ttml.write([{'start': 1, 'end': 2, 'text': 'Hello'}], 'en'), False)
+
 print('checking a file against its profile')
 check('what Subtitld writes passes its own check',
       (ttml.check(imsc1, 'imsc1'), ttml.check(imsc11, 'imsc1.1'), ttml.check(ebu, 'ebu-tt-d')), ([], [], []))
@@ -609,6 +627,11 @@ session.SUBTITLE['language'] = 'en-us'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.ttml'))
 check('opens, its language for the project', (len(opened), fmt, opened[0].get('speaker'), session.SUBTITLE['language']),
       (4, 'TTML', 'Thom', 'pt-br'))
+(folder / 'said.ttml').write_text(said, encoding='utf-8')
+session.SUBTITLE.pop('metadata', None)
+file_io.process_subtitles_file(str(folder / 'said.ttml'))
+check('what the file says about itself reaches the project, and is not dropped on the way',
+      session.SUBTITLE.get('metadata'), META)
 check('.dfxp opens as DFXP, .itt and .xml as TTML', [file_io.process_subtitles_file(str(folder / name))[1]
                                                     for name in ('in.dfxp', 'in.itt', 'in.xml')], ['DFXP', 'TTML', 'TTML'])
 check('a language alone, as Subtitld names it', [file_io._known_language(tag) for tag in ('en', 'fr', 'pt_BR', 'xx', '')],

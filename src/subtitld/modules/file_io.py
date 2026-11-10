@@ -666,6 +666,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     collab_state.opening(None)
     # Only USF and USFX files remember a subtitld.cc origin; any other file starts without one.
     session.SUBTITLE.pop('origin', None)
+    # What a file says about itself belongs to that file: the one opened
+    # before must not lend its title to the next.
+    session.SUBTITLE.pop('metadata', None)
 
     if subtitle_file and os.path.isfile(subtitle_file):
         if subtitle_file.lower().endswith(('.srt')):
@@ -709,7 +712,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
             subtitle_format = 'DFXP' if subtitle_file.lower().endswith('.dfxp') else 'TTML'
             try:
-                segments_list, ttml_language = ttml.read(subtitle_file)
+                segments_list, ttml_language, ttml_metadata = ttml.read(subtitle_file)
             except ET.ParseError as error:
                 line, column = error.position
                 raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
@@ -718,6 +721,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             language = _known_language(ttml_language)
             if language:
                 session.SUBTITLE['language'] = language
+            # What the file says about itself (ttm:title, ttm:desc,
+            # ttm:copyright): kept on the subtitle, written out again.
+            if ttml_metadata:
+                session.SUBTITLE['metadata'] = ttml_metadata
 
         elif subtitle_file.lower().endswith('.smi') and legacy.kind(_text_of(subtitle_file)) == 'smiltext':
             # SMIL and SAMI both answer to .smi, and only one of them is
@@ -847,6 +854,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            if reader.metadata:
+                session.SUBTITLE['metadata'] = reader.metadata
             # Speaker color/dubbing metadata is cheap — set synchronously.
             # Image decode + downscale moves to `_SpeakerImageLoader` so
             # 20 HD face crops don't add 0.5–2 s to the main-thread open.
@@ -940,6 +949,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            if reader.metadata:
+                session.SUBTITLE['metadata'] = reader.metadata
 
             # Speaker color/dubbing metadata stays inline; image decode
             # is dispatched to `_SpeakerImageLoader` (same rationale as
@@ -1548,7 +1559,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       agents=options.get('speakers') == 'voice',
                       look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
                       preview=subtitle_styles.preview_look(),
-                      profile=options.get('profile') if options.get('profile') in ttml.PROFILES else 'ttml1')
+                      profile=options.get('profile') if options.get('profile') in ttml.PROFILES else 'ttml1',
+                      metadata=SUBTITLE.get('metadata'))
 
         elif subtitle_format == 'SAMI':
             # A class for each language written: the original's, the
@@ -1676,7 +1688,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 SUBTITLE['segments'],
                 speakers=writer_speakers,
                 language=language,
-                metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0]},
+                metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
+                          **{key: value for key, value in (SUBTITLE.get('metadata') or {}).items()
+                             if str(value or '').strip()}},
                 embed_audio_clips=embed_audio_clips,
                 origin=SUBTITLE.get('origin'),
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
@@ -1792,7 +1806,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 segments_copy,
                 speakers=writer_speakers,
                 language=language,
-                metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0]},
+                metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
+                          **{key: value for key, value in (SUBTITLE.get('metadata') or {}).items()
+                             if str(value or '').strip()}},
                 embed_audio_clips=False,
                 origin=SUBTITLE.get('origin'),
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},

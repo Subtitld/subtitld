@@ -148,6 +148,23 @@ check('a project with nothing hidden says nothing',
       'hidden' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
                                     speakers={}, language='en-us'), False)
 
+print('what the project says about itself')
+told = USFWriter().write([{'start': 0, 'end': 1, 'text': 'Line', 'speaker': 'A'}], speakers={}, language='en-us',
+                         metadata={'title': 'The Trial', 'description': 'For the restored print',
+                                   'copyright': '© 2026 Someone'})
+check('a description is USF\'s own <comment>; a copyright is not USF\'s, so it is Subtitld\'s',
+      ('<comment>For the restored print</comment>' in told,
+       '<subtitldcc:copyright>© 2026 Someone</subtitldcc:copyright>' in told), (True, True))
+reader = USFReader()
+reader.read(told)
+check('read back, beside the title USF has always had',
+      {key: reader.metadata[key] for key in ('title', 'description', 'copyright')},
+      {'title': 'The Trial', 'description': 'For the restored print', 'copyright': '© 2026 Someone'})
+check('a project told nothing says nothing of the two',
+      [word in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Line', 'speaker': 'A'}],
+                                 speakers={}, language='en-us', metadata={'title': 'Bare'})
+       for word in ('comment', 'copyright')], [False, False])
+
 print('which way the writing runs, and what is forced inside it')
 bidi_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'مرحبا', 'speaker': 'A',
                                'direction': 'rtl', 'bidi': 'override'},
