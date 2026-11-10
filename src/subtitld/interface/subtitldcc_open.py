@@ -10,11 +10,17 @@ co-editing card).
 
 With a project open in the editor, the subtitld.cc panel asks first, as its list of projects shared with you
 does (LiveCard.open_link).
+
+A link to a subtitle published on subtitld.cc (one that isn't co-edited live) opens it the way a file would:
+the card gets its USF, asks for the video it goes with, and the editor opens with both. As when it is opened
+from the subtitld.cc panel, it isn't a file yet: saving asks where to put it. With the editor open, the panel
+opens it in place of the subtitles there (SubtitldccPanel.open_link_subtitle).
 """
 
 import copy
 import html
 import os
+import tempfile
 import urllib.parse
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
@@ -63,8 +69,13 @@ def open_link(window, text):
         left_panel.show_panel(window, TAB)
         if problem:
             window.subtitldcc_panel.show_message(problem, error=True)
+        elif 'subtitle' in link:
+            window.subtitldcc_panel.open_link_subtitle(link['subtitle'], link['version'])
         else:
             window.subtitldcc_panel.live_card.open_link(link['project'])
+        return
+    if link is not None and not problem and 'subtitle' in link:
+        window.open_link_card.start_subtitle(link)
         return
     window.open_link_card.start(None if problem else link['project'], problem)
 
@@ -87,7 +98,10 @@ class OpenCard(QWidget):
 
         self._doc = None          # the project the link names
         self._project = None      # what subtitld.cc says of it
-        self._state = None        # 'problem', 'sign_in', 'loading', 'joined'
+        self._subtitle = None     # or the subtitle it names: {'subtitle': share_id, 'version'}
+        self._info = None         # what subtitld.cc says of that subtitle
+        self._usf = None          # and the subtitle itself, as USF
+        self._state = None        # 'problem', 'sign_in', 'loading', 'joined'; 'subtitle_loading', 'subtitle_video'
         self._problem = ''
         self._signing_in = None   # the sign-in call, while it runs
         self._cancel_sign_in = False
@@ -146,6 +160,7 @@ class OpenCard(QWidget):
             return
         if self._state == 'joined':
             collab_service.drop()
+        self._subtitle = self._info = self._usf = None
         self._doc, self._project, self._problem = doc_id, None, problem or ''
         self._asked.clear()
         self._video_error = ''
@@ -157,7 +172,58 @@ class OpenCard(QWidget):
             return
         self._load()
 
+    def start_subtitle(self, link):
+        """Open the subtitle `link` names ({'subtitle': share_id, 'version'}): get it, then ask for the video."""
+        if self._subtitle == link and self._state in ('subtitle_loading', 'subtitle_video'):
+            self.show()
+            return
+        if self._state == 'joined':
+            collab_service.drop()
+        self._doc = self._project = None
+        self._subtitle, self._info, self._usf = link, None, None
+        self._problem = ''
+        self._opening = False
+        self.show()
+        self._load()
+
+    def _load_subtitle(self):
+        """Public and unlisted subtitles come without connecting; a private one needs the person it's shared
+        with."""
+        self._state = 'subtitle_loading'
+        self.render()
+        link = self._subtitle
+        share_id, version = link['subtitle'], link['version']
+        service.call(lambda: (service.client().asset(share_id), service.download_usf(share_id, version)),
+                     lambda result: self._subtitle_loaded(link, result),
+                     lambda error: self._subtitle_failed(link, error))
+
+    def _subtitle_loaded(self, link, result):
+        if link != self._subtitle or self._state != 'subtitle_loading':
+            return  # given up, or another link came meanwhile
+        self._info, self._usf = result
+        self._state = 'subtitle_video'
+        self.render()
+        QTimer.singleShot(0, self.choose_video)  # straight away, as opening a subtitle file does
+
+    def _subtitle_failed(self, link, error):
+        if link != self._subtitle or self._state != 'subtitle_loading':
+            return
+        code = service.error_code(error)
+        if code == 'unauthorized':
+            service.forget_account()
+            self._state, self._problem = 'sign_in', ''
+        elif code == 'not_found' and not service.is_connected():
+            self._state, self._problem = 'sign_in', ''  # perhaps private, and theirs or shared with them
+        elif code == 'not_found':
+            self._state, self._problem = 'problem', _('open_link.subtitle_not_found')
+        else:
+            self._state, self._problem = 'problem', service.error_message(error, _)
+        self.render()
+
     def _load(self):
+        if self._subtitle is not None:
+            self._load_subtitle()
+            return
         if not service.is_connected():
             self._state = 'sign_in'
             self.render()
@@ -205,7 +271,7 @@ class OpenCard(QWidget):
         self._signing_in = None
         service.remember_account(me)
         self._problem = ''
-        if self._doc:
+        if self._doc or self._subtitle:
             self._load()
 
     def _sign_in_failed(self, error):
@@ -288,11 +354,20 @@ class OpenCard(QWidget):
             self._asked.discard(row['hash'])
         self._follow()
 
-    def choose_video(self):
-        start = self._folder()
+    def _ask_video(self, caption):
         extensions = ' '.join(f'*.{extension}' for extension in _video_extensions())
-        path = QFileDialog.getOpenFileName(self, _('open_link.choose_video'), start,
+        return QFileDialog.getOpenFileName(self, caption, self._folder(),
                                            f"{_('file_io.video_files')} ({extensions})")[0]
+
+    def choose_video(self):
+        if self._subtitle is not None:
+            if self._state != 'subtitle_video':
+                return
+            path = self._ask_video(_('open_link.subtitle_choose_video'))
+            if path:
+                self._open_subtitle(path)
+            return
+        path = self._ask_video(_('open_link.choose_video'))
         if not path:
             return
         row = self._video_row()
@@ -313,6 +388,39 @@ class OpenCard(QWidget):
         startscreen.load_productionscreen(self.window_, collab=copy.deepcopy(collab_state.STATE))
         QTimer.singleShot(0, lambda: left_panel.show_panel(self.window_, TAB))
 
+    def _open_subtitle(self, path):
+        """The subtitle and its video: the editor opens with them, as for a subtitle file and its video."""
+        from subtitld.interface import left_panel, startscreen, top_bar
+
+        link, info = self._subtitle, self._info or {}
+        handle, temporary = tempfile.mkstemp(suffix='.usf', dir=session.PATH_TEMP)
+        with os.fdopen(handle, 'wb') as file:
+            file.write(self._usf)
+        self._opening = True
+        self.hide()
+        session.VIDEO = {'filepath': path}
+        session.SUBTITLE['filepath'] = temporary
+        try:
+            startscreen.load_productionscreen(self.window_)
+        finally:
+            os.unlink(temporary)
+        if not editor_shown(self.window_):  # it couldn't be read (the start screen said why)
+            session.SUBTITLE['filepath'] = ''
+            self._opening = False
+            self._state, self._problem = 'problem', _('open_link.subtitle_not_opened')
+            self.show()
+            self.render()
+            return
+        self._state = None
+        # Not a file yet, as when opened from the subtitld.cc panel: saving asks where to put it.
+        session.SUBTITLE['filepath'] = ''
+        session.CONFIG['format_to_save'] = 'USFX'
+        if not service.origin():
+            service.set_origin(link['subtitle'], link['version'] or info.get('version'))
+        session.set_unsaved(False)
+        top_bar.update(self.window_)
+        QTimer.singleShot(0, lambda: left_panel.show_panel(self.window_, TAB))
+
     def cancel(self):
         """Give up: nothing stays open."""
         if self._signing_in is not None:
@@ -323,6 +431,7 @@ class OpenCard(QWidget):
                 collab_service.cancel_download(row['hash'])
             collab_service.drop()
         self._doc, self._project, self._state = None, None, None
+        self._subtitle = self._info = self._usf = None
         self.hide()
 
     # --- What it shows ------------------------------------------------------------------------------------------
@@ -338,7 +447,12 @@ class OpenCard(QWidget):
 
     def render(self):
         project = self._project or {}
-        self.title.setText(html.escape(project.get('title') or '') or _('open_link.title'))
+        if self._subtitle is not None:
+            self.kicker.setText(_('open_link.subtitle_kicker'))
+            self.title.setText(html.escape((self._info or {}).get('title') or '') or _('open_link.subtitle_title'))
+        else:
+            self.kicker.setText(_('collab.title'))
+            self.title.setText(html.escape(project.get('title') or '') or _('open_link.title'))
         self.video.hide()
         self.progress.hide()
         self.folder_row.hide()
@@ -347,10 +461,12 @@ class OpenCard(QWidget):
         state = self._state
         if state == 'problem':
             self.status.setText(self._problem)
-            self._actions(secondary=(_('open_link.try_again'), self._load) if self._doc else None)
+            again = self._doc or self._subtitle is not None
+            self._actions(secondary=(_('open_link.try_again'), self._load) if again else None)
         elif state == 'sign_in':
             waiting = self._signing_in is not None
-            self.status.setText(_('subtitldcc.browser_wait') if waiting else _('open_link.connect_text'))
+            connect_text = 'open_link.subtitle_connect' if self._subtitle is not None else 'open_link.connect_text'
+            self.status.setText(_('subtitldcc.browser_wait') if waiting else _(connect_text))
             if waiting:
                 self._actions(primary=(_('subtitldcc.cancel'), self.cancel_sign_in), cancel=False)
             else:
@@ -360,6 +476,14 @@ class OpenCard(QWidget):
             self._actions()
         elif state == 'joined':
             self._render_joined(project)
+        elif state == 'subtitle_loading':
+            self.status.setText(_('open_link.subtitle_loading'))
+            self._actions()
+        elif state == 'subtitle_video':
+            owner = (self._info or {}).get('owner') or ''
+            by = _('open_link.subtitle_by').format(handle=html.escape(owner)) + '<br>' if owner else ''
+            self.status.setText(by + _('open_link.subtitle_video'))
+            self._actions(primary=(_('open_link.subtitle_choose_video'), self.choose_video))
 
     def _render_joined(self, project):
         owner = (project.get('owner') or {}).get('handle', '')
@@ -402,7 +526,7 @@ class OpenCard(QWidget):
         self.folder.setText(_('open_link.folder').format(folder=html.escape(self._folder())))
 
     def retranslate(self):
-        self.kicker.setText(_('collab.title'))
+        self.kicker.setText(_('open_link.subtitle_kicker') if self._subtitle is not None else _('collab.title'))
         self.folder_button.setText(_('open_link.change_folder'))
         self.cancel_button.setText(_('subtitldcc.cancel'))
         if not self.isHidden():

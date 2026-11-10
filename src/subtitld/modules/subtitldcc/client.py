@@ -276,12 +276,21 @@ class Client:
         return self.request("GET", f"/collab/projects/{doc_id}")
 
     def share_project(
-        self, title: str, state: dict, *, owner: str = "", idempotency_key: str | None = None
+        self,
+        title: str,
+        state: dict,
+        *,
+        owner: str = "",
+        subtitle: str = "",
+        idempotency_key: str | None = None,
     ) -> dict:
         """Share a project for live co-editing: ``state`` is its document now ({segments, speakers, meta},
-        subtitles with IDs). ``owner``: yourself (the default) or a group you may publish as. Returns the
-        project, with the address of its websocket."""
+        subtitles with IDs). ``owner``: yourself (the default) or a group you may publish as. ``subtitle``:
+        the share ID the editor's subtitles came from; the project publishes to it if you may publish versions
+        of it. Returns the project, with the address of its websocket."""
         body = {"title": title, "owner": owner, "state": state}
+        if subtitle:
+            body["subtitle"] = subtitle
         key = idempotency_key or str(uuid.uuid4())
         return self.request("POST", "/collab/projects", json_body=body, idempotency_key=key)
 

@@ -1,5 +1,5 @@
 """Opening a shared project from a subtitld:// link (subtitld.cc's "Open in Subtitld"), with no file of it
-here: reading links, handing one to the Subtitld already running, and the start screen's card
+here, or a subtitle published there, whose video Subtitld asks for: reading links, handing one to the Subtitld already running, and the start screen's card
 (interface/subtitldcc_open.py) connecting, taking the project, getting the video from a collaborator and
 opening the editor; with a project open, the subtitld.cc panel asking first. Against a fake subtitld.cc, a
 fake connection and fake transfers: no network.
@@ -54,6 +54,13 @@ check('a local subtitld.cc, with its port', links.parse(f'subtitld://localhost:8
 check('anything else is no link', [links.parse(text) for text in (
     'subtitld://subtitld.cc/project/short', f'subtitld://subtitld.cc/asset/{DOC}', f'subtitld:///project/{DOC}',
     f'https://subtitld.cc/project/{DOC}', f'subtitld://subtitld.cc/project/{DOC}/more')], [None] * 5)
+SHARE = 'Sb7kQ2xZ9aT'
+check('a subtitle', links.parse(f'subtitld://subtitld.cc/subtitle/{SHARE}'),
+      {'site': 'subtitld.cc', 'subtitle': SHARE, 'version': None})
+check('one version of it', links.parse(f'subtitld://subtitld.cc/subtitle/{SHARE}/3/'),
+      {'site': 'subtitld.cc', 'subtitle': SHARE, 'version': 3})
+check('no version that isn\'t one', [links.parse(f'subtitld://subtitld.cc/subtitle/{SHARE}/{v}') for v in ('0', 'x', '1/2')],
+      [None] * 3)
 check('only for the subtitld.cc this Subtitld connects to', (
     links.for_site(links.parse(f'subtitld://subtitld.cc/project/{DOC}'), 'https://subtitld.cc'),
     links.for_site(links.parse(f'subtitld://evil.example/project/{DOC}'), 'https://subtitld.cc'),
@@ -122,6 +129,16 @@ class FakeClient:
 
     def media_received(self, doc_id, file_hash, handle):
         calls.append(('received', file_hash, handle))
+
+    def asset(self, share_id):
+        calls.append(('asset', share_id))
+        if ANSWER.get('subtitle'):
+            raise ANSWER['subtitle']
+        return {'share_id': share_id, 'title': 'Electric-Blue Clouds', 'owner': 'jonata', 'version': 4}
+
+    def download(self, share_id, fmt='usf', version=None):
+        calls.append(('usf', share_id, version))
+        return b'<usf>' + share_id.encode() + b'</usf>'
 
 
 class FakeStore:
@@ -388,6 +405,86 @@ check('shared still', collab_state.shared(), True)
 print('a free name for a received file')
 check('a name already taken', collab_media.free_path(folder, 'mine.mkv'), os.path.join(folder, 'mine (2).mkv'))
 check('a free one', collab_media.free_path(folder, 'Other.mkv'), os.path.join(folder, 'Other.mkv'))
+
+print('a published subtitle, not co-edited: its USF, then its video')
+host.central_widget.layout().setCurrentWidget(host.start_screen)
+collab_service.drop()
+service._store.clear()
+session.VIDEO = {}
+calls.clear()
+signed_in.clear()
+read = []
+
+
+def load_subtitle(window, collab=None):
+    """Opening the editor with a subtitle file and a video: the file is read then (here, its bytes noted)."""
+    read.append((session.VIDEO.get('filepath'), Path(session.SUBTITLE['filepath']).read_bytes()))
+    load_productionscreen(window, collab)
+
+
+startscreen.load_productionscreen = load_subtitle
+asked = []
+subtitldcc_open.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (asked.append(a[1]), ('', ''))[1])
+subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}/2')
+check('no need to connect for a public one', wait(lambda: card._state == 'subtitle_video'), True)
+check('that version, from subtitld.cc', [c for c in calls if c[0] in ('asset', 'usf')],
+      [('asset', SHARE), ('usf', SHARE, 2)])
+check('the video asked for at once', wait(lambda: asked == ['Choose the video']), True)
+check('turned down: the card waits for it', (card.isVisible(), card.title.text(), card.status.text(), shown(card.primary)),
+      (True, 'Electric-Blue Clouds', 'By @jonata<br>Choose the video it goes with: the editor opens with both.',
+       'Choose the video'))
+check('nothing open yet', host.central_widget.layout().currentWidget() is host.start_screen, True)
+subtitldcc_open.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (own, ''))
+card.primary.click()
+check('the editor opens with the video and the subtitle', read, [(own, f'<usf>{SHARE}</usf>'.encode())])
+check('not a file yet: saving asks where', (session.SUBTITLE['filepath'], session.UNSAVED), ('', False))
+check('it knows where it came from', service.origin(), {'share_id': SHARE, 'version': 2})
+check('not shared, the card gone', (collab_state.shared(), card.isVisible()), (False, False))
+check('nothing left behind', [name for name in os.listdir(session.PATH_TEMP) if name.endswith('.usf')], [])
+
+print('a private one, before connecting')
+host.central_widget.layout().setCurrentWidget(host.start_screen)
+session.SUBTITLE = {'segments': [], 'filepath': ''}
+read.clear()
+ANSWER['subtitle'] = ApiError(404, 'not_found', 'Not found.')
+subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}')
+check('connect, in case it is yours or shared with you', wait(lambda: shown(card.primary) == 'Connect'), True)
+check('says so', card.status.text().startswith('This subtitle may be private.'), True)
+del ANSWER['subtitle']
+card.primary.click()
+check('connected, then it comes, the latest', wait(lambda: read), True)
+check('signed in', (signed_in, calls[-1]), ([True], ('usf', SHARE, None)))
+check('the latest version known as its origin', service.origin(), {'share_id': SHARE, 'version': 4})
+
+print('connected, and not there')
+host.central_widget.layout().setCurrentWidget(host.start_screen)
+ANSWER['subtitle'] = ApiError(404, 'not_found', 'Not found.')
+subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}')
+check('said so, with Try again', wait(lambda: 'isn’t on subtitld.cc' in card.status.text()), True)
+check('try again', shown(card.secondary), 'Try again')
+del ANSWER['subtitle']
+card.cancel_button.click()
+
+print('with subtitles in the editor')
+host.central_widget.layout().setCurrentWidget(host.main_vertical_splitter)
+session.SUBTITLE['segments'] = [{'id': 'b', 'start': 1.0, 'end': 2.0, 'text': 'Mine'}]
+replaced = []
+service.open_in_editor = lambda window, data: replaced.append(data)
+subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}')
+panel = host.subtitldcc_panel
+check('asked first, in the panel', wait(lambda: panel.link_confirm.isVisible()), True)
+check('what it asks', panel.link_confirm.text.text(),
+      'The subtitles in the editor will be replaced by “Electric-Blue Clouds”.')
+check('nothing replaced yet', replaced, [])
+panel.link_confirm.yes.click()
+check('replaced, with the video that is open', replaced, [f'<usf>{SHARE}</usf>'.encode()])
+check('said so', panel.message.text(), 'Opened “Electric-Blue Clouds”.')
+
+print('with a shared project open')
+collab_state.start(DOC, service.base_url(), 0, base=None)
+subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}')
+check('not over everyone\'s subtitles', panel.message.text().startswith('A shared project is open'), True)
+collab_state.opening(None)
 
 collab_service.shutdown()
 print('\nALL PASS' if not fails else f'\nFAILED: {fails}')
