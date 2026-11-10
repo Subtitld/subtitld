@@ -105,8 +105,15 @@ session.SUBTITLE['language'] = 'en-us'
 session.FORMAT = {}
 file_io.save_file(str(folder / 'export.usf'), 'USF')
 exported = (folder / 'export.usf').read_text(encoding='utf-8')
-check('a saved USF: the codes and names the specification asks for, a title', (
-    '<language code="eng">English (United States)</language>' in exported, '<title>export</title>' in exported), (True, True))
+check('a saved USF: the codes and names the specification asks for, and the title the file came with', (
+    '<language code="eng">English (United States)</language>' in exported,
+    '<title>Tears of Steel</title>' in exported), (True, True))
+# The filename only stands in for a title: a document that has one of its
+# own keeps it, and other.usf was opened above saying "Tears of Steel".
+session.SUBTITLE.pop('metadata', None)
+file_io.save_file(str(folder / 'untitled.usf'), 'USF')
+check('and the filename where the document has no title of its own',
+      '<title>untitled</title>' in (folder / 'untitled.usf').read_text(encoding='utf-8'), True)
 reopened, _fmt = file_io.process_subtitles_file(str(folder / 'export.usf'))
 check("reopened: the names tell Brazil's Portuguese from Portugal's", (session.SUBTITLE['language'], reopened[0]['translations']),
       ('en-us', {'pt-br': 'Olá', 'pt-pt': 'Olá!'}))
