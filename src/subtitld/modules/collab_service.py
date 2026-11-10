@@ -310,6 +310,9 @@ def _received(file_hash, path):
             # A dub file came: the subtitles that name it play it now.
             collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
             _tell('dubs')
+        if entry.get('kind') == 'stem':
+            # Separated audio for the video open here: the player takes it once all of it is here.
+            _tell('stems')
         _announce()
         sender = max(download.sources, key=download.sources.get) if download.sources else None
         handle = ((_connection.engine.peers.get(sender) or {}).get('user') or {}).get('handle', '') if _connection else ''

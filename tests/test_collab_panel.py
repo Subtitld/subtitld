@@ -149,7 +149,8 @@ class Host(QWidget):
         self.left_panel_stackedwidgets = QStackedWidget()
         self.layout().addWidget(self.left_panel_stackedwidgets)
         self.titleBar_left_information_label = QLabel()
-        self.preview_panel_player = types.SimpleNamespace(_audio_device=types.SimpleNamespace(duck=1.0))
+        self.preview_panel_player = types.SimpleNamespace(_audio_device=types.SimpleNamespace(
+            duck=1.0, sync_subtitle_dubs=lambda segments: None))
 
 
 session.CONFIG = {}
@@ -405,6 +406,42 @@ else:
     key(QEvent.KeyPress)
     check('F8 does nothing out of the call', collab_service.in_call(), False)
     del connection.engine.peers['p1']
+
+print("a project's dubs show here")
+from subtitld.interface import left_panel_dubbing  # noqa: E402
+session.CONFIG.setdefault('dubbing', {})['enabled'] = False
+session.SUBTITLE['segments'][0]['dubbing'] = [{'hash': 'd' * 64, 'start': 1.0, 'end': 2.0}]
+connection.changed.emit('document')
+check('dubs that came from a collaborator turn dubbing on', wait(lambda: session.CONFIG['dubbing']['enabled']), True)
+session.CONFIG['dubbing']['enabled'] = False
+del session.SUBTITLE['segments'][0]['dubbing']
+left_panel_dubbing.show_project_dubs()
+check('a project without dubs leaves it as it is', session.CONFIG['dubbing']['enabled'], False)
+
+print('separated audio from a collaborator reaches the player')
+import os as _os  # noqa: E402
+from subtitld.modules import collab_media  # noqa: E402
+started = []
+host.music_voice_separation_thread = types.SimpleNamespace(filename=None, start=lambda: started.append(
+    host.music_voice_separation_thread.filename))
+import tempfile as _tempfile  # noqa: E402
+before_video = dict(session.VIDEO)
+_video = _tempfile.NamedTemporaryFile(suffix='.mkv', delete=False)
+_video.write(b'not really a video'); _video.close()
+session.VIDEO = {'filepath': _video.name}
+stems = [collab_media.destination('stem', f'{role}.flac') for role in collab_media.STEM_ROLES]
+for path in stems[:2]:
+    _os.makedirs(_os.path.dirname(path), exist_ok=True)
+    open(path, 'wb').write(b'flac')
+connection.changed.emit('stems')
+check('not until all of it is here', started, [])
+open(stems[2], 'wb').write(b'flac')
+connection.changed.emit('stems')
+check('then the player takes it, for the video open here', started, [session.VIDEO['filepath']])
+for path in stems:
+    _os.remove(path)
+_os.remove(_video.name)
+session.VIDEO = before_video
 
 print('offline')
 connection.engine.state = 'offline'
