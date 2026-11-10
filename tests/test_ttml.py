@@ -695,10 +695,10 @@ for fmt in ('TTML', 'DFXP'):
                                                    panel.look_combo.combobox.itemText(1).endswith('(font, colour, box)')),
           (('As agents (ttm:agent)', 'voice'), False, True))
 panel.look_combo.combobox.setCurrentIndex(1)
-check('the profiles offered, TTML 1 first',
+check('the profiles offered, TTML 1 first, the pictures last',
       ([panel.profile_combo.combobox.itemData(i) for i in range(panel.profile_combo.combobox.count())],
        panel.profile_combo.isHidden()),
-      (list(ttml.PROFILES), False))
+      (list(ttml.PROFILES + ttml.IMAGE_PROFILES), False))
 panel.profile_combo.combobox.setCurrentIndex(2)
 check('chosen', {key: panel.get_config()['options'].get(key) for key in ('speakers', 'look', 'profile')},
       {'speakers': 'voice', 'look': 'preview', 'profile': 'imsc1.1'})
@@ -719,6 +719,10 @@ check('and what it would break, listed, as soon as the profile is chosen',
 panel.profile_combo.combobox.setCurrentIndex(0)
 check('TTML 1 asks nothing of the kind', panel.check_label.text(),
       'Nothing Subtitld checks for breaks TTML 1 in this file.')
+panel.profile_combo.combobox.setCurrentIndex(5)
+check('pictures are not drawn to be checked: where they will go is said instead',
+      (panel.get_config()['options']['profile'], panel.check_label.text().startswith('Each subtitle is drawn')),
+      ('imsc1.1-image', True))
 panel.profile_combo.combobox.setCurrentIndex(2)
 panel.format_combo.setCurrentText('ASS')
 panel._refresh_options()

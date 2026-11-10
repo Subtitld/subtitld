@@ -79,6 +79,11 @@ a service that checks what it is given accepts it (PROFILES):
                 the EBU's own spec asks for and which forbids
                 ttp:contentProfiles
 
+The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
+instead, a PNG beside the file drawn as Subtitld's preview draws it, with
+its words as the picture's alt text: `write_images` writes one
+(IMAGE_PROFILES), for a player or a service that takes pictures only.
+
 A profile also sets what the file may hold, and `check` reads a file back
 to say where it breaks the rules this module knows (it is a useful set of
 checks, not a conformance certificate).
@@ -146,6 +151,8 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 LOOKS = ('clean', 'preview')
 
 PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
+# IMSC's profiles of subtitles that are pictures (`write_images`).
+IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
 # What each profile is called where it is declared. IMSC 1.0.1 names the
 # profile it conforms to in ttp:profile; 1.1 moved that to
@@ -154,6 +161,11 @@ PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
 # forbids ttp:contentProfiles.
 _IMSC1_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1/text'
 _IMSC11_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1.1/text'
+_IMSC1_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1/image'
+_IMSC11_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1.1/image'
+# Where a picture's file is named (SMPTE-TT) and its words kept (IMSC).
+_SMPTE_NS = 'http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt'
+_ITTM_NS = 'http://www.w3.org/ns/ttml/profile/imsc1#metadata'
 _EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
 _EBUTTM_NS = 'urn:ebu:tt:metadata'
 _EBUTTS_NS = 'urn:ebu:tt:style'
@@ -281,14 +293,14 @@ def _span_of(element, base, limit, clock):
 
 
 def _timed_regions(root, clock):
-    """[(start, stop, region)] for every paragraph: what the checks need to
-    ask how much is on screen at once."""
+    """[(start, stop, region)] for every paragraph and every picture: what
+    the checks need to ask how much is on screen at once."""
     found = []
 
     def walk(element, base, limit, region):
         region = element.get('region') or region
         start, stop = _span_of(element, base, limit, clock)
-        if _local(element.tag) == 'p':
+        if _local(element.tag) == 'p' or (_local(element.tag) == 'div' and _attr(element, 'backgroundImage')):
             found.append((start, stop, region))
             return stop
         sequential = element.get('timeContainer') == 'seq'
@@ -1269,7 +1281,7 @@ def check(text, profile='imsc1.1'):
     profile, and what EBU-TT-D asks for. A service's own validator still
     has the last word.
     """
-    profile = profile if profile in PROFILES else 'ttml1'
+    profile = profile if profile in PROFILES + IMAGE_PROFILES else 'ttml1'
     try:
         root = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', _ENTITY.sub(_entity, (text or '').lstrip('﻿'))))
     except ET.ParseError as error:
@@ -1304,6 +1316,10 @@ def check(text, profile='imsc1.1'):
                 raise ValueError
         except ValueError:
             problems.append(f'ttp:cellResolution is {" ".join(cells)!r}: it is two whole numbers above zero')
+
+    if profile in IMAGE_PROFILES:
+        problems += _image_problems(root, profile, declared_profile, content_profiles)
+        return problems
 
     if profile in ('imsc1', 'imsc1.1'):
         images = [element for element in root.iter() if _attr(element, 'backgroundImage')]
@@ -1403,6 +1419,33 @@ def check(text, profile='imsc1.1'):
                       if element.get('region') and element.get('region') not in regions})
     if missing:
         problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    return problems
+
+
+def _image_problems(root, profile, declared_profile, content_profiles):
+    """What breaks one of IMSC's Image Profiles in a document: the
+    declaration, the picture's size in pixels, text where only pictures
+    may be, a picture held in the file, a picture's region missing."""
+    problems = []
+    if profile == 'imsc1-image' and declared_profile != _IMSC1_IMAGE:
+        problems.append(f'ttp:profile does not name IMSC 1.0.1\'s Image Profile ({_IMSC1_IMAGE})')
+    if profile == 'imsc1.1-image' and _IMSC11_IMAGE not in content_profiles:
+        problems.append(f'ttp:contentProfiles does not name IMSC 1.1\'s Image Profile ({_IMSC11_IMAGE})')
+    extent = [_LENGTH.match(part) for part in (_attr(root, 'extent') or '').split()]
+    if not (len(extent) == 2 and all(part and part.group(2) == 'px' for part in extent)):
+        problems.append('<tt> has no tts:extent in pixels: the Image Profile asks for the picture\'s size')
+    texts = [element for element in root.iter() if _local(element.tag) in ('p', 'span')]
+    if texts:
+        problems.append(f'{len(texts)} <p> or <span> element(s): the Image Profile holds pictures, not text')
+    if any(_local(element.tag) == 'image' for element in root.iter()):
+        problems.append('smpte:image: IMSC asks for pictures beside the file, not held in it')
+    regions = {_xml_id(element) for element in root.iter() if _local(element.tag) == 'region'}
+    homeless = [element for element in root.iter()
+                if _attr(element, 'backgroundImage') and element.get('region') not in regions]
+    if homeless:
+        problems.append(f'{len(homeless)} picture(s) in no region the file has')
+    if _most_regions_at_once(_timed_regions(root, _Clock(root))) > 4:
+        problems.append('More than four regions on screen at once: IMSC allows at most four')
     return problems
 
 
@@ -1797,6 +1840,59 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         '  </body>',
         '</tt>',
         ''])
+
+
+def write_images(pictures, size, language='en', profile='imsc1.1-image', metadata=None):
+    """TTML text in one of IMSC's Image Profiles (IMAGE_PROFILES) for
+    `pictures`: [{'start', 'end', 'href', 'x', 'y', 'width', 'height', 'alt'
+    [, 'forced']}], each a PNG named by `href` relative to the file, at x, y
+    on a picture `size` (width, height) pixels, as big as it is, with the
+    words `alt` says it shows.
+
+    The profile asks for the picture's size in pixels on <tt>, a region as
+    big as the picture it holds and the picture as a <div>'s
+    smpte:backgroundImage, never held in the file. A region is shown only
+    while it has a picture in it, so the ones not in use count against
+    none of the four IMSC allows at once."""
+    profile = profile if profile in IMAGE_PROFILES else 'imsc1.1-image'
+    width, height = size
+    regions = {}
+    divs = []
+    for picture in sorted(pictures, key=lambda p: (float(p['start']), float(p['end']))):
+        box = (int(picture['x']), int(picture['y']), int(picture['width']), int(picture['height']))
+        region = regions.setdefault(box, f'picture{len(regions) + 1}')
+        start = float(picture['start'])
+        end = max(start, float(picture['end']))
+        attrs = (f'begin="{format_time(start)}" end="{format_time(end)}" region="{region}" '
+                 f'smpte:backgroundImage={quoteattr(picture["href"])}')
+        if picture.get('forced'):
+            attrs += ' itts:forcedDisplay="true"'
+        alt = str(picture.get('alt') or '').strip()
+        said = f'<metadata><ittm:altText>{escape(alt)}</ittm:altText></metadata>' if alt else ''
+        divs.append(f'    <div {attrs}>{said}</div>' if said else f'    <div {attrs}/>')
+    head = ['  <head>']
+    meta_lines = []
+    for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
+        said = str((metadata or {}).get(key) or '').strip()
+        if said:
+            meta_lines.append(f'      <{name}>{escape(said)}</{name}>')
+    if meta_lines:
+        head += ['    <metadata>', *meta_lines, '    </metadata>']
+    head.append('    <layout>')
+    for (x, y, w, h), name in regions.items():
+        head.append(f'      <region xml:id="{name}" tts:origin="{x}px {y}px" tts:extent="{w}px {h}px" '
+                    f'tts:showBackground="whenActive"/>')
+    head += ['    </layout>', '  </head>']
+    declared = f'ttp:profile="{_IMSC1_IMAGE}"' if profile == 'imsc1-image' else f'ttp:contentProfiles="{_IMSC11_IMAGE}"'
+    namespaces = ['xmlns="http://www.w3.org/ns/ttml"', 'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
+                  'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"', 'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"',
+                  f'xmlns:smpte="{_SMPTE_NS}"', f'xmlns:ittm="{_ITTM_NS}"']
+    if any(picture.get('forced') for picture in pictures):
+        namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
+    root = ' '.join(namespaces + ['ttp:timeBase="media"', declared, f'tts:extent="{int(width)}px {int(height)}px"',
+                                  f'xml:lang={quoteattr(export_options.language_tag(language))}'])
+    return '\n'.join(['<?xml version="1.0" encoding="UTF-8"?>', f'<tt {root}>', *head,
+                      '  <body>', *divs, '  </body>', '</tt>', ''])
 
 
 def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1',

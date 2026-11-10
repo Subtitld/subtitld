@@ -212,7 +212,8 @@ class _SubtitlesPanel(QWidget):
         # TTML and DFXP: the profile the file says it follows.
         self.profile_combo = utils.LabeledComboBox()
         self.profile_combo.setLabel(_('export_dialog.ttml_profile'))
-        for profile, name in (('ttml1', 'ttml1'), ('imsc1', 'imsc1'), ('imsc1.1', 'imsc11'), ('ebu-tt-d', 'ebuttd')):
+        for profile, name in (('ttml1', 'ttml1'), ('imsc1', 'imsc1'), ('imsc1.1', 'imsc11'), ('ebu-tt-d', 'ebuttd'),
+                              ('imsc1-image', 'imsc1_image'), ('imsc1.1-image', 'imsc11_image')):
             self.profile_combo.combobox.addItem(_(f'export_dialog.ttml_profile_{name}'), profile)
         row.addWidget(self.profile_combo, 1)
         self.layout().addWidget(self.ass_options)
@@ -350,6 +351,12 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setVisible(False)
             return
         profile = self.profile_combo.combobox.currentData() or 'ttml1'
+        if profile in ttml.IMAGE_PROFILES:
+            # Pictures are drawn when the file is written, not to check it
+            # here: what is said instead is where they will go.
+            self.check_label.setText(_('export_dialog.ttml_image_note'))
+            self.check_label.setVisible(True)
+            return
         written = ttml.write(segments, session.SUBTITLE.get('language') or 'en', profile=profile,
                              metadata=session.SUBTITLE.get('metadata'))
         problems = ttml.check(written, profile)
