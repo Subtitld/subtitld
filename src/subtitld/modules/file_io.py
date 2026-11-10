@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
+from subtitld.modules import avid_subcap
 from subtitld.modules import collab_state
 from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
@@ -826,6 +827,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             code = _language_like_project(dict(headers).get('LANGUAGE'))
             if code:
                 session.SUBTITLE['language'] = code
+
+        elif subtitle_file.lower().endswith('.txt') and avid_subcap.is_subcap(_text_of(subtitle_file)):
+            # Avid SubCap, which Media Composer writes as .txt: its times in
+            # frames, at the video's rate (drop-frame when the file is); the
+            # rate, the drop-frame and the hour it counts from kept to save
+            # it again as it was. Its timecode lines would read as DVDSS.
+            subtitle_format = 'AVID'
+            segments_list, subcap_settings = avid_subcap.read(subtitle_file, session.VIDEO.get('framerate'))
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
+                                             timecode='drop' if subcap_settings['drop'] else 'non-drop',
+                                             timeline_start=subcap_settings['start'])
 
         elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
             # VPlayer, TMPlayer and their kin wrote .txt, which is also what
@@ -1677,6 +1689,18 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                         else language,
                         title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'AVID':
+            # Avid SubCap: frames at the export's rate (the video's, else
+            # 25), drop-frame at 29.97 and 59.94 unless it asks otherwise,
+            # from the timeline start it asks; the plain text, in the
+            # export's encoding and line ends.
+            avid_subcap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or avid_subcap.DEFAULT_FPS),
+                             drop=options.get('timecode') != 'non-drop',
+                             start=options.get('timeline_start') if options.get('timeline_start') in avid_subcap.STARTS
+                             else avid_subcap.STARTS[0],
+                             encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                             line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.

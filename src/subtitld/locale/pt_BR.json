@@ -593,6 +593,8 @@
     "export_dialog.stl_display_open": "Legendas abertas",
     "export_dialog.stl_start": "Programa começa em",
     "export_dialog.stl_start_ten": "10:00:00:00 (como as emissoras costumam pedir)",
+    "export_dialog.timeline_start": "Linha do tempo começa em",
+    "export_dialog.timeline_start_hour": "01:00:00:00 (como os editores de vídeo começam uma sequência)",
     "subtitles_panel_widget_speakers.new_speaker": "Novo locutor",
     "subtitles_panel_widget_speakers.enter_speaker_name": "Por favor, insira o nome do locutor:",
     "subtitles_panel_widget_speakers.rename_speaker": "Renomear locutor",

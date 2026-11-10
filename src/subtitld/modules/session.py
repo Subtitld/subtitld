@@ -141,6 +141,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # UltraStar's songs are .txt, as VPlayer's and its kin's are below; the
     # bytes tell them apart (file_io).
     'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
+    # Video editors' own: Avid SubCap's .txt is told from the player-era
+    # .txt formats below by its bytes, in file_io.
+    'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

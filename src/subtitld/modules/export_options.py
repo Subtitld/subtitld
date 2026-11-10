@@ -1,8 +1,8 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, SBV, SUB, BCC, XML, LRC, UltraStar and
-the player-era formats); USF, USFX and JSON keep the project as it is.
+DFXP, TTML, SAMI, SCC, MCC, STL, AVID, SBV, SUB, BCC, XML, LRC, UltraStar
+and the player-era formats); USF, USFX and JSON keep the project as it is.
 Karaoke timing is formatting (modules.karaoke): removing the formatting
 takes the word timing of LRC and UltraStar with it.
 
@@ -22,13 +22,17 @@ takes the word timing of LRC and UltraStar with it.
 
 And for a format of its own:
 
-    encoding     SRT, SAMI, SUB and LRC: 'utf-8', 'utf-8-sig' (with a byte
-                 order mark), 'utf-16', 'cp1252' (Western European),
+    encoding     SRT, SAMI, SUB, LRC and AVID: 'utf-8', 'utf-8-sig' (with a
+                 byte order mark), 'utf-16', 'cp1252' (Western European),
                  'cp1250' (Central European), 'cp1251' (Cyrillic) or
                  'cp949' (Korean)
-    line_ends    SRT, SAMI, SUB and LRC: 'lf' or 'crlf'
-    fps          SUB: the frame rate its frame numbers count in
-    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'
+    line_ends    SRT, SAMI, SUB, LRC and AVID: 'lf' or 'crlf'
+    fps          SUB and AVID: the frame rate its frame numbers count in
+    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID
+                 the same, at 29.97 and 59.94, the rates that have it
+    timeline_start
+                 AVID: the timecode the editor's timeline starts at,
+                 '00:00:00:00' or '01:00:00:00'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
     mcc_captions MCC: 'both' (CEA-608 and CEA-708) or '608' (CEA-608 alone)
     caption_mode SCC and MCC: how the captions are written — 'pop' (pop-on,
@@ -58,7 +62,7 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'BCC', 'XML',
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'SBV', 'SUB', 'BCC', 'XML',
                 'LRC', 'ULTRASTAR',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
