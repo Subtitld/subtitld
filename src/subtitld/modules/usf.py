@@ -89,7 +89,9 @@ _INLINE = ('i', 'b', 'u', 's', 'ruby', 'rt', 'sup', 'sub', markup.FLASH_TAG)
 # dropped them would lose them on every save.
 _FONT_EXTRAS = (('size', 'subtitldcc:size'), ('edge', 'subtitldcc:edge'),
                 ('edge_color', 'subtitldcc:edge-color'), ('face', 'subtitldcc:face'),
-                ('kind', 'subtitldcc:kind'))
+                ('kind', 'subtitldcc:kind'), ('emphasis', 'subtitldcc:emphasis'))
+# Where a ruby puts its reading and how it spreads it, on the <ruby>.
+_RUBY_EXTRAS = (('position', 'subtitldcc:position'), ('align', 'subtitldcc:align'))
 
 # ISO 639-2 codes for Subtitld's languages, as Matroska writes them (the
 # bibliographic ones: "fre", "ger"); the terminologic ones ("fra", "deu")
@@ -160,6 +162,10 @@ def _inline_text(tag):
             parts.append(str(child))
         elif child.name == 'br':
             parts.append('\n')
+        elif child.name == 'ruby':
+            said = ''.join(f' {name}="{str(child.get(attribute)).strip()}"' for name, attribute in _RUBY_EXTRAS
+                           if str(child.get(attribute) or '').strip())
+            parts.append(f'<ruby{said}>' + _inline_text(child) + '</ruby>')
         elif child.name in _INLINE:
             parts.append(f'<{child.name}>' + _inline_text(child) + f'</{child.name}>')
         elif child.name == 'font':
@@ -777,7 +783,11 @@ class USFWriter():
                 # text it is.
                 self._append_runs(usf, text_tag, base + reading)
                 continue
-            ruby = usf.new_tag('ruby')
+            said = markup.ruby_attributes(group)
+            attributes = {name: getattr(said, field) for field, name in _RUBY_EXTRAS if getattr(said, field)}
+            if attributes:
+                usf.find('USFSubtitles')['xmlns:subtitldcc'] = SUBTITLDCC_NAMESPACE
+            ruby = usf.new_tag('ruby', attrs=attributes)
             self._append_runs(usf, ruby, base)
             rt = usf.new_tag('rt')
             self._append_runs(usf, rt, reading)

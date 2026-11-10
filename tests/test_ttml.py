@@ -777,6 +777,66 @@ check('a size given across and down takes the one that is a proportion',
       ['Plain <font size="80%">small</font>'])
 
 
+print('emphasis marks, and where a ruby puts its reading')
+_annotated = ('彼は<font emphasis="filled sesame">本当</font>に'
+              '<ruby position="after" align="space-around">東京<rt>とうきょう</rt></ruby>へ')
+_written = ttml.write([{'start': 1, 'end': 2, 'text': _annotated}], 'ja', profile='imsc1.1')
+check('written where TTML2 applies each: the marks on the span, the spread on the container, '
+      'the place on the reading',
+      ('<span tts:textEmphasis="filled sesame">本当</span>' in _written,
+       '<span tts:ruby="container" tts:rubyAlign="spaceAround">' in _written,
+       '<span tts:ruby="text" tts:rubyPosition="after">' in _written), (True, True, True))
+check('read back as it went in', [s['text'] for s in ttml.parse(_written)], [_annotated])
+check('and IMSC 1.1 has nothing to say about it', ttml.check(_written, 'imsc1.1'), [])
+for _profile in ('imsc1', 'ebu-tt-d'):
+    _plain = ttml.write([{'start': 1, 'end': 2, 'text': _annotated}], 'ja', profile=_profile)
+    check(f'left out of {_profile}, which is built on TTML 1',
+          ('textEmphasis' in _plain, 'rubyAlign' in _plain, 'rubyPosition' in _plain,
+           ttml.check(_plain, _profile)), (False, False, False, []))
+_file = ('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xml:lang="ja">'
+         '<body><div><p begin="1s" end="2s"><span tts:textEmphasis="open circle red after">強</span>く'
+         '<span tts:ruby="container" tts:rubyAlign="start"><span tts:ruby="base">東京</span>'
+         '<span tts:ruby="text" tts:rubyPosition="after">とうきょう</span></span></p></div></body></tt>')
+check('a file\'s own, read: the colour of its marks left, the place said on the reading alone kept for the ruby',
+      [s['text'] for s in ttml.parse(_file)],
+      ['<font emphasis="open circle after">強</font>く<ruby position="after" align="start">東京<rt>とうきょう</rt></ruby>'])
+check('an emphasis on the paragraph marks all of it, as it is inherited',
+      [s['text'] for s in ttml.parse(
+          '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>'
+          '<p begin="1s" end="2s" tts:textEmphasis="filled dot">全部</p></div></body></tt>')],
+      ['<font emphasis="filled dot">全部</font>'])
+check('checked against IMSC 1.1\'s minimal sets',
+      [problem.split(':')[0] for problem in ttml.check(
+          _file.replace('xml:lang="ja"', 'xml:lang="ja" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" '
+                        'ttp:contentProfiles="http://www.w3.org/ns/ttml/profile/imsc1.1/text"')
+          .replace('tts:rubyAlign="start"', 'tts:rubyAlign="withBase"'), 'imsc1.1')],
+      ['Emphasis with a colour or a mark of its own (open circle red after)', 'tts'])
+_with_base = [{'start': 1, 'end': 2, 'text': '<ruby align="with-base">東京<rt>とうきょう</rt></ruby>'}]
+check('spread with its base in TTML, which has it, and not in IMSC 1.1, whose minimal set does not',
+      ('tts:rubyAlign="withBase"' in ttml.write(_with_base, 'ja'),
+       'rubyAlign' in ttml.write(_with_base, 'ja', profile='imsc1.1'),
+       ttml.check(ttml.write(_with_base, 'ja', profile='imsc1.1'), 'imsc1.1')), (True, False, []))
+check('and named as TTML2 where the profile is TTML 1',
+      ttml.check(_file, 'imsc1')[-1],
+      'tts:rubyAlign, tts:rubyPosition, tts:textEmphasis: TTML2 styling, which this profile, built on TTML 1, '
+      'does not have')
+
+print('room kept on every line for a reading')
+_reserved = ttml.parse(
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xml:lang="ja"><body><div>'
+    '<p begin="1s" end="2s" tts:rubyReserve="both 50%">予約</p>'
+    '<p begin="3s" end="4s" tts:rubyReserve="before">前</p>'
+    '<p begin="5s" end="6s" tts:rubyReserve="none">無</p></div></body></tt>')
+check('in the look, measured against the font size it is a share of',
+      [s.get('look') for s in _reserved],
+      [{'ruby_reserve': {'position': 'both', 'length': 100 / 15 / 2}}, {'ruby_reserve': {'position': 'before'}}, None])
+_back = ttml.write(_reserved, 'ja', profile='imsc1.1')
+check('written back in cells, as a look\'s lengths are',
+      ('tts:rubyReserve="both 0.5c"' in _back, 'tts:rubyReserve="before"' in _back), (True, True))
+check('and read back the same', [s.get('look') for s in ttml.parse(_back)], [s.get('look') for s in _reserved])
+check('left out of EBU-TT-D', 'rubyReserve' in ttml.write(_reserved, 'ja', profile='ebu-tt-d'), False)
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

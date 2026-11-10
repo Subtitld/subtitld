@@ -230,6 +230,14 @@ check('in Subtitld\'s namespace, which the file declares',
 check('raised, lowered and flashing text as the elements markup names',
       ('<sub>2</sub>' in _written, '<sup>2</sup>' in _written, '<blink>Breaking</blink>' in _written),
       (True, True, True))
+_annotated = ['彼は<font emphasis="filled sesame">本当</font>に',
+              '<ruby position="after" align="space-around">東京<rt>とうきょう</rt></ruby>へ']
+_written = USFWriter().write([{'start': i, 'end': i + 0.5, 'speaker': 'A', 'text': t} for i, t in enumerate(_annotated)],
+                             speakers={}, language='ja')
+check('emphasis marks and what a ruby says about its reading, kept',
+      (read_back(_written), 'subtitldcc:emphasis="filled sesame"' in _written,
+       '<ruby subtitldcc:align="space-around" subtitldcc:position="after">' in _written),
+      (_annotated, True, True))
 check('a project with only ordinary formatting declares no namespace',
       'xmlns:subtitldcc' in USFWriter().write([{'start': 0, 'end': 1, 'speaker': 'A', 'text': '<i>plain</i>'}],
                                               speakers={}, language='en-us'), False)

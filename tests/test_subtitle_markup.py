@@ -219,6 +219,24 @@ check('a subtitle with no look of its own is drawn exactly as before',
 coloured = render('<font color="#00ff00">green</font>')
 check('a colour is drawn in it', any(QColor(coloured.pixel(x, y)).green() > 200 and QColor(coloured.pixel(x, y)).red() < 80
                                      for x in range(0, 640, 2) for y in range(200, 360, 2)), True)
+bare, marked = lit_rows(render('ABC')), lit_rows(render('<font emphasis="filled circle">ABC</font>'))
+check('emphasis marks are drawn above the text',
+      marked is not None and bare is not None and marked[0] < bare[0] - 4 and abs(marked[1] - bare[1]) <= 2, True)
+# Below the text is measured on a subtitle at the top, which grows down: one
+# at the bottom stays on its edge and grows up, whatever is added under it.
+bare_top = lit_rows(render('{\\an8}ABC'))
+under = lit_rows(render('{\\an8}<font emphasis="filled circle after">ABC</font>'))
+check('and below it when they say after',
+      under is not None and abs(under[0] - bare_top[0]) <= 2 and under[1] > bare_top[1] + 4, True)
+base_top = lit_rows(render('{\\an8}AB'))
+below = lit_rows(render('{\\an8}<ruby position="after">AB<rt>cd</rt></ruby>'))
+check('a reading placed after its text is drawn below it',
+      below is not None and abs(below[0] - base_top[0]) <= 2 and below[1] > base_top[1] + 4, True)
+two_lines = lit_rows(render('One\nTwo'))
+reserved = lit_rows(render('One\nTwo', look={'ruby_reserve': {'position': 'both'}}))
+check('room kept for readings spaces the lines further apart',
+      reserved is not None and two_lines is not None and reserved[1] - reserved[0] > two_lines[1] - two_lines[0] + 10,
+      True)
 
 renderer.close()
 
@@ -352,6 +370,53 @@ check('what is not drawn is still what the subtitle says, to count and translate
 _md = markup.to_markdown('<font kind="sound-effect">[a door]</font>')
 check('the Markdown panel keeps it', (_md, markup.from_markdown(_md)),
       ('[[a door]]{kind=sound-effect}', '<font kind="sound-effect">[a door]</font>'))
+
+
+print('emphasis marks')
+check('a fill and a shape, or auto, then where they go if not outside',
+      [markup.emphasis_value(value) for value in
+       ('filled sesame', 'open', 'auto', 'sesame outside', 'filled dot after', 'over right', 'under left')],
+      ['filled sesame', 'open', 'auto', 'sesame', 'filled dot after', 'auto before', 'auto after'])
+check('none is no emphasis at all', [markup.emphasis_value(value) for value in ('none', '', None)], ['', '', ''])
+check('a colour and a mark of its own are left, the marks kept',
+      [markup.emphasis_value(value) for value in ('filled circle red after', '#ff0000', '"*" before')],
+      ['filled circle after', 'auto', 'auto before'])
+EMPHASISED = '彼は<font emphasis="filled sesame">本当</font>に'
+check('read off a <font>, and written back',
+      ([style.emphasis for _run, style in markup.spans(EMPHASISED)], markup.from_spans(markup.spans(EMPHASISED))),
+      (['', 'filled sesame', ''], EMPHASISED))
+check('drawn as CSS draws it: auto is a bare fill, whose shape the writing picks',
+      (markup.to_html(EMPHASISED),
+       markup.to_html('<font emphasis="auto after">x</font>')),
+      ('彼は<span style="text-emphasis:filled sesame;text-emphasis-position:over right">本当</span>に',
+       '<span style="text-emphasis:filled;text-emphasis-position:under left">x</span>'))
+check('what the subtitle says is the words, not their marks', markup.plain(EMPHASISED), '彼は本当に')
+_md = markup.to_markdown(EMPHASISED)
+check('the Markdown panel keeps it', (_md, markup.from_markdown(_md)),
+      ('彼は[本当]{emphasis="filled sesame"}に', EMPHASISED))
+
+print('where a ruby puts its reading, and how it spreads it')
+PLACED = '<ruby position="after" align="space-around">東京<rt>とうきょう</rt></ruby>へ'
+check('said once, on the container, and carried by both its runs',
+      [(run, style.ruby, style.ruby_position, style.ruby_align) for run, style in markup.spans(PLACED)],
+      [('東京', 'base', 'after', 'space-around'), ('とうきょう', 'text', 'after', 'space-around'),
+       ('へ', '', '', '')])
+check('written back on the container', markup.from_spans(markup.spans(PLACED)), PLACED)
+check('a plain ruby stays plain', markup.from_spans(markup.spans('<ruby>漢<rt>かん</rt></ruby>')),
+      '<ruby>漢<rt>かん</rt></ruby>')
+check('TTML\'s and CSS\'s words read alike',
+      (markup.annotation_position('under'), markup.ruby_align_value('spaceBetween'),
+       markup.ruby_align_value('center'), markup.annotation_position('outside')),
+      ('after', 'space-between', '', ''))
+check('drawn as CSS draws it; with-base, which CSS has no word for, centred',
+      (markup.to_html(PLACED), markup.to_html('<ruby align="with-base">A<rt>a</rt></ruby>')),
+      ('<ruby style="ruby-position:under;ruby-align:space-around">東京<rt>とうきょう</rt></ruby>へ',
+       '<ruby>A<rt>a</rt></ruby>'))
+check('a text cut inside one keeps it on both halves',
+      markup.rebalance('<ruby position="after">東', '京<rt>とうきょう</rt></ruby>'),
+      ('<ruby position="after">東</ruby>', '<ruby position="after">京<rt>とうきょう</rt></ruby>'))
+check('and the Markdown panel writes the tags as they are',
+      markup.from_markdown(markup.to_markdown(PLACED)), PLACED)
 
 
 print()

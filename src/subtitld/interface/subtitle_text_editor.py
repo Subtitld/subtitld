@@ -31,6 +31,10 @@ _PEN = {field: QTextFormat.UserProperty + 2 + index
 # A text editor has no way to show text flashing, so it is kept as a
 # property and left to the preview to draw.
 _FLASH = QTextFormat.UserProperty + 8
+# Nor emphasis marks, nor where a ruby puts its reading and how it spreads
+# it: kept the same way, numbered on from the flash's.
+_PEN.update({field: QTextFormat.UserProperty + 9 + index
+             for index, field in enumerate(('emphasis', 'ruby_position', 'ruby_align'))})
 
 
 def _char_format(style):

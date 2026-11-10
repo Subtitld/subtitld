@@ -24,7 +24,10 @@ Reading:
   oblique), bold, underline, line-through and a colour other than white
   become formatting tags; so does a tts:shear, which is how IMSC 1.1
   writes italics for Japanese (Netflix's profile asks for it there, and a
-  file written that way has no fontStyle to find);
+  file written that way has no fontStyle to find), and TTML2's emphasis
+  marks (tts:textEmphasis), and where a ruby puts its reading and how it
+  spreads it (tts:rubyPosition, tts:rubyAlign); the room a paragraph keeps
+  for readings (tts:rubyReserve) goes in its look;
 - where the subtitle sits, from its region: the point tts:displayAlign
   and tts:textAlign put the text at in the region's tts:origin and
   tts:extent (in %, px or cells), or, without those, the two alone
@@ -81,7 +84,23 @@ _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
                  'fontFamily', 'fontSize', 'lineHeight', 'backgroundColor', 'padding', 'textOutline', 'textShadow',
-                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap', 'unicodeBidi')
+                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap', 'unicodeBidi',
+                 'textEmphasis', 'rubyPosition', 'rubyAlign', 'rubyReserve')
+
+# TTML's words for how a reading is spread, from markup's (RUBY_ALIGNS).
+_RUBY_ALIGN_OUT = {'start': 'start', 'end': 'end', 'space-around': 'spaceAround',
+                   'space-between': 'spaceBetween', 'with-base': 'withBase'}
+# What TTML2 says that TTML 1 does not, which IMSC 1.0.1 and EBU-TT-D are
+# built on: emphasis marks, and where a ruby puts its reading and how.
+_TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve')
+# How much of those each profile takes: none in the two built on TTML 1,
+# IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
+# all of it in TTML itself.
+_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none'}
+# The words a tts:textEmphasis may hold that are neither a colour nor a mark
+# of its own: what IMSC 1.1's #textEmphasis-minimal allows.
+_EMPHASIS_WORDS = frozenset(('none', 'auto', 'filled', 'open', 'circle', 'dot', 'sesame',
+                             'before', 'after', 'outside'))
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -584,6 +603,8 @@ def _of_file(frame, props, sizes, opacity, size_own=True):
     gap = (props.get('fillLineGap') or '').strip().lower()
     if gap in ('true', 'false'):
         found['fill_line_gap'] = gap == 'true'
+    # TTML2's: room kept on every line for a reading.
+    found['ruby_reserve'] = _ruby_reserve(frame, props.get('rubyReserve'), size)
     return found
 
 
@@ -639,16 +660,35 @@ def _sheared(value):
 def _look(props):
     decoration = (props.get('textDecoration') or '').split()
     color = _color(props.get('color'))
+    role = _RUBY_ROLES.get((props.get('ruby') or '').strip(), '')
     return markup.Style(
         (props.get('fontStyle') or '') in ('italic', 'oblique') or _sheared(props.get('shear')),
         (props.get('fontWeight') or '') == 'bold',
         'underline' in decoration,
         'lineThrough' in decoration,
         '' if color == '#ffffff' else color,
-        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''),
+        role,
         _background(props.get('backgroundColor')),
         markup.size_percent(_one_size(props.get('fontSize'))),
-        '', *_span_outline(props.get('textOutline')))
+        '', *_span_outline(props.get('textOutline')),
+        emphasis=markup.emphasis_value(props.get('textEmphasis')),
+        # A reading's place and spread are the ruby's: they mean something
+        # only on the base and the reading, which carry them for it.
+        ruby_position=markup.annotation_position(props.get('rubyPosition')) if role else '',
+        ruby_align=markup.ruby_align_value(props.get('rubyAlign')) if role else '')
+
+
+def _ruby_reserve(frame, value, size):
+    """tts:rubyReserve as a look's reserve: where the room goes and, when
+    the file gives one, how much, measured against the font size."""
+    parts = (value or '').strip().split()
+    if not parts or parts[0] not in subtitld_look.RESERVE_POSITIONS:
+        return None
+    reserve = {'position': parts[0]}
+    length = _of_size(frame, parts[1], size) if len(parts) > 1 else None
+    if length:
+        reserve['length'] = length
+    return reserve
 
 
 def _keypad(props, frame, geometry=True):
@@ -1192,6 +1232,28 @@ def check(text, profile='imsc1.1'):
             problems.append(f'Font sizes with a width and a height of their own ({", ".join(stretched)}): '
                             'the profile allows one size for both, and the height is what is read')
 
+    # TTML2's emphasis marks and what a ruby says about its reading. IMSC
+    # 1.0.1 and EBU-TT-D are built on TTML 1 and have none of it; IMSC 1.1
+    # has the minimal sets: no colour or mark of its own for an emphasis
+    # (#textEmphasis-minimal), no spreading a reading with its base
+    # (#rubyAlign-minimal).
+    if profile in ('imsc1', 'ebu-tt-d'):
+        annotated = sorted({name for element in root.iter() for name in _TTML2_ANNOTATIONS
+                            if _attr(element, name) is not None})
+        if annotated:
+            problems.append(f'{", ".join("tts:" + name for name in annotated)}: TTML2 styling, '
+                            'which this profile, built on TTML 1, does not have')
+    if profile == 'imsc1.1':
+        marks = sorted({value for element in root.iter() for value in [_attr(element, 'textEmphasis') or '']
+                        if re.search(r'["\']', value)
+                        or set(value.lower().replace(',', ' ').split()) - _EMPHASIS_WORDS})
+        if marks:
+            problems.append(f'Emphasis with a colour or a mark of its own ({", ".join(marks)}): '
+                            'IMSC 1.1 allows a fill, a shape and a position only')
+        if any((_attr(element, 'rubyAlign') or '').strip() == 'withBase' for element in root.iter()):
+            problems.append('tts:rubyAlign="withBase": IMSC 1.1 allows start, center, end, '
+                            'spaceAround and spaceBetween')
+
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
     missing = sorted({element.get('region') for element in root.iter()
@@ -1219,11 +1281,12 @@ def _rgba(value, default):
     return '#' + value
 
 
-def _open_span(tags, style, shear=False):
+def _open_span(tags, style, shear=False, annotations='full'):
     """A <span> for the formatting `tags` ({(name, value)}) open together;
     its textDecoration names all the run's, so none an outer span set is
     lost, whatever a player makes of a nested one. With `shear`, italics
-    are written as a slant instead (see _SHEAR)."""
+    are written as a slant instead (see _SHEAR). With `annotations` 'none',
+    what only TTML2 can say (emphasis marks) is left out (see _ANNOTATIONS)."""
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
@@ -1238,6 +1301,10 @@ def _open_span(tags, style, shear=False):
             # TTML draws an edge as an outline; the kinds it has no word for
             # are written as the outline nearest them.
             attrs.append(f'tts:textOutline="{font.edge_color or "#000000"} 4%"')
+        if font.emphasis and annotations != 'none':
+            # markup's words are TTML's: a fill and a shape, or auto, and
+            # before or after.
+            attrs.append(f'tts:textEmphasis="{font.emphasis}"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:
@@ -1248,7 +1315,7 @@ def _open_span(tags, style, shear=False):
     return f'<span {" ".join(attrs)}>'
 
 
-def _nested_content(runs, shear=False):
+def _nested_content(runs, shear=False, annotations='full'):
     """Runs of one stretch as TTML: spans for their formatting, nested as
     the tags are, <br/> between lines."""
     out = []
@@ -1264,28 +1331,36 @@ def _nested_content(runs, shear=False):
         del stack[keep:]
         new = wanted.difference(*stack)
         if new:
-            out.append(_open_span(new, style, shear))
+            out.append(_open_span(new, style, shear, annotations))
             stack.append(frozenset(new))
         out.append('<br/>'.join(escape(part) for part in run.split('\n')))
     out.extend('</span>' for _span in stack)
     return ''.join(out)
 
 
-def _content(text, shear=False):
+def _content(text, shear=False, annotations='full'):
     """A subtitle's text as TTML. A ruby is a container span holding the
-    base and its text, which is how IMSC 1.1 writes one."""
+    base and its text, which is how IMSC 1.1 writes one: how its reading is
+    spread on the container, where it sits on the reading, which is where
+    TTML2 applies each. `annotations` says how much of that a profile
+    takes (see _ANNOTATIONS)."""
     out = []
     for group in markup.ruby_groups(markup.spans(text)):
         if group[0] == 'plain':
-            out.append(_nested_content(group[1], shear))
+            out.append(_nested_content(group[1], shear, annotations))
             continue
-        base = _nested_content(group[1], shear)
-        reading = _nested_content(group[2], shear)
+        base = _nested_content(group[1], shear, annotations)
+        reading = _nested_content(group[2], shear, annotations)
         if not (base and reading):
             out.append(base + reading)
             continue
-        out.append(f'<span tts:ruby="container"><span tts:ruby="base">{base}</span>'
-                   f'<span tts:ruby="text">{reading}</span></span>')
+        said = markup.ruby_attributes(group) if annotations != 'none' else markup.Ruby()
+        # Spreading a reading with its base is beyond IMSC 1.1's minimal set.
+        spread = f' tts:rubyAlign="{_RUBY_ALIGN_OUT[said.align]}"' \
+            if said.align in _RUBY_ALIGN_OUT and not (said.align == 'with-base' and annotations == 'minimal') else ''
+        placed = f' tts:rubyPosition="{said.position}"' if said.position else ''
+        out.append(f'<span tts:ruby="container"{spread}><span tts:ruby="base">{base}</span>'
+                   f'<span tts:ruby="text"{placed}>{reading}</span></span>')
     return ''.join(out)
 
 
@@ -1400,6 +1475,13 @@ def _look_attributes(styling, profile='ttml1', inline=False):
         gap = True
     if gap is not None and not ebu:
         out.append(f'itts:fillLineGap="{"true" if gap else "false"}"')
+    # Room on every line for a reading: TTML2's, so not in IMSC 1.0.1 or
+    # EBU-TT-D, which are built on TTML 1.
+    reserve = styling.get('ruby_reserve') or {}
+    if isinstance(reserve, dict) and reserve.get('position') in subtitld_look.RESERVE_POSITIONS \
+            and profile not in ('imsc1', 'ebu-tt-d'):
+        length = f' {_cells(reserve["length"])}' if reserve.get('length') else ''
+        out.append(f'tts:rubyReserve="{reserve["position"]}{length}"')
     return ' '.join(out)
 
 
@@ -1447,6 +1529,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
+    annotations = _ANNOTATIONS[profile]
     cues = []
     places = {}
     speakers = {}
@@ -1502,7 +1585,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         looking = _look_attributes(styling, profile)
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
-        content = _content(rest, shear)
+        content = _content(rest, shear, annotations)
         # A box the file brought stands in for the style's own, and goes on
         # a span: on the paragraph TTML paints a band the width of the
         # region instead of a box around the words.

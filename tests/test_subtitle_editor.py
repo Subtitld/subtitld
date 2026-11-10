@@ -208,6 +208,18 @@ check('the reading drawn raised, where ruby draws it above',
 ste.set_text(ruby, 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
 check('with the formatting inside it', ste.text(ruby), 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
 
+print('marks and a reading\'s place, which the editor cannot show, kept through an edit')
+marked = QTextEdit()
+ste.set_text(marked, '彼は<font emphasis="filled sesame">本当</font>に'
+                     '<ruby position="after" align="start">東京<rt>とうきょう</rt></ruby>へ')
+cursor = marked.textCursor()
+cursor.movePosition(QTextCursor.End)
+marked.setTextCursor(cursor)
+marked.insertPlainText('。')
+check('a keystroke beside them leaves them as they were', ste.text(marked),
+      '彼は<font emphasis="filled sesame">本当</font>に'
+      '<ruby position="after" align="start">東京<rt>とうきょう</rt></ruby>へ。')
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
