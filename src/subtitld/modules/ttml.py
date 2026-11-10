@@ -405,7 +405,8 @@ def _font_size(frame, stated):
     size = 100 / frame.cells[1]
     for value in stated:
         # "<horizontal> <vertical>?": the second is the height, and one
-        # length alone is both.
+        # length alone is both. Two of them stretch the letters, which IMSC
+        # and EBU-TT-D do not allow (check says so), so the height is kept.
         parts = (value or '').strip().split()
         resolved = _of_size(frame, parts[-1], size) if parts else None
         if resolved is not None:
@@ -1100,6 +1101,16 @@ def check(text, profile='imsc1.1'):
         if _attr(root, 'aspectRatio') and _attr(root, 'displayAspectRatio'):
             problems.append('ittp:aspectRatio and ttp:displayAspectRatio are both present: '
                             'a file says its shape one way or the other, not both')
+
+    # Two font sizes, one across and one down, stretch the letters. Both
+    # IMSC versions allow one size for both directions, and EBU-TT-D "only
+    # one percentage value".
+    if profile != 'ttml1':
+        stretched = sorted({value for element in root.iter() for value in [_attr(element, 'fontSize') or '']
+                            if len(value.split()) > 1})
+        if stretched:
+            problems.append(f'Font sizes with a width and a height of their own ({", ".join(stretched)}): '
+                            'the profile allows one size for both, and the height is what is read')
 
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}

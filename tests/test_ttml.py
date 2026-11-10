@@ -618,6 +618,21 @@ check('and four is not too many, nor five that never share a moment',
        for starts in ([1, 1, 1, 1], [1, 2, 3, 4, 5])],
       [[], []])
 
+check('letters stretched by two font sizes are against IMSC and EBU-TT-D both, and said so',
+      [[problem for problem in ttml.check(doc('<p begin="1s" end="2s" tts:fontSize="50% 100%">Wide</p>'),
+                                          profile) if 'Font sizes' in problem] for profile in ('imsc1.1', 'ebu-tt-d')],
+      [['Font sizes with a width and a height of their own (50% 100%): the profile allows one size for both, '
+        'and the height is what is read']] * 2)
+check('one size for both is what IMSC asks for, and TTML 1 is not asked',
+      ([problem for problem in ttml.check(doc('<p begin="1s" end="2s" tts:fontSize="100%">Even</p>'),
+                                          'imsc1.1') if 'Font sizes' in problem],
+       [problem for problem in ttml.check(doc('<p begin="1s" end="2s" tts:fontSize="50% 100%">Wide</p>'),
+                                          'ttml1') if 'Font sizes' in problem]),
+      ([], []))
+check('and the height is what such a file is read with',
+      ttml.parse(doc('<p begin="1s" end="2s" tts:fontSize="50% 200%">Wide</p>'))[0]['look']['size'],
+      200 / 15)
+
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 for name, text, encoding in (('in.ttml', AGENTS, 'utf-8'), ('in.dfxp', OLD, 'utf-8'), ('in.itt', ITT, 'utf-8'),
