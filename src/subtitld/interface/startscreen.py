@@ -253,7 +253,7 @@ def load_productionscreen(self, collab=None):
             try:
                 session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
             except file_io.PictureSubtitlesError as pictures:
-                # VobSub, PGS or IMSC's pictures: read by an OCR add-on, which the dialog runs
+                # VobSub, PGS, IMSC's or a DCP's pictures: read by an OCR add-on, which the dialog runs
                 # (or says to install). Stopped, the open stops as for a
                 # file that cannot be read, with nothing more to say.
                 from subtitld.interface import picture_ocr_dialog
@@ -264,8 +264,9 @@ def load_productionscreen(self, collab=None):
                     session.VIDEO = {}
                     return
                 session.SUBTITLE['segments'], info = read
-                # Saved as text: TTML again for an IMSC file, SRT for a disc's.
-                session.CONFIG['format_to_save'] = 'TTML' if pictures.kind == 'imsc' else 'SRT'
+                # Saved as text: TTML again for an IMSC file, DCP subtitles
+                # again (in text) for a DCP's, SRT for a disc's.
+                session.CONFIG['format_to_save'] = {'imsc': 'TTML', 'dcp': 'DCP'}.get(pictures.kind, 'SRT')
                 if info.get('language'):
                     session.SUBTITLE['language'] = info['language']
         except file_io.CorruptedProjectFileError as exc:

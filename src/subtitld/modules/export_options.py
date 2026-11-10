@@ -1,10 +1,10 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, AVID, FCPXML, SBV, SUB, BCC, XML, LRC,
-UltraStar and the player-era formats); USF, USFX and JSON keep the project
-as it is. Karaoke timing is formatting (modules.karaoke): removing the
-formatting takes the word timing of LRC and UltraStar with it.
+DFXP, TTML, SAMI, SCC, MCC, STL, AVID, FCPXML, DCP, SBV, SUB, BCC, XML,
+LRC, UltraStar and the player-era formats); USF, USFX and JSON keep the
+project as it is. Karaoke timing is formatting (modules.karaoke): removing
+the formatting takes the word timing of LRC and UltraStar with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -52,6 +52,10 @@ And for a format of its own:
     stl_fps      STL: 25 (STL25.01) or 30 (STL30.01, for 29.97 video)
     display      STL: 'teletext' (level 1) or 'open' subtitles
     start        STL: the programme's start, '00:00:00:00' or '10:00:00:00'
+    dcp_standard DCP: 'interop' (CineCanvas's <DCSubtitle>) or 'smpte'
+                 (SMPTE ST 428-7's <SubtitleReel>; modules.dcp)
+    dcp_fps      DCP: the frame rate a SMPTE reel counts its times in, one
+                 of modules.dcp.RATES (24, 25, 30, 48, 50, 60)
     look         ASS and TTML: their style 'clean' (white, a black
                  outline) or as Subtitld's 'preview' draws (modules.ass,
                  modules.ttml)
@@ -64,8 +68,8 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'SBV', 'SUB', 'BCC', 'XML',
-                'LRC', 'ULTRASTAR',
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'DCP', 'SBV', 'SUB',
+                'BCC', 'XML', 'LRC', 'ULTRASTAR',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')

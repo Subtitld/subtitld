@@ -21,6 +21,7 @@ from subtitld.modules import avid_subcap
 from subtitld.modules import collab_state
 from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
+from subtitld.modules import dcp
 from subtitld.modules import ebustl
 from subtitld.modules import fcpxml
 from subtitld.modules import timecode
@@ -56,9 +57,10 @@ class CorruptedProjectFileError(Exception):
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
     pictures (a VobSub's .idx or .sub, a PGS .sup, a TTML file in IMSC's
-    Image Profile with pictures it gives no words for), not text: nothing
-    is wrong with it, but only an OCR add-on can make text of it
-    (picture_ocr). `path` is the file, `kind` 'vobsub', 'pgs' or 'imsc'."""
+    Image Profile with pictures it gives no words for, DCP subtitles with
+    <Image>s), not text: nothing is wrong with it, but only an OCR add-on
+    can make text of it (picture_ocr). `path` is the file, `kind`
+    'vobsub', 'pgs', 'imsc' or 'dcp'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -746,6 +748,28 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, timeline_start=fcp_settings['start'],
                                              timecode='drop' if fcp_settings['drop'] else 'non-drop',
                                              **({'fps': fcp_settings['fps']} if fcp_settings['fps'] else {}))
+
+        elif subtitle_file.lower().endswith('.xml') and dcp.is_dcp(subtitle_file):
+            # A cinema's subtitles, Interop's or SMPTE's: kept in the same
+            # generation, at a SMPTE reel's frame rate, for the next save;
+            # its language the project's, its title what it says of itself.
+            subtitle_format = 'DCP'
+            try:
+                segments_list, dcp_settings = dcp.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            kept = {'dcp_standard': dcp_settings['standard']}
+            if dcp_settings['fps'] in dcp.RATES:
+                kept['dcp_fps'] = dcp_settings['fps']
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+            language = _language_like_project(dcp_settings['language'])
+            if language:
+                session.SUBTITLE['language'] = language
+            if dcp_settings['metadata']:
+                session.SUBTITLE['metadata'] = dcp_settings['metadata']
+            # Subtitles that are pictures are for an OCR add-on, as a disc's are.
+            if dcp.has_images(subtitle_file):
+                raise PictureSubtitlesError(subtitle_file, 'dcp')
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
@@ -1745,6 +1769,20 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         else fcpxml.STARTS[0],
                         title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file.rstrip('/\\')))[0],
                         width=VIDEO.get('width') or 1920, height=VIDEO.get('height') or 1080)
+
+        elif subtitle_format == 'DCP':
+            # Interop or SMPTE as the export asks (the generation of a file
+            # opened, for its next save); a SMPTE reel's frames at the
+            # export's rate, else the video's nearest, else 24; in the
+            # language of the text written, for the film the file was for,
+            # else the video.
+            dcp.save(final_file, segments,
+                     standard=options.get('dcp_standard') if options.get('dcp_standard') in dcp.STANDARDS else dcp.SMPTE,
+                     fps=options.get('dcp_fps') if options.get('dcp_fps') in dcp.RATES else dcp.rate_for(VIDEO.get('framerate')),
+                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                     else language,
+                     title=(SUBTITLE.get('metadata') or {}).get('title')
+                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.

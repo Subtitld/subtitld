@@ -13,13 +13,14 @@ from PySide6.QtGui import QFontDatabase
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import csv_export
+from subtitld.modules import dcp
 from subtitld.modules import export_options
 from subtitld.modules import mcc
 from subtitld.modules import session
 from subtitld.modules import ttml
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'DCP', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
@@ -212,6 +213,28 @@ class _SubtitlesPanel(QWidget):
         stl_grid.addWidget(self.stl_start_combo, 1, 0)
         self.layout().addWidget(self.stl_options)
 
+        # DCP: Interop or SMPTE, and the frame rate a SMPTE reel counts its
+        # times in (Interop counts ticks of a second, whatever the film's).
+        self.dcp_options = QWidget()
+        row = QHBoxLayout(self.dcp_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.dcp_standard_combo = utils.LabeledComboBox()
+        self.dcp_standard_combo.setLabel(_('export_dialog.dcp_standard'))
+        self.dcp_standard_combo.combobox.addItem(_('export_dialog.dcp_standard_smpte'), dcp.SMPTE)
+        self.dcp_standard_combo.combobox.addItem(_('export_dialog.dcp_standard_interop'), dcp.INTEROP)
+        row.addWidget(self.dcp_standard_combo, 1)
+        self.dcp_rate_combo = utils.LabeledComboBox()
+        self.dcp_rate_combo.setLabel(_('export_dialog.frame_rate'))
+        for rate in dcp.RATES:
+            label = f'{rate} fps'
+            if video_fps and rate == dcp.rate_for(video_fps):
+                label = _('export_dialog.frame_rate_video').format(fps=label)
+            self.dcp_rate_combo.combobox.addItem(label, rate)
+        row.addWidget(self.dcp_rate_combo, 1)
+        self.dcp_standard_combo.combobox.currentIndexChanged.connect(
+            lambda _index: self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE))
+        self.layout().addWidget(self.dcp_options)
+
         # ASS and TTML: the look of their one style.
         self.ass_options = QWidget()
         row = QHBoxLayout(self.ass_options)
@@ -284,6 +307,11 @@ class _SubtitlesPanel(QWidget):
         _select(self.caption_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         _select(self.timeline_start_combo, remembered.get('timeline_start', '00:00:00:00'))
+        _select(self.dcp_standard_combo, remembered.get('dcp_standard', dcp.SMPTE))
+        # The video's rate, as near as a DCP plays; else the last used, else 24.
+        _select(self.dcp_rate_combo, dcp.rate_for(video_fps) if video_fps
+                else remembered.get('dcp_fps', dcp.DEFAULT_RATE))
+        self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE)
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         # Drop-frame or not is only a choice at the rates that have it.
@@ -334,6 +362,7 @@ class _SubtitlesPanel(QWidget):
         self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML') and _has_drop_frame(rate)))
         self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
         self.stl_options.setVisible(fmt == 'STL')
+        self.dcp_options.setVisible(fmt == 'DCP')
         self.mcc_options.setVisible(fmt == 'MCC')
         # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
         # both fields, so it has all four.
@@ -409,6 +438,8 @@ class _SubtitlesPanel(QWidget):
             'display': self.stl_display_combo.combobox.currentData(),
             'start': self.stl_start_combo.combobox.currentData(),
             'timeline_start': self.timeline_start_combo.combobox.currentData(),
+            'dcp_standard': self.dcp_standard_combo.combobox.currentData(),
+            'dcp_fps': self.dcp_rate_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
@@ -438,6 +469,8 @@ class _SubtitlesPanel(QWidget):
                            caption_channel=self.caption_channel_combo.combobox.currentData() or 1)
         if fmt == 'STL':
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
+        if fmt == 'DCP':
+            options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'])
         if fmt == 'MCC':
             options.update(mcc_rate=choices['mcc_rate'], mcc_captions=choices['mcc_captions'],
                            caption_service_language=choices['caption_service_language']

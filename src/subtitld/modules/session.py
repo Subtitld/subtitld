@@ -128,6 +128,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SCC': {'description': 'SCC Subtitle format', 'extensions': ['scc']},
     'STL': {'description': 'EBU STL Subtitle format', 'extensions': ['stl']},
     'MCC': {'description': 'MacCaption Subtitle format', 'extensions': ['mcc']},
+    'DCP': {'description': 'DCP Subtitle format (Interop or SMPTE)', 'extensions': ['xml']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
