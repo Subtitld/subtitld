@@ -166,8 +166,12 @@ class Engine:
                 self.send({'type': 'unlock', 'cue_id': cue_id})
 
     def have(self, hashes):
-        """Tell the others which media files (by hash) this app can send them."""
-        self.have_hashes = sorted(set(hashes))
+        """Tell the others which media files (by hash) this app can send them, when that changed: subtitld.cc
+        keeps the list and gives it to whoever joins, and a reconnection says it again (_go_live)."""
+        hashes = sorted(set(hashes))
+        if hashes == self.have_hashes:
+            return
+        self.have_hashes = hashes
         if self.state == self.LIVE:
             self.send({'type': 'have', 'hashes': self.have_hashes})
 
@@ -280,9 +284,12 @@ class Engine:
         self._tell('peers')
 
     def _on_have(self, message):
-        self.peers_have[message['peer']] = set(message.get('hashes') or [])
+        hashes = set(message.get('hashes') or [])
+        changed = self.peers_have.get(message['peer']) != hashes
+        self.peers_have[message['peer']] = hashes
         self.peers.setdefault(message['peer'], {'user': message.get('user'), 'state': {}})
-        self._tell('media')
+        if changed:
+            self._tell('media')
 
     def _on_media(self, message):
         entry = message.get('media') or {}

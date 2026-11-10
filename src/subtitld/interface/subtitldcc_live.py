@@ -107,6 +107,7 @@ class LiveCard(QWidget):
         self._link = None         # a project a subtitld:// link named, waiting for a sign-in
         self._busy = False
         self._pending_confirm = None
+        self._shown_here = None   # who was here when the card last showed it (presence alone changes nothing)
 
         self.title = _text('subtitldcc_card_title')
         layout.addWidget(self.title)
@@ -240,8 +241,19 @@ class LiveCard(QWidget):
         if kind in ('shared', 'failed'):
             self._project = None
             self._projects = None if kind == 'shared' else self._projects
+        if kind == 'peers':
+            # Presence comes several times a second while someone plays the video; the card shows who is here.
+            here = self._here()
+            if here == self._shown_here:
+                return
+            self._shown_here = here
         if kind in ('state', 'peers', 'shared', 'failed', 'conflicts', 'media') and not self.isHidden():
             self.refresh(load=kind == 'shared')
+
+    def _here(self):
+        connection = collab_service.connection()
+        engine = connection.engine if connection is not None else None
+        return sorted((p.get('user') or {}).get('handle', '') for p in (engine.peers.values() if engine else []))
 
     def refresh(self, load=True):
         connected = service.is_connected()

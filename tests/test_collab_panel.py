@@ -194,6 +194,18 @@ connection = collab_service.connection()
 connection.engine.peers['p1'] = {'user': {'handle': 'joao'}, 'state': {}}
 connection.changed.emit('peers')
 check('someone joined', card.here.text(), 'Here now: @joao')
+rebuilt = []
+card.refresh, real_refresh = (lambda load=True: rebuilt.append(load)), card.refresh
+connection.engine.peers['p1']['state'] = {'playhead': 12.5, 'selected': 'x'}  # they play the video
+connection.changed.emit('peers')
+check('their playhead moving rebuilds nothing', rebuilt, [])
+connection.engine.peers['p2'] = {'user': {'handle': 'lia'}, 'state': {}}
+connection.changed.emit('peers')
+check('someone else joining does', len(rebuilt), 1)
+del connection.engine.peers['p2']
+connection.changed.emit('peers')
+card.refresh = real_refresh
+card.refresh(load=False)
 connection.engine.conflicts.append({'cue_id': 'x', 'field': 'text', 'theirs': 'x', 'author': 'joao'})
 connection.changed.emit('conflicts')
 check('a change crossed', (card.conflicts.isVisible(), card.conflicts.text()), (True, '1 of your changes crossed someone else’s.'))

@@ -70,6 +70,7 @@ class ChatCard(QWidget):
         layout.setContentsMargins(12, 10, 12, 12)
         layout.setSpacing(8)
         self._editing = None  # the ID of the message being edited
+        self._shown_peers = None
 
         self.title = _text('subtitldcc_card_title')
         layout.addWidget(self.title)
@@ -153,6 +154,13 @@ class ChatCard(QWidget):
         self.refresh()
 
     def _news(self, kind):
+        if kind == 'peers':
+            # Presence comes several times a second while someone plays the video; the card shows whether
+            # anyone is online and who is in the call.
+            shown = (collab_service.chat_alone(), [(p['handle'], p['me']) for p in collab_service.voice_state()['people']])
+            if shown == self._shown_peers:
+                return
+            self._shown_peers = shown
         if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'document', 'voice'):
             self._redraw.start()
         if kind == 'voice':
