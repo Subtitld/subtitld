@@ -807,8 +807,13 @@ class Timeline(QWidget):
                     line = QColor(color)
                     line.setAlpha(170)
                     painter.setPen(QPen(line, 1, Qt.SolidLine))
-                    # The handle at the foot of the timeline, clear of the time and the playhead's own tag at the top.
+                    # The handle at the foot of the timeline, clear of the time and the playhead's own tag at the
+                    # top: the foot that shows, above the scroll area's scrollbar.
                     bottom = float(widget.height())
+                    try:
+                        bottom = min(bottom, float(widget.parent().parent().viewport().height()))
+                    except AttributeError:
+                        pass
                     painter.drawLine(QLineF(x, 0.0, x, bottom - 12.0))
                     tag = QRectF(x, bottom - 12.0, metrics.horizontalAdvance(label) + 6, 12)
                     painter.setPen(Qt.NoPen)
