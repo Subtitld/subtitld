@@ -405,6 +405,7 @@ _CODEC_NAMES = {
     'microdvd': 'MicroDVD', 'subviewer': 'SubViewer', 'subviewer1': 'SubViewer 1', 'mpl2': 'MPL2', 'pjs': 'PJS',
     'realtext': 'RealText', 'sami': 'SAMI', 'stl': 'Spruce STL', 'jacosub': 'JACOsub', 'vplayer': 'VPlayer',
     'hdmv_pgs_subtitle': 'PGS', 'dvd_subtitle': 'VobSub', 'dvb_subtitle': 'DVB', 'xsub': 'XSUB', 'eia_608': 'CEA-608',
+    'dvb_teletext': 'Teletext',
 }
 
 
@@ -440,21 +441,26 @@ def _ocr_engine():
 
 
 def _readable(track, ocr=None):
-    """Whether the subtitles engine can read the track: a text one, or a
-    PGS or VobSub one when an OCR add-on (`ocr`) is installed."""
+    """Whether the subtitles engine can read the track: a text one, a
+    teletext page, or a PGS or VobSub one when an OCR add-on (`ocr`) is
+    installed."""
     from subtitld.modules import video_subtitles
-    return track['kind'] == 'text' or (ocr is not None and track['kind'] == 'pictures'
-                                       and track['codec'] in video_subtitles.READABLE_PICTURE_CODECS)
+    return track['kind'] in ('text', 'teletext') or (ocr is not None and track['kind'] == 'pictures'
+                                                     and track['codec'] in video_subtitles.READABLE_PICTURE_CODECS)
 
 
 def _track_label(track, number, ocr=None):
     """"2. Portuguese “Brasil” · ASS · default": a subtitle track's place
-    among the video's, language, title, codec and flags; why it cannot be
-    read, for one that is no text, or which OCR add-on reads it."""
+    among the video's, language, title, codec (and teletext page) and flags;
+    why it cannot be read, for one that is no text, or which OCR add-on
+    reads it."""
     name = _track_language(track) or track.get('title') or _('import_panel.subtitles_unknown_language')
     title = track.get('title', '') if track.get('title', '') != name else ''
+    codec = _CODEC_NAMES.get(track['codec'], track['codec'].upper())
     parts = [f'{number}. {name}' + (f' “{title}”' if title else ''),
-             _CODEC_NAMES.get(track['codec'], track['codec'].upper())]
+             f'{codec} {track["page"]}' if track.get('page') else codec]
+    if track.get('hearing_impaired'):
+        parts.append(_('import_panel.subtitles_hearing_impaired'))
     if track.get('default'):
         parts.append(_('import_panel.subtitles_default'))
     if track.get('forced'):
@@ -492,9 +498,11 @@ class _SubtitleTracksPanel(_GenericASRPanel):
 
     def _track(widget):
         """The track chosen, when it can be read; else None."""
-        index = widget.track_combo.combobox.currentData()
+        from subtitld.modules import video_subtitles
+        chosen = widget.track_combo.combobox.currentData()
         ocr = _ocr_engine()
-        return next((track for track in widget._tracks() if track['index'] == index and _readable(track, ocr)), None)
+        return next((track for track in widget._tracks()
+                     if video_subtitles.key(track) == chosen and _readable(track, ocr)), None)
 
     def _preferred(widget, tracks):
         """The text track to offer first: the language (and title) chosen
@@ -502,9 +510,10 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         remembered = session.CONFIG.get('transcription', {}).get('subtitles_track') or {}
         language, title = remembered.get('language'), remembered.get('title')
         ocr = _ocr_engine()
-        # Text tracks first: a picture track's text is only as good as its OCR.
-        texts = [track for track in tracks if track['kind'] == 'text'] + \
-            [track for track in tracks if track['kind'] != 'text' and _readable(track, ocr)]
+        # Text tracks (and teletext pages, text too) first: a picture
+        # track's text is only as good as its OCR.
+        texts = [track for track in tracks if track['kind'] in ('text', 'teletext')] + \
+            [track for track in tracks if track['kind'] not in ('text', 'teletext') and _readable(track, ocr)]
         for wanted in (lambda track: language is not None and (track['language_tag'], track['title']) == (language, title),
                        lambda track: bool(language) and track['language_tag'] == language,
                        lambda track: track['default'] and not track['forced'],
@@ -526,13 +535,14 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         widget._listed = (video, tracks)
         combo.clear()
         ocr = _ocr_engine()
+        from subtitld.modules import video_subtitles
         for number, track in enumerate(tracks, 1):
-            combo.addItem(_track_label(track, number, ocr), track['index'])
+            combo.addItem(_track_label(track, number, ocr), video_subtitles.key(track))
             if not _readable(track, ocr):
                 combo.model().item(combo.count() - 1).setEnabled(False)
         if chosen is None:
             preferred = widget._preferred(tracks)
-            chosen = preferred['index'] if preferred else None
+            chosen = video_subtitles.key(preferred) if preferred else None
         combo.setCurrentIndex(combo.findData(chosen) if chosen is not None else -1)
         combo.setPlaceholderText(_('import_panel.no_subtitles_title'))
         # Open even with no text track, to show why those there cannot be read.
@@ -581,6 +591,8 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         widget.transcript_started.emit()
         widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'), {
             'track': track['index'], 'codec': track['codec'], 'duration': float(session.VIDEO.get('duration') or 0),
+            # A teletext stream's page, and its PID in a transport stream.
+            'page': track.get('page'), 'pid': track.get('pid'),
             # What an OCR add-on reads a picture track as.
             'language': _track_project_language(track) or session.SUBTITLE.get('language', 'en-us')})
 

@@ -207,6 +207,7 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MP4': {'description': 'MP4 video with a subtitle track', 'extensions': ['mp4', 'm4v']},
     'MOV TEXT': {'description': 'QuickTime video with a subtitle track', 'extensions': ['mov']},
     'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
+    'TS': {'description': 'MPEG transport stream with teletext subtitles', 'extensions': ['ts']},
 }
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {

@@ -1241,5 +1241,8 @@
     "export_dialog.subtitle_track_forced": "Forced: shown even with subtitles turned off",
     "export_dialog.subtitle_track_note_mov_text": "The picture and sound are copied as they are. MP4 timed text keeps bold, italic, underline and colour; where a subtitle sits and the box behind it are the player's.",
     "export_dialog.subtitle_track_note_srt": "The picture and sound are copied as they are. An SRT track keeps bold, italic, underline and colour, and plays everywhere.",
-    "export_dialog.subtitle_track_note_ass": "The picture and sound are copied as they are. An ASS track keeps where each subtitle sits and the look of the preview."
+    "export_dialog.subtitle_track_note_ass": "The picture and sound are copied as they are. An ASS track keeps where each subtitle sits and the look of the preview.",
+    "import_panel.subtitles_hearing_impaired": "for the hard of hearing",
+    "export_dialog.video_ts_teletext": "Transport stream (.ts), teletext",
+    "export_dialog.subtitle_track_note_teletext": "The picture and sound are copied as they are. Each language is a teletext page, 888 and up, double height and boxed, in the colours teletext has; letters its character set lacks are added as Level 1.5 decoders show them."
 }

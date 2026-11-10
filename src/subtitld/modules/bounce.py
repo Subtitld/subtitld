@@ -382,7 +382,8 @@ class CaptionsThread(QThread):
                                'language': language, 'title': names.get(language, '')})
         soft_subtitles.write_video(
             video, self._output_path, tracks, container=self._container,
-            codec=self._options.get('subtitle_codec'), forced=bool(self._options.get('forced')),
+            codec=self._options.get('subtitle_codec'),
+            forced=bool(self._options.get('forced')) and self._container != 'TS',
             width=session.VIDEO.get('width'), height=session.VIDEO.get('height'),
             look='preview', preview=subtitle_styles.preview_look(),
             ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)

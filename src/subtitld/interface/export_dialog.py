@@ -1031,8 +1031,8 @@ class _VideoPanel(QWidget):
 
         # Subtitle track sub-tab -------------------------------------------
         # The subtitles as a track of their own, which a player lists and
-        # turns on and off: MP4's timed text, or Matroska's SRT or ASS
-        # (soft_subtitles).
+        # turns on and off: MP4's timed text, Matroska's SRT or ASS, or a
+        # transport stream's teletext (soft_subtitles, teletext).
         self.tracks_panel = QWidget()
         self.tracks_panel.setLayout(QVBoxLayout())
         self.tracks_panel.layout().setContentsMargins(10, 10, 10, 10)
@@ -1046,6 +1046,7 @@ class _VideoPanel(QWidget):
         self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mp4_track'), 'MP4')
         self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mov_track'), 'MOV TEXT')
         self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mkv_track'), 'MKV')
+        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_ts_teletext'), 'TS')
         self.tracks_format_combo.activated.connect(self._refresh_tracks)
         line.addWidget(self.tracks_format_combo, 2)
         self.tracks_codec_combo = utils.LabeledComboBox()
@@ -1150,11 +1151,16 @@ class _VideoPanel(QWidget):
     def _refresh_tracks(self):
         """What the chosen kind of file does with the subtitles: an MP4's
         timed text keeps a run's formatting alone; Matroska takes SRT,
-        which every player reads, or ASS, which keeps the look."""
+        which every player reads, or ASS, which keeps the look; a transport
+        stream, teletext pages."""
         container = self.tracks_format_combo.combobox.currentData() or 'MP4'
         self.tracks_codec_combo.setVisible(container == 'MKV')
+        # Teletext has no forced pages: a viewer chooses one or none.
+        self.tracks_forced.setVisible(container != 'TS')
         if container == 'MKV':
             key = 'export_dialog.subtitle_track_note_' + (self.tracks_codec_combo.combobox.currentData() or 'srt')
+        elif container == 'TS':
+            key = 'export_dialog.subtitle_track_note_teletext'
         else:
             key = 'export_dialog.subtitle_track_note_mov_text'
         self.tracks_note.setText(_(key))

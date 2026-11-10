@@ -68,12 +68,13 @@ probe = {'streams': [stream(0, 'h264', kind='video'), stream(1, 'aac', 'eng', ki
                      stream(4, 'dvd_subtitle', 'fre'), stream(5, 'eia_608'), stream(6, 'ttml', 'eng'),
                      stream(7, 'dvb_teletext', 'ger'), stream(8, 'mov_text', 'pt-BR', forced=1)]}
 probe['streams'][3]['tags'] = {'LANGUAGE': 'und', 'TITLE': 'Signs'}
-check('subtitle streams only, those it can read and those it cannot say why; TTML and teletext left out',
+check('subtitle streams only, those it can read and those it cannot say why; TTML left out',
       brief(video_subtitles.tracks(probe, language_of=file_io._known_language)),
       [(2, 'hdmv_pgs_subtitle', 'pictures', 'en-us', 'eng', '', True, False),
        (3, 'subrip', 'text', '', '', 'Signs', False, False),
        (4, 'dvd_subtitle', 'pictures', 'fr-fr', 'fre', '', False, False),
        (5, 'eia_608', 'captions', '', '', '', False, False),
+       (7, 'dvb_teletext', 'teletext', 'de-de', 'ger', '', False, False),
        (8, 'mov_text', 'text', 'pt-br', 'pt-BR', '', False, True)])
 check('a video with no streams: none', video_subtitles.tracks({}), [])
 check('the file each is written as, copied when it is that already', [video_subtitles.output_of(codec) for codec in (
@@ -350,10 +351,11 @@ check('pictures and closed captions listed, saying why, but not to be chosen', l
     ('2. Signs · SRT', True),
     ('3. French · VobSub · ' + _('import_panel.subtitles_pictures'), False),
     ('4. ' + _('import_panel.subtitles_unknown_language') + ' · CEA-608 · ' + _('import_panel.subtitles_captions'), False),
-    ('5. Portuguese (Brazil) · MP4 Timed Text · forced', True)])
+    ('5. German · Teletext', True),
+    ('6. Portuguese (Brazil) · MP4 Timed Text · forced', True)])
 check('the text track not forced offered first', track_combo.currentData(), 3)
 session.VIDEO = {'filepath': str(folder / 'tracks.mkv'),
-                 'subtitle_tracks': [t for t in video_subtitles.tracks(probe) if t['kind'] != 'text']}
+                 'subtitle_tracks': [t for t in video_subtitles.tracks(probe) if t['kind'] not in ('text', 'teletext')]}
 panel.update_callback()
 shown.clear()
 check('pictures only: none chosen, the list open to say why, nothing to start',
