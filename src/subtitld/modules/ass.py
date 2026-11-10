@@ -14,31 +14,47 @@ Reading:
   override codes in the text change them as it goes ({\\i1}, {\\b1},
   {\\u1}, {\\s1}, {\\c&H...&}, {\\r} back to the style), and {\\anN} (or
   SSA's {\\aN}) places it. What Subtitld has no place for ({\\pos},
-  {\\fad}, karaoke, fonts, borders ...) goes;
+  {\\fad}, karaoke ...) goes;
+- the look a line's style gives it beyond the file's own baseline — the
+  style named Default, else the one most lines use — is the subtitle's
+  look (modules.look): its font, size, outline, shadow, or the opaque box
+  BorderStyle 3 draws. So are \\fn, \\fs, \\bord, \\shad, \\3c and \\4c in
+  the code block a line starts with; further in, they would change only
+  part of it, which a look cannot. The baseline itself is not a look:
+  it is what the chosen style is for, and Subtitld's own scripts state
+  one for the whole file;
 - \\N is a line break; \\n one only under "WrapStyle: 2", a space
   otherwise; \\h a no-break space;
 - the event's Name (the actor) is the subtitle's speaker;
 - the subtitles come sorted by start.
 
-Writing gives a script sized to the video (PlayResX/PlayResY), with one
+Writing gives a script sized to the video (PlayResX/PlayResY), with a
 style, Default, scaled to that height: white with a black outline, or the
 look of Subtitld's preview (its font, colour, shadow and background box).
+A subtitle with a look of its own gets a style of its own, Default with
+the look laid over it, one for each look the subtitles use: what ASS has
+words for (font, size, outline, shadow, a box and its padding) and nothing
+of what it has none for (line height, opacity, wrapping per line).
 The subtitles go in order of start, the speaker as the Name, formatting
 as override codes, line breaks as \\N. A file named .ssa is written as
 SubStation Alpha v4, with SSA's codes for the position.
 """
 
+import json
 import re
 
 import pysubs2
 
-from subtitld.modules import markup, position
+from subtitld.modules import look as subtitld_look, markup, position
 from subtitld.modules.srt import decode
 
 _BLOCK = re.compile(r'\{([^{}]*)\}')
 _CODE = re.compile(r'\\(?:(?P<flag>[ibus])(?P<value>\d+)|(?P<cn>1?c)(?:&H(?P<bgr>[0-9a-fA-F]{1,8})&?)?(?![\w])|'
                    r'(?P<reset>r)(?P<style>[^\\]*)|an(?P<an>\d)|a(?P<a>\d{1,2})(?!\w)|p(?P<p>\d+)|'
                    r'fr(?P<axis>[xyz])(?P<turn>-?\d+(?:\.\d+)?))')
+# The codes a line's look comes from, in the block it starts with.
+_LOOK_CODE = re.compile(r'\\(?:fn(?P<fn>[^\\]+)|fs(?P<fs>\d+(?:\.\d+)?)|bord(?P<bord>\d+(?:\.\d+)?)|'
+                        r'shad(?P<shad>\d+(?:\.\d+)?)|(?P<which>[34])c&H(?P<bgr>[0-9a-fA-F]{1,8})&?)')
 _LEGACY_ALIGN = {1: 1, 2: 2, 3: 3, 5: 7, 6: 8, 7: 9, 9: 4, 10: 5, 11: 6}
 _TO_LEGACY = {value: key for key, value in _LEGACY_ALIGN.items()}
 
@@ -130,6 +146,89 @@ def _text(event, styles, wrap):
     return (markup.with_alignment('', keypad) if keypad != 2 else '') + text, turns
 
 
+def _hex(color):
+    """A pysubs2 Color as a look's "#aarrggbb": ASS counts alpha the other
+    way, 0 for opaque."""
+    return f'#{255 - color.a:02x}{color.r:02x}{color.g:02x}{color.b:02x}'
+
+
+def _look_of_style(style, height):
+    """What a style says a line looks like, as a look holds it: lengths in
+    % of the script's height, colours as "#aarrggbb". BorderStyle 3 draws
+    an opaque box in the outline's colour, padded by the outline's width;
+    1 draws an outline and a shadow."""
+    if style is None:
+        return {}
+    found = {'font': style.fontname, 'size': float(style.fontsize) * 100 / height}
+    if int(style.borderstyle) == 3:
+        found['background'] = _hex(style.outlinecolor)
+        found['padding'] = [float(style.outline) * 100 / height] * 4
+    else:
+        if style.outline:
+            found['outline'] = {'width': float(style.outline) * 100 / height, 'color': _hex(style.outlinecolor)}
+        if style.shadow:
+            depth = float(style.shadow) * 100 / height
+            found['shadow'] = [{'x': depth, 'y': depth, 'color': _hex(style.backcolor)}]
+    return found
+
+
+def _with_codes(found, text, height):
+    """`found` changed by the look codes in the block a line starts with."""
+    lead = _BLOCK.match(text)
+    if not lead:
+        return found
+    found = dict(found)
+    for code in _LOOK_CODE.finditer(lead.group(1)):
+        if code.group('fn'):
+            found['font'] = code.group('fn').strip()
+        elif code.group('fs'):
+            found['size'] = float(code.group('fs')) * 100 / height
+        elif code.group('bord') is not None and 'background' not in found:
+            width = float(code.group('bord')) * 100 / height
+            if width:
+                found['outline'] = dict(found.get('outline') or {}, width=width)
+            else:
+                found.pop('outline', None)
+        elif code.group('shad') is not None and 'background' not in found:
+            depth = float(code.group('shad')) * 100 / height
+            if depth:
+                kept = (found.get('shadow') or [{}])[0]
+                found['shadow'] = [dict(kept, x=depth, y=depth)]
+            else:
+                found.pop('shadow', None)
+        elif code.group('which'):
+            bgr = code.group('bgr')[-6:].rjust(6, '0')
+            colour = '#ff' + (bgr[4:6] + bgr[2:4] + bgr[0:2]).lower()
+            if code.group('which') == '3':
+                if 'background' in found:
+                    found['background'] = colour
+                elif found.get('outline'):
+                    found['outline'] = dict(found['outline'], color=colour)
+            elif found.get('shadow'):
+                found['shadow'] = [dict(found['shadow'][0], color=colour)]
+    return found
+
+
+def _opening_style(event, styles):
+    """The style a line is drawn in from its start: its own, or the one a
+    {\\rName} in the block it starts with switches it to."""
+    lead = _BLOCK.match(event.text)
+    if lead:
+        switched = re.search(r'\\r([^\\}]+)', lead.group(1))
+        if switched and switched.group(1).strip() in styles:
+            return switched.group(1).strip()
+    return event.style
+
+
+def _baseline(subfile):
+    """The style that is the file's own look rather than any line's: the
+    one named Default, else the one most lines use."""
+    if 'Default' in subfile.styles:
+        return 'Default'
+    used = [event.style for event in subfile.events if not event.is_comment]
+    return max(set(used), key=used.count) if used else None
+
+
 def _play_res(subfile):
     """The picture a script's lengths are counted in."""
     def number(key, fallback):
@@ -156,6 +255,8 @@ def segments_of(subfile):
     except ValueError:
         wrap = 0
     width, height = _play_res(subfile)
+    baseline = _baseline(subfile)
+    base_look = _look_of_style(subfile.styles.get(baseline), height)
     segments = []
     for event in subfile.events:
         if event.is_comment:
@@ -178,6 +279,12 @@ def segments_of(subfile):
             rotate=tuple(float(turns.get(axis) or 0) for axis in position.AXES))
         if placed.any():
             position.store(segment, placed)
+        # Its look: what its style and its opening codes say beyond the
+        # file's baseline, so a file of Default lines brings none.
+        style_name = _opening_style(event, subfile.styles)
+        styled = _with_codes(_look_of_style(subfile.styles.get(style_name) or subfile.styles.get(baseline),
+                                            height), event.text, height)
+        subtitld_look.store(segment, {key: value for key, value in styled.items() if base_look.get(key) != value})
         segments.append(segment)
     segments.sort(key=lambda segment: segment['start'])
     return segments
@@ -299,6 +406,37 @@ def default_style(height, look='clean', preview=None):
     return style
 
 
+def _style_with_look(base, styling, height):
+    """`base` with a look laid over it, as ASS can say it: a box (in
+    BorderStyle 3, the outline's colour, padded by the outline's width), or
+    an outline and a shadow; a font and a size."""
+    style = base.copy()
+    if styling.get('font'):
+        style.fontname = str(styling['font']).split(',')[0].strip().strip('"\'')
+    if styling.get('size'):
+        style.fontsize = round(styling['size'] * height / 100, 3)
+    if styling.get('background'):
+        style.borderstyle = 3
+        style.outlinecolor = _argb(styling['background'], '#ff000000')
+        style.outline = round(max(styling.get('padding') or [0]) * height / 100, 3)
+        style.shadow = 0
+        return style
+    outline = styling.get('outline') or {}
+    if outline.get('width'):
+        style.borderstyle = 1
+        style.outline = round(outline['width'] * height / 100, 3)
+        if outline.get('color'):
+            style.outlinecolor = _argb(outline['color'], '#ff000000')
+    shadows = styling.get('shadow') or []
+    if shadows:
+        # ASS has one shadow, as deep across as down.
+        first = shadows[0]
+        style.shadow = round(max(abs(first.get('x') or 0), abs(first.get('y') or 0)) * height / 100, 3)
+        if first.get('color'):
+            style.backcolor = _argb(first['color'], '#ff000000')
+    return style
+
+
 def _turn(degrees):
     return str(int(degrees)) if float(degrees).is_integer() else str(float(degrees))
 
@@ -311,6 +449,10 @@ def write(segments, width=None, height=None, fmt='ass', look='clean', preview=No
     subfile.info['PlayResY'] = str(height)
     subfile.info['ScaledBorderAndShadow'] = 'yes'
     subfile.styles['Default'] = default_style(height, look, preview)
+    # One style for each look the subtitles use, Default with it laid
+    # over: the file keeps the structure though the project holds a look
+    # per subtitle.
+    lookings = {}
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
         lead, rest = markup.split_lead(raw)
@@ -330,6 +472,17 @@ def write(segments, width=None, height=None, fmt='ass', look='clean', preview=No
         end = max(start, float(segment.get('end', start)))
         event = pysubs2.SSAEvent(start=int(round(start * 1000)), end=int(round(end * 1000)), text=text,
                                  name=str(segment.get('speaker') or '').strip())
+        styling = subtitld_look.of(segment)
+        if styling:
+            key = json.dumps(styling, sort_keys=True)
+            if key not in lookings:
+                styled = _style_with_look(subfile.styles['Default'], styling, height)
+                # A look of nothing ASS has words for is Default again.
+                lookings[key] = (f'Look{len(lookings) + 1}' if styled.as_dict() != subfile.styles['Default'].as_dict()
+                                 else 'Default')
+                if lookings[key] != 'Default':
+                    subfile.styles[lookings[key]] = styled
+            event.style = lookings[key]
         # Margins stand the line off the edge it is aligned to. ASS centres
         # a line between its left and right margins, so a subtitle nudged
         # off the middle has nowhere to say so and keeps the style's.

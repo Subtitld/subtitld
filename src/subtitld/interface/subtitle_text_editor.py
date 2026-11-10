@@ -10,14 +10,14 @@ The formatting commands act on the selection, or on the whole text when
 nothing is selected, and toggle: italic on a text all italic takes it off.
 """
 
-from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap, QTextCharFormat,
                            QTextCursor, QTextFormat)
 from PySide6.QtWidgets import (QColorDialog, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget,
                                QWidgetAction)
 
 from subtitld.interface.translation import _
-from subtitld.modules import history, markup, position, session
+from subtitld.modules import history, look as subtitld_look, markup, position, session
 
 FLAGS = ('italic', 'bold', 'underline', 'strike')
 # A reading and what it reads have no look of their own to go by, so the
@@ -264,6 +264,20 @@ def _clear_icon(color='#b8cee0', size=16):
     return QIcon(pixmap)
 
 
+def _subtitle_icon(color='#b8cee0', size=16):
+    """Three dots: what the subtitle is besides its text."""
+    pixmap = _pixmap(size)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(color))
+    radius = size / 9
+    for column in (0.25, 0.5, 0.75):
+        painter.drawEllipse(QRectF(size * column - radius, size / 2 - radius, 2 * radius, 2 * radius))
+    painter.end()
+    return QIcon(pixmap)
+
+
 class FormattingBar(QWidget):
     """The buttons that format the editor's text: italic, bold, underline,
     strikeout (also Ctrl+I, Ctrl+B, Ctrl+U), a colour, the position on the
@@ -272,7 +286,11 @@ class FormattingBar(QWidget):
 
     `segment`, when given, says which subtitle the editor holds (a callable,
     the subtitle or None): the position menu then also sets its margins and
-    rotation (modules.position), which the subtitle keeps beside its text."""
+    rotation (modules.position), which the subtitle keeps beside its text,
+    and a menu of its own says when the subtitle is shown — forced, for a
+    viewer with subtitles off; hidden, for none — and hands a subtitle
+    that brought a look of its own from its file back to the chosen
+    style."""
 
     changed = Signal()
 
@@ -388,6 +406,28 @@ class FormattingBar(QWidget):
         self.position_button.setMenu(self.position_menu)
         layout.addWidget(self.position_button)
 
+        # What the subtitle is besides its text, kept beside it as its
+        # position is: when it is shown, and the look its file gave it.
+        self.subtitle_button = QPushButton()
+        self.subtitle_button.setObjectName('subtitle_formatting_subtitle')
+        self.subtitle_button.setProperty('class', 'subtitle_formatting_button')
+        self.subtitle_button.setCursor(Qt.PointingHandCursor)
+        self.subtitle_button.setFocusPolicy(Qt.NoFocus)
+        self.subtitle_button.setIconSize(QSize(16, 16))
+        self.subtitle_menu = QMenu(self.subtitle_button)
+        self.subtitle_menu.setObjectName('subtitle_formatting_menu')
+        self.forced_action = self.subtitle_menu.addAction(_('formatting.forced'))
+        self.forced_action.setCheckable(True)
+        self.forced_action.toggled.connect(lambda on: self._set_shown('forced', on))
+        self.hidden_action = self.subtitle_menu.addAction(_('formatting.hidden'))
+        self.hidden_action.setCheckable(True)
+        self.hidden_action.toggled.connect(lambda on: self._set_shown('hidden', on))
+        self.subtitle_menu.addSeparator()
+        self.look_action = self.subtitle_menu.addAction(_('formatting.look_clear'), self._clear_look)
+        self.subtitle_menu.aboutToShow.connect(self._show_subtitle)
+        self.subtitle_button.setMenu(self.subtitle_menu)
+        layout.addWidget(self.subtitle_button)
+
         self.clear_button = QPushButton()
         self.clear_button.setIcon(_clear_icon())
         self.clear_button.setIconSize(QSize(16, 16))
@@ -434,6 +474,10 @@ class FormattingBar(QWidget):
             label.setText(_(f'formatting.position_{key}'))
             self.place_spins[key].setToolTip(_(f'formatting.position_{key}_tip'))
         self.place_reset_action.setText(_('formatting.position_reset'))
+        self.subtitle_button.setToolTip(_('formatting.subtitle'))
+        self.forced_action.setText(_('formatting.forced'))
+        self.hidden_action.setText(_('formatting.hidden'))
+        self.look_action.setText(_('formatting.look_clear'))
         self.clear_button.setToolTip(_('formatting.clear'))
 
     def refresh(self):
@@ -449,6 +493,14 @@ class FormattingBar(QWidget):
         self.position_button.setIcon(_position_icon(keypad, '#ffffff' if placed else '#b8cee0'))
         for key, cell in self.position_cells.items():
             cell.setChecked(key == keypad)
+        # Lit, as the position is when the subtitle is placed, while the
+        # subtitle is anything but ordinary: forced, hidden, or in a look
+        # of its own.
+        segment = self.segment()
+        self.subtitle_button.setVisible(segment is not None)
+        unusual = segment is not None and bool(segment.get('forced') or segment.get('hidden')
+                                               or subtitld_look.of(segment))
+        self.subtitle_button.setIcon(_subtitle_icon('#ffffff' if unusual else '#b8cee0'))
 
     def _step(self):
         """One undo step for what follows."""
@@ -543,6 +595,41 @@ class FormattingBar(QWidget):
         self.refresh()
         session.set_unsaved(True)
 
+    # --- when it is shown, and its own look -----------------------------------
+    def _show_subtitle(self):
+        """The menu opens: it shows what the subtitle is now."""
+        segment = self.segment()
+        for key, action in (('forced', self.forced_action), ('hidden', self.hidden_action)):
+            action.blockSignals(True)
+            action.setChecked(bool(segment and segment.get(key)))
+            action.blockSignals(False)
+        self.look_action.setEnabled(bool(segment and subtitld_look.of(segment)))
+
+    def _set_shown(self, key, on):
+        """Forced (shown with subtitles off) or hidden (shown to nobody),
+        on or off: kept on the subtitle only while it is on."""
+        segment = self.segment()
+        if segment is None or bool(segment.get(key)) == on:
+            return
+        self._step()
+        if on:
+            segment[key] = True
+        else:
+            segment.pop(key, None)
+        self.refresh()
+        session.set_unsaved(True)
+
+    def _clear_look(self):
+        """Draw the subtitle in the chosen style again, not in the look its
+        file brought."""
+        segment = self.segment()
+        if segment is None or not subtitld_look.of(segment):
+            return
+        self._step()
+        subtitld_look.store(segment, {})
+        self.refresh()
+        session.set_unsaved(True)
+
     def _clear(self):
         self._step()
         clear_formatting(self.textedit)
@@ -550,6 +637,10 @@ class FormattingBar(QWidget):
             segment = self.segment()
             if segment is not None and position.of(segment).any():
                 position.store(segment, position.of(segment)._replace(h='', v='', rotate=(0.0, 0.0, 0.0)))
+                session.set_unsaved(True)
+            # Formatting gone, all of it: the look a file gave it as well.
+            if segment is not None and subtitld_look.of(segment):
+                subtitld_look.store(segment, {})
                 session.set_unsaved(True)
             if alignment(self.textedit) != 2:
                 set_alignment(self.textedit, 2)
