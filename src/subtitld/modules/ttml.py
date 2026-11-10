@@ -257,6 +257,27 @@ def _timed_regions(root, clock):
     return found
 
 
+def _most_regions_at_once(shown):
+    """The most regions any one moment has on screen, for [(start, stop,
+    region)]. Swept in time order, so a film's worth of subtitles costs a
+    sort rather than every subtitle against every other."""
+    events = []
+    for start, stop, region in shown:
+        if region and start is not None and stop is not None and stop > start:
+            events.append((start, 1, region))
+            events.append((stop, -1, region))
+    # At one instant what ends goes before what begins: one subtitle
+    # following another is not two on screen at once.
+    events.sort(key=lambda event: (event[0], event[1]))
+    showing, most = {}, 0
+    for _moment, change, region in events:
+        showing[region] = showing.get(region, 0) + change
+        if not showing[region]:
+            del showing[region]
+        most = max(most, len(showing))
+    return most
+
+
 class _Frame:
     """Turns a region's lengths into percentages of the picture."""
 
@@ -1090,12 +1111,7 @@ def check(text, profile='imsc1.1'):
     # No more than four regions on screen at once, and a file states its
     # shape once: either the 1.1 way or the 1.0.1 way, never both.
     if profile in ('imsc1', 'imsc1.1'):
-        shown = _timed_regions(root, _Clock(root))
-        crowded = 0
-        for moment in sorted({start for start, _stop, _region in shown if start is not None}):
-            crowded = max(crowded, len({region for start, stop, region in shown
-                                        if region and start is not None and stop is not None
-                                        and start <= moment < stop}))
+        crowded = _most_regions_at_once(_timed_regions(root, _Clock(root)))
         if crowded > 4:
             problems.append(f'{crowded} regions are on screen at once: IMSC allows at most four')
         if _attr(root, 'aspectRatio') and _attr(root, 'displayAspectRatio'):

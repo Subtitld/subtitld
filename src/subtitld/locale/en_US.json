@@ -568,6 +568,8 @@
     "export_dialog.ttml_profile_imsc1": "IMSC 1.0.1 Text",
     "export_dialog.ttml_profile_imsc11": "IMSC 1.1 Text",
     "export_dialog.ttml_profile_ebuttd": "EBU-TT-D",
+    "export_dialog.ttml_check_clean": "Nothing Subtitld checks for breaks {profile} in this file.",
+    "export_dialog.ttml_check_found": "This file would break {profile}:",
     "export_dialog.timecode": "Timecode",
     "export_dialog.timecode_drop": "Drop-frame (00:00:01;00), as broadcast uses",
     "export_dialog.timecode_non_drop": "Non-drop-frame (00:00:01:00)",

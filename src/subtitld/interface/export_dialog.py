@@ -16,6 +16,7 @@ from subtitld.modules import csv_export
 from subtitld.modules import export_options
 from subtitld.modules import mcc
 from subtitld.modules import session
+from subtitld.modules import ttml
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'SBV', 'SUB', 'XML', 'USF', 'JSON', 'BCC']
@@ -193,6 +194,17 @@ class _SubtitlesPanel(QWidget):
             self.profile_combo.combobox.addItem(_(f'export_dialog.ttml_profile_{name}'), profile)
         row.addWidget(self.profile_combo, 1)
         self.layout().addWidget(self.ass_options)
+        # What the file about to be written would break in the profile it
+        # declares, as ttml.check finds it, while there is still time to
+        # change something.
+        self.check_label = QLabel()
+        self.check_label.setObjectName('export_dialog_ttml_check')
+        self.check_label.setWordWrap(True)
+        self.check_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # In from the edge as far as the fields' own text is.
+        self.check_label.setContentsMargins(6, 4, 6, 4)
+        self.layout().addWidget(self.check_label)
+        self.profile_combo.combobox.currentIndexChanged.connect(self._run_check)
 
         self.usf_options = QWidget()
         self.usf_options.setLayout(QVBoxLayout())
@@ -286,6 +298,27 @@ class _SubtitlesPanel(QWidget):
         # Only TTML and DFXP have a profile to declare.
         self.profile_combo.setVisible(fmt in ('DFXP', 'TTML'))
         self.usf_options.setVisible(fmt == 'USF')
+        self._run_check()
+
+    def _run_check(self, *_args):
+        """What the TTML this export writes would break in its profile:
+        the file written as it will be, then read back by ttml.check."""
+        fmt = self.format_combo.currentText()
+        segments = session.SUBTITLE.get('segments') or []
+        if fmt not in ('DFXP', 'TTML') or not segments:
+            self.check_label.setVisible(False)
+            return
+        profile = self.profile_combo.combobox.currentData() or 'ttml1'
+        written = ttml.write(segments, session.SUBTITLE.get('language') or 'en', profile=profile,
+                             metadata=session.SUBTITLE.get('metadata'))
+        problems = ttml.check(written, profile)
+        name = self.profile_combo.combobox.currentText()
+        if problems:
+            self.check_label.setText('\n'.join([_('export_dialog.ttml_check_found').format(profile=name)]
+                                               + [f'\u2022 {problem}' for problem in problems]))
+        else:
+            self.check_label.setText(_('export_dialog.ttml_check_clean').format(profile=name))
+        self.check_label.setVisible(True)
 
     def get_config(self):
         fmt = self.format_combo.currentText()
