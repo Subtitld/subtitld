@@ -14,6 +14,8 @@ depends=(
     'ffmpeg'
     # Live co-editing: media sent directly between collaborators.
     'libdatachannel'
+    # Live co-editing's voice call.
+    'opus'
     'portaudio'
     'pyside6'
     'python'

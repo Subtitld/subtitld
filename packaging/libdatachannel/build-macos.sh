@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build libdatachannel (live co-editing's peer-to-peer media transfer) for the macOS package: data channels only
+# Build libdatachannel (live co-editing's peer-to-peer media transfer) and libopus (its voice call) for the macOS package: data channels only
 # (no media, no websocket), with Mbed TLS linked in, for the machine's architecture (Apple Silicon on CI).
 #
 #   packaging/libdatachannel/build-macos.sh            # → packaging/libdatachannel/dist/macos-arm64/
@@ -9,6 +9,8 @@ set -euo pipefail
 
 LIBDATACHANNEL=v0.23.2
 MBEDTLS=v3.6.4
+OPUS=1.6.1
+OPUS_SHA256=6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1
 ARCH=$(uname -m)
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT="$HERE/dist/macos-$ARCH"
@@ -44,6 +46,24 @@ cp libdatachannel/LICENSE "$OUT/licenses/libdatachannel.txt"
 cp mbedtls/LICENSE "$OUT/licenses/mbedtls.txt"
 cp libdatachannel/deps/libjuice/LICENSE "$OUT/licenses/libjuice.txt"
 cp libdatachannel/deps/usrsctp/LICENSE.md "$OUT/licenses/usrsctp.txt"
-echo "libdatachannel $LIBDATACHANNEL, Mbed TLS $MBEDTLS, macOS $MACOSX_DEPLOYMENT_TARGET+ $ARCH" > "$OUT/VERSION"
-otool -L "$OUT/libdatachannel.dylib"
+
+# libopus, for the voice call (see build-linux.sh). Here with opus-ctl.c linked in: its encoder settings go
+# through a variadic function, which ctypes can't call rightly on Apple Silicon, and opus-ctl.c's two functions
+# take a fixed argument instead. So libopus is built static, then linked with them into one library.
+curl -sfLO "https://downloads.xiph.org/releases/opus/opus-$OPUS.tar.gz"
+echo "$OPUS_SHA256  opus-$OPUS.tar.gz" | shasum -a 256 -c - > /dev/null
+tar -xzf "opus-$OPUS.tar.gz"
+cmake -S "opus-$OPUS" -B opus-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPUS_BUILD_SHARED_LIBRARY=OFF \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_BUILD_TESTING=OFF \
+  -DOPUS_INSTALL_PKG_CONFIG_MODULE=OFF
+cmake --build opus-build
+cc -dynamiclib -O2 -o "$OUT/libopus.0.dylib" -install_name @rpath/libopus.0.dylib -I "opus-$OPUS/include" \
+  "$HERE/opus-ctl.c" -Wl,-force_load,opus-build/libopus.a
+strip -x "$OUT/libopus.0.dylib"
+codesign --force --sign - "$OUT/libopus.0.dylib"
+cp "opus-$OPUS/COPYING" "$OUT/licenses/opus.txt"
+
+echo "libdatachannel $LIBDATACHANNEL, Mbed TLS $MBEDTLS, Opus $OPUS, macOS $MACOSX_DEPLOYMENT_TARGET+ $ARCH" > "$OUT/VERSION"
+otool -L "$OUT/libdatachannel.dylib" "$OUT/libopus.0.dylib"
+nm -gU "$OUT/libopus.0.dylib" | grep -E " _(opus_encoder_create|subtitld_opus_encoder_set)$"
 ls -la "$OUT"

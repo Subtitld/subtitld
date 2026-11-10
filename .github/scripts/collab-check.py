@@ -1,10 +1,11 @@
 """Live co-editing in a package: run with the package's own Python (snap run --shell, flatpak run --command).
 
 Live co-editing's libraries load only once a project is shared, after the start-up smoke test, so check them
-here: Qt's websockets (the link to subtitld.cc), and libdatachannel (media between collaborators) carrying 4 MB
-between two connections in this process.
+here: Qt's websockets (the link to subtitld.cc), libdatachannel (media between collaborators) carrying 4 MB
+between two connections in this process, and libopus (the voice call) encoding a tone and decoding it back.
 """
 import hashlib
+import math
 import os
 import sys
 import threading
@@ -12,7 +13,7 @@ import threading
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWebSockets import QWebSocket
 
-from subtitld.modules import rtc
+from subtitld.modules import opus, rtc
 
 app = QCoreApplication(sys.argv)
 QWebSocket()
@@ -53,3 +54,13 @@ if not done.wait(30) or digest.hexdigest() != hashlib.sha256(blob).hexdigest():
 offerer.close()
 answerer.close()
 print('libdatachannel: 4 MB across a link, intact')
+
+if not opus.available():
+    sys.exit('libopus: not found, or its settings do not reach it')
+encoder, decoder = opus.Encoder(), opus.Decoder()
+tone = [0.4 * math.sin(2 * math.pi * 220 * i / opus.RATE) for i in range(opus.FRAME)]
+frames = [decoder.decode(encoder.encode(tone)) for _ in range(10)]
+energy = sum(x * x for x in frames[-1]) / opus.FRAME
+if not 0.03 < energy < 0.15:
+    sys.exit(f'libopus: a tone did not come back ({energy:.3f})')
+print('libopus:', opus.library().opus_get_version_string().decode(), '- a tone there and back')

@@ -25,6 +25,7 @@ BITRATE = 32000
 
 _APPLICATION_VOIP = 2048
 _SET_BITRATE = 4002
+_GET_BITRATE = 4003
 _SET_COMPLEXITY = 4010
 _SET_INBAND_FEC = 4012
 _SET_PACKET_LOSS_PERC = 4014
@@ -87,6 +88,12 @@ def library():
                                               ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.c_int]
             lib.opus_decoder_destroy.argtypes = [ctypes.c_void_p]
             lib.opus_get_version_string.restype = ctypes.c_char_p
+            # Settings with a fixed argument, where libopus was built with them (macOS: build-macos.sh).
+            try:
+                lib.subtitld_opus_encoder_set.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int32]
+                lib.subtitld_opus_encoder_get.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int32)]
+            except AttributeError:
+                pass
             _lib = lib
             log.info('opus: %s from %s', lib.opus_get_version_string().decode(), path)
             return lib
@@ -94,14 +101,53 @@ def library():
         return None
 
 
+_works = None
+
+
 def available():
-    return library() is not None
+    """Whether libopus is here and works: opus_encoder_ctl takes its value as a variadic argument, which ctypes
+    passes rightly on some platforms only (Apple Silicon is the doubtful one), so an encoder set up here has to
+    read its bitrate back as it was set."""
+    global _works
+    if _works is None:
+        _works = False
+        if library() is not None:
+            try:
+                encoder = Encoder()
+                bitrate = _get(_lib, encoder.state, _GET_BITRATE)
+                if bitrate == BITRATE:
+                    _works = True
+                else:
+                    log.warning('opus: settings do not reach libopus through ctypes here (bitrate %s): no voice',
+                                bitrate)
+                encoder.close()
+            except Exception as error:  # noqa: BLE001
+                log.warning('opus: libopus does not work here: %s', error)
+    return _works
+
+
+def _fixed(lib):
+    """libopus built with packaging/libdatachannel/opus-ctl.c: settings without a variadic call."""
+    return hasattr(lib, 'subtitld_opus_encoder_set')
 
 
 def _ctl(lib, encoder, request, value):
-    # opus_encoder_ctl is variadic; its value goes as a C int.
-    if lib.opus_encoder_ctl(ctypes.c_void_p(encoder), ctypes.c_int(request), ctypes.c_int(value)) != 0:
+    if _fixed(lib):
+        result = lib.subtitld_opus_encoder_set(encoder, request, value)
+    else:
+        # opus_encoder_ctl is variadic; its value goes as a C int.
+        result = lib.opus_encoder_ctl(ctypes.c_void_p(encoder), ctypes.c_int(request), ctypes.c_int(value))
+    if result != 0:
         raise RuntimeError(f'opus_encoder_ctl({request}) failed')
+
+
+def _get(lib, encoder, request):
+    value = ctypes.c_int32()
+    if _fixed(lib):
+        result = lib.subtitld_opus_encoder_get(encoder, request, ctypes.byref(value))
+    else:
+        result = lib.opus_encoder_ctl(ctypes.c_void_p(encoder), ctypes.c_int(request), ctypes.byref(value))
+    return value.value if result == 0 else None
 
 
 class Encoder:

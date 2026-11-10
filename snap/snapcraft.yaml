@@ -154,6 +154,8 @@ parts:
       - build-essential
     stage-packages:
       - ffmpeg
+      # libopus, the live co-editing voice call's codec (modules/opus.py).
+      - libopus0
       # dav1d, for the FFmpeg that replaces PySide6's (qt-ffmpeg part).
       - libdav1d5
       - libpulse0
