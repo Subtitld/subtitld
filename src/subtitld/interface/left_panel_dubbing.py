@@ -1319,6 +1319,26 @@ def _populate_engines(self):
     global_panel_dubbing_tabwidget_update(self)
 
 
+def show_project_dubs():
+    """A project that already has dubs shows and plays them: dubbing goes on, as its checkbox would turn it on.
+    Called when a project opens and when collaborators' changes come in (a shared project's dubs arrive
+    after it opens); never turns dubbing off."""
+    if session.CONFIG.get('dubbing', {}).get('enabled'):
+        return
+    if not any(segment.get('dubbing') for segment in session.SUBTITLE.get('segments') or []):
+        return
+    for window in QApplication.topLevelWidgets():
+        checkbox = getattr(window, 'left_panel_dubbing_enable_checkbox', None)
+        if checkbox is not None:
+            checkbox.setChecked(True)
+            left_panel_dubbing_enable_checkbox_clicked(window)
+            return
+    session.CONFIG.setdefault('dubbing', {})['enabled'] = True
+
+
+session._document_loaded_callbacks.append(show_project_dubs)
+
+
 def left_panel_dubbing_enable_checkbox_clicked(self):
     enabled = self.left_panel_dubbing_enable_checkbox.isChecked()
     session.CONFIG['dubbing']['enabled'] = enabled

@@ -134,12 +134,27 @@ class Call:
         def playing(outdata, frames, _time, _status):
             outdata[:, 0] = self.playback(frames)
 
-        inp = sd.InputStream(samplerate=opus.RATE, channels=1, dtype='float32', blocksize=opus.FRAME,
-                             device=input_device, callback=captured, latency='low')
-        out = sd.OutputStream(samplerate=opus.RATE, channels=1, dtype='float32', blocksize=opus.FRAME,
-                              device=output_device, callback=playing, latency='low')
-        inp.start()
-        out.start()
+        def opened(kind, device, callback):
+            """The stream on the chosen device; on the system's default one when that won't open (a sound card
+            opened directly that something else holds: PortAudio's "Device unavailable")."""
+            for candidate in ([device, None] if device is not None else [None]):
+                try:
+                    stream = kind(samplerate=opus.RATE, channels=1, dtype='float32', blocksize=opus.FRAME,
+                                  device=candidate, callback=callback, latency='low')
+                    stream.start()
+                    return stream
+                except sd.PortAudioError as error:
+                    if candidate is None:
+                        raise
+                    log.warning('voice: device %s would not open (%s): the default one instead', candidate, error)
+
+        inp = opened(sd.InputStream, input_device, captured)
+        try:
+            out = opened(sd.OutputStream, output_device, playing)
+        except Exception:
+            inp.stop()
+            inp.close()
+            raise
         self._streams = [inp, out]
 
     def sync(self, me, others):

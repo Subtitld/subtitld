@@ -310,6 +310,9 @@ def _received(file_hash, path):
             # A dub file came: the subtitles that name it play it now.
             collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
             _tell('dubs')
+        if entry.get('kind') == 'stem':
+            # Separated audio for the video open here: the player takes it once all of it is here.
+            _tell('stems')
         _announce()
         sender = max(download.sources, key=download.sources.get) if download.sources else None
         handle = ((_connection.engine.peers.get(sender) or {}).get('user') or {}).get('handle', '') if _connection else ''
@@ -819,7 +822,9 @@ def voice_join():
     _call = collab_voice.Call(lambda peer, payload: engine.rtc(peer, payload),
                               relays=lambda: collab_transfer.relay_urls(engine.ice))
     try:
-        _call.start(input_device=(session.CONFIG.get('record') or {}).get('device'))
+        # The system's own microphone and speakers (PipeWire or PulseAudio on Linux), not the device picked
+        # for recording dubs: that one can be any input of a sound card, opened directly.
+        _call.start()
     except Exception as error:  # a device that won't open
         log.warning('collab: could not open the audio devices for the call: %s', error)
         _call.stop()

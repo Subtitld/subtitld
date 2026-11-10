@@ -171,6 +171,16 @@ engine.on_message({'type': 'welcome', 'peer': 'me', 'you': {'handle': 'ana'}, 's
 engine.on_message({'type': 'changes', 'batches': []})
 check('then presence and the lock go', [m['type'] for m in sent], ['hello', 'presence', 'lock'])
 check("the relay subtitld.cc offers is kept", engine.ice, [relay])
+del sent[:]
+engine.have(['a' * 64])
+engine.have(['a' * 64])
+check('what this app can send goes once, not again unchanged', [m['type'] for m in sent], ['have'])
+told = []
+engine.listeners.append(lambda kind, *args: told.append(kind))
+for _ in range(3):
+    engine.on_message({'type': 'have', 'peer': 'p9', 'user': {'handle': 'x'}, 'hashes': ['b' * 64]})
+check("someone's unchanged list is news once", told.count('media'), 1)
+engine.have([])  # as it was: nothing to send (later checks count what a reconnection says)
 heard = []
 engine.listeners.append(lambda kind, *args: heard.append((kind, *args)))
 engine.on_message({'type': 'chat', 'message': {'id': 'm1'}})

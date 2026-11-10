@@ -107,6 +107,7 @@ class LiveCard(QWidget):
         self._link = None         # a project a subtitld:// link named, waiting for a sign-in
         self._busy = False
         self._pending_confirm = None
+        self._shown_here = None   # who was here when the card last showed it (presence alone changes nothing)
 
         self.title = _text('subtitldcc_card_title')
         layout.addWidget(self.title)
@@ -208,7 +209,9 @@ class LiveCard(QWidget):
     # --- What it shows -----------------------------------------------------------------------------------
 
     def _refresh_editor(self):
-        from subtitld.interface import left_panel, left_panel_subtitleslist
+        from subtitld.interface import left_panel, left_panel_dubbing, left_panel_subtitleslist
+
+        left_panel_dubbing.show_project_dubs()  # the project's dubs, as they arrive, seen and heard here too
 
         window = self.panel.window_
         start_screen = getattr(window, 'start_screen', None)
@@ -237,11 +240,39 @@ class LiveCard(QWidget):
             left_panel_subtitleslist.refresh_lock(window)
         if kind in ('document', 'dubs') and not self._editor_refresh.isActive():
             self._editor_refresh.start()
+        if kind == 'stems':
+            self._take_stems()
         if kind in ('shared', 'failed'):
             self._project = None
             self._projects = None if kind == 'shared' else self._projects
+        if kind == 'peers':
+            # Presence comes several times a second while someone plays the video; the card shows who is here.
+            here = self._here()
+            if here == self._shown_here:
+                return
+            self._shown_here = here
         if kind in ('state', 'peers', 'shared', 'failed', 'conflicts', 'media') and not self.isHidden():
             self.refresh(load=kind == 'shared')
+
+    def _take_stems(self):
+        """Separated audio that came from a collaborator: once the original, the vocals and the background are
+        all here, the player takes them (the music/voice slider comes on), as when the video is opened again."""
+        from subtitld.modules import collab_media
+
+        window = self.panel.window_
+        video = (session.VIDEO or {}).get('filepath')
+        extractor = getattr(window, 'music_voice_separation_thread', None)
+        if not video or extractor is None:
+            return
+        paths = [collab_media.destination('stem', f'{role}.flac') for role in collab_media.STEM_ROLES]
+        if all(path and os.path.isfile(path) for path in paths):
+            extractor.filename = video
+            extractor.start()
+
+    def _here(self):
+        connection = collab_service.connection()
+        engine = connection.engine if connection is not None else None
+        return sorted((p.get('user') or {}).get('handle', '') for p in (engine.peers.values() if engine else []))
 
     def refresh(self, load=True):
         connected = service.is_connected()
