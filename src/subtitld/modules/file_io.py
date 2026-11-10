@@ -22,6 +22,7 @@ from subtitld.modules import collab_state
 from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
 from subtitld.modules import ebustl
+from subtitld.modules import fcpxml
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
@@ -674,7 +675,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     # before must not lend its title to the next.
     session.SUBTITLE.pop('metadata', None)
 
-    if subtitle_file and os.path.isfile(subtitle_file):
+    # Final Cut Pro's bundle is a folder with the document in it.
+    if subtitle_file and os.path.isdir(subtitle_file) and subtitle_file.lower().rstrip('/\\').endswith('.fcpxmld'):
+        subtitle_file = subtitle_file.rstrip('/\\')
+    if subtitle_file and (os.path.isfile(subtitle_file) or (os.path.isdir(subtitle_file) and subtitle_file.lower().endswith('.fcpxmld'))):
         if subtitle_file.lower().endswith(('.srt')):
             segments_list = srt.read(subtitle_file)
 
@@ -722,6 +726,26 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list = legacy.parse(_text_of(subtitle_file), 'captionate')
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
+
+        elif subtitle_file.lower().endswith(('.fcpxml', '.fcpxmld')):
+            # Final Cut Pro's captions (its titles, where it has none): the
+            # first language the subtitles', the others their translations,
+            # as SAMI's are; the sequence's frame rate, drop-frame and start
+            # kept to save it again as it was.
+            subtitle_format = 'FCPXML'
+            try:
+                segments_list, fcp_settings = fcpxml.read(subtitle_file)
+            except (OSError, ValueError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            codes = {tag: _known_language(tag) or tag.lower() for tag in fcp_settings['languages']}
+            if fcp_settings['languages'] and _known_language(fcp_settings['languages'][0]):
+                session.SUBTITLE['language'] = _known_language(fcp_settings['languages'][0])
+            for segment in segments_list:
+                if 'translations' in segment:
+                    segment['translations'] = {codes[tag]: text for tag, text in segment['translations'].items()}
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, timeline_start=fcp_settings['start'],
+                                             timecode='drop' if fcp_settings['drop'] else 'non-drop',
+                                             **({'fps': fcp_settings['fps']} if fcp_settings['fps'] else {}))
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
@@ -1701,6 +1725,26 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                              else avid_subcap.STARTS[0],
                              encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                              line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'FCPXML':
+            # A Final Cut Pro project of captions: a role for each language
+            # written (the original and the translation, when the export
+            # asks for both, as two caption languages), on the frames of the
+            # export's rate (the video's), from the timeline start it asks.
+            translation = options.get('language') or ''
+            if options.get('text') == 'both' and translation:
+                tracks = [(language, export_options.prepare(SUBTITLE['segments'], dict(options, text='original'))),
+                          (translation, [segment for segment in export_options.prepare(
+                              SUBTITLE['segments'], dict(options, text='translation'))
+                              if str((segment.get('translations') or {}).get(translation) or '').strip()])]
+            else:
+                tracks = [(translation if options.get('text') == 'translation' and translation else language, segments)]
+            fcpxml.save(final_file, tracks, fps=float(options.get('fps') or VIDEO.get('framerate') or fcpxml.DEFAULT_FPS),
+                        drop=options.get('timecode') != 'non-drop',
+                        start=options.get('timeline_start') if options.get('timeline_start') in fcpxml.STARTS
+                        else fcpxml.STARTS[0],
+                        title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file.rstrip('/\\')))[0],
+                        width=VIDEO.get('width') or 1920, height=VIDEO.get('height') or 1080)
 
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.

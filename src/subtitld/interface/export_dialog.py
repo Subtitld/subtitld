@@ -19,7 +19,7 @@ from subtitld.modules import session
 from subtitld.modules import ttml
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
@@ -102,7 +102,7 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.line_ends_combo, 1)
         self.layout().addWidget(self.srt_options)
 
-        # SUB (MicroDVD) and Avid SubCap count in frames.
+        # SUB (MicroDVD), Avid SubCap and Final Cut Pro count in frames.
         self.sub_options = QWidget()
         row = QHBoxLayout(self.sub_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -132,7 +132,8 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.timecode_combo, 1)
         self.layout().addWidget(self.scc_options)
 
-        # Avid SubCap: the timecode the editor's timeline starts at.
+        # Avid SubCap and Final Cut Pro: the timecode the editor's timeline
+        # starts at.
         self.timeline_options = QWidget()
         row = QHBoxLayout(self.timeline_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -319,19 +320,19 @@ class _SubtitlesPanel(QWidget):
         self._speaker_choices(fmt)
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
         self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID'))
-        # SAMI writes the original and the translation as two languages.
+        # SAMI and FCPXML write the original and the translation as two languages.
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
         combo = self.text_combo.combobox
         for index in range(combo.count()):
             text, language = combo.itemData(index)
             if text == 'both':
-                combo.setItemText(index, _('export_dialog.text_both_sami' if fmt == 'SAMI' else 'export_dialog.text_both')
+                combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
-        self.sub_options.setVisible(fmt in ('SUB', 'AVID'))
+        self.sub_options.setVisible(fmt in ('SUB', 'AVID', 'FCPXML'))
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
-        self.scc_options.setVisible(fmt == 'SCC' or (fmt == 'AVID' and _has_drop_frame(rate)))
-        self.timeline_options.setVisible(fmt == 'AVID')
+        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML') and _has_drop_frame(rate)))
+        self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
         self.stl_options.setVisible(fmt == 'STL')
         self.mcc_options.setVisible(fmt == 'MCC')
         # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
@@ -422,9 +423,9 @@ class _SubtitlesPanel(QWidget):
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID'):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'AVID'):
+        if fmt in ('SUB', 'AVID', 'FCPXML'):
             options['fps'] = choices['fps']
-        if fmt == 'AVID':
+        if fmt in ('AVID', 'FCPXML'):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])
         if fmt in ('ASS', 'DFXP', 'TTML'):
             options['look'] = choices['look']

@@ -1,15 +1,15 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, AVID, SBV, SUB, BCC, XML, LRC, UltraStar
-and the player-era formats); USF, USFX and JSON keep the project as it is.
-Karaoke timing is formatting (modules.karaoke): removing the formatting
-takes the word timing of LRC and UltraStar with it.
+DFXP, TTML, SAMI, SCC, MCC, STL, AVID, FCPXML, SBV, SUB, BCC, XML, LRC,
+UltraStar and the player-era formats); USF, USFX and JSON keep the project
+as it is. Karaoke timing is formatting (modules.karaoke): removing the
+formatting takes the word timing of LRC and UltraStar with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
-                 original, then the translation below it; SAMI: each as a
-                 language of its own)
+                 original, then the translation below it; SAMI and FCPXML:
+                 each as a language of its own)
     language     the translation's language code
     speakers     'none'; 'prefix': the speaker's name before the text; or
                  'voice', the format's own way: WebVTT's voice tags
@@ -27,11 +27,13 @@ And for a format of its own:
                  'cp1250' (Central European), 'cp1251' (Cyrillic) or
                  'cp949' (Korean)
     line_ends    SRT, SAMI, SUB, LRC and AVID: 'lf' or 'crlf'
-    fps          SUB and AVID: the frame rate its frame numbers count in
+    fps          SUB and AVID: the frame rate its frame numbers count in;
+                 FCPXML: its sequence's, whose frames the captions are on
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID
-                 the same, at 29.97 and 59.94, the rates that have it
+                 and FCPXML the same, at 29.97 and 59.94, the rates that
+                 have it
     timeline_start
-                 AVID: the timecode the editor's timeline starts at,
+                 AVID and FCPXML: the timecode the editor's timeline starts at,
                  '00:00:00:00' or '01:00:00:00'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
     mcc_captions MCC: 'both' (CEA-608 and CEA-708) or '608' (CEA-608 alone)
@@ -62,7 +64,7 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'SBV', 'SUB', 'BCC', 'XML',
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'SBV', 'SUB', 'BCC', 'XML',
                 'LRC', 'ULTRASTAR',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
