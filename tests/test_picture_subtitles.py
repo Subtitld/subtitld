@@ -58,6 +58,10 @@ check('the frame size', {(p.screen_width, p.screen_height) for p in pictures}, {
 check('the second at the top, the others at the bottom', [p.y < 240 for p in pictures], [False, True, False])
 width, height, indices = picture_samples.draw(CUES[1][2])
 check('its pixels, as drawn', (pictures[1].width, pictures[1].height, pictures[1].indices == indices), (width, height, True))
+picture_samples.write_vobsub(str(folder / 'forced'), CUES, language='pt', forced=(0,))
+check('the forced flag, read from the SPU that starts with it',
+      ([p.forced for p in pictures], [p.forced for p in vobsub.read(str(folder / 'forced.idx'))[0]]),
+      ([False, False, False], [True, False, False]))
 check('four colours from the palette, the background clear',
       pictures[1].colours, [(0, 0, 0, 0), (240, 240, 240, 255), (128, 128, 128, 255), (16, 16, 16, 255)])
 same, _track = vobsub.read(str(folder / 'film.sub'))
@@ -96,6 +100,15 @@ if FFPROBE:
                              str(folder / 'film.sup')], capture_output=True, text=True).stdout.split()
     check('FFmpeg shows and clears them at the same times', probed,
           ['1.000000,1', '3.500000,0', '4.000000,1', '6.000000,0', '65.250000,1', '68.000000,0'])
+
+check('the forced flag, which a player shows with subtitles off',
+      [p.forced for p in shown], [False, False, False])
+picture_samples.write_pgs(str(folder / 'forced.sup'), CUES, forced=(1,))
+marked = pgs.read(str(folder / 'forced.sup'))
+check('set on the one that carries it', [p.forced for p in marked], [False, True, False])
+check('and carried on to the subtitle',
+      [s.get('forced') for s in picture_subtitles.segments(marked, ['one', 'two', 'three'])],
+      [None, True, None])
 
 print('for OCR')
 picture = picture_subtitles.Picture(0, 1, 10, 20, 4, 3, bytes([0, 0, 0, 0,

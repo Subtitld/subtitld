@@ -99,11 +99,23 @@
       top: `${inset.top}px`, bottom: `${inset.bottom}px`,
     });
     safe.dataset.align = String(job.align);
+    // Which way the writing runs. Arabic and Hebrew read right to left, and
+    // a cue's base direction decides where its punctuation lands and which
+    // end "start" is; the characters' own direction does the rest.
+    safe.style.direction = job.direction || '';
     safe.innerHTML = '';
     if (job.html !== null) {
       const cue = document.createElement('div');
       cue.className = 'cue';
       cue.innerHTML = job.html;
+      // What the file the subtitle came from says it should look like
+      // (modules.look): inline, so it wins over the style's own rules for
+      // the properties it names and leaves the style the rest.
+      for (const [name, value] of Object.entries(job.look || {})) cue.style.setProperty(name, value);
+      // How a run of the other direction sits inside the line, where the
+      // file forces it: embedded as its own run, isolated from what is
+      // around it, or whatever the characters themselves say overruled.
+      if (job.bidi) cue.style.unicodeBidi = job.bidi === 'override' ? 'bidi-override' : job.bidi;
       const [turnX, turnY, turnZ] = place.rotate || [0, 0, 0];
       if (turnX || turnY || turnZ) {
         // Counter-clockwise, as USF and ASS both count: the screen's y
