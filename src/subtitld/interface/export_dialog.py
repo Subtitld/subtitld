@@ -20,7 +20,8 @@ from subtitld.modules import session
 from subtitld.modules import ttml
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'AVID', 'FCPXML', 'DCP', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'CAP', 'AVID', 'FCPXML', 'DCP', 'SBV', 'SUB',
+                    'XML', 'LRC', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
@@ -103,7 +104,8 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.line_ends_combo, 1)
         self.layout().addWidget(self.srt_options)
 
-        # SUB (MicroDVD), Avid SubCap and Final Cut Pro count in frames.
+        # SUB (MicroDVD), Cheetah CAP, Avid SubCap and Final Cut Pro count in
+        # frames; MicroDVD and CAP do not say at what rate.
         self.sub_options = QWidget()
         row = QHBoxLayout(self.sub_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -356,7 +358,7 @@ class _SubtitlesPanel(QWidget):
             if text == 'both':
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
-        self.sub_options.setVisible(fmt in ('SUB', 'AVID', 'FCPXML'))
+        self.sub_options.setVisible(fmt in ('SUB', 'CAP', 'AVID', 'FCPXML'))
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
         self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML') and _has_drop_frame(rate)))
@@ -454,7 +456,7 @@ class _SubtitlesPanel(QWidget):
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID'):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'AVID', 'FCPXML'):
+        if fmt in ('SUB', 'CAP', 'AVID', 'FCPXML'):
             options['fps'] = choices['fps']
         if fmt in ('AVID', 'FCPXML'):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])

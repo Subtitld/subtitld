@@ -18,6 +18,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
+from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
 from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
@@ -920,6 +921,16 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
                                              display=stl_settings['display'], start=stl_settings['start'])
 
+        elif subtitle_file.lower().endswith('.cap'):
+            # Cheetah CAP: frames that do not say their rate, counted at the
+            # video's, else 25; the rate kept to save it again as it was.
+            subtitle_format = 'CAP'
+            try:
+                segments_list, cap_settings = cheetahcap.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cap_settings['fps'])
+
         elif subtitle_file.lower().endswith(('.mcc')):
             # MacCaption: the CEA-708 captions of its packets, else the CEA-608
             # ones; its frame rate and what it carries kept to save it again
@@ -1783,6 +1794,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                      else language,
                      title=(SUBTITLE.get('metadata') or {}).get('title')
                      or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'CAP':
+            # Frames at the export's rate, or the video's, else 25: the file
+            # does not say which.
+            cheetahcap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
 
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.
