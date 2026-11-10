@@ -209,6 +209,44 @@ check('an opaque one needs no alpha of its own to come back',
           speakers={}, language='en-us'))[0]['text'],
       '<font background="#00ff00">Green box</font>')
 
+print('what a run is drawn in, beyond its colours')
+# A caption's pen and TTML's spans say all of these, and the project file
+# is where they have to survive a save; USF has no word for most of them.
+_pens = [
+    '<font size="80%">small</font> and normal',
+    '<font edge="uniform" edge-color="#ff0000">outlined</font>',
+    '<font face="Courier New">typed</font>',
+    '<font kind="sound-effect">[door slams]</font>',
+    'H<sub>2</sub>O and x<sup>2</sup>',
+    '<blink>Breaking</blink> news',
+    '<font color="#ffd700" background="#000000cc" size="80%" kind="lyrics">all at once</font> <i>and</i> plain',
+]
+_written = USFWriter().write([{'start': i, 'end': i + 0.5, 'speaker': 'A', 'text': t} for i, t in enumerate(_pens)],
+                             speakers={}, language='en-us')
+check('read back exactly as they went in', read_back(_written), _pens)
+check('in Subtitld\'s namespace, which the file declares',
+      ('subtitldcc:size="80%"' in _written, 'subtitldcc:edge-color="#ff0000"' in _written,
+       'xmlns:subtitldcc' in _written), (True, True, True))
+check('raised, lowered and flashing text as the elements markup names',
+      ('<sub>2</sub>' in _written, '<sup>2</sup>' in _written, '<blink>Breaking</blink>' in _written),
+      (True, True, True))
+_annotated = ['彼は<font emphasis="filled sesame">本当</font>に',
+              '<ruby position="after" align="space-around">東京<rt>とうきょう</rt></ruby>へ']
+_written = USFWriter().write([{'start': i, 'end': i + 0.5, 'speaker': 'A', 'text': t} for i, t in enumerate(_annotated)],
+                             speakers={}, language='ja')
+check('emphasis marks and what a ruby says about its reading, kept',
+      (read_back(_written), 'subtitldcc:emphasis="filled sesame"' in _written,
+       '<ruby subtitldcc:align="space-around" subtitldcc:position="after">' in _written),
+      (_annotated, True, True))
+_down = USFWriter().write([{'start': 0, 'end': 1, 'speaker': 'A', 'text': '第<font combine="all">12</font>話',
+                            'writing': 'vertical-rl'}], speakers={}, language='ja')
+check('written down the picture, a number set upright in it, kept',
+      ([(s['text'], s.get('writing')) for s in USFReader().read(_down)], 'subtitldcc:writing="vertical-rl"' in _down),
+      ([('第<font combine="all">12</font>話', 'vertical-rl')], True))
+check('a project with only ordinary formatting declares no namespace',
+      'xmlns:subtitldcc' in USFWriter().write([{'start': 0, 'end': 1, 'speaker': 'A', 'text': '<i>plain</i>'}],
+                                              speakers={}, language='en-us'), False)
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

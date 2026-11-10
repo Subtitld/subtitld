@@ -1,9 +1,12 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub) or a Blu-ray PGS (.sup), or reading a
-picture track of a video, Subtitld decodes each subtitle into a picture
-(vobsub, pgs), and an add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the
-text in it. `OCRJob` runs the whole of it off the main thread:
+Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup) or a TTML file in
+IMSC's Image Profile, or reading a picture track of a video, Subtitld
+decodes each subtitle into a picture (vobsub, pgs, `imsc_pictures`), and an
+add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
+A picture whose words the file gives (IMSC's alt text) is not read: the
+file's words are better than any reading of them. `OCRJob` runs the whole
+of it off the main thread:
 
 1. decode the pictures, in a thread (0-10 %);
 2. crop each to what shows and write it as a grayscale PGM, dark text on
@@ -21,6 +24,7 @@ nothing), Subtitld's code for it, and how many pictures gave no text.
 import os
 import shutil
 import tempfile
+import urllib.parse
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -54,13 +58,78 @@ def is_picture_file(path):
     return False
 
 
+# What a TTML file is called; any of them may be in IMSC's Image Profile.
+TTML_EXTENSIONS = ('.ttml', '.dfxp', '.xml', '.itt')
+# The picture a TTML file that gives no size of its own is laid on.
+_IMSC_SCREEN = (1920, 1080)
+
+
 def read_file(path):
     """(pictures, language tag the file gives or '') of a picture subtitle file."""
     from subtitld.modules import pgs, vobsub
     if str(path).lower().endswith('.sup'):
         return pgs.read(path), ''
+    if str(path).lower().endswith(TTML_EXTENSIONS):
+        return imsc_pictures(path)
     found, track = vobsub.read(path)
     return found, track.get('language') or ''
+
+
+def imsc_pictures(path):
+    """(pictures, language tag) of a TTML file in IMSC's Image Profile: each
+    PNG where its region puts it, on the picture the file gives the size
+    of, else a 1920x1080 one, with the words its alt text gives."""
+    from subtitld.modules import ttml
+    images, language, size = ttml.read_images(path)
+    screen = tuple(int(round(side)) for side in size) if size else _IMSC_SCREEN
+    folder = os.path.dirname(os.path.abspath(path))
+    pictures = []
+    for image in images:
+        data = image['data']
+        if data is None and image['href']:
+            href = urllib.parse.unquote(urllib.parse.urlparse(image['href']).path or image['href'])
+            try:
+                with open(os.path.join(folder, href), 'rb') as handle:
+                    data = handle.read()
+            except OSError:
+                data = None
+        decoded = png_picture(data) if data else None
+        if decoded is None:
+            if not image['alt']:
+                continue
+            # No picture to be had, but words: one transparent pixel says them.
+            decoded = (1, 1, b'\x00', [(0, 0, 0, 0)])
+        width, height, indices, colours = decoded
+        origin = image['origin'] or (0.0, 0.0)
+        pictures.append(picture_subtitles.Picture(
+            image['start'], image['end'], int(round(origin[0] * screen[0] / 100)),
+            int(round(origin[1] * screen[1] / 100)), width, height, indices, colours, image['forced'],
+            screen[0], screen[1], image['alt']))
+    return pictures, language
+
+
+def png_picture(data):
+    """(width, height, indices, colours) for PNG bytes, as a Picture holds
+    them, or None when they are not a picture.
+
+    A PNG is in true colour, and a Picture in at most 256 of them. What an
+    OCR reading needs of a pixel is how light it is and how much of it
+    shows (picture_subtitles.ink), so the palette is 16 of each: grays
+    from black to white at 16 opacities, which is exactly what is drawn.
+    """
+    import numpy
+    from PySide6.QtGui import QImage
+    image = QImage.fromData(data, 'PNG')
+    if image.isNull():
+        return None
+    image = image.convertToFormat(QImage.Format_RGBA8888)
+    width, height = image.width(), image.height()
+    rows = numpy.frombuffer(image.constBits(), numpy.uint8, count=image.sizeInBytes())
+    rgba = rows.reshape(height, image.bytesPerLine())[:, :width * 4].reshape(height, width, 4).astype(numpy.float32)
+    luma = 0.299 * rgba[..., 0] + 0.587 * rgba[..., 1] + 0.114 * rgba[..., 2]
+    indices = (numpy.rint(luma / 17) * 16 + numpy.rint(rgba[..., 3] / 17)).astype(numpy.uint8)
+    colours = [(level * 17, level * 17, level * 17, alpha * 17) for level in range(16) for alpha in range(16)]
+    return width, height, indices.tobytes(), colours
 
 
 def project_language(tag):
@@ -94,7 +163,10 @@ class _Decoder(QThread):
                     return
                 cropped = picture_subtitles.crop(picture)
                 if cropped is None:
-                    continue
+                    # Nothing shows, but the file gives its words: kept for them.
+                    if not picture.text:
+                        continue
+                    cropped = picture
                 target = os.path.join(self.folder, f'{number:05d}.pgm')
                 with open(target, 'wb') as handle:
                     handle.write(picture_subtitles.pgm(cropped))
@@ -135,6 +207,7 @@ class OCRJob(QObject):
         self._texts = []
         self._confidences = []
         self._retry = []
+        self._unread = []
         self._stage = 'idle'
         self._connected = False
 
@@ -168,13 +241,17 @@ class OCRJob(QObject):
             return
         self._pictures, self._paths = pictures, paths
         self._language = self._language or language
-        if not pictures:
+        # The pictures whose words the file gives are not read again.
+        self._texts = [picture.text for picture in pictures]
+        self._confidences = [1.0 if picture.text else 0.0 for picture in pictures]
+        self._unread = [number for number, picture in enumerate(pictures) if not picture.text]
+        if not self._unread:
             self._finish()
             return
         self._stage = 'reading'
         self.progress.emit(0.1, '')
         self._connect()
-        self._provider.recognize(paths, self._language)
+        self._provider.recognize([paths[number] for number in self._unread], self._language)
 
     def _connect(self):
         self._connected = True
@@ -205,8 +282,10 @@ class OCRJob(QObject):
     @Slot(list, list)
     def _on_finished(self, texts, confidences):
         if self._stage == 'reading':
-            self._texts, self._confidences = list(texts), list(confidences)
-            self._retry = [i for i, (t, c) in enumerate(zip(texts, confidences)) if not t.strip() or c < RETRY_BELOW]
+            for number, text, confidence in zip(self._unread, texts, confidences):
+                self._texts[number], self._confidences[number] = text, confidence
+            self._retry = [number for number in self._unread
+                           if not self._texts[number].strip() or self._confidences[number] < RETRY_BELOW]
             if not self._retry:
                 self._finish()
                 return

@@ -49,7 +49,9 @@ And for a format of its own:
                  modules.ttml)
     profile      TTML and DFXP: the profile the file declares itself to be,
                  a value of modules.ttml.PROFILES ('ttml1', 'imsc1',
-                 'imsc1.1', 'ebu-tt-d')
+                 'imsc1.1', 'ebu-tt-d'), or of its IMAGE_PROFILES
+                 ('imsc1-image', 'imsc1.1-image'), which draw each
+                 subtitle as a PNG beside the file
 """
 
 from subtitld.modules import markup

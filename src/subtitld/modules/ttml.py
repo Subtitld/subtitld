@@ -24,7 +24,17 @@ Reading:
   oblique), bold, underline, line-through and a colour other than white
   become formatting tags; so does a tts:shear, which is how IMSC 1.1
   writes italics for Japanese (Netflix's profile asks for it there, and a
-  file written that way has no fontStyle to find);
+  file written that way has no fontStyle to find), and TTML2's emphasis
+  marks (tts:textEmphasis), and where a ruby puts its reading and how it
+  spreads it (tts:rubyPosition, tts:rubyAlign); the room a paragraph keeps
+  for readings (tts:rubyReserve) goes in its look; a run set upright in
+  one character's room down a column (tts:textCombine) is markup's too;
+- a region written down the picture (tts:writingMode tbrl, tb or tblr)
+  makes its subtitles written so, the subtitle's 'writing'; its
+  displayAlign then says which side the columns go to and its textAlign
+  how far down, so the keypad is the place on the picture either way. A
+  region written right to left (rltb, rl) is the direction its subtitles
+  run in, where they do not say one of their own;
 - where the subtitle sits, from its region: the point tts:displayAlign
   and tts:textAlign put the text at in the region's tts:origin and
   tts:extent (in %, px or cells), or, without those, the two alone
@@ -40,6 +50,12 @@ Reading:
   — is read like any other and marked hidden, not left out;
 - the document's xml:lang is the subtitles' language, and its <metadata>'s
   ttm:title, ttm:desc and ttm:copyright what it says about itself;
+- a subtitle that is a picture (IMSC's Image Profile, SMPTE-TT: a <div>
+  with smpte:backgroundImage, a PNG beside the file or one the file holds
+  in a smpte:image) is read as the text its ittm:altText gives, placed
+  where its region is; `read_images` gives the pictures themselves, for
+  the ones with no text to read (modules.picture_ocr reads them with an
+  OCR add-on);
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -47,7 +63,9 @@ Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
 spans with tts:fontStyle, tts:fontWeight, tts:textDecoration and
 tts:color, line breaks as <br/>, and, when asked, each speaker as a
 ttm:agent. Its one style is white with a black outline, or the look of
-Subtitld's preview: its font, colour and box.
+Subtitld's preview: its font, colour and box. A subtitle written down the
+picture gets a region of its own, with tts:writingMode; every profile here
+has vertical writing, IMSC 1.0.1's and EBU-TT-D's included.
 
 `profile` says which of TTML's profiles the file declares itself to be, so
 a service that checks what it is given accepts it (PROFILES):
@@ -61,11 +79,18 @@ a service that checks what it is given accepts it (PROFILES):
                 the EBU's own spec asks for and which forbids
                 ttp:contentProfiles
 
+The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
+instead, a PNG beside the file drawn as Subtitld's preview draws it, with
+its words as the picture's alt text: `write_images` writes one
+(IMAGE_PROFILES), for a player or a service that takes pictures only.
+
 A profile also sets what the file may hold, and `check` reads a file back
 to say where it breaks the rules this module knows (it is a useful set of
 checks, not a conformance certificate).
 """
 
+import base64
+import binascii
 import html.entities
 import re
 import xml.etree.ElementTree as ET
@@ -81,7 +106,31 @@ _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
                  'fontFamily', 'fontSize', 'lineHeight', 'backgroundColor', 'padding', 'textOutline', 'textShadow',
-                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap', 'unicodeBidi')
+                 'wrapOption', 'linePadding', 'multiRowAlign', 'fillLineGap', 'unicodeBidi',
+                 'textEmphasis', 'rubyPosition', 'rubyAlign', 'rubyReserve', 'writingMode', 'textCombine')
+
+# What tts:writingMode says, as the subtitle's 'writing' (modules.position):
+# down the picture, in columns from the right or from the left. Across, it
+# is no 'writing' at all; across right to left it is a direction.
+_WRITING = {'tbrl': 'vertical-rl', 'tb': 'vertical-rl', 'tblr': 'vertical-lr'}
+_WRITING_OUT = {'vertical-rl': 'tbrl', 'vertical-lr': 'tblr'}
+_RIGHT_TO_LEFT = ('rltb', 'rl')
+
+# TTML's words for how a reading is spread, from markup's (RUBY_ALIGNS).
+_RUBY_ALIGN_OUT = {'start': 'start', 'end': 'end', 'space-around': 'spaceAround',
+                   'space-between': 'spaceBetween', 'with-base': 'withBase'}
+# What TTML2 says that TTML 1 does not, which IMSC 1.0.1 and EBU-TT-D are
+# built on: emphasis marks, where a ruby puts its reading and how, and a
+# run set upright down a column.
+_TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve', 'textCombine')
+# How much of those each profile takes: none in the two built on TTML 1,
+# IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
+# all of it in TTML itself.
+_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none'}
+# The words a tts:textEmphasis may hold that are neither a colour nor a mark
+# of its own: what IMSC 1.1's #textEmphasis-minimal allows.
+_EMPHASIS_WORDS = frozenset(('none', 'auto', 'filled', 'open', 'circle', 'dot', 'sesame',
+                             'before', 'after', 'outside'))
 
 # tts:ruby says what part of a ruby a span is. Only the two that hold text
 # are a run of their own; the containers around them hold no text, and a
@@ -102,6 +151,8 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 LOOKS = ('clean', 'preview')
 
 PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
+# IMSC's profiles of subtitles that are pictures (`write_images`).
+IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
 # What each profile is called where it is declared. IMSC 1.0.1 names the
 # profile it conforms to in ttp:profile; 1.1 moved that to
@@ -110,6 +161,11 @@ PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
 # forbids ttp:contentProfiles.
 _IMSC1_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1/text'
 _IMSC11_TEXT = 'http://www.w3.org/ns/ttml/profile/imsc1.1/text'
+_IMSC1_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1/image'
+_IMSC11_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1.1/image'
+# Where a picture's file is named (SMPTE-TT) and its words kept (IMSC).
+_SMPTE_NS = 'http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt'
+_ITTM_NS = 'http://www.w3.org/ns/ttml/profile/imsc1#metadata'
 _EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
 _EBUTTM_NS = 'urn:ebu:tt:metadata'
 _EBUTTS_NS = 'urn:ebu:tt:style'
@@ -237,14 +293,14 @@ def _span_of(element, base, limit, clock):
 
 
 def _timed_regions(root, clock):
-    """[(start, stop, region)] for every paragraph: what the checks need to
-    ask how much is on screen at once."""
+    """[(start, stop, region)] for every paragraph and every picture: what
+    the checks need to ask how much is on screen at once."""
     found = []
 
     def walk(element, base, limit, region):
         region = element.get('region') or region
         start, stop = _span_of(element, base, limit, clock)
-        if _local(element.tag) == 'p':
+        if _local(element.tag) == 'p' or (_local(element.tag) == 'div' and _attr(element, 'backgroundImage')):
             found.append((start, stop, region))
             return stop
         sequential = element.get('timeContainer') == 'seq'
@@ -584,6 +640,8 @@ def _of_file(frame, props, sizes, opacity, size_own=True):
     gap = (props.get('fillLineGap') or '').strip().lower()
     if gap in ('true', 'false'):
         found['fill_line_gap'] = gap == 'true'
+    # TTML2's: room kept on every line for a reading.
+    found['ruby_reserve'] = _ruby_reserve(frame, props.get('rubyReserve'), size)
     return found
 
 
@@ -639,16 +697,36 @@ def _sheared(value):
 def _look(props):
     decoration = (props.get('textDecoration') or '').split()
     color = _color(props.get('color'))
+    role = _RUBY_ROLES.get((props.get('ruby') or '').strip(), '')
     return markup.Style(
         (props.get('fontStyle') or '') in ('italic', 'oblique') or _sheared(props.get('shear')),
         (props.get('fontWeight') or '') == 'bold',
         'underline' in decoration,
         'lineThrough' in decoration,
         '' if color == '#ffffff' else color,
-        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''),
+        role,
         _background(props.get('backgroundColor')),
         markup.size_percent(_one_size(props.get('fontSize'))),
-        '', *_span_outline(props.get('textOutline')))
+        '', *_span_outline(props.get('textOutline')),
+        emphasis=markup.emphasis_value(props.get('textEmphasis')),
+        # A reading's place and spread are the ruby's: they mean something
+        # only on the base and the reading, which carry them for it.
+        ruby_position=markup.annotation_position(props.get('rubyPosition')) if role else '',
+        ruby_align=markup.ruby_align_value(props.get('rubyAlign')) if role else '',
+        combine=markup.combine_value(props.get('textCombine')))
+
+
+def _ruby_reserve(frame, value, size):
+    """tts:rubyReserve as a look's reserve: where the room goes and, when
+    the file gives one, how much, measured against the font size."""
+    parts = (value or '').strip().split()
+    if not parts or parts[0] not in subtitld_look.RESERVE_POSITIONS:
+        return None
+    reserve = {'position': parts[0]}
+    length = _of_size(frame, parts[1], size) if len(parts) > 1 else None
+    if length:
+        reserve['length'] = length
+    return reserve
 
 
 def _keypad(props, frame, geometry=True):
@@ -665,9 +743,12 @@ def _keypad(props, frame, geometry=True):
     with no place of its own, "start", textAlign's default, is taken as
     saying nothing too: pycaption writes it on every region, and so did
     Subtitld when it wrote TTML with pycaption."""
+    origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
+    writing = _WRITING.get((props.get('writingMode') or '').strip())
+    if writing:
+        return _keypad_down(props, frame, writing, origin, extent, geometry)
     display = props.get('displayAlign') or 'after'
     align = props.get('textAlign') or 'center'
-    origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
     if align == 'start' and not (origin and extent):
         align = 'center'
     # "start" and "end" are the near and the far edge of the writing, which
@@ -686,6 +767,33 @@ def _keypad(props, frame, geometry=True):
     else:
         row = {'before': 2, 'center': 1}.get(display, 0)
         column = horizontal
+    return (1, 4, 7)[row] + column
+
+
+def _keypad_down(props, frame, writing, origin, extent, geometry):
+    """_keypad for a region written down the picture. Its displayAlign says
+    which side the columns go to — before is where they start, the right
+    for columns from the right — and its textAlign how far down: start at
+    the top, as left is, end at the bottom, as right is. With no
+    displayAlign the columns start where the writing does, TTML's own
+    default: the bottom a line across is put at is a habit of players, and
+    a column has no such habit."""
+    display = props.get('displayAlign') or 'before'
+    align = props.get('textAlign') or 'center'
+    if align == 'start' and not (origin and extent):
+        align = 'center'
+    first, last = (2, 0) if writing == 'vertical-rl' else (0, 2)
+    column = {'before': first, 'center': 1}.get(display, last)
+    row = 2 if align in ('start', 'left') else 0 if align in ('end', 'right') else 1
+    if origin and extent and geometry:
+        # The middle of the column nearest the side the text is put
+        # against, half a cell in from it, a cell being as wide as a line
+        # across is tall.
+        half_column = min(50 / frame.cells[1] / frame.aspect, extent[0] / 2)
+        x = origin[0] + (half_column, extent[0] / 2, extent[0] - half_column)[column]
+        y = origin[1] + extent[1] * (2 - row) / 2
+        column = 0 if x < 34 else 1 if x < 67 else 2
+        row = 2 if y < 34 else 1 if y < 67 else 0
     return (1, 4, 7)[row] + column
 
 
@@ -907,8 +1015,39 @@ def _runs(element, styles, props, preserve, out, agent):
         text(child.tail)
 
 
-def _document(text):
-    """(subtitles, language) in TTML text."""
+def _embedded_images(root):
+    """{xml:id: PNG bytes} for the pictures a SMPTE-TT file holds itself,
+    as smpte:image elements in Base64."""
+    found = {}
+    for element in root.iter():
+        if _local(element.tag) != 'image' or not _xml_id(element):
+            continue
+        if (element.get('encoding') or 'Base64').strip().lower() != 'base64':
+            continue
+        try:
+            found[_xml_id(element)] = base64.b64decode(''.join((element.text or '').split()), validate=True)
+        except (binascii.Error, ValueError):
+            continue
+    return found
+
+
+def _alt_text(element):
+    """What a picture says in words: the ittm:altText in its <metadata>,
+    its lines kept apart."""
+    lines = []
+    for block in element:
+        if _local(block.tag) != 'metadata':
+            continue
+        for inner in block:
+            if _local(inner.tag) == 'altText':
+                lines += [line.strip() for line in ''.join(inner.itertext()).split('\n') if line.strip()]
+    return '\n'.join(lines)
+
+
+def _document(text, images=None):
+    """(subtitles, language, metadata) in TTML text; with `images`, a dict,
+    the pictures go in it as 'pictures' and the picture's size as 'size',
+    as `read_images` gives them."""
     text = _ENTITY.sub(_entity, text.lstrip('﻿'))
     # The text is decoded already: the declaration's encoding no longer applies.
     text = re.sub(r'^\s*<\?xml[^>]*\?>', '', text)
@@ -929,6 +1068,31 @@ def _document(text):
     # they state one style for the whole document.
     body = next((element for element in root.iter() if _local(element.tag) == 'body'), None)
     base_props = styles.of(body, {}) if body is not None else {}
+    embedded = _embedded_images(root)
+
+    def picture(element, start, stop, props, region):
+        """A subtitle that is a picture: the words its alt text gives it, where
+        its region puts it, and the picture itself for `images`."""
+        if stop is None:
+            return
+        region_props = styles.of(regions[region], {}) if region in regions else {}
+        own = styles.of(element, dict(region_props, **props))
+        alt = _alt_text(element)
+        keypad = _keypad(own, frame)
+        forced = str(own.get('forcedDisplay') or '').strip().lower() == 'true'
+        if alt:
+            segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
+                       'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + alt}
+            if forced:
+                segment['forced'] = True
+            segments.append(segment)
+        if images is not None:
+            source = _attr(element, 'backgroundImage').strip()
+            images.setdefault('pictures', []).append({'start': round(start, 3), 'end': round(max(start, stop), 3), 'alt': alt,
+                           'href': '' if source.startswith('#') else source,
+                           'data': embedded.get(source[1:]) if source.startswith('#') else None,
+                           'origin': frame.percent(own.get('origin')), 'extent': frame.percent(own.get('extent')),
+                           'forced': forced})
     base_sizes = (base_props['fontSize'],) if base_props.get('fontSize') else ()
 
     def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
@@ -955,8 +1119,14 @@ def _document(text):
         # Which way the writing runs, where the file says: Arabic and Hebrew
         # read right to left, and that decides where a line's punctuation
         # lands and which end "start" is.
+        writing_mode = (p_props.get('writingMode') or '').strip()
         if p_props.get('direction') in ('ltr', 'rtl'):
             segment['direction'] = p_props['direction']
+        elif writing_mode in _RIGHT_TO_LEFT:
+            segment['direction'] = 'rtl'
+        # Written down the picture, in columns.
+        if writing_mode in _WRITING:
+            segment['writing'] = _WRITING[writing_mode]
         # And how another direction sits inside the line. TTML does not
         # inherit this one, so it is read off the paragraph itself.
         bidi = _BIDI.get((styles.of(element, {}).get('unicodeBidi') or '').strip())
@@ -1023,6 +1193,9 @@ def _document(text):
         if name == 'p':
             paragraph(element, start, stop, props, region, preserve, agent, unshown, sizes)
             return stop
+        if name == 'div' and (_attr(element, 'backgroundImage') or '').strip():
+            picture(element, start, stop, props, region)
+            return stop
         inner = styles.of(element, props) if name != 'tt' else props
         unshown = unshown or str(inner.get('display') or '').strip() == 'none'
         own_size = styles.of(element, {}).get('fontSize') if name != 'tt' else None
@@ -1040,6 +1213,9 @@ def _document(text):
 
     walk(root, 0.0, None, {}, None, False, None)
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
+    if images is not None:
+        images.setdefault('pictures', []).sort(key=lambda image: (image['start'], image['end']))
+        images['size'] = frame.pixels
     return segments, (root.get(_XML_NS + 'lang') or '').strip(), _metadata(root)
 
 
@@ -1080,6 +1256,20 @@ def read(path):
         return _document(_text_of(ttml_file.read()))
 
 
+def read_images(path):
+    """(pictures, language, picture size) of the TTML file at `path`.
+
+    A picture is {'start', 'end', 'alt', 'href', 'data', 'origin', 'extent',
+    'forced'}: its words where the file gives them ('' where it does not),
+    the PNG as a path relative to the file ('href') or as the bytes the
+    file holds ('data'), and its region's place and size in % of the
+    picture. The size is the file's tts:extent in pixels, or None."""
+    images = {}
+    with open(path, 'rb') as ttml_file:
+        _segments, language, _metadata_found = _document(_text_of(ttml_file.read()), images)
+    return images['pictures'], language, images['size']
+
+
 def check(text, profile='imsc1.1'):
     """What breaks `profile`'s rules in TTML text: ["what is wrong", ...],
     empty when this finds nothing.
@@ -1091,7 +1281,7 @@ def check(text, profile='imsc1.1'):
     profile, and what EBU-TT-D asks for. A service's own validator still
     has the last word.
     """
-    profile = profile if profile in PROFILES else 'ttml1'
+    profile = profile if profile in PROFILES + IMAGE_PROFILES else 'ttml1'
     try:
         root = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', _ENTITY.sub(_entity, (text or '').lstrip('﻿'))))
     except ET.ParseError as error:
@@ -1126,6 +1316,10 @@ def check(text, profile='imsc1.1'):
                 raise ValueError
         except ValueError:
             problems.append(f'ttp:cellResolution is {" ".join(cells)!r}: it is two whole numbers above zero')
+
+    if profile in IMAGE_PROFILES:
+        problems += _image_problems(root, profile, declared_profile, content_profiles)
+        return problems
 
     if profile in ('imsc1', 'imsc1.1'):
         images = [element for element in root.iter() if _attr(element, 'backgroundImage')]
@@ -1192,12 +1386,66 @@ def check(text, profile='imsc1.1'):
             problems.append(f'Font sizes with a width and a height of their own ({", ".join(stretched)}): '
                             'the profile allows one size for both, and the height is what is read')
 
+    # TTML2's emphasis marks, what a ruby says about its reading and text
+    # set upright down a column. IMSC 1.0.1 and EBU-TT-D are built on TTML 1
+    # and have none of it; IMSC 1.1
+    # has the minimal sets: no colour or mark of its own for an emphasis
+    # (#textEmphasis-minimal), no spreading a reading with its base
+    # (#rubyAlign-minimal).
+    if profile in ('imsc1', 'ebu-tt-d'):
+        annotated = sorted({name for element in root.iter() for name in _TTML2_ANNOTATIONS
+                            if _attr(element, name) is not None})
+        if annotated:
+            problems.append(f'{", ".join("tts:" + name for name in annotated)}: TTML2 styling, '
+                            'which this profile, built on TTML 1, does not have')
+    if profile == 'imsc1.1':
+        marks = sorted({value for element in root.iter() for value in [_attr(element, 'textEmphasis') or '']
+                        if re.search(r'["\']', value)
+                        or set(value.lower().replace(',', ' ').split()) - _EMPHASIS_WORDS})
+        if marks:
+            problems.append(f'Emphasis with a colour or a mark of its own ({", ".join(marks)}): '
+                            'IMSC 1.1 allows a fill, a shape and a position only')
+        if any((_attr(element, 'rubyAlign') or '').strip() == 'withBase' for element in root.iter()):
+            problems.append('tts:rubyAlign="withBase": IMSC 1.1 allows start, center, end, '
+                            'spaceAround and spaceBetween')
+        combined = sorted({value for element in root.iter() for value in [(_attr(element, 'textCombine') or '').strip()]
+                           if value and value not in ('none', 'all')})
+        if combined:
+            problems.append(f'tts:textCombine="{", ".join(combined)}": IMSC 1.1 allows none and all')
+
     regions = {_xml_id(element) for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
     missing = sorted({element.get('region') for element in root.iter()
                       if element.get('region') and element.get('region') not in regions})
     if missing:
         problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    return problems
+
+
+def _image_problems(root, profile, declared_profile, content_profiles):
+    """What breaks one of IMSC's Image Profiles in a document: the
+    declaration, the picture's size in pixels, text where only pictures
+    may be, a picture held in the file, a picture's region missing."""
+    problems = []
+    if profile == 'imsc1-image' and declared_profile != _IMSC1_IMAGE:
+        problems.append(f'ttp:profile does not name IMSC 1.0.1\'s Image Profile ({_IMSC1_IMAGE})')
+    if profile == 'imsc1.1-image' and _IMSC11_IMAGE not in content_profiles:
+        problems.append(f'ttp:contentProfiles does not name IMSC 1.1\'s Image Profile ({_IMSC11_IMAGE})')
+    extent = [_LENGTH.match(part) for part in (_attr(root, 'extent') or '').split()]
+    if not (len(extent) == 2 and all(part and part.group(2) == 'px' for part in extent)):
+        problems.append('<tt> has no tts:extent in pixels: the Image Profile asks for the picture\'s size')
+    texts = [element for element in root.iter() if _local(element.tag) in ('p', 'span')]
+    if texts:
+        problems.append(f'{len(texts)} <p> or <span> element(s): the Image Profile holds pictures, not text')
+    if any(_local(element.tag) == 'image' for element in root.iter()):
+        problems.append('smpte:image: IMSC asks for pictures beside the file, not held in it')
+    regions = {_xml_id(element) for element in root.iter() if _local(element.tag) == 'region'}
+    homeless = [element for element in root.iter()
+                if _attr(element, 'backgroundImage') and element.get('region') not in regions]
+    if homeless:
+        problems.append(f'{len(homeless)} picture(s) in no region the file has')
+    if _most_regions_at_once(_timed_regions(root, _Clock(root))) > 4:
+        problems.append('More than four regions on screen at once: IMSC allows at most four')
     return problems
 
 
@@ -1219,11 +1467,13 @@ def _rgba(value, default):
     return '#' + value
 
 
-def _open_span(tags, style, shear=False):
+def _open_span(tags, style, shear=False, annotations='full'):
     """A <span> for the formatting `tags` ({(name, value)}) open together;
     its textDecoration names all the run's, so none an outer span set is
     lost, whatever a player makes of a nested one. With `shear`, italics
-    are written as a slant instead (see _SHEAR)."""
+    are written as a slant instead (see _SHEAR). With `annotations` 'none',
+    what only TTML2 can say (emphasis marks, text set upright) is left out
+    (see _ANNOTATIONS)."""
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
@@ -1238,6 +1488,12 @@ def _open_span(tags, style, shear=False):
             # TTML draws an edge as an outline; the kinds it has no word for
             # are written as the outline nearest them.
             attrs.append(f'tts:textOutline="{font.edge_color or "#000000"} 4%"')
+        if font.emphasis and annotations != 'none':
+            # markup's words are TTML's: a fill and a shape, or auto, and
+            # before or after.
+            attrs.append(f'tts:textEmphasis="{font.emphasis}"')
+        if font.combine and annotations != 'none':
+            attrs.append(f'tts:textCombine="{font.combine}"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:
@@ -1248,7 +1504,7 @@ def _open_span(tags, style, shear=False):
     return f'<span {" ".join(attrs)}>'
 
 
-def _nested_content(runs, shear=False):
+def _nested_content(runs, shear=False, annotations='full'):
     """Runs of one stretch as TTML: spans for their formatting, nested as
     the tags are, <br/> between lines."""
     out = []
@@ -1264,28 +1520,36 @@ def _nested_content(runs, shear=False):
         del stack[keep:]
         new = wanted.difference(*stack)
         if new:
-            out.append(_open_span(new, style, shear))
+            out.append(_open_span(new, style, shear, annotations))
             stack.append(frozenset(new))
         out.append('<br/>'.join(escape(part) for part in run.split('\n')))
     out.extend('</span>' for _span in stack)
     return ''.join(out)
 
 
-def _content(text, shear=False):
+def _content(text, shear=False, annotations='full'):
     """A subtitle's text as TTML. A ruby is a container span holding the
-    base and its text, which is how IMSC 1.1 writes one."""
+    base and its text, which is how IMSC 1.1 writes one: how its reading is
+    spread on the container, where it sits on the reading, which is where
+    TTML2 applies each. `annotations` says how much of that a profile
+    takes (see _ANNOTATIONS)."""
     out = []
     for group in markup.ruby_groups(markup.spans(text)):
         if group[0] == 'plain':
-            out.append(_nested_content(group[1], shear))
+            out.append(_nested_content(group[1], shear, annotations))
             continue
-        base = _nested_content(group[1], shear)
-        reading = _nested_content(group[2], shear)
+        base = _nested_content(group[1], shear, annotations)
+        reading = _nested_content(group[2], shear, annotations)
         if not (base and reading):
             out.append(base + reading)
             continue
-        out.append(f'<span tts:ruby="container"><span tts:ruby="base">{base}</span>'
-                   f'<span tts:ruby="text">{reading}</span></span>')
+        said = markup.ruby_attributes(group) if annotations != 'none' else markup.Ruby()
+        # Spreading a reading with its base is beyond IMSC 1.1's minimal set.
+        spread = f' tts:rubyAlign="{_RUBY_ALIGN_OUT[said.align]}"' \
+            if said.align in _RUBY_ALIGN_OUT and not (said.align == 'with-base' and annotations == 'minimal') else ''
+        placed = f' tts:rubyPosition="{said.position}"' if said.position else ''
+        out.append(f'<span tts:ruby="container"{spread}><span tts:ruby="base">{base}</span>'
+                   f'<span tts:ruby="text"{placed}>{reading}</span></span>')
     return ''.join(out)
 
 
@@ -1400,6 +1664,13 @@ def _look_attributes(styling, profile='ttml1', inline=False):
         gap = True
     if gap is not None and not ebu:
         out.append(f'itts:fillLineGap="{"true" if gap else "false"}"')
+    # Room on every line for a reading: TTML2's, so not in IMSC 1.0.1 or
+    # EBU-TT-D, which are built on TTML 1.
+    reserve = styling.get('ruby_reserve') or {}
+    if isinstance(reserve, dict) and reserve.get('position') in subtitld_look.RESERVE_POSITIONS \
+            and profile not in ('imsc1', 'ebu-tt-d'):
+        length = f' {_cells(reserve["length"])}' if reserve.get('length') else ''
+        out.append(f'tts:rubyReserve="{reserve["position"]}{length}"')
     return ' '.join(out)
 
 
@@ -1447,6 +1718,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
+    annotations = _ANNOTATIONS[profile]
     cues = []
     places = {}
     speakers = {}
@@ -1468,8 +1740,10 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         styling = subtitld_look.of(segment)
         # Opacity belongs to a region, so a subtitle only part shown takes
         # a region of its own rather than fading the ones beside it.
+        # And writing down the picture is a region's, so a subtitle written
+        # in columns takes one of its own too.
         spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v),
-                None if profile == 'ebu-tt-d' else styling.get('opacity'))
+                None if profile == 'ebu-tt-d' else styling.get('opacity'), position.writing(segment))
         if spot not in places:
             # One region for each place used. A subtitle placed more finely
             # than the nine takes a region of its own, named after the place
@@ -1502,7 +1776,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         looking = _look_attributes(styling, profile)
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
-        content = _content(rest, shear)
+        content = _content(rest, shear, annotations)
         # A box the file brought stands in for the style's own, and goes on
         # a span: on the paragraph TTML paints a band the width of the
         # region instead of a box around the words.
@@ -1532,15 +1806,25 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                                  for looking, name in list(lookings.items()) + list(boxings.items())]
     head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
     for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0,
-                                                 spot[3] if spot[3] is not None else 1)):
-        keypad, across, down, alpha = spot
-        display = ('after', 'center', 'before')[(keypad - 1) // 3]
-        align = ('left', 'center', 'right')[(keypad - 1) % 3]
+                                                 spot[3] if spot[3] is not None else 1, spot[4])):
+        keypad, across, down, alpha, writing = spot
+        column, row = (keypad - 1) % 3, (keypad - 1) // 3
+        if writing:
+            # Down the picture the two swap axes: displayAlign says which
+            # side the columns go to, before being the side they start
+            # from, and textAlign how far down (see _keypad_down).
+            first = 2 if writing == 'vertical-rl' else 0
+            display = 'before' if column == first else 'center' if column == 1 else 'after'
+            align = ('end', 'center', 'start')[row]
+        else:
+            display = ('after', 'center', 'before')[row]
+            align = ('left', 'center', 'right')[column]
         (x, y), (width, height) = _box(keypad, across, down)
         faded = f' tts:opacity="{alpha:.4g}"' if alpha is not None else ''
+        written = f' tts:writingMode="{_WRITING_OUT[writing]}"' if writing else ''
         head.append(f'      <region xml:id="{places[spot]}" '
                     f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
-                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{faded}/>')
+                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{written}{faded}/>')
     head += ['    </layout>', '  </head>']
     forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
     imsc_styling = forced or any('itts:' in looking for looking in lookings)
@@ -1556,6 +1840,59 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         '  </body>',
         '</tt>',
         ''])
+
+
+def write_images(pictures, size, language='en', profile='imsc1.1-image', metadata=None):
+    """TTML text in one of IMSC's Image Profiles (IMAGE_PROFILES) for
+    `pictures`: [{'start', 'end', 'href', 'x', 'y', 'width', 'height', 'alt'
+    [, 'forced']}], each a PNG named by `href` relative to the file, at x, y
+    on a picture `size` (width, height) pixels, as big as it is, with the
+    words `alt` says it shows.
+
+    The profile asks for the picture's size in pixels on <tt>, a region as
+    big as the picture it holds and the picture as a <div>'s
+    smpte:backgroundImage, never held in the file. A region is shown only
+    while it has a picture in it, so the ones not in use count against
+    none of the four IMSC allows at once."""
+    profile = profile if profile in IMAGE_PROFILES else 'imsc1.1-image'
+    width, height = size
+    regions = {}
+    divs = []
+    for picture in sorted(pictures, key=lambda p: (float(p['start']), float(p['end']))):
+        box = (int(picture['x']), int(picture['y']), int(picture['width']), int(picture['height']))
+        region = regions.setdefault(box, f'picture{len(regions) + 1}')
+        start = float(picture['start'])
+        end = max(start, float(picture['end']))
+        attrs = (f'begin="{format_time(start)}" end="{format_time(end)}" region="{region}" '
+                 f'smpte:backgroundImage={quoteattr(picture["href"])}')
+        if picture.get('forced'):
+            attrs += ' itts:forcedDisplay="true"'
+        alt = str(picture.get('alt') or '').strip()
+        said = f'<metadata><ittm:altText>{escape(alt)}</ittm:altText></metadata>' if alt else ''
+        divs.append(f'    <div {attrs}>{said}</div>' if said else f'    <div {attrs}/>')
+    head = ['  <head>']
+    meta_lines = []
+    for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
+        said = str((metadata or {}).get(key) or '').strip()
+        if said:
+            meta_lines.append(f'      <{name}>{escape(said)}</{name}>')
+    if meta_lines:
+        head += ['    <metadata>', *meta_lines, '    </metadata>']
+    head.append('    <layout>')
+    for (x, y, w, h), name in regions.items():
+        head.append(f'      <region xml:id="{name}" tts:origin="{x}px {y}px" tts:extent="{w}px {h}px" '
+                    f'tts:showBackground="whenActive"/>')
+    head += ['    </layout>', '  </head>']
+    declared = f'ttp:profile="{_IMSC1_IMAGE}"' if profile == 'imsc1-image' else f'ttp:contentProfiles="{_IMSC11_IMAGE}"'
+    namespaces = ['xmlns="http://www.w3.org/ns/ttml"', 'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
+                  'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"', 'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"',
+                  f'xmlns:smpte="{_SMPTE_NS}"', f'xmlns:ittm="{_ITTM_NS}"']
+    if any(picture.get('forced') for picture in pictures):
+        namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
+    root = ' '.join(namespaces + ['ttp:timeBase="media"', declared, f'tts:extent="{int(width)}px {int(height)}px"',
+                                  f'xml:lang={quoteattr(export_options.language_tag(language))}'])
+    return '\n'.join(['<?xml version="1.0" encoding="UTF-8"?>', f'<tt {root}>', *head,
+                      '  <body>', *divs, '  </body>', '</tt>', ''])
 
 
 def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1',

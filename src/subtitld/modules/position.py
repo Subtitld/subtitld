@@ -27,6 +27,14 @@ file that says 'window' still says it after a round trip.
 
 Rotations are degrees, counter-clockwise about each axis, as USF and ASS
 both count them.
+
+A subtitle written down the picture, in columns, as Japanese and Chinese
+may be, says so as its 'writing': 'vertical-rl', columns from the right,
+or 'vertical-lr', from the left, as CSS names them (TTML's tts:writingMode
+tbrl and tblr, WebVTT's vertical:rl and lr). Its keypad still says where
+it sits on the picture — a column against the right edge is a 6 — so every
+format and the preview place it as they place any other; a subtitle
+written across has no 'writing'.
 """
 
 import re
@@ -34,6 +42,7 @@ from typing import NamedTuple
 
 AXES = ('x', 'y', 'z')
 RELATIVE_TO = ('video', 'window')
+WRITING_MODES = ('vertical-rl', 'vertical-lr')
 
 _LENGTH = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s*(%?)\s*$')
 
@@ -104,6 +113,13 @@ def of(segment):
         v=str(held.get('v') or '').strip() if length(held.get('v')) else '',
         relative_to=relative if relative in RELATIVE_TO else '',
         rotate=tuple(_rotation(turns.get(axis)) for axis in AXES))
+
+
+def writing(segment):
+    """One of WRITING_MODES for a subtitle written down the picture, '' for
+    one written across."""
+    held = segment.get('writing') if isinstance(segment, dict) else None
+    return held if held in WRITING_MODES else ''
 
 
 def store(segment, place):

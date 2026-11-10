@@ -9,7 +9,10 @@ Reading forgives, as for SRT (modules.srt):
   (``::cue(.gold) { color: #ffd700 }``) are kept for the cues;
 - cues are found by their timing lines: an identifier before one is
   skipped, hours may be left out, a comma reads as the dot; the cue settings
-  give where the subtitle sits (``line:``, ``align:``, ``position:``);
+  give where the subtitle sits (``line:``, ``align:``, ``position:``) and
+  whether it is written down the picture (``vertical:rl`` or ``lr``, the
+  subtitle's 'writing'), where ``line:`` then counts across, from the side
+  the columns start at, and ``position:`` down;
 - the cue text keeps <i>, <b> and <u>, and <ruby> with its readings
   (<rt>), which Subtitld keeps the same way; <c.class> takes the colour
   its class has (WebVTT's own colour classes, or a STYLE block's);
@@ -20,14 +23,15 @@ Writing gives "WEBVTT" and the cues in order of start: times as
 "HH:MM:SS.mmm"; italic, bold and underline as tags (WebVTT has no
 strikeout); a ruby around each reading and what it reads; a colour as a
 class, WebVTT's own where it is one of them, else one a STYLE block
-defines; the position as cue settings; the speaker as a voice tag when
+defines; the position as cue settings, ``vertical:`` with them for a
+subtitle written in columns; the speaker as a voice tag when
 asked; &, < and > escaped; no blank line in a cue and no "-->" in its text.
 """
 
 import html
 import re
 
-from subtitld.modules import markup
+from subtitld.modules import markup, position
 from subtitld.modules.srt import decode
 
 _STAMP = r'(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:[.,](\d+))?'
@@ -61,9 +65,16 @@ def _style_classes(css):
     return classes
 
 
+# A cue written down the picture, as the subtitle's 'writing' says it.
+_VERTICAL = {'rl': 'vertical-rl', 'lr': 'vertical-lr'}
+_VERTICAL_OUT = {value: key for key, value in _VERTICAL.items()}
+
+
 def _keypad(settings):
     """Where cue settings put a subtitle, as a keypad number (2: bottom centre)."""
     values = dict(token.split(':', 1) for token in settings.split() if ':' in token)
+    if values.get('vertical') in _VERTICAL:
+        return _keypad_down(values, _VERTICAL[values['vertical']])
     row, column = 0, 1                                     # bottom, centre
     line = values.get('line', '').split(',')[0]
     if line.endswith('%'):
@@ -138,6 +149,38 @@ def cue_text(text, classes=None):
     return ''.join(out), speaker
 
 
+def _keypad_down(values, writing):
+    """_keypad for a cue written down the picture. Its line counts across
+    from the side the columns start at — the right for vertical:rl — and
+    a line it does not give is the last one, the far side, as WebVTT puts
+    one; its position and align say how far down, the middle when they do
+    not."""
+    first, last = (2, 0) if writing == 'vertical-rl' else (0, 2)
+    column, row = last, 1
+    line = values.get('line', '').split(',')[0]
+    if line.endswith('%'):
+        try:
+            percent = float(line[:-1])
+        except ValueError:
+            percent = 100
+        from_first = 0 if percent <= 33 else 1 if percent < 66 else 2
+        column = (first, 1, last)[from_first]
+    elif re.fullmatch(r'-?\d+', line):
+        column = first if int(line) >= 0 else last
+    align = values.get('align', '')
+    if align in ('start', 'left'):
+        row = 2
+    elif align in ('end', 'right'):
+        row = 0
+    elif not align and values.get('position', '').split(',')[0].endswith('%'):
+        try:
+            percent = float(values['position'].split(',')[0][:-1])
+            row = 2 if percent < 33 else 0 if percent > 66 else 1
+        except ValueError:
+            pass
+    return (1, 4, 7)[row] + column
+
+
 def parse(text):
     """The subtitles in WebVTT text: [{'start', 'end', 'text'[, 'speaker']}], by start."""
     lines = text.split('\n')
@@ -180,6 +223,9 @@ def parse(text):
         if keypad != 2:
             text_ = markup.with_alignment('', keypad) + text_
         segment = {'start': start, 'end': max(start, end), 'text': text_}
+        vertical = re.search(r'(?:^|\s)vertical:(rl|lr)(?:\s|$)', groups[8] or '')
+        if vertical:
+            segment['writing'] = _VERTICAL[vertical.group(1)]
         if speaker:
             segment['speaker'] = speaker
         segments.append(segment)
@@ -202,8 +248,11 @@ def format_time(seconds):
     return f'{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}'
 
 
-def _settings(keypad):
-    """Cue settings that put a subtitle at `keypad`."""
+def _settings(keypad, writing=''):
+    """Cue settings that put a subtitle at `keypad`, written down the
+    picture where `writing` says so."""
+    if writing in _VERTICAL_OUT:
+        return _settings_down(keypad, writing)
     settings = []
     if keypad >= 7:
         settings.append('line:0')
@@ -212,6 +261,21 @@ def _settings(keypad):
     if keypad % 3 == 1:
         settings.append('position:10% align:start')
     elif keypad % 3 == 0:
+        settings.append('position:90% align:end')
+    return ' '.join(settings)
+
+
+def _settings_down(keypad, writing):
+    """_settings for a subtitle written down the picture. The line is
+    always given, the far side included, so the file says which side
+    without leaning on WebVTT's rule for a cue that gives none."""
+    column, row = (keypad - 1) % 3, (keypad - 1) // 3
+    first = 2 if writing == 'vertical-rl' else 0
+    settings = [f'vertical:{_VERTICAL_OUT[writing]}',
+                'line:0' if column == first else 'line:50%,center' if column == 1 else 'line:-1']
+    if row == 2:
+        settings.append('position:10% align:start')
+    elif row == 0:
         settings.append('position:90% align:end')
     return ' '.join(settings)
 
@@ -284,7 +348,7 @@ def write(segments, voices=False):
             body = f'<v {_escape(speaker)}>' + body
         start = float(segment.get('start', 0))
         end = max(start, float(segment.get('end', start)))
-        settings = _settings(markup.alignment(lead))
+        settings = _settings(markup.alignment(lead), position.writing(segment))
         cues.append(f'{format_time(start)} --> {format_time(end)}' + (f' {settings}' if settings else '') + '\n' + body)
     head = 'WEBVTT\n'
     if classes:

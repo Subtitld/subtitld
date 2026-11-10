@@ -107,6 +107,20 @@ check('without voices', webvtt.write(segments[:1]), 'WEBVTT\n\n00:00:05.000 --> 
 check('nothing to write', webvtt.write([{'start': 0, 'end': 1, 'text': ''}]), 'WEBVTT\n')
 check('format_time', [webvtt.format_time(t) for t in (0, 61.25, 360000.5)], ['00:00:00.000', '00:01:01.250', '100:00:00.500'])
 
+print('written down the picture')
+_down = webvtt.parse('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 vertical:rl line:0 align:start\n縦書き\n\n'
+                     '00:00:03.000 --> 00:00:04.000 vertical:lr\n左から\n\n'
+                     '00:00:05.000 --> 00:00:06.000 vertical:rl line:50%\n真ん中\n')
+check('vertical: is the subtitle\'s writing; line counts across from where the columns start, position down',
+      [(s['text'], s.get('writing')) for s in _down],
+      [('{\\an9}縦書き', 'vertical-rl'), ('{\\an6}左から', 'vertical-lr'), ('{\\an5}真ん中', 'vertical-rl')])
+_back = webvtt.write(_down)
+check('written with its line always given', ('vertical:rl line:0 position:10% align:start' in _back,
+                                             'vertical:lr line:-1' in _back, 'vertical:rl line:50%,center' in _back),
+      (True, True, True))
+check('and read back the same', [(s['text'], s.get('writing')) for s in webvtt.parse(_back)],
+      [(s['text'], s.get('writing')) for s in _down])
+
 print('opened and exported through file_io')
 folder = Path(tempfile.mkdtemp())
 source = folder / 'in.vtt'

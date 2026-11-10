@@ -67,6 +67,19 @@ check('a look that says nothing draws nothing', (look.css({}), look.css(None)), 
 check('and as one attribute', look.style_attribute({'size': 5.0, 'font': 'Arial'}),
       'font-family: Arial; font-size: 54px')
 
+print('room kept for a reading')
+check('a reserve is room on every line, twice, since leading is shared above and below',
+      look.css({'ruby_reserve': {'position': 'both', 'length': 2.5}}), {'line-height': 'calc(1.2em + 2 * 27px)'})
+check('with no length, the room a reading takes: half the letters',
+      look.css({'ruby_reserve': {'position': 'before'}}), {'line-height': 'calc(1.2em + 2 * 0.5em)'})
+check('on top of a line height the file gave',
+      look.css({'line_height': 10.0, 'ruby_reserve': {'position': 'after'}})['line-height'],
+      'calc(108px + 2 * 0.5em)')
+check('a reserve that names no place is none',
+      look.css({'ruby_reserve': {'position': 'nowhere'}}), {})
+check('kept on the subtitle like any other key',
+      look.store({}, {'ruby_reserve': {'position': 'both'}}), {'ruby_reserve': {'position': 'both'}})
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

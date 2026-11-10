@@ -18,9 +18,17 @@ the formatting tags SRT files use, which players such as VLC and mpv honour:
     <font kind="sound-effect">…</font>       what kind of text it is, where
                                              a file says (a speaker's name,
                                              lyrics, an expletive …)
+    <font emphasis="filled sesame">…</font>  emphasis marks beside each
+                                             character, as Japanese and
+                                             Chinese stress a word
+    <font combine="all">…</font>             set upright in one character's
+                                             room, as vertical Japanese sets
+                                             a number (tate-chū-yoko)
     {\\an8}  {\\i1}  …                         ASS override codes, which the
                                              same players read in SRT
     <ruby>漢字<rt>かんじ</rt></ruby>            a reading above the text
+    <ruby position="after" align="start">    one below it, or spread another
+                                             way across what it reads
 
 Anything else that looks like a tag ("<3", "a < b", WebVTT's <v Name>) is
 text. Tags may nest and may be left open (they run to the end); a closing
@@ -45,6 +53,24 @@ A ruby is written the way HTML and WebVTT write one, which is also what
 the preview draws, and it is what IMSC 1.1 calls a container holding a
 base and its text: `Style.ruby` says which of the two a run is, so a
 reading stays attached to what it reads through every read and write.
+Where the reading sits and how it is spread across its base belong to
+the container, so they are written on <ruby> and every run inside it
+carries them: TTML's tts:rubyPosition (before the text, which is above it
+across and to its right down; after it; outside, the default) and
+tts:rubyAlign (centred by default; start, end, spread around or between).
+
+An emphasis mark is TTML2's tts:textEmphasis and CSS's text-emphasis: a
+filled or open circle, dot or sesame, or "auto", the one the writing asks
+for (a filled circle across, a filled sesame down), before the text or
+after it, outside being the default. Its colour and a quoted mark of its
+own are left out: IMSC's text profile has neither (#textEmphasis-minimal).
+
+A run set upright in one character's room is TTML2's tts:textCombine="all"
+and CSS's text-combine-upright: a number or a short Latin word in a
+subtitle written down the picture (the cue's `writing`) is laid across
+the column instead of along it. In a line written across it means nothing
+and is drawn as the text it is.
+
 A face is kept as it is written and not drawn: a subtitle is set in what
 its style template says, and a file that asks for Helvetica still asks for
 it after a read and a write. A <font>'s size, on the other hand, is read
@@ -70,6 +96,7 @@ from typing import NamedTuple
 _TOKEN = re.compile(
     r'<\s*(?P<close>/?)\s*(?P<tag>ruby|rt|blink|sub|sup|[ibus])\s*>'
     r'|<\s*font\b(?P<font>[^>]*)>'
+    r'|<\s*ruby\s+(?P<ruby>[^>]*)>'
     r'|<\s*/\s*font\s*>'
     r'|\{(?P<override>\\[^{}]*)\}',
     re.IGNORECASE)
@@ -85,7 +112,12 @@ _FONT_EDGE = re.compile(r'''(?<![-\w])edge\s*=\s*["']?\s*([-\w]+)''', re.IGNOREC
 _FONT_EDGE_COLOR = re.compile(r'''edge-colou?r\s*=\s*["']?\s*([#\w]+)''', re.IGNORECASE)
 # A typeface may be several words, so an unquoted one is one word only.
 _FONT_FACE = re.compile(r'''face\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w-]+))''', re.IGNORECASE)
+_FONT_COMBINE = re.compile(r'''combine\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
 _FONT_KIND = re.compile(r'''kind\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
+# Several words, so quoted; one word alone may go without.
+_FONT_EMPHASIS = re.compile(r'''emphasis\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w-]+))''', re.IGNORECASE)
+_RUBY_POSITION = re.compile(r'''position\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
+_RUBY_ALIGN = re.compile(r'''align\s*=\s*["']?\s*([-\w]+)''', re.IGNORECASE)
 # The colours HTML names that subtitle files use; others are kept, not drawn.
 _NAMED = {
     'white': 'ffffff', 'black': '000000', 'red': 'ff0000', 'lime': '00ff00', 'green': '008000',
@@ -121,9 +153,20 @@ FLASH_TAG = 'blink'
 # a flash is an animation and a tag's own style cannot hold one.
 FLASH_CLASS = 'subtitld-flash'
 _OFFSET_TAGS = {role: tag for tag, role in OFFSETS.items()}
+# An emphasis mark: filled or open, and a circle, a dot or a sesame.
+EMPHASIS_FILLS = ('filled', 'open')
+EMPHASIS_SHAPES = ('circle', 'dot', 'sesame')
+# Where a reading or an emphasis mark sits against its text, beyond outside,
+# TTML's default, which is written as nothing.
+ANNOTATION_POSITIONS = ('before', 'after')
+# How a reading is spread across its base, beyond centred, the default.
+RUBY_ALIGNS = ('start', 'end', 'space-around', 'space-between', 'with-base')
 # What a run is drawn in beyond its colours: kept together for the places
 # that carry them all or none.
-_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face', 'kind')
+_PEN_FIELDS = ('size', 'offset', 'edge', 'edge_color', 'face', 'kind', 'emphasis', 'ruby_position', 'ruby_align',
+               'combine')
+# What a run set upright in one character's room is: all of it, or nothing.
+COMBINE = 'all'
 
 
 class Style(NamedTuple):
@@ -141,6 +184,10 @@ class Style(NamedTuple):
     face: str = ''           # the typeface it asks for, kept but not drawn
     flash: bool = False      # text that flashes, as a caption flashes a word
     kind: str = ''           # one of KINDS: what sort of text it is, '' dialogue
+    emphasis: str = ''       # its marks ('filled sesame', 'auto after'), '' none
+    ruby_position: str = ''  # where the ruby it is in puts its reading, '' outside
+    ruby_align: str = ''     # how that reading is spread, '' centred
+    combine: str = ''        # COMBINE: set upright in one character's room down a column
 
     def any(self):
         return self != PLAIN
@@ -191,9 +238,55 @@ class Font(NamedTuple):
     edge_color: str = ''
     face: str = ''
     kind: str = ''
+    emphasis: str = ''
+    combine: str = ''
 
     def any(self):
         return self != Font()
+
+
+class Ruby(NamedTuple):
+    """What a <ruby> says about the reading it holds: where it sits and how
+    it is spread across its base."""
+
+    position: str = ''
+    align: str = ''
+
+
+def emphasis_value(value):
+    """An emphasis as markup keeps it, for one as TTML, CSS or markup writes
+    it: its fill and shape, or 'auto', then 'before' or 'after' where it is
+    not outside; '' for none. A colour and a quoted mark are left out (see
+    the module's notes); a value with nothing but a colour is 'auto', as
+    TTML reads one with no style."""
+    words = re.sub(r'"[^"]*"|\'[^\']*\'', ' ', str(value or '')).replace(',', ' ').lower().split()
+    if not words or words == ['none'] or ('none' in words and not set(words) & set(EMPHASIS_FILLS + EMPHASIS_SHAPES)):
+        return ''
+    fill = next((word for word in words if word in EMPHASIS_FILLS), '')
+    shape = next((word for word in words if word in EMPHASIS_SHAPES), '')
+    where = annotation_position(next((word for word in words if annotation_position(word)), ''))
+    return (' '.join(part for part in (fill, shape) if part) or 'auto') + (f' {where}' if where else '')
+
+
+def combine_value(value):
+    """COMBINE for a run TTML or CSS sets upright in one character's room
+    ('all'), '' for anything else ('none', and TTML2's digits, which IMSC
+    leaves out)."""
+    return COMBINE if str(value or '').strip().lower() == COMBINE else ''
+
+
+def annotation_position(value):
+    """'before' or 'after' for a position as TTML (before, after) or CSS
+    (over, under) writes it; '' for outside, the default, or anything else."""
+    return {'before': 'before', 'over': 'before', 'after': 'after', 'under': 'after'}.get(
+        str(value or '').strip().lower(), '')
+
+
+def ruby_align_value(value):
+    """One of RUBY_ALIGNS for an alignment as TTML (spaceAround) or CSS
+    (space-around) writes it; '' for centred, the default, or anything else."""
+    folded = str(value or '').strip().lower().replace('-', '')
+    return next((name for name in RUBY_ALIGNS if name.replace('-', '') == folded), '')
 
 
 def size_percent(value):
@@ -252,10 +345,11 @@ def _tokens(text):
             found = {name: pattern.search(written) for name, pattern in
                      (('color', _FONT_COLOR), ('background', _FONT_BACKGROUND), ('size', _FONT_SIZE),
                       ('edge', _FONT_EDGE), ('edge_color', _FONT_EDGE_COLOR), ('face', _FONT_FACE),
-                      ('kind', _FONT_KIND))}
+                      ('kind', _FONT_KIND), ('emphasis', _FONT_EMPHASIS), ('combine', _FONT_COMBINE))}
             edge = (found['edge'].group(1).lower() if found['edge'] else '')
             kind = (found['kind'].group(1).lower() if found['kind'] else '')
             face = next((part for part in found['face'].groups() if part), '') if found['face'] else ''
+            emphasis = next((part for part in found['emphasis'].groups() if part), '') if found['emphasis'] else ''
             yield ('open', 'font', Font(
                 color=color_hex(found['color'].group(1)) if found['color'] else '',
                 background=background_hex(found['background'].group(1)) if found['background'] else '',
@@ -263,7 +357,14 @@ def _tokens(text):
                 edge=edge if edge in EDGES else '',
                 edge_color=color_hex(found['edge_color'].group(1)) if found['edge_color'] else '',
                 face=face.strip(),
-                kind=kind if kind in KINDS else ''))
+                kind=kind if kind in KINDS else '',
+                emphasis=emphasis_value(emphasis),
+                combine=combine_value(found['combine'].group(1) if found['combine'] else '')))
+        elif match.group('ruby') is not None:
+            written = match.group('ruby')
+            placed, spread = _RUBY_POSITION.search(written), _RUBY_ALIGN.search(written)
+            yield ('open', 'ruby', Ruby(annotation_position(placed.group(1)) if placed else '',
+                                        ruby_align_value(spread.group(1)) if spread else ''))
         elif match.group('override') is not None:
             yield 'override', match.group('override')
         else:
@@ -303,6 +404,12 @@ class _Reader:
             if name == 'font':
                 said = {field: held for field, held in (value or Font())._asdict().items() if held}
                 self.style = self.style._replace(**said)
+            elif name == 'ruby':
+                # A container: what it says about its reading goes to every
+                # run in it, so it is there whichever of them is written out.
+                said = value or Ruby()
+                self.style = self.style._replace(ruby=_RUBY[name], ruby_position=said.position,
+                                                 ruby_align=said.align)
             elif name in _RUBY:
                 self.style = self.style._replace(ruby=_RUBY[name])
             elif name in OFFSETS:
@@ -324,9 +431,14 @@ class _Reader:
                         self.style = self.style._replace(offset=previous.offset)
                     elif name == FLASH_TAG:
                         self.style = self.style._replace(flash=previous.flash)
+                    elif name == 'ruby':
+                        # </ruby> leaves the ruby altogether, and what it said
+                        # about its reading with it.
+                        self.style = self.style._replace(ruby=previous.ruby, ruby_position=previous.ruby_position,
+                                                         ruby_align=previous.ruby_align)
                     elif name in _RUBY:
-                        # </rt> leaves the container, so what follows is its
-                        # base again; </ruby> leaves the ruby altogether.
+                        # </rt> leaves the reading, so what follows is the
+                        # container's base again.
                         self.style = self.style._replace(ruby=previous.ruby)
                     else:
                         self.style = self.style._replace(**{_FLAGS[name]: getattr(previous, _FLAGS[name])})
@@ -379,6 +491,23 @@ def ruby_groups(runs):
             groups.append(['ruby', [], []])
         groups[-1][1 if role == 'base' else 2].append((run, style._replace(ruby='')))
     return groups
+
+
+def ruby_attributes(group):
+    """Ruby(position, align) for a ['ruby', base, text] group: what its
+    container says, which every run in it carries; the reading's own first,
+    since TTML may say a position on the reading alone."""
+    for _run, style in group[2] + group[1]:
+        if style.ruby_position or style.ruby_align:
+            return Ruby(style.ruby_position, style.ruby_align)
+    return Ruby()
+
+
+def _ruby_open(said):
+    """The <ruby> tag for what a container says."""
+    attributes = (f' position="{said.position}"' if said.position else '') + \
+                 (f' align="{said.align}"' if said.align else '')
+    return f'<ruby{attributes}>'
 
 
 def without_readings(runs):
@@ -434,7 +563,9 @@ def to_html(text, colors=True):
         looks = ([f'color:{style.color}'] if colors and style.color else []) + \
                ([f'background-color:{css_color(style.background)}'] if style.background else []) + \
                ([f'font-size:{style.size}'] if style.size else []) + \
-               ([f'text-shadow:{_shadow(style)}'] if colors and style.edge else [])
+               ([f'text-shadow:{_shadow(style)}'] if colors and style.edge else []) + \
+               _emphasis_css(style.emphasis) + \
+               (['text-combine-upright:all'] if style.combine else [])
         if looks:
             chunk = f'<span style="{";".join(looks)}">{chunk}</span>'
         return chunk
@@ -446,8 +577,41 @@ def to_html(text, colors=True):
             continue
         base = ''.join(chunk_of(run, style) for run, style in group[1])
         reading = ''.join(chunk_of(run, style) for run, style in group[2])
-        parts.append(f'<ruby>{base}<rt>{reading}</rt></ruby>' if base and reading else base + reading)
+        if not (base and reading):
+            parts.append(base + reading)
+            continue
+        placed = _ruby_css(ruby_attributes(group))
+        parts.append(f'<ruby style="{placed}">' if placed else '<ruby>')
+        parts.append(f'{base}<rt>{reading}</rt></ruby>')
     return ''.join(parts)
+
+
+# A reading's place as CSS says it: over is before the text (above it, or
+# right of it down), under is after. Outside, the default, is over.
+_RUBY_CSS_POSITION = {'before': 'over', 'after': 'under'}
+# The ones CSS can spread a reading by; end and with-base it has no word
+# for, so those draw centred, and are kept for the file all the same.
+_RUBY_CSS_ALIGN = {'start': 'start', 'space-around': 'space-around', 'space-between': 'space-between'}
+
+
+def _ruby_css(said):
+    """The inline CSS for a <ruby> that says where its reading goes."""
+    looks = ([f'ruby-position:{_RUBY_CSS_POSITION[said.position]}'] if said.position in _RUBY_CSS_POSITION else []) + \
+            ([f'ruby-align:{_RUBY_CSS_ALIGN[said.align]}'] if said.align in _RUBY_CSS_ALIGN else [])
+    return ';'.join(looks)
+
+
+def _emphasis_css(emphasis):
+    """CSS for an emphasis: text-emphasis and where its marks go. "auto" is
+    CSS's bare "filled", whose shape follows the writing as TTML's auto
+    does; before is over the text (and right of it down), after is under."""
+    if not emphasis:
+        return []
+    words = emphasis.split()
+    where = words[-1] if words[-1] in ANNOTATION_POSITIONS else ''
+    marks = ' '.join(word for word in words if word not in ANNOTATION_POSITIONS)
+    return [f'text-emphasis:{"filled" if marks == "auto" else marks}',
+            f'text-emphasis-position:{"under left" if where == "after" else "over right"}']
 
 
 # How each edge is drawn: offsets in em, around the text for an outline and
@@ -513,7 +677,7 @@ def tags_for(style):
     """The tags a run in `style` sits in: [(name, value)]. A font's value is
     (colour, background), so one tag carries both."""
     font = Font(style.color, style.background, style.size, style.edge, style.edge_color, style.face,
-                style.kind)
+                style.kind, style.emphasis, style.combine)
     wanted = [('font', font)] if font.any() else []
     if style.flash:
         wanted.append((FLASH_TAG, True))
@@ -523,7 +687,8 @@ def tags_for(style):
 
 
 _FONT_ATTRIBUTES = (('color', 'color'), ('background', 'background'), ('size', 'size'),
-                    ('edge', 'edge'), ('edge_color', 'edge-color'), ('face', 'face'), ('kind', 'kind'))
+                    ('edge', 'edge'), ('edge_color', 'edge-color'), ('face', 'face'), ('kind', 'kind'),
+                    ('emphasis', 'emphasis'), ('combine', 'combine'))
 
 
 def _open_tag(name, value):
@@ -569,7 +734,8 @@ def from_spans(runs):
             out.append(_nested(group[1]))
             continue
         base, reading = _nested(group[1]), _nested(group[2])
-        out.append(f'<ruby>{base}<rt>{reading}</rt></ruby>' if base and reading else base + reading)
+        out.append(f'{_ruby_open(ruby_attributes(group))}{base}<rt>{reading}</rt></ruby>'
+                   if base and reading else base + reading)
     return ''.join(out)
 
 
@@ -790,6 +956,10 @@ def _md_span_attrs(style):
         attrs.append(f'face="{style.face}"')
     if style.kind:
         attrs.append(f'kind={style.kind}')
+    if style.emphasis:
+        attrs.append(f'emphasis="{style.emphasis}"')
+    if style.combine:
+        attrs.append(f'combine={style.combine}')
     return ' '.join(attrs)
 
 
@@ -867,7 +1037,9 @@ _MD_ATTR = re.compile(
     r'''|edge-colou?r\s*=\s*["']?(?P<edgecolor>[#\w]+)["']?'''
     r'''|(?<![-\w])edge\s*=\s*["']?(?P<edge>[-\w]+)["']?'''
     r'''|face\s*=\s*(?:"(?P<facequoted>[^"]*)"|(?P<face>[\w-]+))'''
-    r'''|kind\s*=\s*["']?(?P<kind>[-\w]+)["']?''')
+    r'''|kind\s*=\s*["']?(?P<kind>[-\w]+)["']?'''
+    r'''|emphasis\s*=\s*(?:"(?P<emphasisquoted>[^"]*)"|(?P<emphasis>[\w-]+))'''
+    r'''|combine\s*=\s*["']?(?P<combine>[-\w]+)["']?''')
 
 
 def _md_span_style(attrs):
@@ -899,6 +1071,13 @@ def _md_span_style(attrs):
         elif match.group('kind'):
             if match.group('kind').lower() in KINDS:
                 change['kind'] = match.group('kind').lower()
+        elif match.group('emphasisquoted') or match.group('emphasis'):
+            emphasis = emphasis_value(match.group('emphasisquoted') or match.group('emphasis'))
+            if emphasis:
+                change['emphasis'] = emphasis
+        elif match.group('combine'):
+            if combine_value(match.group('combine')):
+                change['combine'] = COMBINE
         else:
             color = color_hex(match.group('fore') or match.group('css'))
             if color:

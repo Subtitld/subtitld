@@ -358,16 +358,19 @@ class SubtitleRenderer(QObject):
         # And how a run of the other direction sits inside the line, where
         # the file forces it (TTML's tts:unicodeBidi).
         bidi = segment.get('bidi') if segment.get('bidi') in ('embed', 'override', 'isolate') else None
+        # Written down the picture, in columns, as Japanese and Chinese may be
+        # (TTML's tts:writingMode, WebVTT's vertical setting).
+        writing = position.writing(segment) or None
         # What the file it came from says it should look like, as CSS over
         # the style's own rules (modules.look). What the file is silent
         # about the style still draws.
         styling = subtitld_look.css(subtitld_look.of(segment)) or None
         key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None,
-                      place, direction, bidi, styling)
+                      place, direction, bidi, styling, writing)
         page = {'html': markup.to_html(text) if text.strip() else None, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
                 'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': direction,
-                'bidi': bidi, 'look': styling}
+                'bidi': bidi, 'look': styling, 'writing': writing}
         return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
 
     def layers(self, segments, at):

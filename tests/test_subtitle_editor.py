@@ -195,6 +195,17 @@ check('with no look left there is none to hand back', shown_bar.look_action.isEn
 shown['look'] = {'size': 8.0}
 shown_bar.clear_button.click()
 check("clear formatting takes the file's look too", 'look' in shown, False)
+shown_bar._show_subtitle()
+check('written across, as a subtitle that says nothing is', shown_bar.writing_actions[''].isChecked(), True)
+steps = len(history.ALL_HISTORY)
+shown_bar.writing_actions['vertical-rl'].setChecked(True)
+check('written down the picture: on the subtitle, in one undo step',
+      (shown.get('writing'), len(history.ALL_HISTORY) - steps, shown_bar.writing_actions[''].isChecked()),
+      ('vertical-rl', 1, False))
+shown_bar._show_subtitle()
+check('the menu shows it the next time', shown_bar.writing_actions['vertical-rl'].isChecked(), True)
+shown_bar.writing_actions[''].setChecked(True)
+check('across again: the key goes', 'writing' in shown, False)
 check('without a subtitle the menu is not offered',
       ste.FormattingBar(loaded('x')).subtitle_button.isVisibleTo(None), False)
 
@@ -207,6 +218,18 @@ check('the reading drawn raised, where ruby draws it above',
       ste.runs(ruby)[1][1].ruby, 'text')
 ste.set_text(ruby, 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
 check('with the formatting inside it', ste.text(ruby), 'A <ruby><i>漢字</i><rt>かんじ</rt></ruby> here')
+
+print('marks and a reading\'s place, which the editor cannot show, kept through an edit')
+marked = QTextEdit()
+ste.set_text(marked, '彼は<font emphasis="filled sesame">本当</font>に'
+                     '<ruby position="after" align="start">東京<rt>とうきょう</rt></ruby>へ')
+cursor = marked.textCursor()
+cursor.movePosition(QTextCursor.End)
+marked.setTextCursor(cursor)
+marked.insertPlainText('。')
+check('a keystroke beside them leaves them as they were', ste.text(marked),
+      '彼は<font emphasis="filled sesame">本当</font>に'
+      '<ruby position="after" align="start">東京<rt>とうきょう</rt></ruby>へ。')
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

@@ -30,13 +30,22 @@ styles' settings are.
     fill_line_gap   whether the box behind each line reaches the next, so a
                     subtitle of two lines is one block and not two stripes
                     (IMSC's itts:fillLineGap)
+    ruby_reserve    room kept on every line for a reading above or below
+                    it, so lines with one and lines without sit alike:
+                    {'position': 'both', 'before', 'after' or 'outside',
+                    'length'?}, the length the room a reading takes when it
+                    is not given (TTML's tts:rubyReserve)
 
 `css` turns one into the inline CSS the renderer draws it with, in pixels
 of a 1080-tall picture, which is the stage host.js lays the subtitle on.
 """
 
 KEYS = ('font', 'size', 'line_height', 'background', 'padding', 'outline', 'shadow', 'wrap',
-        'opacity', 'line_padding', 'row_align', 'fill_line_gap')
+        'opacity', 'line_padding', 'row_align', 'fill_line_gap', 'ruby_reserve')
+
+# Where a reserve may keep its room: both sides of a line, or the one a
+# reading goes on (TTML's <annotation-position>).
+RESERVE_POSITIONS = ('both', 'before', 'after', 'outside')
 
 # The picture the renderer's stage is: a look's percentages are of its height.
 PICTURE_HEIGHT = 1080.0
@@ -116,6 +125,18 @@ def css(look):
         out['padding-right'] = _px(look['line_padding'])
     if look.get('row_align') in _ROW_ALIGN:
         out['text-align'] = _ROW_ALIGN[look['row_align']]
+    reserve = look.get('ruby_reserve') or {}
+    if isinstance(reserve, dict) and reserve.get('position') in RESERVE_POSITIONS:
+        # Room for a reading on every line, as more space between lines: a
+        # line's leading is shared above and below it, so the room asked for
+        # is added twice, and a line that has a reading then sits where one
+        # without would. That is the point of a reserve; drawing exactly one
+        # side of it is more than CSS's line boxes say. With no length, the
+        # room a reading takes, which is half the size of what it reads.
+        room = _px(reserve['length']) if reserve.get('length') else '0.5em'
+        height = look.get('line_height')
+        base = _px(height) if isinstance(height, (int, float)) else '1.2em'
+        out['line-height'] = f'calc({base} + 2 * {room})'
     # fill_line_gap is not drawn: the box goes behind the whole cue here, so
     # it already reaches from one line to the next and a file asking for
     # that gets it. It is kept so the file can say so again, and so a file

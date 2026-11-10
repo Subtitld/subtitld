@@ -51,9 +51,10 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (a VobSub's .idx or .sub, a PGS .sup), not text: nothing is
-    wrong with it, but only an OCR add-on can make text of it
-    (picture_ocr). `path` is the file, `kind` 'vobsub' or 'pgs'."""
+    pictures (a VobSub's .idx or .sub, a PGS .sup, a TTML file in IMSC's
+    Image Profile with pictures it gives no words for), not text: nothing
+    is wrong with it, but only an OCR add-on can make text of it
+    (picture_ocr). `path` is the file, `kind` 'vobsub', 'pgs' or 'imsc'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -718,6 +719,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
+            # IMSC's Image Profile: subtitles that are pictures. Those whose
+            # words the file gives are read as them; a picture with none is
+            # for an OCR add-on, as a disc's are.
+            with open(subtitle_file, 'rb') as ttml_file:
+                has_pictures = b'backgroundImage' in ttml_file.read()
+            if has_pictures and any(not image['alt'] for image in ttml.read_images(subtitle_file)[0]):
+                raise PictureSubtitlesError(subtitle_file, 'imsc')
             language = _known_language(ttml_language)
             if language:
                 session.SUBTITLE['language'] = language
@@ -1549,6 +1557,24 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format == 'VTT':
             # Speakers as voice tags when the export asks for them.
             webvtt.save(final_file, segments, voices=options.get('speakers') == 'voice')
+
+        elif subtitle_format in ['DFXP', 'TTML'] and options.get('profile') in ttml.IMAGE_PROFILES:
+            # IMSC's Image Profile: each subtitle drawn as the preview draws
+            # it, a PNG in a folder beside the file, its words as alt text.
+            # The pictures are the video's size, else a 1920x1080 one.
+            from subtitld.interface import subtitle_pictures
+            size = (int(session.VIDEO.get('width') or 0) or 1920, int(session.VIDEO.get('height') or 0) or 1080)
+            stem = os.path.splitext(os.path.basename(final_file))[0]
+            folder = os.path.join(os.path.dirname(os.path.abspath(final_file)), f'{stem}_pictures')
+            pictures = subtitle_pictures.draw(segments, size, folder)
+            for picture in pictures:
+                picture['href'] = f'{stem}_pictures/{os.path.basename(picture["path"])}'
+            with open(final_file, 'w', encoding='utf-8', newline='\n') as ttml_file:
+                ttml_file.write(ttml.write_images(
+                    pictures, size,
+                    language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                    else language,
+                    profile=options['profile'], metadata=SUBTITLE.get('metadata')))
 
         elif subtitle_format in ['DFXP', 'TTML']:
             # In the language of the text written: a translation's alone, the

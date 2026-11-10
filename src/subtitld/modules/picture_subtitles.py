@@ -1,7 +1,9 @@
-"""Picture subtitles (DVD VobSub, Blu-ray PGS) made ready for OCR, and its text made subtitles.
+"""Picture subtitles (DVD VobSub, Blu-ray PGS, IMSC's Image Profile) made ready for OCR, and its text made subtitles.
 
-The readers (vobsub, pgs) give a `Picture` per subtitle: its time, its place
-on the frame and its pixels, as palette indices with the palette's colours.
+The readers (vobsub, pgs, picture_ocr for IMSC's PNGs) give a `Picture` per
+subtitle: its time, its place on the frame and its pixels, as palette
+indices with the palette's colours, and the words it is, where the file
+gives them (IMSC's alt text), so those need no reading.
 An OCR add-on reads text best as dark ink on light paper, so `ink` turns
 a picture into 8-bit grayscale that way, in one table lookup:
 
@@ -32,6 +34,7 @@ class Picture:
     forced: bool = False
     screen_width: int = 0
     screen_height: int = 0
+    text: str = ''                  # its words where the file gives them, '' to read them
 
 
 def _table(colours, polarity):
@@ -67,7 +70,8 @@ def crop(picture):
             right = max(right, len(row.rstrip(b'\x00')))
     indices = b''.join(picture.indices[y * width + left:y * width + right] for y in range(top, bottom))
     return Picture(picture.start, picture.end, picture.x + left, picture.y + top, right - left, bottom - top,
-                   indices, picture.colours, picture.forced, picture.screen_width, picture.screen_height)
+                   indices, picture.colours, picture.forced, picture.screen_width, picture.screen_height,
+                   picture.text)
 
 
 def ink(picture, polarity='light'):

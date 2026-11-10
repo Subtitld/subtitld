@@ -1,4 +1,4 @@
-"""Picture subtitles: DVD VobSub (.idx/.sub) and Blu-ray PGS (.sup) read
+"""Picture subtitles: DVD VobSub (.idx/.sub), Blu-ray PGS (.sup) and IMSC's Image Profile read
 into pictures (time, place, palette), made dark-on-light grayscale for OCR,
 and their text made subtitles by an OCR engine (picture_ocr.OCRJob): every
 picture read, those read with little confidence read again the other way
@@ -205,6 +205,89 @@ check('a file that is not there: failed', 'failed' in out, True)
 engine = FakeOCR()
 out = run(picture_ocr.OCRJob.for_file(str(folder / 'film.sup'), engine), cancel=True)
 check('cancelled: nothing more heard', out, {})
+
+
+print("IMSC's Image Profile")
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+from PySide6.QtGui import QColor, QImage
+from subtitld.modules import ttml
+
+
+def png(width, height):
+    """A white bar on nothing, as a PNG's bytes."""
+    image = QImage(width, height, QImage.Format_ARGB32)
+    image.fill(QColor(0, 0, 0, 0))
+    for x in range(4, width - 4):
+        for y in range(4, height - 4):
+            image.setPixelColor(x, y, QColor(255, 255, 255))
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.WriteOnly)
+    image.save(buffer, 'PNG')
+    return bytes(data)
+
+
+import base64
+(folder / 'one.png').write_bytes(png(400, 60))
+(folder / 'two.png').write_bytes(png(300, 60))
+IMAGES = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" '
+    'xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" '
+    'xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt" '
+    'xmlns:ittm="http://www.w3.org/ns/ttml/profile/imsc1#metadata" '
+    'xmlns:itts="http://www.w3.org/ns/ttml/profile/imsc1#styling" '
+    'ttp:contentProfiles="http://www.w3.org/ns/ttml/profile/imsc1.1/image" tts:extent="1920px 1080px" xml:lang="fr">'
+    '<head><metadata><smpte:image xml:id="embedded" imagetype="PNG" encoding="Base64">'
+    + base64.b64encode(png(200, 40)).decode('ascii') +
+    '</smpte:image></metadata><layout>'
+    '<region xml:id="bottom" tts:origin="760px 900px" tts:extent="400px 60px"/>'
+    '<region xml:id="top" tts:origin="810px 80px" tts:extent="300px 60px"/>'
+    '</layout></head><body>'
+    '<div begin="1s" end="2s" region="bottom" smpte:backgroundImage="one.png">'
+    '<metadata><ittm:altText>Bonjour\ntout le monde</ittm:altText></metadata></div>'
+    '<div begin="3s" end="4s" region="top" smpte:backgroundImage="two.png" itts:forcedDisplay="true"/>'
+    '<div begin="5s" end="6s" region="bottom" smpte:backgroundImage="#embedded"/>'
+    '</body></tt>')
+(folder / 'pictures.ttml').write_text(IMAGES, encoding='utf-8')
+check('a picture with words is read as them, placed where its region is',
+      ttml.parse(IMAGES), [{'start': 1.0, 'end': 2.0, 'text': 'Bonjour\ntout le monde'}])
+_images, _language, _size = ttml.read_images(str(folder / 'pictures.ttml'))
+check('the pictures, the file\'s and the ones it holds',
+      [(i['start'], i['href'], i['data'] is not None, i['forced']) for i in _images] + [_language, _size],
+      [(1.0, 'one.png', False, False), (3.0, 'two.png', False, True), (5.0, '', True, False), 'fr', (1920.0, 1080.0)])
+try:
+    file_io.process_subtitles_file(str(folder / 'pictures.ttml'))
+    check('pictures with no words: for the OCR dialog', None, 'PictureSubtitlesError')
+except file_io.PictureSubtitlesError as error:
+    check('pictures with no words: for the OCR dialog', (error.path, error.kind),
+          (str(folder / 'pictures.ttml'), 'imsc'))
+(folder / 'described.ttml').write_text(IMAGES.replace('itts:forcedDisplay="true"/>', 'itts:forcedDisplay="true">'
+                                                      '<metadata><ittm:altText>En haut</ittm:altText></metadata></div>')
+                                       .replace('smpte:backgroundImage="#embedded"/>', 'smpte:backgroundImage="#embedded">'
+                                                '<metadata><ittm:altText>Encore</ittm:altText></metadata></div>'),
+                                       encoding='utf-8')
+_segments, _format = file_io.process_subtitles_file(str(folder / 'described.ttml'))
+check('every picture with words: opened as text, the forced one forced, the top one at the top',
+      ([(s['text'], s.get('forced', False)) for s in _segments], _format),
+      ([('Bonjour\ntout le monde', False), ('{\\an8}En haut', True), ('Encore', False)], 'TTML'))
+_pictures, _tag = picture_ocr.imsc_pictures(str(folder / 'pictures.ttml'))
+check('made pictures where their regions put them, on the picture the file is',
+      [(p.x, p.y, p.width, p.height, p.screen_height, p.text) for p in _pictures] + [_tag],
+      [(760, 900, 400, 60, 1080, 'Bonjour\ntout le monde'), (810, 80, 300, 60, 1080, ''),
+       (760, 900, 200, 40, 1080, ''), 'fr'])
+_white, _clear = _pictures[0].indices[10 * 400 + 10], _pictures[0].indices[0]
+check('a PNG\'s pixels as how light they are and how much of them shows',
+      (_pictures[0].colours[_white], _pictures[0].colours[_clear]), ((255, 255, 255, 255), (0, 0, 0, 0)))
+check('and drawn for OCR as dark ink on light paper, as a disc\'s are',
+      (picture_subtitles.ink(_pictures[0])[10 * 400 + 10], picture_subtitles.ink(_pictures[0])[0]), (0, 255))
+engine = FakeOCR()
+out = run(picture_ocr.OCRJob.for_file(str(folder / 'pictures.ttml'), engine))
+check('only the pictures with no words are read, in the file\'s language',
+      engine.calls, [(['00001.pgm', '00002.pgm'], 'fr')])
+check('and the words the file gives are kept as they are',
+      [(s['text'], s.get('forced', False)) for s in out['segments']],
+      [('Bonjour\ntout le monde', False), ('{\\an8}text 1', True), ('text 2', False)])
 
 
 class Request(QObject):
