@@ -129,6 +129,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'STL': {'description': 'EBU STL Subtitle format', 'extensions': ['stl']},
     'MCC': {'description': 'MacCaption Subtitle format', 'extensions': ['mcc']},
     'DCP': {'description': 'DCP Subtitle format (Interop or SMPTE)', 'extensions': ['xml']},
+    'PAC': {'description': 'Screen PAC Subtitle format', 'extensions': ['pac']},
+    'FPC': {'description': 'Screen UniPac Subtitle format', 'extensions': ['fpc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},

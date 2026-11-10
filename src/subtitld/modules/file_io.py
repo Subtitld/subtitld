@@ -33,6 +33,7 @@ from subtitld.modules import legacy
 from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
+from subtitld.modules import pac
 from subtitld.modules import plaintext
 from subtitld.modules import sami
 from subtitld.modules import sbv
@@ -948,6 +949,22 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cavena_settings['fps'],
                                              start=cavena_settings['start'])
 
+        elif subtitle_file.lower().endswith(('.pac', '.fpc')):
+            # Screen's PAC and UniPac. Neither says its frame rate, so the
+            # video's, else 25; nor its code page, which is found from the
+            # text. Both kept to save it again as it was, and the language
+            # the file names (or its script does) becomes the project's.
+            subtitle_format = 'FPC' if subtitle_file.lower().endswith('.fpc') else 'PAC'
+            rate = float(session.VIDEO.get('framerate') or 0) or pac.DEFAULT_FPS
+            try:
+                segments_list, pac_settings = pac.read(subtitle_file, fps=rate)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(pac_settings['language']):
+                session.SUBTITLE['language'] = _known_language(pac_settings['language'])
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=rate,
+                                             pac_code_page=pac_settings['code_page'])
+
         elif subtitle_file.lower().endswith(('.mcc')):
             # MacCaption: the CEA-708 captions of its packets, else the CEA-608
             # ones; its frame rate and what it carries kept to save it again
@@ -1827,6 +1844,16 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                            title=(SUBTITLE.get('metadata') or {}).get('title')
                            or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
                            start=options.get('start') if options.get('start') in cavena890.STARTS else cavena890.STARTS[0])
+
+        elif subtitle_format in ('PAC', 'FPC'):
+            # Frames at the export's rate (the video's, else 25); PAC in the
+            # code page it asks for when the text fits it, else the one the
+            # text's language or characters ask for; UniPac in UTF-8.
+            pac.save(final_file, segments,
+                     fps=float(options.get('fps') or VIDEO.get('framerate') or pac.DEFAULT_FPS),
+                     code_page=options.get('pac_code_page') or 'auto', unicode=subtitle_format == 'FPC',
+                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                     else language)
 
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.
