@@ -1582,10 +1582,12 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                       line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
         elif subtitle_format == 'SCC':
-            # Pop-on captions, in drop-frame timecode unless the export asks
+            # Captions the way the export asks for them (pop-on, roll-up or
+            # paint-on, in CC1 or CC2), in drop-frame timecode unless it asks
             # otherwise; speakers as captioners mark them when it asks.
             scc.save(final_file, segments, drop_frame=options.get('timecode') != 'non-drop',
-                     speaker_changes=options.get('speakers') == 'voice')
+                     speaker_changes=options.get('speakers') == 'voice',
+                     mode=options.get('caption_mode') or 'pop', channel=options.get('caption_channel') or 1)
 
         elif subtitle_format == 'ASS':
             # Sized to the video, in the export's look; .ssa as SSA v4.
@@ -1594,12 +1596,20 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                      preview=subtitle_styles.preview_look())
 
         elif subtitle_format == 'MCC':
-            # Pop-on captions in CEA-608 and CEA-708 (or CEA-608 alone), a packet
-            # a frame, at the export's frame rate (the video's); speakers as
-            # captioners mark them.
+            # Captions the way the export asks for them, in CEA-608 and
+            # CEA-708 (or CEA-608 alone), a packet a frame, at the export's
+            # frame rate (the video's); speakers as captioners mark them. A
+            # translation asked for as well gets a CEA-708 service of its own.
             rate = options.get('mcc_rate') if options.get('mcc_rate') in mcc.RATES else mcc.rate_for(VIDEO.get('framerate'))
+            services = {}
+            if options.get('caption_service_language'):
+                beside = export_options.prepare(SUBTITLE.get('segments'), dict(
+                    options, text='translation', language=options['caption_service_language']))
+                services = {2: beside}
             mcc.save(final_file, segments, rate=rate or '29.97DF', speaker_changes=options.get('speakers') == 'voice',
-                     captions='608' if options.get('mcc_captions') == '608' else 'both')
+                     captions='608' if options.get('mcc_captions') == '608' else 'both',
+                     mode=options.get('caption_mode') or 'pop', channel=options.get('caption_channel') or 1,
+                     services=services)
 
         elif subtitle_format == 'STL':
             # In the language of the text written; frames at the export's rate

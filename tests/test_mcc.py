@@ -18,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import cea708, file_io, mcc, scc, session
+from subtitld.modules import cea708, closed_captions, file_io, mcc, scc, session
 
 fails = []
 
@@ -111,9 +111,10 @@ check('a line in letters, as MacCaption writes it', cues(
 AT_25 = to_mcc(SCC, rate='25', timecode=at_25, rate_code=3, count=24)
 check('at 25: the header says so, and the packets', (cues(AT_25)[0][:2], mcc.parse(AT_25)[1]),
       ((1.2, 3.0), {'rate': '25', 'captions': '608'}))
-check('the rate the export offers, by the header and the packets', [mcc.parse(to_mcc(SCC, rate=label, rate_code=code))[1]['rate']
-      for label, code in (('30DF', 4), ('30', 4), ('30', 5), ('24', 1), ('24', 2), ('60', 8))],
-      ['29.97DF', '29.97', '30', '23.976', '24', None])
+check('the rate the export offers, by the header and the packets; none where the two disagree',
+      [mcc.parse(to_mcc(SCC, rate=label, rate_code=code))[1]['rate']
+       for label, code in (('30DF', 4), ('30', 4), ('30', 5), ('24', 1), ('24', 2), ('60', 8), ('30DF', 3))],
+      ['29.97DF', '29.97', '30', '23.976', '24', '60', None])
 # CEA-708 as the cea708 module writes it: in a file with CEA-608 too, it is read first; alone, it is read.
 DTVCC_DATA = cea708.frame_data([('{\\an8}<font color="#ffd700">Only in 708</font>', 30, 60)], 18)
 CEA608_TOO = to_mcc(SCC.split('\n\n00:00:01;20')[0])
@@ -197,7 +198,8 @@ for name, options, framerate, want in (
         ('saved at the rate asked; >> marks; Windows line ends', {'mcc_rate': '23.976', 'speakers': 'voice'}, 25.0,
          ('Time Code Rate=24', 1, '>> ', True)),
         ("else the video's; CEA-608 alone when asked", {'mcc_captions': '608'}, 25.0, ('Time Code Rate=25', 3, "You", True)),
-        ('else 29.97 drop-frame', {}, 50.0, ('Time Code Rate=30DF', 4, "You", True))):
+        ("else the video's, at the faster rates too", {}, 50.0, ('Time Code Rate=50', 6, "You", True)),
+        ('else 29.97 drop-frame', {}, 48.0, ('Time Code Rate=30DF', 4, "You", True))):
     session.FORMAT = {'options': options}
     session.VIDEO = {'framerate': framerate}
     file_io.save_file(str(folder / 'out.mcc'), 'MCC')
@@ -212,6 +214,47 @@ try:
     check('not MCC: says so', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('not MCC: says so', str(error).startswith('Not a MacCaption file'), True)
+
+print('writing: the modes, the channels, another service, every frame')
+TYPED = [{'start': 1.0, 'end': 3.0, 'text': 'First line'}, {'start': 3.0, 'end': 5.0, 'text': 'Second line'}]
+
+
+def batches_of(text):
+    """The caption data an MCC's lines carry, as closed_captions reads it."""
+    out = []
+    for line in text.split('\n'):
+        match = mcc._LINE.match(line)
+        if not match:
+            continue
+        frame = mcc._frame(*(int(part) for part in match.groups()[:4]), 30, True)
+        triplets, _rate = mcc._cc_data(mcc._expand(match.group(5)))
+        if triplets:
+            out.append((frame, triplets))
+    return out
+
+
+check('roll-up through CEA-608 and CEA-708 alike',
+      ([s['text'] for s in mcc.parse(mcc.write(TYPED, mode='roll2'))[0]],
+       [s['text'] for s in mcc.parse(mcc.write(TYPED, mode='roll2', captions='608'))[0]]),
+      (['First line', 'Second line'], ['First line', 'Second line']))
+check('paint-on too', [s['text'] for s in mcc.parse(mcc.write(TYPED, mode='paint', captions='608'))[0]],
+      ['First line', 'Second line'])
+third = batches_of(mcc.write(TYPED, channel=3, captions='608'))
+check('CC3 rides in the second field, where CC1 is empty',
+      ([s['text'] for s in closed_captions.decode(third, mcc.RATES['29.97DF'][2], 'cc3')[0]],
+       closed_captions.decode(third, mcc.RATES['29.97DF'][2], 'cc1')[0],
+       sorted({cc_type for _frame, triplets in third for cc_type, _a, _b in triplets})),
+      (['First line', 'Second line'], [], [0, 1]))
+spanish = batches_of(mcc.write(TYPED, services={2: [{'start': 1.0, 'end': 3.0, 'text': 'Primera linea'}]}))
+check('a CEA-708 service of its own for another language',
+      (cea708.services([(f, [t for t in trip if t[0] >= 2]) for f, trip in spanish]),
+       [s['text'] for s in cea708.decode(spanish, mcc.RATES['29.97DF'][2], 2)]),
+      ([1, 2], ['Primera linea']))
+check('a packet for every frame, as ancillary data needs',
+      len([line for line in mcc.write(TYPED, frames=180).split('\n') if '\t' in line]), 180)
+check('and never fewer than the captions need', len([line for line in mcc.write(TYPED, frames=2).split('\n')
+                                                     if '\t' in line]) > 2, True)
+
 
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
@@ -234,10 +277,46 @@ check('chosen', {key: panel.get_config()['options'].get(key) for key in ('mcc_ra
 session.VIDEO = {}
 check('remembered, without a video', (_SubtitlesPanel().mcc_rate_combo.combobox.currentData(),
                                       _SubtitlesPanel().mcc_captions_combo.combobox.currentData()), ('25', '608'))
+check('all four channels, since MacCaption carries both fields',
+      [panel.caption_channel_combo.combobox.itemData(index)
+       for index in range(panel.caption_channel_combo.combobox.count())], [1, 2, 3, 4])
 panel.format_combo.setCurrentText('SCC')
 panel._refresh_options()
 check('not for SCC', (panel.mcc_options.isHidden(), 'mcc_rate' in panel.get_config()['options'],
-                      'mcc_captions' in panel.get_config()['options']), (True, False, False))
+                      'mcc_captions' in panel.get_config()['options'],
+                      [panel.caption_channel_combo.combobox.itemData(index)
+                       for index in range(panel.caption_channel_combo.combobox.count())]), (True, False, False, [1, 2]))
+
+print('a placed subtitle, all the way through a file')
+_placed = [{'start': 1.0, 'end': 3.0, 'text': '{\\an7}In from the corner',
+            'position': {'h': '20%', 'v': '15%'}},
+           {'start': 4.0, 'end': 6.0, 'text': 'Where it always went'}]
+_text = mcc.write(_placed, 30000 / 1001)
+_back, _settings = mcc.parse(_text)
+check('CEA-708 carries it exactly, and says nothing of a subtitle that asks for nothing',
+      [(subtitle['text'], subtitle.get('position')) for subtitle in _back],
+      [('{\\an7}In from the corner', {'h': '20%', 'v': '15%'}),
+       ('Where it always went', None)])
+_six, _track = closed_captions.decode(
+    [(frame, triplets) for frame, triplets in
+     [(mcc._frame(*(int(part) for part in match.groups()[:4]), 30, True),
+       mcc._cc_data(mcc._expand(match.group(5)))[0])
+      for match in (mcc._LINE.match(line) for line in _text.split('\n')) if match]
+     if triplets], 30000 / 1001, track='cc1')
+check('CEA-608 beside it puts it on the nearest of its own rows and columns',
+      (_six[0]['text'], _six[0].get('position')),
+      ('{\\an8}In from the corner', {'h': '-3.1%', 'v': '13.3%'}))
+
+
+print('a window carried through a file')
+_held = {'fill': '#000000', 'border': 'uniform', 'print_direction': 'ttb', 'priority': 3}
+_back, _settings = mcc.parse(mcc.write(
+    [{'start': 1.0, 'end': 3.0, 'text': 'Through a file', 'caption_window': _held},
+     {'start': 4.0, 'end': 6.0, 'text': 'Asking for nothing'}], 30000 / 1001))
+check('CEA-708 says it in its window, and says nothing for a caption that asks for nothing',
+      [(subtitle['text'], subtitle.get('caption_window')) for subtitle in _back],
+      [('Through a file', _held), ('Asking for nothing', None)])
+
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

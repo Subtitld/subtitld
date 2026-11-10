@@ -18,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import ebustl, file_io, session
+from subtitld.modules import ebustl, file_io, markup, session
 
 fails = []
 
@@ -150,6 +150,33 @@ check('remembered', (_SubtitlesPanel().stl_display_combo.combobox.currentData(),
 panel.format_combo.setCurrentText('SRT')
 panel._refresh_options()
 check('not for SRT', panel.stl_options.isHidden(), True)
+
+print('a background behind a run')
+
+
+def _kept(text, display='teletext'):
+    data = ebustl.write([{'start': 1.0, 'end': 3.0, 'text': text}], display=display)
+    back, _info = ebustl.parse(data)
+    return back[0]['text'] if back else ''
+
+
+for _display in ('teletext', 'open'):
+    check(f'{_display}: written as teletext says one, and read back',
+          _kept('<font color="#ffff00" background="#0000ff">Yellow on blue</font>', _display),
+          '<font color="#ffff00" background="#0000ff">Yellow on blue</font>')
+    check(f'{_display}: the space the codes stand in is still a space of the text',
+          _kept('Plain <font background="#0000ff">then blue</font> then plain', _display),
+          'Plain <font background="#0000ff">then blue</font> then plain')
+    check(f'{_display}: a run with no background of its own says nothing',
+          _kept('Where it always went', _display), 'Where it always went')
+check('New Background takes the colour set before it, and Black Background puts it back',
+      [style.background for _run, style in markup.spans(_kept(
+          '<font background="#ff0000">On red</font> and not'))],
+      ['#ff0000', ''])
+check('a colour teletext has not: the nearest it has',
+      [style.background for _run, style in markup.spans(_kept('<font background="#2200cc">x</font>'))],
+      ['#0000ff'])
+
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

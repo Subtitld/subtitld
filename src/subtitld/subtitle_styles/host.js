@@ -32,6 +32,12 @@
     #safe[data-align="3"], #safe[data-align="6"], #safe[data-align="9"] { align-items: flex-end; text-align: right; }
     #subtitld-stamp { position: absolute; left: 0; height: ${STRIP}px; }
     #subtitld-stamp i { position: absolute; top: 2px; width: 8px; height: 8px; background: #fff; }
+    /* A run of text that flashes (modules.markup: both caption standards can
+       ask for it). The rule lives here, not in a style, so every style gets
+       it; the capture holds the animation at the moment it asks for, so a
+       flash is on or off for certain and never half drawn. */
+    @keyframes subtitld-flash { 0%, 49% { visibility: visible; } 50%, 100% { visibility: hidden; } }
+    .subtitld-flash { animation: subtitld-flash 1s step-end infinite; }
   `;
   document.head.prepend(css);
 

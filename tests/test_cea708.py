@@ -12,7 +12,7 @@ instead silently tests stale code.
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from subtitld.modules import cea708
+from subtitld.modules import cea708, markup, position
 
 fails = []
 RATE = 30000 / 1001
@@ -188,6 +188,236 @@ check('at most the room a frame has', max(len(triplets) for triplets in data.val
 tight = cea708.frame_data([('One', 10, None), ('Two two two two two two two', 11, 40)], 2)
 check('too little room: the show waits for its load', [round(s['start'] * RATE) for s in cea708.decode(
     sorted(tight.items()), RATE)][1] > 11, True)
+
+print('writing: roll-up, paint-on and more than one service')
+SHOWS = [('First line', 30, None), ('Second line', 90, 150)]
+for mode, want in (('roll2', [(1.034, 3.003, 'First line'), (3.003, 5.005, 'Second line')]),
+                   ('roll4', [(1.034, 3.003, 'First line'), (3.003, 5.005, 'Second line')]),
+                   ('paint', [(1.034, 3.036, 'First line'), (3.036, 5.005, 'Second line')])):
+    typed = cea708.frame_data(SHOWS, 18, mode=mode)
+    check(f'{mode}: read back as it was typed',
+          [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in cea708.decode(sorted(typed.items()), RATE)],
+          want)
+rolled = cea708.frame_data(SHOWS, 18, mode='roll3')
+first = cea708.blocks(cea708.packets(sorted(rolled.items()))[0][1])[0][1]
+check('roll-up: the windows cleared, then one defined visible, three rows, the pen on its base row',
+      (list(first[:2]), first[3] & 0x20, (first[6] & 0x0F) + 1, list(first[14:19])),
+      ([0x8C, 0xFF], 0x20, 3, [0x88, 0x01, 0x92, 0x02, 0x00]))
+both = cea708.frames_for({1: SHOWS, 3: [('Primera linea', 30, None)]}, 18)
+batches = sorted(both.items())
+check('two services in one channel, each read on its own',
+      (cea708.services(batches), [s['text'] for s in cea708.decode(batches, RATE, 1)],
+       [s['text'] for s in cea708.decode(batches, RATE, 3)]),
+      ([1, 3], ['First line', 'Second line'], ['Primera linea']))
+
+
+print('placed by hand')
+
+
+def _window_of(text, place, mode='pop'):
+    """The DefineWindow a caption of `mode` writes, as its bytes."""
+    shows = [(text, 30, None, place)]
+    frames = cea708.frames_for({1: shows}, 18, mode)
+    data = [byte for _frame, triplets in sorted(frames.items())
+            for _type, first, second in triplets for byte in (first, second)]
+    start = next(index for index, byte in enumerate(data) if 0x98 <= byte <= 0x9F)
+    return data[start:start + 7]
+
+
+_plain = _window_of('Where it always went', position.NOWHERE)
+check('no place of its own: anchored at the bottom middle, as it always was',
+      (_plain[2], _plain[3]), (0x80 | 90, 50))
+_corner_plain = _window_of('{\\an1}Hard against the corner', position.NOWHERE)
+check('and at a corner, the title-safe tenth in from both edges',
+      (_corner_plain[2], _corner_plain[3]), (0x80 | 90, 10))
+_lifted = _window_of('Clear of a lower third', position.Place(v='30%'))
+check('lifted 30%: the anchor says exactly that, with nothing rounded',
+      (_lifted[2], _lifted[3]), (0x80 | 70, 50))
+_corner = _window_of('{\\an7}In from the corner', position.Place(h='20%', v='15%'))
+check('in from a corner: both margins straight into the anchor, and the corner it hangs from',
+      (_corner[2], _corner[3], _corner[4] >> 4), (0x80 | 15, 20, 0))
+_pixels = _window_of('Said in pixels', position.Place(v='108'))
+check('a margin in pixels of a 1080-tall picture is a tenth of it',
+      _pixels[2], 0x80 | 90)
+_turned = _window_of('Turned about', position.Place(v='30%', rotate=(0.0, 0.0, 45.0)))
+check('a rotation is nothing CEA-708 can draw: the place it leaves is still kept',
+      _turned[2], 0x80 | 70)
+
+for _mode in ('pop', 'roll2', 'paint'):
+    _shows = [('{\\an1}Hard against the corner', 30, None, position.Place(h='40%'))]
+    _read = cea708.decode(sorted(cea708.frames_for({1: _shows}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: read back where it was placed, off the left edge',
+          (_read[0]['text'], _read[0].get('position')),
+          ('{\\an1}Hard against the corner', {'h': '40%'}))
+_read = cea708.decode(sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)
+check('captions where the nine places alone put them say nothing more',
+      [subtitle.get('position') for subtitle in _read], [None, None])
+
+
+print('a background behind the pen')
+
+
+def _pen_bytes(text):
+    """The SetPenColor a caption writes for its first run."""
+    units = cea708._load(text, 0)
+    return next(unit for unit in units if unit[0] == 0x91)
+
+
+check('solid black is what a pen sits on, as a CEA-608 one does: nothing says otherwise',
+      _pen_bytes('Plain')[2], 0x00)
+check('a colour to two bits a component, solid',
+      _pen_bytes('<font background="#0000ff">On blue</font>')[2], 0b00_00_00_11)
+check('half seen through, and asked to be seen through altogether',
+      (_pen_bytes('<font background="#00ff0080">x</font>')[2] >> 6,
+       _pen_bytes('<font background="#00000000">x</font>')[2] >> 6), (2, 3))
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <font color="#ffff00" background="#0000ff">yellow on blue</font> plain'
+    _read = cea708.decode(sorted(cea708.frames_for(
+        {1: [(_asked, 30, None)]}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: written into the pen and read back, colour and all',
+          markup.spans(_read[0]['text']), markup.spans(_asked))
+_read = cea708.decode(sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)
+check('captions that ask for no background say nothing about one',
+      [subtitle['text'] for subtitle in _read], ['First line', 'Second line'])
+
+
+print('the size, place and edge of a pen')
+
+
+def _attrs(text):
+    """The SetPenAttributes a caption writes for its first run."""
+    return next(unit for unit in cea708._load(text, 0) if unit[0] == 0x90)
+
+
+check('standard size, on the line, no edge: what it always wrote',
+      _attrs('Plain')[1:], [0x05, 0x00])
+check('the three sizes, by their two bits',
+      [_attrs(f'<font size="{size}">x</font>')[1] & 0x03 for size in ('80%', '100%', '120%')], [0, 1, 2])
+check('lowered, on the line and raised',
+      [(_attrs(written)[1] >> 2) & 0x03 for written in ('<sub>x</sub>', 'x', '<sup>x</sup>')], [0, 1, 2])
+check('each edge CEA-708 names, by its three bits',
+      [(_attrs(f'<font edge="{edge}">x</font>')[2] >> 3) & 0x07
+       for edge in ('raised', 'depressed', 'uniform', 'left-shadow', 'right-shadow')], [1, 2, 3, 4, 5])
+check('the colour the edge is drawn in goes in the pen colour, black by default',
+      [next(unit for unit in cea708._load(written, 0) if unit[0] == 0x91)[3]
+       for written in ('<font edge="uniform">x</font>',
+                       '<font edge="uniform" edge-color="#ff0000">x</font>')],
+      [0x00, 0b11_00_00])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = ('Plain <font size="80%" edge="raised" edge-color="#ff0000">small and raised</font> '
+              'then <sup>up</sup>')
+    _read = cea708.decode(sorted(cea708.frames_for({1: [(_asked, 30, None)]}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: written into the pen and read back, every part of it',
+          markup.spans(_read[0]['text']), markup.spans(_asked))
+check('an edge colour with no edge to draw says nothing',
+      [subtitle.get('text') for subtitle in cea708.decode(
+          sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)],
+      ['First line', 'Second line'])
+
+
+print('the services above the sixth')
+check('named by an extended service number, written and read back',
+      [(cea708.services(sorted(cea708.frames_for({number: [(f'In {number}', 30, None)]}, 18).items())),
+        [subtitle['text'] for subtitle in cea708.decode(
+            sorted(cea708.frames_for({number: [(f'In {number}', 30, None)]}, 18).items()), RATE, number)])
+       for number in (6, 7, 8, 63)],
+      [([6], ['In 6']), ([7], ['In 7']), ([8], ['In 8']), ([63], ['In 63'])])
+_mixed = sorted(cea708.frames_for({1: [('Main', 30, None)], 20: [('Twentieth', 30, None)]}, 18).items())
+check('one of each in a channel, each read on its own',
+      (cea708.services(_mixed), [s['text'] for s in cea708.decode(_mixed, RATE, 1)],
+       [s['text'] for s in cea708.decode(_mixed, RATE, 20)]),
+      ([1, 20], ['Main'], ['Twentieth']))
+check('the header says 7 and the byte after it says which',
+      [(packet[1] >> 5, packet[2] & 0x3F) for _frame, packet in
+       cea708.packets(sorted(cea708.frames_for({20: [('x', 30, None)]}, 18).items()))][:1],
+      [(7, 20)])
+
+
+print('the typeface a pen asks for')
+check('each of the eight CEA-708 names, written and read back',
+      [cea708.decode(sorted(cea708.frames_for(
+          {1: [(f'<font face="{face}">x</font>', 30, None)]}, 18).items()), RATE, 1)[0]['text']
+       for face in markup.FACES],
+      [f'<font face="{face}">x</font>' for face in markup.FACES])
+check('one it does not name is whatever the decoder draws anyway',
+      cea708.decode(sorted(cea708.frames_for(
+          {1: [('<font face="Arial">x</font>', 30, None)]}, 18).items()), RATE, 1)[0]['text'], 'x')
+check('the default takes the tag that says nothing',
+      next(unit for unit in cea708._load('Plain', 0) if unit[0] == 0x90)[2] & 0x07, 0)
+
+
+print('text that flashes')
+check('a pen says it in how opaque its own colour is',
+      [next(unit for unit in cea708._load(written, 0) if unit[0] == 0x91)[1] >> 6
+       for written in ('x', '<blink>x</blink>')], [0, 1])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <blink>flash</blink> then plain'
+    _read = cea708.decode(sorted(cea708.frames_for({1: [(_asked, 30, None)]}, 18, _mode).items()), RATE, 1)
+    check(f'{_mode}: written into the pen and read back', markup.spans(_read[0]['text']), markup.spans(_asked))
+check('a caption that asks for none says nothing about it',
+      [subtitle['text'] for subtitle in cea708.decode(
+          sorted(cea708.frames_for({1: SHOWS}, 18).items()), RATE, 1)],
+      ['First line', 'Second line'])
+
+
+print('what kind of text a pen says it is')
+check('the text tag, in the four bits above the size and the offset',
+      [next(unit for unit in cea708._load(f'<font kind="{kind}">x</font>', 0)
+            if unit[0] == 0x90)[1] >> 4
+       for kind in ('source-id', 'lyrics', 'expletive', 'not-displayed')],
+      [1, 8, 11, 15])
+check('dialogue is the tag that says nothing, and what a run says by default',
+      next(unit for unit in cea708._load('Plain', 0) if unit[0] == 0x90)[1] >> 4, 0)
+check('every kind written and read back',
+      [cea708.decode(sorted(cea708.frames_for(
+          {1: [(f'<font kind="{kind}">x</font>', 30, None)]}, 18).items()), RATE, 1)[0]['text']
+       for kind in markup.KINDS if kind],
+      [f'<font kind="{kind}">x</font>' for kind in markup.KINDS if kind])
+check('beside dialogue in one caption',
+      cea708.decode(sorted(cea708.frames_for(
+          {1: [('Dialog <font kind="sound-effect">[a door]</font> more', 30, None)]}, 18).items()),
+          RATE, 1)[0]['text'],
+      'Dialog <font kind="sound-effect">[a door]</font> more')
+
+
+print("what a window says about itself")
+
+
+def _window_kept(held, mode='pop'):
+    shows = [('Caption text', 30, None, position.NOWHERE, held)]
+    read = cea708.decode(sorted(cea708.frames_for({1: shows}, 18, mode).items()), RATE, 1)
+    return read[0].get('caption_window') if read else '(nothing read)'
+
+
+check('a window Subtitld writes itself asks for nothing out of the ordinary',
+      _window_kept(None), None)
+check('the bytes it writes for one are the ones it always wrote',
+      [unit for unit in cea708._load('Plain', 0) if unit[0] == 0x97][0],
+      [0x97, 0xC0, 0x00, 0x0C | cea708._CENTER, 0x00])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = {'fill': '#0055aa', 'border': 'raised', 'border_color': '#ffffff',
+              'print_direction': 'rtl', 'scroll_direction': 'ltr', 'word_wrap': True,
+              'effect': 'wipe', 'effect_direction': 'btt', 'effect_speed': 9, 'priority': 2}
+    check(f'{_mode}: all of it written and read back', _window_kept(_asked, _mode), _asked)
+check('a box solid black, which a pen on solid black is not',
+      (_window_kept({'fill': '#000000'}), _window_kept({'fill': '#0000ff80'})),
+      ({'fill': '#000000'}, {'fill': '#0000ff80'}))
+check('a border with nothing to draw has no colour of its own',
+      _window_kept({'border_color': '#ff0000'}), None)
+check('a colour CEA-708 cannot say to two bits a component: the nearest it can',
+      _window_kept({'fill': '#003366'}), {'fill': '#005555'})
+check('the ordinary directions say nothing, and a named one says itself',
+      (_window_kept({'print_direction': 'ltr', 'scroll_direction': 'btt'}),
+       _window_kept({'print_direction': 'ttb'})),
+      (None, {'print_direction': 'ttb'}))
+check('what a window holds, read off a subtitle and put back on one',
+      (cea708.window_of({'caption_window': {'fill': '#000000', 'effect': 'fade'}}),
+       cea708.window_of({}), cea708.store_window({'text': 'x'}, cea708.NOWINDOW)),
+      (cea708.Window(fill='#000000', effect='fade'), cea708.NOWINDOW, {'text': 'x'}))
+check('a kind of thing it does not know is nothing',
+      cea708.window_of({'caption_window': {'effect': 'explode', 'priority': 99, 'fill': 'nonsense'}}),
+      cea708.Window(priority=7))
+
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

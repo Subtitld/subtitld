@@ -2,7 +2,8 @@
 caption decoder does (pop-on, roll-up and paint-on captions, PAC and
 mid-row styles, special and extended characters, codes sent twice, the
 second channel, backspace and delete to end of row), writing pop-on
-captions shown on their frames, and the export's options.
+captions shown on their frames, placing a subtitle on the fifteen rows and
+thirty-two columns, and the export's options.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -17,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, scc, session
+from subtitld.modules import file_io, markup, position, scc, session
 
 fails = []
 
@@ -49,6 +50,7 @@ def cues(text):
     return [(s['start'], s['end'], s['text']) for s in scc.parse(text)]
 
 
+_FON_ = scc._FON
 RCL, ENM, EOC, EDM = code(0x14, 0x20), code(0x14, 0x2E), code(0x14, 0x2F), code(0x14, 0x2C)
 RU2, CR, RDC, BS, DER = code(0x14, 0x25), code(0x14, 0x2D), code(0x14, 0x29), code(0x14, 0x21), code(0x14, 0x24)
 
@@ -172,6 +174,27 @@ crowded_frames = [scc.frame_of(line.split('\t')[0]) + index for line in crowded.
 check('too close to load in time: shown as soon as it is loaded (40 frames each), no frame used twice',
       ([round(s['start'], 2) for s in scc.parse(crowded)], len(crowded_frames) == len(set(crowded_frames))), ([1.33, 2.74], True))
 
+print('writing: roll-up, paint-on and the second channel')
+typed = [{'start': 1.0, 'end': 3.0, 'text': 'First line'}, {'start': 3.0, 'end': 5.0, 'text': 'Second line'}]
+rolled = scc.write(typed, mode='roll2')
+check('roll-up: RU2, a CR to roll, the base row and its text',
+      rolled.split('\n')[2].split('\t')[1].split()[:8],
+      ['9425', '9425', '94ad', '94ad', '94f4', '94f4', '9723', '9723'])
+check('of four rows: RU4', scc.write(typed, mode='roll4').split('\n')[2].split('\t')[1][:4], '94a7')
+check('each line read back on its own frame, until the next begins',
+      [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in scc.parse(rolled)],
+      [(1.001, 3.003, 'First line'), (3.003, 5.005, 'Second line')])
+painted = scc.write(typed, mode='paint')
+check('paint-on: RDC, the row, the screen erased just before the text',
+      painted.split('\n')[2].split('\t')[1].split()[:8],
+      ['9429', '9429', '94f4', '94f4', '9723', '9723', '942c', '942c'])
+check('painted on its frame, erased as the next is painted',
+      [(round(s['start'], 3), round(s['end'], 3)) for s in scc.parse(painted)], [(1.001, 2.936), (3.003, 5.005)])
+check('the mode asked for, or pop-on', (scc.write(typed, mode='nonsense') == scc.write(typed), scc.MODES[0]), (True, 'pop'))
+check('the second channel: CC2 control codes', scc.write(typed[:1], channel=2).split('\n')[2].split('\t')[1][:4], '1c20')
+check('read back from the second channel', [s['text'] for s in scc.parse(scc.write(typed, channel=2))],
+      ['First line', 'Second line'])
+
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'in.scc').write_text(POP, encoding='ascii')
@@ -197,9 +220,149 @@ check('SCC: its timecode, >> for speakers', (panel.scc_options.isHidden(), panel
 panel.timecode_combo.combobox.setCurrentIndex(1)
 check('chosen', panel.get_config()['options'].get('timecode'), 'non-drop')
 check('remembered', _SubtitlesPanel().timecode_combo.combobox.currentData(), 'non-drop')
+check('how the captions are written, and in which channel',
+      (panel.caption_options.isHidden(),
+       [panel.caption_channel_combo.combobox.itemData(i) for i in range(panel.caption_channel_combo.combobox.count())],
+       panel.caption_service_combo.isHidden()), (False, [1, 2], True))
+panel.caption_mode_combo.combobox.setCurrentIndex(2)
+check('chosen and kept', ({key: panel.get_config()['options'].get(key) for key in ('caption_mode', 'caption_channel')},
+                          _SubtitlesPanel().caption_mode_combo.combobox.currentData()),
+      ({'caption_mode': 'roll3', 'caption_channel': 1}, 'roll3'))
 panel.format_combo.setCurrentText('SRT')
 panel._refresh_options()
-check('not for SRT', (panel.scc_options.isHidden(), 'timecode' in panel.get_config()['options']), (True, False))
+check('not for SRT', (panel.scc_options.isHidden(), panel.caption_options.isHidden(),
+                      'timecode' in panel.get_config()['options'],
+                      'caption_mode' in panel.get_config()['options']), (True, True, False, False))
+
+print('placed by hand')
+
+
+def _spot(segment, safe=0.0):
+    """(left, top) of a subtitle's text, fractions of the picture: what its
+    nine-place code and its own place together say. `safe` is the margin the
+    nine places alone leave, a tenth where a renderer keeps text in the
+    title-safe area and none on CEA-608's own grid."""
+    lead, rest = markup.split_lead(str(segment.get('text') or ''))
+    keypad = markup.alignment(lead)
+    lines = markup.plain(rest).split('\n')
+    span, block = max(len(line) for line in lines) / 32, len(lines) / 15
+    place = position.of(segment)
+    across, down = position.as_percent(place.h), position.as_percent(place.v)
+    across = (0.0 if keypad % 3 == 2 else safe) if across is None else across
+    down = (0.0 if 3 < keypad < 7 else safe) if down is None else down
+    return ((across / 100, 0.5 + across / 100 - span / 2, 1 - across / 100 - span)[(keypad - 1) % 3],
+            (1 - down / 100 - block, 0.5 + down / 100 - block / 2, down / 100)[(keypad - 1) // 3])
+
+
+def _near(one, other):
+    """Whether two spots are the same to within half a row and half a
+    column, which is as finely as CEA-608 places anything."""
+    return abs(one[0] - other[0]) <= 1 / 64 + 0.002 and abs(one[1] - other[1]) <= 1 / 30 + 0.002
+
+
+def _round_trip(text, place, mode='pop'):
+    asked = {'start': 1.0, 'end': 3.0, 'text': text}
+    if place:
+        asked['position'] = place
+    back = scc.parse(scc.write([asked], mode=mode))
+    return asked, (back[0] if back else {})
+
+
+_asked, _got = _round_trip('Where it always went', None)
+check('a subtitle with no place of its own is written where it always was',
+      (_got.get('text'), _got.get('position')), ('Where it always went', None))
+_asked, _got = _round_trip('Two lines of it\nlifted together', {'v': '20%'})
+check('lifted clear of a lower third: the rows it is written on say so',
+      (_got.get('position'), _near(_spot(_got), _spot(_asked))), ({'v': '20%'}, True))
+_asked, _got = _round_trip('{\\an7}In from the corner', {'h': '20%', 'v': '15%'})
+check('in from a corner: the same spot, which CEA-608 says in its own way',
+      (_near(_spot(_got), _spot(_asked)), _got.get('position')),
+      (True, {'h': '-3.1%', 'v': '13.3%'}))
+_asked, _got = _round_trip('{\\an3}Over on the right', {'h': '25%'})
+check('a quarter in from the right edge', _near(_spot(_got), _spot(_asked)), True)
+_asked, _got = _round_trip('{\\an5}Under the middle', {'v': '10%'})
+check('a tenth below the middle, as near as fifteen rows come',
+      _near(_spot(_got), _spot(_asked)), True)
+_asked, _got = _round_trip('Clear of a lower third', {'v': '30%'}, mode='paint')
+check('painted on where it is placed too', _near(_spot(_got), _spot(_asked)), True)
+_asked, _got = _round_trip('Rolled up, lifted', {'v': '20%'}, mode='roll2')
+check('a roll-up window lifted with its caption', _got.get('position'), {'v': '20%'})
+check('a place no subtitle asks for leaves the words it is written in alone',
+      scc.write([{'start': 1.0, 'end': 3.0, 'text': 'Where it always went'}]) ==
+      scc.write([{'start': 1.0, 'end': 3.0, 'text': 'Where it always went', 'position': {}}]), True)
+
+
+print('a background behind the text')
+
+
+def _shown(*written):
+    """What a caption built from `written` says, its leading codes aside."""
+    text = doc(('00:00:00;00', ' '.join((RCL, ENM, pac(15, 0)) + written + (EOC,))), ('00:00:02;00', EDM))
+    found = scc.parse(text)
+    return markup.split_lead(found[0]['text'])[1] if found else ''
+
+
+check('read off a background code, which shows as a space',
+      _shown(code(0x10, 0x20), chars('On white')),
+      '<font background="#ffffff">On white</font>')
+check('each of its seven colours, opaque and half seen through',
+      [_shown(code(0x10, second), chars('x')) for second in (0x22, 0x23, 0x28, 0x2C)],
+      ['<font background="#00ff00">x</font>', '<font background="#00ff0080">x</font>',
+       '<font background="#ff0000">x</font>', '<font background="#ff00ff">x</font>'])
+check('black is what text sits on anyway, so it says nothing of its own',
+      _shown(code(0x10, 0x2E), chars('Plain')), 'Plain')
+check('transparent, which 0x17 0x2D asks for too',
+      [_shown(written, chars('x')) for written in (code(0x10, 0x2F), code(0x17, 0x2D))],
+      ['<font background="#00000000">x</font>'] * 2)
+check('0x17 0x2E and 0x2F are still a black foreground, underlined by the second',
+      [markup.spans(_shown(written, chars('x'))) for written in (code(0x17, 0x2E), code(0x17, 0x2F))],
+      [markup.spans('<font color="#000000">x</font>'), markup.spans('<u><font color="#000000">x</font></u>')])
+check('a mid-row code leaves the background alone, saying nothing about it',
+      _shown(code(0x10, 0x28), chars('red box '), code(0x11, 0x26), chars('still red')),
+      '<font background="#ff0000">red box </font>'
+      '<font color="#00ffff" background="#ff0000">still red</font>')
+
+
+def _written_back(text, mode='pop'):
+    back = scc.parse(scc.write([{'start': 1.0, 'end': 3.0, 'text': text}], mode=mode))
+    return markup.spans(back[0]['text']) if back else []
+
+
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <font color="#ffff00" background="#0000ff">yellow on blue</font> plain'
+    check(f'{_mode}: written as a code of its own and read back, colour and all',
+          _written_back(_asked, _mode), markup.spans(_asked))
+check('half seen through, and asked to be seen through altogether',
+      [_written_back(f'<font background="{shade}">x</font>') for shade in ('#00ff0080', '#00000000')],
+      [markup.spans(f'<font background="{shade}">x</font>') for shade in ('#00ff0080', '#00000000')])
+check('a colour CEA-608 has not: the nearest of its seven',
+      _written_back('<font background="#2200cc">x</font>'),
+      markup.spans('<font background="#0000ff">x</font>'))
+check('a background on one caption is not on the next',
+      [subtitle['text'] for subtitle in scc.parse(scc.write(
+          [{'start': 1.0, 'end': 3.0, 'text': '<font background="#ffffff">On white</font>'},
+           {'start': 4.0, 'end': 6.0, 'text': 'No box at all'}]))],
+      ['<font background="#ffffff">On white</font>', 'No box at all'])
+
+
+print('text that flashes')
+check('read off a Flash On code', _shown(code(0x14, _FON_), chars('Flashing')), '<blink>Flashing</blink>')
+check('a mid-row code ends it, since CEA-608 has no code that only does',
+      _shown(code(0x14, _FON_), chars('flash '), code(0x11, 0x26), chars('and not')),
+      '<blink>flash</blink> <font color="#00ffff">and not</font>')
+check('a PAC ends it too, so the next row does not flash',
+      [markup.split_lead(subtitle['text'])[1] for subtitle in scc.parse(doc(
+          ('00:00:00;00', ' '.join((RCL, ENM, pac(14, 0), code(0x14, _FON_), chars('flashing'),
+                                    pac(15, 0), chars('not'), EOC))),
+          ('00:00:02;00', EDM)))],
+      ['<blink>flashing</blink>\nnot'])
+for _mode in ('pop', 'roll2', 'paint'):
+    _asked = 'Plain <blink>flash</blink> then plain'
+    check(f'{_mode}: written and read back, the space before it kept',
+          _written_back(_asked, _mode), markup.spans(_asked))
+check('a flash takes no column of its own, unlike the codes that show as a space',
+      _written_back('<blink>Flashing</blink>'), markup.spans('<blink>Flashing</blink>'))
+
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

@@ -729,6 +729,54 @@ check('ASS: its own words for the look, and no profile to declare',
       (True, True))
 check('nor does ASS carry one', 'profile' in panel.get_config()['options'], False)
 
+print('a background behind a run')
+_boxed = [{'start': 1.0, 'end': 2.0,
+           'text': 'Plain <font color="#ffd700" background="#000000cc">on a box</font> again'}]
+_written = ttml.write(_boxed, 'en')
+check('written as tts:backgroundColor on the span that carries the colour',
+      'tts:color="#ffd700" tts:backgroundColor="#000000cc"' in _written, True)
+check('read back as it went in', [(s['start'], s['text']) for s in ttml.parse(_written)],
+      [(1.0, 'Plain <font color="#ffd700" background="#000000cc">on a box</font> again')])
+check('a background on every run is the subtitle\'s own box, and no run\'s',
+      [s['text'] for s in ttml.parse(
+'<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>'
+          '<p begin="1s" end="2s"><span tts:backgroundColor="#55000000">All of it</span></p>'
+          '</div></body></tt>')],
+      ['All of it'])
+check('one on only some of them is theirs',
+      [s['text'] for s in ttml.parse(
+'<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>'
+          '<p begin="1s" end="2s">Plain <span tts:backgroundColor="#ff0000">red box</span></p>'
+          '</div></body></tt>')],
+      ['Plain <font background="#ff0000">red box</font>'])
+check('rgba() with its opacity, as TTML may write one',
+      [s['text'] for s in ttml.parse(
+'<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>'
+          '<p begin="1s" end="2s">Plain <span tts:backgroundColor="rgba(255, 0, 0, 128)">half</span></p>'
+          '</div></body></tt>')],
+      ['Plain <font background="#ff000080">half</font>'])
+
+
+print('a size and an edge')
+_drawn = [{'start': 1.0, 'end': 2.0,
+           'text': 'Plain <font size="80%" edge="uniform" edge-color="#ff0000">small, outlined</font>'}]
+_written = ttml.write(_drawn, 'en')
+check('written as TTML says them',
+      ('tts:fontSize="80%"' in _written, 'tts:textOutline="#ff0000 4%"' in _written), (True, True))
+check('read back, the outline as the edge TTML can draw',
+      [s['text'] for s in ttml.parse(_written)],
+      ['Plain <font size="80%" edge="uniform" edge-color="#ff0000">small, outlined</font>'])
+check('the outline every subtitle is drawn with is no run\'s own edge',
+      [s['text'] for s in ttml.parse(ttml.write([{'start': 1.0, 'end': 2.0, 'text': 'Plain'}], 'en'))],
+      ['Plain'])
+check('a size given across and down takes the one that is a proportion',
+      [s['text'] for s in ttml.parse(
+          '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>'
+          '<p begin="1s" end="2s">Plain <span tts:fontSize="100% 80%">small</span></p>'
+          '</div></body></tt>')],
+      ['Plain <font size="80%">small</font>'])
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

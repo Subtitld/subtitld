@@ -15,36 +15,55 @@ of 32 columns:
   ones, painted on screen, from their first characters to their last
   state; roll-up ones, line after line as in live captions, one subtitle a
   line, from its first character to the next line's;
-- italics, underline and colours (white, green, blue, cyan, red, yellow,
-  magenta) become formatting tags; where the caption sits on the screen,
-  its rows and columns, one of the nine places;
+- italics, underline, colours (white, green, blue, cyan, red, yellow,
+  magenta) and a flash become formatting tags (CEA-608 says nothing about
+  what sort of text a run is, which CEA-708 does: see modules.cea708), and so does the background
+  the text sits on, in the same seven colours, opaque, half seen through or
+  transparent; black is what text sits on anyway, so it says nothing of
+  its own; where the caption sits on the screen,
+  its rows and columns, one of the nine places, and the margins it sits by
+  where those rows and columns are not where the nine places alone put
+  text (modules.position);
 - the spaces the codes that change a style take up on screen are not kept
   where they would double a space or stand before punctuation;
 - timecodes with ";" are drop-frame, with ":" non-drop-frame;
 - the first channel (CC1) is read, the second when the first is empty;
   control codes sent twice count once; parity bits are not checked.
 
-Writing gives pop-on captions in CC1: each loaded in the frames before it
-shows (RCL, ENM, a PAC for each row, its text) and shown (EOC) on the
-frame it starts, on a line of its own so that decoders reading a line at
-a time show it on time too; cleared (EDM) where it ends, unless the next
-one replaces it. Lines longer than 32 columns are wrapped; each row is
-centred, or put left or right, top, middle or bottom as the subtitle
-asks. Italics, underline and colours go as PAC and mid-row codes, the
-codes put where spaces are (punctuation against a word takes its style,
-so that no code puts a space before it). When asked, ">> " marks each
-change of speaker, as captioners do. A character CEA-608 has only in its extended
-set goes after its plain fallback (É after E), as decoders expect; one it
-lacks becomes its letter without accents, or "?".
+Writing gives captions in the channel asked for (CC1 or CC2; a file holds
+field 1 alone), in one of the three ways captioners write them:
+
+- pop-on (the default): each caption loaded in the frames before it shows
+  (RCL, ENM, a PAC for each row, its text) and shown (EOC) on the frame it
+  starts, on a line of its own so that decoders reading a line at a time
+  show it on time too; cleared (EDM) where it ends, unless the next one
+  replaces it;
+- roll-up of two, three or four rows (RU2, RU3, RU4), as live captions
+  are: each line typed on the base row after a CR has rolled the ones
+  before it up, from the frame its subtitle starts;
+- paint-on (RDC): each caption typed straight onto the screen from the
+  frame it starts, cleared (EDM) where it ends.
+
+Lines longer than 32 columns are wrapped; each row is centred, or put left
+or right, top, middle or bottom as the subtitle asks (a roll-up caption
+sits on row 15, 8 or its own rows, by where it asks to be). Italics,
+underline and colours go as PAC and mid-row codes, the codes put where
+spaces are (punctuation against a word takes its style, so that no code
+puts a space before it). When asked, ">> " marks each change of speaker,
+as captioners do. A character CEA-608 has only in its extended set goes
+after its plain fallback (É after E), as decoders expect; one it lacks
+becomes its letter without accents, or "?".
 """
 
 import re
 import unicodedata
 
-from subtitld.modules import markup
+from subtitld.modules import markup, position
 from subtitld.modules.srt import decode
 
 LAST_DURATION = 4.0                      # seconds a caption still shown at the end lasts
+MODES = ('pop', 'roll2', 'roll3', 'roll4', 'paint')
+CHANNELS = (1, 2)                        # a file carries field 1: its CC1 and CC2
 _RATE = 30000 / 1001
 _ROWS, _COLUMNS = 15, 32
 _TIMECODE = r'(\d{1,2})[:;.,](\d{2})[:;.,](\d{2})([:;.,])(\d{2})'
@@ -60,13 +79,22 @@ _SPECIAL = dict(zip(range(0x30, 0x40), '®°½¿™¢£♪à èâêîôû'))
 _EXTENDED = {0x12: dict(zip(range(0x20, 0x40), 'ÁÉÓÚÜü‘¡*’—©℠•“”ÀÂÇÈÊËëÎÏïÔÙùÛ«»')),
              0x13: dict(zip(range(0x20, 0x40), 'ÃãÍÌìÒòÕõ{}\\^_¦~ÄäÖöß¥¤|ÅåØø┌┐└┘'))}
 _COLORS = ('', '#00ff00', '#0000ff', '#00ffff', '#ff0000', '#ffff00', '#ff00ff')    # white first
+# What a background code says, by its second byte: the same seven colours,
+# each opaque and semi-transparent, then black and none at all. Black is
+# what text sits on when nothing says otherwise, so it reads as no
+# background of its own, as white reads as no colour of its own.
+_BACKGROUNDS = {0x2E: '', 0x2F: '#00000000'}
+for _index, _shade in enumerate(('#ffffff',) + _COLORS[1:]):
+    _BACKGROUNDS[0x20 + _index * 2] = _shade
+    _BACKGROUNDS[0x21 + _index * 2] = _shade + '80'                 # semi-transparent
+_BACKGROUND_CODES = {shade: second for second, shade in sorted(_BACKGROUNDS.items(), reverse=True)}
 # The first byte of a PAC and the second's base, by row.
 _PAC_ROWS = {1: (0x11, 0x40), 2: (0x11, 0x60), 3: (0x12, 0x40), 4: (0x12, 0x60), 5: (0x15, 0x40), 6: (0x15, 0x60),
              7: (0x16, 0x40), 8: (0x16, 0x60), 9: (0x17, 0x40), 10: (0x17, 0x60), 11: (0x10, 0x40), 12: (0x13, 0x40),
              13: (0x13, 0x60), 14: (0x14, 0x40), 15: (0x14, 0x60)}
 _ROW_OF_PAC = {pac: row for row, pac in _PAC_ROWS.items()}
-_RCL, _BS, _DER, _RU2, _RU3, _RU4, _RDC, _TR, _RTD, _EDM, _CR, _ENM, _EOC = (
-    0x20, 0x21, 0x24, 0x25, 0x26, 0x27, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F)
+_RCL, _BS, _DER, _FON, _RU2, _RU3, _RU4, _RDC, _TR, _RTD, _EDM, _CR, _ENM, _EOC = (
+    0x20, 0x21, 0x24, 0x28, 0x25, 0x26, 0x27, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F)
 _OPENING = '([{¿¡“‘«'
 _CLOSING = ',.;:!?)]}’”»…'
 
@@ -110,7 +138,8 @@ def _blank():
 
 
 def _render(memory, rows=None):
-    """(text with tags, keypad) for what a memory shows, or ('', 2)."""
+    """(text with tags, keypad, where it sits beyond it) for what a memory
+    shows, or ('', 2, NOWHERE)."""
     lines, edges, used = [], [], []
     for row in rows or range(1, _ROWS + 1):
         cells = memory[row]
@@ -141,7 +170,7 @@ def _render(memory, rows=None):
         edges.append((first, last))
         used.append(row)
     if not lines:
-        return '', 2
+        return '', 2, position.NOWHERE
     runs = []
     for index, line in enumerate(lines):
         if index:
@@ -150,9 +179,33 @@ def _render(memory, rows=None):
     text = markup.tidy(runs)
     middle_row = (used[0] + used[-1]) / 2
     vertical = 2 if middle_row <= 5 else 0 if middle_row >= 10 else 1
-    centre = (min(first for first, _last in edges) + max(last for _first, last in edges) + 1) / 2
+    left = min(first for first, _last in edges)
+    right = max(last for _first, last in edges)
+    centre = (left + right + 1) / 2
     horizontal = 0 if centre < 12 else 2 if centre > 20 else 1
-    return text, (1, 4, 7)[vertical] + horizontal
+    return text, (1, 4, 7)[vertical] + horizontal, _place(used, left, right, vertical, horizontal)
+
+
+def _place(used, left, right, vertical, horizontal):
+    """Where a caption sits beyond its keypad: NOWHERE when its rows and
+    columns are where the nine places alone put text.
+
+    The fifteen rows and thirty-two columns are taken as spanning the
+    picture, as they are when captions are written, and a margin out by
+    half a row or column or less is that rounding, not a place of its own.
+    """
+    down = ((_ROWS - used[-1]) / _ROWS,
+            (used[0] - 1 + used[-1]) / 2 / _ROWS - 0.5,
+            (used[0] - 1) / _ROWS)[vertical]
+    across = (left / _COLUMNS,
+              (left + right + 1) / 2 / _COLUMNS - 0.5,
+              (_COLUMNS - right - 1) / _COLUMNS)[horizontal]
+    place = position.NOWHERE
+    if abs(down * _ROWS) > 0.5:
+        place = place._replace(v=position.percent(down * 100))
+    if abs(across * _COLUMNS) > 0.5:
+        place = place._replace(h=position.percent(across * 100))
+    return place
 
 
 class _Decoder:
@@ -185,29 +238,31 @@ class _Decoder:
 
     def _show(self, frame, rows=None, extend=False):
         """The screen changed at `frame`: the caption it shows replaces the last."""
-        text, keypad = _render(self.displayed, rows)
+        text, keypad, place = _render(self.displayed, rows)
         if self.current and text == self.current['body']:
             return
         old_lines, new_lines = markup.plain(self.current['body'] if self.current else '').split('\n'), \
             markup.plain(text).split('\n')
         if extend and self.current and text and len(new_lines) >= len(old_lines) and all(
                 new.startswith(old) for old, new in zip(old_lines, new_lines)):
-            self.current['body'], self.current['keypad'] = text, keypad
+            self.current['body'], self.current['keypad'], self.current['place'] = text, keypad, place
             return
         self._close(frame)
         if text:
-            self.current = {'start': self._seconds(frame), 'end': None, 'body': text, 'keypad': keypad}
+            self.current = {'start': self._seconds(frame), 'end': None, 'body': text,
+                            'keypad': keypad, 'place': place}
             self.subtitles.append(self.current)
 
     def _end_line(self, frame, close=False):
         """The roll-up line written so far is a subtitle; with `close`, so is
         its end, at `frame`."""
         if self.line and self.line['start'] is not None:
-            text, keypad = _render(self.displayed, [self.row])
+            text, keypad, place = _render(self.displayed, [self.row])
             if text:
                 # Roll-up lines start at the left edge, whatever their
                 # length: only their row says where they are.
-                self.line.update(body=text, keypad=(keypad - 1) // 3 * 3 + 2)
+                self.line.update(body=text, keypad=(keypad - 1) // 3 * 3 + 2,
+                                 place=place._replace(h=''))
                 self.subtitles.append(self.line)
         if close:
             for subtitle in self.subtitles:
@@ -283,9 +338,13 @@ class _Decoder:
             self._put(frame, _EXTENDED[first][second])
         elif first == 0x17 and 0x21 <= second <= 0x23:
             self.column = min(self.column + second - 0x20, _COLUMNS)
+        elif first == 0x10 and 0x20 <= second <= 0x2F:
+            self._background(frame, _BACKGROUNDS[second])
+        elif first == 0x17 and second == 0x2D:
+            self._background(frame, '#00000000')
         elif first == 0x17 and second in (0x2E, 0x2F):
             self._put(frame, ' ', attribute=True)
-            self.style = markup.Style(False, False, bool(second & 1), False, '#000000')
+            self.style = self.style._replace(italic=False, underline=bool(second & 1), color='#000000')
         elif 0x40 <= second <= 0x7F and (first, second & 0x60) in _ROW_OF_PAC:
             self._pac(frame, _ROW_OF_PAC[(first, second & 0x60)], second & 0x1F)
 
@@ -302,6 +361,8 @@ class _Decoder:
                         self.displayed[target] = cells
         self.row = row
         underline = bool(attribute & 1)
+        # A PAC gives its row the look it names, and neither a background nor
+        # a flash: each is asked for by a code of its own, after it.
         if attribute >= 0x10:
             self.column = ((attribute - 0x10) >> 1) * 4
             self.style = markup.Style(False, False, underline, False, '')
@@ -310,13 +371,20 @@ class _Decoder:
             look = attribute >> 1
             self.style = markup.Style(look == 7, False, underline, False, _COLORS[look] if look < 7 else '')
 
+    def _background(self, frame, shade):
+        """A background code: it shows as a space, as a mid-row code does,
+        and what follows sits on `shade`."""
+        self._put(frame, ' ', attribute=True)
+        self.style = self.style._replace(background=shade)
+
     def _mid_row(self, frame, second):
+        """A mid-row code: what follows takes the colour or italics it
+        names, on the background it already sits on — a mid-row code says
+        nothing about that."""
         self._put(frame, ' ', attribute=True)
         look, underline = (second - 0x20) >> 1, bool(second & 1)
-        if look == 7:
-            self.style = markup.Style(True, False, underline, False, '')
-        else:
-            self.style = markup.Style(False, False, underline, False, _COLORS[look])
+        self.style = self.style._replace(italic=look == 7, bold=False, underline=underline, strike=False,
+                                         color='' if look == 7 else _COLORS[look], flash=False)
 
     def _command(self, frame, second):
         if second == _RCL:
@@ -364,6 +432,10 @@ class _Decoder:
                     self.displayed[top - 1] = [None] * _COLUMNS
                 self.displayed[self.row] = [None] * _COLUMNS
                 self.column = 0
+        elif second == _FON:
+            # Flash On: what follows flashes, until a PAC or a mid-row code
+            # says what the row or the words after it look like.
+            self.style = self.style._replace(flash=True)
         elif second == _BS:
             self.column = max(self.column - 1, 0)
             self._memory()[self.row][min(self.column, _COLUMNS - 1)] = None
@@ -413,8 +485,10 @@ def decode_pairs(batches, rate=_RATE, channel=None):
     segments = []
     for subtitle in subtitles:
         keypad = subtitle['keypad']
-        segments.append({'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
-                         'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']})
+        segments.append(position.store(
+            {'start': subtitle['start'], 'end': max(subtitle['start'], subtitle['end']),
+             'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + subtitle['body']},
+            subtitle.get('place') or position.NOWHERE))
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     return segments
 
@@ -462,20 +536,38 @@ def _cells(char):
     return [('?', [('basic', 0x3F)])]
 
 
-_PLAIN = (False, False, 0)                         # (italic, underline, colour index)
+# (italic, underline, colour index, background code, flashing)
+_PLAIN = (False, False, 0, 0x2E, False)
+_PALETTE = [(255, 255, 255), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 0), (255, 255, 0), (255, 0, 255)]
+
+
+def _nearest(color):
+    """The index in _PALETTE of the nearest colour CEA-608 has."""
+    rgb = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
+    return min(range(len(_PALETTE)), key=lambda index: sum((a - b) ** 2 for a, b in zip(rgb, _PALETTE[index])))
+
+
+def _background_code(background):
+    """The second byte of the background code for a Style's background: the
+    nearest of CEA-608's seven colours, kept opaque or semi-transparent as
+    the background asks, black where it asks for none and transparent where
+    it asks to be seen through."""
+    if not background:
+        return 0x2E                                # black, what text sits on by default
+    alpha = int(background[7:9], 16) if len(background) == 9 else 255
+    if alpha < 0x40:
+        return 0x2F                                # transparent
+    return 0x20 + _nearest(background) * 2 + (1 if alpha < 0xC0 else 0)
 
 
 def _look(style):
-    """(italic, underline, colour index) CEA-608 can show for a Style:
-    italics are white, a colour the nearest of its seven."""
+    """(italic, underline, colour index, background code, flashing) CEA-608
+    can show for a Style: italics are white, a colour the nearest of its
+    seven, the background one of its own, and a flash its own code."""
+    background = _background_code(style.background)
     if style.italic:
-        return True, style.underline, 0
-    color = 0
-    if style.color:
-        rgb = tuple(int(style.color[i:i + 2], 16) for i in (1, 3, 5))
-        palette = [(255, 255, 255), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 0), (255, 255, 0), (255, 0, 255)]
-        color = min(range(len(palette)), key=lambda i: sum((a - b) ** 2 for a, b in zip(rgb, palette[i])))
-    return False, style.underline, color
+        return True, style.underline, 0, background, style.flash
+    return (False, style.underline, _nearest(style.color) if style.color else 0, background, style.flash)
 
 
 def _wrap(cells):
@@ -531,29 +623,43 @@ def _punctuated(line):
 
 
 def _mid_row(look):
-    italic, underline, color = look
+    italic, underline, color, _background, _flash = look
     return 0x11, (0x2E if italic else 0x20 + color * 2) + int(underline)
 
 
 def _row(row, line, column):
     """The tokens, ('b', byte) or ('c', first, second), that write `line`
-    at `row` from `column`: a PAC (and a tab offset) there, mid-row codes
-    where the style changes, put in place of a space where there is one."""
+    at `row` from `column`: a PAC (and a tab offset) there, a background
+    code and mid-row codes where the look changes, each put in place of a
+    space where there is one.
+
+    A PAC can give a row its colour, italics and underline, but a
+    background is only ever a code of its own, so a line that asks for one
+    leaves room for it.
+    """
     first_look = line[0][1]
     pac_first, pac_base = _PAC_ROWS[row]
     tokens = []
-    if first_look != _PLAIN and column == 0:
-        # At column 0 a PAC gives the row its colour, or italics.
-        italic, underline, color = first_look
+    front, background = first_look[:3], first_look[3]
+    coded = (0 if background == _PLAIN[3] else 1)
+    if front != _PLAIN[:3] and column == 0 and not coded:
+        italic, underline, color = front
         tokens.append(('c', pac_first, pac_base + (7 if italic else color) * 2 + int(underline)))
     else:
-        # Else the code before the text takes the column before it.
-        start = column - 1 if first_look != _PLAIN else column
+        # Else the codes before the text take the columns before it.
+        coded += 0 if front == _PLAIN[:3] else 1
+        start = max(column - coded, 0)
         tokens.append(('c', pac_first, pac_base + 0x10 + (start // 4) * 2))
         if start % 4:
             tokens.append(('c', 0x17, 0x20 + start % 4))
-        if first_look != _PLAIN:
+        if background != _PLAIN[3]:
+            tokens.append(('c', 0x10, background))
+        if front != _PLAIN[:3]:
             tokens.append(('c', *_mid_row(first_look)))
+    # A PAC and a mid-row code both turn a flash off, so it is asked for
+    # after them.
+    if first_look[4]:
+        tokens.append(('c', 0x14, _FON))
     current = first_look
     for shown, look, units in line:
         if shown == ' ':
@@ -561,17 +667,35 @@ def _row(row, line, column):
                 tokens.append(('b', 0x20))
             continue
         if look != current:
-            if tokens[-1] == ('b', 0x20):
+            changes = []
+            if look[3] != current[3]:
+                changes.append(('c', 0x10, look[3]))
+            # CEA-608 has no code that only ends a flash: a mid-row code
+            # does, along with saying the colour and the italics.
+            cleared = look[:3] != current[:3] or (current[4] and not look[4])
+            if cleared:
+                changes.append(('c', *_mid_row(look)))
+            if look[4] and (cleared or not current[4]):
+                changes.append(('c', 0x14, _FON))
+            # Only a code that shows as a space takes the space before it:
+            # Flash On takes no column at all.
+            if tokens[-1] == ('b', 0x20) and any(_paints(change) for change in changes):
                 tokens.pop()
-            tokens.append(('c', *_mid_row(look)))
+            tokens.extend(changes)
             current = look
         tokens.extend(('b', unit[1]) if unit[0] == 'basic' else ('c', unit[1], unit[2]) for unit in units)
     return tokens
 
 
-def _words(tokens):
+def _chan(first, channel):
+    """A control code's first byte in `channel`: the field's second channel
+    (CC2, or CC4 in field 2) has bit 3 set."""
+    return first | 0x08 if channel == 2 else first
+
+
+def _words(tokens, channel=1):
     """Words for tokens: characters two to a word, codes sent twice, on a
-    word of their own."""
+    word of their own, in `channel`."""
     words, pending = [], []
     for token in tokens + [None]:
         if token is not None and token[0] == 'b':
@@ -584,30 +708,143 @@ def _words(tokens):
             words.append(_word(pending[0], 0x00))
             pending = []
         if token is not None:
-            words.extend([_word(token[1], token[2])] * 2)
+            words.extend([_word(_chan(token[1], channel), token[2])] * 2)
     return words
 
 
-def _load(text):
-    """The words that load a subtitle as a pop-on caption, before its EOC."""
+def _stacked(lines, keypad):
+    """The row the first of `lines` goes on, where `keypad` puts them: at
+    the top from row 1, in the middle about row 8, at the bottom so the
+    last line is on row 15."""
+    count = len(lines)
+    return 1 if keypad >= 7 else max(1, 8 - count // 2) if keypad >= 4 else _ROWS - count + 1
+
+
+def _column(line, keypad):
+    """The column a line starts at: left, centred or right, as `keypad` asks."""
+    width = len(line)
+    return 0 if keypad % 3 == 1 else _COLUMNS - width if keypad % 3 == 0 else (_COLUMNS - width) // 2
+
+
+def _at_row(lines, keypad, place):
+    """The row the first of `lines` goes on: where `place`'s vertical margin
+    puts it, else where `keypad` alone does.
+
+    A margin is a percentage of the picture, and the fifteen rows are taken
+    as spanning it: a decoder draws the grid inside the title-safe area
+    itself, so there is nothing to inset here.
+    """
+    down = position.as_percent(place.v) if place.v else None
+    if down is None:
+        return _stacked(lines, keypad)
+    count = len(lines)
+    rows = int(round(down * _ROWS / 100))
+    side = (keypad - 1) // 3                   # 0 bottom, 1 middle, 2 top
+    if side == 2:
+        first = 1 + rows
+    elif side == 0:
+        first = _ROWS - rows - count + 1
+    else:
+        first = 8 + rows - count // 2
+    return max(1, min(_ROWS - count + 1, first))
+
+
+def _at_column(line, keypad, place):
+    """The column `line` starts at: where `place`'s horizontal margin puts
+    it, else where `keypad` alone does. The thirty-two columns are taken as
+    spanning the picture, as the rows are."""
+    across = position.as_percent(place.h) if place.h else None
+    if across is None:
+        return _column(line, keypad)
+    width = len(line)
+    columns = int(round(across * _COLUMNS / 100))
+    side = (keypad - 1) % 3                    # 0 left, 1 centre, 2 right
+    if side == 0:
+        start = columns
+    elif side == 2:
+        start = _COLUMNS - columns - width
+    else:
+        start = (_COLUMNS - width) // 2 + columns
+    return max(0, min(_COLUMNS - width, start))
+
+
+def _paints(token):
+    """Whether a token puts something on screen: a character, or one of the
+    codes that shows as a space — a mid-row code or a background code. Each
+    takes a column, so a decoder sees the caption begin there."""
+    return token[0] == 'b' or (token[1] in (0x10, 0x11) and 0x20 <= token[2] <= 0x2F)
+
+
+def _lead(tokens):
+    """How many words the codes before the first character take: what a
+    typed caption is sent ahead by, so its text lands on its own frame."""
+    before = []
+    for token in tokens:
+        if _paints(token):
+            break
+        before.append(token)
+    return len(_words(before))
+
+
+def _load(text, channel=1, place=position.NOWHERE):
+    """(the words that load a subtitle as a pop-on caption, before its EOC;
+    0, since its EOC says when it shows)."""
     lines, keypad = _text_lines(text)
     if not lines:
-        return []
-    count = len(lines)
-    first_row = 1 if keypad >= 7 else max(1, 8 - count // 2) if keypad >= 4 else _ROWS - count + 1
+        return [], 0
+    first_row = _at_row(lines, keypad, place)
     tokens = [('c', 0x14, _RCL), ('c', 0x14, _ENM)]
     for index, line in enumerate(lines):
-        width = len(line)
-        column = 0 if keypad % 3 == 1 else _COLUMNS - width if keypad % 3 == 0 else (_COLUMNS - width) // 2
-        tokens.extend(_row(first_row + index, line, column))
-    return _words(tokens)
+        tokens.extend(_row(first_row + index, line, _at_column(line, keypad, place)))
+    return _words(tokens, channel), 0
 
 
-def write(segments, drop_frame=True, speaker_changes=False):
-    """SCC text for `segments`, as pop-on captions in CC1. With
-    `speaker_changes`, ">> " begins each subtitle a new speaker says, as
-    captions mark them."""
-    frames, breaks, _shows = frame_words(segments, speaker_changes=speaker_changes)
+def _roll(text, rows, channel=1, place=position.NOWHERE):
+    """(the words that type a subtitle as roll-up lines in a window of
+    `rows` rows: the mode, then each line on the base row after a CR has
+    rolled the ones before it up; the words its first character comes
+    after)."""
+    lines, keypad = _text_lines(text)
+    if not lines:
+        return [], 0
+    # The base row is the window's last: at the bottom row 15, in the
+    # middle row 8, at the top the window's own height — or where a vertical
+    # margin puts the window, counted from the same edge.
+    base = rows if keypad >= 7 else 8 if keypad >= 4 else _ROWS
+    if place.v:
+        base = _at_row([None] * rows, keypad, place) + rows - 1
+    tokens = [('c', 0x14, (_RU2, _RU3, _RU4)[rows - 2])]
+    for line in lines:
+        tokens.append(('c', 0x14, _CR))
+        tokens.extend(_row(base, line, _at_column(line, keypad, place)))
+    return _words(tokens, channel), _lead(tokens)
+
+
+def _paint(text, channel=1, place=position.NOWHERE):
+    """(the words that paint a subtitle onto the screen as it is typed: the
+    mode, the first row's place, the screen erased, then the text; the words
+    its first character comes after).
+
+    The erase goes as late as it can, right before the first character, so
+    that the caption before it stays on screen until then."""
+    lines, keypad = _text_lines(text)
+    if not lines:
+        return [], 0
+    first_row = _at_row(lines, keypad, place)
+    tokens = [('c', 0x14, _RDC)]
+    for index, line in enumerate(lines):
+        tokens.extend(_row(first_row + index, line, _at_column(line, keypad, place)))
+    painting = next((index for index, token in enumerate(tokens) if _paints(token)), len(tokens))
+    tokens.insert(painting, ('c', 0x14, _EDM))
+    return _words(tokens, channel), _lead(tokens)
+
+
+def write(segments, drop_frame=True, speaker_changes=False, mode='pop', channel=1):
+    """SCC text for `segments`, as captions of `mode` ('pop', 'roll2',
+    'roll3', 'roll4' or 'paint') in channel `channel` (1 for CC1, 2 for
+    CC2). With `speaker_changes`, ">> " begins each subtitle a new speaker
+    says, as captions mark them."""
+    frames, breaks, _shows = frame_words(segments, speaker_changes=speaker_changes, mode=mode, channel=channel)
     lines = ['Scenarist_SCC V1.0']
     group, group_start = [], 0
     for frame in sorted(frames):
@@ -622,11 +859,10 @@ def write(segments, drop_frame=True, speaker_changes=False):
     return '\n'.join(lines) + '\n'
 
 
-def frame_words(segments, rate=_RATE, speaker_changes=False):
-    """({frame: word}, the frames an EOC or EDM is on, [(text, frame shown,
-    frame cleared or None when the next replaces it)]) for `segments` as
-    pop-on captions in CC1, a word a frame at `rate` frames a second."""
-    eoc, edm = _word(0x14, _EOC), _word(0x14, _EDM)
+def _captions(segments, rate, speaker_changes, build):
+    """[[frame it starts, frame it ends, its words from `build`, its text,
+    the words before its first character, where it sits, what its CEA-708
+    window says]] for `segments`, by start."""
     captions = []
     speaker = ''
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
@@ -637,14 +873,69 @@ def frame_words(segments, rate=_RATE, speaker_changes=False):
                 lead, rest = markup.split_lead(text)
                 text = lead + '>> ' + rest.lstrip()
             speaker = said_by
-        words = _load(text)
+        place = position.of(segment)
+        # What CEA-708 says about its window rides along unread: CEA-608 has
+        # no windows (modules.cea708).
+        pane = segment.get('caption_window')
+        words, lead = build(text, place)
         if words:
             start = round(float(segment.get('start', 0)) * rate)
-            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)), words, text])
+            captions.append([start, max(start + 1, round(float(segment.get('end', 0)) * rate)),
+                             words, text, lead, place, pane])
+    return captions
+
+
+def _typed(captions, channel, rolling):
+    """Frames for captions typed onto the screen, roll-up or paint-on: the
+    codes before each go in the frames ahead of its subtitle, so its first
+    character lands on the frame the subtitle starts, after the one before
+    it is typed. A paint-on caption is cleared where it ends (its own EDM
+    clears the screen before the next is painted); roll-up lines roll away
+    by themselves, so only the last is cleared."""
+    edm = _word(_chan(0x14, channel), _EDM)
+    frames, breaks, shows = {}, set(), []
+    free = 0
+    for index, (start, end, words, text, lead, place, pane) in enumerate(captions):
+        first = max(start - lead, free)
+        for offset, word in enumerate(words):
+            frames[first + offset] = word
+        free = first + len(words)
+        breaks.add(first)
+        following = captions[index + 1][0] if index + 1 < len(captions) else None
+        clear = None
+        if not rolling or following is None:
+            clear = max(end, free)
+            if following is not None and following <= clear + 1:
+                clear = None                       # the next one clears the screen itself
+            else:
+                while clear in frames or clear + 1 in frames:
+                    clear += 1
+                frames[clear] = frames[clear + 1] = edm
+                breaks.add(clear)
+        shows.append((text, first + lead, clear, place, pane))
+    return frames, breaks, shows
+
+
+def frame_words(segments, rate=_RATE, speaker_changes=False, mode='pop', channel=1):
+    """({frame: word}, the frames a line starts at, [(text, frame shown,
+    frame cleared or None when the next replaces it, where it sits, what its
+    CEA-708 window says)]) for `segments` as captions of `mode` in channel
+    `channel`, a word a frame at `rate` frames a second."""
+    mode = mode if mode in MODES else 'pop'
+    channel = 2 if channel == 2 else 1
+    if mode.startswith('roll'):
+        rows = int(mode[4])
+        return _typed(_captions(segments, rate, speaker_changes,
+                                lambda text, place: _roll(text, rows, channel, place)), channel, rolling=True)
+    if mode == 'paint':
+        return _typed(_captions(segments, rate, speaker_changes,
+                                lambda text, place: _paint(text, channel, place)), channel, rolling=False)
+    eoc, edm = _word(_chan(0x14, channel), _EOC), _word(_chan(0x14, channel), _EDM)
+    captions = _captions(segments, rate, speaker_changes, lambda text, place: _load(text, channel, place))
 
     frames, breaks, shows = {}, set(), []          # frame: word; the frames a line starts at
     loaded_from = 0                                # the first frame the next load may use
-    for index, (start, end, words, text) in enumerate(captions):
+    for index, (start, end, words, text, _lead_, place, pane) in enumerate(captions):
         # Loaded after the last one was shown (until then the memory it
         # loads into holds that one), shown on its frame, or as soon after
         # as there is time to load it.
@@ -669,12 +960,12 @@ def frame_words(segments, rate=_RATE, speaker_changes=False):
             breaks.add(clear)
         else:
             clear = None
-        shows.append((text, shown, clear))
+        shows.append((text, shown, clear, place, pane))
     return frames, breaks, shows
 
 
-def save(path, segments, drop_frame=True, speaker_changes=False):
+def save(path, segments, drop_frame=True, speaker_changes=False, mode='pop', channel=1):
     """Write `segments` to `path` as SCC (ASCII, Windows line ends, as
     Scenarist wrote them)."""
     with open(path, 'w', encoding='ascii', newline='\r\n') as scc_file:
-        scc_file.write(write(segments, drop_frame, speaker_changes))
+        scc_file.write(write(segments, drop_frame, speaker_changes, mode, channel))

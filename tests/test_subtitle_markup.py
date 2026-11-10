@@ -222,6 +222,138 @@ check('a colour is drawn in it', any(QColor(coloured.pixel(x, y)).green() > 200 
 
 renderer.close()
 
+print('a background behind a run')
+check('read off a <font>, beside the colour',
+      [(run, style.color, style.background) for run, style in
+       markup.spans('<font color="#ffffff" background="#000000cc">White on a box</font>')],
+      [('White on a box', '#ffffff', '#000000cc')])
+check('"transparent" is a background made invisible, not none at all',
+      markup.background_hex('transparent'), '#00000000')
+check('short hex, with and without an opacity',
+      (markup.background_hex('#f00'), markup.background_hex('#f008'), markup.background_hex('nonsense')),
+      ('#ff0000', '#ff000088', ''))
+check('written back as one tag carrying both',
+      markup.from_spans([('White on a box', markup.Style(color='#ffffff', background='#000000cc'))]),
+      '<font color="#ffffff" background="#000000cc">White on a box</font>')
+check('a background alone needs no colour',
+      markup.from_spans([('On a box', markup.Style(background='#00ff00'))]),
+      '<font background="#00ff00">On a box</font>')
+check('drawn with an opacity as rgba(), which eight hex digits are not',
+      markup.to_html('<font background="#000000cc">On a box</font>'),
+      '<span style="background-color:rgba(0, 0, 0, 0.8)">On a box</span>')
+check('and opaque as it is written',
+      markup.to_html('<font background="#00ff00">On a box</font>'),
+      '<span style="background-color:#00ff00">On a box</span>')
+check('what it reads is the text alone', markup.plain('<font background="#00ff00">On a box</font>'), 'On a box')
+check('the names a file may give the attribute',
+      [[style.background for _run, style in markup.spans(f'<font {written}>x</font>')]
+       for written in ('background="#0f0"', 'bgcolor="#0f0"', 'back-color="#0f0"', 'background-color="#0f0"')],
+      [['#00ff00']] * 4)
+check('a colour attribute is still only the colour, not a background-color',
+      [(style.color, style.background) for _run, style in
+       markup.spans('<font background-color="#00ff00">x</font>')], [('', '#00ff00')])
+check('ASS has no background of its own: left out, as a reading is',
+      markup.to_ass('<font color="#ff0000" background="#00ff00">Red on green</font>'),
+      '{\\c&H0000FF&}Red on green{\\c}')
+_md = markup.to_markdown('plain <font background="#000000cc"><i>on a box</i></font> after')
+check('the Markdown panel writes it as a span attribute, and reads it back',
+      (_md, markup.from_markdown(_md)),
+      ('plain [*on a box*]{background=#000000cc} after',
+       'plain <font background="#000000cc"><i>on a box</i></font> after'))
+
+
+print('the size, place and edge a run is drawn with')
+check('a size as a proportion of the one it is drawn at; a bare number says none',
+      (markup.size_percent('80%'), markup.size_percent('120 %'), markup.size_percent('100%'),
+       markup.size_percent('3'), markup.size_percent('')),
+      ('80%', '120%', '', '', ''))
+check('raised and lowered text, as HTML writes it',
+      [(run, style.offset) for run, style in markup.spans('Plain <sup>up</sup> and <sub>down</sub>')],
+      [('Plain ', ''), ('up', 'super'), (' and ', ''), ('down', 'sub')])
+check('an edge and the colour it is drawn in',
+      [(style.edge, style.edge_color) for _run, style in
+       markup.spans('<font edge="raised" edge-color="#ff0000">Raised</font>')],
+      [('raised', '#ff0000')])
+check('an edge CEA-708 does not name is no edge at all',
+      [style.edge for _run, style in markup.spans('<font edge="engraved">x</font>')], [''])
+check('written back as one tag, and the raised text as its own',
+      markup.from_spans([('up', markup.Style(offset='super', size='80%', edge='uniform'))]),
+      '<font size="80%" edge="uniform"><sup>up</sup></font>')
+check('drawn as a size, a raised span and a shadow',
+      markup.to_html('<font size="80%" edge="uniform" edge-color="#ff0000"><sup>x</sup></font>'),
+      '<span style="font-size:80%;text-shadow:-0.06em 0em 0 #ff0000, 0.06em 0em 0 #ff0000, '
+      '0em -0.06em 0 #ff0000, 0em 0.06em 0 #ff0000"><sup>x</sup></span>')
+check('an edge with no colour of its own is drawn in black',
+      'text-shadow:-0.08em 0.08em 0 #000000' in markup.to_html('<font edge="left-shadow">x</font>'), True)
+check('what it reads is the text alone',
+      markup.plain('<font size="80%" edge="uniform">Small</font> <sup>and up</sup>'), 'Small and up')
+_md = markup.to_markdown('<font size="80%" edge="uniform" edge-color="#ff0000">x</font>')
+check('the Markdown panel writes them as span attributes, and reads them back',
+      (_md, markup.from_markdown(_md)),
+      ('[x]{size=80% edge=uniform edge-color=#ff0000}',
+       '<font size="80%" edge="uniform" edge-color="#ff0000">x</font>'))
+check('a text cut in two keeps them open on both halves',
+      markup.rebalance('<font size="80%" edge="uniform">one ', 'two</font>'),
+      ('<font size="80%" edge="uniform">one </font>', '<font size="80%" edge="uniform">two</font>'))
+
+
+print('a typeface, kept but not drawn')
+check('read off a <font>, quoted or not, several words or one',
+      [style.face for _run, style in markup.spans(
+          '<font face="Arial Black">a</font><font face=Courier>b</font>')],
+      ['Arial Black', 'Courier'])
+check('written back as it was asked for',
+      markup.from_spans([('x', markup.Style(color='#ff0000', face='Arial'))]),
+      '<font color="#ff0000" face="Arial">x</font>')
+check('not drawn: a subtitle is set in what its style template says',
+      markup.to_html('<font face="Arial">x</font>'), 'x')
+check('a bare HTML font size says nothing about a proportion and is left behind',
+      (markup.from_spans(markup.spans('<font size="3">x</font>')),
+       [style.size for _run, style in markup.spans('<font size="80%">x</font>')]),
+      ('x', ['80%']))
+_md = markup.to_markdown('<font face="Arial Black">x</font>')
+check('the Markdown panel keeps it too', (_md, markup.from_markdown(_md)),
+      ('[x]{face="Arial Black"}', '<font face="Arial Black">x</font>'))
+
+
+print('text that flashes')
+check('read off a <blink>, and written back as one',
+      ([(run, style.flash) for run, style in markup.spans('Plain <blink>flash</blink> after')],
+       markup.from_spans(markup.spans('Plain <blink>flash</blink> after'))),
+      ([('Plain ', False), ('flash', True), (' after', False)], 'Plain <blink>flash</blink> after'))
+check('drawn by the class the page gives the keyframes to',
+      markup.to_html('<blink>x</blink>'), f'<span class="{markup.FLASH_CLASS}">x</span>')
+check('what it reads is the text alone', markup.plain('<blink>x</blink>'), 'x')
+check('ASS cannot say it: left out, as a reading is',
+      markup.to_ass('<blink>Flashing</blink>'), 'Flashing')
+_md = markup.to_markdown('Plain <blink>flash</blink>')
+check('the Markdown panel writes it as a span attribute, as it does underline',
+      (_md, markup.from_markdown(_md)), ('Plain [flash]{.flash}', 'Plain <blink>flash</blink>'))
+
+
+print('what kind of text a run is')
+check('read off a <font>, and written back',
+      ([style.kind for _run, style in markup.spans(
+          'Said by <font kind="source-id">NARRATOR</font>')],
+       markup.from_spans(markup.spans('Said by <font kind="source-id">NARRATOR</font>'))),
+      (['', 'source-id'], 'Said by <font kind="source-id">NARRATOR</font>'))
+check('every kind CEA-708 names, kept as it is written',
+      [[style.kind for _run, style in markup.spans(f'<font kind="{kind}">x</font>')][0]
+       for kind in markup.KINDS if kind],
+      [kind for kind in markup.KINDS if kind])
+check('one it does not name is no kind at all',
+      markup.from_spans(markup.spans('<font kind="nonsense">x</font>')), 'x')
+check('a kind says nothing about how it is drawn, except the one that does',
+      (markup.to_html('<font kind="lyrics">♪ la ♪</font>'),
+       markup.to_html('Shown <font kind="not-displayed">and not</font> again')),
+      ('♪ la ♪', 'Shown  again'))
+check('what is not drawn is still what the subtitle says, to count and translate',
+      markup.plain('Shown <font kind="not-displayed">and not</font> again'), 'Shown and not again')
+_md = markup.to_markdown('<font kind="sound-effect">[a door]</font>')
+check('the Markdown panel keeps it', (_md, markup.from_markdown(_md)),
+      ('[[a door]]{kind=sound-effect}', '<font kind="sound-effect">[a door]</font>'))
+
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

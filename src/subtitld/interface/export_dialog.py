@@ -156,6 +156,28 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.mcc_captions_combo, 1)
         self.layout().addWidget(self.mcc_options)
 
+        # SCC and MCC: how the captions are written, in which channel, and
+        # (MacCaption, which has room for them) another language beside them.
+        self.caption_options = QWidget()
+        row = QHBoxLayout(self.caption_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.caption_mode_combo = utils.LabeledComboBox()
+        self.caption_mode_combo.setLabel(_('export_dialog.caption_mode'))
+        for mode in ('pop', 'roll2', 'roll3', 'roll4', 'paint'):
+            self.caption_mode_combo.combobox.addItem(_(f'export_dialog.caption_mode_{mode}'), mode)
+        row.addWidget(self.caption_mode_combo, 1)
+        self.caption_channel_combo = utils.LabeledComboBox()
+        self.caption_channel_combo.setLabel(_('export_dialog.caption_channel'))
+        row.addWidget(self.caption_channel_combo, 1)
+        self.caption_service_combo = utils.LabeledComboBox()
+        self.caption_service_combo.setLabel(_('export_dialog.caption_service'))
+        self.caption_service_combo.combobox.addItem(_('export_dialog.caption_service_none'), '')
+        for language in export_options.translation_languages(session.SUBTITLE.get('segments')):
+            self.caption_service_combo.combobox.addItem(
+                _('export_dialog.caption_service_language').format(language=names.get(language, language)), language)
+        row.addWidget(self.caption_service_combo, 1)
+        self.layout().addWidget(self.caption_options)
+
         # EBU STL: its frame rate, its display and the programme's start.
         self.stl_options = QWidget()
         stl_grid = QGridLayout(self.stl_options)
@@ -220,6 +242,10 @@ class _SubtitlesPanel(QWidget):
         self.format_combo.setCurrentText(remembered.get('format') if remembered.get('format') in SUBTITLE_FORMATS else 'SRT')
         _select(self.text_combo, (remembered.get('text', 'original'), remembered.get('language', '')))
         self._speakers_wanted = remembered.get('speakers', 'none')
+        # The channel last chosen, kept while a format that lacks it is picked.
+        self._caption_channel_wanted = remembered.get('caption_channel', 1)
+        self.caption_channel_combo.combobox.activated.connect(
+            lambda _index: setattr(self, '_caption_channel_wanted', self.caption_channel_combo.combobox.currentData()))
         _select(self.formatting_combo, remembered.get('formatting', 'keep'))
         _select(self.encoding_combo, remembered.get('encoding', 'utf-8'))
         _select(self.line_ends_combo, remembered.get('line_ends', 'lf'))
@@ -242,6 +268,7 @@ class _SubtitlesPanel(QWidget):
         if not _select(self.mcc_rate_combo, mcc.rate_for(video_fps)):
             _select(self.mcc_rate_combo, remembered.get('mcc_rate', '29.97DF'))
         _select(self.mcc_captions_combo, remembered.get('mcc_captions', 'both'))
+        _select(self.caption_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
@@ -289,6 +316,20 @@ class _SubtitlesPanel(QWidget):
         self.scc_options.setVisible(fmt == 'SCC')
         self.stl_options.setVisible(fmt == 'STL')
         self.mcc_options.setVisible(fmt == 'MCC')
+        # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
+        # both fields, so it has all four.
+        self.caption_options.setVisible(fmt in ('SCC', 'MCC'))
+        channels = self.caption_channel_combo.combobox
+        wanted = [1, 2] if fmt == 'SCC' else [1, 2, 3, 4]
+        if [channels.itemData(index) for index in range(channels.count())] != wanted:
+            chosen = channels.currentData()
+            channels.clear()
+            for number in wanted:
+                channels.addItem(f'CC{number}', number)
+            if not _select(self.caption_channel_combo, chosen):
+                _select(self.caption_channel_combo, self._caption_channel_wanted)
+        # Another language rides in a CEA-708 service, which only MCC carries.
+        self.caption_service_combo.setVisible(fmt == 'MCC' and self.caption_service_combo.combobox.count() > 1)
         # SBV and BCC have no formatting to keep.
         self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC'))
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
@@ -337,6 +378,9 @@ class _SubtitlesPanel(QWidget):
             'stl_fps': self.stl_rate_combo.combobox.currentData(),
             'mcc_rate': self.mcc_rate_combo.combobox.currentData(),
             'mcc_captions': self.mcc_captions_combo.combobox.currentData(),
+            'caption_mode': self.caption_mode_combo.combobox.currentData(),
+            'caption_channel': self._caption_channel_wanted,
+            'caption_service_language': self.caption_service_combo.combobox.currentData(),
             'display': self.stl_display_combo.combobox.currentData(),
             'start': self.stl_start_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
@@ -361,10 +405,15 @@ class _SubtitlesPanel(QWidget):
             options['profile'] = choices['profile']
         if fmt == 'SCC':
             options['timecode'] = choices['timecode']
+        if fmt in ('SCC', 'MCC'):
+            options.update(caption_mode=choices['caption_mode'],
+                           caption_channel=self.caption_channel_combo.combobox.currentData() or 1)
         if fmt == 'STL':
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
         if fmt == 'MCC':
-            options.update(mcc_rate=choices['mcc_rate'], mcc_captions=choices['mcc_captions'])
+            options.update(mcc_rate=choices['mcc_rate'], mcc_captions=choices['mcc_captions'],
+                           caption_service_language=choices['caption_service_language']
+                           if choices['mcc_captions'] != '608' else '')
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
@@ -823,6 +872,57 @@ class _VideoPanel(QWidget):
 
         self.video_tabwidget.addTab(self.ffmpeg_panel, 'FFMPEG')
 
+        # Closed captions sub-tab ------------------------------------------
+        # The captions go inside the file, as a broadcast master carries
+        # them, rather than beside it: a QuickTime caption track, or the
+        # ancillary data of an MXF (embedded_captions).
+        self.captions_panel = QWidget()
+        self.captions_panel.setLayout(QVBoxLayout())
+        self.captions_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.captions_panel.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_video') or {}
+
+        self.captions_format_combo = utils.LabeledComboBox()
+        self.captions_format_combo.setLabel(_('export_dialog.format'))
+        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mov'), 'MOV')
+        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mxf'), 'MXF')
+        self.captions_format_combo.activated.connect(self._refresh_captions)
+        self.captions_panel.layout().addWidget(self.captions_format_combo)
+
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.captions_mode_combo = utils.LabeledComboBox()
+        self.captions_mode_combo.setLabel(_('export_dialog.caption_mode'))
+        for mode in ('pop', 'roll2', 'roll3', 'roll4', 'paint'):
+            self.captions_mode_combo.combobox.addItem(_(f'export_dialog.caption_mode_{mode}'), mode)
+        line.addWidget(self.captions_mode_combo, 1)
+        self.captions_channel_combo = utils.LabeledComboBox()
+        self.captions_channel_combo.setLabel(_('export_dialog.caption_channel'))
+        for number in (1, 2, 3, 4):
+            self.captions_channel_combo.combobox.addItem(f'CC{number}', number)
+        line.addWidget(self.captions_channel_combo, 1)
+        self.captions_codec_combo = utils.LabeledComboBox()
+        self.captions_codec_combo.setLabel(_('export_dialog.video_codec'))
+        self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_dnxhr'), 'dnxhr')
+        self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_mpeg2'), 'mpeg2')
+        self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_prores'), 'prores')
+        line.addWidget(self.captions_codec_combo, 1)
+        self.captions_panel.layout().addWidget(row)
+
+        self.captions_note = QLabel()
+        self.captions_note.setWordWrap(True)
+        self.captions_note.setProperty('class', 'widget_label')
+        self.captions_panel.layout().addWidget(self.captions_note)
+        self.captions_panel.layout().addStretch()
+
+        _select(self.captions_format_combo, remembered.get('format', 'MOV'))
+        _select(self.captions_mode_combo, remembered.get('caption_mode', 'pop'))
+        _select(self.captions_channel_combo, remembered.get('caption_channel', 1))
+        _select(self.captions_codec_combo, remembered.get('codec', 'dnxhr'))
+        self._refresh_captions()
+        self.video_tabwidget.addTab(self.captions_panel, _('export_dialog.category_captions'))
+
         self.layout().addWidget(self.video_tabwidget, 0)
 
         # Standalone "generate transparent video" button -----------------
@@ -882,8 +982,24 @@ class _VideoPanel(QWidget):
         self._update_preview()
         return super().showEvent(event)
 
+    def _refresh_captions(self):
+        """What the chosen container can hold: a QuickTime caption track
+        carries CEA-608 and keeps the picture as it is; an MXF's ancillary
+        data carries CEA-708 beside it, but takes a picture of its own."""
+        container = self.captions_format_combo.combobox.currentData() or 'MOV'
+        self.captions_codec_combo.setVisible(container == 'MXF')
+        self.captions_note.setText(_('export_dialog.video_captions_note_mxf' if container == 'MXF'
+                                     else 'export_dialog.video_captions_note_mov'))
+
     def get_config(self):
-        return {'category': 'video'}
+        container = self.captions_format_combo.combobox.currentData() or 'MOV'
+        captions = {
+            'caption_mode': self.captions_mode_combo.combobox.currentData() or 'pop',
+            'caption_channel': self.captions_channel_combo.combobox.currentData() or 1,
+            'codec': self.captions_codec_combo.combobox.currentData() or 'dnxhr',
+        }
+        session.CONFIG['export_video'] = dict(captions, format=container)
+        return {'category': 'video', 'format': container, 'captions': captions}
 
 
 class ExportDialog(utils.SimpleDialog):

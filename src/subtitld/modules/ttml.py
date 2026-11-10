@@ -93,6 +93,8 @@ _RUBY_ROLES = {'base': 'base', 'text': 'text'}
 _BIDI = {'embed': 'embed', 'bidiOverride': 'override', 'isolate': 'isolate'}
 _BIDI_OUT = {value: key for key, value in _BIDI.items()}
 _RGB = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
+# The same, with the opacity TTML writes as a fourth part (0-255, or 0-1).
+_RGBA = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)')
 _DECLARED = re.compile(rb'\s*<\?xml[^>]*?encoding\s*=\s*["\']([\w.:-]+)["\']')
 _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
 _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
@@ -341,6 +343,34 @@ def _color(value):
     return markup.color_hex(value)
 
 
+def _one_size(value):
+    """A tts:fontSize as one measure: it may give two, across and down, and
+    a run's size here is one proportion."""
+    return (str(value or '').strip().split() or [''])[-1]
+
+
+def _span_outline(value):
+    """(the edge a tts:textOutline draws, its colour): TTML says a colour
+    and a thickness, which is the outline CEA-708 calls uniform."""
+    parts = str(value or '').strip().split()
+    if not parts or parts[0] == 'none':
+        return '', ''
+    color = markup.color_hex(parts[0])
+    return ('uniform', color) if color or len(parts) > 1 else ('', '')
+
+
+def _background(value):
+    """'#rrggbb', or '#rrggbbaa' where it is not opaque, for a TTML
+    backgroundColor: the alpha a run's background keeps, unlike a colour's,
+    since a caption's box is often only partly opaque."""
+    value = (value or '').strip()
+    rgb = _RGBA.match(value)
+    if rgb:
+        parts = [min(255, int(part)) for part in rgb.groups()[:3]]
+        alpha = rgb.group(4)
+        opacity = 255 if alpha is None else min(255, int(round(float(alpha) * (1 if '.' in alpha else 1 / 255) * 255)))
+        return '#' + ''.join(f'{part:02x}' for part in parts) + ('' if opacity == 255 else f'{opacity:02x}')
+    return markup.background_hex(value)
 # TTML names the generic families itself; CSS has its own names for them.
 _GENERIC_FONTS = {'default': '', 'monospace': 'monospace', 'sansSerif': 'sans-serif', 'serif': 'serif',
                   'monospaceSansSerif': 'monospace', 'monospaceSerif': 'monospace',
@@ -615,7 +645,10 @@ def _look(props):
         'underline' in decoration,
         'lineThrough' in decoration,
         '' if color == '#ffffff' else color,
-        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''))
+        _RUBY_ROLES.get((props.get('ruby') or '').strip(), ''),
+        _background(props.get('backgroundColor')),
+        markup.size_percent(_one_size(props.get('fontSize'))),
+        '', *_span_outline(props.get('textOutline')))
 
 
 def _keypad(props, frame, geometry=True):
@@ -817,6 +850,35 @@ def _preserving(element, preserve):
     return (element.get(_XML_NS + 'space') or ('preserve' if preserve else 'default')) == 'preserve'
 
 
+def _whole_look(element, styles, props):
+    """What a whole paragraph is drawn in, as {field: value}: the box behind
+    a subtitle and the edge around its letters are a style template's
+    settings, not a run's own (modules.markup). It is what the paragraph
+    itself sets, and for the box what a lone span wrapping all of it does,
+    as this module writes the box; one on only some of the runs is theirs.
+    """
+    whole = _look(props)
+    background = whole.background
+    children = list(element)
+    if len(children) == 1 and _local(children[0].tag) == 'span' and \
+            not (element.text or '').strip() and not (children[0].tail or '').strip():
+        background = _background(styles.of(children[0], props).get('backgroundColor')) or background
+    return background, (whole.edge, whole.edge_color)
+
+
+def _own_look(style, box, outline):
+    """`style` with what the whole paragraph is drawn in taken out: the box
+    behind it and the edge around its letters. The edge goes with the colour
+    it is drawn in, so a run outlined in another colour keeps both, and an
+    edge colour never outlives the edge it was for.
+    """
+    if box and style.background == box:
+        style = style._replace(background='')
+    if outline[0] and (style.edge, style.edge_color) == outline:
+        style = style._replace(edge='', edge_color='')
+    return style if style.edge else style._replace(edge_color='')
+
+
 def _runs(element, styles, props, preserve, out, agent):
     """Collect `element`'s text into `out` as [(text, Style)]; the first
     ttm:agent met goes in `agent`."""
@@ -876,6 +938,8 @@ def _document(text):
         p_props = styles.of(element, dict(region_props, **props))
         runs, agent = [], [None]
         _runs(element, styles, p_props, preserve, runs, agent)
+        box, outline = _whole_look(element, styles, p_props)
+        runs = [(run, _own_look(style, box, outline)) for run, style in runs]
         body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
@@ -1163,7 +1227,17 @@ def _open_span(tags, style, shear=False):
     names = {name: value for name, value in tags}
     attrs = []
     if 'font' in names:
-        attrs.append(f'tts:color="{names["font"]}"')
+        font = names['font']
+        if font.color:
+            attrs.append(f'tts:color="{font.color}"')
+        if font.background:
+            attrs.append(f'tts:backgroundColor="{font.background}"')
+        if font.size:
+            attrs.append(f'tts:fontSize="{font.size}"')
+        if font.edge:
+            # TTML draws an edge as an outline; the kinds it has no word for
+            # are written as the outline nearest them.
+            attrs.append(f'tts:textOutline="{font.edge_color or "#000000"} 4%"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
     if 'b' in names:

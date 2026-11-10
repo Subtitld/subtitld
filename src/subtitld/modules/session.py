@@ -187,6 +187,11 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
     'SRT': {'description': 'SubRip Subtitle format', 'extensions': ['srt']}
 }
 
+LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
+    'MOV': {'description': 'QuickTime video with closed captions', 'extensions': ['mov']},
+    'MXF': {'description': 'MXF video with closed captions', 'extensions': ['mxf']},
+}
+
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
     'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
     'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']},

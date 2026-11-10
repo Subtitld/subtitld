@@ -1,4 +1,5 @@
-"""Bounce / render dub speeches to audio or video files."""
+"""Bounce / render dub speeches to audio or video files, and write the
+video out with its subtitles in it as closed captions (embedded_captions)."""
 
 import os
 import shutil
@@ -320,6 +321,59 @@ def bounce_async(output_path, audio_format, mode, audio_engine=None,
         thread.deleteLater()
 
     thread.bounce_finished.connect(_cleanup, Qt.QueuedConnection)
+    _active_bounce_threads.append(thread)
+    thread.start()
+    return thread
+
+
+class CaptionsThread(QThread):
+    """Write the video out with its subtitles in it as closed captions, off
+    the main thread: FFmpeg copies or re-encodes a whole video, which takes
+    as long as it takes. Mirrors BounceThread's shape, and its signal
+    carries (output_path, success, error_message)."""
+    captions_finished = Signal(str, bool, str)
+
+    def __init__(self, output_path, container, options=None, parent=None):
+        super().__init__(parent)
+        self._output_path = output_path
+        self._container = container
+        self._options = dict(options or {})
+
+    def run(self):
+        try:
+            from subtitld.modules import embedded_captions, export_options
+            video = (session.VIDEO or {}).get('filepath')
+            if not video:
+                raise ValueError('No video loaded to write captions into')
+            segments = export_options.prepare(session.SUBTITLE.get('segments'), self._options)
+            embedded_captions.write_video(
+                video, self._output_path, segments,
+                fps=float(session.VIDEO.get('framerate') or 0),
+                duration=float(session.VIDEO.get('duration') or 0),
+                container=self._container,
+                codec=self._options.get('codec') or embedded_captions.DEFAULT_CODEC,
+                mode=self._options.get('caption_mode') or 'pop',
+                channel=self._options.get('caption_channel') or 1,
+                speaker_changes=self._options.get('speakers') == 'voice',
+                ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
+            self.captions_finished.emit(self._output_path, True, '')
+        except Exception as exc:
+            self.captions_finished.emit(self._output_path, False, str(exc))
+
+
+def captioned_video_async(output_path, container, options=None, on_done=None, parent=None):
+    """Spawn a CaptionsThread, wire `on_done(path, ok, error)` and keep a
+    reference so the thread survives until it is done."""
+    thread = CaptionsThread(output_path, container, options, parent=parent)
+
+    def _cleanup(path, success, error):
+        if on_done is not None:
+            on_done(path, success, error)
+        if thread in _active_bounce_threads:
+            _active_bounce_threads.remove(thread)
+        thread.deleteLater()
+
+    thread.captions_finished.connect(_cleanup, Qt.QueuedConnection)
     _active_bounce_threads.append(thread)
     thread.start()
     return thread

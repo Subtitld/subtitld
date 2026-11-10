@@ -1,7 +1,7 @@
 """A subtitle's text, edited as it looks.
 
 The subtitle list's editor shows a subtitle's italic, bold, underline,
-strikeout and colours, not tags, and turns what is typed and formatted
+strikeout, colours and the background a run sits on, not tags, and turns what is typed and formatted
 there back into the tags the text keeps (modules.markup). The override
 codes a text starts with, such as its position ({\\an8}), are not text to
 edit: the editor keeps them aside (`lead`) and puts them back.
@@ -24,6 +24,13 @@ FLAGS = ('italic', 'bold', 'underline', 'strike')
 # format carries which of the two a run is; without it an edit would leave
 # the reading loose in the text it reads.
 _RUBY_ROLE = QTextFormat.UserProperty + 1
+# A size, an edge and the colour it is drawn in have no look of their own in
+# the editor either: it keeps them so an edit does not drop them.
+_PEN = {field: QTextFormat.UserProperty + 2 + index
+        for index, field in enumerate(('size', 'offset', 'edge', 'edge_color', 'face', 'kind'))}
+# A text editor has no way to show text flashing, so it is kept as a
+# property and left to the preview to draw.
+_FLASH = QTextFormat.UserProperty + 8
 
 
 def _char_format(style):
@@ -36,6 +43,17 @@ def _char_format(style):
     fmt.setFontStrikeOut(style.strike)
     if style.color:
         fmt.setForeground(QColor(style.color))
+    if style.background:
+        fmt.setBackground(QColor(style.background))
+    for field, held in _PEN.items():
+        if getattr(style, field):
+            fmt.setProperty(held, getattr(style, field))
+    if style.offset == 'super':
+        fmt.setVerticalAlignment(QTextCharFormat.AlignSuperScript)
+    elif style.offset == 'sub':
+        fmt.setVerticalAlignment(QTextCharFormat.AlignSubScript)
+    if style.flash:
+        fmt.setProperty(_FLASH, True)
     if style.ruby:
         fmt.setProperty(_RUBY_ROLE, style.ruby)
         if style.ruby == 'text':
@@ -45,12 +63,17 @@ def _char_format(style):
 
 
 def _style(fmt):
-    color = ''
+    color, background = '', ''
     if fmt.hasProperty(QTextFormat.ForegroundBrush) and fmt.foreground().style() != Qt.NoBrush:
         color = fmt.foreground().color().name()
+    if fmt.hasProperty(QTextFormat.BackgroundBrush) and fmt.background().style() != Qt.NoBrush:
+        shade = fmt.background().color()
+        background = shade.name() if shade.alpha() == 255 else shade.name(QColor.HexArgb)
     role = fmt.property(_RUBY_ROLE)
+    pen = {field: fmt.property(held) or '' for field, held in _PEN.items()}
     return markup.Style(fmt.fontItalic(), fmt.fontWeight() >= QFont.DemiBold, fmt.fontUnderline(),
-                        fmt.fontStrikeOut(), color, role if role in markup.RUBY_ROLES else '')
+                        fmt.fontStrikeOut(), color, role if role in markup.RUBY_ROLES else '', background,
+                        flash=bool(fmt.property(_FLASH)), **pen)
 
 
 def set_text(textedit, text):
@@ -93,7 +116,12 @@ def runs(textedit, start=0, end=None):
             after = next((s for r, s in found[index + 1:] if s is not None), markup.PLAIN)
             found[index] = (run, markup.Style(*(a and b for a, b in zip(before[:4], after[:4])),
                                               before.color if before.color == after.color else '',
-                                              before.ruby if before.ruby == after.ruby else ''))
+                                              before.ruby if before.ruby == after.ruby else '',
+                                              before.background if before.background == after.background else '',
+                                              flash=before.flash and after.flash,
+                                              **{field: getattr(before, field)
+                                                 if getattr(before, field) == getattr(after, field) else ''
+                                                 for field in markup._PEN_FIELDS}))
     return found
 
 
