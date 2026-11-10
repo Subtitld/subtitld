@@ -173,6 +173,31 @@ placed_bar.clear_button.click()
 check('clear takes the position too', ('position' in held, ste.text(placed)), (False, 'Hello'))
 check('without a subtitle the numbers are not offered', (ste.FormattingBar(loaded('x'))._show_place(), ), (None,))
 
+print('when it is shown, and the look its file gave it')
+shown = {'text': 'A sign', 'start': 0, 'end': 1, 'look': {'size': 8.0, 'background': '#c8000000'}}
+shown_bar = ste.FormattingBar(loaded('A sign'), segment=lambda: shown)
+shown_bar._show_subtitle()
+check('the menu shows what the subtitle is now',
+      (shown_bar.forced_action.isChecked(), shown_bar.hidden_action.isChecked(), shown_bar.look_action.isEnabled()),
+      (False, False, True))
+steps = len(history.ALL_HISTORY)
+shown_bar.forced_action.setChecked(True)
+check('forced: on the subtitle, in one undo step', (shown.get('forced'), len(history.ALL_HISTORY) - steps), (True, 1))
+shown_bar.hidden_action.setChecked(True)
+shown_bar.hidden_action.setChecked(False)
+check('hidden on and off again: the key goes, not left False', 'hidden' in shown, False)
+shown_bar.forced_action.setChecked(False)
+check('and forced off the same way', 'forced' in shown, False)
+shown_bar._clear_look()
+check("the file's look handed back to the chosen style", 'look' in shown, False)
+shown_bar._show_subtitle()
+check('with no look left there is none to hand back', shown_bar.look_action.isEnabled(), False)
+shown['look'] = {'size': 8.0}
+shown_bar.clear_button.click()
+check("clear formatting takes the file's look too", 'look' in shown, False)
+check('without a subtitle the menu is not offered',
+      ste.FormattingBar(loaded('x')).subtitle_button.isVisibleTo(None), False)
+
 print('a reading stays a reading')
 ruby = QTextEdit()
 ste.set_text(ruby, '<ruby>東京<rt>とうきょう</rt></ruby> is big')
