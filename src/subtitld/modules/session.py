@@ -147,6 +147,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
     'FCPXML': {'description': 'Final Cut Pro XML captions', 'extensions': ['fcpxml', 'fcpxmld']},
     'CAP': {'description': 'Cheetah CAP Caption format', 'extensions': ['cap']},
+    'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

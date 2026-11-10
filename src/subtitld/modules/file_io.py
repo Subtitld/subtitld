@@ -18,6 +18,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
+from subtitld.modules import cavena890
 from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
 from subtitld.modules import csv_export
@@ -931,6 +932,22 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cap_settings['fps'])
 
+        elif subtitle_file.lower().endswith('.890'):
+            # Cavena 890: frames counted at the video's rate, else 25; its
+            # language for the project's, its title the project's, its rate
+            # and programme start kept to save it again as it was.
+            subtitle_format = 'CAVENA890'
+            try:
+                segments_list, cavena_settings = cavena890.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(cavena_settings['language']):
+                session.SUBTITLE['language'] = _known_language(cavena_settings['language'])
+            if cavena_settings['title']:
+                session.SUBTITLE['metadata'] = {'title': cavena_settings['title']}
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cavena_settings['fps'],
+                                             start=cavena_settings['start'])
+
         elif subtitle_file.lower().endswith(('.mcc')):
             # MacCaption: the CEA-708 captions of its packets, else the CEA-608
             # ones; its frame rate and what it carries kept to save it again
@@ -1799,6 +1816,17 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Frames at the export's rate, or the video's, else 25: the file
             # does not say which.
             cheetahcap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'CAVENA890':
+            # In the character table of the text's language; frames at the
+            # export's rate (the video's, else 25), from the programme start
+            # it asks; the project's title, else the video's name.
+            cavena890.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                           language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                           else language,
+                           title=(SUBTITLE.get('metadata') or {}).get('title')
+                           or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
+                           start=options.get('start') if options.get('start') in cavena890.STARTS else cavena890.STARTS[0])
 
         elif subtitle_format == 'BCC':
             # Bilibili's: plain text, the player's default look, no overlaps.

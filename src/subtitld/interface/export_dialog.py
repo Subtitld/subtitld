@@ -20,8 +20,8 @@ from subtitld.modules import session
 from subtitld.modules import ttml
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'CAP', 'AVID', 'FCPXML', 'DCP', 'SBV', 'SUB',
-                    'XML', 'LRC', 'USF', 'JSON', 'BCC']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'CAP', 'CAVENA890', 'AVID', 'FCPXML', 'DCP',
+                    'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
@@ -104,8 +104,8 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.line_ends_combo, 1)
         self.layout().addWidget(self.srt_options)
 
-        # SUB (MicroDVD), Cheetah CAP, Avid SubCap and Final Cut Pro count in
-        # frames; MicroDVD and CAP do not say at what rate.
+        # SUB (MicroDVD), Cheetah CAP, Cavena 890, Avid SubCap and Final Cut
+        # Pro count in frames; MicroDVD, CAP and 890 do not say at what rate.
         self.sub_options = QWidget()
         row = QHBoxLayout(self.sub_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -237,6 +237,18 @@ class _SubtitlesPanel(QWidget):
             lambda _index: self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE))
         self.layout().addWidget(self.dcp_options)
 
+        # Cavena 890: the programme's start its frames count from.
+        self.cavena_options = QWidget()
+        row = QHBoxLayout(self.cavena_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.cavena_start_combo = utils.LabeledComboBox()
+        self.cavena_start_combo.setLabel(_('export_dialog.stl_start'))
+        self.cavena_start_combo.combobox.addItem('00:00:00:00', '00:00:00:00')
+        self.cavena_start_combo.combobox.addItem(_('export_dialog.stl_start_ten'), '10:00:00:00')
+        row.addWidget(self.cavena_start_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.cavena_options)
+
         # ASS and TTML: the look of their one style.
         self.ass_options = QWidget()
         row = QHBoxLayout(self.ass_options)
@@ -314,6 +326,7 @@ class _SubtitlesPanel(QWidget):
         _select(self.dcp_rate_combo, dcp.rate_for(video_fps) if video_fps
                 else remembered.get('dcp_fps', dcp.DEFAULT_RATE))
         self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE)
+        _select(self.cavena_start_combo, remembered.get('cavena_start', '00:00:00:00'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
         # Drop-frame or not is only a choice at the rates that have it.
@@ -358,11 +371,12 @@ class _SubtitlesPanel(QWidget):
             if text == 'both':
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
-        self.sub_options.setVisible(fmt in ('SUB', 'CAP', 'AVID', 'FCPXML'))
+        self.sub_options.setVisible(fmt in ('SUB', 'CAP', 'CAVENA890', 'AVID', 'FCPXML'))
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
         self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML') and _has_drop_frame(rate)))
         self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
+        self.cavena_options.setVisible(fmt == 'CAVENA890')
         self.stl_options.setVisible(fmt == 'STL')
         self.dcp_options.setVisible(fmt == 'DCP')
         self.mcc_options.setVisible(fmt == 'MCC')
@@ -442,6 +456,7 @@ class _SubtitlesPanel(QWidget):
             'timeline_start': self.timeline_start_combo.combobox.currentData(),
             'dcp_standard': self.dcp_standard_combo.combobox.currentData(),
             'dcp_fps': self.dcp_rate_combo.combobox.currentData(),
+            'cavena_start': self.cavena_start_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
@@ -456,10 +471,12 @@ class _SubtitlesPanel(QWidget):
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID'):
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'CAP', 'AVID', 'FCPXML'):
+        if fmt in ('SUB', 'CAP', 'CAVENA890', 'AVID', 'FCPXML'):
             options['fps'] = choices['fps']
         if fmt in ('AVID', 'FCPXML'):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])
+        if fmt == 'CAVENA890':
+            options['start'] = choices['cavena_start']
         if fmt in ('ASS', 'DFXP', 'TTML'):
             options['look'] = choices['look']
         if fmt in ('DFXP', 'TTML'):
