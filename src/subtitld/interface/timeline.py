@@ -763,8 +763,8 @@ class Timeline(QWidget):
 
     def _paint_collaborators(widget, painter):
         """The others in a shared project (modules.collab_service), each in their colour: the subtitle they
-        selected, outlined; a tag on the one they type in; their playhead, a thin line with their handle.
-        Never in the way of the timeline: a failure here only loses this overlay."""
+        selected, outlined; a tag on the one they type in; their playhead, a thin line with their handle at
+        the foot. Never in the way of the timeline: a failure here only loses this overlay."""
         try:
             from subtitld.modules import collab_service, cue_ids
             people = collab_service.collaborators()
@@ -807,8 +807,10 @@ class Timeline(QWidget):
                     line = QColor(color)
                     line.setAlpha(170)
                     painter.setPen(QPen(line, 1, Qt.SolidLine))
-                    painter.drawLine(QLineF(x, 12.0, x, float(widget.height())))
-                    tag = QRectF(x, 0, metrics.horizontalAdvance(label) + 6, 12)
+                    # The handle at the foot of the timeline, clear of the time and the playhead's own tag at the top.
+                    bottom = float(widget.height())
+                    painter.drawLine(QLineF(x, 0.0, x, bottom - 12.0))
+                    tag = QRectF(x, bottom - 12.0, metrics.horizontalAdvance(label) + 6, 12)
                     painter.setPen(Qt.NoPen)
                     painter.setBrush(line)
                     painter.drawRect(tag)
