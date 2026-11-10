@@ -176,6 +176,8 @@ class SubtitleStylePanel(QWidget):
             control = QPushButton()
             control.setProperty('class', 'color_pick_button')
             control.setFixedWidth(80)
+            if label:
+                control.setAccessibleName(label)
             self._paint_color(control, value)
             control.clicked.connect(lambda checked=False, key=key, control=control: self._pick_color(key, control))
         else:

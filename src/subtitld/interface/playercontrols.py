@@ -2991,7 +2991,7 @@ def playercontrols_properties_panel_tabwidget_subtitles_update_widgets(self):
     self.playercontrols_properties_panel_tabwidget_waveform_border_color_button.setStyleSheet('background-color: {color};'.format(color=session.CONFIG['timeline'].get('waveform_border_color', '#ff153450')))
     self.playercontrols_properties_panel_tabwidget_waveform_fill_color_button.setStyleSheet('background-color: {color};'.format(color=session.CONFIG['timeline'].get('waveform_fill_color', '#cc153450')))
     self.playercontrols_properties_panel_tabwidget_background_grid_color_button.setStyleSheet('background-color: {color};'.format(color=session.CONFIG['timeline'].get('grid_color', '#336a7483')))
-    self.playercontrols_properties_panel_tabwidget_background_time_text_color_button.setStyleSheet('background-color: {color};'.format(color=session.CONFIG['timeline'].get('time_text_color', '#806a7483')))
+    self.playercontrols_properties_panel_tabwidget_background_time_text_color_button.setStyleSheet('background-color: {color};'.format(color=session.CONFIG['timeline'].get('time_text_color', '#b8b8cee0')))
     self.playercontrols_properties_panel_tabwidget_background_cursor_color_button.setStyleSheet('background-color: {color};'.format(color=session.CONFIG['timeline'].get('cursor_color', '#ccff0000')))
 
 
@@ -3328,6 +3328,8 @@ def translate(self):
     self.send_text_to_next_subtitle_and_slice_button.setToolTip(_('playercontrols.send_text_to_next_subtitle_and_slice'))
     self.slice_selected_subtitle_button.setToolTip(_('playercontrols.slice_selected_subtitle'))
     self.merge_next_selected_subtitle_button.setToolTip(_('playercontrols.merge_next_selected_subtitle'))
+    self.merge_back_selected_subtitle_button.setToolTip(_('playercontrols.merge_back_selected_subtitle'))
+    self.playercontrols_handle_button.setToolTip(_('playercontrols.resize_handle'))
     self.last_end_to_current_position_button.setToolTip(_('playercontrols.last_end_to_current_position'))
     self.last_start_to_current_position_button.setToolTip(_('playercontrols.last_start_to_current_position'))
     self.last_start_last_end_to_current_position_button.setToolTip(_('playercontrols.last_start_last_end_to_current_position'))

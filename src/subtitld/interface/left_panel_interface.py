@@ -300,6 +300,11 @@ def translate(self):
     self.global_panel_interface_videoplayer_safe_margin_title_y_margin_label.setText(_('interface_panel.vertical_margin'))
     self.global_panel_interface_videoplayer_safe_margin_title_y_margin_pixels_label.setText(_('units.pixels'))
     self.global_panel_interface_videoplayer_safe_margin_title_color_label.setText(_('units.color'))
+    # The colour swatches show no text: named after their margin.
+    self.global_panel_interface_videoplayer_safe_margin_action_color_button.setAccessibleName(
+        f"{_('interface_panel.action_safe_margin')}: {_('units.color')}")
+    self.global_panel_interface_videoplayer_safe_margin_title_color_button.setAccessibleName(
+        f"{_('interface_panel.title_safe_margin')}: {_('units.color')}")
     self.global_panel_interface_tabwidget.setTabText(0, _('interface_panel.video_player'))
     self.global_panel_interface_videoplayer_safe_margin_title_x_margin_pixels_label.setText(_('units.pixels'))
 
