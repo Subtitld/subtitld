@@ -113,13 +113,21 @@ def _save_config():
         pass
 
 
+def _signin_page():
+    """The words of the page the browser shows once it sends the person back, in Subtitld's language."""
+    from subtitld.interface.translation import _, get_language
+
+    return {'lang': (get_language() or 'en').replace('_', '-'), 'connected': _('subtitldcc.page_connected'),
+            'canceled': _('subtitldcc.page_canceled'), 'close': _('subtitldcc.page_close')}
+
+
 def sign_in(device_code_shown=None, cancelled=lambda: False):
     """Sign in (blocking: run it with call()). With ``device_code_shown(code, uri, full_uri)`` it uses a
     code typed at subtitld.cc/device instead of the browser. Returns /me."""
     connection = client(token='')
     about = {'device_id': store().device_id(), 'scopes': SCOPES, 'cancelled': cancelled}
     if device_code_shown is None:
-        token = api.sign_in_browser(connection, **about)
+        token = api.sign_in_browser(connection, page=_signin_page(), **about)
     else:
         token = api.sign_in_device(connection, show=device_code_shown, **about)
     store().save(token['access_token'])
