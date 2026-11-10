@@ -29,8 +29,8 @@ And for a format of its own:
                  'cp949' (Korean)
     line_ends    SRT, SAMI, SUB, LRC and AVID: 'lf' or 'crlf'
     fps          SUB, PAC, FPC, CAP, CAVENA890 and AVID: the frame rate its
-                 frame numbers count in;
-                 FCPXML: its sequence's, whose frames the captions are on
+                 frame numbers count in; FCPXML: its sequence's, whose
+                 frames the captions are on
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID
                  and FCPXML the same, at 29.97 and 59.94, the rates that
                  have it
