@@ -44,6 +44,7 @@ def wait(condition, seconds=5):
 
 
 calls = []
+SHARED_FROM = []
 HELD = set()
 PROJECT = {'doc_id': 'Dk3pQ9aZ2bT', 'title': 'Sintel', 'seq': 0, 'owner': {'handle': 'marina', 'name': 'Marina', 'kind': 'user'},
            'members': [], 'websocket': 'wss://subtitld.cc/ws/collab/Dk3pQ9aZ2bT', 'permissions': {'can_manage': True}}
@@ -58,8 +59,9 @@ class FakeClient:
     def me(self):
         return {'handle': 'marina', 'name': 'Marina', 'publish_as': ['marina', 'subbers'], 'subtitle_languages': []}
 
-    def share_project(self, title, state, *, owner='', idempotency_key=None):
+    def share_project(self, title, state, *, owner='', subtitle='', idempotency_key=None):
         calls.append(('share', title, owner, [s['text'] for s in state['segments']], all(s.get('id') for s in state['segments'])))
+        SHARED_FROM.append(subtitle)
         return dict(PROJECT, title=title)
 
     def project(self, doc_id):
@@ -182,9 +184,12 @@ check('yourself or a group you publish as', [card.owner_field.itemText(i) for i 
 print('sharing')
 card.owner_field.setCurrentIndex(1)
 card.title_field.setText('Sintel')
+service.set_origin('Sb7kQ2xZ9aT', 1)  # opened from subtitld.cc
 card.share_button.click()
 check('subtitld.cc gets the document, every subtitle with its ID', wait(lambda: collab_state.shared()), True)
 check('as the group, with the subtitles', calls[0], ('share', 'Sintel', 'subbers', ['Hello', 'Bye'], True))
+check('and the subtitle they came from, for the project to publish to', SHARED_FROM, ['Sb7kQ2xZ9aT'])
+session.SUBTITLE.pop('origin')
 check('it connects', calls[1][0], 'connect')
 check('shared: the members part, not the form', wait(lambda: card.members_title.isVisible()), True)
 check('connected', card.status.text(), 'Connected. Changes reach everyone as you make them.')

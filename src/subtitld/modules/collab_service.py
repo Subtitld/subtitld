@@ -557,8 +557,10 @@ def _document():
 
 def share(title, owner, on_success, on_failure):
     """Share the open project for live co-editing, as `owner` (a handle: yourself or a group you may publish
-    as). The project becomes shared once subtitld.cc has it; saving keeps that with it."""
+    as). The project becomes shared once subtitld.cc has it; saving keeps that with it. Subtitles opened from
+    subtitld.cc name it, so the project publishes to them (and shows on their page)."""
     document = _document()
+    subtitle = (service.origin() or {}).get('share_id', '')
 
     def shared(project):
         collab_state.start(project['doc_id'], service.base_url(), int(project.get('seq') or 0), base=document)
@@ -571,7 +573,7 @@ def share(title, owner, on_success, on_failure):
         _tell('shared')
         on_success(project)
 
-    return service.call(lambda: service.client().share_project(title, document, owner=owner), shared, on_failure)
+    return service.call(lambda: service.client().share_project(title, document, owner=owner, subtitle=subtitle), shared, on_failure)
 
 
 def take(project):

@@ -278,6 +278,9 @@ class SubtitldccPanel(QWidget):
         self.message = _label('subtitldcc_message')
         self.message.hide()
         self.cards.insertWidget(0, self.message)
+        # A subtitld:// link to a subtitle, followed with subtitles in the editor: asked here first.
+        self.link_confirm = Confirm()
+        self.cards.insertWidget(1, self.link_confirm)
         self._message_timer = QTimer(self)
         self._message_timer.setSingleShot(True)
         self._message_timer.timeout.connect(self.message.hide)
@@ -778,6 +781,41 @@ class SubtitldccPanel(QWidget):
             self._failed(error)
 
         service.call(lambda: service.download_usf(share_id), opened, failed)
+
+    def open_link_subtitle(self, share_id, version=None):
+        """A subtitld:// link to subtitle `share_id` (its `version`, or the latest), followed with the editor
+        open: it replaces the subtitles there, with the video that is open, after asking when there are any.
+        Not into a shared project, where it would replace everyone's."""
+        if collab_state.shared():
+            self.show_message(_('open_link.subtitle_while_shared'), error=True)
+            return
+
+        def got(result):
+            info, data = result
+            title = info.get('title') or share_id
+
+            def replace():
+                service.open_in_editor(self.window_, data)
+                if not service.origin():
+                    service.set_origin(share_id, version or info.get('version'))
+                self._origin_info = None
+                self._load_origin()
+                self._render_publish()
+                self.show_message(_('subtitldcc.opened').format(title=title))
+
+            if session.SUBTITLE.get('segments'):
+                key = 'subtitldcc.replace_unsaved' if session.UNSAVED else 'subtitldcc.replace_text'
+                self.link_confirm.ask(_(key).format(title=title), _('subtitldcc.replace'), replace)
+            else:
+                replace()
+
+        def failed(error):
+            if service.error_code(error) == 'not_found':
+                self.show_message(_('open_link.subtitle_not_found'), error=True)
+            else:
+                self._failed(error)
+
+        service.call(lambda: (service.client().asset(share_id), service.download_usf(share_id, version)), got, failed)
 
     # --- Publishing --------------------------------------------------------------------------------------
 
