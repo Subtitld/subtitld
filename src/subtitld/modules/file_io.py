@@ -51,9 +51,10 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (a VobSub's .idx or .sub, a PGS .sup), not text: nothing is
-    wrong with it, but only an OCR add-on can make text of it
-    (picture_ocr). `path` is the file, `kind` 'vobsub' or 'pgs'."""
+    pictures (a VobSub's .idx or .sub, a PGS .sup, a TTML file in IMSC's
+    Image Profile with pictures it gives no words for), not text: nothing
+    is wrong with it, but only an OCR add-on can make text of it
+    (picture_ocr). `path` is the file, `kind` 'vobsub', 'pgs' or 'imsc'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -718,6 +719,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
+            # IMSC's Image Profile: subtitles that are pictures. Those whose
+            # words the file gives are read as them; a picture with none is
+            # for an OCR add-on, as a disc's are.
+            with open(subtitle_file, 'rb') as ttml_file:
+                has_pictures = b'backgroundImage' in ttml_file.read()
+            if has_pictures and any(not image['alt'] for image in ttml.read_images(subtitle_file)[0]):
+                raise PictureSubtitlesError(subtitle_file, 'imsc')
             language = _known_language(ttml_language)
             if language:
                 session.SUBTITLE['language'] = language

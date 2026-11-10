@@ -50,6 +50,12 @@ Reading:
   — is read like any other and marked hidden, not left out;
 - the document's xml:lang is the subtitles' language, and its <metadata>'s
   ttm:title, ttm:desc and ttm:copyright what it says about itself;
+- a subtitle that is a picture (IMSC's Image Profile, SMPTE-TT: a <div>
+  with smpte:backgroundImage, a PNG beside the file or one the file holds
+  in a smpte:image) is read as the text its ittm:altText gives, placed
+  where its region is; `read_images` gives the pictures themselves, for
+  the ones with no text to read (modules.picture_ocr reads them with an
+  OCR add-on);
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -78,6 +84,8 @@ to say where it breaks the rules this module knows (it is a useful set of
 checks, not a conformance certificate).
 """
 
+import base64
+import binascii
 import html.entities
 import re
 import xml.etree.ElementTree as ET
@@ -995,8 +1003,39 @@ def _runs(element, styles, props, preserve, out, agent):
         text(child.tail)
 
 
-def _document(text):
-    """(subtitles, language) in TTML text."""
+def _embedded_images(root):
+    """{xml:id: PNG bytes} for the pictures a SMPTE-TT file holds itself,
+    as smpte:image elements in Base64."""
+    found = {}
+    for element in root.iter():
+        if _local(element.tag) != 'image' or not _xml_id(element):
+            continue
+        if (element.get('encoding') or 'Base64').strip().lower() != 'base64':
+            continue
+        try:
+            found[_xml_id(element)] = base64.b64decode(''.join((element.text or '').split()), validate=True)
+        except (binascii.Error, ValueError):
+            continue
+    return found
+
+
+def _alt_text(element):
+    """What a picture says in words: the ittm:altText in its <metadata>,
+    its lines kept apart."""
+    lines = []
+    for block in element:
+        if _local(block.tag) != 'metadata':
+            continue
+        for inner in block:
+            if _local(inner.tag) == 'altText':
+                lines += [line.strip() for line in ''.join(inner.itertext()).split('\n') if line.strip()]
+    return '\n'.join(lines)
+
+
+def _document(text, images=None):
+    """(subtitles, language, metadata) in TTML text; with `images`, a dict,
+    the pictures go in it as 'pictures' and the picture's size as 'size',
+    as `read_images` gives them."""
     text = _ENTITY.sub(_entity, text.lstrip('﻿'))
     # The text is decoded already: the declaration's encoding no longer applies.
     text = re.sub(r'^\s*<\?xml[^>]*\?>', '', text)
@@ -1017,6 +1056,31 @@ def _document(text):
     # they state one style for the whole document.
     body = next((element for element in root.iter() if _local(element.tag) == 'body'), None)
     base_props = styles.of(body, {}) if body is not None else {}
+    embedded = _embedded_images(root)
+
+    def picture(element, start, stop, props, region):
+        """A subtitle that is a picture: the words its alt text gives it, where
+        its region puts it, and the picture itself for `images`."""
+        if stop is None:
+            return
+        region_props = styles.of(regions[region], {}) if region in regions else {}
+        own = styles.of(element, dict(region_props, **props))
+        alt = _alt_text(element)
+        keypad = _keypad(own, frame)
+        forced = str(own.get('forcedDisplay') or '').strip().lower() == 'true'
+        if alt:
+            segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
+                       'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + alt}
+            if forced:
+                segment['forced'] = True
+            segments.append(segment)
+        if images is not None:
+            source = _attr(element, 'backgroundImage').strip()
+            images.setdefault('pictures', []).append({'start': round(start, 3), 'end': round(max(start, stop), 3), 'alt': alt,
+                           'href': '' if source.startswith('#') else source,
+                           'data': embedded.get(source[1:]) if source.startswith('#') else None,
+                           'origin': frame.percent(own.get('origin')), 'extent': frame.percent(own.get('extent')),
+                           'forced': forced})
     base_sizes = (base_props['fontSize'],) if base_props.get('fontSize') else ()
 
     def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
@@ -1117,6 +1181,9 @@ def _document(text):
         if name == 'p':
             paragraph(element, start, stop, props, region, preserve, agent, unshown, sizes)
             return stop
+        if name == 'div' and (_attr(element, 'backgroundImage') or '').strip():
+            picture(element, start, stop, props, region)
+            return stop
         inner = styles.of(element, props) if name != 'tt' else props
         unshown = unshown or str(inner.get('display') or '').strip() == 'none'
         own_size = styles.of(element, {}).get('fontSize') if name != 'tt' else None
@@ -1134,6 +1201,9 @@ def _document(text):
 
     walk(root, 0.0, None, {}, None, False, None)
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
+    if images is not None:
+        images.setdefault('pictures', []).sort(key=lambda image: (image['start'], image['end']))
+        images['size'] = frame.pixels
     return segments, (root.get(_XML_NS + 'lang') or '').strip(), _metadata(root)
 
 
@@ -1172,6 +1242,20 @@ def read(path):
     about itself (its title, description and copyright)."""
     with open(path, 'rb') as ttml_file:
         return _document(_text_of(ttml_file.read()))
+
+
+def read_images(path):
+    """(pictures, language, picture size) of the TTML file at `path`.
+
+    A picture is {'start', 'end', 'alt', 'href', 'data', 'origin', 'extent',
+    'forced'}: its words where the file gives them ('' where it does not),
+    the PNG as a path relative to the file ('href') or as the bytes the
+    file holds ('data'), and its region's place and size in % of the
+    picture. The size is the file's tts:extent in pixels, or None."""
+    images = {}
+    with open(path, 'rb') as ttml_file:
+        _segments, language, _metadata_found = _document(_text_of(ttml_file.read()), images)
+    return images['pictures'], language, images['size']
 
 
 def check(text, profile='imsc1.1'):
