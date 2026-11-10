@@ -7,6 +7,7 @@ sees on a machine laid out differently from the build host).
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SRC = str(Path(__file__).resolve().parents[1] / 'src')
@@ -16,6 +17,9 @@ if os.environ.get('_NET_TEST_CHILD') != '1':
                SSL_CERT_FILE='/nonexistent/ca.pem', SSL_CERT_DIR='/nonexistent')
     sys.exit(subprocess.call([sys.executable, __file__], env=env))
 
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, SRC)
 import ssl
 from subtitld.modules.net import https_context

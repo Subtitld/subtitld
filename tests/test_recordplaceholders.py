@@ -7,6 +7,9 @@ from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'src'))
 sys.modules['mediapipe'] = types.ModuleType('mediapipe')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+_xdg = tempfile.mkdtemp()
+for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
+    os.environ[_key] = os.path.join(_xdg, _key.lower())
 import numpy as np
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtCore import QObject, Signal, QTimer as _RealQTimer
