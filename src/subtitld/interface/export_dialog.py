@@ -208,6 +208,12 @@ class _SubtitlesPanel(QWidget):
         self.look_combo.combobox.addItem(_('export_dialog.ass_look_clean'), 'clean')
         self.look_combo.combobox.addItem(_('export_dialog.ass_look_preview'), 'preview')
         row.addWidget(self.look_combo, 1)
+        # TTML and DFXP: the profile the file says it follows.
+        self.profile_combo = utils.LabeledComboBox()
+        self.profile_combo.setLabel(_('export_dialog.ttml_profile'))
+        for profile, name in (('ttml1', 'ttml1'), ('imsc1', 'imsc1'), ('imsc1.1', 'imsc11'), ('ebu-tt-d', 'ebuttd')):
+            self.profile_combo.combobox.addItem(_(f'export_dialog.ttml_profile_{name}'), profile)
+        row.addWidget(self.profile_combo, 1)
         self.layout().addWidget(self.ass_options)
 
         self.usf_options = QWidget()
@@ -236,6 +242,7 @@ class _SubtitlesPanel(QWidget):
         if not _select(self.fps_combo, video_rate) and not _select(self.fps_combo, remembered.get('fps')):
             _select(self.fps_combo, 25.0)
         _select(self.look_combo, remembered.get('look', 'clean'))
+        _select(self.profile_combo, remembered.get('profile', 'ttml1'))
         _select(self.timecode_combo, remembered.get('timecode', 'drop'))
         # 30 (29.97) for a video at that rate or twice it; else the last used.
         if video_fps and (abs(video_fps - 30) < 0.1 or abs(video_fps - 60) < 0.1):
@@ -317,6 +324,8 @@ class _SubtitlesPanel(QWidget):
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
                                              else _('export_dialog.ttml_look_preview'))
+        # Only TTML and DFXP have a profile to declare.
+        self.profile_combo.setVisible(fmt in ('DFXP', 'TTML'))
         self.usf_options.setVisible(fmt == 'USF')
 
     def get_config(self):
@@ -331,6 +340,7 @@ class _SubtitlesPanel(QWidget):
             'line_ends': self.line_ends_combo.combobox.currentData(),
             'fps': self.fps_combo.combobox.currentData(),
             'look': self.look_combo.combobox.currentData(),
+            'profile': self.profile_combo.combobox.currentData(),
             'timecode': self.timecode_combo.combobox.currentData(),
             'stl_fps': self.stl_rate_combo.combobox.currentData(),
             'mcc_rate': self.mcc_rate_combo.combobox.currentData(),
@@ -358,6 +368,8 @@ class _SubtitlesPanel(QWidget):
             options['fps'] = choices['fps']
         if fmt in ('ASS', 'DFXP', 'TTML'):
             options['look'] = choices['look']
+        if fmt in ('DFXP', 'TTML'):
+            options['profile'] = choices['profile']
         if fmt == 'SCC':
             options['timecode'] = choices['timecode']
         if fmt in ('SCC', 'MCC'):

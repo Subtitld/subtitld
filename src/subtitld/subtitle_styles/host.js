@@ -11,7 +11,10 @@
 //
 // Under the stage, a strip with the job's number in 16 squares: the capture
 // is checked against it, as a capture taken too early still shows the job
-// before.
+// before. The strip draws whatever the subtitle does, so the page waits for
+// the fonts the cue asks for before it says anything: until a face has
+// loaded, Chromium lays the text out but draws no glyph of it, and a
+// capture of that is a layer with nothing in it.
 (() => {
   if (window.subtitld) return;
   const STRIP = 12;
@@ -48,12 +51,17 @@
   document.body.append(stage, stamp);
 
   const frames = (n, then) => n ? requestAnimationFrame(() => frames(n - 1, then)) : then();
+  const after = n => new Promise(done => frames(n, done));
+  // A job this one takes the place of may still be waiting on a frame or a
+  // font: the one asked for last is the one that answers.
+  let latest = 0;
 
-  function render(job, tries = 0) {
+  async function render(job) {
+    const mine = ++latest;
     // A view just resized: Chromium gets the new size a few frames later.
-    if ((innerWidth !== job.view[0] || innerHeight !== job.view[1]) && tries < 60) {
-      requestAnimationFrame(() => render(job, tries + 1));
-      return;
+    for (let tries = 0; (innerWidth !== job.view[0] || innerHeight !== job.view[1]) && tries < 60; tries++) {
+      await after(1);
+      if (mine !== latest) return;
     }
     const root = document.documentElement;
     for (const name of [...root.style]) {
@@ -97,11 +105,23 @@
       top: `${inset.top}px`, bottom: `${inset.bottom}px`,
     });
     safe.dataset.align = String(job.align);
+    // Which way the writing runs. Arabic and Hebrew read right to left, and
+    // a cue's base direction decides where its punctuation lands and which
+    // end "start" is; the characters' own direction does the rest.
+    safe.style.direction = job.direction || '';
     safe.innerHTML = '';
     if (job.html !== null) {
       const cue = document.createElement('div');
       cue.className = 'cue';
       cue.innerHTML = job.html;
+      // What the file the subtitle came from says it should look like
+      // (modules.look): inline, so it wins over the style's own rules for
+      // the properties it names and leaves the style the rest.
+      for (const [name, value] of Object.entries(job.look || {})) cue.style.setProperty(name, value);
+      // How a run of the other direction sits inside the line, where the
+      // file forces it: embedded as its own run, isolated from what is
+      // around it, or whatever the characters themselves say overruled.
+      if (job.bidi) cue.style.unicodeBidi = job.bidi === 'override' ? 'bidi-override' : job.bidi;
       const [turnX, turnY, turnZ] = place.rotate || [0, 0, 0];
       if (turnX || turnY || turnZ) {
         // Counter-clockwise, as USF and ASS both count: the screen's y
@@ -109,6 +129,18 @@
         cue.style.transform = `perspective(1000px) rotateX(${-turnX}deg) rotateY(${turnY}deg) rotateZ(${-turnZ}deg)`;
       }
       safe.append(cue);
+    }
+
+    // The fonts this cue asks for. A face loads when something first uses
+    // it, and until it has Chromium lays the text out but draws no glyph of
+    // it: the cue is a box with nothing in it, while the strip under the
+    // stage draws all the same, so a capture taken now passes for this job's
+    // and is kept as an empty layer. Laying out asks for the faces; then
+    // they are waited for.
+    void safe.offsetWidth;
+    for (let tries = 0; document.fonts.status === 'loading' && tries < 120; tries++) {
+      await after(1);
+      if (mine !== latest) return;
     }
 
     // Animations at the moment asked for, held there.
@@ -127,28 +159,39 @@
       }
     }
 
-    frames(3, () => {
-      const cue = safe.querySelector('.cue');
-      let rect = null;
-      if (cue) {
-        // The cue and anything of it drawn outside it (shadows, glows, a
-        // style's decorations), padded for what boxes do not count.
-        let box = cue.getBoundingClientRect();
-        let [left, top, right, bottom] = [box.left, box.top, box.right, box.bottom];
-        for (const el of cue.querySelectorAll('*')) {
-          const r = el.getBoundingClientRect();
-          if (r.width || r.height) {
-            left = Math.min(left, r.left); top = Math.min(top, r.top);
-            right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
-          }
-        }
-        const pad = job.pad * 1080 * scale, height = 1080 * scale;
-        left = Math.max(0, Math.floor(left - pad)); top = Math.max(0, Math.floor(top - pad));
-        right = Math.min(innerWidth, Math.ceil(right + pad)); bottom = Math.min(height, Math.ceil(bottom + pad));
-        if (right > left && bottom > top) rect = [left, top, right - left, bottom - top];
+    // Where it ended up, once Chromium has had frames to draw it in. A cue
+    // with text that measures to nothing has not been laid out yet: again,
+    // rather than an empty rect for a subtitle there is something to draw.
+    let rect = null;
+    for (let tries = 0; tries < 10; tries++) {
+      await after(3);
+      if (mine !== latest) return;
+      rect = measure(job, scale);
+      if (rect !== null || !job.html) break;
+    }
+    console.log('SUBTITLD_RENDERED ' + JSON.stringify({id: job.id, rect, view: [innerWidth, innerHeight]}));
+  }
+
+  function measure(job, scale) {
+    const cue = safe.querySelector('.cue');
+    if (!cue) return null;
+    // The cue and anything of it drawn outside it (shadows, glows, a
+    // style's decorations), padded for what boxes do not count.
+    let box = cue.getBoundingClientRect();
+    let [left, top, right, bottom] = [box.left, box.top, box.right, box.bottom];
+    for (const el of cue.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.width || r.height) {
+        left = Math.min(left, r.left); top = Math.min(top, r.top);
+        right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
       }
-      console.log('SUBTITLD_RENDERED ' + JSON.stringify({id: job.id, rect, view: [innerWidth, innerHeight]}));
-    });
+    }
+    // Nothing of it anywhere: not laid out (an empty cue has a place all the same).
+    if (job.html && right <= left && bottom <= top) return null;
+    const pad = job.pad * 1080 * scale, height = 1080 * scale;
+    left = Math.max(0, Math.floor(left - pad)); top = Math.max(0, Math.floor(top - pad));
+    right = Math.min(innerWidth, Math.ceil(right + pad)); bottom = Math.min(height, Math.ceil(bottom + pad));
+    return right > left && bottom > top ? [left, top, right - left, bottom - top] : null;
   }
 
   window.subtitld = {render, STRIP};

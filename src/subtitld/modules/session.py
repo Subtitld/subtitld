@@ -137,6 +137,40 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'USFX': {'description': 'Universal Subtitle Format bundled with assets', 'extensions': ['usfx']},
     'JSON': {'description': 'JSON format', 'extensions': ['json', 'json3']},
     'BCC': {'description': 'Bilibili BCC Subtitle format', 'extensions': ['bcc']},
+    # The player era (modules.legacy). These come after the formats above
+    # on purpose: three of them share .sub, .stl and .txt with a format
+    # already here, and the first entry to claim an extension keeps it.
+    # What a file actually holds is decided by its bytes, in file_io.
+    'MPL2': {'description': 'MPL2 Subtitle format', 'extensions': ['mpl', 'mpl2']},
+    'PJS': {'description': 'Phoenix Japanimation Society format', 'extensions': ['pjs']},
+    'MPSUB': {'description': 'MPlayer MPsub format', 'extensions': ['sub']},
+    'VPLAYER': {'description': 'VPlayer and TMPlayer format', 'extensions': ['txt']},
+    'AQTITLE': {'description': 'AQTitle Subtitle format', 'extensions': ['aqt']},
+    'SUBVIEWER1': {'description': 'SubViewer 1.0 Subtitle format', 'extensions': ['sub']},
+    'SPRUCE': {'description': 'Spruce Subtitle File format', 'extensions': ['stl']},
+    'REALTEXT': {'description': 'RealText Subtitle format', 'extensions': ['rt']},
+    'TURBOTITLE': {'description': 'TurboTitle Subtitle format', 'extensions': ['tts']},
+    'ZEROG': {'description': 'ZeroG Subtitle format', 'extensions': ['zeg']},
+    'VIPLAY': {'description': 'ViPlay Subtitle File format', 'extensions': ['vsf']},
+    'SBT': {'description': 'SBT Subtitle format', 'extensions': ['sbt']},
+    'CAPTIONS32': {'description': 'Captions 32 Subtitle format', 'extensions': ['txt']},
+    'SUBSONIC': {'description': 'SubSonic Subtitle format', 'extensions': ['sub']},
+    'ORESME': {'description': 'Oresme Subtitle format', 'extensions': ['txt']},
+    'JACOSUB': {'description': 'JACOSub Subtitle format', 'extensions': ['jss', 'js']},
+    'SASAMI': {'description': 'Sasami2k Script format', 'extensions': ['s2k']},
+    'XOMBIE': {'description': 'XombieSub Subtitle format', 'extensions': ['xss']},
+    'MACSUB': {'description': 'MacSubtitler Subtitle format', 'extensions': ['scr', 'mac']},
+    'SST': {'description': 'Stream SubText Player format', 'extensions': ['sst']},
+    'SSTS': {'description': 'Stream SubText Script format', 'extensions': ['ssts']},
+    'DKS': {'description': 'DKS Subtitle format', 'extensions': ['dks']},
+    'POWERDIVX': {'description': 'Power DivX Subtitle format', 'extensions': ['psb']},
+    'DVDSS': {'description': 'DVD Subtitle System format', 'extensions': ['txt']},
+    'QTTEXT': {'description': 'QuickTime QTtext format', 'extensions': ['txt']},
+    'CAPTIONATE': {'description': 'Captionate XML format', 'extensions': ['xml']},
+    'CMML': {'description': 'Continuous Media Markup Language', 'extensions': ['cmml']},
+    'SMILTEXT': {'description': 'SMIL smilText format', 'extensions': ['smil']},
+    'SSF': {'description': 'Structured Subtitle Format', 'extensions': ['ssf']},
+    'TEXML': {'description': 'QuickTime TeXML format', 'extensions': ['txml']},
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on

@@ -24,6 +24,7 @@ from subtitld.modules import ebustl
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
+from subtitld.modules import legacy
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import plaintext
@@ -600,6 +601,36 @@ def _youtube_xml(path):
     return False
 
 
+def _is_ebu_stl(path):
+    """Whether the .stl at `path` is EBU STL and not Spruce's text script."""
+    try:
+        with open(path, 'rb') as stl_file:
+            return ebustl.is_stl(stl_file.read(ebustl.GSI_SIZE))
+    except OSError:
+        return False
+
+
+def _text_of(path):
+    """The text of a subtitle file, decoded as SRT's bytes are."""
+    with open(path, 'rb') as subtitle_file:
+        return srt.decode(subtitle_file.read())
+
+
+def _spruce_stl(path):
+    """Whether a .stl holds Spruce's text script instead of EBU STL.
+
+    A .stl that is neither — a 3D model, which is what most .stl files in
+    the world are — goes to the EBU reader all the same, so the error the
+    user sees says what the file is not.
+    """
+    if _is_ebu_stl(path):
+        return False
+    try:
+        return legacy.kind(_text_of(path)) == 'spruce'
+    except OSError:
+        return False
+
+
 def _language_like_project(tag):
     """Subtitld's code for a language a file names (a code, as "pt" or
     "en_us", or a name, as Whisper keeps "English"), the project's own when
@@ -656,6 +687,24 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
 
+        elif subtitle_file.lower().endswith('.xml') and legacy.kind(_text_of(subtitle_file)) == 'texml':
+            # QuickTime's XML for the timed text of a 3GPP track: a
+            # sample a subtitle, and no start times anywhere in it.
+            subtitle_format = 'TEXML'
+            try:
+                segments_list = legacy.parse(_text_of(subtitle_file), 'texml')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
+        elif subtitle_file.lower().endswith('.xml') and legacy.kind(_text_of(subtitle_file)) == 'captionate':
+            # Captionate's XML, from the Flash era: its own root element,
+            # and nothing a TTML reader would make sense of.
+            subtitle_format = 'CAPTIONATE'
+            try:
+                segments_list = legacy.parse(_text_of(subtitle_file), 'captionate')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
             subtitle_format = 'DFXP' if subtitle_file.lower().endswith('.dfxp') else 'TTML'
@@ -669,6 +718,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             language = _known_language(ttml_language)
             if language:
                 session.SUBTITLE['language'] = language
+
+        elif subtitle_file.lower().endswith('.smi') and legacy.kind(_text_of(subtitle_file)) == 'smiltext':
+            # SMIL and SAMI both answer to .smi, and only one of them is
+            # Microsoft's.
+            subtitle_format = 'SMILTEXT'
+            try:
+                segments_list = legacy.parse(_text_of(subtitle_file), 'smiltext')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
 
         elif subtitle_file.lower().endswith(('.smi', '.sami')):
             # Every language the file holds: the first the subtitles', the
@@ -703,6 +761,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if sub_kind == 'subviewer':
                 subtitle_format = 'SBV'
                 segments_list = sbv.parse(srt.decode(data))
+            elif legacy.kind(data) in ('mpsub', 'subviewer1', 'subsonic'):
+                # MPSub and SubViewer 1 are .sub as well, and neither is
+                # MicroDVD: counted in frames, the text would come out at
+                # the wrong times and the right ones would look plausible.
+                found = legacy.kind(data)
+                subtitle_format = legacy.SESSION_IDS[found]
+                segments_list = legacy.parse(srt.decode(data), found, session.VIDEO.get('framerate'))
             else:
                 subtitle_format = 'SUB'
                 segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
@@ -712,6 +777,32 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.idx', '.sup')):
             # DVD's VobSub index and Blu-ray's PGS: pictures, for an OCR add-on.
             raise PictureSubtitlesError(subtitle_file, 'pgs' if subtitle_file.lower().endswith('.sup') else 'vobsub')
+
+        elif subtitle_file.lower().endswith('.stl') and _spruce_stl(subtitle_file):
+            # Spruce's script is .stl too, and is text where EBU STL is
+            # binary. Three unrelated formats share this extension.
+            subtitle_format = 'SPRUCE'
+            segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
+
+        elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
+            # VPlayer, TMPlayer and their kin wrote .txt, which is also what
+            # a plain transcript is: only a file that reads as one of them
+            # is opened as subtitles, and anything else stays plain text.
+            text = _text_of(subtitle_file)
+            found = legacy.kind(text)
+            subtitle_format = legacy.SESSION_IDS[found]
+            segments_list = legacy.parse(text, found, session.VIDEO.get('framerate'))
+
+        elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
+                                             '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
+                                             '.scr', '.mac', '.sst', '.ssts',
+                                             '.dks', '.psb', '.cmml', '.smil', '.ssf', '.txml')):
+            # The player era: the extension narrows it, the bytes decide it.
+            try:
+                segments_list, found = legacy.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            subtitle_format = legacy.SESSION_IDS[found]
 
         elif subtitle_file.lower().endswith(('.stl')):
             # EBU STL: its language for the project's, its frame rate, display
@@ -1537,6 +1628,15 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             microdvd.save(final_file, segments, float(options.get('fps') or VIDEO.get('framerate') or 25),
                           encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                           line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format in legacy.SESSION_FORMATS:
+            # The player era. The ones counted in frames (AQTitle, Spruce)
+            # take the export's rate, or the video's, as MicroDVD does; the
+            # rest carry their own unit and need none.
+            legacy.save(final_file, segments, legacy.SESSION_FORMATS[subtitle_format],
+                        fps=float(options.get('fps') or VIDEO.get('framerate') or legacy.DEFAULT_FPS),
+                        encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                        line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
         elif subtitle_format in ['XML']:
             # YouTube's timed text, srv3: pens for the formatting, window

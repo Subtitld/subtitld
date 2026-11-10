@@ -99,6 +99,13 @@ def segments(pictures, texts, join_gap=0.1):
         previous = found[-1] if found else None
         if previous and previous['text'] == text and picture.start - previous['end'] <= join_gap:
             previous['end'] = max(previous['end'], picture.end)
+            if picture.forced:
+                previous['forced'] = True
             continue
-        found.append({'start': round(picture.start, 3), 'end': round(picture.end, 3), 'text': text})
+        subtitle = {'start': round(picture.start, 3), 'end': round(picture.end, 3), 'text': text}
+        # A DVD or a Blu-ray marks the subtitle a viewer sees even with
+        # subtitles off: the sign or the foreign line a film translates.
+        if picture.forced:
+            subtitle['forced'] = True
+        found.append(subtitle)
     return found

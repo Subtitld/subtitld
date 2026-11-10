@@ -20,7 +20,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, session, subtitle_styles as styles
-from subtitld.interface import subtitle_renderer
+from subtitld.interface import subtitle_render_worker, subtitle_renderer
 
 fails = []
 
@@ -84,7 +84,19 @@ fallback = rendered(renderer, wide)[0][1].width()
 styles.set_value('font_family', 'Ubuntu Condensed')     # in graphics/, not a system font here
 condensed = rendered(renderer, wide)[0][1].width()
 check('a bundled font is used (narrower than the fallback)', condensed < fallback * 0.92, True)
+# A face loads when something first uses it, and until it has Chromium lays
+# the text out but draws no glyph of it: a capture taken then is in the right
+# place with nothing in it, and would be kept as the subtitle's layer.
+check('drawn in it, not only laid out in it',
+      max(bytes(rendered(renderer, wide)[0][1].constBits())) > 0, True)
 styles.set_value('font_family', 'Montserrat')
+
+print('a capture with nothing of the cue in it is one taken too early')
+clear, drawn = bytes(4 * 9), bytes(4 * 8) + bytes([170, 170, 170, 255])
+check('a cue that was to have text, nothing drawn', subtitle_render_worker.nothing_drawn(clear, '<b>Top</b>'), True)
+check('one pixel of it is enough', subtitle_render_worker.nothing_drawn(drawn, '<b>Top</b>'), False)
+check('a cue with no text draws nothing by rights',
+      [subtitle_render_worker.nothing_drawn(clear, html) for html in ('', None)], [False, False])
 
 print('kept by what changes the pixels')
 before = renderer.stats['rendered']

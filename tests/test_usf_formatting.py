@@ -122,6 +122,63 @@ check('read back, each reading still with what it reads', read_back(content), [
     '東京 no reading',
 ])
 
+print('forced: shown with subtitles off')
+forced_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'A sign', 'speaker': 'A', 'forced': True},
+                                {'start': 2, 'end': 3, 'text': 'Ordinary', 'speaker': 'A'}],
+                               speakers={}, language='en-us')
+check("on the subtitle, in Subtitld's namespace, since USF has no word for it",
+      ('subtitldcc:forced="true"' in forced_usf, forced_usf.count('subtitldcc:forced'),
+       'xmlns:subtitldcc' in forced_usf), (True, 1, True))
+check('read back as it was', [(s['text'], s.get('forced')) for s in USFReader().read(forced_usf)],
+      [('A sign', True), ('Ordinary', None)])
+check('a project with nothing forced says nothing',
+      'forced' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                    speakers={}, language='en-us'), False)
+
+print('hidden: what the file says a player should not draw')
+hidden_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'Not for the viewer', 'speaker': 'A', 'hidden': True},
+                                {'start': 2, 'end': 3, 'text': 'Ordinary', 'speaker': 'A'}],
+                               speakers={}, language='en-us')
+check("on the subtitle, in Subtitld's namespace, as forced is",
+      ('subtitldcc:hidden="true"' in hidden_usf, hidden_usf.count('subtitldcc:hidden'),
+       'xmlns:subtitldcc' in hidden_usf), (True, 1, True))
+check('read back as it was', [(s['text'], s.get('hidden')) for s in USFReader().read(hidden_usf)],
+      [('Not for the viewer', True), ('Ordinary', None)])
+check('a project with nothing hidden says nothing',
+      'hidden' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                    speakers={}, language='en-us'), False)
+
+print('which way the writing runs, and what is forced inside it')
+bidi_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'مرحبا', 'speaker': 'A',
+                               'direction': 'rtl', 'bidi': 'override'},
+                              {'start': 2, 'end': 3, 'text': 'Ordinary', 'speaker': 'A'}],
+                             speakers={}, language='ar')
+check('both on the subtitle, in Subtitld\'s namespace',
+      ('subtitldcc:direction="rtl"' in bidi_usf, 'subtitldcc:bidi="override"' in bidi_usf), (True, True))
+check('read back as they were',
+      [(s.get('direction'), s.get('bidi')) for s in USFReader().read(bidi_usf)],
+      [('rtl', 'override'), (None, None)])
+check('a project that says neither stays as it was',
+      ('direction' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                        speakers={}, language='en-us')), False)
+
+print('the look the subtitle\'s own file gave it')
+LOOK = {'size': 10.0, 'background': '#c8000000', 'padding': [1.0, 2.0, 1.0, 2.0],
+        'outline': {'color': '#ff000000', 'width': 0.5}, 'shadow': [{'x': 0.2, 'y': 0.2}]}
+look_usf = USFWriter().write([{'start': 0, 'end': 1, 'text': 'Styled', 'speaker': 'A', 'look': LOOK},
+                              {'start': 2, 'end': 3, 'text': 'Plain', 'speaker': 'A'}],
+                             speakers={}, language='en-us')
+check('on the subtitle, as JSON, since USF has no word for most of it',
+      ('subtitldcc:look=' in look_usf, look_usf.count('subtitldcc:look'), 'xmlns:subtitldcc' in look_usf),
+      (True, 1, True))
+check('read back exactly, shadows and sides and all',
+      [(s['text'], s.get('look')) for s in USFReader().read(look_usf)], [('Styled', LOOK), ('Plain', None)])
+check('a project nothing styled says nothing',
+      'look' in USFWriter().write([{'start': 0, 'end': 1, 'text': 'Plain', 'speaker': 'A'}],
+                                  speakers={}, language='en-us'), False)
+check('a look that will not parse is no reason to lose the subtitle',
+      [s['text'] for s in USFReader().read(look_usf.replace('{&quot;background', '{oops'))], ['Styled', 'Plain'])
+
 print('a background behind a run')
 _boxed = {'start': 0, 'end': 1, 'speaker': 'A',
           'text': 'Plain <font color="#ffd700" background="#000000cc">on a box</font>'}
@@ -134,7 +191,6 @@ check('an opaque one needs no alpha of its own to come back',
           [{'start': 0, 'end': 1, 'speaker': 'A', 'text': '<font background="#00ff00">Green box</font>'}],
           speakers={}, language='en-us'))[0]['text'],
       '<font background="#00ff00">Green box</font>')
-
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
