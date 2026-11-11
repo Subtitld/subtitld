@@ -8,7 +8,7 @@ QPushButton {
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-radius: 3px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
     padding: 6px 12px 5px 12px;
     outline: none;
     font-family: 'Montserrat';
@@ -19,7 +19,7 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
 }
 
 /* Compact areas keep their own sizes (they are laid out to the pixel and get
@@ -397,7 +397,7 @@ QLabel#scope_hint_label {
    that field. Sized to the input's height so the pair reads as one control
    rather than a button bolted on. */
 QPushButton#scope_range_capture_button {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-radius: 3px;
@@ -949,7 +949,7 @@ QComboBox {
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-radius: 3px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
     min-width: 40px;
     padding: 5px 6px 4px 8px;
     font-size: 11px;
@@ -957,7 +957,7 @@ QComboBox {
 }
 
 QComboBox::hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
 }
 
 QComboBox:on {
@@ -3411,14 +3411,14 @@ QGroupBox[class="videoproperties_card"]::title {
 }
 
 #videoproperties_scale_segments QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
     min-width: 40px;
     padding: 9px 12px;
-    color: #b8cee0;
+    color: #e1ebf2;
 }
 
 #videoproperties_scale_segments QPushButton[segment="first"] {
@@ -3433,7 +3433,7 @@ QGroupBox[class="videoproperties_card"]::title {
 }
 
 #videoproperties_scale_segments QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
 }
 
 #videoproperties_scale_segments QPushButton:checked {
@@ -3619,7 +3619,7 @@ QPushButton#videoproperties_delete_button:pressed {
     border: 0;
     border-bottom: 2px solid #1a232b;
     border-radius: 3px;
-    padding: 2px 6px 1px 6px;
+    padding: 3px 7px 2px 7px;
     min-width: 12px;
     min-height: 14px;
 }
@@ -3699,7 +3699,7 @@ QPushButton#videoproperties_delete_button:pressed {
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-radius: 3px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
     color: #cddbe7;
 }
 
@@ -3741,8 +3741,8 @@ QPushButton#videoproperties_delete_button:pressed {
 }
 
 QPushButton#plaintext_panel_format_button {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
-    color: #b8cee0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
+    color: #e1ebf2;
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-left: 1px solid rgba(0, 0, 0, 50);
@@ -3765,7 +3765,7 @@ QPushButton#plaintext_panel_format_button[position="last"] {
 }
 
 QPushButton#plaintext_panel_format_button:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
     color: #b8cee0;
 }
 
@@ -3943,7 +3943,7 @@ QLabel#vtimeline_panel_selected_label {
 }
 
 QPushButton#vtimeline_panel_zoom_button {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-left: 1px solid rgba(0, 0, 0, 50);
@@ -3964,7 +3964,7 @@ QPushButton#vtimeline_panel_zoom_button[position="last"] {
 }
 
 QPushButton#vtimeline_panel_zoom_button:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
 }
 
 /* ---- Audio panel: input monitor (Recording) ---- */
@@ -4127,8 +4127,8 @@ QPushButton#audio_fx_range_chip:checked {
 }
 
 QPushButton#audio_fx_band_button {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
-    color: #b8cee0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
+    color: #e1ebf2;
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-left: 1px solid rgba(0, 0, 0, 50);
@@ -4151,7 +4151,7 @@ QPushButton#audio_fx_band_button[position="last"] {
 }
 
 QPushButton#audio_fx_band_button:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
     color: #b8cee0;
 }
 
@@ -4237,8 +4237,8 @@ QPushButton#autosave_backup_now_button:hover {
 }
 
 QPushButton#autosave_filter_button {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
-    color: #b8cee0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
+    color: #e1ebf2;
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 115);
     border-left: 1px solid rgba(0, 0, 0, 50);
@@ -4261,7 +4261,7 @@ QPushButton#autosave_filter_button[position="last"] {
 }
 
 QPushButton#autosave_filter_button:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
     color: #b8cee0;
 }
 
