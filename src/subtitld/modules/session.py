@@ -163,6 +163,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'SCENARIST': {'description': 'Sonic Scenarist Subtitle script', 'extensions': ['sst', 'txt']},
     'DVDPRODUCER': {'description': 'Sonic DVD Producer Subtitle script', 'extensions': ['txt']},
     'AVIDDVD': {'description': 'Avid DVD Subtitle script', 'extensions': ['txt']},
+    # MP4Box's text tracks as XML; CCExtractor's transcripts share .ttxt and
+    # are told apart by their bytes (file_io).
+    'TTXT': {'description': 'GPAC TTXT (MP4 Timed Text) format', 'extensions': ['ttxt']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

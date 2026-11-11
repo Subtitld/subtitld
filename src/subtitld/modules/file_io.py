@@ -44,6 +44,7 @@ from subtitld.modules import srt
 from subtitld.modules import subtitle_styles
 from subtitld.modules import session
 from subtitld.modules import ttml
+from subtitld.modules import ttxt
 from subtitld.modules import waveform
 from subtitld.modules import webvtt
 from subtitld.modules import youtube_timedtext
@@ -999,6 +1000,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cap_settings['fps'])
 
+        elif subtitle_file.lower().endswith('.ttxt'):
+            # GPAC's TTXT, an MP4 text track as XML; a CCExtractor transcript,
+            # which shares the extension, says it is not one.
+            subtitle_format = 'TTXT'
+            try:
+                segments_list = ttxt.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
         elif subtitle_file.lower().endswith('.890'):
             # Cavena 890: frames counted at the video's rate, else 25; its
             # language for the project's, its title the project's, its rate
@@ -1923,6 +1933,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             lambdacap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or lambdacap.DEFAULT_FPS),
                            drop=options.get('timecode') != 'non-drop',
                            encoding=options.get('lambda_encoding') or 'utf-8-sig')
+
+        elif subtitle_format == 'TTXT':
+            # An MP4 text track's samples, the stream the video's size.
+            ttxt.save(final_file, segments, width=VIDEO.get('width'), height=VIDEO.get('height'))
 
         elif subtitle_format == 'CAVENA890':
             # In the character table of the text's language; frames at the

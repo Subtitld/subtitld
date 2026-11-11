@@ -25,7 +25,7 @@ from subtitld.modules import ttml
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
-                    'XML', 'LRC', 'USF', 'JSON', 'BCC']
+                    'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC']
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
 # drop-frame for the two whose tools write it.
 DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)

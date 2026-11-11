@@ -2,10 +2,10 @@
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
 DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID,
-FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC, UltraStar and
-the player-era formats); USF, USFX and JSON keep the project as it is. Karaoke timing is formatting
-(modules.karaoke): removing the formatting takes the word timing of LRC
-and UltraStar with it.
+FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC, UltraStar,
+TTXT and the player-era formats); USF, USFX and JSON keep the project as it
+is. Karaoke timing is formatting (modules.karaoke): removing the formatting
+takes the word timing of LRC, UltraStar and TTXT with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -87,7 +87,7 @@ And for a format of its own:
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
-                'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR',
+                'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'TTXT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')
