@@ -10,7 +10,7 @@ checked looks, so a group reads as one object.
 import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QSizePolicy, QWidget
 
@@ -428,3 +428,147 @@ class BalanceSlider(QAbstractSlider):
 
     def sizeHint(self):
         return self.size()
+
+
+# --- add subtitle: the button with its switches hanging in it -------------------------------------------------------
+
+class AddSubtitleButton(QAbstractButton):
+    """ADD: a 42px raised button hanging from the top line (its icon and
+    label on the left), with its three switches hanging from its top edge as
+    one 75° notch of raised keys whose icons butt into one picture — a
+    switched-on key sinks — and the new subtitle's duration field after
+    them. The switches are StripKeys (checkable), the field the given spin
+    box; a click anywhere else is the button's own."""
+
+    H = 42
+    NOTCH_H = H - 3                   # the switches hang to 3px above the bottom
+    ZONE = 20                         # each switch's icon zone; icons butt, no padding
+    ICON = 20
+    FIELD_W = 50
+    STROKES = ((2.67, 4.0), (18.67, 20.0))   # the brackets' top and bottom strokes in a 20px icon
+
+    def __init__(self, name, switches, spinbox, parent=None):
+        """switches: (object name, icon, icon when checked or None)."""
+        super().__init__(parent)
+        self.setObjectName(name)
+        self.setAttribute(Qt.WA_Hover)
+        self.setMouseTracking(True)
+        self.setFixedHeight(self.H)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.run = self.NOTCH_H * shapes.RUN15
+        self._icon = graphic('add_subtitle_icon.svg')
+        self.switches = []
+        self._switch_icons = {}
+        for key_name, icon, icon_checked in switches:
+            key = StripKey(key_name, self)
+            key.setCheckable(True)
+            self.switches.append(key)
+            self._switch_icons[key_name] = (graphic(icon), graphic(icon_checked) if icon_checked else None)
+        self.spinbox = spinbox
+        spinbox.setParent(self)
+        self.pressed.connect(self.update)
+        self.released.connect(self.update)
+        self._layout()
+
+    def _label_font(self):
+        font = self.font()
+        font.setPixelSize(10)
+        font.setBold(True)
+        return font
+
+    def _layout(self):
+        text_w = QFontMetricsF(self._label_font()).horizontalAdvance(self.text().strip().upper())
+        self.notch_x = 12 + self.ICON + 8 + text_w + 12 + shapes.T6
+        n = len(self.switches)
+        notch_w = n * self.ZONE + 2 * self.run
+        # zone edges: the outer zones take the notch's slanted sides (and their curves), the inner ones split the
+        # icons where they meet
+        edges = ([self.notch_x - shapes.T6] + [self.notch_x + self.run + i * self.ZONE for i in range(1, n)] +
+                 [self.notch_x + notch_w + shapes.T6])
+        for key, left, right in zip(self.switches, edges, edges[1:]):
+            key.setGeometry(int(left), 0, int(round(right - left)), self.NOTCH_H)
+        field_x = self.notch_x + notch_w + 10
+        self.spinbox.setGeometry(int(field_x), (self.H - 26) // 2, self.FIELD_W, 26)
+        self.setFixedWidth(int(field_x + self.FIELD_W + 8))
+        self.update()
+
+    def setText(self, text):
+        super().setText(text)
+        self._layout()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        self.update()
+
+    def notch(self):
+        return shapes.hanging_trap(self.notch_x, 0, len(self.switches) * self.ZONE + 2 * self.run,
+                                   self.NOTCH_H).intersected(self.shape())
+
+    def shape(self):
+        return shapes.hanging_rect(0, 0, self.width(), self.H)
+
+    def hitButton(self, pos):
+        return self.rect().contains(pos)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect())
+        shape, notch = self.shape(), self.notch()
+        if not self.isEnabled():
+            painter.fillPath(shape, QColor('#25323d'))
+            painter.setOpacity(0.35)
+        elif self.isDown():
+            shapes.fill_sunk(painter, shape, rect)
+        else:
+            painter.fillPath(shape, shapes.gradient(0, self.H, '#3e5363'))
+            over_child = any(k.underMouse() for k in self.switches) or self.spinbox.underMouse()
+            if self.underMouse() and not over_child:
+                painter.fillPath(shape, shapes.HOVER)
+        # icon and label
+        self._icon.render(painter, QRectF(12, (self.H - self.ICON) / 2, self.ICON, self.ICON))
+        painter.setFont(self._label_font())
+        painter.setPen(QColor('#cddbe7'))
+        painter.drawText(QRectF(12 + self.ICON + 8, 0, self.notch_x - 40, self.H), Qt.AlignVCenter | Qt.AlignLeft,
+                         self.text().strip().upper())
+        # the switches: one raised group, then only the zones that differ are painted over
+        painter.fillPath(notch, shapes.gradient(0, self.NOTCH_H, shapes.NEST))
+        painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.NOTCH_H - 1, self.width(), 1))),
+                         QColor(0, 0, 0, 30))
+        iy = (self.NOTCH_H - self.ICON) / 2 + 1
+        for i, key in enumerate(self.switches):
+            zone = notch.intersected(shapes.rect_path(QRectF(key.geometry()).adjusted(0, -1, 0, 1)))
+            state = key.state()
+            if state == 'sunk':
+                painter.fillPath(zone, shapes.gradient(0, self.NOTCH_H, shapes.SUNK, 'sunken'))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 46))
+            elif state == 'hover':
+                painter.fillPath(zone, QColor(255, 255, 255, 14))
+            normal, checked = self._switch_icons[key.objectName()]
+            renderer = checked if key.isChecked() and checked is not None else normal
+            ix = self.notch_x + self.run + i * self.ZONE
+            painter.save()
+            painter.setClipPath(notch)
+            renderer.render(painter, QRectF(ix, iy, self.ICON, self.ICON))
+            # the neighbouring subtitles' brackets run on into the slanted sides
+            if i in (0, len(self.switches) - 1):
+                for top, bottom in self.STROKES:
+                    if i == 0:
+                        ext = QRectF(self.notch_x - 20, iy + top, ix - self.notch_x + 20.5, bottom - top)
+                    else:
+                        ext = QRectF(ix + self.ICON - 0.5, iy + top, 40, bottom - top)
+                    painter.fillRect(ext, QColor('#b8cee0'))
+            painter.restore()
+        if self.isEnabled() and not self.isDown():
+            painter.fillPath(shape.subtracted(shape.translated(0, -1)), shapes.CONTACT)
+
+    def sizeHint(self):
+        return QSize(self.width(), self.H)
+
+    def mouseMoveEvent(self, event):
+        self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)

@@ -828,61 +828,25 @@ def load(self):
     self.add_remove_subtitle_frame.layout().setContentsMargins(0, 0, 0, 0)
     self.add_remove_subtitle_frame.layout().setSpacing(0)
 
-    self.add_subtitle_button = QPushButton()
-    self.add_subtitle_button.setObjectName('add_subtitle_button')
-    self.add_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_button.setIconSize(QSize(20, 20))
-    self.add_subtitle_button.setFixedHeight(42)
-    self.add_subtitle_button.setLayout(QHBoxLayout())
-    self.add_subtitle_button.layout().setSizeConstraint(QLayout.SetMinimumSize)
-    self.add_subtitle_button.layout().setContentsMargins(0, 0, 5, 5)
-    self.add_subtitle_button.layout().setSpacing(0)
-    self.add_subtitle_button.clicked.connect(lambda: add_subtitle_button_clicked(self))
-
-    self.add_subtitle_button.layout().addStretch()
-
-    self.add_subtitle_starting_from_last = QPushButton()
-    self.add_subtitle_starting_from_last.setObjectName('add_subtitle_starting_from_last')
-    self.add_subtitle_starting_from_last.setCheckable(True)
-    self.add_subtitle_starting_from_last.setIconSize(QSize(20, 20))
-    self.add_subtitle_starting_from_last.setFixedWidth(28)
-    self.add_subtitle_starting_from_last.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_starting_from_last.clicked.connect(lambda: add_subtitle_starting_from_last_clicked(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_starting_from_last, 1)
-
-    self.add_subtitle_button.layout().addSpacing(-1)
-
-    self.add_subtitle_and_play = QPushButton()
-    self.add_subtitle_and_play.setObjectName('add_subtitle_and_play')
-    self.add_subtitle_and_play.setCheckable(True)
-    self.add_subtitle_and_play.setIconSize(QSize(20, 20))
-    self.add_subtitle_and_play.setFixedWidth(20)
-    self.add_subtitle_and_play.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_and_play.clicked.connect(lambda: add_subtitle_and_play_clicked(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_and_play, 1)
-
-    self.add_subtitle_button.layout().addSpacing(-1)
-
-    self.add_subtitle_to_next_start = QPushButton()
-    self.add_subtitle_to_next_start.setObjectName('add_subtitle_to_next_start')
-    self.add_subtitle_to_next_start.setCheckable(True)
-    self.add_subtitle_to_next_start.setIconSize(QSize(20, 20))
-    self.add_subtitle_to_next_start.setFixedWidth(28)
-    self.add_subtitle_to_next_start.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_to_next_start.clicked.connect(lambda: add_subtitle_to_next_start_clicked(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_to_next_start, 1)
-
-    self.add_subtitle_button.layout().addSpacing(6)
-
+    # ADD is one painted button: its three switches hang from its top edge as one notch, then the duration field.
     self.add_subtitle_duration = QDoubleSpinBox()
     self.add_subtitle_duration.setObjectName('add_subtitle_duration')
     self.add_subtitle_duration.setMinimum(.1)
     self.add_subtitle_duration.setMaximum(60.)
     self.add_subtitle_duration.setValue(10.0)
-    self.add_subtitle_duration.setFixedWidth(46)
-    self.add_subtitle_duration.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.add_subtitle_duration.valueChanged.connect(lambda: add_subtitle_duration_changed(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_duration, 1)
+    self.add_subtitle_button = player_widgets.AddSubtitleButton('add_subtitle_button', [
+        ('add_subtitle_starting_from_last', 'add_from_last.svg', 'add_from_last_checked.svg'),
+        ('add_subtitle_and_play', 'add_and_play.svg', None),
+        ('add_subtitle_to_next_start', 'add_subtitle_to_next_start.svg', 'add_subtitle_to_next_start_checked.svg'),
+    ], self.add_subtitle_duration)
+    self.add_subtitle_button.clicked.connect(lambda: add_subtitle_button_clicked(self))
+    for name, handler in (('add_subtitle_starting_from_last', add_subtitle_starting_from_last_clicked),
+                          ('add_subtitle_and_play', add_subtitle_and_play_clicked),
+                          ('add_subtitle_to_next_start', add_subtitle_to_next_start_clicked)):
+        key = next(k for k in self.add_subtitle_button.switches if k.objectName() == name)
+        key.clicked.connect(lambda _checked=False, handler=handler: handler(self))
+        setattr(self, name, key)
 
     self.add_remove_subtitle_frame.layout().addWidget(self.add_subtitle_button)
 

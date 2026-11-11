@@ -2269,11 +2269,6 @@ QMenu#subtitle_formatting_menu::separator {
     padding: 4 4 0 4;
 }
 
-#gap_hbox #gap_subtitle_duration, 
-#add_subtitle_button #add_subtitle_duration,
-#playercontrols_widget_left_top_line #add_subtitle_button QPushButton {
-    border: 1px solid #40304251;
-}
 
 #gap_hbox #gap_add_subtitle_button {
     padding: 0 32px 0 10px;
@@ -2344,8 +2339,33 @@ QMenu#subtitle_formatting_menu::separator {
     icon: url(graphics:add_subtitle_to_next_start_checked.svg);
 }
 
+/* ADD's duration: a normal 26px field (the player's compact field look aside). */
 #playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration {
-    margin: 8 0 3 0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #324350, stop:1 #445b6c);
+    border-radius: 3px;
+    padding: 0 0 0 6px;
+    font-size: 10px;
+    color: #c8dbe9;
+}
+
+#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration::up-button,
+#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration::down-button {
+    width: 14px;
+    height: 13px;
+    padding: 0;
+    margin: 0;
+}
+
+#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration::up-arrow {
+    image: url(graphics:spinbox_triangle_up.svg);
+    width: 6px;
+    height: 3px;
+}
+
+#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration::down-arrow {
+    image: url(graphics:spinbox_triangle_down.svg);
+    width: 6px;
+    height: 3px;
 }
 
 
