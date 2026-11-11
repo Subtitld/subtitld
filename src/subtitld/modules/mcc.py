@@ -233,18 +233,19 @@ def _packet(triplets, sequence, cdp_rate, count):
     return anc + bytes([sum(anc) & 0xFF])
 
 
-def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=None,
-          mode='pop', channel=1, services=None, frames=0, teletext_tracks=None):
-    """MCC text for `segments`, captions of `mode` in CEA-608's channel
-    `channel` (1 to 4) and, with `captions` 'both' or 'op47', in CEA-708's
-    service 1, at `rate` (a key of RATES); with `speaker_changes`, ">> "
-    where a new speaker begins. `services` {number: segments} gives CEA-708
-    a service of its own for each further language. `teletext_tracks`
-    ([{'segments', 'language'}]) adds OP-47 teletext beside them, a page
-    each from 888, in a packet of its own on the frames that carry it.
-    `frames` writes a packet for every frame up to it, as ancillary data
-    needs, an OP-47 one too when there is teletext."""
-    label, nominal, frames_per_second, drop, cdp_rate, count = RATES.get(rate, RATES['29.97DF'])
+# A frame with no caption data: CEA-608's padding in both fields.
+_NO_CAPTIONS = ((0xFC, 0x80, 0x80), (0xFD, 0x80, 0x80))
+
+
+def caption_frames(segments, rate='29.97DF', speaker_changes=False, captions='both', mode='pop', channel=1,
+                   services=None):
+    """({frame: [(marker, byte, byte)]}, cc_data count) of `segments` as
+    captions, as `write` puts them in each frame's packet and a video's
+    own frames carry them (the a53 module): for each frame with caption
+    data, CEA-608's pair (or padding) for each field, then CEA-708's
+    packets; and how many entries a frame has at `rate`, padding filling
+    those it does not use. The arguments are `write`'s."""
+    _label, _nominal, frames_per_second, _drop, _cdp_rate, count = RATES.get(rate, RATES['29.97DF'])
     channel = channel if channel in (1, 2, 3, 4) else 1
     field = 1 if channel >= 3 else 0                   # CC3 and CC4 ride in the second field
     words, _breaks, shows = scc.frame_words(segments, frames_per_second, speaker_changes,
@@ -257,6 +258,30 @@ def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=
                 _words_, _b_, extra_shows = scc.frame_words(extra, frames_per_second, speaker_changes, mode=mode)
                 by_service[int(number)] = extra_shows
         dtvcc = cea708.frames_for(by_service, count - 2, mode)
+    out = {}
+    for frame in sorted(set(words) | set(dtvcc)):
+        # CEA-608's pair (or nothing) for each field, then CEA-708's.
+        pair = bytes.fromhex(words[frame]) if frame in words else b'\x80\x80'
+        triplets = list(_NO_CAPTIONS)
+        triplets[field] = (0xFC if field == 0 else 0xFD, *pair)
+        triplets += [(0xFF if cc_type == 3 else 0xFE, first, second) for cc_type, first, second in dtvcc.get(frame, [])]
+        out[frame] = triplets
+    return out, count
+
+
+def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=None,
+          mode='pop', channel=1, services=None, frames=0, teletext_tracks=None):
+    """MCC text for `segments`, captions of `mode` in CEA-608's channel
+    `channel` (1 to 4) and, with `captions` 'both' or 'op47', in CEA-708's
+    service 1, at `rate` (a key of RATES); with `speaker_changes`, ">> "
+    where a new speaker begins. `services` {number: segments} gives CEA-708
+    a service of its own for each further language. `teletext_tracks`
+    ([{'segments', 'language'}]) adds OP-47 teletext beside them, a page
+    each from 888, in a packet of its own on the frames that carry it.
+    `frames` writes a packet for every frame up to it, as ancillary data
+    needs, an OP-47 one too when there is teletext."""
+    label, nominal, frames_per_second, drop, cdp_rate, count = RATES.get(rate, RATES['29.97DF'])
+    data, count = caption_frames(segments, rate, speaker_changes, captions, mode, channel, services)
     subtitles = teletext.op47_frames(teletext_tracks, frames_per_second) if teletext_tracks else {}
     now = now or datetime.datetime.now()
     days = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
@@ -265,16 +290,11 @@ def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=
     lines = [HEADER, f'UUID={str(uuid.uuid4()).upper()}', 'Creation Program=Subtitld',
              f'Creation Date={days[now.weekday()]}, {months[now.month - 1]} {now.day}, {now.year}',
              f'Creation Time={now.hour}:{now.minute:02d}:{now.second:02d}', f'Time Code Rate={label}', '']
-    carried = set(words) | set(dtvcc) | set(subtitles)
+    carried = set(data) | set(subtitles)
     span = range(max(frames, (max(carried) + 1) if carried else 0)) if frames else sorted(carried)
     counter = 0
     for sequence, frame in enumerate(span):
-        # CEA-608's pair (or nothing) for each field, then CEA-708's.
-        pair = bytes.fromhex(words[frame]) if frame in words else b'\x80\x80'
-        triplets = [(0xFC, 0x80, 0x80), (0xFD, 0x80, 0x80)]
-        triplets[field] = (0xFC if field == 0 else 0xFD, *pair)
-        triplets += [(0xFF if cc_type == 3 else 0xFE, first, second) for cc_type, first, second in dtvcc.get(frame, [])]
-        packet = _packet(triplets, sequence % 65536, cdp_rate, count)
+        packet = _packet(data.get(frame, _NO_CAPTIONS), sequence % 65536, cdp_rate, count)
         lines.append(f'{_timecode(frame, nominal, drop)}\t{_compress(packet)}')
         if frame in subtitles or (frames and teletext_tracks):
             # The frame's teletext, on a line of the same timecode.

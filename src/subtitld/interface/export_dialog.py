@@ -1130,6 +1130,8 @@ class _VideoPanel(QWidget):
         self.captions_format_combo.setLabel(_('export_dialog.format'))
         self.captions_format_combo.combobox.addItem(_('export_dialog.video_mov'), 'MOV')
         self.captions_format_combo.combobox.addItem(_('export_dialog.video_mxf'), 'MXF')
+        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mp4_a53'), 'MP4 A53')
+        self.captions_format_combo.combobox.addItem(_('export_dialog.video_ts_a53'), 'TS A53')
         self.captions_format_combo.activated.connect(self._refresh_captions)
         self.captions_panel.layout().addWidget(self.captions_format_combo)
 
@@ -1286,12 +1288,13 @@ class _VideoPanel(QWidget):
     def _refresh_captions(self):
         """What the chosen container can hold: a QuickTime caption track
         carries CEA-608 and keeps the picture as it is; an MXF's ancillary
-        data carries CEA-708 beside it, but takes a picture of its own."""
+        data carries CEA-708 beside it, but takes a picture of its own; the
+        video's own frames carry both, the picture copied."""
         container = self.captions_format_combo.combobox.currentData() or 'MOV'
         self.captions_codec_combo.setVisible(container == 'MXF')
         self.captions_teletext.setVisible(container == 'MXF')
-        self.captions_note.setText(_('export_dialog.video_captions_note_mxf' if container == 'MXF'
-                                     else 'export_dialog.video_captions_note_mov'))
+        note = 'mxf' if container == 'MXF' else 'a53' if container.endswith('A53') else 'mov'
+        self.captions_note.setText(_(f'export_dialog.video_captions_note_{note}'))
 
     def _refresh_tracks(self):
         """What the chosen kind of file does with the subtitles: an MP4's

@@ -1,7 +1,7 @@
 """Closed captions written into a video file, the way a broadcast master
 carries them rather than as a subtitle file beside it.
 
-Two containers take them, and they carry different things:
+Three kinds of file take them, and they carry different things:
 
 - **QuickTime (.mov)**: a caption track of its own, `c608`, holding
   CEA-608. The picture and sound are copied as they are, so the export is
@@ -13,6 +13,11 @@ Two containers take them, and they carry different things:
   takes none of the usual delivery codecs as they are, so the picture is
   re-encoded: DNxHR (Avid's), MPEG-2 (Sony's XDCAM) or ProRes (Apple's),
   and the sound as PCM.
+- **The video's own frames (.mp4, .ts)**: each picture's user data, as
+  ATSC broadcasts carry them (A/53 Part 4), CEA-608 and CEA-708 both, in
+  an H.264, HEVC or MPEG-2 video copied as it is (the a53 module), in an
+  MP4 or a transport stream. Every player that decodes the video finds
+  them, with no track of their own to choose.
 
 The captions themselves are written by the mcc module, with a packet for
 every frame of the video: ancillary data is per-frame essence, and FFmpeg
@@ -34,12 +39,15 @@ import os
 import subprocess
 import tempfile
 
+from subtitld.modules import a53
 from subtitld.modules import mcc
 
 # What each container holds, and what it does to the picture.
 CONTAINERS = {
     'MOV': {'extension': 'mov', 'captions': '608', 'copies': True},
     'MXF': {'extension': 'mxf', 'captions': 'both', 'copies': False},
+    'MP4 A53': {'extension': 'mp4', 'captions': 'both', 'copies': True, 'frames': True},
+    'TS A53': {'extension': 'ts', 'captions': 'both', 'copies': True, 'frames': True},
 }
 
 # The picture codecs MXF takes, with what FFmpeg needs for each. MXF holds
@@ -86,7 +94,7 @@ def command(video, output, captions, container='MOV', codec=DEFAULT_CODEC, ffmpe
 
 def write_video(video, output, segments, fps, duration, container='MOV', codec=DEFAULT_CODEC,
                 mode='pop', channel=1, services=None, speaker_changes=False,
-                ffmpeg='ffmpeg', startupinfo=None, teletext_tracks=None):
+                ffmpeg='ffmpeg', startupinfo=None, teletext_tracks=None, ffprobe='ffprobe'):
     """Write `video` out as `output` with `segments` in it as closed
     captions, and in an MXF `teletext_tracks` ([{'segments', 'language'}])
     as OP-47 teletext pages, 888 and up. Raises ValueError when the video's
@@ -96,6 +104,12 @@ def write_video(video, output, segments, fps, duration, container='MOV', codec=D
     if not rate:
         raise ValueError(f'Closed captions cannot be written at {float(fps or 0):g} frames a second')
     holder = CONTAINERS.get(str(container).upper(), CONTAINERS['MOV'])
+    if holder.get('frames'):
+        # Into the pictures themselves: no caption file for FFmpeg to read.
+        data, count = mcc.caption_frames(segments, rate, speaker_changes, holder['captions'], mode, channel,
+                                         services)
+        return a53.write_video(video, output, data, count, mcc.RATES[rate][2], str(container).upper(),
+                               ffmpeg=ffmpeg, ffprobe=ffprobe, startupinfo=startupinfo)
     teletext_tracks = teletext_tracks if holder['captions'] == 'both' else None
     frames = max(1, int(math.ceil(float(duration or 0) * mcc.RATES[rate][2])) + 1)
     handle, captions = tempfile.mkstemp(suffix='.mcc')

@@ -363,7 +363,8 @@ class CaptionsThread(QThread):
                 mode=self._options.get('caption_mode') or 'pop',
                 channel=self._options.get('caption_channel') or 1,
                 speaker_changes=self._options.get('speakers') == 'voice',
-                ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO, teletext_tracks=teletext_tracks)
+                ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO, teletext_tracks=teletext_tracks,
+                ffprobe=session.FFPROBE_EXECUTABLE)
             self.captions_finished.emit(self._output_path, True, '')
         except Exception as exc:
             self.captions_finished.emit(self._output_path, False, str(exc))

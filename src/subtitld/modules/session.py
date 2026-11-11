@@ -232,6 +232,9 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MOV': {'description': 'QuickTime video with closed captions', 'extensions': ['mov']},
     'MXF': {'description': 'MXF video with closed captions', 'extensions': ['mxf']},
+    # Captions in the video's own frames, as ATSC has them (modules.a53).
+    'MP4 A53': {'description': 'MP4 video with closed captions in its frames', 'extensions': ['mp4']},
+    'TS A53': {'description': 'MPEG transport stream with closed captions in its frames', 'extensions': ['ts']},
     # The subtitles as a track of their own (modules.soft_subtitles).
     'MP4': {'description': 'MP4 video with a subtitle track', 'extensions': ['mp4', 'm4v']},
     'MOV TEXT': {'description': 'QuickTime video with a subtitle track', 'extensions': ['mov']},
