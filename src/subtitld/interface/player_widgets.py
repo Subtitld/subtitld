@@ -10,7 +10,8 @@ checked looks, so a group reads as one object.
 import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (QColor, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
+                           QRegion)
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QSizePolicy, QWidget
 
@@ -572,3 +573,248 @@ class AddSubtitleButton(QAbstractButton):
     def leaveEvent(self, event):
         self.update()
         super().leaveEvent(event)
+
+
+# --- transport: play from the beginning · play/pause ▶|▶ · record ◉ mode ------------------------------------------
+
+def _tinted(renderer, rect, color, scale=4):
+    """An icon in one colour (white on the red recording state)."""
+    img = shapes.render_svg_image(renderer, rect.width(), rect.height(), scale)
+    ip = QPainter(img)
+    ip.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    ip.fillRect(img.rect(), QColor(color))
+    ip.end()
+    return img
+
+
+def _mask_of(path, key):
+    """A key's mouse area: the part of `path` (in the parent's coordinates) over the key."""
+    local = path.translated(-key.x(), -key.y())
+    return QRegion(local.toFillPolygon().toPolygon())
+
+
+class Transport(QWidget):
+    """The light centre notch of the player controls, one painted piece:
+
+    - play from the beginning: a key hanging from the panel's top edge, flush
+      with its left slant;
+    - play/pause: the panel's left part, with the ▶|▶ group (play from the
+      previous / next subtitle's start) hanging after its icon;
+    - record: the panel's right part, its left edge continuing the ▶|▶
+      group's slanted side, with the record mode key (transcript or audio,
+      one key that switches) hanging flush with the right slant.
+
+    Playing sinks the play part; recording turns the record part red. Where
+    play and record meet under the group, a gradient blends one into the
+    other. The keys are buttons laid over their areas (masked to them)."""
+
+    H = 51
+    PANEL_TOP, PANEL_BOTTOM = 2, 48
+    LIGHT = '#bfd3e3'
+    GROUP = '#93abbf'                 # the hanging keys' own colour
+    GROUP_ON = '#7f92a3'
+    PLAYING = '#5d778c'
+    RECORDING = '#c8393f'
+    MARGIN = 30                       # under the neighbouring lines, which overlap this piece
+    ROOM = 64                         # room around the play and record icons, at mid-height
+    KEY = 32
+    INK = QColor('#304251')
+
+    def __init__(self, name, parent=None):
+        super().__init__(parent)
+        self.setObjectName(name)
+        self.setAttribute(Qt.WA_Hover)
+        self.setMouseTracking(True)
+        h = self.PANEL_BOTTOM - self.PANEL_TOP
+        self.nh = h - 3                                       # keys hang to 3px above the panel's bottom
+        self.run = h * shapes.RUN15
+        self.rg = self.nh * shapes.RUN15
+        x = self.MARGIN
+        self.x0 = x
+        self.lg_gx = x + self.run / 2 - self.rg               # play from the beginning, flush with the left slant
+        lg_right_mid = self.lg_gx + self.rg + self.KEY + self.rg / 2
+        self.play_x = lg_right_mid + self.ROOM / 2
+        self.pg_x = lg_right_mid + self.ROOM - self.rg / 2    # the ▶|▶ group
+        self.pg_w = 48 + 2 * self.rg
+        rec_left_mid = self.pg_x + self.pg_w - h / 2 * shapes.RUN15
+        self.rec_dot_x = rec_left_mid + self.ROOM / 2
+        self.rec_gx = rec_left_mid + self.ROOM - h / 2 * shapes.RUN15
+        self.W = self.rec_gx + self.rg + self.KEY + self.run / 2 - x
+        self.setFixedSize(int(round(self.W + 2 * self.MARGIN)), self.H)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.play_key = StripKey('playercontrols_playpause_button', self)
+        self.play_key.setCheckable(True)
+        self.record_key = StripKey('playercontrols_record_button', self)
+        self.record_key.setCheckable(True)
+        self.begin_key = StripKey('playercontrols_play_from_beginning_button', self)
+        self.last_key = StripKey('playercontrols_play_from_last_start_button', self)
+        self.next_key = StripKey('playercontrols_play_from_next_start_button', self)
+        self.mode_key = StripKey('playercontrols_record_mode_button', self)
+        self.mode = 'transcript'
+        self.pulse = False
+        r = graphic
+        self._icons = {'play': r('play_icon.svg'), 'pause': r('pause_icon.svg'),
+                       'last': r('play_from_last_start_icon.svg'), 'next': r('play_from_next_start_icon.svg'),
+                       'transcript': r('record_transcript_icon.svg'), 'audio': r('record_wave_icon.svg')}
+        self._areas()
+
+    # -- geometry ------------------------------------------------------------------------------------------------------
+    def panel(self):
+        x0, x1, y0, y1 = self.x0, self.x0 + self.W, self.PANEL_TOP, self.PANEL_BOTTOM
+        run = (y1 - y0) * shapes.RUN15
+        dl, dr = shapes.unit(run, y1 - y0), shapes.unit(run, -(y1 - y0))
+        p = QPainterPath(QPointF(x0 - shapes.T6, y0))
+        shapes.fillet(p, (x0, y0), (1, 0), dl, shapes.T6)
+        shapes.fillet(p, (x0 + run, y1), dl, (1, 0), shapes.T6)
+        shapes.fillet(p, (x1 - run, y1), (1, 0), dr, shapes.T6)
+        shapes.fillet(p, (x1, y0), dr, (1, 0), shapes.T6)
+        p.closeSubpath()
+        return p
+
+    def _notch(self, gx, w, flush_left=False, flush_right=False):
+        lx = 60 if flush_left else 0
+        rx = 60 if flush_right else 0
+        return shapes.hanging_trap(gx - lx, self.PANEL_TOP, w + lx + rx, self.nh).intersected(self.panel())
+
+    def _areas(self):
+        y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
+        panel = self.panel()
+        self.begin_notch = self._notch(self.lg_gx, self.KEY + 2 * self.rg, flush_left=True)
+        self.group_notch = self._notch(self.pg_x, self.pg_w)
+        self.mode_notch = self._notch(self.rec_gx, self.KEY + 2 * self.rg, flush_right=True)
+        xl_top = self.pg_x + self.pg_w
+        self.edge_at = lambda yy: xl_top - (yy - y0) * shapes.RUN15
+        rec = QPainterPath()
+        rec.addPolygon(QPolygonF([QPointF(self.edge_at(y0 - 2), y0 - 2), QPointF(self.width() + 40, y0 - 2),
+                                  QPointF(self.width() + 40, yb + 2), QPointF(self.edge_at(yb + 2), yb + 2)]))
+        self.record_area = rec.subtracted(shapes.hanging_trap(self.pg_x, y0, self.pg_w, self.nh)).intersected(panel)
+        self.play_area = panel.subtracted(self.record_area)
+        # keys over their areas, masked to them
+        group_edges = [self.pg_x - shapes.T6, self.pg_x + self.rg + 24, self.pg_x + self.pg_w + shapes.T6]
+        self.last_zone = self.group_notch.intersected(shapes.rect_path(QRectF(group_edges[0], 0, group_edges[1] - group_edges[0], self.H)))
+        self.next_zone = self.group_notch.intersected(shapes.rect_path(QRectF(group_edges[1], 0, group_edges[2] - group_edges[1], self.H)))
+        for key, path in ((self.play_key, self.play_area.subtracted(self.begin_notch).subtracted(self.group_notch)),
+                          (self.record_key, self.record_area.subtracted(self.mode_notch)),
+                          (self.begin_key, self.begin_notch), (self.last_key, self.last_zone),
+                          (self.next_key, self.next_zone), (self.mode_key, self.mode_notch)):
+            box = path.boundingRect().toAlignedRect()
+            key.setGeometry(box)
+            key.setMask(_mask_of(path, key))
+        for key in (self.begin_key, self.last_key, self.next_key, self.mode_key):
+            key.raise_()
+
+    # -- state ---------------------------------------------------------------------------------------------------------
+    def set_mode(self, mode):
+        self.mode = mode
+        self.update()
+
+    def set_pulse(self, on):
+        self.pulse = on
+        self.update()
+
+    # -- painting ------------------------------------------------------------------------------------------------------
+    def _group(self, painter, notch, zones, bg, on, hover_alpha, all_sunk=False):
+        """A hanging group of keys: one raised fill, then the zones that differ."""
+        painter.fillPath(notch, shapes.gradient(self.PANEL_TOP, self.PANEL_TOP + self.nh, bg))
+        painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.PANEL_TOP + self.nh - 1, self.width(), 1))),
+                         QColor(0, 0, 0, 30))
+        for zone, key in zones:
+            state = key.state()
+            if state == 'sunk' or all_sunk:
+                painter.fillPath(zone, shapes.gradient(self.PANEL_TOP, self.PANEL_TOP + self.nh, on, 'sunken'))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.PANEL_TOP, self.width(), 1))),
+                                 QColor(0, 0, 0, 45))
+            if state == 'hover':
+                painter.fillPath(zone, QColor(255, 255, 255, hover_alpha))
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
+        h = yb - y0
+        cy = y0 + h / 2
+        painter.fillRect(QRectF(0, 0, self.width(), self.H - 1), QColor('#304251'))
+        painter.fillRect(QRectF(0, 0, self.width(), 2), QColor('#3e5363'))
+        panel = self.panel()
+        painter.fillPath(panel, shapes.gradient(y0, yb, self.LIGHT))
+        playing = self.play_key.isChecked()
+        recording = self.record_key.isChecked()
+        enabled = self.isEnabled()
+        for key, area in ((self.play_key, self.play_area), (self.record_key, self.record_area)):
+            if key.state() == 'hover':
+                painter.fillPath(area, QColor(255, 255, 255, 50))
+        for on, area, base in ((playing, self.play_area, self.PLAYING), (recording, self.record_area, self.RECORDING)):
+            if on:
+                painter.fillPath(area, shapes.gradient(y0, yb, base, 'sunken'))
+                painter.fillPath(area.intersected(shapes.rect_path(QRectF(0, y0, self.width(), 1))), QColor(0, 0, 0, 45))
+        # under the ▶|▶ group, play blends into record where their colours differ
+        play_c = shapes.bottom_colour(self.PLAYING, 'sunken') if playing else shapes.bottom_colour(self.LIGHT)
+        rec_c = shapes.bottom_colour(self.RECORDING, 'sunken') if recording else shapes.bottom_colour(self.LIGHT)
+        if play_c != rec_c:
+            strip = self.play_area.intersected(shapes.rect_path(QRectF(self.pg_x - 20, y0 + self.nh - 1, self.pg_w + 40,
+                                                                       yb - (y0 + self.nh - 1) + 2)))
+            strip = strip.subtracted(shapes.hanging_trap(self.pg_x, y0, self.pg_w, self.nh))
+            g = QLinearGradient(self.pg_x + self.rg, 0, self.edge_at(yb), 0)
+            clear = QColor(rec_c)
+            clear.setAlpha(0)
+            g.setColorAt(0, clear)
+            g.setColorAt(1, rec_c)
+            painter.fillPath(strip, g)
+
+        # play from the beginning: its own colour, a 1px start line, the ▶ on its own, the first subtitle clipped
+        self._group(painter, self.begin_notch, [(self.begin_notch, self.begin_key)], self.GROUP, self.GROUP_ON, 60)
+        iy = y0 + (self.nh - 24) / 2 + 1
+        ix = self.lg_gx + self.rg + 4
+        painter.save()
+        painter.setClipPath(self.begin_notch)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.INK)
+        painter.drawRect(QRectF(ix, iy, 1, 24))
+        painter.drawPolygon(QPolygonF([QPointF(ix + 3, iy + 9), QPointF(ix + 13, iy + 14), QPointF(ix + 3, iy + 19)]))
+        first = QPainterPath()
+        first.addRoundedRect(QRectF(ix + 15, iy + 4, 60, 20), 2, 2)
+        painter.fillPath(first, self.INK)
+        painter.restore()
+
+        # play / pause
+        self._icons['pause' if playing else 'play'].render(painter, QRectF(self.play_x - 11, cy - 12, 22, 24))
+
+        # ▶|▶: play from the previous / next subtitle's start; the neighbouring subtitles run out of the icons
+        self._group(painter, self.group_notch, [(self.last_zone, self.last_key), (self.next_zone, self.next_key)],
+                    self.GROUP, self.GROUP_ON, 60)
+        gx = self.pg_x + self.rg
+        self._icons['last'].render(painter, QRectF(gx, iy, 24, 24))
+        self._icons['next'].render(painter, QRectF(gx + 24, iy, 24, 24))
+        top, bottom = iy + 4, iy + 24
+        before = QPainterPath()
+        before.addRoundedRect(QRectF(self.pg_x - 30, top, gx - 1 - (self.pg_x - 30), bottom - top), 2, 2)
+        after = shapes.rect_path(QRectF(gx + 48 - 3, top, self.rg + 23, bottom - top))
+        for block in (before, after):
+            painter.fillPath(block.intersected(self.group_notch), self.INK)
+
+        # record: a muted red dot at rest, white while recording (dimmer on the pulse's off beat)
+        painter.setPen(Qt.NoPen)
+        if recording:
+            dot = QColor('#ffffff') if not self.pulse else QColor(255, 255, 255, 150)
+        else:
+            dot = QColor('#7a4651')
+        painter.setBrush(dot)
+        painter.drawEllipse(QPointF(self.rec_dot_x, cy), 11, 11)
+        # the mode key: one key, its icon pushed left, flush with the right slant; red while recording
+        self._group(painter, self.mode_notch, [(self.mode_notch, self.mode_key)],
+                    '#d4555b' if recording else self.GROUP, '#a62c32' if recording else self.GROUP_ON,
+                    22 if recording else 60, all_sunk=recording)
+        icon_rect = QRectF(self.rec_gx + self.rg, iy, 24, 24)
+        renderer = self._icons['transcript' if self.mode == 'transcript' else 'audio']
+        if recording:
+            painter.drawImage(icon_rect, _tinted(renderer, icon_rect, '#ffffff'))
+        else:
+            renderer.render(painter, icon_rect)
+        painter.fillRect(QRectF(0, self.H - 1, self.width(), 1), QColor(0, 0, 0, 60))
+        if not enabled:
+            painter.fillRect(self.rect(), QColor(48, 66, 81, 140))
+
+    def sizeHint(self):
+        return self.size()

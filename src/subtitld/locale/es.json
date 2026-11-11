@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Reducir la velocidad de reproducción",
     "playercontrols.change_playback_speed_increase": "Aumentar la velocidad de reproducción",
     "playercontrols.stop": "Detener",
+    "playercontrols.play_from_beginning": "Reproducir desde el principio",
     "playercontrols.playpause": "Reproducir/Pausar",
     "playercontrols.play_from_last_start": "Reproducir desde el inicio del subtítulo anterior",
     "playercontrols.play_from_next_start": "Reproducir desde el inicio del siguiente subtítulo",

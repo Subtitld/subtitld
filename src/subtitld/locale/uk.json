@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Зменшити швидкість відтворення",
     "playercontrols.change_playback_speed_increase": "Збільшити швидкість відтворення",
     "playercontrols.stop": "Зупинити",
+    "playercontrols.play_from_beginning": "Відтворити з початку",
     "playercontrols.playpause": "Відтворити/Пауза",
     "playercontrols.play_from_last_start": "Відтворити з початку попереднього субтитру",
     "playercontrols.play_from_next_start": "Відтворити з початку наступного субтитру",

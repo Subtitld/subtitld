@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Уменьшить скорость воспроизведения",
     "playercontrols.change_playback_speed_increase": "Увеличить скорость воспроизведения",
     "playercontrols.stop": "Стоп",
+    "playercontrols.play_from_beginning": "Воспроизвести с начала",
     "playercontrols.playpause": "Воспроизведение/Пауза",
     "playercontrols.play_from_last_start": "Воспроизвести с начала предыдущего субтитра",
     "playercontrols.play_from_next_start": "Воспроизвести с начала следующего субтитра",

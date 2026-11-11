@@ -566,92 +566,24 @@ def load(self):
 
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_left_top_line, 1)
 
-    self.playercontrols_widget_center_top_line = QWidget()
-    self.playercontrols_widget_center_top_line.setObjectName('playercontrols_widget_center_top_line')
-    self.playercontrols_widget_center_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.playercontrols_widget_center_top_line.setFixedHeight(51)
-    self.playercontrols_widget_center_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_center_top_line.layout().setContentsMargins(16, 6, 16, 1)
-    self.playercontrols_widget_center_top_line.layout().setSpacing(0)
-    self.playercontrols_widget_center_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
-
-    self.playercontrols_stop_button = QPushButton()
-    self.playercontrols_stop_button.setObjectName('playercontrols_stop_button')
-    self.playercontrols_stop_button.setProperty('position', 'first')
-    self.playercontrols_stop_button.setIconSize(QSize(20, 20))
-    self.playercontrols_stop_button.clicked.connect(lambda: playercontrols_stop_button_clicked(self))
-    self.playercontrols_stop_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_stop_button)
-
-    self.playercontrols_playpause_button = QPushButton()
-    self.playercontrols_playpause_button.setObjectName('playercontrols_playpause_button')
-    self.playercontrols_playpause_button.setCheckable(True)
-    self.playercontrols_playpause_button.setIconSize(QSize(22, 24))
-    self.playercontrols_playpause_button.setLayout(QHBoxLayout())
-    self.playercontrols_playpause_button.layout().setContentsMargins(40, 0, 0, 5)
-    self.playercontrols_playpause_button.layout().setSpacing(0)
-    self.playercontrols_playpause_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    # The transport is one painted piece (player_widgets.Transport): play from the beginning, play/pause with the
+    # ▶|▶ group, and record with its mode key. Its parts are buttons, so the handlers below are unchanged.
+    self.playercontrols_widget_center_top_line = player_widgets.Transport('playercontrols_widget_center_top_line')
+    transport = self.playercontrols_widget_center_top_line
+    self.playercontrols_play_from_beginning_button = transport.begin_key
+    self.playercontrols_play_from_beginning_button.clicked.connect(lambda: playercontrols_play_from_beginning_button_clicked(self))
+    self.playercontrols_playpause_button = transport.play_key
     self.playercontrols_playpause_button.clicked.connect(lambda: playercontrols_playpause_button_clicked(self))
-
-    self.playercontrols_play_from_last_start_button = QPushButton()
-    self.playercontrols_play_from_last_start_button.setIconSize(QSize(24, 24))
-    self.playercontrols_play_from_last_start_button.setObjectName('playercontrols_play_from_last_start_button')
-    self.playercontrols_play_from_last_start_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_play_from_last_start_button.setFixedWidth(36)
+    self.playercontrols_play_from_last_start_button = transport.last_key
     self.playercontrols_play_from_last_start_button.clicked.connect(lambda: playercontrols_play_from_last_start_button_clicked(self))
-    self.playercontrols_playpause_button.layout().addWidget(self.playercontrols_play_from_last_start_button, 0, Qt.AlignRight)
-
-    self.playercontrols_playpause_button.layout().addSpacing(-1)
-
-    self.playercontrols_play_from_next_start_button = QPushButton()
-    self.playercontrols_play_from_next_start_button.setIconSize(QSize(24, 24))
-    self.playercontrols_play_from_next_start_button.setObjectName('playercontrols_play_from_next_start_button')
-    self.playercontrols_play_from_next_start_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_play_from_next_start_button.setFixedWidth(36)
+    self.playercontrols_play_from_next_start_button = transport.next_key
     self.playercontrols_play_from_next_start_button.clicked.connect(lambda: playercontrols_play_from_next_start_button_clicked(self))
-    self.playercontrols_playpause_button.layout().addWidget(self.playercontrols_play_from_next_start_button, 0, Qt.AlignLeft)
-
-    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_playpause_button)
-
-    self.playercontrols_record_button = QPushButton()
-    self.playercontrols_record_button.setObjectName('playercontrols_record_button')
-    self.playercontrols_record_button.setIconSize(QSize(24, 24))
-    self.playercontrols_record_button.setCheckable(True)
-    self.playercontrols_record_button.setProperty('position', 'last')
-    self.playercontrols_record_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.playercontrols_record_button = transport.record_key
     self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
     self.playercontrols_record_button.clicked.connect(lambda: playercontrols_record_button_clicked(self))
-    # Keep clicks on a disabled mode switch from falling through and arming
-    # the recorder — see _DisabledChildClickGuard.
-    self._record_child_click_guard = _DisabledChildClickGuard(self.playercontrols_record_button)
-    self.playercontrols_record_button.installEventFilter(self._record_child_click_guard)
-    self.playercontrols_record_button.setLayout(QHBoxLayout())
-    self.playercontrols_record_button.layout().setContentsMargins(40, 0, 0, 5)
-    self.playercontrols_record_button.layout().setSpacing(0)
-
-    self.playercontrols_record_transcript_button = QPushButton()
-    self.playercontrols_record_transcript_button.setIconSize(QSize(24, 24))
-    self.playercontrols_record_transcript_button.setObjectName('playercontrols_record_transcript_button')
-    self.playercontrols_record_transcript_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_record_transcript_button.setFixedWidth(36)
-    self.playercontrols_record_transcript_button.setCheckable(True)
-    self.playercontrols_record_transcript_button.setToolTip(_('record_button.transcript_tooltip'))
-    self.playercontrols_record_transcript_button.clicked.connect(lambda: playercontrols_record_transcript_button_clicked(self))
-    self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_transcript_button, 0, Qt.AlignRight)
-
-    self.playercontrols_record_button.layout().addSpacing(-1)
-
-    self.playercontrols_record_audio_button = QPushButton()
-    self.playercontrols_record_audio_button.setIconSize(QSize(24, 24))
-    self.playercontrols_record_audio_button.setObjectName('playercontrols_record_audio_button')
-    self.playercontrols_record_audio_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_record_audio_button.setFixedWidth(36)
-    self.playercontrols_record_audio_button.setCheckable(True)
-    self.playercontrols_record_audio_button.setToolTip(_('record_button.wave_tooltip'))
-    self.playercontrols_record_audio_button.clicked.connect(lambda: playercontrols_record_audio_button_clicked(self))
-    self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_audio_button, 0, Qt.AlignLeft)
-
-    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_record_button)
+    # Transcript or audio: one key that switches between the two.
+    self.playercontrols_record_mode_button = transport.mode_key
+    self.playercontrols_record_mode_button.clicked.connect(lambda: playercontrols_record_mode_button_clicked(self))
 
     # Record-mode controller (recording is tied to playback; see
     # record_controls.RecordController). Reflect persisted arm/mode state.
@@ -1522,11 +1454,15 @@ def load(self):
     self.playercontrols_widget_bottom_line.raise_()
 
 
-def playercontrols_stop_button_clicked(self):
-    playercontrols_playpause_button_clicked(self)
-    self.preview_panel_player.stop()
+def playercontrols_play_from_beginning_button_clicked(self):
+    """Back to the start of the timeline, and play (recording too, if armed)."""
+    self.preview_panel_player.seek(0)
+    if self.preview_panel_player.is_paused():
+        playercontrols_playpause_button_clicked(self)
+    self.timeline_widget.setFocus(Qt.TabFocusReason)
     update_playercontrols_playpause_button(self)
     timeline.update(self)
+
 
 @shortcut('playpause', 'shortcuts.playpause', ['Space'])
 def playercontrols_playpause_button_pressed(self):
@@ -1591,34 +1527,17 @@ def playercontrols_record_audio_button_clicked(self):
     _update_record_mode_buttons(self)
 
 
-class _DisabledChildClickGuard(QObject):
-    """Swallow mouse clicks that land on a DISABLED child of the record button.
-
-    The record button is itself a checkable QPushButton with the two mode
-    switches as laid-out children. Disabling a child does not stop a click in
-    its rect from reaching the parent — verified: with the transcript switch
-    disabled, a click over it toggles the parent and ARMS recording. So the
-    disabled option would become an arm/disarm button, which is worse than
-    leaving it enabled.
-
-    Filtering on the parent is the narrow fix: only presses whose position
-    lands on a disabled child are consumed, so clicking the parent's own body
-    still arms as usual.
-    """
-
-    _MOUSE = (QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
-              QEvent.MouseButtonDblClick)
-
-    def eventFilter(self, obj, event):
-        if event.type() in self._MOUSE:
-            try:
-                pos = event.position().toPoint()
-            except AttributeError:      # Qt5-style events
-                pos = event.pos()
-            child = obj.childAt(pos)
-            if child is not None and not child.isEnabled():
-                return True
-        return False
+def playercontrols_record_mode_button_clicked(self):
+    """The mode key switches between transcript and audio. Transcript needs an
+    engine: without one the key stays on audio (its tooltip says why)."""
+    from subtitld.interface.record_controls import MODE_TRANSCRIPT
+    controller = getattr(self, 'record_controller', None)
+    if controller is None:
+        return
+    if controller.mode == MODE_TRANSCRIPT:
+        playercontrols_record_audio_button_clicked(self)
+    else:
+        playercontrols_record_transcript_button_clicked(self)
 
 
 def _update_record_mode_buttons(self):
@@ -1633,20 +1552,19 @@ def _update_record_mode_buttons(self):
     if controller is None:
         return
     from subtitld.interface.record_controls import (
-        MODE_TRANSCRIPT, MODE_WAVE, any_asr_provider)
+        MODE_TRANSCRIPT, any_asr_provider)
 
     has_engine = any_asr_provider()
-    transcript = self.playercontrols_record_transcript_button
-    transcript.setEnabled(has_engine)
-    transcript.setToolTip(
-        _('record_button.transcript_tooltip') if has_engine
-        else _('record_button.transcript_unavailable_tooltip'))
-
-    # `controller.mode` already reports audio when no engine is installed, so
-    # the two checks stay mutually exclusive without special-casing here.
+    # `controller.mode` already reports audio when no engine is installed.
     mode = controller.mode
-    transcript.setChecked(has_engine and mode == MODE_TRANSCRIPT)
-    self.playercontrols_record_audio_button.setChecked(mode == MODE_WAVE)
+    key = self.playercontrols_record_mode_button
+    if mode == MODE_TRANSCRIPT:
+        key.setToolTip(_('record_button.transcript_tooltip'))
+    elif has_engine:
+        key.setToolTip(_('record_button.wave_tooltip'))
+    else:
+        key.setToolTip(_('record_button.wave_tooltip') + '\n' + _('record_button.transcript_unavailable_tooltip'))
+    self.playercontrols_widget_center_top_line.set_mode('transcript' if mode == MODE_TRANSCRIPT else 'audio')
     _update_record_pulse(self)
 
 
@@ -1654,8 +1572,7 @@ def _toggle_record_pulse(self):
     """Flip the `pulse` property so the QSS alternates the record glyph."""
     button = self.playercontrols_record_button
     button.setProperty('pulse', not bool(button.property('pulse')))
-    button.style().unpolish(button)
-    button.style().polish(button)
+    self.playercontrols_widget_center_top_line.set_pulse(bool(button.property('pulse')))
 
 
 def _update_record_pulse(self):
@@ -1682,8 +1599,7 @@ def _update_record_pulse(self):
             self._record_pulse_running = False
         if button.property('pulse'):
             button.setProperty('pulse', False)
-            button.style().unpolish(button)
-            button.style().polish(button)
+            self.playercontrols_widget_center_top_line.set_pulse(False)
 
 
 
@@ -2886,7 +2802,7 @@ def translate(self):
     self.change_playback_speed.setToolTip(_('playercontrols.change_playback_speed'))
     self.change_playback_speed_decrease.setToolTip(_('playercontrols.change_playback_speed_decrease'))
     self.change_playback_speed_increase.setToolTip(_('playercontrols.change_playback_speed_increase'))
-    self.playercontrols_stop_button.setToolTip(_('playercontrols.stop'))
+    self.playercontrols_play_from_beginning_button.setToolTip(_('playercontrols.play_from_beginning'))
     self.playercontrols_playpause_button.setToolTip(_('playercontrols.playpause'))
     self.playercontrols_play_from_last_start_button.setToolTip(_('playercontrols.play_from_last_start'))
     self.playercontrols_play_from_next_start_button.setToolTip(_('playercontrols.play_from_next_start'))
@@ -2927,7 +2843,6 @@ def translate(self):
     self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))
     self.timeline_show_speaker_tracks_button.setToolTip(_('playercontrols.timeline_show_speaker_tracks'))
     self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
-    self.playercontrols_record_audio_button.setToolTip(_('record_button.wave_tooltip'))
     # The transcript switch's tooltip depends on whether an engine is installed.
     _update_record_mode_buttons(self)
 

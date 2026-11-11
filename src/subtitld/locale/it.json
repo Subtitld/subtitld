@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Riduci la velocità di riproduzione",
     "playercontrols.change_playback_speed_increase": "Aumenta la velocità di riproduzione",
     "playercontrols.stop": "Interrompi",
+    "playercontrols.play_from_beginning": "Riproduci dall'inizio",
     "playercontrols.playpause": "Riproduci/Pausa",
     "playercontrols.play_from_last_start": "Riproduci dall'inizio del sottotitolo precedente",
     "playercontrols.play_from_next_start": "Riproduci dall'inizio del sottotitolo successivo",

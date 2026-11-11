@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "再生速度を下げる",
     "playercontrols.change_playback_speed_increase": "再生速度を上げる",
     "playercontrols.stop": "停止",
+    "playercontrols.play_from_beginning": "最初から再生",
     "playercontrols.playpause": "再生／一時停止",
     "playercontrols.play_from_last_start": "前の字幕の開始から再生",
     "playercontrols.play_from_next_start": "次の字幕の開始から再生",

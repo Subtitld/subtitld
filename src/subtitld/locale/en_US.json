@@ -187,6 +187,7 @@
     "playercontrols.change_playback_speed_decrease": "Decrease playback speed",
     "playercontrols.change_playback_speed_increase": "Increase playback speed",
     "playercontrols.stop": "Stop",
+    "playercontrols.play_from_beginning": "Play from the beginning",
     "playercontrols.playpause": "Play/Pause",
     "playercontrols.play_from_last_start": "Play from previous subtitle start",
     "playercontrols.play_from_next_start": "Play from next subtitle start",

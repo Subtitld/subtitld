@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Diminuer la vitesse de lecture",
     "playercontrols.change_playback_speed_increase": "Augmenter la vitesse de lecture",
     "playercontrols.stop": "Arrêter",
+    "playercontrols.play_from_beginning": "Lire depuis le début",
     "playercontrols.playpause": "Lecture/Pause",
     "playercontrols.play_from_last_start": "Lire depuis le début du sous-titre précédent",
     "playercontrols.play_from_next_start": "Lire depuis le début du sous-titre suivant",

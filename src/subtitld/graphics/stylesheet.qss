@@ -292,11 +292,9 @@ QLabel[class='widget_label'] {
     padding: 2px 0 2px -2px;
 }
 
-
 QLabel[class='widget_label']::disabled {
     color: #1ab8cee0;
 }
-
 
 QLabel[class='units_label'] {
     font-size: 9px;
@@ -930,7 +928,6 @@ QLineEdit[class=qlineedit_timings] {
     background-color: transparent;
 }
 
-
 /* Fields (spin boxes, line edits, key sequences): sunken — darker at the top,
    lighter at the bottom — 3px corners, no border, 26px tall. */
 QSpinBox,
@@ -1315,7 +1312,6 @@ QGroupBox {
     color: #b8cee0;
 }
 
-
 QGroupBox:disabled {
     border-image: url(graphics:groupbox_background_disabled.svg) 4 4 4 4 stretch stretch;
 }
@@ -1607,32 +1603,6 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: #40304251;
 }
 
-#send_text_buttons_container #send_text_to_last_subtitle_button {
-    padding-top: 1px;
-    padding-left: 32px;
-    padding-right: 0;
-    border-bottom-left-radius: 3px;
-    icon: url(graphics:send_text_to_last_subtitle_icon.svg);
-}
-
-#send_text_buttons_container #send_text_to_last_subtitle_and_slice_button {
-    padding-top: 3px;
-    icon: url('graphics:send_text_to_last_subtitle_and_slice_button.svg');
-}
-
-#send_text_buttons_container #send_text_to_next_subtitle_button {
-    padding-right: 32px;
-    padding-left: 0;
-    padding-top: 1px;
-    border-bottom-right-radius: 3px;
-    icon: url(graphics:send_text_to_next_subtitle_icon.svg);
-}
-
-#send_text_buttons_container #send_text_to_next_subtitle_and_slice_button {
-    padding-top: 3px;
-    icon: url('graphics:send_text_to_next_subtitle_and_slice_button.svg');
-}
-
 #left_panel_subtitleslist_bottom_buttons_container QPushButton,
 #left_panel_subtitleslist_bottom_buttons_container QComboBox {
     border-radius: 0;
@@ -1899,7 +1869,6 @@ QMenu#subtitle_formatting_menu::separator {
     font-family: "Ubuntu Mono", monospace;
 }
 
-
 #playercontrols_widget QPushButton {
     border: unset;
 }
@@ -1930,11 +1899,6 @@ QMenu#subtitle_formatting_menu::separator {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 53 0 0 stretch stretch;
     border-width: 2 0 0 0;
     margin-right: 28;
-}
-
-#playercontrols_widget_center_top_line {
-    border-width: 7 31 2 31;
-    border-image: url(graphics:playercontrols_widget_center_top_line.svg) 7 31 2 31 stretch stretch;
 }
 
 #playercontrols_widget_right_top_line {
@@ -1970,205 +1934,6 @@ QMenu#subtitle_formatting_menu::separator {
     border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 0 2 28 stretch stretch;
     border-width: 0 0 2 0;
     margin-left: 12px;
-}
-
-#playercontrols_widget_center_top_line {
-    margin: 0;
-}
-
-#playercontrols_widget_center_top_line QPushButton {
-    background: transparent;
-    border-radius: 0;
-    padding: 0 8;
-    border-left: 1px solid #14ffffff;
-    border-right: 1px solid #143e5363;
-}
-
-#playercontrols_widget_center_top_line QPushButton:hover {
-    background: #14304251;
-    border-left: 1px solid #33ffffff;
-    border-right: 1px solid #333e5363;
-}
-
-#playercontrols_widget_center_top_line QPushButton::hover:pressed,
-#playercontrols_widget_center_top_line QPushButton::hover:checked,
-#playercontrols_widget_center_top_line QPushButton::pressed,
-#playercontrols_widget_center_top_line QPushButton::checked {
-    background: #803e5363;
-    border-left: 1px solid #333e5363;
-    border-right: 1px solid #33ffffff;
-}
-
-#playercontrols_widget_center_top_line QPushButton[position="first"] {
-    background: transparent;
-    border-width: 0 1 0 13;
-    border-style: none;
-    padding: 0 8 0 2;
-    border-image: url(graphics:playercontrols_button_first.svg) 0 1 0 13 stretch stretch;
-}
-
-#playercontrols_widget_center_top_line QPushButton[position="first"]:hover {
-    background: transparent;
-    border-width: 0 1 0 13;
-    border-image: url(graphics:playercontrols_button_first_hover.svg) 0 1 0 13 stretch stretch;
-}
-
-#playercontrols_widget_center_top_line QPushButton[position="first"]:hover:pressed,
-#playercontrols_widget_center_top_line QPushButton[position="first"]:hover:checked,
-#playercontrols_widget_center_top_line QPushButton[position="first"]:pressed,
-#playercontrols_widget_center_top_line QPushButton[position="first"]:checked {
-    background: transparent;
-    border-width: 0 1 0 13;
-    border-image: url(graphics:playercontrols_button_first_pressed.svg) 0 1 0 13 stretch stretch;
-}
-
-#playercontrols_widget_center_top_line QPushButton[position="last"] {
-    background: transparent;
-    border-width: 0 13 0 1;
-    border-style: none;
-    /* padding: 0 10 0 8; */
-    border-image: url(graphics:playercontrols_button_last.svg) 0 13 0 1 stretch stretch;
-}
-
-#playercontrols_widget_center_top_line QPushButton[position="last"]:hover {
-    background: transparent;
-    border-width: 0 13 0 1;
-    border-image: url(graphics:playercontrols_button_last_hover.svg) 0 13 0 1 stretch stretch;
-}
-
-#playercontrols_widget_center_top_line QPushButton[position="last"]:pressed,
-#playercontrols_widget_center_top_line QPushButton[position="last"]:hover:pressed,
-#playercontrols_widget_center_top_line QPushButton[position="last"]:checked,
-#playercontrols_widget_center_top_line QPushButton[position="last"]:hover:checked {
-    background: transparent;
-    border-width: 0 13 0 1;
-    border-image: url(graphics:playercontrols_button_last_pressed.svg) 0 13 0 1 stretch stretch;
-}
-
-#playercontrols_stop_button {
-    icon: url(graphics:stop_icon.svg);
-}
-
-#playercontrols_stop_button:hover {
-    icon: url(graphics:stop_icon_hover.svg);
-}   
-
-#playercontrols_stop_button:hover:pressed,
-#playercontrols_stop_button:pressed,
-#playercontrols_stop_button:hover:checked,
-#playercontrols_stop_button:checked {
-    icon: url(graphics:stop_icon_pressed.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button {
-    padding: 0 80 0 10;
-    icon: url(graphics:play_icon.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button:hover {
-    icon: url(graphics:play_icon_hover.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button:hover:pressed,
-#playercontrols_widget_center_top_line #playercontrols_playpause_button:pressed {
-    icon: url(graphics:play_icon_pressed.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button:hover:checked,
-#playercontrols_widget_center_top_line #playercontrols_playpause_button:checked {
-    icon: url(graphics:pause_icon.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button #playercontrols_play_from_next_start_button,
-#playercontrols_widget_center_top_line #playercontrols_playpause_button #playercontrols_play_from_last_start_button {
-    border-bottom: 1px solid #143e5363;
-    padding-top: 3;
-    padding-bottom: 2;
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button #playercontrols_play_from_next_start_button {
-    icon: url(graphics:play_from_next_start_icon.svg);
-    border-bottom-right-radius: 4px;
-    padding-right: 10;
-    padding-left: 0;
-    border-left: none;
-}
-
-#playercontrols_widget_center_top_line #playercontrols_playpause_button #playercontrols_play_from_last_start_button {
-    icon: url(graphics:play_from_last_start_icon.svg);
-    border-bottom-left-radius: 4px;   
-    padding-left: 10;
-    padding-right: 0;
-    border-right: none;
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button {
-    padding: 0 80 0 10;
-    icon: url(graphics:record_icon.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button:checked {
-    icon: url(graphics:record_icon_pressed.svg);
-}
-
-/* Armed pulse: the glyph alternates on a timer. Replaces an opacity effect,
-   which rendered this container's styled children unreliably. */
-#playercontrols_widget_center_top_line #playercontrols_record_button[pulse="true"]:checked {
-    icon: url(graphics:record_icon.svg);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button,
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button {
-    border-bottom: 1px solid #143e5363;
-    padding-top: 3;
-    padding-bottom: 2;
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button {
-    icon: url(graphics:record_transcript_icon.svg);
-    border-bottom-left-radius: 4px;
-    /* Even left/right so the icon sits centred in its 36px button. These
-       used to be 10/0 and 0/10, which pushed both icons toward each other
-       and left dead space at the pair's outer edges. */
-    padding-left: 5;
-    padding-right: 5;
-    border-right: none;
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button {
-    icon: url(graphics:record_wave_icon.svg);
-    border-bottom-right-radius: 4px;
-    padding-left: 5;
-    padding-right: 5;
-    border-left: none;
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:checked,
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button:checked {
-    background: rgba(255, 255, 255, 0.18);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:hover,
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button:hover {
-    background: rgba(255, 255, 255, 0.10);
-}
-
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:checked:hover,
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_audio_button:checked:hover {
-    background: rgba(255, 255, 255, 0.24);
-}
-
-/* No transcription engine installed: the transcript switch is disabled, with a
-   tooltip pointing at Add-ons. The disabled cue has to live in the ICON, not
-   the background — "checked" here is a background tint only, so a background
-   treatment would read as "unchecked" instead of "unavailable". `background:
-   transparent` defeats the global QPushButton::disabled slate gradient, which
-   would otherwise paint an opaque block inside the record button. */
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:disabled,
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:checked:disabled,
-#playercontrols_widget_center_top_line #playercontrols_record_button #playercontrols_record_transcript_button:hover:disabled {
-    icon: url(graphics:record_transcript_icon_disabled.svg);
-    background: transparent;
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed {
@@ -2269,23 +2034,6 @@ QMenu#subtitle_formatting_menu::separator {
     padding: 4 4 0 4;
 }
 
-
-#gap_hbox #gap_add_subtitle_button {
-    padding: 0 32px 0 10px;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    icon: url(graphics:gap_add_icon.svg);
-}
-
-#gap_hbox #gap_remove_subtitle_button {
-    padding: 0 10px 0 32px;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    border-bottom-left-radius: 0;
-    icon: url(graphics:gap_remove_icon.svg);
-}
-
 #playercontrols_widget_top_line #add_subtitle_button {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
@@ -2294,49 +2042,11 @@ QMenu#subtitle_formatting_menu::separator {
     qproperty-icon: url(graphics:add_subtitle_icon.svg);
 }
 
-#playercontrols_widget_top_line #add_subtitle_button QPushButton {
-    padding: 6 6 0 6;
-    border-top: none;
-    border-radius: 0;
-}
-
 #playercontrols_widget_top_line #add_subtitle_button QPushButton:checked,
 #playercontrols_widget_top_line #add_subtitle_button QPushButton:hover:checked,
 #playercontrols_widget_bottom_line QPushButton:checked,
 #playercontrols_widget_bottom_line QPushButton:hover:checked {
     background-color: #80304251;
-}
-
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_starting_from_last {
-    border-bottom-left-radius: 3px;
-    border-right: none;
-    padding-right: 0;
-    icon: url(graphics:add_from_last.svg);
-}
-
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_starting_from_last:checked,
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_starting_from_last:hover:checked {
-    icon: url(graphics:add_from_last_checked.svg);
-}
-
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_and_play {
-    border-right: none;
-    padding-right: 0;
-    border-left: none;
-    padding-left: 0;
-    icon: url(graphics:add_and_play.svg);
-}
-
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_to_next_start {
-    border-bottom-right-radius: 3px;
-    border-left: none;
-    padding-left: 0;
-    icon: url(graphics:add_subtitle_to_next_start.svg);
-}
-
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_to_next_start:checked,
-#playercontrols_widget_top_line #add_subtitle_button #add_subtitle_to_next_start:hover:checked {
-    icon: url(graphics:add_subtitle_to_next_start_checked.svg);
 }
 
 /* ADD paints itself (player_widgets.AddSubtitleButton); its label takes this colour. */
@@ -2373,7 +2083,6 @@ QMenu#subtitle_formatting_menu::separator {
     height: 3px;
 }
 
-
 #playercontrols_widget_top_line QDoubleSpinBox:disabled,
 #playercontrols_widget_top_line QSpinBox:disabled {
     background-color: #803e5363;
@@ -2406,78 +2115,6 @@ QMenu#subtitle_formatting_menu::separator {
     border-top-right-radius: 0;
     border-bottom-left-radius: 0;
     qproperty-icon: url(graphics:remove_selected_subtitle_icon.svg);
-}
-
-#playercontrols_widget_top_line #merge_slice_frame #merge_back_selected_subtitle_button,
-#playercontrols_widget_top_line #merge_slice_frame #slice_selected_subtitle_button,
-#playercontrols_widget_top_line #merge_slice_frame #merge_next_selected_subtitle_button {
-    border-radius: 0;
-}
-
-#playercontrols_widget_top_line #merge_slice_frame #merge_back_selected_subtitle_button {
-    border-bottom-left-radius: 3px;
-    padding-right: 0;
-    padding-left: 8;
-    icon: url(graphics:merge_back_selected_subtitle_icon.svg);
-}
-
-#playercontrols_widget_top_line #merge_slice_frame #slice_selected_subtitle_button {
-    padding-right: 0;
-    padding-left: 0;
-    icon: url(graphics:slice_selected_subtitle_icon.svg);
-}
-
-#playercontrols_widget_top_line #merge_slice_frame #slice_selected_subtitle_button:checked {
-    background-color: #803e5363;
-}
-
-
-#playercontrols_widget_top_line #merge_slice_frame #merge_next_selected_subtitle_button {
-    border-bottom-right-radius: 3px;
-    padding-left: 0;
-    padding-right: 8;
-    icon: url(graphics:merge_next_selected_subtitle_icon.svg);
-}
-
-
-#last_end_to_current_position_button {
-    icon: url(graphics:last_end_to_current_position_icon.svg);
-}
-
-#last_start_last_end_to_current_position_button {
-    icon: url(graphics:last_start_last_end_to_current_position_button.svg);
-}
-
-#next_start_next_end_to_current_position_button {
-    icon: url(graphics:next_start_next_end_to_current_position_button.svg);
-}
-
-#last_start_to_current_position_button {
-    icon: url(graphics:last_start_to_current_position_icon.svg);
-}
-
-#next_end_to_current_position_button {
-    icon: url(graphics:next_end_to_current_position_icon.svg);
-}
-
-#next_start_to_current_position_button {
-    icon: url(graphics:next_start_to_current_position_icon.svg);
-}
-
-#start_end_moving_frame QPushButton,
-#send_text_buttons_container QPushButton {
-    border-radius: 0;
-    padding: 0;
-}
-
-#start_end_moving_frame #next_start_to_current_position_button {
-    padding-right: 8px;
-    border-bottom-right-radius: 3px;
-}
-
-#start_end_moving_frame #last_end_to_current_position_button {
-    padding-left: 8px;
-    border-bottom-left-radius: 3px;
 }
 
 #playercontrols_widget_bottom_line QPushButton {
@@ -2735,7 +2372,6 @@ QMenu#subtitle_formatting_menu::separator {
     border-top-right-radius: 3px;
 }
 
-
 #playercontrols_widget_right_bottom_line #step_button_container QComboBox::disabled {
     color: #40b8cee0;
 }
@@ -2766,7 +2402,6 @@ QMenu#subtitle_formatting_menu::separator {
 #left_panel_metadata_panel_info {
     background-color: transparent;
 }
-
 
 #properties_information_word_counter,
 #properties_information_wpm,
@@ -2930,16 +2565,13 @@ QMenu#subtitle_formatting_menu::separator {
     background-color: transparent;
 }
 
-
 #left_panel_speakers_panel_content_item QPushButton::hover {
     background-color: #80304251;
 }
 
-
 #left_panel_speakers_panel_content_item QPushButton::pressed {
     background-color: #40304251;
 }
-
 
 #left_panel_speakers_panel_content_item #left_panel_speakers_panel_content_item_rename_button {
     icon: url(graphics:speaker_list_item_rename_icon.svg);
@@ -3384,43 +3016,6 @@ QMenu#subtitle_formatting_menu::separator {
 
 #find_replace_dialog #dialog_bottom #find_replace_next_button:disabled {
     icon: url(graphics:find_next_icon_tab_disabled.svg);
-}
-
-#music_voice_separation_box #music_voice_separation_music_icon {
-    icon: url(graphics:music_voice_separation_music_icon.svg);
-    padding: 0 13px 0 8px;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-}
-
-#music_voice_separation_box #music_voice_separation_voice_icon {
-    icon: url(graphics:music_voice_separation_voice_icon.svg);
-    padding: 0 8px 0 13px;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    border-bottom-left-radius: 0;
-}
-
-#music_voice_separation_box #music_voice_separation_slider {
-    background-color: #b8cee0;
-}
-
-#music_voice_separation_box #music_voice_separation_slider[class="middle"] {
-    background-color: #6a7483;
-}
-
-#music_voice_separation_box #music_voice_separation_slider::disabled {
-    background-color: #1a1e2a33;
-    opacity: .5;
-}
-
-#music_voice_separation_box #music_voice_separation_music_icon::disabled {
-    icon: url(graphics:music_voice_separation_music_icon_disabled.svg);
-}
-
-#music_voice_separation_box #music_voice_separation_voice_icon::disabled {
-    icon: url(graphics:music_voice_separation_voice_icon_disabled.svg);
 }
 
 #global_panel_transcription_vosk_transcription_download_model_button {

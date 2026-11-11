@@ -187,6 +187,7 @@
     "playercontrols.change_playback_speed_decrease": "Diminuir velocidade de reprodução",
     "playercontrols.change_playback_speed_increase": "Aumentar velocidade de reprodução",
     "playercontrols.stop": "Parar",
+    "playercontrols.play_from_beginning": "Reproduzir do início",
     "playercontrols.playpause": "Reproduzir/Pausar",
     "playercontrols.play_from_last_start": "Reproduzir do início da última legenda",
     "playercontrols.play_from_next_start": "Reproduzir do início da próxima legenda",

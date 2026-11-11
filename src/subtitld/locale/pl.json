@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Zmniejsz szybkość odtwarzania",
     "playercontrols.change_playback_speed_increase": "Zwiększ szybkość odtwarzania",
     "playercontrols.stop": "Zatrzymaj",
+    "playercontrols.play_from_beginning": "Odtwórz od początku",
     "playercontrols.playpause": "Odtwórz/Pauza",
     "playercontrols.play_from_last_start": "Odtwarzaj od początku poprzedniego napisu",
     "playercontrols.play_from_next_start": "Odtwarzaj od początku następnego napisu",

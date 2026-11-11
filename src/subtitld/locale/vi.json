@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Giảm tốc độ phát",
     "playercontrols.change_playback_speed_increase": "Tăng tốc độ phát",
     "playercontrols.stop": "Dừng",
+    "playercontrols.play_from_beginning": "Phát từ đầu",
     "playercontrols.playpause": "Phát/Tạm dừng",
     "playercontrols.play_from_last_start": "Phát từ điểm bắt đầu của phụ đề trước",
     "playercontrols.play_from_next_start": "Phát từ điểm bắt đầu của phụ đề sau",

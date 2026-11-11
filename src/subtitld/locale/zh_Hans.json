@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "降低播放速度",
     "playercontrols.change_playback_speed_increase": "提高播放速度",
     "playercontrols.stop": "停止",
+    "playercontrols.play_from_beginning": "从头播放",
     "playercontrols.playpause": "播放/暂停",
     "playercontrols.play_from_last_start": "从上一条字幕的开始播放",
     "playercontrols.play_from_next_start": "从下一条字幕的开始播放",

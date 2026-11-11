@@ -159,6 +159,7 @@
     "playercontrols.change_playback_speed_decrease": "Oynatma hızını azalt",
     "playercontrols.change_playback_speed_increase": "Oynatma hızını artır",
     "playercontrols.stop": "Durdur",
+    "playercontrols.play_from_beginning": "Baştan oynat",
     "playercontrols.playpause": "Oynat/Duraklat",
     "playercontrols.play_from_last_start": "Önceki altyazının başından oynat",
     "playercontrols.play_from_next_start": "Sonraki altyazının başından oynat",
