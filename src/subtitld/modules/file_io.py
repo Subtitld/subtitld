@@ -898,6 +898,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             label = ':'.join(programme[i:i + 2] for i in range(0, 8, 2)) if len(programme) == 8 else ''
             if label in ebustl.STARTS:
                 session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, start=label)
+            # A DAPT script's other languages are the subtitles'
+            # translations, by Subtitld's codes for them; its characters
+            # (any agent named) are speakers the project lists.
+            for segment in segments_list:
+                if segment.get('translations'):
+                    segment['translations'] = {_language_like_project(tag) or tag.lower(): text
+                                               for tag, text in segment['translations'].items()}
+                if segment.get('speaker'):
+                    session.SPEAKERS.setdefault(segment['speaker'], {'image': None})
+            if (ttml_metadata or {}).get('dapt'):
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, profile='dapt')
 
         elif subtitle_file.lower().endswith('.smi') and legacy.kind(_text_of(subtitle_file)) == 'smiltext':
             # SMIL and SAMI both answer to .smi, and only one of them is
@@ -1928,6 +1939,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 if VIDEO.get('framerate'):
                     extra['fps'] = float(VIDEO['framerate'])
                 extra['tunnel'] = bool(options.get('tunnel_608'))
+            # DAPT is a script of the whole subtitle: its text in the
+            # project's language, every translation beside it, every
+            # speaker a character, the dubs heard, whatever the export asks
+            # of the text.
+            if profile == 'dapt':
+                segments = export_options.prepare(SUBTITLE['segments'], dict(options, text='original', speakers='none'))
+                options = dict(options, text='original')
             # EBU-TT is timed in timecode where there is a frame rate (the
             # video's, else the STL's it came from), from the programme
             # start the file was opened with; in media time without one.

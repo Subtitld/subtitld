@@ -89,9 +89,11 @@ And for a format of its own:
                  modules.ttml)
     profile      TTML and DFXP: the profile the file declares itself to be,
                  a value of modules.ttml.PROFILES ('ttml1', 'imsc1',
-                 'imsc1.1', 'ebu-tt-d'), or of its IMAGE_PROFILES
-                 ('imsc1-image', 'imsc1.1-image'), which draw each
-                 subtitle as a PNG beside the file
+                 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'dapt'), or
+                 of its IMAGE_PROFILES ('imsc1-image', 'imsc1.1-image'),
+                 which draw each subtitle as a PNG beside the file
+    tunnel_608   TTML and DFXP in SMPTE-TT: whether the file carries the
+                 subtitles as CEA-608 captions too (RP 2052-10)
     segment_duration
                  HLS, CMFT and DASH: the seconds each segment (a fragment
                  of a CMAF track) lasts (6, as Apple recommends;

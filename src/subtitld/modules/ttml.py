@@ -70,6 +70,8 @@ Reading:
   CEA-608 or CEA-708 captions it was converted from, tunnelled in
   smpte:data (RP 2052-10, RP 2052-11), is read from those, decoded as an
   SCC or a video's captions are;
+- a DAPT script is read as the dubbing session it describes (see the
+  'dapt' profile below, and _dapt_document);
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -108,6 +110,17 @@ a service that checks what it is given accepts it (PROFILES):
                 ttm:copyright in <head>, and the GSI fields EBU Tech 3360
                 carries over from an STL file (metadata['stl'], by their STL
                 names) as Part M's ebuttm elements
+    'dapt'      DAPT, W3C's Dubbing and Audio description Profiles of TTML2
+                (a Candidate Recommendation), declared in
+                ttp:contentProfiles: a script, not subtitles to show. Each
+                subtitle is a Script Event, a <div> with an xml:id; its
+                speaker a character (a ttm:agent of type character, named
+                by its alias, its talent a person agent); its text a <p>
+                in the subtitle's language and each translation a <p>
+                translated from it (xml:lang and daptm:langSrc); the dub
+                heard for it an <audio> for each clip of a file. Written
+                by _write_dapt, read by _dapt_document, which says what a
+                subtitle has no room for and keeps it
 
 The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
 instead, a PNG beside the file drawn as Subtitld's preview draws it, with
@@ -157,7 +170,7 @@ _TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve'
 # IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
 # all of it in TTML itself.
 _ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none', 'smpte-tt': 'none',
-                'ebu-tt': 'flat'}
+                'ebu-tt': 'flat', 'dapt': 'full'}
 # The profiles built on TTML 1, which has none of TTML2's styling.
 _TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt')
 # The EBU's two, which leave out what EBU-TT does not use: an outline, a
@@ -186,7 +199,7 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
 
-PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt')
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'dapt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
 IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
@@ -1115,7 +1128,7 @@ def _runs(element, styles, props, preserve, out, agent):
             out.append(('\n', _look(props)))
         elif name == 'span':
             _runs(child, styles, styles.of(child, props), preserve, out, agent)
-        elif name and name not in ('metadata', 'set', 'animate', 'style', 'region'):
+        elif name and name not in ('metadata', 'set', 'animate', 'style', 'region', 'audio', 'source', 'data', 'desc'):
             _runs(child, styles, props, preserve, out, agent)
         text(child.tail)
 
@@ -1261,10 +1274,540 @@ def _captions_of(root, clock, tunnels):
     return closed_captions.decode(batches, _CEA608_RATE, 'auto')[0]
 
 
-def _document(text, images=None):
+# DAPT (W3C's Dubbing and Audio description Profiles of TTML2, a Candidate
+# Recommendation): a script for dubbing or audio description, whose
+# events are <div>s with an xml:id, each holding a <p> for each language its
+# text is in, the characters ttm:agents in <head>, recordings <audio>.
+_DAPT_CONTENT = 'http://www.w3.org/ns/ttml/profile/dapt1.0/content'
+_DAPTM_NS = 'http://www.w3.org/ns/ttml/profile/dapt#metadata'
+_TTA_NS = 'http://www.w3.org/ns/ttml#audio'
+_TTM_NS = 'http://www.w3.org/ns/ttml#metadata'
+DAPT_SCRIPT_TYPES = ('originalTranscript', 'translatedTranscript', 'preRecording', 'asRecorded')
+# The registry of what a script and its events represent (DAPT, H.2.2). A
+# value of one's own begins "x-", or extends one of these with an "x-" part.
+DAPT_REPRESENTS = ('audio', 'audio.dialogue', 'audio.nonDialogueSounds', 'visual', 'visual.dialogue',
+                   'visual.nonText', 'visual.text', 'visual.text.title', 'visual.text.credit', 'visual.text.location')
+_DAPT_ON_SCREEN = ('ON', 'OFF', 'ON_OFF', 'OFF_ON')
+# What a text's source language says when it names no language: content
+# with none (zxx), or one not yet determined ('' or und). Such text is
+# original, as is text whose source is its own language.
+_NO_LANGUAGE = ('', 'zxx', 'und')
+_BCP47 = re.compile(r'^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$')
+_DESCRIPTOR = re.compile(r'^[^\s.]+(?:\.[^\s.]+)*$')
+_AUDIO_TYPES = {'.wav': 'audio/wave', '.wave': 'audio/wave', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
+                '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.flac': 'audio/flac', '.m4a': 'audio/mp4',
+                '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff'}
+
+
+def is_dapt(root_or_text):
+    """Whether a document (its root element, or its text) is a DAPT script:
+    it says so in ttp:contentProfiles, or carries DAPT's script type."""
+    root = root_or_text
+    if isinstance(root_or_text, str):
+        try:
+            root = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', _ENTITY.sub(_entity, root_or_text.lstrip('﻿'))))
+        except ET.ParseError:
+            return False
+    return any('/ttml/profile/dapt' in value for value in (_attr(root, 'contentProfiles') or '').split()) \
+        or root.get(f'{{{_DAPTM_NS}}}scriptType') is not None
+
+
+def _dapt(element, name):
+    return element.get(f'{{{_DAPTM_NS}}}{name}')
+
+
+def _original(language, source):
+    """Whether text in `language` from `source` (its daptm:langSrc) is
+    original rather than a translation (DAPT 4.5)."""
+    return source.strip().lower() in _NO_LANGUAGE or source.strip().lower() == language.strip().lower()
+
+
+def _dapt_agents(root):
+    """({character id: name}, {character id: the talent's name}): DAPT's
+    characters are ttm:agents of type character named by an alias, the
+    actor who voices one a person agent its ttm:actor names."""
+    names, persons, actors = {}, {}, {}
+    for element in root.iter():
+        if _local(element.tag) != 'agent' or not _xml_id(element):
+            continue
+        found = {child.get('type'): (child.text or '').strip() for child in element
+                 if _local(child.tag) == 'name' and (child.text or '').strip()}
+        if element.get('type') == 'person':
+            persons[_xml_id(element)] = found.get('full') or next(iter(found.values()), '')
+        else:
+            names[_xml_id(element)] = found.get('alias') or found.get('full') or next(iter(found.values()), '') \
+                or _xml_id(element)
+            actor = next((child.get('agent') for child in element if _local(child.tag) == 'actor'), None)
+            if actor:
+                actors[_xml_id(element)] = actor
+    return names, {key: persons[actor] for key, actor in actors.items() if persons.get(actor)}
+
+
+def _dapt_document(root, clock, styles, folder=None):
+    """(subtitles, language, metadata) of a DAPT script.
+
+    Each Script Event is a subtitle: its times, its character as its
+    speaker, its text in the subtitle's language and the rest as its
+    translations, its recordings, where the files are there to be had, as
+    its dub. The subtitle's language is the one most of the events' original
+    text is in (the text whose daptm:langSrc is its own language, or none),
+    else the document's. What has no home in a subtitle — what an event
+    represents, whether its subject is on screen, its descriptions, the
+    source language of its text, a second character, the mixing of its
+    audio, a recording that is not there — is kept in its 'dapt', and what
+    the script says of itself in metadata['dapt'], for a DAPT written again.
+    """
+    characters, talents = _dapt_agents(root)
+    language = (root.get(_XML_NS + 'lang') or '').strip()
+    events = []
+
+    def lang_of(element, inherited):
+        return (element.get(_XML_NS + 'lang') if element.get(_XML_NS + 'lang') is not None else inherited).strip()
+
+    def source_of(element, inherited):
+        return _dapt(element, 'langSrc') if _dapt(element, 'langSrc') is not None else inherited
+
+    def audio_in(element, base, limit, found, mixing):
+        """The recordings in a text, each timed from the text's start, and
+        the mixing instructions on it."""
+        for child in element:
+            name = _local(child.tag)
+            if name == 'audio':
+                start, stop = _span_of(child, base, limit, clock)
+                sources = [child.get('src')] if child.get('src') else \
+                    [source.get('src') for source in child if _local(source.tag) == 'source' and source.get('src')]
+                found.append({'sources': [source for source in sources if source], 'start': start, 'end': stop,
+                              'type': child.get('type') or '',
+                              'clip_begin': clock.seconds(child.get('clipBegin')),
+                              'clip_end': clock.seconds(child.get('clipEnd'))})
+            elif name == 'animate':
+                said = {_local(key): value for key, value in child.attrib.items()
+                        if _local(key) in ('begin', 'end', 'dur', 'fill', 'gain', 'pan')}
+                if 'gain' in said or 'pan' in said:
+                    mixing.append(said)
+            elif name == 'span':
+                start, stop = _span_of(child, base, limit, clock)
+                audio_in(child, start, stop, found, mixing)
+
+    def walk(element, base, limit, lang, source, represents, agent):
+        name = _local(element.tag)
+        start, stop = _span_of(element, base, limit, clock) if name in ('body', 'div') else (base, limit)
+        lang, source = lang_of(element, lang), source_of(element, source)
+        represents = _dapt(element, 'represents') or represents
+        agent = element.get(f'{{{_TTM_NS}}}agent') or agent
+        children = [child for child in element if _local(child.tag) in ('body', 'div')]
+        if name == 'div' and _xml_id(element) and not children:
+            texts, mixing = [], []
+            for p in (child for child in element if _local(child.tag) == 'p'):
+                p_lang, p_source = lang_of(p, lang), source_of(p, source)
+                runs = []
+                _runs(p, styles, styles.of(p, {}), False, runs, [None])
+                found = []
+                p_start, p_stop = _span_of(p, start, stop, clock)
+                audio_in(p, p_start, p_stop, found, mixing)
+                speak = next((value for inner in p.iter() for key, value in inner.attrib.items()
+                              if _namespace(key) == _TTA_NS and _local(key) == 'speak' and value != 'none'), '')
+                texts.append({'lang': p_lang, 'source': p_source, 'text': markup.tidy(runs).strip(),
+                              'audio': found, 'speak': speak, 'represents': _dapt(p, 'represents') or '',
+                              'agent': p.get(f'{{{_TTM_NS}}}agent') or ''})
+            audio_in(element, start, stop, [], mixing)
+            descriptions = [{'text': (child.text or '').strip(),
+                             **({'type': _dapt(child, 'descType')} if _dapt(child, 'descType') else {})}
+                            for child in element if _local(child.tag) == 'desc' and (child.text or '').strip()]
+            events.append({'id': _xml_id(element), 'start': start, 'end': stop, 'texts': texts,
+                           'represents': represents, 'said': _dapt(element, 'represents') is not None, 'on_screen': (_dapt(element, 'onScreen') or '').strip(),
+                           'agents': (agent or next((text['agent'] for text in texts if text['agent']), '')).split(),
+                           'descriptions': descriptions, 'mixing': mixing})
+            return
+        for child in children:
+            walk(child, start, stop, lang, source, represents, agent)
+
+    body = next((element for element in root if _local(element.tag) == 'body'), None)
+    root_source = _dapt(root, 'langSrc') or ''
+    root_represents = _dapt(root, 'represents') or ''
+    if body is not None:
+        walk(body, 0.0, None, language, root_source, root_represents, root.get(f'{{{_TTM_NS}}}agent'))
+
+    counted = {}
+    for event in events:
+        for text in event['texts']:
+            if text['text'] and _original(text['lang'], text['source']):
+                counted[text['lang']] = counted.get(text['lang'], 0) + 1
+    main = max(counted, key=lambda key: (counted[key], key == language)) if counted else language
+    body_represents = (_dapt(body, 'represents') if body is not None else None) or root_represents
+
+    segments = []
+    for event in events:
+        if event['end'] is None:
+            continue
+        mine = [text for text in event['texts'] if text['lang'].lower() == main.lower()]
+        chosen = next((text for text in mine if _original(text['lang'], text['source'])), mine[0] if mine else None)
+        segment = {'start': round(event['start'], 3), 'end': round(max(event['start'], event['end']), 3),
+                   'text': chosen['text'] if chosen else ''}
+        names = [characters.get(agent, agent) for agent in event['agents']]
+        if names:
+            segment['speaker'] = names[0]
+        translations = {}
+        for text in event['texts']:
+            if text is not chosen and text['text']:
+                translations[text['lang']] = '\n'.join(part for part in (translations.get(text['lang']), text['text'])
+                                                       if part)
+        if translations:
+            segment['translations'] = translations
+        kept = {'id': event['id']}
+        # What it represents, where the event says or it differs from what
+        # the script's body says for all of them.
+        if event['represents'] and (event['said'] or event['represents'] != body_represents):
+            kept['represents'] = event['represents']
+        if event['on_screen'] and event['on_screen'] != 'ON':
+            kept['on_screen'] = event['on_screen']
+        if chosen and chosen['source'] and chosen['source'] != root_source:
+            kept['lang_src'] = chosen['source']
+        if len(names) > 1:
+            kept['characters'] = names
+        if event['descriptions']:
+            kept['descriptions'] = event['descriptions']
+        if event['mixing']:
+            kept['mixing'] = event['mixing']
+        if chosen and chosen['speak']:
+            kept['speak'] = chosen['speak']
+        # The recordings of the subtitle's own text, as its dub, where the
+        # files are there: each a clip of its file, placed where it plays.
+        clips, missing = [], []
+        for audio in (chosen['audio'] if chosen else []):
+            path = _audio_path(audio['sources'], folder)
+            if path is None:
+                missing.append({key: value for key, value in audio.items() if value not in (None, '', [])})
+                continue
+            clips.append((path, audio))
+        if clips:
+            segment['dubbing'] = [_dub_of(clips)]
+        if missing:
+            kept['audio'] = missing
+        segment['dapt'] = kept
+        segments.append(segment)
+    segments.sort(key=lambda segment: (segment['start'], segment['end']))
+
+    about = _metadata(root)
+    script = {'script_type': (_dapt(root, 'scriptType') or '').strip(),
+              'script_represents': ' '.join((_dapt(root, 'scriptRepresents') or '').split()),
+              'lang_src': root_source, 'represents': body_represents}
+    if talents:
+        script['talents'] = {characters.get(key, key): name for key, name in talents.items()}
+    about['dapt'] = {key: value for key, value in script.items() if value}
+    return segments, main, about
+
+
+def _audio_path(sources, folder):
+    """The local file one of an <audio>'s sources names, or None: a path
+    or a file: URL, relative to the script's folder; an embedded or a
+    remote recording is not one."""
+    import os
+    import urllib.parse
+    for source in sources:
+        if source.startswith('#'):
+            continue
+        parsed = urllib.parse.urlparse(source)
+        if parsed.scheme not in ('', 'file') and len(parsed.scheme) > 1:
+            continue
+        path = urllib.parse.unquote(parsed.path if parsed.scheme else source)
+        if folder and not os.path.isabs(path):
+            path = os.path.join(folder, path)
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
+
+
+def _dub_of(clips):
+    """A dub (subtitle['dubbing'][0], modules.dub_clip) of a text's
+    recordings [(path, audio)]: one file played whole is the dub's path, as
+    a recorded take is; more, or a clip of one, are its subclips."""
+    first = min(audio['start'] for _path, audio in clips)
+    if len(clips) == 1 and clips[0][1]['clip_begin'] is None and clips[0][1]['clip_end'] is None:
+        return {'path': clips[0][0], 'start': round(first, 3)}
+    subclips = []
+    for path, audio in clips:
+        begin = audio['clip_begin'] or 0.0
+        end = audio['clip_end']
+        if end is None and audio['end'] is not None:
+            end = begin + (audio['end'] - audio['start'])
+        if end is None or end <= begin:
+            continue
+        subclips.append({'type': 'audio', 'path': path, 'start': round(begin, 3), 'end': round(end, 3),
+                         'offset': round(audio['start'] - first, 3)})
+    dub = {'path': clips[0][0], 'start': round(first, 3)}
+    if subclips:
+        dub['segments'] = subclips
+    return dub
+
+
+def _dapt_problems(root, declared_profile, content_profiles):
+    """What breaks DAPT in a document: its profile and what the script
+    must say of itself, its characters, its events, the languages and what
+    they represent, its timing, its recordings."""
+    problems = []
+    if _DAPT_CONTENT not in content_profiles:
+        problems.append(f'ttp:contentProfiles does not name DAPT\'s content profile ({_DAPT_CONTENT})')
+    if declared_profile:
+        problems.append('ttp:profile is present: DAPT, built on TTML2, prohibits it')
+    script_represents = (_dapt(root, 'scriptRepresents') or '').split()
+    if not script_represents:
+        problems.append('<tt> has no daptm:scriptRepresents: a script says what it is an alternative for')
+
+    def valid(descriptor):
+        if not _DESCRIPTOR.match(descriptor):
+            return False
+        if descriptor in DAPT_REPRESENTS or descriptor.startswith('x-'):
+            return True
+        parts = descriptor.split('.')
+        return any(parts[index].startswith('x-') and '.'.join(parts[:index]) in DAPT_REPRESENTS
+                   for index in range(1, len(parts)))
+    unknown = sorted({value for value in script_represents if not valid(value)})
+    if unknown:
+        problems.append(f'daptm:scriptRepresents names what DAPT\'s registry has not ({", ".join(unknown)}): '
+                        'one of its own begins "x-"')
+    script_type = _dapt(root, 'scriptType')
+    if script_type is None:
+        problems.append('<tt> has no daptm:scriptType')
+    elif script_type.strip() not in DAPT_SCRIPT_TYPES:
+        problems.append(f'daptm:scriptType="{script_type}": it is {", ".join(DAPT_SCRIPT_TYPES)}')
+    if (_attr(root, 'timeBase') or 'media').strip() != 'media':
+        problems.append('DAPT is timed in media time: ttp:timeBase is "media" or not said')
+    if any((element.get('timeContainer') or 'par') != 'par' for element in root.iter()):
+        problems.append('timeContainer other than "par": DAPT has none')
+    framed = any(re.fullmatch(r'\d+(?:\.\d+)?f|\d+:\d{2}:\d{2}:\d+(?:\.\d+)?', (element.get(name) or '').strip())
+                 for element in root.iter() for name in ('begin', 'end', 'dur', 'clipBegin', 'clipEnd'))
+    if framed and _attr(root, 'frameRate') is None:
+        problems.append('Times in frames, but <tt> has no ttp:frameRate')
+
+    parents = {child: parent for parent in root.iter() for child in parent}
+    ids = [_xml_id(element) for element in root.iter() if _xml_id(element)]
+    twice = sorted({value for value in ids if ids.count(value) > 1})
+    if twice:
+        problems.append(f'xml:ids used twice ({", ".join(twice)}): each identifier is the script\'s once')
+    agents = {_xml_id(element): element for element in root.iter() if _local(element.tag) == 'agent'}
+    persons = {key for key, element in agents.items() if element.get('type') == 'person'}
+    for key, element in agents.items():
+        holder = parents.get(element)
+        if holder is None or _local(holder.tag) != 'metadata' or _local(parents.get(holder, holder).tag) != 'head':
+            problems.append(f'ttm:agent {key or "(no xml:id)"} outside <head>\'s <metadata>')
+        if element.get('type') == 'character':
+            if not key:
+                problems.append('A character with no xml:id: events name characters by it')
+            if not any(_local(child.tag) == 'name' and child.get('type') == 'alias' for child in element):
+                problems.append(f'Character {key} has no ttm:name of type alias')
+            for actor in (child for child in element if _local(child.tag) == 'actor'):
+                if actor.get('agent') not in persons:
+                    problems.append(f'Character {key}\'s ttm:actor names no person agent the script has')
+        if element.get('type') == 'person' and not any(_local(child.tag) == 'name' and child.get('type') == 'full'
+                                                       for child in element):
+            problems.append(f'Person {key} has no ttm:name of type full')
+    named = sorted({value for element in root.iter() for value in (element.get(f'{{{_TTM_NS}}}agent') or '').split()
+                    if value not in agents})
+    if named:
+        problems.append(f'Events name characters the script does not have: {", ".join(named)}')
+
+    homeless, unrepresented, wide, sources, screens = 0, 0, set(), set(), set()
+
+    def walk(element, represents, inside_event):
+        nonlocal homeless, unrepresented
+        represents = _dapt(element, 'represents') or represents
+        value = _dapt(element, 'represents')
+        if value is not None and not (valid(value) and any(value == top or value.startswith(top + '.')
+                                                          for top in script_represents)):
+            wide.add(value)
+        source = _dapt(element, 'langSrc')
+        if source is not None and source.strip() and not _BCP47.match(source.strip()):
+            sources.add(source)
+        name = _local(element.tag)
+        if name == 'div' and _dapt(element, 'onScreen') is not None and \
+                _dapt(element, 'onScreen').strip() not in _DAPT_ON_SCREEN:
+            screens.add(_dapt(element, 'onScreen'))
+        event = inside_event or (name == 'div' and bool(_xml_id(element)))
+        if name == 'p':
+            if not inside_event:
+                homeless += 1
+            elif not represents:
+                unrepresented += 1
+        for child in element:
+            walk(child, represents, event)
+    walk(root, '', False)
+    if homeless:
+        problems.append(f'{homeless} <p> element(s) in no <div> with an xml:id: text belongs to a Script Event')
+    if unrepresented:
+        problems.append(f'{unrepresented} text(s) with no daptm:represents, said or inherited')
+    if wide:
+        problems.append(f'daptm:represents that is not one of the script\'s daptm:scriptRepresents, or below one '
+                        f'({", ".join(sorted(wide))})')
+    if sources:
+        problems.append(f'daptm:langSrc that is not a language tag ({", ".join(sorted(sources))})')
+    if screens:
+        problems.append(f'daptm:onScreen="{", ".join(sorted(screens))}": it is ON, OFF, ON_OFF or OFF_ON')
+    untyped = 0
+    for element in root.iter():
+        if _local(element.tag) != 'audio':
+            continue
+        for holder in [element] + [child for child in element if _local(child.tag) == 'source']:
+            if holder.get('src') and not holder.get('src').startswith('#') and not holder.get('type'):
+                untyped += 1
+    if untyped:
+        problems.append(f'{untyped} recording(s) linked with no type: DAPT asks for the audio\'s MIME type')
+    return problems
+
+
+def _dapt_text(text):
+    """A subtitle's text as a DAPT <p> holds it: its formatting as TTML's
+    spans, without the place a subtitle sits in, which a script has not."""
+    _lead, rest = markup.split_lead(str(text or '').replace('\r\n', '\n').replace('\r', '\n'))
+    rest = '\n'.join(line.strip() for line in rest.split('\n') if line.strip())
+    return _content(rest) if markup.plain(rest).strip() else ''
+
+
+def _dapt_audio(segment, start, audio_base):
+    """<audio> elements for the dub of `segment` that is heard (its first
+    un-muted take), each clip of a file placed where it plays, from the
+    text's start, and linked relative to `audio_base`."""
+    import os
+    import urllib.parse
+    dubs = segment.get('dubbing') or []
+    dub = next((take for index, take in enumerate(dubs) if not take.get('muted', index != 0)), dubs[0] if dubs else None)
+    if not isinstance(dub, dict):
+        return []
+    begin = float(dub.get('start', start) or start)
+    clips = [clip for clip in (dub.get('segments') or []) if isinstance(clip, dict) and clip.get('path')]
+    if not clips and dub.get('path'):
+        clips = [{'path': dub['path'], 'offset': 0.0}]
+    out = []
+    for clip in clips:
+        path = str(clip['path'])
+        if audio_base:
+            try:
+                path = os.path.relpath(path, audio_base)
+            except ValueError:
+                pass
+        source = urllib.parse.quote(path.replace(os.sep, '/'))
+        kind = _AUDIO_TYPES.get(os.path.splitext(path)[1].lower(), 'audio/wave')
+        attrs = [f'src={quoteattr(source)}', f'type="{kind}"']
+        at = begin + float(clip.get('offset') or 0) - start
+        if at > 0.0005:
+            attrs.append(f'begin="{format_time(at)}"')
+        if clip.get('start') is not None and 'end' in clip:
+            attrs.append(f'clipBegin="{format_time(float(clip["start"]))}"')
+            if clip.get('end') is not None:
+                attrs.append(f'clipEnd="{format_time(float(clip["end"]))}"')
+        out.append(f'<audio {" ".join(attrs)}/>')
+    return out
+
+
+def _write_dapt(segments, language, metadata=None, audio_base=None):
+    """A DAPT script of `segments`: each subtitle a Script Event, its
+    speaker its character, its text the original <p> in `language` and its
+    translations a <p> each, translated from it; the dub heard for it, an
+    <audio> for each clip. What the script said of itself when it was read
+    (metadata['dapt']) and what each event said (its 'dapt') is written
+    again; a new script is a dubbing script of dialogue, as recorded where
+    there are dubs, translated where there are translations."""
+    tag = export_options.language_tag(language)
+    script = dict((metadata or {}).get('dapt') or {})
+    ordered = sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0))))
+    translated = sorted({code for segment in ordered for code, text in (segment.get('translations') or {}).items()
+                         if isinstance(segment.get('translations'), dict) and str(text or '').strip()})
+    dubbed = any(segment.get('dubbing') for segment in ordered)
+    script_type = script.get('script_type') if script.get('script_type') in DAPT_SCRIPT_TYPES else \
+        'asRecorded' if dubbed else 'translatedTranscript' if translated else 'originalTranscript'
+    script_represents = ' '.join(str(script.get('script_represents') or 'audio.dialogue').split())
+    represents = script.get('represents') or script_represents.split()[0]
+    source = script.get('lang_src') if script.get('lang_src') is not None and 'lang_src' in script else tag
+
+    characters, persons = {}, {}
+    talents = script.get('talents') or {}
+    for segment in ordered:
+        for name in [str(segment.get('speaker') or '').strip()] + list((segment.get('dapt') or {}).get('characters') or [])[1:]:
+            if name and name not in characters:
+                characters[name] = f'character_{len(characters) + 1}'
+                if talents.get(name) and talents[name] not in persons:
+                    persons[talents[name]] = f'actor_{len(persons) + 1}'
+    head = []
+    for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
+        said = str((metadata or {}).get(key) or '').strip()
+        if said:
+            head.append(f'      <{name}>{escape(said)}</{name}>')
+    # The talents before the characters they voice, all in the first
+    # <metadata>, as DAPT recommends.
+    for name, agent_id in persons.items():
+        head.append(f'      <ttm:agent type="person" xml:id="{agent_id}"><ttm:name type="full">{escape(name)}'
+                    f'</ttm:name></ttm:agent>')
+    for name, agent_id in characters.items():
+        actor = f'<ttm:actor agent="{persons[talents[name]]}"/>' if talents.get(name) in persons else ''
+        head.append(f'      <ttm:agent type="character" xml:id="{agent_id}"><ttm:name type="alias">{escape(name)}'
+                    f'</ttm:name>{actor}</ttm:agent>')
+
+    used = set(characters.values()) | set(persons.values())
+    events, audio_used = [], False
+    for number, segment in enumerate(ordered, start=1):
+        kept = segment.get('dapt') if isinstance(segment.get('dapt'), dict) else {}
+        event_id = str(kept.get('id') or '')
+        if not re.fullmatch(r'[A-Za-z_][\w.-]*', event_id) or event_id in used:
+            event_id = next(f'e{n}' for n in range(number, number + len(ordered) + 2) if f'e{n}' not in used)
+        used.add(event_id)
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', start)))
+        attrs = [f'xml:id="{event_id}"', f'begin="{format_time(start)}"', f'end="{format_time(end)}"']
+        names = list(kept.get('characters') or []) or [str(segment.get('speaker') or '').strip()]
+        agents = [characters[name] for name in names if name in characters]
+        if agents:
+            attrs.append(f'ttm:agent="{" ".join(agents)}"')
+        if kept.get('represents'):
+            attrs.append(f'daptm:represents={quoteattr(str(kept["represents"]))}')
+        if kept.get('on_screen') in _DAPT_ON_SCREEN and kept['on_screen'] != 'ON':
+            attrs.append(f'daptm:onScreen="{kept["on_screen"]}"')
+        lines = [f'    <div {" ".join(attrs)}>']
+        for description in kept.get('descriptions') or []:
+            if isinstance(description, dict) and str(description.get('text') or '').strip():
+                kind = f' daptm:descType={quoteattr(str(description["type"]))}' if description.get('type') else ''
+                lines.append(f'      <ttm:desc{kind}>{escape(str(description["text"]).strip())}</ttm:desc>')
+        inner = []
+        for mix in kept.get('mixing') or []:
+            if isinstance(mix, dict):
+                said = ' '.join(f'{"tta:" if key in ("gain", "pan") else ""}{key}={quoteattr(str(value))}'
+                                for key, value in mix.items() if key in ('begin', 'end', 'dur', 'fill', 'gain', 'pan'))
+                inner.append(f'<animate {said}/>')
+        recordings = _dapt_audio(segment, start, audio_base)
+        audio_used = audio_used or bool(recordings or inner or kept.get('speak'))
+        speak = f' tta:speak={quoteattr(str(kept["speak"]))}' if kept.get('speak') else ''
+        own_source = kept.get('lang_src') if kept.get('lang_src') is not None else source
+        text = _dapt_text(segment.get('text'))
+        lines.append(f'      <p xml:lang="{tag}" daptm:langSrc={quoteattr(str(own_source))}{speak}>'
+                     f'{"".join(inner + recordings)}{text}</p>')
+        for code in translated:
+            other = _dapt_text((segment.get('translations') or {}).get(code))
+            if other:
+                # Translated from the subtitle's own language: DAPT names the
+                # source by the language of the text it came from.
+                lines.append(f'      <p xml:lang="{export_options.language_tag(code)}" daptm:langSrc="{tag}">'
+                             f'{other}</p>')
+        lines.append('    </div>')
+        events += lines
+
+    namespaces = ['xmlns="http://www.w3.org/ns/ttml"', 'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
+                  'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"', f'xmlns:ttm="{_TTM_NS}"',
+                  f'xmlns:daptm="{_DAPTM_NS}"']
+    if audio_used:
+        namespaces.append(f'xmlns:tta="{_TTA_NS}"')
+    root = ' '.join(namespaces + [f'ttp:contentProfiles="{_DAPT_CONTENT}"', f'xml:lang="{tag}"',
+                                  f'daptm:langSrc={quoteattr(str(source))}',
+                                  f'daptm:scriptRepresents={quoteattr(script_represents)}',
+                                  f'daptm:scriptType="{script_type}"'])
+    return '\n'.join(['<?xml version="1.0" encoding="UTF-8"?>', f'<tt {root}>', '  <head>', '    <metadata>', *head,
+                      '    </metadata>', '  </head>', f'  <body daptm:represents={quoteattr(represents)}>', *events,
+                      '  </body>', '</tt>', ''])
+
+
+def _document(text, images=None, folder=None):
     """(subtitles, language, metadata) in TTML text; with `images`, a dict,
     the pictures go in it as 'pictures' and the picture's size as 'size',
-    as `read_images` gives them."""
+    as `read_images` gives them. A DAPT script's recordings are found in
+    `folder`, where the script is."""
     text = _ENTITY.sub(_entity, text.lstrip('﻿'))
     # The text is decoded already: the declaration's encoding no longer applies.
     text = re.sub(r'^\s*<\?xml[^>]*\?>', '', text)
@@ -1274,6 +1817,8 @@ def _document(text, images=None):
     clock = _Clock(root)
     frame = _Frame(root)
     styles = _Styles(root)
+    if images is None and is_dapt(root):
+        return _dapt_document(root, clock, styles, folder)
     regions = {_xml_id(element): element for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
     agents = _agents(root)
@@ -1538,8 +2083,9 @@ def read(path):
     """(subtitles, language, metadata) in the TTML file at `path`: the
     language as the file's xml:lang gives it, or '', and what the file says
     about itself (its title, description and copyright)."""
+    import os
     with open(path, 'rb') as ttml_file:
-        return _document(_text_of(ttml_file.read()))
+        return _document(_text_of(ttml_file.read()), folder=os.path.dirname(os.path.abspath(path)))
 
 
 def read_images(path):
@@ -1604,6 +2150,8 @@ def check(text, profile='imsc1.1'):
         problems += _smpte_problems(root, declared_profile)
     if profile == 'ebu-tt':
         problems += _ebu_tt_problems(root, standards)
+    if profile == 'dapt':
+        problems += _dapt_problems(root, declared_profile, content_profiles)
 
     cells = (_attr(root, 'cellResolution') or '').split()
     if cells:
@@ -2327,7 +2875,7 @@ def _tunnel_608(segments):
 
 
 def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None,
-          *, fps=None, tunnel=False, start=None, drop_frame=False):
+          *, fps=None, tunnel=False, start=None, drop_frame=False, audio_base=None):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
@@ -2335,12 +2883,15 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     `tunnel`, a SMPTE-TT file carries the subtitles as CEA-608 captions too.
     EBU-TT with a frame rate is timed in SMPTE timecode, from a programme
     start of `start` ("HH:MM:SS:FF", 00:00:00:00 without one), drop-frame
-    at 29.97 with `drop_frame`.
+    at 29.97 with `drop_frame`. A DAPT script links its recordings relative
+    to `audio_base`, the folder it is written in.
 
     A Japanese file in an IMSC profile writes its italics as tts:shear:
     that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
+    if profile == 'dapt':
+        return _write_dapt(segments, language, metadata, audio_base)
     tunnel = bool(tunnel) and profile == 'smpte-tt'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     annotations = _ANNOTATIONS[profile]
@@ -2575,6 +3126,9 @@ def write_images(pictures, size, language='en', profile='imsc1.1-image', metadat
 def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1',
          metadata=None, **options):
     """Write `segments` to `path` as TTML, in UTF-8; `options` as write()
-    takes them."""
+    takes them. A DAPT script's recordings are linked from where it is."""
+    import os
+    if profile == 'dapt':
+        options.setdefault('audio_base', os.path.dirname(os.path.abspath(path)))
     with open(path, 'w', encoding='utf-8', newline='\n') as ttml_file:
         ttml_file.write(write(segments, language, agents, look, preview, profile, metadata, **options))
