@@ -1334,8 +1334,8 @@ QGroupBox::title {
     border-radius: 0;
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
-    border-width: 0 24 0 2;
-    border-image: url(graphics:titleBar_left_export_quick_button_normal.svg) 0 24 0 2 stretch stretch;
+    border-width: 0 24 0 3;
+    border-image: url(graphics:titleBar_left_export_quick_button_normal.svg) 0 24 0 3 stretch stretch;
     background-color: transparent;
     color: #ffffff;
     font-family: 'Montserrat';
@@ -1346,11 +1346,11 @@ QGroupBox::title {
 }
 
 #titleBar_left_export_button #titleBar_left_export_quick_button:hover {
-    border-image: url(graphics:titleBar_left_export_quick_button_hover.svg) 0 24 0 2 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_quick_button_hover.svg) 0 24 0 3 stretch stretch;
 }
 
 #titleBar_left_export_button #titleBar_left_export_quick_button:pressed {
-    border-image: url(graphics:titleBar_left_export_quick_button_pressed.svg) 0 24 0 2 stretch stretch;
+    border-image: url(graphics:titleBar_left_export_quick_button_pressed.svg) 0 24 0 3 stretch stretch;
 }
 /* 
 #titleBar_left_information_container {
