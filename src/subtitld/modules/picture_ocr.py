@@ -2,9 +2,9 @@
 
 Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a BDN's PNGs, a
 TTML file in IMSC's Image Profile or a DCP's subtitles with pictures in
-them, or reading a picture track of a video, Subtitld decodes each subtitle
-into a picture (vobsub, pgs, `bdn_pictures`, `imsc_pictures`,
-`dcp_pictures`), and an
+them, or reading a picture track of a video (a DVB subtitle stream among
+them), Subtitld decodes each subtitle into a picture (vobsub, pgs, dvbsub,
+`bdn_pictures`, `imsc_pictures`, `dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
 file's words are better than any reading of them. `OCRJob` runs the whole
@@ -36,6 +36,8 @@ from subtitld.modules.addons.provider import TASK_OCR_RECOGNIZE
 # Pictures read with less confidence than this are read again the other way.
 RETRY_BELOW = 0.6
 PICTURE_EXTENSIONS = ('.sup', '.idx')
+# Transport streams, whose DVB subtitles read_file reads.
+TRANSPORT_STREAM_EXTENSIONS = ('.ts', '.m2ts', '.mts')
 
 
 def ocr_provider():
@@ -68,9 +70,13 @@ _IMSC_SCREEN = (1920, 1080)
 
 def read_file(path):
     """(pictures, language tag the file gives or '') of a picture subtitle file."""
-    from subtitld.modules import pgs, vobsub
+    from subtitld.modules import dvbsub, pgs, vobsub
     if str(path).lower().endswith('.sup'):
         return pgs.read(path), ''
+    if str(path).lower().endswith(TRANSPORT_STREAM_EXTENSIONS):
+        # The first DVB subtitle service the PMT lists.
+        pictures, info = dvbsub.read(path)
+        return pictures, info['language']
     if str(path).lower().endswith('.xml') and _is_dcp(path):
         return dcp_pictures(path)
     if str(path).lower().endswith('.xml') and _is_bdn(path):
@@ -295,13 +301,16 @@ class OCRJob(QObject):
         return cls(lambda _decoder: read_file(path), provider, language, parent)
 
     @classmethod
-    def for_track(cls, video, index, codec, language, provider, parent=None):
+    def for_track(cls, video, index, codec, language, provider, parent=None, pid=None, page=None):
+        """A picture track of a video; `pid` and `page` choose a DVB
+        subtitle stream of a transport stream and a service in it."""
         from subtitld.modules import video_subtitles
 
         def read(decoder):
             return video_subtitles.extract_pictures(
                 video, index, codec, ffmpeg=session.FFMPEG_EXECUTABLE, ffprobe=session.FFPROBE_EXECUTABLE,
-                folder=session.PATH_TEMP, startupinfo=session.STARTUPINFO, started=decoder.started_process), ''
+                folder=session.PATH_TEMP, startupinfo=session.STARTUPINFO, started=decoder.started_process,
+                pid=pid, page=page), ''
         return cls(read, provider, language, parent)
 
     def start(self):

@@ -442,7 +442,7 @@ def _ocr_engine():
 
 def _readable(track, ocr=None):
     """Whether the subtitles engine can read the track: a text one, a
-    teletext page, or a PGS or VobSub one when an OCR add-on (`ocr`) is
+    teletext page, or a PGS, VobSub or DVB one when an OCR add-on (`ocr`) is
     installed."""
     from subtitld.modules import video_subtitles
     return track['kind'] in ('text', 'teletext') or (ocr is not None and track['kind'] == 'pictures'

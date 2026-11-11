@@ -1268,5 +1268,7 @@
     "export_dialog.subtitle_track_note_ass": "The picture and sound are copied as they are. An ASS track keeps where each subtitle sits and the look of the preview.",
     "import_panel.subtitles_hearing_impaired": "for the hard of hearing",
     "export_dialog.video_ts_teletext": "Transport stream (.ts), teletext",
-    "export_dialog.subtitle_track_note_teletext": "The picture and sound are copied as they are. Each language is a teletext page, 888 and up, double height and boxed, in the colours teletext has; letters its character set lacks are added as Level 1.5 decoders show them."
+    "export_dialog.subtitle_track_note_teletext": "The picture and sound are copied as they are. Each language is a teletext page, 888 and up, double height and boxed, in the colours teletext has; letters its character set lacks are added as Level 1.5 decoders show them.",
+    "export_dialog.video_ts_dvb": "Transport stream (.ts), DVB subtitles",
+    "export_dialog.subtitle_track_note_dvb": "The picture and sound are copied as they are. Each subtitle is drawn as the preview shows it, in up to 256 colours, as a DVB subtitle for a 1920x1080 display (720x576 for a standard definition video); each language a stream of its own."
 }

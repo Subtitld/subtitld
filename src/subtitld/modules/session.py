@@ -237,6 +237,7 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MOV TEXT': {'description': 'QuickTime video with a subtitle track', 'extensions': ['mov']},
     'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
     'TS': {'description': 'MPEG transport stream with teletext subtitles', 'extensions': ['ts']},
+    'TS DVB': {'description': 'MPEG transport stream with DVB subtitles', 'extensions': ['ts']},
 }
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {

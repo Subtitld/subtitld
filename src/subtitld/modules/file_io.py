@@ -1455,9 +1455,11 @@ def process_video_file(video_file=False):
     # tracks, from this same probe. Project files keep only the video's
     # path and come here again on open, so older ones get it too.
     # A teletext stream lists its pages in the file's PMT, read at its
-    # start, which the probe does not give.
-    video_metadata['subtitle_tracks'] = video_subtitles.with_teletext_pages(
-        video_subtitles.tracks(json_result, language_of=_known_language), video_file, language_of=_known_language)
+    # start, which the probe does not give, and a DVB subtitle stream its
+    # services.
+    video_metadata['subtitle_tracks'] = video_subtitles.with_dvb_pages(video_subtitles.with_teletext_pages(
+        video_subtitles.tracks(json_result, language_of=_known_language), video_file, language_of=_known_language),
+        video_file, language_of=_known_language)
     video_metadata['filepath'] = video_file
     video_metadata['scenes'] = []
 

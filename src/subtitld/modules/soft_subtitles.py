@@ -2,7 +2,7 @@
 subtitles a player lists and turns on and off, rather than drawn into the
 picture or kept in a file beside it.
 
-Three kinds of file take them:
+Four kinds of file take them:
 
 - **MP4 and QuickTime (.mp4, .m4v, .mov)**: 3GPP timed text (3GPP TS
   26.245), the `tx3g` track FFmpeg calls mov_text, which is what iTunes,
@@ -17,6 +17,9 @@ Three kinds of file take them:
 - **MPEG transport stream (.ts)**: DVB teletext, a page for each language
   (888 and up), as broadcasters deliver subtitles; the teletext module
   writes it.
+- **MPEG transport stream (.ts), DVB subtitles**: each subtitle a picture,
+  drawn as the preview draws it, in a DVB subtitle stream (EN 300 743) for
+  each language; the dvbsub module writes it.
 
 The picture and sound are copied as they are, so the export is quick and
 loses nothing of them; the video's own subtitle tracks are left out, since
@@ -53,8 +56,12 @@ CONTAINERS = {
     'MOV TEXT': {'extension': 'mov', 'codecs': ('mov_text',)},
     'MKV': {'extension': 'mkv', 'codecs': ('srt', 'ass')},
     'TS': {'extension': 'ts', 'codecs': ('teletext',)},
+    'TS DVB': {'extension': 'ts', 'codecs': ('dvb_subtitle',)},
 }
-DEFAULT_CODEC = {'MP4': 'mov_text', 'MOV TEXT': 'mov_text', 'MKV': 'srt', 'TS': 'teletext'}
+DEFAULT_CODEC = {'MP4': 'mov_text', 'MOV TEXT': 'mov_text', 'MKV': 'srt', 'TS': 'teletext',
+                 'TS DVB': 'dvb_subtitle'}
+# The kinds of file with no forced track: a viewer chooses one or none.
+UNFORCED = frozenset({'TS', 'TS DVB'})
 
 # FFmpeg's mov_text encoder changes the colour of a run for \1c alone; the
 # \c Subtitld's ASS writes (ASS's own short form of it) it leaves out. A
@@ -146,6 +153,10 @@ def write_video(video, output, tracks, container='MP4', codec=None, forced=False
     if container == 'TS':
         from subtitld.modules import teletext
         return teletext.write_video(video, output, tracks, ffmpeg=ffmpeg, startupinfo=startupinfo)
+    if container == 'TS DVB':
+        from subtitld.modules import dvbsub
+        return dvbsub.write_video(video, output, tracks, width=width, height=height, ffmpeg=ffmpeg,
+                                  startupinfo=startupinfo)
     codec = codec_for(container, codec)
     extension = '.srt' if codec == 'srt' else '.ass'
     written = []
