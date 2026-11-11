@@ -3,10 +3,11 @@
 The options apply to the formats that hold only timed text (SRT, VTT, HLS,
 CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
-XML, LRC, UltraStar, KAR, TTXT and the player-era formats); USF, USFX and
-JSON keep the project as it is. Karaoke timing is formatting
-(modules.karaoke): removing the formatting takes the word timing of LRC,
-UltraStar, KAR and TTXT with it.
+XML, LRC, UltraStar, KAR, TTXT and the player-era formats) and to VOBSUB and
+PGS, whose pictures are drawn of the text they write; USF, USFX and JSON
+keep the project as it is. Karaoke timing is formatting (modules.karaoke):
+removing the formatting takes the word timing of LRC, UltraStar, KAR and
+TTXT with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -99,6 +100,9 @@ And for a format of its own:
     mpegts       HLS: the MPEG-2 timestamp each segment maps its cue time
                  0 to (900000, 10 s at 90 kHz, where most encoders start
                  a stream's clock; or 0)
+    vobsub_size  VOBSUB: the frame its pictures are placed on, 'video' (the
+                 video's), 'pal' (720x576) or 'ntsc' (720x480), a key of
+                 modules.vobsub.SIZES (modules.vobsub.frame_size)
 """
 
 from subtitld.modules import markup
@@ -107,7 +111,8 @@ TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAM
                 'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
-                'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')
+                'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
+                'VOBSUB', 'PGS')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)

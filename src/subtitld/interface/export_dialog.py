@@ -24,10 +24,11 @@ from subtitld.modules import pac
 from subtitld.modules import session
 from subtitld.modules import soft_subtitles
 from subtitld.modules import ttml
+from subtitld.modules import vobsub
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
-                    'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC']
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
 # drop-frame for the two whose tools write it.
@@ -324,6 +325,22 @@ class _SubtitlesPanel(QWidget):
         self.mpegts_combo.combobox.addItem(_('export_dialog.mpegts_zero'), 0)
         row.addWidget(self.mpegts_combo, 1)
         self.layout().addWidget(self.stream_options)
+        # VobSub: the frame its pictures are on, a DVD's (PAL or NTSC) or,
+        # for a VobSub kept beside a video file, the video's.
+        self.vobsub_options = QWidget()
+        row = QHBoxLayout(self.vobsub_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.vobsub_size_combo = utils.LabeledComboBox()
+        self.vobsub_size_combo.setLabel(_('export_dialog.picture_size'))
+        video_size = (int(session.VIDEO.get('width') or 0), int(session.VIDEO.get('height') or 0))
+        if all(video_size):
+            self.vobsub_size_combo.combobox.addItem(
+                _('export_dialog.picture_size_video').format(size=f'{video_size[0]}x{video_size[1]}'), 'video')
+        self.vobsub_size_combo.combobox.addItem(_('export_dialog.picture_size_pal'), 'pal')
+        self.vobsub_size_combo.combobox.addItem(_('export_dialog.picture_size_ntsc'), 'ntsc')
+        row.addWidget(self.vobsub_size_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.vobsub_options)
 
         # ASS and TTML: the look of their one style.
         self.ass_options = QWidget()
@@ -410,6 +427,10 @@ class _SubtitlesPanel(QWidget):
         _select(self.segment_combo, remembered.get('segment_duration', hls.SEGMENT_DURATION))
         _select(self.mpegts_combo, remembered.get('mpegts', hls.MPEGTS))
         _select(self.carriage_combo, remembered.get('mp4_text', 'wvtt'))
+        # The video's frame when there is a video; else the last used, else
+        # the DVD frame of the video's rate.
+        if not _select(self.vobsub_size_combo, 'video') and not _select(self.vobsub_size_combo, remembered.get('vobsub_size')):
+            _select(self.vobsub_size_combo, 'ntsc' if vobsub.frame_size(fps=video_fps) == vobsub.SIZES['ntsc'] else 'pal')
         _select(self.pac_code_page_combo, remembered.get('pac_code_page', 'auto'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
@@ -462,6 +483,7 @@ class _SubtitlesPanel(QWidget):
         self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP') + DVD_DROP_FRAME and _has_drop_frame(rate)))
         self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
         self.cavena_options.setVisible(fmt == 'CAVENA890')
+        self.vobsub_options.setVisible(fmt == 'VOBSUB')
         self.pac_options.setVisible(fmt == 'PAC')
         self.stl_options.setVisible(fmt == 'STL')
         self.stream_options.setVisible(fmt in ('HLS', 'CMFT', 'DASH'))
@@ -501,7 +523,8 @@ class _SubtitlesPanel(QWidget):
 
     def _run_check(self, *_args):
         """What the TTML this export writes would break in its profile:
-        the file written as it will be, then read back by ttml.check."""
+        the file written as it will be, then read back by ttml.check. For
+        VobSub and PGS, what their pictures will be."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
         if fmt == 'BDN':
@@ -513,6 +536,14 @@ class _SubtitlesPanel(QWidget):
             smpte = self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE
             self.check_label.setText(_('export_dialog.dcp_pictures_note_smpte' if smpte
                                        else 'export_dialog.dcp_pictures_note_interop'))
+            self.check_label.setVisible(True)
+            return
+        if fmt in ('VOBSUB', 'PGS'):
+            # A disc's pictures: what they will be, or that this build
+            # cannot draw them.
+            from subtitld.interface import subtitle_renderer
+            self.check_label.setText(_('export_dialog.picture_note_' + fmt.lower()) if subtitle_renderer.available()
+                                     else _('export_dialog.picture_no_renderer'))
             self.check_label.setVisible(True)
             return
         if fmt not in ('DFXP', 'TTML') or not segments:
@@ -567,6 +598,7 @@ class _SubtitlesPanel(QWidget):
             'segment_duration': self.segment_combo.combobox.currentData(),
             'mpegts': self.mpegts_combo.combobox.currentData(),
             'mp4_text': self.carriage_combo.combobox.currentData(),
+            'vobsub_size': self.vobsub_size_combo.combobox.currentData(),
             'pac_code_page': self.pac_code_page_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
@@ -590,6 +622,8 @@ class _SubtitlesPanel(QWidget):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])
         if fmt == 'CAVENA890':
             options['start'] = choices['cavena_start']
+        if fmt == 'VOBSUB':
+            options['vobsub_size'] = choices['vobsub_size']
         if fmt == 'PAC':
             options['pac_code_page'] = choices['pac_code_page']
         if fmt in ('ASS', 'DFXP', 'TTML'):

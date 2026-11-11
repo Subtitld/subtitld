@@ -4,6 +4,7 @@ import re
 import hashlib
 import shutil
 import sys
+import tempfile
 import threading
 import zipfile
 import time
@@ -41,6 +42,7 @@ from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import pac
+from subtitld.modules import pgs
 from subtitld.modules import plaintext
 from subtitld.modules import sami
 from subtitld.modules import sbv
@@ -57,6 +59,7 @@ from subtitld.modules import usf
 from subtitld.modules import ultrastar
 from subtitld.modules import utils
 from subtitld.modules import video_subtitles
+from subtitld.modules import vobsub
 
 
 class CorruptedProjectFileError(Exception):
@@ -1876,6 +1879,29 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                     else language,
                     profile=options['profile'], metadata=SUBTITLE.get('metadata')))
+
+        elif subtitle_format in ('VOBSUB', 'PGS'):
+            # A DVD's VobSub and a Blu-ray's PGS: each subtitle drawn as the
+            # preview draws it, then cut to the colours the disc's pictures
+            # hold. PGS on the video's frame, else a 1920x1080 one; VobSub
+            # on DVD's PAL or NTSC frame as the export asks, else the
+            # video's, else the DVD frame of its rate. The drawings go once
+            # they are encoded.
+            from subtitld.interface import subtitle_pictures
+            width, height = int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)
+            if subtitle_format == 'PGS':
+                size = (width or 1920, height or 1080)
+            else:
+                size = vobsub.frame_size(options.get('vobsub_size'), width, height, VIDEO.get('framerate'))
+            with tempfile.TemporaryDirectory(prefix='subtitld-pictures-') as folder:
+                drawn = subtitle_pictures.draw(segments, size, folder)
+                pictures = (dict(picture, rgba=subtitle_pictures.rgba(picture['path'])) for picture in drawn)
+                if subtitle_format == 'PGS':
+                    pgs.save(final_file, pictures, size, fps=VIDEO.get('framerate'))
+                else:
+                    vobsub.save(final_file, pictures, size,
+                                language=options.get('language') if options.get('text') == 'translation'
+                                and options.get('language') else language)
 
         elif subtitle_format in ['DFXP', 'TTML']:
             # In the language of the text written: a translation's alone, the

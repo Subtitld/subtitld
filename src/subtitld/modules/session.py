@@ -213,8 +213,11 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on
-# (modules.picture_ocr) and are never saved as such. A VobSub's .sub is in
-# the list above, as MicroDVD's, whose extension it shares.
+# (modules.picture_ocr). They are exported, each subtitle drawn as the
+# preview draws it (modules.vobsub, modules.pgs), but are not a format to
+# save a project in, as its text would not come back. A VobSub's .sub is
+# in the list above, as MicroDVD's, whose extension it shares; its .idx
+# names both.
 LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     'VOBSUB': {'description': 'DVD VobSub subtitles (pictures)', 'extensions': ['idx']},
     'PGS': {'description': 'Blu-ray PGS subtitles (pictures)', 'extensions': ['sup']},
