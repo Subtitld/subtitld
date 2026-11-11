@@ -149,6 +149,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
     'FCPXML': {'description': 'Final Cut Pro XML captions', 'extensions': ['fcpxml', 'fcpxmld']},
     'CAP': {'description': 'Cheetah CAP Caption format', 'extensions': ['cap']},
+    # Lambda's .cap is text and Cheetah's binary: the bytes tell them apart
+    # (file_io), and Cheetah's, first here, keeps the extension.
+    'LAMBDACAP': {'description': 'Lambda CAP Japanese Subtitle format', 'extensions': ['cap']},
     'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
     # The DVD authoring tools' scripts (modules.dvd_scripts). DVD Studio
     # Pro's .stl is EBU STL's extension and Spruce's; the rest share .txt,

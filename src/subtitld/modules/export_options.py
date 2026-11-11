@@ -1,9 +1,9 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, CAVENA890, AVID, FCPXML,
-DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC, UltraStar and the
-player-era formats); USF, USFX and JSON keep the project as it is. Karaoke timing is formatting
+DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID,
+FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC, UltraStar and
+the player-era formats); USF, USFX and JSON keep the project as it is. Karaoke timing is formatting
 (modules.karaoke): removing the formatting takes the word timing of LRC
 and UltraStar with it.
 
@@ -30,13 +30,13 @@ And for a format of its own:
                  European), 'cp1251' (Cyrillic) or 'cp949' (Korean)
     line_ends    SRT, SAMI, SUB, LRC, AVID and the DVD authoring scripts:
                  'lf' or 'crlf'
-    fps          SUB, PAC, FPC, CAP, CAVENA890, AVID and the DVD authoring
-                 scripts: the frame rate its frame numbers count in;
-                 FCPXML: its sequence's, whose frames the captions are on
-    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID
-                 and FCPXML the same, at 29.97 and 59.94, the rates that
-                 have it; DVDSTUDIOPRO and ENCORE too, where it is
-                 'non-drop' unless asked
+    fps          SUB, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID and the DVD
+                 authoring scripts: the frame rate its frame numbers count
+                 in; FCPXML: its sequence's, whose frames the captions are on
+    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID,
+                 FCPXML and LAMBDACAP the same, at 29.97 and 59.94, the
+                 rates that have it; DVDSTUDIOPRO and ENCORE too, where it
+                 is 'non-drop' unless asked
     script_layout
                  the DVD authoring scripts: which of the format's layouts
                  to write, one of modules.dvd_scripts.LAYOUTS; a file
@@ -86,8 +86,8 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID',
-                'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR',
+TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+                'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')

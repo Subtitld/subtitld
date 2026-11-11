@@ -30,6 +30,7 @@ from subtitld.modules import fcpxml
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
+from subtitld.modules import lambdacap
 from subtitld.modules import legacy
 from subtitld.modules import lrc
 from subtitld.modules import mcc
@@ -621,6 +622,15 @@ def _is_ebu_stl(path):
         return False
 
 
+def _is_lambda_cap(path):
+    """Whether the .cap at `path` is Lambda's text and not Cheetah's binary."""
+    try:
+        with open(path, 'rb') as cap_file:
+            return lambdacap.is_lambda(cap_file.read(256))
+    except OSError:
+        return False
+
+
 def _text_of(path):
     """The text of a subtitle file, decoded as SRT's bytes are."""
     with open(path, 'rb') as subtitle_file:
@@ -965,6 +975,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = _known_language(stl_settings['language'])
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
                                              display=stl_settings['display'], start=stl_settings['start'])
+
+        elif subtitle_file.lower().endswith('.cap') and _is_lambda_cap(subtitle_file):
+            # Lambda CAP, Japanese subtitles: frames at the video's rate, else
+            # 30, or drop-frame at 29.97 where its header says; the rate, the
+            # timecode and the encoding kept to save it again as it was.
+            subtitle_format = 'LAMBDACAP'
+            try:
+                segments_list, lambda_settings = lambdacap.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=lambda_settings['fps'],
+                                             timecode='drop' if lambda_settings['drop'] else 'non-drop',
+                                             lambda_encoding=lambda_settings['encoding'])
 
         elif subtitle_file.lower().endswith('.cap'):
             # Cheetah CAP: frames that do not say their rate, counted at the
@@ -1892,6 +1915,14 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Frames at the export's rate, or the video's, else 25: the file
             # does not say which.
             cheetahcap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'LAMBDACAP':
+            # Frames at the export's rate, or the video's, else 30; drop-frame
+            # at 29.97 and 59.94 unless it asks otherwise; in the encoding the
+            # file opened was in, else UTF-8 with a byte order mark.
+            lambdacap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or lambdacap.DEFAULT_FPS),
+                           drop=options.get('timecode') != 'non-drop',
+                           encoding=options.get('lambda_encoding') or 'utf-8-sig')
 
         elif subtitle_format == 'CAVENA890':
             # In the character table of the text's language; frames at the
