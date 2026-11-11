@@ -37,7 +37,7 @@ QPushButton:hover {
 #playercontrols_widget QComboBox {
     min-width: 40px;
     padding: 2px;
-    border-radius: 2px;
+    border-radius: 3px;
     border-bottom: 0;
     background: #3e5363;
     font-size: 10px;
@@ -78,7 +78,7 @@ QPushButton:checked {
 QWidget#cloud_card {
     background: rgba(62, 83, 99, 0.9);
     border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.45);
+    border: 0;
 }
 
 QWidget#cloud_header_band {
@@ -93,7 +93,7 @@ QWidget#cloud_balance_band {
 }
 
 QLabel#cloud_avatar {
-    border-radius: 2px;
+    border-radius: 3px;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #34454f);
     color: #b8cee0;
     font-family: 'Montserrat';
@@ -112,8 +112,8 @@ QLabel#cloud_email {
 QLabel#cloud_key_badge {
     color: rgba(184, 206, 224, 0.75);
     background: rgba(184, 206, 224, 0.1);
-    border: 1px solid rgba(184, 206, 224, 0.18);
-    border-radius: 2px;
+    border: 0;
+    border-radius: 3px;
     padding: 1px 6px;
     font-family: 'Montserrat';
     font-weight: 700;
@@ -143,7 +143,7 @@ QLabel#cloud_status_label[state="low"] {
 QPushButton#cloud_icon_button {
     background: transparent;
     border: 0;
-    border-radius: 2px;
+    border-radius: 3px;
     padding: 0px;
 }
 QPushButton#cloud_icon_button:hover {
@@ -202,7 +202,7 @@ QLabel#cloud_usage_cost {
 /* --- not-connected empty card --- */
 QLabel#cloud_icon_tile {
     background: rgba(184, 206, 224, 0.08);
-    border: 1px solid rgba(184, 206, 224, 0.18);
+    border: 0;
     border-radius: 3px;
 }
 
@@ -226,9 +226,9 @@ QLabel#cloud_empty_error {
 }
 
 QLineEdit#cloud_key_field {
-    background: #3e5363;
-    border: 1px solid rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #324350, stop:1 #445b6c);
+    border: 0;
+    border-radius: 3px;
     padding: 0px 10px;
     min-height: 28px;
     color: rgba(255, 255, 255, 0.92);
@@ -278,7 +278,7 @@ QLabel[class='units_label'] {
 /* Content area (per-engine ASR settings) — subtle top-down gradient. */
 QStackedWidget#transcription_options_area {
     background: transparent;
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 /* The shared scope footer (interface/scope_selector.py): scope row,
@@ -340,9 +340,9 @@ QWidget#transcription_scope_bar {
    white value text, tabular numerals. */
 QComboBox#transcription_scope_combobox,
 QLineEdit#transcription_scope_input {
-    background: #3e5363;
-    border: 1px solid rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #324350, stop:1 #445b6c);
+    border: 0;
+    border-radius: 3px;
     padding: 4px 10px;
     min-height: 20px;
     color: rgba(255, 255, 255, 0.92);
@@ -362,7 +362,7 @@ QComboBox#transcription_scope_combobox QAbstractItemView {
     background: #3e5363;
     color: #b8cee0;
     selection-background-color: #4a5f70;
-    border: 1px solid rgba(0, 0, 0, 0.3);
+    border: 0;
     outline: 0;
 }
 
@@ -397,9 +397,10 @@ QLabel#scope_hint_label {
    that field. Sized to the input's height so the pair reads as one control
    rather than a button bolted on. */
 QPushButton#scope_range_capture_button {
-    background: #3e5363;
-    border: 1px solid rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-radius: 3px;
     padding: 0px;
     min-width: 24px;
     max-width: 24px;
@@ -511,8 +512,8 @@ QLabel[class='metadata_badge'] {
     font-weight: 600;
     color: #d8e6f2;
     background-color: rgba(184, 206, 224, 0.10);
-    border: 1px solid rgba(184, 206, 224, 0.20);
-    border-radius: 9px;
+    border: 0;
+    border-radius: 3px;
     padding: 2px 10px;
 }
 
@@ -522,8 +523,8 @@ QPushButton[class='filter_pill'] {
     font-weight: 600;
     color: #b8cee0;
     background-color: rgba(184, 206, 224, 0.06);
-    border: 1px solid rgba(184, 206, 224, 0.15);
-    border-radius: 11px;
+    border: 0;
+    border-radius: 3px;
     padding: 3px 12px;
     text-transform: none;
 }
@@ -557,8 +558,8 @@ QComboBox[class='filter_pill'] {
     font-weight: 600;
     color: #b8cee0;
     background-color: rgba(184, 206, 224, 0.06);
-    border: 1px solid rgba(184, 206, 224, 0.15);
-    border-radius: 11px;
+    border: 0;
+    border-radius: 3px;
     padding: 3px 22px 3px 12px;
     min-height: 16px;
 }
@@ -605,8 +606,8 @@ QComboBox[class='filter_pill'] QAbstractItemView {
     font-size: 11px;
     color: #d8e6f2;
     background-color: #2a3845;
-    border: 1px solid rgba(184, 206, 224, 0.25);
-    border-radius: 4px;
+    border: 0;
+    border-radius: 3px;
     padding: 2px;
     selection-background-color: #b8cee0;
     selection-color: #1a2632;
@@ -626,8 +627,8 @@ QLabel[class='addons_empty_state'] {
    and word-wrap nicely on narrow widths. */
 QWidget[class='addon_card'] {
     background-color: rgba(184, 206, 224, 0.05);
-    border: 1px solid rgba(184, 206, 224, 0.15);
-    border-radius: 6px;
+    border: 0;
+    border-radius: 4px;
 }
 
 QWidget[class='addon_card']:hover {
@@ -681,8 +682,8 @@ QLabel[class='addon_card_compute'] {
     font-size: 10px;
     font-weight: 600;
     color: #b8cee0;
-    background: transparent;
-    border: 1px solid rgba(184, 206, 224, 0.35);
+    background: rgba(184, 206, 224, 0.12);
+    border: 0;
     border-radius: 3px;
     padding: 1px 6px;
 }
@@ -692,8 +693,8 @@ QLabel[class='addon_card_compute_warning'] {
     font-size: 10px;
     font-weight: 600;
     color: #f0c060;
-    background: transparent;
-    border: 1px solid rgba(240, 192, 96, 0.6);
+    background: rgba(240, 192, 96, 0.14);
+    border: 0;
     border-radius: 3px;
     padding: 1px 6px;
 }
@@ -731,8 +732,8 @@ QWidget#addons_panel_scroll_inner {
 
 QLabel[class='metadata_field_image'] {
     background: transparent;
-    border: 1px solid rgba(184, 206, 224, 0.15);
-    border-radius: 4px;
+    border: 0;
+    border-radius: 3px;
     padding: 0;
 }
 
@@ -1005,7 +1006,7 @@ LabeledComboBox,
 LabeledDoubleSpinBox,
 LabeledLineEdit {
     background-color: #304251; 
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 LabeledComboBox QComboBox,
@@ -1014,8 +1015,8 @@ LabeledDoubleSpinBox QDoubleSpinBox,
 LabeledLineEdit QLineEdit {
     background-color: #304251; 
     border: 0;
-    border-bottom-left-radius: 2px;
-    border-bottom-right-radius: 2px;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     font-size: 12px;
@@ -1055,7 +1056,7 @@ LabeledLineEdit #top_label {
 LabeledLabel,
 QProgressBar {
     background-color: #33304251; 
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 LabeledLabel #label {
@@ -1404,7 +1405,7 @@ QGroupBox::title {
 
 #start_screen_recent_listwidget::item {
     padding: 0;
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 #start_screen_recent_listwidget::item QLabel {
@@ -1546,7 +1547,7 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     padding-top: 1px;
     padding-left: 32px;
     padding-right: 0;
-    border-bottom-left-radius: 2px;
+    border-bottom-left-radius: 3px;
     icon: url(graphics:send_text_to_last_subtitle_icon.svg);
 }
 
@@ -1559,7 +1560,7 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     padding-right: 32px;
     padding-left: 0;
     padding-top: 1px;
-    border-bottom-right-radius: 2px;
+    border-bottom-right-radius: 3px;
     icon: url(graphics:send_text_to_next_subtitle_icon.svg);
 }
 
@@ -1652,7 +1653,7 @@ QPushButton[class="subtitle_formatting_swatch"]:checked {
 
 QMenu#subtitle_formatting_menu {
     background-color: #1a232b;
-    border: 1px solid #304251;
+    border: 0;
     border-radius: 3px;
     padding: 2px;
     color: #b8cee0;
@@ -1662,7 +1663,7 @@ QMenu#subtitle_formatting_menu {
 
 QMenu#subtitle_formatting_menu::item {
     padding: 6px 12px;
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 QMenu#subtitle_formatting_menu::item:selected {
@@ -1704,8 +1705,8 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #subtitles_panel_simplelist_properties_duration_timing_lock_button {
-    border-bottom-right-radius: 4px;
-    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 3px;
+    border-bottom-left-radius: 3px;
     border-top-right-radius: 0;
     border-top-left-radius: 0;
     padding: 0;
@@ -1771,7 +1772,7 @@ QMenu#subtitle_formatting_menu::separator {
 #left_panel_subtitleslist_speaker_selector #add_button {
     padding: 4px;
     border-radius: 0;
-    border-bottom-left-radius: 2px;
+    border-bottom-left-radius: 3px;
     border: 0;
     icon-size: 10px;
     background-color: #05ffffff;
@@ -1796,7 +1797,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #left_panel_subtitleslist_speaker_selector #speaker_selector_list_widget {
-    border: 1px solid #0affffff;
+    border: 0;
     border-right: 0;
     border-top-left-radius: 4px;
     border-bottom-left-radius: 4px;
@@ -2138,24 +2139,24 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #timeline_speaker_container #timeline_show_speaker_color_button {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
     icon: url(graphics:timeline_show_speaker_color.svg);
 }
 
 #timeline_speaker_container #timeline_show_speaker_color_button:checked {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
     icon: url(graphics:timeline_show_speaker_color_checked.svg);
 }
 
 /* Last button in the group, so it carries the group's rounded top-right
    corner. */
 #timeline_speaker_container #timeline_show_speaker_tracks_button {
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
     icon: url(graphics:timeline_show_speaker_in_tracks.svg);
 }
 
 #timeline_speaker_container #timeline_show_speaker_tracks_button:checked {
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
     icon: url(graphics:timeline_show_speaker_in_tracks_checked.svg);
 }
 
@@ -2164,13 +2165,13 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #change_playback_speed #change_playback_speed_decrease {
-    border-top-left-radius: 2px;
-    border-bottom-left-radius: 2px;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
 }
 
 #change_playback_speed #change_playback_speed_increase {
-    border-top-right-radius: 2px;
-    border-bottom-right-radius: 2px;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
 }
 
 #playercontrols_widget_top_line #repeat_playback {
@@ -2248,7 +2249,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_top_line #add_subtitle_button #add_subtitle_starting_from_last {
-    border-bottom-left-radius: 2px;
+    border-bottom-left-radius: 3px;
     border-right: none;
     padding-right: 0;
     icon: url(graphics:add_from_last.svg);
@@ -2268,7 +2269,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_top_line #add_subtitle_button #add_subtitle_to_next_start {
-    border-bottom-right-radius: 2px;
+    border-bottom-right-radius: 3px;
     border-left: none;
     padding-left: 0;
     icon: url(graphics:add_subtitle_to_next_start.svg);
@@ -2325,7 +2326,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_top_line #merge_slice_frame #merge_back_selected_subtitle_button {
-    border-bottom-left-radius: 2px;
+    border-bottom-left-radius: 3px;
     padding-right: 0;
     padding-left: 8;
     icon: url(graphics:merge_back_selected_subtitle_icon.svg);
@@ -2343,7 +2344,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 
 #playercontrols_widget_top_line #merge_slice_frame #merge_next_selected_subtitle_button {
-    border-bottom-right-radius: 2px;
+    border-bottom-right-radius: 3px;
     padding-left: 0;
     padding-right: 8;
     icon: url(graphics:merge_next_selected_subtitle_icon.svg);
@@ -2382,12 +2383,12 @@ QMenu#subtitle_formatting_menu::separator {
 
 #start_end_moving_frame #next_start_to_current_position_button {
     padding-right: 8px;
-    border-bottom-right-radius: 2px;
+    border-bottom-right-radius: 3px;
 }
 
 #start_end_moving_frame #last_end_to_current_position_button {
     padding-left: 8px;
-    border-bottom-left-radius: 2px;
+    border-bottom-left-radius: 3px;
 }
 
 #playercontrols_widget_bottom_line QPushButton {
@@ -2401,7 +2402,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #timelinescrolling_container #timelinescrolling_none_button {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
     icon: url(graphics:timelinescrolling_none_icon.svg);
 }
 
@@ -2410,7 +2411,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #timelinescrolling_container #timelinescrolling_follow_button {
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
     icon: url(graphics:timelinescrolling_follow_icon.svg);
 }
 
@@ -2427,7 +2428,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #snap_controls_container #snap_button {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
 }
 
 #snap_controls_container #snap_button QLabel,
@@ -2440,7 +2441,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #onset_controls_container #onset_button {
-    border-radius: 2px;
+    border-radius: 3px;
     padding: 0 4 0 4;
 }
 
@@ -2504,7 +2505,7 @@ QMenu#subtitle_formatting_menu::separator {
 #snap_controls_container #snap_move_nereast_button {
     icon: url(graphics:snap_moving_icon.svg);
     padding-right: 4px;
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
 }
 
 #snap_controls_container #snap_move_nereast_button::disabled,
@@ -2519,39 +2520,39 @@ QMenu#subtitle_formatting_menu::separator {
 #move_start_container #move_start_back_subtitle {
     icon: url(graphics:move_start_back_subtitle.svg);
     padding: 4 0 4 0;
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
 }
 
 #move_start_container #move_start_forward_subtitle {
     icon: url(graphics:move_start_forward_subtitle.svg);
     padding: 4 0 4 0;
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
 }
 
 #move_end_container #move_end_back_subtitle {
     icon: url(graphics:move_end_back_subtitle.svg);
     padding: 4 0 4 0;
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
 }
 
 #move_end_container #move_end_forward_subtitle {
     icon: url(graphics:move_end_forward_subtitle.svg);
     padding: 4 0 4 0;
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
 }
 
 #playercontrols_widget_left_bottom_line #move_backward_subtitle {
     icon: url(graphics:move_backward_subtitle.svg);
     padding: 4 0 4 0;
-    border-top-left-radius: 2px;
-    border-top-right-radius: 2px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
 }
 
 #playercontrols_widget_right_bottom_line #move_forward_subtitle {
     icon: url(graphics:move_forward_subtitle.svg);
     padding: 4 0 4 0;
-    border-top-left-radius: 2px;
-    border-top-right-radius: 2px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
 }
 
 #playercontrols_widget_left_bottom_line #timeline_cursor_back_frame {
@@ -2573,7 +2574,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #grid_controls_container #grid_button {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
     padding: 0 4 0 4;
 }
 
@@ -2603,7 +2604,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button {
     icon: url(graphics:grid_scenes_icon.svg);
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
 }
 
 #playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button::checked {
@@ -2615,7 +2616,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_right_bottom_line #step_button_container #step_button {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
     padding: 0 4;
 }
 
@@ -2642,7 +2643,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #playercontrols_widget_right_bottom_line #step_button_container QComboBox {
     border-radius: 0;
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
 }
 
 
@@ -2656,7 +2657,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #playercontrols_widget_right_bottom_line #zoomin_button {
     icon: url(graphics:zoom_in_icon.svg);
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
 }
 
 #playercontrols_widget_right_bottom_line #zoomin_button::disabled {
@@ -2665,7 +2666,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #playercontrols_widget_right_bottom_line #zoomout_button {
     icon: url(graphics:zoom_out_icon.svg);
-    border-top-right-radius: 2px;
+    border-top-right-radius: 3px;
 }
 
 #playercontrols_widget_right_bottom_line #zoomout_button::disabled {
@@ -2746,7 +2747,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #properties_information_reason {
-    /* border-radius: 2px; */
+    /* border-radius: 3px; */
     /* padding: 6; */
     color: #304251;
     font-size: 9px;
@@ -3073,10 +3074,10 @@ QMenu#subtitle_formatting_menu::separator {
     background: transparent;
     color: #b8cee0;
     text-align: left;
-    padding: 10px 16px 10px 11px;
+    padding: 9px 12px 9px 10px;
     border: none;
     border-radius: 0;
-    border-left: 3px solid transparent;
+    margin: 1px 4px;
     font-family: 'Montserrat';
     font-size: 11px;
     font-weight: 700;
@@ -3086,12 +3087,13 @@ QMenu#subtitle_formatting_menu::separator {
 #export_dialog_sidebar QPushButton:hover {
     background: rgba(255, 255, 255, 8);
     color: #ffffff;
+    border-radius: 3px;
 }
 
 #export_dialog_sidebar QPushButton:checked {
-    background: #3e5363;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
     color: #ffffff;
-    border-left: 3px solid #b8cee0;
+    border-radius: 3px;
 }
 
 #export_dialog_pages QLabel {
@@ -3129,8 +3131,8 @@ QMenu#subtitle_formatting_menu::separator {
 
 #find_replace_field {
     background-color: #27333d;
-    border-radius: 2px;
-    border: 1px solid rgba(0, 0, 0, 90);
+    border-radius: 3px;
+    border: 0;
     min-height: 30px;
     max-height: 30px;
 }
@@ -3149,7 +3151,7 @@ QMenu#subtitle_formatting_menu::separator {
     background-color: transparent;
     color: rgba(184, 206, 224, 178);
     border: none;
-    border-radius: 2px;
+    border-radius: 3px;
     font-size: 11px;
     font-weight: 700;
     padding: 0;
@@ -3198,8 +3200,8 @@ QMenu#subtitle_formatting_menu::separator {
     text-align: left;
     /* With the text left-aligned, this is the gap before ALL. */
     padding-right: 6px;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
 }
 
 #find_replace_dialog #dialog_bottom QPushButton[class="find_replace_button"]:disabled {
@@ -3217,8 +3219,8 @@ QMenu#subtitle_formatting_menu::separator {
     font-size: 9px;
     font-weight: 700;
     color: #b8cee0;
-    background-color: transparent;
-    border: 1px solid rgba(184, 206, 224, 60);
+    background: rgba(184, 206, 224, 0.12);
+    border: 0;
     border-radius: 3px;
 }
 
@@ -3358,12 +3360,12 @@ QMenu#subtitle_formatting_menu::separator {
 
 #global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_download_model_button,
 #global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_remove_model_button {
-    border-bottom-right-radius: 2px;
+    border-bottom-right-radius: 3px;
 }
 
 #global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_download_model_button,
 #global_panel_transcription_vosk_transcription_model_combobox #global_panel_transcription_vosk_transcription_update_model_button {
-    border-top-left-radius: 2px;
+    border-top-left-radius: 3px;
 }
 
 #left_panel_speakers_panel_content_item_dubbing_content {
@@ -3405,14 +3407,14 @@ QGroupBox[class="videoproperties_card"]::title {
 
 /* Scale: an exclusive strip in the same frame; the chosen size is lit. */
 #videoproperties_scale_segments {
-    border-image: url(graphics:groupbox_background.svg) 3 3 3 3 stretch stretch;
-    border-width: 3px;
+    border: 0;
 }
 
 #videoproperties_scale_segments QPushButton {
-    background: transparent;
-    border: none;
-    border-left: 1px solid rgba(184, 206, 224, 0.12);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
     min-width: 40px;
     padding: 9px 12px;
@@ -3420,7 +3422,7 @@ QGroupBox[class="videoproperties_card"]::title {
 }
 
 #videoproperties_scale_segments QPushButton[segment="first"] {
-    border-left: none;
+    border-left: 0;
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
 }
@@ -3431,22 +3433,24 @@ QGroupBox[class="videoproperties_card"]::title {
 }
 
 #videoproperties_scale_segments QPushButton:hover {
-    background: rgba(184, 206, 224, 0.08);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
 }
 
 #videoproperties_scale_segments QPushButton:checked {
-    background: #c8dbe9;
-    color: #3e5363;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
+    color: #ffffff;
+    border-bottom-color: transparent;
+    border-left-color: transparent;
 }
 
 #videoproperties_scale_segments QPushButton:disabled {
-    background: transparent;
+    background: #25323d;
     color: rgba(184, 206, 224, 0.35);
 }
 
 #videoproperties_scale_segments QPushButton:checked:disabled {
-    background: rgba(200, 219, 233, 0.30);
-    color: #3e5363;
+    background: #1f2a33;
+    color: rgba(184, 206, 224, 0.6);
 }
 
 #videoproperties_status_title {
@@ -3463,14 +3467,14 @@ QGroupBox[class="videoproperties_card"]::title {
 QProgressBar#videoproperties_progress {
     background: rgba(184, 206, 224, 0.10);
     border: none;
-    border-radius: 1px;
+    border-radius: 0;
     min-height: 3px;
     max-height: 3px;
 }
 
 QProgressBar#videoproperties_progress::chunk {
     background-color: #b8cee0;
-    border-radius: 1px;
+    border-radius: 0;
 }
 
 QPushButton#videoproperties_delete_button {
@@ -3558,7 +3562,7 @@ QPushButton#videoproperties_delete_button:pressed {
    hovered or selected. */
 #left_panel_keyboard #keyboard_panel_list_scroll {
     background: #40000000;
-    border-radius: 2px;
+    border-radius: 3px;
     margin: 0 12px 0 12px;
 }
 
@@ -3612,8 +3616,8 @@ QPushButton#videoproperties_delete_button:pressed {
     font-weight: 600;
     color: #f2f7fb;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
-    border: 1px solid #566f84;
-    border-bottom: 3px solid #1a232b;
+    border: 0;
+    border-bottom: 2px solid #1a232b;
     border-radius: 3px;
     padding: 2px 6px 1px 6px;
     min-width: 12px;
@@ -3630,7 +3634,7 @@ QPushButton#videoproperties_delete_button:pressed {
 /* Capture area: the selected command's shortcut, big. */
 #left_panel_keyboard #keyboard_panel_capture {
     background: #304251;
-    border-radius: 2px;
+    border-radius: 3px;
     margin: 14px 12px 0 12px;
 }
 
@@ -3640,7 +3644,7 @@ QPushButton#videoproperties_delete_button:pressed {
 #left_panel_keyboard QWidget[class="big_keycap"] {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #6a7483, stop:0.7 #566f84, stop:1 #4a5f70);
-    border: 1px solid #7a8494;
+    border: 0;
     border-bottom: 6px solid #1a232b;
     border-radius: 4px;
 }
@@ -3691,10 +3695,11 @@ QPushButton#videoproperties_delete_button:pressed {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.88px;
-    padding: 6px 12px;
-    border: 1px solid #20000000;
-    border-radius: 2px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f70, stop:1 #3e5363);
+    padding: 6px 12px 5px 12px;
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-radius: 3px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
     color: #cddbe7;
 }
 
@@ -3736,9 +3741,11 @@ QPushButton#videoproperties_delete_button:pressed {
 }
 
 QPushButton#plaintext_panel_format_button {
-    background: #1e2832;
-    color: rgba(184, 206, 224, 0.72);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    color: #b8cee0;
     border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
     padding: 3px 10px;
     min-width: 0;
@@ -3749,6 +3756,7 @@ QPushButton#plaintext_panel_format_button {
 QPushButton#plaintext_panel_format_button[position="first"] {
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
+    border-left: 0;
 }
 
 QPushButton#plaintext_panel_format_button[position="last"] {
@@ -3757,13 +3765,15 @@ QPushButton#plaintext_panel_format_button[position="last"] {
 }
 
 QPushButton#plaintext_panel_format_button:hover {
-    background: #2a3743;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
     color: #b8cee0;
 }
 
 QPushButton#plaintext_panel_format_button:checked {
-    background: #4a5f70;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
     color: #ffffff;
+    border-bottom-color: transparent;
+    border-left-color: transparent;
 }
 
 QWidget#plaintext_panel_stale_bar {
@@ -3933,8 +3943,10 @@ QLabel#vtimeline_panel_selected_label {
 }
 
 QPushButton#vtimeline_panel_zoom_button {
-    background: #1e2832;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
     border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
     padding: 3px 9px;
     min-width: 0;
@@ -3943,22 +3955,22 @@ QPushButton#vtimeline_panel_zoom_button {
 QPushButton#vtimeline_panel_zoom_button[position="first"] {
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
+    border-left: 0;
 }
 
 QPushButton#vtimeline_panel_zoom_button[position="last"] {
     border-top-right-radius: 3px;
     border-bottom-right-radius: 3px;
-    border-left: 1px solid #151d24;
 }
 
 QPushButton#vtimeline_panel_zoom_button:hover {
-    background: #2a3743;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
 }
 
 /* ---- Audio panel: input monitor (Recording) ---- */
 QFrame#audio_record_monitor {
     background: #1a232b;
-    border: 1px solid #0affffff;
+    border: 0;
     border-radius: 3px;
 }
 
@@ -4003,7 +4015,7 @@ QLabel#audio_record_interim {
 /* ---- Audio panel: effects (tracks and chains) ---- */
 QFrame#audio_fx_tracks {
     background: #121a20;
-    border: 1px solid #0affffff;
+    border: 0;
     border-radius: 3px;
 }
 
@@ -4033,7 +4045,7 @@ QFrame#audio_fx_track_row[selected="true"] QLabel#audio_fx_track_name {
 QLabel#audio_fx_track_count {
     background: rgba(184, 206, 224, 0.16);
     color: #d4e1eb;
-    border-radius: 7px;
+    border-radius: 3px;
     min-width: 14px;
     max-height: 14px;
     padding: 0 4px;
@@ -4043,7 +4055,6 @@ QLabel#audio_fx_track_count {
 
 QFrame#audio_fx_device {
     background: #1a232b;
-    border: 1px solid #0affffff;
     border-left: 3px solid #56707f;
     border-radius: 3px;
 }
@@ -4094,7 +4105,7 @@ QPushButton#audio_fx_icon_button[role="remove"]:hover {
 QPushButton#audio_fx_range_chip {
     background: rgba(184, 206, 224, 0.08);
     border: 0;
-    border-radius: 9px;
+    border-radius: 3px;
     min-width: 0;
     min-height: 18px;
     max-height: 18px;
@@ -4116,9 +4127,11 @@ QPushButton#audio_fx_range_chip:checked {
 }
 
 QPushButton#audio_fx_band_button {
-    background: #121a20;
-    color: rgba(184, 206, 224, 0.72);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    color: #b8cee0;
     border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
     padding: 4px 8px;
     min-width: 0;
@@ -4129,6 +4142,7 @@ QPushButton#audio_fx_band_button {
 QPushButton#audio_fx_band_button[position="first"] {
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
+    border-left: 0;
 }
 
 QPushButton#audio_fx_band_button[position="last"] {
@@ -4137,13 +4151,15 @@ QPushButton#audio_fx_band_button[position="last"] {
 }
 
 QPushButton#audio_fx_band_button:hover {
-    background: #212c36;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
     color: #b8cee0;
 }
 
 QPushButton#audio_fx_band_button:checked {
-    background: #304251;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
     color: #ffffff;
+    border-bottom-color: transparent;
+    border-left-color: transparent;
 }
 
 QFrame#audio_fx_range_editor {
@@ -4153,8 +4169,8 @@ QFrame#audio_fx_range_editor {
 }
 
 QPushButton#audio_fx_range_selected {
-    background: transparent;
-    border: 1px solid rgba(184, 206, 224, 0.2);
+    background: rgba(184, 206, 224, 0.12);
+    border: 0;
     border-radius: 3px;
     padding: 4px 8px;
     color: #b8cee0;
@@ -4205,8 +4221,8 @@ QLabel#autosave_card_description[warning="true"] {
 }
 
 QPushButton#autosave_backup_now_button {
-    background: transparent;
-    border: 1px solid rgba(184, 206, 224, 0.25);
+    background: rgba(184, 206, 224, 0.12);
+    border: 0;
     border-radius: 3px;
     padding: 4px 10px;
     min-width: 0;
@@ -4221,9 +4237,11 @@ QPushButton#autosave_backup_now_button:hover {
 }
 
 QPushButton#autosave_filter_button {
-    background: #121a20;
-    color: rgba(184, 206, 224, 0.72);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    color: #b8cee0;
     border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
     padding: 3px 9px;
     min-width: 0;
@@ -4234,6 +4252,7 @@ QPushButton#autosave_filter_button {
 QPushButton#autosave_filter_button[position="first"] {
     border-top-left-radius: 3px;
     border-bottom-left-radius: 3px;
+    border-left: 0;
 }
 
 QPushButton#autosave_filter_button[position="last"] {
@@ -4242,13 +4261,15 @@ QPushButton#autosave_filter_button[position="last"] {
 }
 
 QPushButton#autosave_filter_button:hover {
-    background: #212c36;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
     color: #b8cee0;
 }
 
 QPushButton#autosave_filter_button:checked {
-    background: #304251;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
     color: #ffffff;
+    border-bottom-color: transparent;
+    border-left-color: transparent;
 }
 
 QPushButton#autosave_filter_button:disabled {
@@ -4257,7 +4278,7 @@ QPushButton#autosave_filter_button:disabled {
 
 QListWidget#panel_autosave_backup_listwidget {
     background: #121a20;
-    border: 1px solid #0affffff;
+    border: 0;
     border-radius: 3px;
     padding: 2px 0 6px 0;
     outline: 0;
@@ -4287,7 +4308,7 @@ QLabel#autosave_empty_label {
 QWidget#subtitldcc_card {
     background: rgba(62, 83, 99, 0.9);
     border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.45);
+    border: 0;
 }
 
 QLabel#subtitldcc_card_title {
@@ -4314,7 +4335,7 @@ QLabel#subtitldcc_text {
 QLabel#subtitldcc_code {
     color: #ffffff;
     background: rgba(0, 0, 0, 0.22);
-    border-radius: 2px;
+    border-radius: 3px;
     padding: 8px;
     font-family: 'Montserrat';
     font-weight: 700;
@@ -4342,8 +4363,8 @@ QLabel#subtitldcc_result_details {
 QLabel#subtitldcc_badge {
     color: rgba(184, 206, 224, 0.75);
     background: rgba(184, 206, 224, 0.1);
-    border: 1px solid rgba(184, 206, 224, 0.18);
-    border-radius: 2px;
+    border: 0;
+    border-radius: 3px;
     padding: 1px 5px;
     font-family: 'Montserrat';
     font-weight: 700;
@@ -4378,7 +4399,7 @@ QPushButton#subtitldcc_star:checked {
 QLabel#subtitldcc_message {
     color: #dff5da;
     background: rgba(85, 212, 63, 0.14);
-    border: 1px solid rgba(85, 212, 63, 0.4);
+    border: 0;
     border-radius: 3px;
     padding: 6px 8px;
 }
@@ -4395,7 +4416,7 @@ QLabel#subtitldcc_error {
 QWidget#subtitldcc_problem {
     background: rgba(0, 0, 0, 0.15);
     border-left: 3px solid #e0b040;
-    border-radius: 2px;
+    border-radius: 3px;
 }
 QWidget#subtitldcc_problem[severity="block"] {
     border-left-color: #c55252;
