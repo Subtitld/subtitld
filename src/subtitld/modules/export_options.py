@@ -1,11 +1,11 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
-The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID,
-FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC, UltraStar,
-KAR, TTXT and the player-era formats); USF, USFX and JSON keep the project as
-it is. Karaoke timing is formatting (modules.karaoke): removing the formatting
-takes the word timing of LRC, UltraStar, KAR and TTXT with it.
+The options apply to the formats that hold only timed text (SRT, VTT, HLS,
+ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP, CAVENA890,
+AVID, FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC,
+UltraStar, KAR, TTXT and the player-era formats); USF, USFX and JSON keep the
+project as it is. Karaoke timing is formatting (modules.karaoke): removing
+the formatting takes the word timing of LRC, UltraStar, KAR and TTXT with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -13,7 +13,7 @@ takes the word timing of LRC, UltraStar, KAR and TTXT with it.
                  each as a language of its own)
     language     the translation's language code
     speakers     'none'; 'prefix': the speaker's name before the text; or
-                 'voice', the format's own way: WebVTT's voice tags
+                 'voice', the format's own way: WebVTT's (and HLS's) voice tags
                  (<v Name>), TTML's agents, SAMI's Source line, SCC's
                  and MCC's ">>" at each change of speaker, SBV's ">> NAME: "
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
@@ -82,11 +82,17 @@ And for a format of its own:
                  'imsc1.1', 'ebu-tt-d'), or of its IMAGE_PROFILES
                  ('imsc1-image', 'imsc1.1-image'), which draw each
                  subtitle as a PNG beside the file
+    segment_duration
+                 HLS: the seconds each segment lasts (6, as Apple
+                 recommends; modules.hls.SEGMENT_DURATIONS)
+    mpegts       HLS: the MPEG-2 timestamp each segment maps its cue time
+                 0 to (900000, 10 s at 90 kHz, where most encoders start
+                 a stream's clock; or 0)
 """
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',

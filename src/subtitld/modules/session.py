@@ -132,6 +132,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'PAC': {'description': 'Screen PAC Subtitle format', 'extensions': ['pac']},
     'FPC': {'description': 'Screen UniPac Subtitle format', 'extensions': ['fpc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
+    'HLS': {'description': 'HLS playlist of WebVTT segments', 'extensions': ['m3u8']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},

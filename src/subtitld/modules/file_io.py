@@ -26,6 +26,7 @@ from subtitld.modules import cue_ids
 from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
 from subtitld.modules import ebustl
+from subtitld.modules import hls
 from subtitld.modules import fcpxml
 from subtitld.modules import timecode
 from subtitld.modules import export_options
@@ -718,6 +719,20 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
             segments_list = webvtt.read(subtitle_file)
+
+        elif subtitle_file.lower().endswith('.m3u8'):
+            # HLS: the WebVTT segments a playlist lists, as one file again;
+            # the rendition's language for the project's, its segments'
+            # length and timestamp map kept to save it again as it was.
+            subtitle_format = 'HLS'
+            try:
+                segments_list, hls_settings = hls.read(subtitle_file, language=session.SUBTITLE.get('language'))
+            except (ValueError, OSError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(hls_settings['language']):
+                session.SUBTITLE['language'] = _known_language(hls_settings['language'])
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mpegts=hls_settings['mpegts'],
+                                             segment_duration=hls_settings['segment_duration'])
 
         elif subtitle_file.lower().endswith('.lrc'):
             # Lyrics: word stamps as karaoke codes, the ID tags (title,
@@ -1783,6 +1798,15 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format == 'VTT':
             # Speakers as voice tags when the export asks for them.
             webvtt.save(final_file, segments, voices=options.get('speakers') == 'voice')
+
+        elif subtitle_format == 'HLS':
+            # The playlist and its WebVTT segments, in a folder beside it,
+            # for as long as the video lasts.
+            hls.save(final_file, segments,
+                     duration=float(options.get('segment_duration') or hls.SEGMENT_DURATION),
+                     mpegts=int(options.get('mpegts', hls.MPEGTS) or 0),
+                     voices=options.get('speakers') == 'voice',
+                     total=float(VIDEO.get('duration') or 0) if VIDEO.get('filepath') else 0.0)
 
         elif subtitle_format in ['DFXP', 'TTML'] and options.get('profile') in ttml.IMAGE_PROFILES:
             # IMSC's Image Profile: each subtitle drawn as the preview draws
