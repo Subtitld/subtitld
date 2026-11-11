@@ -150,6 +150,16 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'FCPXML': {'description': 'Final Cut Pro XML captions', 'extensions': ['fcpxml', 'fcpxmld']},
     'CAP': {'description': 'Cheetah CAP Caption format', 'extensions': ['cap']},
     'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
+    # The DVD authoring tools' scripts (modules.dvd_scripts). DVD Studio
+    # Pro's .stl is EBU STL's extension and Spruce's; the rest share .txt,
+    # .sub and .sst with formats above and below. The bytes decide, in
+    # file_io.
+    'DVDSTUDIOPRO': {'description': 'DVD Studio Pro STL Subtitle script', 'extensions': ['stl']},
+    'ENCORE': {'description': 'Adobe Encore Subtitle script', 'extensions': ['txt']},
+    'DVDARCHITECT': {'description': 'Sony DVD Architect Subtitle script', 'extensions': ['sub', 'txt']},
+    'SCENARIST': {'description': 'Sonic Scenarist Subtitle script', 'extensions': ['sst', 'txt']},
+    'DVDPRODUCER': {'description': 'Sonic DVD Producer Subtitle script', 'extensions': ['txt']},
+    'AVIDDVD': {'description': 'Avid DVD Subtitle script', 'extensions': ['txt']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

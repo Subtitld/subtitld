@@ -14,6 +14,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
+from subtitld.modules import dvd_scripts
 from subtitld.modules import export_options
 from subtitld.modules import mcc
 from subtitld.modules import pac
@@ -23,7 +24,11 @@ from subtitld.modules import ttml
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID',
-                    'FCPXML', 'DCP', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
+                    'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'XML', 'LRC', 'USF', 'JSON', 'BCC']
+# The DVD authoring tools' scripts: frames, an encoding and line ends each;
+# drop-frame for the two whose tools write it.
+DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
+DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
@@ -88,8 +93,9 @@ class _SubtitlesPanel(QWidget):
         grid.addWidget(self.offset_spin, 2, 0)
         self.layout().addWidget(self.text_options)
 
-        # SRT, SAMI, SUB, LRC and Avid SubCap: for players (and editors)
-        # that need an older encoding or Windows line ends.
+        # SRT, SAMI, SUB, LRC, Avid SubCap and the DVD scripts: for players
+        # (and editors, and authoring tools) that need an older encoding or
+        # Windows line ends.
         self.srt_options = QWidget()
         row = QHBoxLayout(self.srt_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -379,7 +385,7 @@ class _SubtitlesPanel(QWidget):
         fmt = self.format_combo.currentText()
         self._speaker_choices(fmt)
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
-        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID'))
+        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS)
         # SAMI and FCPXML write the original and the translation as two languages.
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
         combo = self.text_combo.combobox
@@ -388,10 +394,10 @@ class _SubtitlesPanel(QWidget):
             if text == 'both':
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
-        self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID', 'FCPXML'))
+        self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS)
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
-        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML') and _has_drop_frame(rate)))
+        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML') + DVD_DROP_FRAME and _has_drop_frame(rate)))
         self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
         self.cavena_options.setVisible(fmt == 'CAVENA890')
         self.pac_options.setVisible(fmt == 'PAC')
@@ -412,8 +418,11 @@ class _SubtitlesPanel(QWidget):
                 _select(self.caption_channel_combo, self._caption_channel_wanted)
         # Another language rides in a CEA-708 service, which only MCC carries.
         self.caption_service_combo.setVisible(fmt == 'MCC' and self.caption_service_combo.combobox.count() > 1)
-        # SBV, BCC and Avid SubCap have no formatting to keep.
-        self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID'))
+        # SBV, BCC, Avid SubCap and the DVD scripts but DVD Studio Pro's and
+        # Avid DVD's (italics, and DVD Studio Pro's places) have no
+        # formatting to keep.
+        self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
+                                                     'DVDPRODUCER'))
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
@@ -488,10 +497,12 @@ class _SubtitlesPanel(QWidget):
         if fmt in export_options.TEXT_FORMATS:
             options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting')})
             options['offset'] = self.offset_spin.value()
-        if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID'):
+        if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS:
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID', 'FCPXML'):
+        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS:
             options['fps'] = choices['fps']
+        if fmt in DVD_DROP_FRAME:
+            options['timecode'] = choices['timecode']
         if fmt in ('AVID', 'FCPXML'):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])
         if fmt == 'CAVENA890':

@@ -2,8 +2,8 @@
 
 The options apply to the formats that hold only timed text (SRT, VTT, ASS,
 DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, CAVENA890, AVID, FCPXML,
-DCP, SBV, SUB, BCC, XML, LRC, UltraStar and the player-era formats); USF,
-USFX and JSON keep the project as it is. Karaoke timing is formatting
+DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC, UltraStar and the
+player-era formats); USF, USFX and JSON keep the project as it is. Karaoke timing is formatting
 (modules.karaoke): removing the formatting takes the word timing of LRC
 and UltraStar with it.
 
@@ -23,17 +23,27 @@ and UltraStar with it.
 
 And for a format of its own:
 
-    encoding     SRT, SAMI, SUB, LRC and AVID: 'utf-8', 'utf-8-sig' (with a
-                 byte order mark), 'utf-16', 'cp1252' (Western European),
-                 'cp1250' (Central European), 'cp1251' (Cyrillic) or
-                 'cp949' (Korean)
-    line_ends    SRT, SAMI, SUB, LRC and AVID: 'lf' or 'crlf'
-    fps          SUB, PAC, FPC, CAP, CAVENA890 and AVID: the frame rate its
-                 frame numbers count in; FCPXML: its sequence's, whose
-                 frames the captions are on
+    encoding     SRT, SAMI, SUB, LRC, AVID and the DVD authoring scripts
+                 (DVDSTUDIOPRO, ENCORE, DVDARCHITECT, SCENARIST, DVDPRODUCER,
+                 AVIDDVD): 'utf-8', 'utf-8-sig' (with a byte order mark),
+                 'utf-16', 'cp1252' (Western European), 'cp1250' (Central
+                 European), 'cp1251' (Cyrillic) or 'cp949' (Korean)
+    line_ends    SRT, SAMI, SUB, LRC, AVID and the DVD authoring scripts:
+                 'lf' or 'crlf'
+    fps          SUB, PAC, FPC, CAP, CAVENA890, AVID and the DVD authoring
+                 scripts: the frame rate its frame numbers count in;
+                 FCPXML: its sequence's, whose frames the captions are on
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID
                  and FCPXML the same, at 29.97 and 59.94, the rates that
-                 have it
+                 have it; DVDSTUDIOPRO and ENCORE too, where it is
+                 'non-drop' unless asked
+    script_layout
+                 the DVD authoring scripts: which of the format's layouts
+                 to write, one of modules.dvd_scripts.LAYOUTS; a file
+                 opened keeps its own
+    script_header
+                 DVDSTUDIOPRO and SCENARIST: the header lines of the file
+                 opened, written back above the subtitles
     timeline_start
                  AVID and FCPXML: the timecode the editor's timeline starts at,
                  '00:00:00:00' or '01:00:00:00'
@@ -77,7 +87,7 @@ And for a format of its own:
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID',
-                'FCPXML', 'DCP', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR',
+                'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')

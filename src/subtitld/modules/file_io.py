@@ -24,6 +24,7 @@ from subtitld.modules import collab_state
 from subtitld.modules import csv_export
 from subtitld.modules import cue_ids
 from subtitld.modules import dcp
+from subtitld.modules import dvd_scripts
 from subtitld.modules import ebustl
 from subtitld.modules import fcpxml
 from subtitld.modules import timecode
@@ -641,6 +642,21 @@ def _spruce_stl(path):
         return False
 
 
+def _open_script(path, fmt):
+    """The subtitles in a DVD authoring script (modules.dvd_scripts) read as
+    `fmt`, at its rate or the video's; its rate, drop-frame, layout, header
+    and UTF-16 (DVD Studio Pro's own) kept to save it again as it was."""
+    with open(path, 'rb') as script_file:
+        data = script_file.read()
+    segments_list, settings = dvd_scripts.parse(srt.decode(data), fmt, session.VIDEO.get('framerate'))
+    kept = dict(fps=settings['fps'], timecode='drop' if settings['drop'] else 'non-drop',
+                script_layout=settings['layout'], script_header=settings['header'])
+    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        kept['encoding'] = 'utf-16'
+    session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+    return segments_list
+
+
 def _language_like_project(tag):
     """Subtitld's code for a language a file names (a code, as "pt" or
     "en_us", or a name, as Whisper keeps "English"), the project's own when
@@ -848,6 +864,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 found = legacy.kind(data)
                 subtitle_format = legacy.SESSION_IDS[found]
                 segments_list = legacy.parse(srt.decode(data), found, session.VIDEO.get('framerate'))
+            elif dvd_scripts.kind(data, 'sub') == 'dvdarchitect':
+                # DVD Architect's script, whose last field is hundredths.
+                subtitle_format = 'DVDARCHITECT'
+                segments_list = _open_script(subtitle_file, 'dvdarchitect')
             else:
                 subtitle_format = 'SUB'
                 segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
@@ -860,9 +880,24 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith('.stl') and _spruce_stl(subtitle_file):
             # Spruce's script is .stl too, and is text where EBU STL is
-            # binary. Three unrelated formats share this extension.
-            subtitle_format = 'SPRUCE'
-            segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
+            # binary. Three unrelated formats share this extension. DVD
+            # Studio Pro's is the same script with a header of settings,
+            # tabs around its commas or drop-frame times: it keeps them.
+            if dvd_scripts.stl_flavour(_text_of(subtitle_file)) == 'dvdstudiopro':
+                subtitle_format = 'DVDSTUDIOPRO'
+                segments_list = _open_script(subtitle_file, 'dvdstudiopro')
+            else:
+                subtitle_format = 'SPRUCE'
+                segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
+
+        elif subtitle_file.lower().endswith('.sst') and dvd_scripts.is_picture_script(_text_of(subtitle_file)):
+            raise CorruptedProjectFileError('A Scenarist subtitle script of pictures: its subtitles are '
+                                            'image files, not text')
+
+        elif subtitle_file.lower().endswith('.sst') and dvd_scripts.kind(_text_of(subtitle_file), 'sst') == 'scenarist':
+            # Scenarist's subtitle script, which Stream SubText shares .sst with.
+            subtitle_format = 'SCENARIST'
+            segments_list = _open_script(subtitle_file, 'scenarist')
 
         elif subtitle_file.lower().endswith('.txt') and ultrastar.kind(_text_of(subtitle_file)):
             # An UltraStar song: its syllables as karaoke codes, its notes'
@@ -889,6 +924,14 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
                                              timecode='drop' if subcap_settings['drop'] else 'non-drop',
                                              timeline_start=subcap_settings['start'])
+
+        elif subtitle_file.lower().endswith('.txt') and dvd_scripts.kind(_text_of(subtitle_file), 'txt'):
+            # The DVD authoring tools' scripts: Encore, DVD Architect,
+            # Scenarist, DVD Producer and Avid DVD, told apart (and from
+            # DVDSS, whose lines Encore's look like) by their layouts.
+            found = dvd_scripts.kind(_text_of(subtitle_file), 'txt')
+            subtitle_format = dvd_scripts.SESSION_IDS[found]
+            segments_list = _open_script(subtitle_file, found)
 
         elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
             # VPlayer, TMPlayer and their kin wrote .txt, which is also what
@@ -1785,6 +1828,19 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                         else language,
                         title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format in dvd_scripts.SESSION_FORMATS:
+            # The DVD authoring scripts: frames at the export's rate (the
+            # video's, else 25), drop-frame where asked and the format has
+            # it, in the layout and under the header the file was opened
+            # with, else the format's own.
+            dvd_scripts.save(final_file, segments, dvd_scripts.SESSION_FORMATS[subtitle_format],
+                             fps=float(options.get('fps') or VIDEO.get('framerate') or dvd_scripts.DEFAULT_FPS),
+                             drop=options.get('timecode') == 'drop',
+                             layout=options.get('script_layout'), header=options.get('script_header'),
+                             encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                             line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'),
+                             title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
         elif subtitle_format == 'AVID':
             # Avid SubCap: frames at the export's rate (the video's, else
