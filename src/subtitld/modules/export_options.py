@@ -1,11 +1,13 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
-The options apply to the formats that hold only timed text (SRT, VTT, ASS,
-DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, CAVENA890, AVID, FCPXML,
-DCP, SBV, SUB, BCC, XML, LRC, UltraStar and the player-era formats); USF,
-USFX and JSON keep the project as it is. Karaoke timing is formatting
-(modules.karaoke): removing the formatting takes the word timing of LRC
-and UltraStar with it.
+The options apply to the formats that hold only timed text (SRT, VTT, HLS,
+CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
+CAVENA890, AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
+XML, LRC, UltraStar, KAR, TTXT and the player-era formats) and to VOBSUB and
+PGS, whose pictures are drawn of the text they write; USF, USFX and JSON
+keep the project as it is. Karaoke timing is formatting (modules.karaoke):
+removing the formatting takes the word timing of LRC, UltraStar, KAR and
+TTXT with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -13,7 +15,7 @@ and UltraStar with it.
                  each as a language of its own)
     language     the translation's language code
     speakers     'none'; 'prefix': the speaker's name before the text; or
-                 'voice', the format's own way: WebVTT's voice tags
+                 'voice', the format's own way: WebVTT's (and HLS's) voice tags
                  (<v Name>), TTML's agents, SAMI's Source line, SCC's
                  and MCC's ">>" at each change of speaker, SBV's ">> NAME: "
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
@@ -23,22 +25,34 @@ and UltraStar with it.
 
 And for a format of its own:
 
-    encoding     SRT, SAMI, SUB, LRC and AVID: 'utf-8', 'utf-8-sig' (with a
-                 byte order mark), 'utf-16', 'cp1252' (Western European),
-                 'cp1250' (Central European), 'cp1251' (Cyrillic) or
-                 'cp949' (Korean)
-    line_ends    SRT, SAMI, SUB, LRC and AVID: 'lf' or 'crlf'
-    fps          SUB, PAC, FPC, CAP, CAVENA890 and AVID: the frame rate its
-                 frame numbers count in; FCPXML: its sequence's, whose
-                 frames the captions are on
-    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID
-                 and FCPXML the same, at 29.97 and 59.94, the rates that
-                 have it
+    encoding     SRT, SAMI, SUB, LRC, AVID and the DVD authoring scripts
+                 (DVDSTUDIOPRO, ENCORE, DVDARCHITECT, SCENARIST, DVDPRODUCER,
+                 AVIDDVD): 'utf-8', 'utf-8-sig' (with a byte order mark),
+                 'utf-16', 'cp1252' (Western European), 'cp1250' (Central
+                 European), 'cp1251' (Cyrillic) or 'cp949' (Korean)
+    line_ends    SRT, SAMI, SUB, LRC, AVID and the DVD authoring scripts:
+                 'lf' or 'crlf'
+    fps          SUB, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID and the DVD
+                 authoring scripts: the frame rate its frame numbers count
+                 in; FCPXML: its sequence's, whose frames the captions are on
+    timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID,
+                 FCPXML and LAMBDACAP the same, at 29.97 and 59.94, the
+                 rates that have it; DVDSTUDIOPRO and ENCORE too, where it
+                 is 'non-drop' unless asked
+    script_layout
+                 the DVD authoring scripts: which of the format's layouts
+                 to write, one of modules.dvd_scripts.LAYOUTS; a file
+                 opened keeps its own
+    script_header
+                 DVDSTUDIOPRO and SCENARIST: the header lines of the file
+                 opened, written back above the subtitles
     timeline_start
                  AVID and FCPXML: the timecode the editor's timeline starts at,
                  '00:00:00:00' or '01:00:00:00'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
-    mcc_captions MCC: 'both' (CEA-608 and CEA-708) or '608' (CEA-608 alone)
+    mcc_captions MCC: 'both' (CEA-608 and CEA-708), '608' (CEA-608 alone) or
+                 'op47' (both, and the subtitles as OP-47 teletext beside
+                 them, page 888)
     caption_mode SCC and MCC: how the captions are written — 'pop' (pop-on,
                  as prepared captions are), 'roll2', 'roll3', 'roll4'
                  (roll-up of that many rows, as live captions are) or
@@ -59,28 +73,50 @@ And for a format of its own:
                  (SMPTE ST 428-7's <SubtitleReel>; modules.dcp)
     dcp_fps      DCP: the frame rate a SMPTE reel counts its times in, one
                  of modules.dcp.RATES (24, 25, 30, 48, 50, 60)
+    dcp_content  DCP: 'text', or 'pictures': each subtitle drawn as a PNG
+                 beside the file, named in Interop, by UUID in SMPTE
+                 (modules.dcp.CONTENTS)
+    bdn_fps      BDN: the frame rate its events count in, one of
+                 modules.bdn.RATES (23.976, 24, 25, 29.97, 50, 59.94); each
+                 subtitle is drawn as a PNG beside the file
     pac_code_page
                  PAC: 'auto' (the language's, else the first that holds
                  the text) or one of modules.pac.CODE_PAGES ('latin',
                  'greek', 'cyrillic', 'korean' ...); a page that does not
                  hold the text gives way to one that does
-    look         ASS and TTML: their style 'clean' (white, a black
+    look         ASS, TTML, and CMFT and DASH's TTML: their style 'clean' (white, a black
                  outline) or as Subtitld's 'preview' draws (modules.ass,
                  modules.ttml)
     profile      TTML and DFXP: the profile the file declares itself to be,
                  a value of modules.ttml.PROFILES ('ttml1', 'imsc1',
-                 'imsc1.1', 'ebu-tt-d'), or of its IMAGE_PROFILES
-                 ('imsc1-image', 'imsc1.1-image'), which draw each
-                 subtitle as a PNG beside the file
+                 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'dapt'), or
+                 of its IMAGE_PROFILES ('imsc1-image', 'imsc1.1-image'),
+                 which draw each subtitle as a PNG beside the file
+    tunnel_608   TTML and DFXP in SMPTE-TT: whether the file carries the
+                 subtitles as CEA-608 captions too (RP 2052-10)
+    segment_duration
+                 HLS, CMFT and DASH: the seconds each segment (a fragment
+                 of a CMAF track) lasts (6, as Apple recommends;
+                 modules.hls.SEGMENT_DURATIONS)
+    mp4_text     CMFT and DASH: what the track carries, 'wvtt' (WebVTT) or
+                 TTML in a profile, 'imsc1.1', 'imsc1' or 'ebu-tt-d'
+                 (modules.isobmff_text.CARRIAGES)
+    mpegts       HLS: the MPEG-2 timestamp each segment maps its cue time
+                 0 to (900000, 10 s at 90 kHz, where most encoders start
+                 a stream's clock; or 0)
+    vobsub_size  VOBSUB: the frame its pictures are placed on, 'video' (the
+                 video's), 'pal' (720x576) or 'ntsc' (720x480), a key of
+                 modules.vobsub.SIZES (modules.vobsub.frame_size)
 """
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'CAVENA890', 'AVID',
-                'FCPXML', 'DCP', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR',
+TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
-                'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')
+                'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
+                'VOBSUB', 'PGS')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)

@@ -9,7 +9,10 @@ default or a forced one, and its kind:
 
 - 'text': subtitles FFmpeg decodes as text, which Subtitld can read;
 - 'pictures': subtitles drawn as pictures (Blu-ray's PGS, DVD's VobSub,
-  DVB's, DivX's XSUB), which only OCR would make text;
+  DVB's, DivX's XSUB), which only OCR would make text. A DVB subtitle
+  stream may carry a service for each language (a composition page each),
+  so `with_dvb_pages` makes a track of each, from the stream's subtitling
+  descriptor in the file's PMT;
 - 'captions': closed captions in a track of their own (QuickTime's
   CEA-608), which the closed_captions module reads;
 - 'teletext': a DVB teletext stream, whose subtitle pages the teletext
@@ -59,7 +62,7 @@ def tracks(metadata, language_of=None):
         tag = str(tags.get('language') or '').strip()
         tag = '' if tag.lower() == 'und' else tag
         disposition = stream.get('disposition') or {}
-        if kind == 'teletext':
+        if kind == 'teletext' or codec == 'dvb_subtitle':
             # A stream of several pages names all their languages ("eng,ger").
             tag = tag.split(',')[0].strip()
         found.append({
@@ -72,7 +75,7 @@ def tracks(metadata, language_of=None):
             'default': bool(disposition.get('default')),
             'forced': bool(disposition.get('forced')),
         })
-        if kind == 'teletext':
+        if kind == 'teletext' or codec == 'dvb_subtitle':
             # Its PID, in a transport stream ("0x102"), to find it there.
             try:
                 found[-1]['pid'] = int(str(stream.get('id') or ''), 0)
@@ -112,9 +115,44 @@ def with_teletext_pages(found, path, language_of=None):
     return out
 
 
+def with_dvb_pages(found, path, language_of=None):
+    """`found` (as `tracks` lists them) with what the subtitling descriptor
+    of each DVB subtitle stream of the transport stream at `path` says of
+    it: 'hearing_impaired' for subtitles for the hard of hearing, and, for
+    a stream that carries several services, a track for each, its 'page'
+    (the composition page, '2') and its own 'language_tag' and 'language'.
+    A stream that lists one service, or one in another container, stays one
+    track ('page' None), which reads the first."""
+    if not any(track['codec'] == 'dvb_subtitle' for track in found):
+        return found
+    from subtitld.modules import dvbsub, teletext
+    try:
+        listed = dvbsub.streams(path) if teletext.is_transport_stream(path) else {}
+    except OSError:
+        listed = {}
+    out = []
+    for track in found:
+        if track['codec'] != 'dvb_subtitle':
+            out.append(track)
+            continue
+        services = [service for service in listed.get(track.get('pid'), [])
+                    if service['type'] in dvbsub.SUBTITLE_TYPES]
+        if len(services) < 2:
+            hearing = bool(services) and services[0]['type'] in dvbsub.HARD_OF_HEARING_TYPES
+            out.append(dict(track, page=None, hearing_impaired=hearing))
+            continue
+        for service in services:
+            tag = '' if service['language'].lower() in ('', 'und') else service['language']
+            out.append(dict(track, page=str(service['page']), language_tag=tag,
+                            language=(language_of(tag) if language_of and tag else '') or '',
+                            hearing_impaired=service['type'] in dvbsub.HARD_OF_HEARING_TYPES))
+    return out
+
+
 def key(track):
     """What tells a track from the others: its stream index, and its page
-    for one of a teletext stream's ('2/888')."""
+    for one of a teletext stream's ('2/888') or a DVB subtitle stream's
+    ('3/2')."""
     return f"{track['index']}/{track['page']}" if track.get('page') else track['index']
 
 
@@ -230,7 +268,7 @@ def _without_sizes(path):
 
 
 # Picture tracks Subtitld can read through an OCR add-on (picture_ocr).
-READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle'})
+READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle'})
 
 
 def _hexdump(text):
@@ -244,13 +282,18 @@ def _hexdump(text):
 
 
 def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', folder=None, startupinfo=None,
-                     started=None):
-    """The pictures of the picture track at stream `index` (PGS or VobSub)
-    of the video at `path`, timed as FFmpeg counts from the video's start:
-    [picture_subtitles.Picture]. A PGS track is written out by FFmpeg as a
-    .sup; a VobSub track is read packet by packet through ffprobe, with the
-    palette and frame size its extradata (an .idx header) gives."""
-    from subtitld.modules import pgs, vobsub
+                     started=None, pid=None, page=None):
+    """The pictures of the picture track at stream `index` (PGS, VobSub or
+    DVB) of the video at `path`, timed as FFmpeg counts from the video's
+    start: [picture_subtitles.Picture]. A PGS track is written out by
+    FFmpeg as a .sup; a VobSub track is read packet by packet through
+    ffprobe, with the palette and frame size its extradata (an .idx header)
+    gives. A DVB track of a transport stream is read as it is (dvbsub.read:
+    the stream `pid`, its composition page `page`); in another container,
+    packet by packet through ffprobe, the pages its extradata names."""
+    from subtitld.modules import dvbsub, pgs, teletext, vobsub
+    if codec == 'dvb_subtitle' and teletext.is_transport_stream(path):
+        return dvbsub.read(path, pid=pid, page=page)[0]
     if codec == 'hdmv_pgs_subtitle':
         handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix='.sup', dir=folder)
         os.close(handle)
@@ -267,7 +310,7 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
             return pgs.read(target)
         finally:
             os.remove(target)
-    if codec == 'dvd_subtitle':
+    if codec in ('dvd_subtitle', 'dvb_subtitle'):
         import json
         command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_streams',
                    '-show_packets', '-show_format', '-show_data', '-of', 'json', str(path)]
@@ -280,6 +323,23 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
             raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
         probe = json.loads(out.decode('utf-8', 'replace') or '{}')
         stream = (probe.get('streams') or [{}])[0]
+        if codec == 'dvb_subtitle':
+            # The extradata: the composition and ancillary pages.
+            extradata = _hexdump(stream.get('extradata'))
+            composition = int(page) if page else (extradata[0] << 8 | extradata[1] if len(extradata) >= 4 else None)
+            ancillary = extradata[2] << 8 | extradata[3] if len(extradata) >= 4 and not page else None
+            packets = []
+            for packet in probe.get('packets') or []:
+                try:
+                    when = float(packet.get('pts_time'))
+                except (TypeError, ValueError):
+                    continue
+                packets.append((round(when * 90000), _hexdump(packet.get('data'))))
+            try:
+                offset = float((probe.get('format') or {}).get('start_time') or 0)
+            except ValueError:
+                offset = 0.0
+            return dvbsub.decode(packets, composition, ancillary, origin=round(offset * 90000))
         info = vobsub.parse_idx(_hexdump(stream.get('extradata')).decode('utf-8', 'replace'))
         if stream.get('width') and stream.get('height') and info['size'] == (720, 576):
             info['size'] = (int(stream['width']), int(stream['height']))

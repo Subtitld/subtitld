@@ -28,30 +28,50 @@ What is read of a page, in the bytes the specification gives:
 - Hamming 8/4 for the addresses and the header's control bits, Hamming
   24/18 for the enhancement triplets, one error put right and two found;
   odd parity for the characters, a character failing it read as a space;
-- the Latin G0 set with the national option sub-set the header's C12 to
-  C14 bits choose among those of the group a packet X/28/0 or M/29/0
-  designates or, without one, the group the page's language belongs to
-  (Polish, Turkish, the Balkan and the Baltic languages have groups of
-  their own);
-- accented letters and others of the G2 set placed over the page by
-  packet X/26 (Level 1.5), as broadcasters write what the sub-set lacks;
+- the G0 set the header's C12 to C14 bits choose among those of the group
+  a packet X/28/0 or M/29/0 designates (table 32) or, without one, the
+  group the page's language belongs to: Latin with a national option
+  sub-set (Polish, Turkish, the Balkan and the Baltic languages have
+  groups of their own), Cyrillic (Serbian and Macedonian, Russian and
+  Bulgarian, Ukrainian), Greek, Arabic or Hebrew, with the G2 set that
+  goes with it;
+- characters of the G2 set and letters of the G0 set with a diacritical
+  mark placed over the page by packet X/26 (Level 1.5), as broadcasters
+  write what the G0 set lacks, and the G0 and G2 sets a triplet
+  designates for those after it;
+- Arabic and Hebrew, which sit on the page from the right, in the order
+  they are read, Arabic's letters as themselves rather than the form
+  each takes beside the others;
 - the alphanumeric colours, a background given by New Background, Flash,
   the boxing of a subtitle page and double height (the row under one is
   not read);
 - where a subtitle sits: at the top, middle or bottom of the page by the
   rows it is on, and to the left, middle or right by its columns.
 
-Mosaic characters are spaces; the Cyrillic, Greek, Arabic and Hebrew G0
-sets are not read (their pages read as Latin).
+Mosaic characters are spaces.
 
 Writing gives a transport stream with one teletext stream: a page for each
-language, 888 and up, Level 1 with X/26 for an accented letter the
-language's sub-set lacks, each subtitle double height and boxed in its
+language, 888 and up, each subtitle double height and boxed in its
 colours, centred on the bottom rows (or the top, for one placed there),
-erased when it ends. `write_video` has FFmpeg copy that stream into a
+erased when it ends. A page is written in the set its language has, or
+the first that holds its text (Serbian in Latin or Cyrillic), designated
+by packet X/28/0 but for western Europe's Latin, which needs none; what
+the G0 set lacks is placed by X/26 from the G2 set or as a letter with a
+mark, a Latin capital the Cyrillic and Greek sets have no place for as
+the letter that looks the same. Arabic is shaped, each letter in the form
+the sets have nearest the one it takes, and Arabic and Hebrew put on the
+page from the right. `write_video` has FFmpeg copy that stream into a
 transport stream of the video, its picture and sound copied as well.
+
+The same teletext packets go in each frame's ancillary data as OP-47
+(SMPTE RDD 8), the way an MXF carries subtitles beside its captions (SMPTE
+ST 436) and an MCC file writes them: `op47_packet` and `op47_fields`
+write and read a frame's subtitling distribution packet, `op47_frames`
+spreads a page's transmissions over the frames, five packets a frame, and
+`op47_decode` reads them back as subtitles.
 """
 
+import functools
 import os
 import subprocess
 import tempfile
@@ -177,40 +197,101 @@ SUBSETS = {
     'estonian': '#õŠÄÖŽÜÕšäöžü',
     'lettish': '#$ŠėęŽčūšąųžį',                     # Latvian and Lithuanian
 }
-# Table 32: the sub-set each value of C12, C13 and C14 (read as a number,
-# C12 the highest bit) chooses in each group the 4 bits above them
-# designate. None is a set this module does not read (Cyrillic, Greek) or
-# one the table leaves empty.
+# The G0 sets other than Latin (15.6.4 to 15.6.12), 2/0 to 7/F. They have
+# no national option sub-sets: a page in one of them has its own G0 set.
+_ASCII = ' !"#$%&\'()*+,-./0123456789:;<=>?'
+_CYRILLIC_LOWER = 'юабцдефгхийклмнопярстужвьъзшэщч■'
+G0_SETS = {
+    'cyrillic-1': _ASCII + 'ЧАБЦДЕФГХИЈКЛМНОПЌРСТУВЃЉЊЗЋЖЂШЏчабцдефгхијклмнопќрстувѓљњзћжђш■',
+    # 4/A is drawn Й, with a mark libzvbi takes for Ѝ's grave: Russian and
+    # Bulgarian have no other place for Й.
+    'cyrillic-2': _ASCII[:6] + 'ы' + _ASCII[7:] + 'ЮАБЦДЕФГХИЙКЛМНОПЯРСТУЖВЬЪЗШЭЩЧЫ' + _CYRILLIC_LOWER,
+    'cyrillic-3': _ASCII[:6] + 'ї' + _ASCII[7:] + 'ЮАБЦДЕФГХИЙКЛМНОПЯРСТУЖВЬІЗШЄЩЧЇ'
+                  + 'юабцдефгхийклмнопярстужвьізшєщч■',
+    'greek': _ASCII[:28] + '«=»?' + 'ΐΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡ\u0374ΣΤΥΦΧΨΩΪΫάέήίΰαβγδεζηθικλμνξοπρςστυφχψωϊϋόύώ■',
+    # Arabic is drawn as it is shown, each letter in the form it takes
+    # beside the others (Unicode's presentation forms); 2/8 and 2/9, 3/C
+    # and 3/E are mirrored, as the text runs from the right. 2/6 is a tail
+    # that ends a letter, read as nothing (see _TAIL).
+    'arabic': ' !"£$%ـﻲ)(*+،-./0123456789:؛>=<؟'
+              'ﺔﺀﺒﺏﺘﺕﺎﺍﺑﺓﺗﺛﺟﺣﺧﺩﺫﺭﺯﺳﺷﺻﺿﻃﻇﻋﻏﺜﺠﺤﺨ#ـﻓﻗﻛﻟﻣﻧﻫﻭﻰﻳﺙﺝﺡﺥﻴﻯﻌﻐﻔﻑﻘﻕﻙﻠﻝﻤﻡﻨﻥﻻ■',
+    'hebrew': _ASCII[:3] + '£' + _ASCII[4:] + '@ABCDEFGHIJKLMNOPQRSTUVWXYZ←½→↑#אבגדהוזחטיךכלםמןנסעףפץצקרשת₪‖¾÷■',
+}
+_TAIL = ('arabic', 0x26)
+# The sets whose text runs from right to left.
+RIGHT_TO_LEFT = frozenset({'arabic', 'hebrew'})
+
+# Table 32: the G0 set or Latin national option sub-set each value of C12,
+# C13 and C14 (read as a number, C12 the highest bit) chooses in each group
+# the 4 bits above them designate. None is a place the table leaves empty.
 GROUPS = {
     0: ('english', 'german', 'swedish', 'italian', 'french', 'spanish', 'czech', None),
     1: ('polish', 'german', 'swedish', 'italian', 'french', None, 'czech', None),
     2: ('english', 'german', 'swedish', 'italian', 'french', 'spanish', 'turkish', None),
     3: (None, None, None, None, None, 'serbian', None, 'romanian'),
-    4: (None, 'german', 'estonian', 'lettish', None, None, 'czech', None),
-    6: (None, None, None, None, None, None, 'turkish', None),
+    4: ('cyrillic-1', 'german', 'estonian', 'lettish', 'cyrillic-2', 'cyrillic-3', 'czech', None),
+    6: (None, None, None, None, None, None, 'turkish', 'greek'),
+    8: ('english', None, None, None, 'french', None, None, 'arabic'),
+    10: (None, None, None, None, None, 'hebrew', None, 'arabic'),
 }
 # The group a page in a language is in, when no packet designates one.
-_LANGUAGE_GROUPS = {'pl': 1, 'tr': 2, 'sr': 3, 'hr': 3, 'sl': 3, 'bs': 3, 'ro': 3, 'et': 4, 'lv': 4, 'lt': 4}
+_LANGUAGE_GROUPS = {'pl': 1, 'tr': 2, 'sr': 3, 'hr': 3, 'sl': 3, 'bs': 3, 'ro': 3, 'et': 4, 'lv': 4, 'lt': 4,
+                    'ru': 4, 'bg': 4, 'uk': 4, 'be': 4, 'mk': 4, 'el': 6, 'ar': 8, 'fa': 8, 'ur': 8, 'he': 10,
+                    'yi': 10}
 # ISO 639-2 codes a descriptor gives, as their ISO 639-1 ones.
 _TWO_LETTERS = {'pol': 'pl', 'tur': 'tr', 'srp': 'sr', 'scc': 'sr', 'hrv': 'hr', 'scr': 'hr', 'slv': 'sl',
                 'bos': 'bs', 'ron': 'ro', 'rum': 'ro', 'est': 'et', 'lav': 'lv', 'lit': 'lt', 'eng': 'en',
                 'ger': 'de', 'deu': 'de', 'swe': 'sv', 'fin': 'fi', 'hun': 'hu', 'ita': 'it', 'fre': 'fr',
                 'fra': 'fr', 'por': 'pt', 'spa': 'es', 'cze': 'cs', 'ces': 'cs', 'slo': 'sk', 'slk': 'sk',
-                'dut': 'nl', 'nld': 'nl', 'dan': 'da', 'nor': 'no', 'nob': 'no', 'cat': 'ca'}
-# The sub-set (group, C12-C14 value) a page in a language is written with.
-_WRITING = {'en': (0, 0), 'de': (0, 1), 'sv': (0, 2), 'fi': (0, 2), 'hu': (0, 2), 'it': (0, 3), 'fr': (0, 4),
-            'pt': (0, 5), 'es': (0, 5), 'ca': (0, 5), 'cs': (0, 6), 'sk': (0, 6), 'pl': (1, 0), 'tr': (2, 6),
-            'sr': (3, 5), 'hr': (3, 5), 'sl': (3, 5), 'bs': (3, 5), 'ro': (3, 7), 'et': (4, 2), 'lv': (4, 3),
-            'lt': (4, 3)}
+                'dut': 'nl', 'nld': 'nl', 'dan': 'da', 'nor': 'no', 'nob': 'no', 'cat': 'ca', 'rus': 'ru',
+                'bul': 'bg', 'ukr': 'uk', 'bel': 'be', 'mac': 'mk', 'mkd': 'mk', 'gre': 'el', 'ell': 'el',
+                'ara': 'ar', 'per': 'fa', 'fas': 'fa', 'urd': 'ur', 'heb': 'he', 'yid': 'yi'}
+# The sets (group, C12-C14 value) a page in a language is written with, the
+# first that holds its text: Serbian is written in Latin or in Cyrillic.
+_WRITING = {'en': [(0, 0)], 'de': [(0, 1)], 'sv': [(0, 2)], 'fi': [(0, 2)], 'hu': [(0, 2)], 'it': [(0, 3)],
+            'fr': [(0, 4)], 'pt': [(0, 5)], 'es': [(0, 5)], 'ca': [(0, 5)], 'cs': [(0, 6)], 'sk': [(0, 6)],
+            'pl': [(1, 0)], 'tr': [(2, 6)], 'sr': [(3, 5), (4, 0)], 'hr': [(3, 5)], 'sl': [(3, 5)],
+            'bs': [(3, 5), (4, 0)], 'ro': [(3, 7)], 'et': [(4, 2)], 'lv': [(4, 3)], 'lt': [(4, 3)],
+            'mk': [(4, 0)], 'ru': [(4, 4)], 'bg': [(4, 4)], 'uk': [(4, 5)], 'be': [(4, 5), (4, 4)],
+            'el': [(6, 7)], 'ar': [(8, 7)], 'fa': [(8, 7)], 'ur': [(8, 7)], 'he': [(10, 5)], 'yi': [(10, 5)]}
+# Every set a page can be written with, in the order one is looked for
+# when the language's own does not hold the text.
+_DESIGNATIONS = [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6), (1, 0), (2, 6), (3, 5), (3, 7), (4, 2),
+                 (4, 3), (4, 4), (4, 5), (4, 0), (6, 7), (8, 7), (10, 5)]
 
-# The G2 set (table 37) is ISO 6937's upper half, with the euro at 5/6.
+# The Latin G2 set (table 37) is ISO 6937's upper half, but for the euro at
+# 5/6 and a few others.
 _G2 = {code: ebustl._ISO6937.get(code | 0x80, '') for code in range(0x20, 0x80)}
-_G2[0x56] = '€'
-_G2[0x20] = ' '
-# Its column 4: the diacritical marks a G0 letter takes from packet X/26.
+_G2.update({0x20: ' ', 0x24: '$', 0x26: '#', 0x56: '€', 0x57: '‰', 0x58: 'ɑ', 0x7F: '■'})
+# Its column 4: the diacritical marks a G0 letter takes from packet X/26,
+# the same in the Cyrillic and Greek G2 sets.
 _MARKS = {code & 0x0F: mark for code, mark in ebustl._DIACRITICS.items()}
 _FROM_MARK = {mark: number for number, mark in _MARKS.items()}
-_FROM_G2 = {char: code for code, char in _G2.items() if char and code != 0x20}
+_COLUMN_4 = {0x40 | number: '' for number in range(16)}
+
+
+def _g2_set(text, marks=True):
+    """A G2 set as {code: char} from its characters from 2/0, '·' for a
+    place that shows nothing; with `marks`, column 4 is the diacritical
+    marks, which are no character of their own."""
+    table = {0x20 + index: '' if char == '·' else char for index, char in enumerate(text)}
+    if marks:
+        table.update(_COLUMN_4)
+    return table
+
+
+# The Cyrillic, Greek and Arabic G2 sets (tables 41, 43 and 45). Arabic's
+# has letters in column 4, not marks.
+G2_SETS = {
+    'latin': _G2,
+    'cyrillic': _g2_set(' ¡¢£$¥·§·‘“«←↑→↓°±²³×µ¶·÷’”»¼½¾¿' + '·' * 16 + '—¹®©™♪€‰ɑŁłß⅛⅜⅝⅞'
+                        'DEFGIJKLNQRSUVWZdefgijklnqrsuvwz'),
+    'greek': _g2_set(' ab£ehi§:‘“k←↑→↓°±²³xmnp÷’”t¼½¾x' + '·' * 16 + '?¹®©™♪€‰ɑΊΎΏ⅛⅜⅝⅞'
+                     'CDFGJLQRSUVWYZΆΉcdfgjlqrsuvwyzΈ■'),
+    'arabic': _g2_set(' ﻉﺁﺃﺅﺇﺋﺊﭼﭽﭺﭘﭙﭖﮊﮔ٠١٢٣٤٥٦٧٨٩ﻎﻍﻼﻬﻪﻩàABCDEFGHIJKLMNOPQRSTUVWXYZëêùîﻊéabcdefghijklmnopqrstuvwxyzâôûç·', marks=False),
+}
+_G2_OF = {'cyrillic-1': 'cyrillic', 'cyrillic-2': 'cyrillic', 'cyrillic-3': 'cyrillic', 'greek': 'greek',
+          'arabic': 'arabic', 'hebrew': 'arabic'}
 
 # Teletext's alphanumeric colours, white being a subtitle's own (''); as
 # a background, black is the box's own.
@@ -231,18 +312,148 @@ def language_code(tag):
 
 
 def subset_of(group, option):
-    """The national option sub-set's name for a group and C12-C14 value;
-    English for one this module does not read."""
+    """The G0 set for a group and C12-C14 value: a Latin national option
+    sub-set's name ('german') or another G0 set's ('cyrillic-2'); English
+    for a place table 32 leaves empty."""
     return GROUPS.get(group, GROUPS[0])[option & 7] or 'english'
 
 
+def g2_of(group, option):
+    """The G2 set's name ('latin', 'cyrillic', 'greek', 'arabic') that goes
+    with a group and C12-C14 value: Arabic's, too, for the Latin sets of the
+    Arabic group."""
+    subset = subset_of(group, option)
+    return _G2_OF.get(subset, 'arabic' if group == 8 else 'latin')
+
+
 def g0_char(code, subset='english'):
-    """The character of a 7-bit code in the Latin G0 set with `subset`."""
+    """The character of a 7-bit code in the G0 set `subset`: the Latin one
+    with that national option sub-set, or another G0 set."""
+    if subset in G0_SETS:
+        if (subset, code) == _TAIL:
+            return ''
+        return G0_SETS[subset][code - 0x20] if 0x20 <= code < 0x80 else ' '
     if code in NATIONAL_POSITIONS:
         return SUBSETS.get(subset, SUBSETS['english'])[NATIONAL_POSITIONS.index(code)]
     if code == 0x7F:
         return '■'                             # a block, the whole cell
     return chr(code) if 0x20 <= code < 0x7F else ' '
+
+
+def _plain_char(code, subset='english'):
+    """A G0 character as an X/26 triplet addresses it: without the national
+    option sub-set (15.4, note)."""
+    if subset in G0_SETS:
+        return g0_char(code, subset)
+    return '■' if code == 0x7F else chr(code) if 0x20 <= code < 0x7F else ' '
+
+
+def _shown(char):
+    """A character as Subtitld keeps it: Arabic's presentation forms as the
+    letters they are (a lam-alef as its two), the rest as it is."""
+    if char and ('ﭐ' <= char <= '﷿' or 'ﹰ' <= char <= '﻿'):
+        return unicodedata.normalize('NFKC', char)
+    return char
+
+
+# --- Right to left -------------------------------------------------------------
+
+_MIRRORED = dict(zip('()<>[]{}«»', ')(><][}{»«'))
+
+
+def _direction(char):
+    """'rtl' for a letter written from the right, 'ltr' for one written from
+    the left or a digit, '' for what goes either way (spaces, punctuation)."""
+    kind = unicodedata.bidirectional(char[:1]) if char else ''
+    if kind in ('R', 'AL'):
+        return 'rtl'
+    if kind in ('L', 'EN', 'AN'):
+        return 'ltr'
+    return ''
+
+
+def visual_order(items, char_of=lambda item: item, mirror=None):
+    """`items` of a line with letters written from the right, turned from
+    the order they are read in to the order they sit in on the page, or
+    back again: the line taken from its end, but for a run written from the
+    left (Latin words, numbers) kept as it is, and the brackets between
+    turned round (`mirror(item)` turns one). A line with no such letter is
+    left as it is."""
+    kinds = [_direction(char_of(item)) for item in items]
+    if 'rtl' not in kinds:
+        return list(items)
+    mirror = mirror or (lambda item: _MIRRORED.get(item, item))
+    pieces, index = [], 0
+    while index < len(items):
+        if kinds[index] == 'ltr':
+            end = last = index
+            while end < len(items) and kinds[end] != 'rtl':
+                if kinds[end] == 'ltr':
+                    last = end
+                end += 1
+            pieces.append(list(items[index:last + 1]))
+            index = last + 1
+        else:
+            pieces.append([mirror(items[index])])
+            index += 1
+    return [item for piece in reversed(pieces) for item in piece]
+
+
+# --- Arabic letters' forms ------------------------------------------------------
+
+# Letters that join the one after them as well as the one before, and those
+# that join only the one before; the rest join neither.
+_DUAL_JOINING = frozenset('بتثجحخسشصضطظعغفقكلمنهيئىپچگـ')
+_RIGHT_JOINING = frozenset('اآأإدذرزوؤةژ')
+# Persian's own kaf and yeh, which the sets draw as Arabic's.
+_ARABIC_SUBSTITUTES = {'ک': 'ك', 'ی': 'ي'}
+_FALLBACKS = {'isolated': ('isolated', 'final', 'initial', 'medial'),
+              'final': ('final', 'isolated', 'medial', 'initial'),
+              'initial': ('initial', 'medial', 'isolated', 'final'),
+              'medial': ('medial', 'initial', 'final', 'isolated')}
+
+
+def _arabic_forms():
+    """{letter: {form: presentation form}} of the letters the Arabic G0
+    and G2 sets draw, by the form each of their characters is."""
+    forms = {}
+    for char in G0_SETS['arabic'] + ''.join(G2_SETS['arabic'].values()):
+        decomposition = unicodedata.decomposition(char).split()
+        if decomposition and decomposition[0] in ('<isolated>', '<final>', '<initial>', '<medial>'):
+            letter = ''.join(chr(int(code, 16)) for code in decomposition[1:])
+            forms.setdefault(letter, {})[decomposition[0][1:-1]] = char
+    return forms
+
+
+_ARABIC_FORMS = _arabic_forms()
+
+
+def shape_arabic(items, char_of=lambda item: item, with_char=lambda item, char: char):
+    """`items` of a line in reading order with each Arabic letter turned to
+    the form it takes beside the others (isolated, initial, medial, final),
+    the nearest form the sets have when they lack that one, and a lam
+    before an alef as their one character."""
+    chars = [_ARABIC_SUBSTITUTES.get(char_of(item), char_of(item)) for item in items]
+    out, index = [], 0
+    while index < len(items):
+        char = chars[index]
+        before = chars[index - 1] if index else ''
+        joins_before = before in _DUAL_JOINING and (char in _DUAL_JOINING or char in _RIGHT_JOINING)
+        if char == 'ل' and index + 1 < len(items) and chars[index + 1] == 'ا':
+            forms = _ARABIC_FORMS['لا']
+            out.append(with_char(items[index], forms['final' if joins_before else 'isolated']))
+            index += 2
+            continue
+        after = chars[index + 1] if index + 1 < len(items) else ''
+        joins_after = char in _DUAL_JOINING and (after in _DUAL_JOINING or after in _RIGHT_JOINING)
+        forms = _ARABIC_FORMS.get(char)
+        if forms:
+            form = {(False, False): 'isolated', (True, False): 'final', (False, True): 'initial',
+                    (True, True): 'medial'}[(joins_before, joins_after)]
+            char = next(forms[name] for name in _FALLBACKS[form] if name in forms)
+        out.append(with_char(items[index], char))
+        index += 1
+    return out
 
 
 # --- Transport stream ---------------------------------------------------------
@@ -495,8 +706,10 @@ def _designation(data):
     return None if triplet is None else (triplet >> 7) & 0x7F
 
 
-def _x26(data):
-    """The characters packet X/26 places: {(row, column): char}."""
+def _x26(data, subset='english', g2='latin'):
+    """The characters packet X/26 places: {(row, column): char}, from the
+    page's G0 set `subset` and G2 set `g2`, or those a triplet designates
+    for the ones after it (Table 34)."""
     placed = {}
     row = 0
     for start in range(1, 40, 3):
@@ -512,10 +725,14 @@ def _x26(data):
             elif mode == 0x07:                     # address display row 0
                 row = 0
             continue
-        if mode == 0x0F and value >= 0x20:
-            placed[(row, address)] = _G2.get(value, '')
-        elif mode >= 0x10 and value >= 0x20:
-            base = '@' if value == 0x2A and mode == 0x10 else g0_char(value)
+        if mode == 0x08:                           # modified G0 and G2 designation
+            subset, g2 = subset_of(value >> 3, value & 7), g2_of(value >> 3, value & 7)
+        elif mode == 0x09 and value >= 0x20:       # a G0 character
+            placed[(row, address)] = _plain_char(value, subset)
+        elif mode == 0x0F and value >= 0x20:       # a G2 character
+            placed[(row, address)] = G2_SETS.get(g2, _G2).get(value, '')
+        elif mode >= 0x10 and value >= 0x20:       # a G0 letter with a mark
+            base = '@' if value == 0x2A and mode == 0x10 else _plain_char(value, subset)
             mark = _MARKS.get(mode & 0x0F, '') if mode != 0x10 else ''
             placed[(row, address)] = unicodedata.normalize('NFC', base + mark)
     return placed
@@ -603,6 +820,11 @@ def render(rows, subset='english', placed=None, subtitle=True):
         if not visible:
             continue
         first, last = visible[0], visible[-1]
+        # Arabic and Hebrew sit on the page from the right: read, they are
+        # taken from the end, their presentation forms as letters.
+        shown[first:last + 1] = [(column, _shown(char), style) for column, char, style in visual_order(
+            shown[first:last + 1], char_of=lambda cell: cell[1],
+            mirror=lambda cell: (cell[0], _MIRRORED.get(cell[1], cell[1]), cell[2]))]
         runs = []
         for index in range(first, last + 1):
             _column, char, style = shown[index]
@@ -664,7 +886,7 @@ class _Decoder:
         self.magazine_group = {}                    # M/29/0's designation, by magazine
         self.current = {}                           # the page each magazine is sending
         self.receiving = False
-        self.rows, self.placed = {}, {}
+        self.rows, self.enhancements = {}, {}       # X/26 packets, by their number
         self.page_group = None                      # X/28/0's designation
         self.option, self.subtitle = 0, True
         self.started = None                         # when this transmission's header came
@@ -672,17 +894,22 @@ class _Decoder:
         self.segments = []
         self.last = None
 
-    def _subset(self):
+    def _sets(self):
+        """The page's G0 set (or Latin sub-set) and G2 set."""
         group = self.page_group if self.page_group is not None else \
             self.magazine_group.get(self.magazine, self.group)
-        return subset_of(group, self.option)
+        return subset_of(group, self.option), g2_of(group, self.option)
 
     def _commit(self, until):
         """The transmission that began at self.started is complete: what it
         shows replaces what was shown, from when it began."""
         if self.started is None:
             return
-        text = render(self.rows, self._subset(), self.placed, self.subtitle)
+        subset, g2 = self._sets()
+        placed = {}
+        for number in sorted(self.enhancements):
+            placed.update(_x26(self.enhancements[number], subset, g2))
+        text = render(self.rows, subset, placed, self.subtitle)
         if text != self.shown:
             if self.shown and self.since is not None and self.started > self.since:
                 self.segments.append({'start': self.since, 'end': self.started, 'text': self.shown})
@@ -711,7 +938,7 @@ class _Decoder:
             if ours:
                 self._commit(seconds)
                 if controls[1] & 0x08:              # C4, erase page
-                    self.rows, self.placed = {}, {}
+                    self.rows, self.enhancements = {}, {}
                 self.page_group = None
                 self.subtitle = bool(controls[3] & 0x08)
                 c12, c13, c14 = (controls[5] >> 1) & 1, (controls[5] >> 2) & 1, (controls[5] >> 3) & 1
@@ -731,7 +958,8 @@ class _Decoder:
         if row <= 24:
             self.rows[row] = bytes(data)
         elif row == 26:
-            self.placed.update(_x26(data))
+            # Read when the page is complete, in the sets it ends up with.
+            self.enhancements[ham84(data[0])] = bytes(data)
         elif row == 28:
             designation = _designation(data)
             if designation is not None:
@@ -818,16 +1046,88 @@ def busiest_subtitle_page(packets):
 # --- Writing -------------------------------------------------------------------
 
 def _encoder(subset):
-    """{char: G0 code} for the Latin G0 set with `subset`."""
+    """{char: G0 code} for the G0 set `subset`: the Latin one with that
+    national option sub-set, or another G0 set."""
+    if subset in G0_SETS:
+        return {char: 0x20 + index for index, char in reversed(list(enumerate(G0_SETS[subset])))
+                if (subset, 0x20 + index) != _TAIL}
     table = {chr(code): code for code in range(0x20, 0x7F) if code not in NATIONAL_POSITIONS}
     table.update({char: code for code, char in zip(NATIONAL_POSITIONS, SUBSETS[subset])})
     return table
 
 
-def _row_bytes(runs, encode, column):
+# Letters written as another that looks the same, where a set has no place
+# of its own for them: Latin capitals in Cyrillic and Greek, and Ukrainian's
+# Ґ, which the Ukrainian set draws as Г.
+_LOOKALIKES = tuple(zip('ABCEHKMOPTXaceopxy', 'АВСЕНКМОРТХасеорху')) + \
+    tuple(zip('ABEHIKMNOPTXYZo', 'ΑΒΕΗΙΚΜΝΟΡΤΧΥΖο')) + (('Ґ', 'Г'), ('ґ', 'г'))
+
+
+@functools.lru_cache(maxsize=None)
+def _encoders(group, option):
+    """What a page of a group and C12-C14 value writes its text with:
+    ({char: G0 code}, {char: G2 code}, {letter: G0 code an X/26 mark goes
+    over}, the G0 set's name)."""
+    subset = subset_of(group, option)
+    supplementary = {char: code for code, char in sorted(G2_SETS[g2_of(group, option)].items(), reverse=True)
+                     if char and code != 0x20}
+    encode = _encoder(subset)
+    if subset in G0_SETS:
+        plain = dict(encode)
+    else:
+        plain = {chr(code): code for code in range(0x41, 0x7B) if chr(code).isalpha()}
+    # A Latin letter the Cyrillic and Greek G2 sets leave out, because a
+    # letter of the G0 set looks the same, is written as that letter.
+    for latin, other in _LOOKALIKES:
+        if latin not in encode and latin not in supplementary and other in encode:
+            encode[latin] = encode[other]
+    return encode, supplementary, plain, subset
+
+
+def _encodable(char, encoders):
+    """Whether a page written with `encoders` holds `char`: in its G0 set,
+    its G2 set, as a letter of its G0 set with a mark, or (Arabic) as a
+    letter one of the forms of which the sets draw."""
+    encode, supplementary, plain, subset = encoders
+    if char in encode or char in supplementary or char.isspace():
+        return True
+    if (subset == 'arabic' or 'ﺍ' in supplementary) and _ARABIC_SUBSTITUTES.get(char, char) in _ARABIC_FORMS:
+        return True
+    decomposed = unicodedata.normalize('NFD', char)
+    if len(decomposed) == 1:
+        return decomposed in encode or decomposed in supplementary
+    return len(decomposed) == 2 and decomposed[1] in _FROM_MARK and decomposed[0] in plain
+
+
+def designation_for(language='', texts=()):
+    """(group, C12-C14 value) a page in `language` (Subtitld's code or ISO
+    639-2) showing `texts` is written with: the first of the language's
+    own sets that holds every character of them, else the first set that
+    does, else the one that holds the most."""
+    chars = set()
+    for text in texts:
+        chars.update(markup.plain(markup.split_lead(str(text or ''))[1]))
+    chars.discard('\n')
+    preferred = _WRITING.get(language_code(language), [])
+    best = None
+    for designation in preferred + [entry for entry in _DESIGNATIONS if entry not in preferred]:
+        encoders = _encoders(*designation)
+        missing = sum(1 for char in chars if not _encodable(char, encoders))
+        if not missing:
+            return designation
+        if best is None or missing < best[0]:
+            best = (missing, designation)
+    return best[1]
+
+
+def _row_bytes(runs, encode, column, supplementary=None, plain=None):
     """The 40 bytes of a subtitle row: double height, boxed, the text from
-    `column` in its colours; and the X/26 characters it needs
-    {column: (mode, data)} for what the sub-set lacks."""
+    `column` in its colours (in the order it sits in); and the X/26
+    characters it needs {column: (mode, data)} for what the G0 set lacks,
+    from the G2 set (`supplementary`, {char: code}) or as a letter of the
+    G0 set (`plain`, {letter: code}) with a mark. Latin's by default."""
+    if supplementary is None:
+        _encode, supplementary, plain, _subset = _encoders(0, 0)
     cells = [0x20] * 40
     extra = {}
     position = max(0, column - 3)
@@ -856,17 +1156,19 @@ def _row_bytes(runs, encode, column):
         for char in text:
             if position >= 38:
                 break
+            decomposed = unicodedata.normalize('NFD', char)
+            if len(decomposed) == 1 and char not in encode and char not in supplementary:
+                char = decomposed                   # a character that is another (Greek ; for ;)
             if char in encode:
                 cells[position] = encode[char]
-            elif char in _FROM_G2:
+            elif char in supplementary:
                 cells[position] = 0x20
-                extra[position] = (0x0F, _FROM_G2[char])
+                extra[position] = (0x0F, supplementary[char])
             else:
-                decomposed = unicodedata.normalize('NFD', char)
                 base, marks = decomposed[:1], decomposed[1:]
-                if len(marks) == 1 and marks in _FROM_MARK and base in encode and 0x20 <= ord(base) < 0x7F:
+                if len(marks) == 1 and marks in _FROM_MARK and base in plain:
                     cells[position] = encode.get(base, 0x20)
-                    extra[position] = (0x10 | _FROM_MARK[marks], ord(base))
+                    extra[position] = (0x10 | _FROM_MARK[marks], plain[base])
                 else:
                     cells[position] = encode.get(char, 0x3F)
             position += 1
@@ -900,16 +1202,70 @@ def _header(magazine, number, erase, option):
     return _field(magazine, 0, data + bytes(parity_encode(0x20) for _ in range(32)))
 
 
-def page_fields(text, page=DEFAULT_PAGE, language=''):
+# Table 30's colours for CLUTs 2 and 3, which a packet X/28/0 Format 1
+# defines again: the same, so a page that designates its sets keeps them.
+_CLUTS_2_AND_3 = ((15, 0, 5), (15, 7, 0), (0, 15, 7), (15, 15, 11), (0, 12, 10), (5, 0, 0), (6, 5, 2), (12, 7, 7),
+                  (3, 3, 3), (15, 7, 7), (7, 15, 7), (15, 15, 7), (7, 7, 15), (15, 7, 15), (7, 15, 15), (13, 13, 13))
+
+
+def _x28(magazine, group, option):
+    """Packet X/28/0 Format 1 (9.4.2.2, table 4) for a Level 1 page,
+    designating its G0 and G2 sets and national option sub-set (table 32),
+    the second G0 set the same; no side panels, the colours as they are."""
+    bits = []
+
+    def put(value, count):
+        bits.extend((value >> index) & 1 for index in range(count))
+
+    designation = (group << 3) | (option & 7)
+    put(0, 4)                                       # a basic Level 1 page
+    put(0, 3)                                       # 7 bits and odd parity
+    put(designation, 7)
+    put(designation, 7)
+    put(0, 7)                                       # side panels
+    for red, green, blue in _CLUTS_2_AND_3:
+        put(red, 4)
+        put(green, 4)
+        put(blue, 4)
+    put(0, 14)                                      # screen and row colours, no re-mapping
+    triplets = [sum(bit << index for index, bit in enumerate(bits[start:start + 18])) for start in range(0, 234, 18)]
+    return _field(magazine, 28, bytes([ham84_encode(0)]) + b''.join(ham2418_encode(value) for value in triplets))
+
+
+def _visual_runs(runs, subset, supplementary):
+    """A line's runs [(text, style)] in the order they sit on the page:
+    Arabic shaped (in the Arabic sets), then a line with letters written
+    from the right taken from its end."""
+    cells = [(char, style) for text, style in runs for char in text]
+    if subset == 'arabic' or 'ﺍ' in supplementary:
+        cells = shape_arabic(cells, char_of=lambda cell: cell[0], with_char=lambda cell, char: (char, cell[1]))
+    cells = visual_order(cells, char_of=lambda cell: cell[0],
+                         mirror=lambda cell: (_MIRRORED.get(cell[0], cell[0]), cell[1]))
+    out = []
+    for char, style in cells:
+        if out and out[-1][1] == style:
+            out[-1] = (out[-1][0] + char, style)
+        else:
+            out.append((char, style))
+    return out
+
+
+def page_fields(text, page=DEFAULT_PAGE, language='', designation=None):
     """The teletext packets of one transmission of a subtitle page showing
     `text` (Subtitld's, with tags and a place), its Erase Page bit set: the
-    header, its X/26 for the characters the sub-set lacks, and the rows,
-    double height and centred on the bottom rows, or the top ones for a
-    subtitle placed there. `text` '' is a transmission that erases."""
+    header, an X/28/0 that designates its character sets (but for the
+    Latin ones of western Europe, which need none), its X/26 for the
+    characters the G0 set lacks, and the rows, double height and centred
+    on the bottom rows, or the top ones for a subtitle placed there. The
+    sets are `designation` (group, C12-C14 value), else those
+    `designation_for` the language and the text gives. `text` '' is a
+    transmission that erases."""
     magazine, number = page_parts(page)
-    group, option = _WRITING.get(language_code(language), (0, 0))
-    encode = _encoder(subset_of(group, option))
+    group, option = designation or designation_for(language, [text])
+    encode, supplementary, plain, subset = _encoders(group, option)
     fields = [_header(magazine, number, 1, option)]
+    if group:
+        fields.append(_x28(magazine, group, option))
     lead, rest = markup.split_lead(text or '')
     lines = [line for line in rest.split('\n') if markup.plain(line).strip()][:11]
     if not lines:
@@ -921,7 +1277,7 @@ def page_fields(text, page=DEFAULT_PAGE, language=''):
     triplets = []
     rows = []
     for index, line in enumerate(lines):
-        runs = markup.spans(line)
+        runs = _visual_runs(markup.spans(line), subset, supplementary)
         width = len(''.join(chunk for chunk, _style in runs))
         if keypad in (1, 4, 7):
             column = 3
@@ -930,7 +1286,7 @@ def page_fields(text, page=DEFAULT_PAGE, language=''):
         else:
             column = max(3, (40 - width) // 2)
         row = first_row + 2 * index
-        data, extra = _row_bytes(runs, encode, column)
+        data, extra = _row_bytes(runs, encode, column, supplementary, plain)
         rows.append(_field(magazine, row, data))
         if extra:
             triplets.append((40 + row if row != 24 else 40, 0x04, 0))       # set active position
@@ -1009,6 +1365,30 @@ def _pcr_packet(pts):
     return bytes((0x47, PCR_PID >> 8, PCR_PID & 0xFF, 0x20, 183, 0x10)) + clock + b'\xff' * 176
 
 
+def _transmissions(pages, frame=0.04):
+    """The transmissions of `pages` ([{'page', 'language', 'subtitld_language',
+    'segments'}]), in the order they are sent: [(seconds, text, page,
+    designation)], each page erased at 0, each subtitle sent when it starts
+    and erased when it ends (or replaced, when the next one starts within
+    `frame`), in the sets its page is written with."""
+    events = []
+    for order, entry in enumerate(pages):
+        # One set for the whole page: the one its language and all its
+        # subtitles ask for.
+        timeline = sorted(entry.get('segments') or [], key=lambda s: float(s.get('start', 0)))
+        designation = designation_for(entry.get('subtitld_language') or entry.get('language') or '',
+                                      [segment.get('text') for segment in timeline])
+        events.append((0.0, order, '', entry['page'], designation))
+        for index, segment in enumerate(timeline):
+            begin, end = float(segment.get('start', 0)), float(segment.get('end', 0))
+            following = float(timeline[index + 1]['start']) if index + 1 < len(timeline) else None
+            events.append((begin, order, str(segment.get('text') or ''), entry['page'], designation))
+            if following is None or following - end > frame / 2:
+                events.append((end, order, '', entry['page'], designation))
+    events.sort(key=lambda event: (round(event[0], 3), event[1], event[2] != ''))
+    return [(when, text, page, designation) for when, _order, text, page, designation in events]
+
+
 def transport_stream(pages, start=0.0, frame=0.04):
     """The bytes of a transport stream with one teletext stream holding
     `pages`: [{'page' ('888'), 'language' (ISO 639-2, 'eng'), 'type' (2 or
@@ -1025,24 +1405,12 @@ def transport_stream(pages, start=0.0, frame=0.04):
     stream_info = bytes((0x06, 0xE0 | (TELETEXT_PID >> 8), TELETEXT_PID & 0xFF, 0xF0, 2 + len(descriptor),
                          0x56, len(descriptor))) + descriptor
     pmt = b'\x00' + _section(0x02, 1, bytes((0xE0 | (PCR_PID >> 8), PCR_PID & 0xFF, 0xF0, 0x00)) + stream_info)
-    events = []
-    for order, entry in enumerate(pages):
-        language = entry.get('subtitld_language') or entry['language']
-        events.append((0.0, order, '', entry['page'], language))
-        timeline = sorted(entry.get('segments') or [], key=lambda s: float(s.get('start', 0)))
-        for index, segment in enumerate(timeline):
-            begin, end = float(segment.get('start', 0)), float(segment.get('end', 0))
-            following = float(timeline[index + 1]['start']) if index + 1 < len(timeline) else None
-            events.append((begin, order, str(segment.get('text') or ''), entry['page'], language))
-            if following is None or following - end > frame / 2:
-                events.append((end, order, '', entry['page'], language))
-    events.sort(key=lambda event: (round(event[0], 3), event[1], event[2] != ''))
     out = []
-    for when, _order, text, page, language in events:
+    for when, text, page, designation in _transmissions(pages, frame):
         out += _ts_packets(0, pat, counters) + _ts_packets(PMT_PID, pmt, counters)
         pts = int(round((max(0.0, when) + start) * 90000)) % _PTS_WRAP
         out.append(_pcr_packet(pts))
-        out += _ts_packets(TELETEXT_PID, _pes(page_fields(text, page, language), pts), counters)
+        out += _ts_packets(TELETEXT_PID, _pes(page_fields(text, page, designation=designation), pts), counters)
     return b''.join(out)
 
 
@@ -1086,3 +1454,94 @@ def write_video(video, output, tracks, ffmpeg='ffmpeg', startupinfo=None):
         except OSError:
             pass
     return output
+
+
+# --- OP-47: teletext in each frame's ancillary data ------------------------------
+
+# Free TV Australia's OP-47 (SMPTE RDD 8) carries a teletext service in the
+# ancillary data of each frame of a high definition video, where SMPTE ST
+# 436 puts it in an MXF and an MCC file writes it as text: a subtitling
+# distribution packet (DID 43h, SDID 02h) holds up to five teletext packets
+# as they would go over the air on five lines of the vertical interval,
+# their bytes in reading order; a multipacket (SDID 03h) holds SDPs and
+# others. A teletext packet here is the 44-byte data field DVB carries, as
+# page_fields gives it and decode reads it.
+OP47_DID, OP47_SDID, OP47_MULTIPACKET = 0x43, 0x02, 0x03
+# The lines of the first field the five packets of a frame are said to be
+# on (6 to 22 are the ones teletext takes).
+_OP47_LINES = (7, 8, 9, 10, 11)
+
+
+def op47_fields(packet):
+    """The teletext packets in an ancillary data packet (DID, SDID, data
+    count, then its words, as an MCC line or SMPTE ST 436 holds it): those
+    of a subtitling distribution packet, or of each one a multipacket
+    carries; [] for any other packet."""
+    if len(packet) < 3 or packet[0] != OP47_DID:
+        return []
+    sdid, words = packet[1], bytes(packet[3:3 + packet[2]])
+    if sdid == OP47_MULTIPACKET:
+        # A priority word, then each inner packet: its line, DID, SDID,
+        # count and words.
+        found, index = [], 1
+        while index + 4 <= len(words):
+            count = words[index + 3]
+            found += op47_fields(words[index + 1:index + 4 + count])
+            index += 4 + count
+        return found
+    if sdid != OP47_SDID or len(words) < 9 or words[:2] != b'\x51\x15' or words[3] != 0x02:
+        return []
+    found, index = [], 9
+    for descriptor in words[4:9]:
+        if not descriptor:
+            break                                   # the descriptors after an empty one are empty too
+        vbi = words[index:index + 45]
+        index += 45
+        # The clock run-in, the framing code, then the packet's 42 bytes.
+        if len(vbi) == 45 and vbi[2] == 0x27:
+            found.append(b'\xe0' + bytes(_REVERSED[byte] for byte in vbi[2:]))
+    return found
+
+
+def op47_packet(fields, counter=0):
+    """The ancillary data packet (DID, SDID, data count, words, checksum, as
+    an MCC line holds it) of a subtitling distribution packet carrying up
+    to five teletext packets `fields`, its footer counting `counter` (one
+    more than the packet before it). Its length counts its words from the
+    identifier to its own checksum, which makes their sum 0."""
+    fields = list(fields)[:5]
+    descriptors = bytes(0x80 | 0x60 | line for line, _field_ in zip(_OP47_LINES, fields)).ljust(5, b'\x00')
+    packets = b''.join(b'\x55\x55' + bytes(_REVERSED[byte] for byte in field[1:44]) for field in fields)
+    words = b'\x51\x15\x00\x02' + descriptors + packets + bytes((0x74, (counter >> 8) & 0xFF, counter & 0xFF))
+    words = words[:2] + bytes([len(words) + 1]) + words[3:]
+    words += bytes([-sum(words) & 0xFF])
+    anc = bytes((OP47_DID, OP47_SDID, len(words))) + words
+    return anc + bytes([sum(anc) & 0xFF])
+
+
+def op47_frames(tracks, fps):
+    """{frame: [teletext packets]} carrying `tracks` ([{'segments',
+    'language' (Subtitld's code)}], a page each, 888 and up) at `fps`
+    frames a second: each transmission from the frame its time falls on,
+    five packets a frame, the next one after it when they crowd."""
+    pages = [{'page': str(DEFAULT_PAGE + index), 'language': '', 'subtitld_language': track.get('language') or '',
+              'segments': track.get('segments') or []} for index, track in enumerate(tracks)]
+    out, cursor = {}, 0                             # the next free place, counted in packets
+    for when, text, page, designation in _transmissions(pages, 1.0 / float(fps)):
+        cursor = max(cursor, int(round(max(0.0, when) * float(fps))) * 5)
+        for field in page_fields(text, page, designation=designation):
+            out.setdefault(cursor // 5, []).append(field)
+            cursor += 1
+    return out
+
+
+def op47_decode(batches, fps, page=None, language=''):
+    """(subtitles, page) of the OP-47 teletext in `batches` [(frame, [teletext
+    packets])] at `fps` frames a second: page `page` ('888'), or the subtitle
+    page sent most often, timed from frame 0; ([], None) for none."""
+    packets = [(int(round(frame * 90000 / float(fps))), field)
+               for frame, fields in sorted(batches, key=lambda batch: batch[0]) for field in fields]
+    if not packets:
+        return [], None
+    page = str(page) if page else busiest_subtitle_page(packets)
+    return decode(packets, page, language, origin=0), page

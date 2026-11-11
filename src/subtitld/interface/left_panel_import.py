@@ -392,6 +392,8 @@ class _CaptionsPanel(_GenericASRPanel):
             track = combo.itemData(index)
             if track == 'auto':
                 text = _('import_panel.captions_auto')
+            elif track == 'teletext':
+                text = _('import_panel.captions_teletext')
             elif track.startswith('708-'):
                 text = _('import_panel.captions_service').format(number=track[4:])
             else:
@@ -442,7 +444,7 @@ def _ocr_engine():
 
 def _readable(track, ocr=None):
     """Whether the subtitles engine can read the track: a text one, a
-    teletext page, or a PGS or VobSub one when an OCR add-on (`ocr`) is
+    teletext page, or a PGS, VobSub or DVB one when an OCR add-on (`ocr`) is
     installed."""
     from subtitld.modules import video_subtitles
     return track['kind'] in ('text', 'teletext') or (ocr is not None and track['kind'] == 'pictures'

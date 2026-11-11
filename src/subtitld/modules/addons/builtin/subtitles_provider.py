@@ -10,7 +10,7 @@ opening the video already probed (session.VIDEO['subtitle_tracks']).
 `transcribe` takes the video's path, not an audio file's, and options
 {'track': the track's stream index, 'codec': its codec, 'duration': the
 video's, for progress, 'language': what a picture track is read as}. A
-PGS or VobSub track is read by an OCR add-on (picture_ocr.OCRJob); a
+PGS, VobSub or DVB track is read by an OCR add-on (picture_ocr.OCRJob); a
 teletext page ('page', of the stream 'pid' of a transport stream) by the
 teletext module, in a thread (video_subtitles.read_teletext), which
 gives the subtitles themselves; the others as follows. FFmpeg writes the track to a file of its own in
@@ -211,7 +211,8 @@ class SubtitlesProvider(ASRProvider):
             self.error.emit('No OCR add-on is installed to read subtitles drawn as pictures.')
             return
         job = picture_ocr.OCRJob.for_track(video, int(options.get('track', 0)), str(options['codec']),
-                                           str(options.get('language') or language or ''), engine)
+                                           str(options.get('language') or language or ''), engine,
+                                           pid=options.get('pid'), page=options.get('page'))
         job.progress.connect(lambda share, _message: self.progress.emit(share, ''))
         job.finished.connect(lambda segments, _info: self._pictures_read(job, segments))
         job.failed.connect(lambda message: self._pictures_failed(job, message))

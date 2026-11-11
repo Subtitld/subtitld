@@ -1,8 +1,8 @@
-"""The dialog that reads picture subtitles (VobSub, PGS, IMSC's Image Profile, a DCP's) as text with an OCR add-on.
+"""The dialog that reads picture subtitles (VobSub, PGS, a BDN, IMSC's Image Profile, a DCP's) as text with an OCR add-on.
 
 Opening such a file, Subtitld asks for the subtitles' language, which an
-OCR engine needs to know (a VobSub's .idx, a TTML file and a DCP's XML
-name it; a .sup never does),
+OCR engine needs to know (a VobSub's .idx, a BDN, a TTML file and a DCP's
+XML name it; a .sup never does),
 then reads them with a progress bar the user can stop
 (modules.picture_ocr.OCRJob). Without an OCR add-on installed, the dialog
 says which one to install instead.
@@ -25,6 +25,14 @@ def _language_guess(path):
         from subtitld.modules import dcp, file_io
         try:
             code = file_io._language_like_project(dcp.read_images(path)[2]['language'])
+        except (OSError, ValueError):
+            code = ''
+        if code:
+            return code
+    elif str(path).lower().endswith('.xml') and picture_ocr._is_bdn(path):
+        from subtitld.modules import bdn, file_io
+        try:
+            code = file_io._language_like_project(bdn.read(path)[1]['language'])
         except (OSError, ValueError):
             code = ''
         if code:

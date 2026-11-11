@@ -351,6 +351,9 @@ class CaptionsThread(QThread):
                 self.captions_finished.emit(self._output_path, True, '')
                 return
             segments = export_options.prepare(session.SUBTITLE.get('segments'), self._options)
+            # OP-47 asked for in an MXF: the same subtitles as teletext page 888.
+            teletext_tracks = [{'segments': segments, 'language': session.SUBTITLE.get('language') or ''}] \
+                if self._options.get('teletext') and self._container == 'MXF' else None
             embedded_captions.write_video(
                 video, self._output_path, segments,
                 fps=float(session.VIDEO.get('framerate') or 0),
@@ -360,7 +363,8 @@ class CaptionsThread(QThread):
                 mode=self._options.get('caption_mode') or 'pop',
                 channel=self._options.get('caption_channel') or 1,
                 speaker_changes=self._options.get('speakers') == 'voice',
-                ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
+                ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO, teletext_tracks=teletext_tracks,
+                ffprobe=session.FFPROBE_EXECUTABLE)
             self.captions_finished.emit(self._output_path, True, '')
         except Exception as exc:
             self.captions_finished.emit(self._output_path, False, str(exc))
@@ -383,7 +387,7 @@ class CaptionsThread(QThread):
         soft_subtitles.write_video(
             video, self._output_path, tracks, container=self._container,
             codec=self._options.get('subtitle_codec'),
-            forced=bool(self._options.get('forced')) and self._container != 'TS',
+            forced=bool(self._options.get('forced')) and self._container not in soft_subtitles.UNFORCED,
             width=session.VIDEO.get('width'), height=session.VIDEO.get('height'),
             look='preview', preview=subtitle_styles.preview_look(),
             ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
