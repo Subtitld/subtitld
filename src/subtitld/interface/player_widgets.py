@@ -77,7 +77,7 @@ class ActionStrip(QWidget):
     """
 
     KEY_W = 32
-    TOP, BOTTOM = 3, 6                # around the 20px icons
+    TOP, BOTTOM = 11, 11              # around the 20px icons: as tall as the other 42px pieces
     FADE = 7                          # the ends fade in over this many pixels
 
     def __init__(self, name, keys, picture=None, parent=None):
@@ -735,8 +735,7 @@ class Transport(QWidget):
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
         h = yb - y0
         cy = y0 + h / 2
-        painter.fillRect(QRectF(0, 0, self.width(), self.H - 1), QColor('#304251'))
-        painter.fillRect(QRectF(0, 0, self.width(), 2), QColor('#3e5363'))
+        painter.fillRect(QRectF(0, 0, self.width(), self.H), QColor('#304251'))
         panel = self.panel()
         painter.fillPath(panel, shapes.gradient(y0, yb, self.LIGHT))
         playing = self.play_key.isChecked()
@@ -812,7 +811,6 @@ class Transport(QWidget):
             painter.drawImage(icon_rect, _tinted(renderer, icon_rect, '#ffffff'))
         else:
             renderer.render(painter, icon_rect)
-        painter.fillRect(QRectF(0, self.H - 1, self.width(), 1), QColor(0, 0, 0, 60))
         if not enabled:
             painter.fillRect(self.rect(), QColor(48, 66, 81, 140))
 
