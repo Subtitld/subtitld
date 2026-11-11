@@ -55,7 +55,17 @@ Reading:
   in a smpte:image) is read as the text its ittm:altText gives, placed
   where its region is; `read_images` gives the pictures themselves, for
   the ones with no text to read (modules.picture_ocr reads them with an
-  OCR add-on);
+  OCR add-on); SMPTE-TT's own example puts the picture's words in a <p>
+  inside its <div>, and those are its words too;
+- with ttp:timeBase="smpte", a clock time with frames is a timecode's
+  label, counted at the nominal rate, the labels ttp:dropMode's dropNTSC
+  or dropPAL skip left out (timecode_frames);
+- what RP 2052-10 makes of CEA-608: a region with a tts:origin and no
+  extent holds text starting there, and the <set> inside a region moves
+  it from caption to caption; a document that holds no text but the
+  CEA-608 or CEA-708 captions it was converted from, tunnelled in
+  smpte:data (RP 2052-10, RP 2052-11), is read from those, decoded as an
+  SCC or a video's captions are;
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -78,6 +88,12 @@ a service that checks what it is given accepts it (PROFILES):
     'ebu-tt-d'  EBU-TT-D, declared in ebuttm:conformsToStandard, the way
                 the EBU's own spec asks for and which forbids
                 ttp:contentProfiles
+    'smpte-tt'  SMPTE-TT (ST 2052-1), declared in ttp:profile: TTML 1 with
+                ttp:timeBase="media" and clock times, the form Premiere
+                and the broadcast tools import; the video's frame rate in
+                ttp:frameRate where it is known, and, when asked
+                (`tunnel`), the subtitles as CEA-608 captions in CC1,
+                tunnelled in smpte:data as RP 2052-10 stores them
 
 The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
 instead, a PNG beside the file drawn as Subtitld's preview draws it, with
@@ -126,7 +142,9 @@ _TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve'
 # How much of those each profile takes: none in the two built on TTML 1,
 # IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
 # all of it in TTML itself.
-_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none'}
+_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none', 'smpte-tt': 'none'}
+# The profiles built on TTML 1, which has none of TTML2's styling.
+_TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt')
 # The words a tts:textEmphasis may hold that are neither a colour nor a mark
 # of its own: what IMSC 1.1's #textEmphasis-minimal allows.
 _EMPHASIS_WORDS = frozenset(('none', 'auto', 'filled', 'open', 'circle', 'dot', 'sesame',
@@ -150,7 +168,7 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
 
-PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
 IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
@@ -165,6 +183,18 @@ _IMSC1_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1/image'
 _IMSC11_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1.1/image'
 # Where a picture's file is named (SMPTE-TT) and its words kept (IMSC).
 _SMPTE_NS = 'http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt'
+# SMPTE-TT (ST 2052-1). The 2013 edition moved its vocabulary to a 2013
+# namespace; IMSC, and the tools that read SMPTE-TT, name the 2010 one, which
+# is what Subtitld writes. Both are read. The profile is declared in
+# ttp:profile; RP 2052-10 and -11 add CEA-608's and CEA-708's metadata
+# attributes, in namespaces of their own, and name the data they tunnel.
+_SMPTE_NAMESPACES = (_SMPTE_NS, 'http://www.smpte-ra.org/schemas/2052-1/2013/smpte-tt')
+_SMPTE_PROFILE = 'http://www.smpte-ra.org/schemas/2052-1/2010/profiles/smpte-tt-full'
+_SMPTE_PROFILES = (_SMPTE_PROFILE, 'http://www.smpte-ra.org/schemas/2052-1/2013/profiles/smpte-tt-full')
+_M608_NS = _SMPTE_NS + '#cea608'
+_CEA608_DATA = _SMPTE_NS + '#cea608'
+# CEA-608's pairs come at NTSC's rate, whatever the document's (RP 2052-10).
+_CEA608_RATE = 30000 / 1001
 _ITTM_NS = 'http://www.w3.org/ns/ttml/profile/imsc1#metadata'
 _EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
 _EBUTTM_NS = 'urn:ebu:tt:metadata'
@@ -216,6 +246,52 @@ def _text_of(data):
     return decode(data)
 
 
+def _dropped(minutes, drop):
+    """How many frame labels a drop-frame count has skipped by the start of
+    minute `minutes` (counted from 00:00): TTML's ttp:dropMode. dropNTSC
+    skips 00 and 01 at each minute but every tenth; dropPAL 00 to 03 at
+    each even minute but 00, 20 and 40."""
+    if drop == 'dropNTSC':
+        return 2 * (minutes - minutes // 10)
+    if drop == 'dropPAL':
+        return 4 * (minutes // 2 - minutes // 20)
+    return 0
+
+
+def timecode_frames(hours, minutes, seconds, frames, nominal, drop=''):
+    """The frame a SMPTE timecode label names, counted from 00:00:00:00, at
+    `nominal` frames a second, the labels `drop` ('dropNTSC', 'dropPAL' or
+    '') skips left out."""
+    return int(round(((hours * 60 + minutes) * 60 + seconds) * nominal + frames)) - \
+        _dropped(hours * 60 + minutes, drop)
+
+
+def timecode_label(count, nominal, drop=''):
+    """'HH:MM:SS:FF' for the frame `count`, the inverse of timecode_frames."""
+    nominal = int(round(nominal))
+    count = max(0, int(count))
+    if drop in ('dropNTSC', 'dropPAL'):
+        skip = 2 if drop == 'dropNTSC' else 4
+
+        def drops(minute):
+            return minute % 10 != 0 if drop == 'dropNTSC' else minute % 2 == 0 and minute % 20 != 0
+        # Walk to the minute the frame falls in: each minute is a full one,
+        # less the labels it skips at its start.
+        minute = 0
+        while count >= nominal * 60 - (skip if drops(minute) else 0):
+            count -= nominal * 60 - (skip if drops(minute) else 0)
+            minute += 1
+        if drops(minute):
+            count += skip                       # this minute's first labels are not used
+        hours, minutes = divmod(minute, 60)
+        seconds, frames = divmod(count, nominal)
+        return f'{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}'
+    seconds, frames = divmod(count, nominal)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f'{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}'
+
+
 class _Clock:
     """Turns TTML times into seconds, by the document's parameters."""
 
@@ -230,12 +306,19 @@ class _Clock:
             ratio = float(multiplier[0]) / float(multiplier[1]) if len(multiplier) == 2 else 1.0
         except (ValueError, ZeroDivisionError):
             ratio = 1.0
-        self.fps = number('frameRate', 30) * (ratio or 1.0)
+        self.nominal = number('frameRate', 30)
+        self.fps = self.nominal * (ratio or 1.0)
         self.subframes = number('subFrameRate', 1)
         if _attr(root, 'tickRate'):
             self.tick_rate = number('tickRate', 1)
         else:
             self.tick_rate = self.fps * self.subframes if _attr(root, 'frameRate') else 1
+        # A time base of "smpte" makes a clock time a timecode's label: its
+        # hours, minutes and seconds count frames at the nominal rate (30
+        # for 29.97), with the labels a drop-frame count skips, and the
+        # frame it names comes at the real rate.
+        self.smpte = (_attr(root, 'timeBase') or '').strip() == 'smpte'
+        self.drop = (_attr(root, 'dropMode') or '').strip() if self.smpte else ''
 
     def seconds(self, text):
         """Seconds for a time expression, or None for none."""
@@ -243,6 +326,10 @@ class _Clock:
         clock = _CLOCK.match(text)
         if clock:
             hours, minutes, seconds, fraction, frames, subframes = clock.groups()
+            if self.smpte and fraction is None:
+                count = timecode_frames(int(hours), int(minutes), int(seconds), int(frames or 0),
+                                        self.nominal, self.drop)
+                return (count + (int(subframes) / self.subframes if subframes else 0)) / self.fps
             value = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
             if fraction:
                 value += int(fraction) / 10 ** len(fraction)
@@ -1044,6 +1131,118 @@ def _alt_text(element):
     return '\n'.join(lines)
 
 
+def _region_props(element, styles, clock, at):
+    """A region's properties at `at` seconds: its own, then those of a
+    <set> inside it that is active then, which is how RP 2052-10 moves the
+    one region a CEA-608 conversion uses from caption to caption."""
+    if element is None:
+        return {}
+    props = styles.of(element, {})
+    base = clock.seconds(element.get('begin')) or 0.0
+    for child in element:
+        if _local(child.tag) != 'set':
+            continue
+        start, stop = _span_of(child, base, None, clock)
+        if start <= at + 0.0005 and (stop is None or at < stop - 0.0005):
+            props.update(_properties(child))
+    return props
+
+
+def _plain_paragraph(element, styles, props):
+    """A paragraph's words, its lines kept apart and its formatting not."""
+    runs = []
+    _runs(element, styles, styles.of(element, props), False, runs, [None])
+    return '\n'.join(line.strip() for line in markup.plain(markup.tidy(runs)).split('\n') if line.strip())
+
+
+def _data_kind(datatype):
+    """'608' or '708' for the captions a smpte:data tunnels, by the datatype
+    RP 2052-10 and -11 give them (in either edition's namespace, or as the
+    private x-cea608 some tools write), else ''."""
+    datatype = (datatype or '').strip().lower()
+    for kind in ('608', '708'):
+        if datatype.endswith('#cea' + kind) or datatype == 'x-cea' + kind:
+            return kind
+    return ''
+
+
+def _tunnelled(root, clock):
+    """[(seconds, '608' or '708', bytes)] for the captions the document
+    tunnels in smpte:data, each from when the element whose metadata holds
+    it begins (the document's start, for the head's)."""
+    found = []
+
+    def walk(element, base, limit):
+        start, stop = (_span_of(element, base, limit, clock)
+                       if _local(element.tag) in ('body', 'div', 'p', 'span') else (base, limit))
+        for child in element:
+            name = _local(child.tag)
+            if name == 'metadata':
+                for data in child:
+                    kind = _data_kind(data.get('datatype')) if _local(data.tag) == 'data' else ''
+                    if not kind:
+                        continue
+                    try:
+                        found.append((start, kind, base64.b64decode(''.join((data.text or '').split()), validate=True)))
+                    except (binascii.Error, ValueError):
+                        continue
+            elif name in ('head', 'body', 'div', 'p', 'span'):
+                walk(child, start, stop)
+
+    walk(root, 0.0, None)
+    return found
+
+
+# The frame rate a cc_data() holding this many entries is sent at: CEA-708
+# carries 9600 bits a second, 20 entries a frame at 29.97.
+_CC_COUNT_RATES = {10: 60000 / 1001, 20: 30000 / 1001, 25: 24000 / 1001}
+
+
+def _captions_of(root, clock, tunnels):
+    """The subtitles in the CEA-608 or CEA-708 data a document tunnels,
+    decoded as an SCC or a video's captions are (modules.closed_captions):
+    CEA-708's first service with captions, else the CEA-608 channel the
+    smpte:information names, else the first with captions.
+
+    RP 2052-10 stores CEA-608 as its byte pairs, field 1's and field 2's
+    by turns, m608:fieldStart saying which comes first, at NTSC's rate.
+    RP 2052-11 stores CEA-708 as its cc_data() structures, one a frame."""
+    from subtitld.modules import closed_captions
+    info = next((element for element in root.iter() if _local(element.tag) == 'information'), None)
+    field_start = 2 if info is not None and (_attr(info, 'fieldStart') or '').strip() == '2' else 1
+    channel = (_attr(info, 'channel') or '').strip().lower() if info is not None else ''
+    pairs, frames, rate = {}, {}, None
+    for start, kind, raw in tunnels:
+        if kind == '608':
+            first = round(start * _CEA608_RATE)
+            for index in range(len(raw) // 2):
+                slot = index + field_start - 1
+                pairs.setdefault(first + slot // 2, []).append((slot % 2, raw[2 * index], raw[2 * index + 1]))
+            continue
+        # One cc_data() a frame, from the frame the element begins on.
+        offset, frame = 0, None
+        while offset + 2 <= len(raw):
+            count = raw[offset] & 0x1F
+            if rate is None:
+                rate = clock.fps if _attr(root, 'frameRate') else _CC_COUNT_RATES.get(count, 30000 / 1001)
+            frame = round(start * rate) if frame is None else frame + 1
+            entries = closed_captions.triplets(raw[offset + 2:offset + 2 + 3 * count])
+            if entries:
+                frames.setdefault(frame, []).extend(entries)
+            offset += 2 + 3 * count
+    dtvcc = sorted(frames.items())
+    if dtvcc:
+        segments, _track = closed_captions.decode(dtvcc, rate, 'auto')
+        if segments:
+            return segments
+    batches = sorted(pairs.items())
+    if channel in ('cc1', 'cc2', 'cc3', 'cc4'):
+        segments, _track = closed_captions.decode(batches, _CEA608_RATE, channel)
+        if segments:
+            return segments
+    return closed_captions.decode(batches, _CEA608_RATE, 'auto')[0]
+
+
 def _document(text, images=None):
     """(subtitles, language, metadata) in TTML text; with `images`, a dict,
     the pictures go in it as 'pictures' and the picture's size as 'size',
@@ -1075,9 +1274,13 @@ def _document(text, images=None):
         its region puts it, and the picture itself for `images`."""
         if stop is None:
             return
-        region_props = styles.of(regions[region], {}) if region in regions else {}
+        region_props = _region_props(regions.get(region), styles, clock, start)
         own = styles.of(element, dict(region_props, **props))
-        alt = _alt_text(element)
+        # Its words: IMSC's alt text, else the text SMPTE-TT may put in the
+        # picture's <div> beside it, which is read and not drawn.
+        alt = _alt_text(element) or '\n'.join(
+            text for text in (_plain_paragraph(inner, styles, own) for inner in element.iter()
+                              if _local(inner.tag) == 'p') if text)
         keypad = _keypad(own, frame)
         forced = str(own.get('forcedDisplay') or '').strip().lower() == 'true'
         if alt:
@@ -1096,7 +1299,9 @@ def _document(text, images=None):
     base_sizes = (base_props['fontSize'],) if base_props.get('fontSize') else ()
 
     def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
-        region_props = styles.of(regions[region], {}) if region in regions else {}
+        # The region as it is when the subtitle begins: a region converted
+        # from CEA-608 is moved about by <set> (RP 2052-10).
+        region_props = _region_props(regions.get(region), styles, clock, start)
         # The region's styles first: what the body, div or paragraph says
         # goes over them.
         p_props = styles.of(element, dict(region_props, **props))
@@ -1110,7 +1315,24 @@ def _document(text, images=None):
         # A file that states both alignments means them; one that leaves
         # them out is read by where its region sits, as before.
         stated = p_props.get('displayAlign') is not None and p_props.get('textAlign') is not None
-        keypad = _keypad(p_props, frame, geometry=not stated)
+        at = frame.percent(p_props.get('origin')) \
+            if not p_props.get('extent') and not p_props.get('position') else None
+        if at:
+            # A region with a place and no size, as RP 2052-10 converts
+            # CEA-608's rows and columns: the text starts there, as tall as
+            # its lines and reaching to the right edge. Its column is the
+            # one its textAlign says, so a line indented from the left stays
+            # a left-aligned line with a margin, as an SCC is read.
+            lines = markup.plain(body).count('\n') + 1
+            height = max(1.0, min(100.0 - at[1], lines * 100.0 / frame.cells[1]))
+            p_props = dict(p_props, extent=f'{100.0 - at[0]:.4g}% {height:.4g}%',
+                           displayAlign=p_props.get('displayAlign') or 'before')
+            align = p_props.get('textAlign') or 'start'
+            near, far = (2, 0) if p_props.get('direction') == 'rtl' else (0, 2)
+            column = {'left': 0, 'right': 2, 'start': near, 'end': far}.get(align, 1)
+            keypad = (_keypad(dict(p_props, textAlign='left'), frame) - 1) // 3 * 3 + 1 + column
+        else:
+            keypad = _keypad(p_props, frame, geometry=not stated)
         segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
                    'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + body}
         speaker = agent[0] or outer_agent
@@ -1212,6 +1434,13 @@ def _document(text, images=None):
         return stop
 
     walk(root, 0.0, None, {}, None, False, None)
+    if not segments:
+        # SMPTE-TT may carry the captions it was converted from, CEA-608 or
+        # CEA-708, tunnelled in smpte:data; a document that holds them and
+        # no text is read from them.
+        tunnels = _tunnelled(root, clock)
+        if tunnels:
+            segments.extend(_captions_of(root, clock, tunnels))
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     if images is not None:
         images.setdefault('pictures', []).sort(key=lambda image: (image['start'], image['end']))
@@ -1290,7 +1519,13 @@ def check(text, profile='imsc1.1'):
         return [f'The document is <{_local(root.tag)}>, not <tt>']
 
     problems = []
-    if not (root.get(_XML_NS + 'lang') or '').strip():
+    if profile == 'smpte-tt':
+        # TTML 1 asks for the attribute, and RP 2052-10 for it empty where a
+        # conversion's language is not known.
+        if root.get(_XML_NS + 'lang') is None:
+            problems.append('<tt> has no xml:lang: TTML 1 asks a file to say what language it is in, '
+                            'if only as ""')
+    elif not (root.get(_XML_NS + 'lang') or '').strip():
         problems.append('<tt> has no xml:lang: every profile asks a file to say what language it is in')
 
     declared_profile = _attr(root, 'profile') or ''
@@ -1308,6 +1543,8 @@ def check(text, profile='imsc1.1'):
             problems.append('ttp:contentProfiles is prohibited in EBU-TT-D')
         if (_attr(root, 'timeBase') or 'media') != 'media':
             problems.append('EBU-TT-D asks for ttp:timeBase="media"')
+    if profile == 'smpte-tt':
+        problems += _smpte_problems(root, declared_profile)
 
     cells = (_attr(root, 'cellResolution') or '').split()
     if cells:
@@ -1392,7 +1629,7 @@ def check(text, profile='imsc1.1'):
     # has the minimal sets: no colour or mark of its own for an emphasis
     # (#textEmphasis-minimal), no spreading a reading with its base
     # (#rubyAlign-minimal).
-    if profile in ('imsc1', 'ebu-tt-d'):
+    if profile in _TTML1_PROFILES:
         annotated = sorted({name for element in root.iter() for name in _TTML2_ANNOTATIONS
                             if _attr(element, name) is not None})
         if annotated:
@@ -1419,6 +1656,86 @@ def check(text, profile='imsc1.1'):
                       if element.get('region') and element.get('region') not in regions})
     if missing:
         problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    return problems
+
+
+def _namespace(name):
+    return name[1:].split('}', 1)[0] if isinstance(name, str) and name.startswith('{') else ''
+
+
+def _smpte_problems(root, declared_profile):
+    """What breaks SMPTE-TT (ST 2052-1) in a document: the profile it
+    declares, its time base and offsets, and its own vocabulary — the data
+    it tunnels, the pictures it holds, the one smpte:information — as the
+    standard and RP 2052-10 lay them down."""
+    problems = []
+    if declared_profile not in _SMPTE_PROFILES:
+        problems.append(f'ttp:profile does not name SMPTE-TT\'s profile ({_SMPTE_PROFILE})')
+    if (_attr(root, 'timeBase') or 'media').strip() != 'media':
+        problems.append('SMPTE-TT asks for ttp:timeBase="media": "smpte" and "clock" should not be used')
+    units = sorted({offset.group(2) for element in root.iter() for name in ('begin', 'end', 'dur')
+                    for offset in [_OFFSET.match((element.get(name) or '').strip())] if offset and offset.group(2) != 't'})
+    if units:
+        problems.append(f'Offset times in {", ".join(units)}: an offset time in SMPTE-TT is counted in ticks (t)')
+    parents = {child: parent for parent in root.iter() for child in parent}
+    ours = [element for element in root.iter() if 'smpte-ra.org' in _namespace(element.tag)]
+    stray = sorted({_namespace(element.tag) for element in ours if _namespace(element.tag) not in _SMPTE_NAMESPACES})
+    if stray:
+        problems.append(f'SMPTE vocabulary in a namespace SMPTE-TT does not have: {", ".join(stray)}')
+    images = {}
+    tunnels_608 = 0
+    for element in ours:
+        name = _local(element.tag)
+        if name not in ('data', 'image', 'information'):
+            continue
+        parent = parents.get(element)
+        if parent is None or _local(parent.tag) != 'metadata':
+            problems.append(f'smpte:{name} outside a <metadata>: it is metadata\'s, and nowhere else')
+        if name == 'information':
+            continue
+        if (element.get('encoding') or '').strip() != 'Base64':
+            problems.append(f'smpte:{name} with encoding="{element.get("encoding") or ""}": it is Base64, and says so')
+        try:
+            payload = base64.b64decode(''.join((element.text or '').split()), validate=True)
+        except (binascii.Error, ValueError):
+            problems.append(f'smpte:{name} {_xml_id(element) or ""} holds what is not Base64'.replace('  ', ' '))
+            payload = None
+        if name == 'image':
+            images[_xml_id(element)] = element
+            if (element.get('imageType') or '').strip() != 'PNG':
+                problems.append(f'smpte:image with imageType="{element.get("imageType") or ""}": SMPTE-TT\'s pictures are PNG')
+            elif payload is not None and not payload.startswith(b'\x89PNG\r\n\x1a\n'):
+                problems.append(f'smpte:image {_xml_id(element) or ""} is not a PNG'.replace('  ', ' '))
+            continue
+        datatype = (element.get('datatype') or '').strip()
+        if not (datatype.startswith('x-') and len(datatype) > 2) and datatype not in \
+                [namespace + suffix for namespace in _SMPTE_NAMESPACES for suffix in ('#cea608', '#cea708')]:
+            problems.append(f'smpte:data with datatype="{element.get("datatype") or ""}": the datatype is one '
+                            'SMPTE defines (CEA-608\'s, CEA-708\'s), or a private one beginning "x-"')
+        tunnels_608 += _data_kind(datatype) == '608'
+    informations = [element for element in ours if _local(element.tag) == 'information']
+    if len(informations) > 1:
+        problems.append(f'{len(informations)} smpte:information elements: a document has one, in <head>')
+    for info in informations:
+        holder = parents.get(parents.get(info))
+        if holder is None or _local(holder.tag) != 'head':
+            problems.append('smpte:information outside <head>\'s <metadata>')
+        mode = info.get('mode')
+        if mode is not None and mode.strip() not in ('Enhanced', 'Preserved'):
+            problems.append(f'smpte:information mode="{mode}": it is Enhanced or Preserved')
+    if tunnels_608 and not any(_attr(info, 'fieldStart') for info in informations):
+        problems.append('CEA-608 data tunnelled, but no m608:fieldStart says which field its first pair is from')
+    pictures = [element for element in root.iter() if _attr(element, 'backgroundImage')]
+    for element in pictures:
+        if _local(element.tag) != 'div':
+            problems.append(f'smpte:backgroundImage on a <{_local(element.tag)}>: it applies to a <div>')
+        source = _attr(element, 'backgroundImage').strip()
+        if source.startswith('#') and source[1:] not in images:
+            problems.append(f'smpte:backgroundImage="{source}" names no smpte:image the file holds')
+    origin = next((info.get('origin') or '' for info in informations), '')
+    if _data_kind(origin) == '608' and (images or pictures):
+        problems.append('Pictures in a document converted from CEA-608: RP 2052-10 has no smpte:image or '
+                        'smpte:backgroundImage in one')
     return problems
 
 
@@ -1668,7 +1985,7 @@ def _look_attributes(styling, profile='ttml1', inline=False):
     # EBU-TT-D, which are built on TTML 1.
     reserve = styling.get('ruby_reserve') or {}
     if isinstance(reserve, dict) and reserve.get('position') in subtitld_look.RESERVE_POSITIONS \
-            and profile not in ('imsc1', 'ebu-tt-d'):
+            and profile not in _TTML1_PROFILES:
         length = f' {_cells(reserve["length"])}' if reserve.get('length') else ''
         out.append(f'tts:rubyReserve="{reserve["position"]}{length}"')
     return ' '.join(out)
@@ -1678,12 +1995,23 @@ def _japanese(language):
     return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
 
 
-def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
+def _frame_rate(fps):
+    """(ttp:frameRate, ttp:frameRateMultiplier or None) for a frame rate:
+    29.97 is 30 frames at 1000/1001 of the speed, as TTML writes it."""
+    fps = float(fps)
+    nominal = int(round(fps))
+    if abs(fps - nominal) < 0.005:
+        return nominal, None
+    return int(round(fps * 1.001)), '1000 1001'
+
+
+def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, fps=None, tunnel=False):
     """What <tt> carries: the namespaces and parameters, and the profile
     the file declares itself to be. `imsc_styling` brings IMSC's styling
     namespace in, for a forced subtitle to mark or a box that reaches from
     one line to the next, and `ebu_styling` the EBU's, for a look that
-    states one of its two."""
+    states one of its two. `fps` states the video's frame rate, and
+    `tunnel` the namespaces of the CEA-608 data a SMPTE-TT file carries."""
     namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
                   'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
                   'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
@@ -1694,11 +2022,21 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
         namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
     if ebu_styling:
         namespaces.append(f'xmlns:ebutts="{_EBUTTS_NS}"')
+    if profile == 'smpte-tt' and tunnel:
+        namespaces += [f'xmlns:smpte="{_SMPTE_NS}"', f'xmlns:m608="{_M608_NS}"']
     attrs = ['ttp:timeBase="media"']
+    if fps:
+        rate, multiplier = _frame_rate(fps)
+        attrs.append(f'ttp:frameRate="{rate}"')
+        if multiplier:
+            attrs.append(f'ttp:frameRateMultiplier="{multiplier}"')
     if profile == 'imsc1':
         attrs.append(f'ttp:profile="{_IMSC1_TEXT}"')
     elif profile == 'imsc1.1':
         attrs.append(f'ttp:contentProfiles="{_IMSC11_TEXT}"')
+    elif profile == 'smpte-tt':
+        # SMPTE-TT names its profile the way TTML 1 does, in ttp:profile.
+        attrs.append(f'ttp:profile="{_SMPTE_PROFILE}"')
     if profile != 'ttml1':
         # What the percentages in this file are measured against. It is
         # TTML's default, but EBU-TT-D asks for it in writing and a file
@@ -1708,15 +2046,38 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
     return ' '.join(namespaces + attrs)
 
 
-def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None):
+def _tunnel_608(segments):
+    """[(first frame, bytes)] for `segments` as CEA-608 pop-on captions in
+    CC1 (modules.scc), stored as RP 2052-10 stores them: field 1's pair and
+    field 2's (empty) by turns, a frame each, at NTSC's rate. A run of
+    frames is broken where a second or more goes by with nothing sent, so
+    the file holds the captions and not the silence between them."""
+    from subtitld.modules import scc
+    words, _breaks, _shows = scc.frame_words(segments, _CEA608_RATE, mode='pop', channel=1)
+    runs = []
+    for frame in sorted(words):
+        if runs and frame - runs[-1][1] <= 30:
+            runs[-1][1] = frame
+        else:
+            runs.append([frame, frame])
+    return [(first, b''.join(bytes.fromhex(words.get(frame, '8080')) + b'\x80\x80'
+                             for frame in range(first, last + 1)))
+            for first, last in runs]
+
+
+def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None,
+          *, fps=None, tunnel=False):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
+    `fps`, the video's frame rate, is stated where it is given; with
+    `tunnel`, a SMPTE-TT file carries the subtitles as CEA-608 captions too.
 
     A Japanese file in an IMSC profile writes its italics as tts:shear:
     that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
+    tunnel = bool(tunnel) and profile == 'smpte-tt'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     annotations = _ANNOTATIONS[profile]
     cues = []
@@ -1800,6 +2161,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     for name, agent_id in speakers.items():
         meta_lines.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
                           f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
+    tunnels = _tunnel_608(segments) if tunnel else []
+    if tunnels:
+        # What the tunnelled data is (RP 2052-10): CEA-608's CC1, its first
+        # pair field 1's. The text was not translated from it, so the mode
+        # is Enhanced: the captions are the text's, in what 608 can say.
+        meta_lines.append(f'      <smpte:information origin="{_CEA608_DATA}" mode="Enhanced" '
+                          f'm608:channel="CC1" m608:fieldStart="1"/>')
     if meta_lines:
         head += ['    <metadata>', *meta_lines, '    </metadata>']
     style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>'
@@ -1829,14 +2197,30 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
     imsc_styling = forced or any('itts:' in looking for looking in lookings)
     ebu_styling = any('ebutts:' in looking for looking in lookings)
+    # The tunnelled captions, each run in a <div> of its own that begins on
+    # its first frame: RP 2052-11's way, which RP 2052-10 shares, of saying
+    # where data in the body belongs on the timeline.
+    carried = []
+    for first, data in tunnels:
+        encoded = base64.b64encode(data).decode('ascii')
+        lines = '\n'.join('          ' + encoded[i:i + 76] for i in range(0, len(encoded), 76))
+        carried += [f'    <div begin="{format_time(first / _CEA608_RATE)}" '
+                    f'end="{format_time((first + len(data) // 4) / _CEA608_RATE)}">',
+                    '      <metadata>',
+                    f'        <smpte:data encoding="Base64" datatype="{_CEA608_DATA}">',
+                    lines,
+                    '        </smpte:data>',
+                    '      </metadata>',
+                    '    </div>']
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<tt {_root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling)}>',
+        f'<tt {_root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling, fps=fps, tunnel=bool(tunnels))}>',
         *head,
         '  <body style="text">',
         '    <div>',
         *cues,
         '    </div>',
+        *carried,
         '  </body>',
         '</tt>',
         ''])
@@ -1896,7 +2280,8 @@ def write_images(pictures, size, language='en', profile='imsc1.1-image', metadat
 
 
 def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1',
-         metadata=None):
-    """Write `segments` to `path` as TTML, in UTF-8."""
+         metadata=None, **options):
+    """Write `segments` to `path` as TTML, in UTF-8; `options` as write()
+    takes them."""
     with open(path, 'w', encoding='utf-8', newline='\n') as ttml_file:
-        ttml_file.write(write(segments, language, agents, look, preview, profile, metadata))
+        ttml_file.write(write(segments, language, agents, look, preview, profile, metadata, **options))

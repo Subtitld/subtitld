@@ -1908,14 +1908,21 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format in ['DFXP', 'TTML']:
             # In the language of the text written: a translation's alone, the
             # original's otherwise. Speakers as agents when the export asks.
+            # SMPTE-TT states the video's frame rate, and carries the
+            # subtitles as CEA-608 captions too when the export asks.
+            profile = options.get('profile') if options.get('profile') in ttml.PROFILES else 'ttml1'
+            extra = {}
+            if profile == 'smpte-tt':
+                if VIDEO.get('framerate'):
+                    extra['fps'] = float(VIDEO['framerate'])
+                extra['tunnel'] = bool(options.get('tunnel_608'))
             ttml.save(final_file, segments,
                       language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                       else language,
                       agents=options.get('speakers') == 'voice',
                       look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
                       preview=subtitle_styles.preview_look(),
-                      profile=options.get('profile') if options.get('profile') in ttml.PROFILES else 'ttml1',
-                      metadata=SUBTITLE.get('metadata'))
+                      profile=profile, metadata=SUBTITLE.get('metadata'), **extra)
 
         elif subtitle_format == 'SAMI':
             # A class for each language written: the original's, the

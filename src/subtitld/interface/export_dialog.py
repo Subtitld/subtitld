@@ -356,10 +356,16 @@ class _SubtitlesPanel(QWidget):
         self.profile_combo = utils.LabeledComboBox()
         self.profile_combo.setLabel(_('export_dialog.ttml_profile'))
         for profile, name in (('ttml1', 'ttml1'), ('imsc1', 'imsc1'), ('imsc1.1', 'imsc11'), ('ebu-tt-d', 'ebuttd'),
+                              ('smpte-tt', 'smptett'),
                               ('imsc1-image', 'imsc1_image'), ('imsc1.1-image', 'imsc11_image')):
             self.profile_combo.combobox.addItem(_(f'export_dialog.ttml_profile_{name}'), profile)
         row.addWidget(self.profile_combo, 1)
         self.layout().addWidget(self.ass_options)
+        # SMPTE-TT: the subtitles as CEA-608 captions too, tunnelled in the
+        # file for what takes the captions and not the text (RP 2052-10).
+        self.tunnel_608_check = QCheckBox(_('export_dialog.ttml_tunnel_608'))
+        self.layout().addWidget(self.tunnel_608_check)
+        self.profile_combo.combobox.currentIndexChanged.connect(self._show_tunnel)
         # What the file about to be written would break in the profile it
         # declares, as ttml.check finds it, while there is still time to
         # change something.
@@ -399,6 +405,7 @@ class _SubtitlesPanel(QWidget):
             _select(self.fps_combo, 25.0)
         _select(self.look_combo, remembered.get('look', 'clean'))
         _select(self.profile_combo, remembered.get('profile', 'ttml1'))
+        self.tunnel_608_check.setChecked(bool(remembered.get('tunnel_608', False)))
         _select(self.timecode_combo, remembered.get('timecode', 'drop'))
         # 30 (29.97) for a video at that rate or twice it; else the last used.
         if video_fps and (abs(video_fps - 30) < 0.1 or abs(video_fps - 60) < 0.1):
@@ -519,8 +526,14 @@ class _SubtitlesPanel(QWidget):
                                              else _('export_dialog.ttml_look_preview'))
         # Only TTML and DFXP have a profile to declare.
         self.profile_combo.setVisible(fmt in ('DFXP', 'TTML'))
+        self._show_tunnel()
         self.usf_options.setVisible(fmt == 'USF')
         self._run_check()
+
+    def _show_tunnel(self, *_args):
+        """The CEA-608 tunnel is SMPTE-TT's alone."""
+        self.tunnel_608_check.setVisible(self.format_combo.currentText() in ('DFXP', 'TTML')
+                                         and self.profile_combo.combobox.currentData() == 'smpte-tt')
 
     def _run_check(self, *_args):
         """What the TTML this export writes would break in its profile:
@@ -581,6 +594,7 @@ class _SubtitlesPanel(QWidget):
             'fps': self.fps_combo.combobox.currentData(),
             'look': self.look_combo.combobox.currentData(),
             'profile': self.profile_combo.combobox.currentData(),
+            'tunnel_608': self.tunnel_608_check.isChecked(),
             'timecode': self.timecode_combo.combobox.currentData(),
             'stl_fps': self.stl_rate_combo.combobox.currentData(),
             'mcc_rate': self.mcc_rate_combo.combobox.currentData(),
@@ -631,6 +645,8 @@ class _SubtitlesPanel(QWidget):
             options['look'] = choices['look']
         if fmt in ('DFXP', 'TTML'):
             options['profile'] = choices['profile']
+            if choices['profile'] == 'smpte-tt':
+                options['tunnel_608'] = choices['tunnel_608']
         if fmt in ('SCC', 'LAMBDACAP'):
             options['timecode'] = choices['timecode']
         if fmt in ('SCC', 'MCC'):

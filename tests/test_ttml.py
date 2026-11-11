@@ -719,7 +719,7 @@ check('and what it would break, listed, as soon as the profile is chosen',
 panel.profile_combo.combobox.setCurrentIndex(0)
 check('TTML 1 asks nothing of the kind', panel.check_label.text(),
       'Nothing Subtitld checks for breaks TTML 1 in this file.')
-panel.profile_combo.combobox.setCurrentIndex(5)
+panel.profile_combo.combobox.setCurrentIndex(panel.profile_combo.combobox.findData('imsc1.1-image'))
 check('pictures are not drawn to be checked: where they will go is said instead',
       (panel.get_config()['options']['profile'], panel.check_label.text().startswith('Each subtitle is drawn')),
       ('imsc1.1-image', True))
