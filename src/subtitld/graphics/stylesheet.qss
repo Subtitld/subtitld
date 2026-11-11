@@ -31,6 +31,36 @@ QPushButton:hover {
     border-bottom: 0;
 }
 
+/* The gap control's duration field lies in its painted notch: transparent,
+   the value left of the 6×3 arrows, which sit 5px from the notch's edge. */
+#gap_hbox #gap_subtitle_duration {
+    background: transparent;
+    border: 0;
+    min-width: 0;
+    padding: 0;
+    font-size: 10px;
+    color: #c8dbe9;
+}
+
+#gap_hbox #gap_subtitle_duration::up-button,
+#gap_hbox #gap_subtitle_duration::down-button {
+    width: 11px;
+    height: 13px;
+    background: transparent;
+}
+
+#gap_hbox #gap_subtitle_duration::up-arrow {
+    image: url(graphics:spinbox_triangle_up.svg);
+    width: 6px;
+    height: 3px;
+}
+
+#gap_hbox #gap_subtitle_duration::down-arrow {
+    image: url(graphics:spinbox_triangle_down.svg);
+    width: 6px;
+    height: 3px;
+}
+
 /* Until the player controls get their own painted pieces, their fields keep
    the previous compact look. */
 #playercontrols_widget QAbstractSpinBox,

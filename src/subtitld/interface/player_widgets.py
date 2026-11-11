@@ -12,7 +12,7 @@ import os
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
+from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QSizePolicy, QWidget
 
 from subtitld.interface import shapes
 from subtitld.modules import session
@@ -224,3 +224,207 @@ def send_text_picture(painter, rect):
     lp.fillRect(QRectF(0, 0, w, ICON_H), g)
     lp.end()
     painter.drawImage(QRectF(rect.x(), rect.y(), w, ICON_H), layer)
+
+
+# --- gap: add gap · duration · remove gap ----------------------------------------------------------------------------
+
+class GapControl(QWidget):
+    """One 42px raised piece hanging from the top line: add gap on the left,
+    remove gap on the right, and between them the duration field hanging from
+    the top edge as a sunken 75° notch. The icons' subtitle blocks run into
+    the notch's slanted sides and out to the piece's ends, where they fade in.
+    The field is the given spin box, laid over the notch."""
+
+    H = 42
+    KEY_W = 40
+    FIELD_W = 36                      # the notch's flat bottom
+    ICON = 20
+
+    def __init__(self, name, spinbox, parent=None):
+        super().__init__(parent)
+        self.setObjectName(name)
+        self.setAttribute(Qt.WA_Hover)
+        self.notch_h = self.H - 3
+        self.run = self.notch_h * shapes.RUN15
+        self.setFixedSize(int(round(2 * self.KEY_W + self.FIELD_W + 2 * self.run)), self.H)
+        w = self.width()
+        self.add_key = StripKey('gap_add_subtitle_button', self)
+        self.add_key.setGeometry(0, 0, int(self.KEY_W + self.run), self.H)
+        self.remove_key = StripKey('gap_remove_subtitle_button', self)
+        self.remove_key.setGeometry(int(w - self.KEY_W - self.run), 0, int(self.KEY_W + self.run), self.H)
+        self.spinbox = spinbox
+        spinbox.setParent(self)
+        # as wide as the notch at mid-height, where the text sits
+        spinbox.setGeometry(int(self.KEY_W + self.run / 2), 0, int(self.FIELD_W + self.run), self.notch_h)
+        spinbox.raise_()
+        self._icons = {'add': graphic('gap_add_icon.svg'), 'remove': graphic('gap_remove_icon.svg')}
+
+    def shape(self):
+        return shapes.hanging_rect(0, 0, self.width(), self.height())
+
+    def notch(self):
+        return shapes.hanging_trap(self.KEY_W, 0, self.FIELD_W + 2 * self.run, self.notch_h).intersected(self.shape())
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        rect = QRectF(self.rect())
+        shape, notch = self.shape(), self.notch()
+        if not self.isEnabled():
+            painter.fillPath(shape, QColor('#25323d'))
+            painter.setOpacity(0.35)
+        else:
+            painter.fillPath(shape, shapes.gradient(0, rect.height(), '#3e5363'))
+        line = shape.subtracted(shape.translated(0, -1))
+        for key in (self.add_key, self.remove_key):
+            zone = shape.intersected(shapes.rect_path(QRectF(key.geometry()))).subtracted(notch)
+            state = key.state()
+            if state == 'sunk':
+                shapes.fill_sunk(painter, zone, QRectF(key.geometry()))
+                line = line.subtracted(shapes.rect_path(QRectF(key.geometry()).adjusted(0, 0, 0, 1)))
+            elif state == 'hover':
+                painter.fillPath(zone, shapes.HOVER)
+        # icons: inner blocks run under the notch (clipped by it), outer blocks out to the piece's ends, fading in
+        painter.save()
+        painter.setClipPath(shape.subtracted(notch))
+        iy = (self.H - self.ICON) / 2
+        ax = self.KEY_W - 22
+        shapes.draw_stretched_icon(painter, self._icons['add'], ax, iy, self.ICON, self.ICON, extend_left=0,
+                                   extend_right=self.KEY_W + self.run + 8, fade_left=(ax + 3) / 2)
+        rx = self.width() - self.KEY_W + 2
+        shapes.draw_stretched_icon(painter, self._icons['remove'], rx, iy, self.ICON, self.ICON,
+                                   extend_left=self.width() - self.KEY_W - self.run - 8, extend_right=self.width(),
+                                   fade_right=(self.width() - rx - self.ICON + 3) / 2)
+        painter.restore()
+        # the field: sunken, 1px shadow under the piece's top edge
+        painter.fillPath(notch, shapes.gradient(0, self.notch_h, shapes.FIELD, 'sunken'))
+        painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 90))
+        if self.isEnabled():
+            painter.fillPath(line, shapes.CONTACT)
+
+    def sizeHint(self):
+        return self.size()
+
+
+# --- music ↔ voice balance ---------------------------------------------------------------------------------------------
+
+class BalanceSlider(QAbstractSlider):
+    """Music ↔ voice balance (0 = music only, 100 = voice only, 50 = the
+    original mix): one 42px piece hanging from the top line, split into a
+    music zone and a voice zone whose widths are their shares, each with its
+    share printed in it. The split is the handle — a 2px light line, solid
+    for its top quarter, then fading out — and a small semicircle hanging from
+    the top edge marks the middle, where the value snaps. The music and voice
+    icons at the ends are keys (music_key / voice_key) that nudge the balance."""
+
+    H = 42
+    W = 132
+    END = 26                          # kept at each end for the icons
+    SNAP = 3
+    MUSIC = '#5d778c'
+    VOICE = '#93abbf'
+
+    def __init__(self, name, parent=None):
+        super().__init__(parent)
+        self.setObjectName(name)
+        self.setOrientation(Qt.Horizontal)
+        self.setRange(0, 100)
+        self.setValue(50)
+        self.setFixedSize(self.W, self.H)
+        self.setAttribute(Qt.WA_Hover)
+        self.music_key = StripKey('music_voice_separation_music_icon', self)
+        self.music_key.setGeometry(0, 0, self.END, self.H)
+        self.voice_key = StripKey('music_voice_separation_voice_icon', self)
+        self.voice_key.setGeometry(self.W - self.END, 0, self.END, self.H)
+        self._icons = {'music': graphic('music_voice_separation_music_icon.svg'),
+                       'voice': graphic('music_voice_separation_voice_icon.svg')}
+        self.valueChanged.connect(self._snap)
+
+    def _snap(self, value):
+        if value != 50 and abs(value - 50) <= self.SNAP:
+            self.blockSignals(True)
+            self.setValue(50)
+            self.blockSignals(False)
+
+    def _split_x(self):
+        return self.END + (1 - self.value() / 100) * (self.W - 2 * self.END)
+
+    def _value_at(self, x):
+        share = 1 - (x - self.END) / (self.W - 2 * self.END)
+        return int(round(max(0.0, min(1.0, share)) * 100))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setSliderDown(True)
+            self.setValue(self._value_at(event.position().x()))
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.isSliderDown():
+            self.setValue(self._value_at(event.position().x()))
+
+    def mouseReleaseEvent(self, event):
+        self.setSliderDown(False)
+
+    def sliderChange(self, change):
+        super().sliderChange(change)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect())
+        shape = shapes.hanging_rect(0, 0, self.W, self.H)
+        if not self.isEnabled():
+            painter.fillPath(shape, QColor('#25323d'))
+            painter.setOpacity(0.35)
+        sx = self._split_x()
+        music = shape.intersected(shapes.rect_path(QRectF(0, 0, sx, self.H)))
+        voice = shape.intersected(shapes.rect_path(QRectF(sx, 0, self.W - sx, self.H)))
+        if self.isEnabled():
+            painter.fillPath(music, shapes.gradient(0, self.H, self.MUSIC))
+            painter.fillPath(voice, shapes.gradient(0, self.H, self.VOICE))
+        for key in (self.music_key, self.voice_key):
+            zone = shape.intersected(shapes.rect_path(QRectF(key.geometry())))
+            if key.state() == 'hover':
+                painter.fillPath(zone, shapes.HOVER)
+            elif key.state() == 'sunk':
+                painter.fillPath(zone, QColor(0, 0, 0, 40))
+        cy = self.H / 2 - 1
+        for which, cx in (('music', 14), ('voice', self.W - 14)):
+            key = self.music_key if which == 'music' else self.voice_key
+            painter.setOpacity(1.0 if key.isEnabled() and self.isEnabled() else 0.35)
+            self._icons[which].render(painter, QRectF(cx - 8, cy - 8, 16, 16))
+        painter.setOpacity(1.0 if self.isEnabled() else 0.35)
+        # the shares, in their zones
+        font = painter.font()
+        font.setPixelSize(9)
+        font.setBold(True)
+        painter.setFont(font)
+        value = self.value()
+        painter.setPen(QColor(255, 255, 255, 220))
+        if sx - self.END > 18:
+            painter.drawText(QRectF(self.END - 2, 0, sx - self.END - 4, self.H), Qt.AlignCenter, str(100 - value))
+        painter.setPen(QColor(26, 38, 50, 230))
+        if self.W - self.END - sx > 18:
+            painter.drawText(QRectF(sx + 6, 0, self.W - self.END - sx - 4, self.H), Qt.AlignCenter, str(value))
+        # the handle: its left side touches the music zone; solid for the top quarter, then fading out
+        g = QLinearGradient(0, 0, 0, self.H)
+        g.setColorAt(0, QColor('#eef4f8'))
+        g.setColorAt(0.25, QColor('#eef4f8'))
+        g.setColorAt(1, QColor(238, 244, 248, 0))
+        painter.save()
+        painter.setClipPath(shape)
+        painter.fillRect(QRectF(sx, 0, 2, self.H), g)
+        painter.restore()
+        # the middle, where it snaps: a small semicircle hanging from the top edge, over the handle's place at 50/50
+        mid = self.END + 0.5 * (self.W - 2 * self.END) + 1
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 70))
+        painter.drawPie(QRectF(mid - 2, -2, 4, 4), 180 * 16, 180 * 16)
+        if self.isEnabled():
+            painter.fillPath(shape.subtracted(shape.translated(0, -1)), shapes.CONTACT)
+
+    def sizeHint(self):
+        return self.size()

@@ -4,7 +4,7 @@ import time
 from bisect import bisect
 import subprocess
 
-from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
 
@@ -744,58 +744,14 @@ def load(self):
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback)
 
-    self.music_voice_separation_box = QWidget()
-    self.music_voice_separation_box.setObjectName('music_voice_separation_box')
-    self.music_voice_separation_box.setFixedHeight(42)
-    self.music_voice_separation_box.setLayout(QHBoxLayout())
-    self.music_voice_separation_box.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.music_voice_separation_box.layout().setContentsMargins(0, 0, 0, 0)
-    self.music_voice_separation_box.layout().setSpacing(0)
-
-    self.music_voice_separation_music_icon = QPushButton()
-    self.music_voice_separation_music_icon.setObjectName('music_voice_separation_music_icon')
-    self.music_voice_separation_music_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.music_voice_separation_music_icon.setIconSize(QSize(24, 24))
-    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
-    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_music_icon)
-
-    self.music_voice_separation_box.layout().addSpacing(-21)
-
-    class CenterSnapDial(QDial):
-        def __init__(self, center=None, threshold=3, parent=None):
-            super().__init__(parent)
-            self._center = center
-            self._threshold = threshold
-            self._middle_value = 50
-
-            self.valueChanged.connect(self.handle_value_change)
-    
-        def handle_value_change(self, value):
-            # Check if value is close to middle
-            if abs(value - self._middle_value) <= self._threshold:
-                # Snap to middle
-                self.blockSignals(True)  # Prevent recursive signal
-                self.setValue(self._middle_value)
-                self.blockSignals(False)
-
-    self.music_voice_separation_slider = CenterSnapDial(center=50, threshold=3)
-    self.music_voice_separation_slider.setObjectName('music_voice_separation_slider')
-    self.music_voice_separation_slider.setFixedSize(QSize(42, 42))
-    self.music_voice_separation_slider.setRange(0,  100)
-    self.music_voice_separation_slider.setValue(50)
+    # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
+    self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
+    self.music_voice_separation_slider = self.music_voice_separation_box
     self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
-    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_slider, 1)
-
-    self.music_voice_separation_box.layout().addSpacing(-21)
-
-    self.music_voice_separation_voice_icon = QPushButton()
-    self.music_voice_separation_voice_icon.setObjectName('music_voice_separation_voice_icon')
-    self.music_voice_separation_voice_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.music_voice_separation_voice_icon.setIconSize(QSize(24, 24))
+    self.music_voice_separation_music_icon = self.music_voice_separation_box.music_key
+    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
+    self.music_voice_separation_voice_icon = self.music_voice_separation_box.voice_key
     self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
-    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_voice_icon)
-
-    self.music_voice_separation_slider.raise_()
 
     def music_voice_separation_thread_finished(response):
         pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
@@ -852,40 +808,16 @@ def load(self):
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
 
-    self.gap_hbox = QWidget()
-    self.gap_hbox.setObjectName('gap_hbox')
-    self.gap_hbox.setFixedHeight(42)
-    self.gap_hbox.setLayout(QHBoxLayout())
-    self.gap_hbox.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.gap_hbox.layout().setContentsMargins(0, 0, 0, 0)
-    self.gap_hbox.layout().setSpacing(0)
-
-    self.gap_add_subtitle_button = QPushButton()
-    self.gap_add_subtitle_button.setObjectName('gap_add_subtitle_button')
-    self.gap_add_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.gap_add_subtitle_button.setIconSize(QSize(24, 24))
-    self.gap_add_subtitle_button.clicked.connect(lambda: gap_add_subtitle_button_clicked(self))
-    self.gap_hbox.layout().addWidget(self.gap_add_subtitle_button)
-
-    self.gap_hbox.layout().addSpacing(-23)
-
+    # Add gap · duration · remove gap: one painted piece, the duration field hanging in it as a notch.
     self.gap_subtitle_duration = QDoubleSpinBox()
     self.gap_subtitle_duration.setObjectName('gap_subtitle_duration')
     self.gap_subtitle_duration.setMinimum(.1)
     self.gap_subtitle_duration.setMaximum(60.)
-    self.gap_subtitle_duration.setFixedSize(QSize(46, 26))
-    self.gap_hbox.layout().addWidget(self.gap_subtitle_duration)
-
-    self.gap_hbox.layout().addSpacing(-23)
-
-    self.gap_remove_subtitle_button = QPushButton()
-    self.gap_remove_subtitle_button.setObjectName('gap_remove_subtitle_button')
-    self.gap_remove_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.gap_remove_subtitle_button.setIconSize(QSize(24, 24))
+    self.gap_hbox = player_widgets.GapControl('gap_hbox', self.gap_subtitle_duration)
+    self.gap_add_subtitle_button = self.gap_hbox.add_key
+    self.gap_add_subtitle_button.clicked.connect(lambda: gap_add_subtitle_button_clicked(self))
+    self.gap_remove_subtitle_button = self.gap_hbox.remove_key
     self.gap_remove_subtitle_button.clicked.connect(lambda: gap_remove_subtitle_button_clicked(self))
-    self.gap_hbox.layout().addWidget(self.gap_remove_subtitle_button)
-
-    self.gap_subtitle_duration.raise_()
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.gap_hbox, 0, Qt.AlignTop)
 
