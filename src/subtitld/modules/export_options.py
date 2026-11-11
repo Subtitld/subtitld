@@ -50,7 +50,9 @@ And for a format of its own:
                  AVID and FCPXML: the timecode the editor's timeline starts at,
                  '00:00:00:00' or '01:00:00:00'
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
-    mcc_captions MCC: 'both' (CEA-608 and CEA-708) or '608' (CEA-608 alone)
+    mcc_captions MCC: 'both' (CEA-608 and CEA-708), '608' (CEA-608 alone) or
+                 'op47' (both, and the subtitles as OP-47 teletext beside
+                 them, page 888)
     caption_mode SCC and MCC: how the captions are written — 'pop' (pop-on,
                  as prepared captions are), 'roll2', 'roll3', 'roll4'
                  (roll-up of that many rows, as live captions are) or

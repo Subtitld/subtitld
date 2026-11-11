@@ -195,6 +195,7 @@ class _SubtitlesPanel(QWidget):
         self.mcc_captions_combo.setLabel(_('export_dialog.mcc_captions'))
         self.mcc_captions_combo.combobox.addItem(_('export_dialog.mcc_captions_both'), 'both')
         self.mcc_captions_combo.combobox.addItem(_('export_dialog.mcc_captions_608'), '608')
+        self.mcc_captions_combo.combobox.addItem(_('export_dialog.mcc_captions_op47'), 'op47')
         row.addWidget(self.mcc_captions_combo, 1)
         self.layout().addWidget(self.mcc_options)
 
@@ -1152,6 +1153,9 @@ class _VideoPanel(QWidget):
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_prores'), 'prores')
         line.addWidget(self.captions_codec_combo, 1)
         self.captions_panel.layout().addWidget(row)
+        # An MXF's ancillary data carries teletext as well (OP-47).
+        self.captions_teletext = QCheckBox(_('export_dialog.video_captions_teletext'))
+        self.captions_panel.layout().addWidget(self.captions_teletext)
 
         self.captions_note = QLabel()
         self.captions_note.setWordWrap(True)
@@ -1163,6 +1167,7 @@ class _VideoPanel(QWidget):
         _select(self.captions_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.captions_channel_combo, remembered.get('caption_channel', 1))
         _select(self.captions_codec_combo, remembered.get('codec', 'dnxhr'))
+        self.captions_teletext.setChecked(bool(remembered.get('teletext')))
         self._refresh_captions()
         self.video_tabwidget.addTab(self.captions_panel, _('export_dialog.category_captions'))
 
@@ -1284,6 +1289,7 @@ class _VideoPanel(QWidget):
         data carries CEA-708 beside it, but takes a picture of its own."""
         container = self.captions_format_combo.combobox.currentData() or 'MOV'
         self.captions_codec_combo.setVisible(container == 'MXF')
+        self.captions_teletext.setVisible(container == 'MXF')
         self.captions_note.setText(_('export_dialog.video_captions_note_mxf' if container == 'MXF'
                                      else 'export_dialog.video_captions_note_mov'))
 
@@ -1322,6 +1328,7 @@ class _VideoPanel(QWidget):
             'caption_mode': self.captions_mode_combo.combobox.currentData() or 'pop',
             'caption_channel': self.captions_channel_combo.combobox.currentData() or 1,
             'codec': self.captions_codec_combo.combobox.currentData() or 'dnxhr',
+            'teletext': container == 'MXF' and self.captions_teletext.isChecked(),
         }
         session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **captions, format=container)
         return {'category': 'video', 'format': container, 'captions': captions}

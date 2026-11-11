@@ -1961,10 +1961,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 beside = export_options.prepare(SUBTITLE.get('segments'), dict(
                     options, text='translation', language=options['caption_service_language']))
                 services = {2: beside}
+            # OP-47 asked for: the same subtitles as a teletext page beside them.
+            teletext_tracks = [{'segments': segments, 'language': SUBTITLE.get('language') or ''}] \
+                if options.get('mcc_captions') == 'op47' else None
             mcc.save(final_file, segments, rate=rate or '29.97DF', speaker_changes=options.get('speakers') == 'voice',
                      captions='608' if options.get('mcc_captions') == '608' else 'both',
                      mode=options.get('caption_mode') or 'pop', channel=options.get('caption_channel') or 1,
-                     services=services)
+                     services=services, teletext_tracks=teletext_tracks)
 
         elif subtitle_format == 'STL':
             # In the language of the text written; frames at the export's rate

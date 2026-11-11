@@ -392,6 +392,8 @@ class _CaptionsPanel(_GenericASRPanel):
             track = combo.itemData(index)
             if track == 'auto':
                 text = _('import_panel.captions_auto')
+            elif track == 'teletext':
+                text = _('import_panel.captions_teletext')
             elif track.startswith('708-'):
                 text = _('import_panel.captions_service').format(number=track[4:])
             else:

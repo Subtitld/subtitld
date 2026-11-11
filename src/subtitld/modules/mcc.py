@@ -14,7 +14,10 @@ are the first CEA-708 service with any, decoded by the cea708 module;
 in a file without, the first CEA-608 channel with any (CC1, CC2, then
 field 2's CC3, CC4, as SMPTE 334's 608 packets, SDID 02h, carry them too),
 decoded as the SCC module does: pop-on, roll-up and paint-on captions,
-italics, underline, colours and places (see closed_captions).
+italics, underline, colours and places (see closed_captions). A file may
+carry OP-47 teletext too (DID 43h, its subtitling distribution packets on
+lines of their own), which the teletext module reads: a file of teletext
+alone is read as its subtitle page.
 
 Writing gives MCC V1.0 with the header MacCaption's licence asks for
 whole, and a packet for each frame with caption data: the captions the SCC
@@ -22,8 +25,10 @@ module writes in CEA-608 (pop-on, roll-up or paint-on, in CC1, CC2, CC3 or
 CC4 — the first two in the first field, the others in the second), at the
 export's frame rate; and, unless only CEA-608 is asked for, the same
 captions in CEA-708's service 1, shown on the same frames, with a service
-of its own for each further language asked for. `frames` writes a packet
-for every frame of a video rather than only those with captions, as the
+of its own for each further language asked for; and, asked for, the
+subtitles as OP-47 teletext beside them, page 888, a packet on a line of
+its own on each frame that carries some. `frames` writes a packet for
+every frame of a video rather than only those with captions, as the
 ancillary data of an MXF or a QuickTime caption track needs; padding fills
 the rest of each packet's count.
 """
@@ -35,6 +40,7 @@ import uuid
 from subtitld.modules import cea708
 from subtitld.modules import closed_captions
 from subtitld.modules import scc
+from subtitld.modules import teletext
 from subtitld.modules.srt import decode
 
 # Rates as the export offers them: (Time Code Rate, timecode frames, frames
@@ -138,24 +144,31 @@ def parse(text):
         raise ValueError('Not a MacCaption file: it does not begin "File Format=MacCaption_MCC"')
     label = (re.search(r'^Time Code Rate=(\S+)', text, re.M) or [None, '30DF'])[1].upper()
     nominal, rate, drop = _HEADER_RATES.get(label, _HEADER_RATES['30DF'])
-    batches, packet_rate = [], None
+    batches, packet_rate, subtitles = [], None, []
     for line in text.split('\n'):
         match = _LINE.match(line)
         if not match:
             continue
         frame = _frame(*(int(part) for part in match.groups()[:4]), nominal, drop)
-        triplets, cdp_rate = _cc_data(_expand(match.group(5)))
+        packet = _expand(match.group(5))
+        triplets, cdp_rate = _cc_data(packet)
         packet_rate = packet_rate or cdp_rate
         if triplets:
             batches.append((frame, triplets))
+        fields = teletext.op47_fields(packet)
+        if fields:
+            subtitles.append((frame, fields))
     rate = packet_rate or rate
     segments, _track = closed_captions.decode(batches, rate)
+    if not segments:
+        # A file of OP-47 teletext alone: its subtitle page.
+        segments = teletext.op47_decode(subtitles, rate)[0]
     if not segments:
         raise ValueError('This MacCaption file holds no captions')
     dtvcc = any(cc_type >= 2 for _frame_, triplets in batches for cc_type, _a, _b in triplets)
     key = next((key for key, value in RATES.items()
                 if value[0] == label and value[3] == drop and abs(value[2] - rate) < 0.01), None)
-    return segments, {'rate': key, 'captions': 'both' if dtvcc else '608'}
+    return segments, {'rate': key, 'captions': 'op47' if subtitles else 'both' if dtvcc else '608'}
 
 
 def read(path):
@@ -221,13 +234,16 @@ def _packet(triplets, sequence, cdp_rate, count):
 
 
 def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=None,
-          mode='pop', channel=1, services=None, frames=0):
+          mode='pop', channel=1, services=None, frames=0, teletext_tracks=None):
     """MCC text for `segments`, captions of `mode` in CEA-608's channel
-    `channel` (1 to 4) and, with `captions` 'both', in CEA-708's service 1,
-    at `rate` (a key of RATES); with `speaker_changes`, ">> " where a new
-    speaker begins. `services` {number: segments} gives CEA-708 a service of
-    its own for each further language. `frames` writes a packet for every
-    frame up to it, as ancillary data needs."""
+    `channel` (1 to 4) and, with `captions` 'both' or 'op47', in CEA-708's
+    service 1, at `rate` (a key of RATES); with `speaker_changes`, ">> "
+    where a new speaker begins. `services` {number: segments} gives CEA-708
+    a service of its own for each further language. `teletext_tracks`
+    ([{'segments', 'language'}]) adds OP-47 teletext beside them, a page
+    each from 888, in a packet of its own on the frames that carry it.
+    `frames` writes a packet for every frame up to it, as ancillary data
+    needs, an OP-47 one too when there is teletext."""
     label, nominal, frames_per_second, drop, cdp_rate, count = RATES.get(rate, RATES['29.97DF'])
     channel = channel if channel in (1, 2, 3, 4) else 1
     field = 1 if channel >= 3 else 0                   # CC3 and CC4 ride in the second field
@@ -241,6 +257,7 @@ def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=
                 _words_, _b_, extra_shows = scc.frame_words(extra, frames_per_second, speaker_changes, mode=mode)
                 by_service[int(number)] = extra_shows
         dtvcc = cea708.frames_for(by_service, count - 2, mode)
+    subtitles = teletext.op47_frames(teletext_tracks, frames_per_second) if teletext_tracks else {}
     now = now or datetime.datetime.now()
     days = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
     months = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
@@ -248,8 +265,9 @@ def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=
     lines = [HEADER, f'UUID={str(uuid.uuid4()).upper()}', 'Creation Program=Subtitld',
              f'Creation Date={days[now.weekday()]}, {months[now.month - 1]} {now.day}, {now.year}',
              f'Creation Time={now.hour}:{now.minute:02d}:{now.second:02d}', f'Time Code Rate={label}', '']
-    span = range(max(frames, (max(set(words) | set(dtvcc)) + 1) if (words or dtvcc) else 0)) if frames \
-        else sorted(set(words) | set(dtvcc))
+    carried = set(words) | set(dtvcc) | set(subtitles)
+    span = range(max(frames, (max(carried) + 1) if carried else 0)) if frames else sorted(carried)
+    counter = 0
     for sequence, frame in enumerate(span):
         # CEA-608's pair (or nothing) for each field, then CEA-708's.
         pair = bytes.fromhex(words[frame]) if frame in words else b'\x80\x80'
@@ -258,11 +276,17 @@ def write(segments, rate='29.97DF', speaker_changes=False, captions='both', now=
         triplets += [(0xFF if cc_type == 3 else 0xFE, first, second) for cc_type, first, second in dtvcc.get(frame, [])]
         packet = _packet(triplets, sequence % 65536, cdp_rate, count)
         lines.append(f'{_timecode(frame, nominal, drop)}\t{_compress(packet)}')
+        if frame in subtitles or (frames and teletext_tracks):
+            # The frame's teletext, on a line of the same timecode.
+            packet = teletext.op47_packet(subtitles.get(frame, []), counter % 65536)
+            lines.append(f'{_timecode(frame, nominal, drop)}\t{_compress(packet)}')
+            counter += 1
     return '\n'.join(lines) + '\n'
 
 
 def save(path, segments, rate='29.97DF', speaker_changes=False, captions='both',
-         mode='pop', channel=1, services=None, frames=0):
+         mode='pop', channel=1, services=None, frames=0, teletext_tracks=None):
     """Write `segments` to `path` as MCC (ASCII, Windows line ends)."""
     with open(path, 'w', encoding='ascii', newline='\r\n') as mcc_file:
-        mcc_file.write(write(segments, rate, speaker_changes, captions, None, mode, channel, services, frames))
+        mcc_file.write(write(segments, rate, speaker_changes, captions, None, mode, channel, services, frames,
+                             teletext_tracks))

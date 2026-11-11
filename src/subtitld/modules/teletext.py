@@ -62,6 +62,13 @@ the letter that looks the same. Arabic is shaped, each letter in the form
 the sets have nearest the one it takes, and Arabic and Hebrew put on the
 page from the right. `write_video` has FFmpeg copy that stream into a
 transport stream of the video, its picture and sound copied as well.
+
+The same teletext packets go in each frame's ancillary data as OP-47
+(SMPTE RDD 8), the way an MXF carries subtitles beside its captions (SMPTE
+ST 436) and an MCC file writes them: `op47_packet` and `op47_fields`
+write and read a frame's subtitling distribution packet, `op47_frames`
+spreads a page's transmissions over the frames, five packets a frame, and
+`op47_decode` reads them back as subtitles.
 """
 
 import functools
@@ -1358,6 +1365,30 @@ def _pcr_packet(pts):
     return bytes((0x47, PCR_PID >> 8, PCR_PID & 0xFF, 0x20, 183, 0x10)) + clock + b'\xff' * 176
 
 
+def _transmissions(pages, frame=0.04):
+    """The transmissions of `pages` ([{'page', 'language', 'subtitld_language',
+    'segments'}]), in the order they are sent: [(seconds, text, page,
+    designation)], each page erased at 0, each subtitle sent when it starts
+    and erased when it ends (or replaced, when the next one starts within
+    `frame`), in the sets its page is written with."""
+    events = []
+    for order, entry in enumerate(pages):
+        # One set for the whole page: the one its language and all its
+        # subtitles ask for.
+        timeline = sorted(entry.get('segments') or [], key=lambda s: float(s.get('start', 0)))
+        designation = designation_for(entry.get('subtitld_language') or entry.get('language') or '',
+                                      [segment.get('text') for segment in timeline])
+        events.append((0.0, order, '', entry['page'], designation))
+        for index, segment in enumerate(timeline):
+            begin, end = float(segment.get('start', 0)), float(segment.get('end', 0))
+            following = float(timeline[index + 1]['start']) if index + 1 < len(timeline) else None
+            events.append((begin, order, str(segment.get('text') or ''), entry['page'], designation))
+            if following is None or following - end > frame / 2:
+                events.append((end, order, '', entry['page'], designation))
+    events.sort(key=lambda event: (round(event[0], 3), event[1], event[2] != ''))
+    return [(when, text, page, designation) for when, _order, text, page, designation in events]
+
+
 def transport_stream(pages, start=0.0, frame=0.04):
     """The bytes of a transport stream with one teletext stream holding
     `pages`: [{'page' ('888'), 'language' (ISO 639-2, 'eng'), 'type' (2 or
@@ -1374,23 +1405,8 @@ def transport_stream(pages, start=0.0, frame=0.04):
     stream_info = bytes((0x06, 0xE0 | (TELETEXT_PID >> 8), TELETEXT_PID & 0xFF, 0xF0, 2 + len(descriptor),
                          0x56, len(descriptor))) + descriptor
     pmt = b'\x00' + _section(0x02, 1, bytes((0xE0 | (PCR_PID >> 8), PCR_PID & 0xFF, 0xF0, 0x00)) + stream_info)
-    events = []
-    for order, entry in enumerate(pages):
-        # One set for the whole page: the one its language and all its
-        # subtitles ask for.
-        timeline = sorted(entry.get('segments') or [], key=lambda s: float(s.get('start', 0)))
-        designation = designation_for(entry.get('subtitld_language') or entry['language'],
-                                      [segment.get('text') for segment in timeline])
-        events.append((0.0, order, '', entry['page'], designation))
-        for index, segment in enumerate(timeline):
-            begin, end = float(segment.get('start', 0)), float(segment.get('end', 0))
-            following = float(timeline[index + 1]['start']) if index + 1 < len(timeline) else None
-            events.append((begin, order, str(segment.get('text') or ''), entry['page'], designation))
-            if following is None or following - end > frame / 2:
-                events.append((end, order, '', entry['page'], designation))
-    events.sort(key=lambda event: (round(event[0], 3), event[1], event[2] != ''))
     out = []
-    for when, _order, text, page, designation in events:
+    for when, text, page, designation in _transmissions(pages, frame):
         out += _ts_packets(0, pat, counters) + _ts_packets(PMT_PID, pmt, counters)
         pts = int(round((max(0.0, when) + start) * 90000)) % _PTS_WRAP
         out.append(_pcr_packet(pts))
@@ -1438,3 +1454,94 @@ def write_video(video, output, tracks, ffmpeg='ffmpeg', startupinfo=None):
         except OSError:
             pass
     return output
+
+
+# --- OP-47: teletext in each frame's ancillary data ------------------------------
+
+# Free TV Australia's OP-47 (SMPTE RDD 8) carries a teletext service in the
+# ancillary data of each frame of a high definition video, where SMPTE ST
+# 436 puts it in an MXF and an MCC file writes it as text: a subtitling
+# distribution packet (DID 43h, SDID 02h) holds up to five teletext packets
+# as they would go over the air on five lines of the vertical interval,
+# their bytes in reading order; a multipacket (SDID 03h) holds SDPs and
+# others. A teletext packet here is the 44-byte data field DVB carries, as
+# page_fields gives it and decode reads it.
+OP47_DID, OP47_SDID, OP47_MULTIPACKET = 0x43, 0x02, 0x03
+# The lines of the first field the five packets of a frame are said to be
+# on (6 to 22 are the ones teletext takes).
+_OP47_LINES = (7, 8, 9, 10, 11)
+
+
+def op47_fields(packet):
+    """The teletext packets in an ancillary data packet (DID, SDID, data
+    count, then its words, as an MCC line or SMPTE ST 436 holds it): those
+    of a subtitling distribution packet, or of each one a multipacket
+    carries; [] for any other packet."""
+    if len(packet) < 3 or packet[0] != OP47_DID:
+        return []
+    sdid, words = packet[1], bytes(packet[3:3 + packet[2]])
+    if sdid == OP47_MULTIPACKET:
+        # A priority word, then each inner packet: its line, DID, SDID,
+        # count and words.
+        found, index = [], 1
+        while index + 4 <= len(words):
+            count = words[index + 3]
+            found += op47_fields(words[index + 1:index + 4 + count])
+            index += 4 + count
+        return found
+    if sdid != OP47_SDID or len(words) < 9 or words[:2] != b'\x51\x15' or words[3] != 0x02:
+        return []
+    found, index = [], 9
+    for descriptor in words[4:9]:
+        if not descriptor:
+            break                                   # the descriptors after an empty one are empty too
+        vbi = words[index:index + 45]
+        index += 45
+        # The clock run-in, the framing code, then the packet's 42 bytes.
+        if len(vbi) == 45 and vbi[2] == 0x27:
+            found.append(b'\xe0' + bytes(_REVERSED[byte] for byte in vbi[2:]))
+    return found
+
+
+def op47_packet(fields, counter=0):
+    """The ancillary data packet (DID, SDID, data count, words, checksum, as
+    an MCC line holds it) of a subtitling distribution packet carrying up
+    to five teletext packets `fields`, its footer counting `counter` (one
+    more than the packet before it). Its length counts its words from the
+    identifier to its own checksum, which makes their sum 0."""
+    fields = list(fields)[:5]
+    descriptors = bytes(0x80 | 0x60 | line for line, _field_ in zip(_OP47_LINES, fields)).ljust(5, b'\x00')
+    packets = b''.join(b'\x55\x55' + bytes(_REVERSED[byte] for byte in field[1:44]) for field in fields)
+    words = b'\x51\x15\x00\x02' + descriptors + packets + bytes((0x74, (counter >> 8) & 0xFF, counter & 0xFF))
+    words = words[:2] + bytes([len(words) + 1]) + words[3:]
+    words += bytes([-sum(words) & 0xFF])
+    anc = bytes((OP47_DID, OP47_SDID, len(words))) + words
+    return anc + bytes([sum(anc) & 0xFF])
+
+
+def op47_frames(tracks, fps):
+    """{frame: [teletext packets]} carrying `tracks` ([{'segments',
+    'language' (Subtitld's code)}], a page each, 888 and up) at `fps`
+    frames a second: each transmission from the frame its time falls on,
+    five packets a frame, the next one after it when they crowd."""
+    pages = [{'page': str(DEFAULT_PAGE + index), 'language': '', 'subtitld_language': track.get('language') or '',
+              'segments': track.get('segments') or []} for index, track in enumerate(tracks)]
+    out, cursor = {}, 0                             # the next free place, counted in packets
+    for when, text, page, designation in _transmissions(pages, 1.0 / float(fps)):
+        cursor = max(cursor, int(round(max(0.0, when) * float(fps))) * 5)
+        for field in page_fields(text, page, designation=designation):
+            out.setdefault(cursor // 5, []).append(field)
+            cursor += 1
+    return out
+
+
+def op47_decode(batches, fps, page=None, language=''):
+    """(subtitles, page) of the OP-47 teletext in `batches` [(frame, [teletext
+    packets])] at `fps` frames a second: page `page` ('888'), or the subtitle
+    page sent most often, timed from frame 0; ([], None) for none."""
+    packets = [(int(round(frame * 90000 / float(fps))), field)
+               for frame, fields in sorted(batches, key=lambda batch: batch[0]) for field in fields]
+    if not packets:
+        return [], None
+    page = str(page) if page else busiest_subtitle_page(packets)
+    return decode(packets, page, language, origin=0), page
