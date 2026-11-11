@@ -30,6 +30,7 @@ from subtitld.modules import fcpxml
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
+from subtitld.modules import kar
 from subtitld.modules import lambdacap
 from subtitld.modules import legacy
 from subtitld.modules import lrc
@@ -728,6 +729,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             if lrc_metadata:
                 session.SUBTITLE['metadata'] = lrc_metadata
+
+        elif subtitle_file.lower().endswith(('.kar', '.mid', '.midi')):
+            # Karaoke MIDI: a line a subtitle, its syllables as karaoke codes,
+            # the title and artist (and the other @ headers) as metadata; the
+            # file's path kept, so saving it again keeps its music.
+            subtitle_format = 'KAR'
+            try:
+                segments_list, kar_metadata = kar.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if kar_metadata:
+                session.SUBTITLE['metadata'] = kar_metadata
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kar_source=os.path.abspath(subtitle_file))
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
@@ -1992,6 +2006,20 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             metadata.setdefault('title', os.path.splitext(video_name or os.path.basename(final_file))[0])
             ultrastar.save(final_file, segments, metadata=metadata, headers=metadata.get('ultrastar'),
                            audio=video_name)
+
+        elif subtitle_format == 'KAR':
+            # The words of a karaoke song, with the music of the MIDI file it
+            # was opened from when that is still there; else words alone, the
+            # video's name as the title when it has none.
+            source = None
+            if options.get('kar_source') and os.path.isfile(options['kar_source']):
+                with open(options['kar_source'], 'rb') as source_file:
+                    source = source_file.read()
+                if not kar.is_midi(source):
+                    source = None
+            metadata = dict(SUBTITLE.get('metadata') or {})
+            metadata.setdefault('title', os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+            kar.save(final_file, segments, metadata=metadata, source=source)
 
         elif subtitle_format in legacy.SESSION_FORMATS:
             # The player era. The ones counted in frames (AQTitle, Spruce)

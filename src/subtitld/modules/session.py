@@ -144,6 +144,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # UltraStar's songs are .txt, as VPlayer's and its kin's are below; the
     # bytes tell them apart (file_io).
     'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
+    # Karaoke MIDI: the words of a .kar, or the lyrics of any MIDI file.
+    'KAR': {'description': 'KAR MIDI Karaoke format', 'extensions': ['kar', 'mid', 'midi']},
     # Video editors' own: Avid SubCap's .txt is told from the player-era
     # .txt formats below by its bytes, in file_io.
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
