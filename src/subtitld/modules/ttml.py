@@ -49,7 +49,11 @@ Reading:
   or on what holds it, tts:visibility="hidden", a region at tts:opacity 0
   — is read like any other and marked hidden, not left out;
 - the document's xml:lang is the subtitles' language, and its <metadata>'s
-  ttm:title, ttm:desc and ttm:copyright what it says about itself;
+  ttm:title, ttm:desc and ttm:copyright what it says about itself (in
+  <head> itself too, where EBU-TT puts its copyright); the ebuttm
+  elements EBU Tech 3360 maps an STL file's GSI to are kept by their STL
+  names, as metadata['stl'], and an EBU-TT file timed in timecode counts
+  from the documentStartOfProgramme it names, as an STL from its TCP;
 - a subtitle that is a picture (IMSC's Image Profile, SMPTE-TT: a <div>
   with smpte:backgroundImage, a PNG beside the file or one the file holds
   in a smpte:image) is read as the text its ittm:altText gives, placed
@@ -94,6 +98,16 @@ a service that checks what it is given accepts it (PROFILES):
                 ttp:frameRate where it is known, and, when asked
                 (`tunnel`), the subtitles as CEA-608 captions in CC1,
                 tunnelled in smpte:data as RP 2052-10 stores them
+    'ebu-tt'    EBU-TT Part 1 (EBU Tech 3350 v1.2), the production and
+                archive profile, declared in ebuttm:conformsToStandard:
+                styled by reference only (what a paragraph or a span says
+                goes into a <style> it names, a region's textAlign too), in
+                SMPTE timecode where a frame rate is given (ttp:timeBase,
+                frameRate, frameRateMultiplier, markerMode, dropMode; from
+                the programme start in ebuttm:documentStartOfProgramme),
+                ttm:copyright in <head>, and the GSI fields EBU Tech 3360
+                carries over from an STL file (metadata['stl'], by their STL
+                names) as Part M's ebuttm elements
 
 The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
 instead, a PNG beside the file drawn as Subtitld's preview draws it, with
@@ -142,9 +156,13 @@ _TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve'
 # How much of those each profile takes: none in the two built on TTML 1,
 # IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
 # all of it in TTML itself.
-_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none', 'smpte-tt': 'none'}
+_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none', 'smpte-tt': 'none',
+                'ebu-tt': 'flat'}
 # The profiles built on TTML 1, which has none of TTML2's styling.
-_TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt')
+_TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt')
+# The EBU's two, which leave out what EBU-TT does not use: an outline, a
+# region's opacity, tts:display.
+_EBU_PROFILES = ('ebu-tt-d', 'ebu-tt')
 # The words a tts:textEmphasis may hold that are neither a colour nor a mark
 # of its own: what IMSC 1.1's #textEmphasis-minimal allows.
 _EMPHASIS_WORDS = frozenset(('none', 'auto', 'filled', 'open', 'circle', 'dot', 'sesame',
@@ -168,7 +186,7 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
 
-PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt')
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
 IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
@@ -1441,11 +1459,23 @@ def _document(text, images=None):
         tunnels = _tunnelled(root, clock)
         if tunnels:
             segments.extend(_captions_of(root, clock, tunnels))
+    about = _metadata(root)
+    # Timecodes from the start of the programme an EBU-TT file names
+    # (ebuttm:documentStartOfProgramme, 10:00:00:00 as often as not): its
+    # subtitles count from there, as an STL's from its TCP, when they all
+    # come after it.
+    programme = (about.get('stl') or {}).get('TCP', '')
+    shift = clock.seconds(':'.join(programme[i:i + 2] for i in range(0, 8, 2))) if clock.smpte and programme else 0
+    found = segments + (images.get('pictures', []) if images is not None else [])
+    if shift and found and min(float(item['start']) for item in found) >= shift - 0.0005:
+        for item in found:
+            item['start'] = round(max(0.0, item['start'] - shift), 3)
+            item['end'] = round(max(0.0, item['end'] - shift), 3)
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     if images is not None:
         images.setdefault('pictures', []).sort(key=lambda image: (image['start'], image['end']))
         images['size'] = frame.pixels
-    return segments, (root.get(_XML_NS + 'lang') or '').strip(), _metadata(root)
+    return segments, (root.get(_XML_NS + 'lang') or '').strip(), about
 
 
 def _metadata(root):
@@ -1455,14 +1485,41 @@ def _metadata(root):
     into = {'title': 'title', 'desc': 'description', 'copyright': 'copyright'}
     found = {}
     # Inside a <metadata> block, so a ttm:desc describing one subtitle is
-    # not read as what the whole document is.
-    for block in root.iter():
-        if _local(block.tag) != 'metadata':
+    # not read as what the whole document is — or in <head> itself, where
+    # TTML 1 permits them and EBU-TT Part 1 puts its ttm:copyright.
+    head = next((element for element in root if _local(element.tag) == 'head'), None)
+    for block in [head] + [element for element in root.iter() if _local(element.tag) == 'metadata']:
+        if block is None:
             continue
         for element in block:
             key = into.get(_local(element.tag))
             if key and (element.text or '').strip():
                 found.setdefault(key, (element.text or '').strip())
+    # What EBU Tech 3360 carries over from an STL file's GSI, kept by the
+    # STL's names for it (modules.ebustl), in <head>'s metadata or in the
+    # ebuttm:documentMetadata that EBU-TT 1.0 kept it in.
+    stl = {}
+    for element in (head.iter() if head is not None else ()):
+        key = _STL_READ.get(_local(element.tag)) if _namespace(element.tag) == _EBUTTM_NS else None
+        value = (element.text or '').strip()
+        if not key or not value or key in stl:
+            continue
+        if key in ('CD', 'RD'):
+            date = re.fullmatch(r'\d\d(\d\d)-(\d\d)-(\d\d)', value)
+            value = ''.join(date.groups()) if date else ''
+        elif key == 'TCP':
+            label = _CLOCK.match(value)
+            value = ''.join(f'{int(part or 0):02d}' for part in label.group(1, 2, 3, 5)) if label else ''
+        if value:
+            stl[key] = value
+    if stl:
+        found['stl'] = stl
+        if stl.get('OPT'):
+            found.setdefault('title', stl['OPT'])
+    copyright_old = next((element.text.strip() for element in (head.iter() if head is not None else ())
+                          if _local(element.tag) == 'documentCopyright' and (element.text or '').strip()), '')
+    if copyright_old:
+        found.setdefault('copyright', copyright_old)
     return found
 
 
@@ -1545,6 +1602,8 @@ def check(text, profile='imsc1.1'):
             problems.append('EBU-TT-D asks for ttp:timeBase="media"')
     if profile == 'smpte-tt':
         problems += _smpte_problems(root, declared_profile)
+    if profile == 'ebu-tt':
+        problems += _ebu_tt_problems(root, standards)
 
     cells = (_attr(root, 'cellResolution') or '').split()
     if cells:
@@ -1739,6 +1798,88 @@ def _smpte_problems(root, declared_profile):
     return problems
 
 
+# What EBU-TT Part 1 lets a region say itself (Tech 3350, Annex G), and the
+# words some of its style attributes are limited to.
+_EBU_TT_REGION = ('tts:displayAlign', 'tts:extent', 'tts:origin', 'tts:overflow', 'tts:padding',
+                  'tts:showBackground', 'tts:writingMode')
+_EBU_TT_WORDS = {'fontStyle': ('normal', 'italic'), 'textDecoration': ('none', 'underline'),
+                 'unicodeBidi': ('normal', 'embed', 'bidiOverride'), 'fontWeight': ('normal', 'bold'),
+                 'multiRowAlign': ('start', 'center', 'end', 'auto'), 'wrapOption': ('wrap', 'noWrap'),
+                 'direction': ('ltr', 'rtl')}
+_TTS_NS = 'http://www.w3.org/ns/ttml#styling'
+
+
+def _ebu_tt_problems(root, standards):
+    """What breaks EBU-TT Part 1 (EBU Tech 3350 v1.2) in a document: the
+    conformance it declares, the time base and the parameters timecode
+    needs, styling by reference only, what a <style> and a <region> may
+    say and in which words, a <head> with its styling and layout."""
+    problems = []
+    if not any(standard.startswith('urn:ebu:tt:exchange') for standard in standards) and \
+            not any(_local(element.tag) == 'documentEbuttVersion' for element in root.iter()):
+        problems.append(f'No ebuttm:conformsToStandard naming EBU-TT Part 1 ({_EBU_TT_STANDARD})')
+    base = _attr(root, 'timeBase')
+    if base is None:
+        problems.append('<tt> has no ttp:timeBase: EBU-TT asks a file to say it')
+    elif base.strip() not in ('media', 'smpte', 'clock'):
+        problems.append(f'ttp:timeBase="{base}": it is media, smpte or clock')
+    if (base or '').strip() == 'smpte':
+        missing = [name for name in ('frameRate', 'frameRateMultiplier', 'markerMode', 'dropMode') if _attr(root, name) is None]
+        if missing:
+            problems.append(f'Timed in timecode, without {", ".join("ttp:" + name for name in missing)}: '
+                            'EBU-TT asks for each with ttp:timeBase="smpte"')
+        if (_attr(root, 'frameRateMultiplier') or '1 1').split() in (['1', '1'], ['1000', '1000']) and \
+                (_attr(root, 'dropMode') or 'nonDrop').strip() != 'nonDrop':
+            problems.append(f'ttp:dropMode="{_attr(root, "dropMode")}" at a whole frame rate: '
+                            'EBU-TT asks for nonDrop there')
+        unlabelled = sorted({value for element in root.iter() for name in ('begin', 'end')
+                             for value in [(element.get(name) or '').strip()]
+                             if value and not re.fullmatch(r'\d{2,}:\d{2}:\d{2}:\d{2}', value)})
+        if unlabelled:
+            problems.append(f'Times that are not timecodes ({", ".join(unlabelled[:3])}): with ttp:timeBase="smpte" '
+                            'EBU-TT writes HH:MM:SS:FF')
+    extent = (_attr(root, 'extent') or '').split()
+    if extent and not all(part.endswith('px') for part in extent):
+        problems.append('tts:extent on <tt> in what is not px: EBU-TT gives the picture\'s size in pixels')
+    head = next((element for element in root if _local(element.tag) == 'head'), None)
+    for name, inside in (('styling', 'style'), ('layout', 'region')):
+        holder = next((element for element in (head if head is not None else ()) if _local(element.tag) == name), None)
+        if holder is None or not any(_local(element.tag) == inside for element in holder):
+            problems.append(f'<head> has no <{name}> with a <{inside}> in it: EBU-TT asks for one')
+    inline, worded = set(), set()
+    for element in root.iter():
+        name = _local(element.tag)
+        styled = [key for key in element.attrib if _namespace(key) == _TTS_NS]
+        if name in ('body', 'div', 'p', 'span', 'br') and styled:
+            inline.add(name)
+        if name == 'region':
+            if not (_attr(element, 'origin') and _attr(element, 'extent')):
+                problems.append(f'Region {_xml_id(element) or "(unnamed)"} without a tts:origin and a tts:extent: '
+                                'EBU-TT asks every region for both')
+            others = sorted({'tts:' + _local(key) for key in styled} - set(_EBU_TT_REGION))
+            if others:
+                problems.append(f'Region {_xml_id(element) or "(unnamed)"} says {", ".join(others)}: '
+                                'EBU-TT puts that in a <style> the region names')
+        if name == 'style':
+            others = sorted({'tts:' + _local(key) for key in styled} - set(_EBU_TT_STYLE))
+            if others:
+                problems.append(f'Style {_xml_id(element) or "(unnamed)"} says {", ".join(others)}, '
+                                'which EBU-TT does not have')
+        for key, value in element.attrib.items():
+            words = _EBU_TT_WORDS.get(_local(key)) if _namespace(key) in (_TTS_NS, _EBUTTS_NS) else None
+            if words and value.strip() not in words:
+                worded.add(f'{"ebutts" if _namespace(key) == _EBUTTS_NS else "tts"}:{_local(key)}="{value}"')
+        padding = _attr(element, 'linePadding')
+        if padding is not None and not re.fullmatch(r'\d+(?:\.\d+)?c', padding.strip()):
+            worded.add(f'ebutts:linePadding="{padding}"')
+    if inline:
+        problems.append(f'Styles stated on {", ".join(f"<{name}>" for name in sorted(inline))} itself: EBU-TT styles '
+                        'content by naming a <style>, never inline')
+    if worded:
+        problems.append(f'{", ".join(sorted(worded))}: not a value EBU-TT has')
+    return problems
+
+
 def _image_problems(root, profile, declared_profile, content_profiles):
     """What breaks one of IMSC's Image Profiles in a document: the
     declaration, the picture's size in pixels, text where only pictures
@@ -1805,11 +1946,11 @@ def _open_span(tags, style, shear=False, annotations='full'):
             # TTML draws an edge as an outline; the kinds it has no word for
             # are written as the outline nearest them.
             attrs.append(f'tts:textOutline="{font.edge_color or "#000000"} 4%"')
-        if font.emphasis and annotations != 'none':
+        if font.emphasis and annotations not in ('none', 'flat'):
             # markup's words are TTML's: a fill and a shape, or auto, and
             # before or after.
             attrs.append(f'tts:textEmphasis="{font.emphasis}"')
-        if font.combine and annotations != 'none':
+        if font.combine and annotations not in ('none', 'flat'):
             attrs.append(f'tts:textCombine="{font.combine}"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
@@ -1860,6 +2001,11 @@ def _content(text, shear=False, annotations='full'):
         if not (base and reading):
             out.append(base + reading)
             continue
+        if annotations == 'flat':
+            # A profile with no ruby at all: the reading after its base, in
+            # brackets, as a line of text gives one.
+            out.append(f'{base}({reading})')
+            continue
         said = markup.ruby_attributes(group) if annotations != 'none' else markup.Ruby()
         # Spreading a reading with its base is beyond IMSC 1.1's minimal set.
         spread = f' tts:rubyAlign="{_RUBY_ALIGN_OUT[said.align]}"' \
@@ -1879,7 +2025,7 @@ def _styles(look, preview, profile='ttml1'):
     style and leave the outline out.
     """
     if look != 'preview':
-        outline = '' if profile == 'ebu-tt-d' else ' tts:textOutline="black 5%"'
+        outline = '' if profile in _EBU_PROFILES else ' tts:textOutline="black 5%"'
         return [f'<style xml:id="text" tts:fontFamily="proportionalSansSerif" tts:fontSize="100%" '
                 f'tts:color="white"{outline}/>'], None
     preview = preview or {}
@@ -1934,7 +2080,7 @@ def _look_attributes(styling, profile='ttml1', inline=False):
     EBU-TT-D's spec names tts:textOutline and tts:opacity among the
     attributes it does not use, so a file written for it says neither.
     """
-    ebu = profile == 'ebu-tt-d'
+    ebu = profile in _EBU_PROFILES
     out = []
     if inline:
         if styling.get('background'):
@@ -2005,27 +2151,36 @@ def _frame_rate(fps):
     return int(round(fps * 1.001)), '1000 1001'
 
 
-def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, fps=None, tunnel=False):
+def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, fps=None, tunnel=False, smpte=None):
     """What <tt> carries: the namespaces and parameters, and the profile
     the file declares itself to be. `imsc_styling` brings IMSC's styling
     namespace in, for a forced subtitle to mark or a box that reaches from
     one line to the next, and `ebu_styling` the EBU's, for a look that
     states one of its two. `fps` states the video's frame rate, and
-    `tunnel` the namespaces of the CEA-608 data a SMPTE-TT file carries."""
+    `tunnel` the namespaces of the CEA-608 data a SMPTE-TT file carries.
+    `smpte` (nominal rate, multiplier or None, drop mode) times the file in
+    SMPTE timecode, with the parameters EBU-TT asks of it."""
     namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
                   'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
                   'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
                   'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"']
     if imsc_styling:
         namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
-    if profile == 'ebu-tt-d':
+    if profile in _EBU_PROFILES:
         namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
     if ebu_styling:
         namespaces.append(f'xmlns:ebutts="{_EBUTTS_NS}"')
     if profile == 'smpte-tt' and tunnel:
         namespaces += [f'xmlns:smpte="{_SMPTE_NS}"', f'xmlns:m608="{_M608_NS}"']
     attrs = ['ttp:timeBase="media"']
-    if fps:
+    if smpte:
+        nominal, multiplier, drop = smpte[:3]
+        # EBU-TT Part 1 asks a file timed in timecode for all four. The
+        # times run on as the subtitles do, so the markers are continuous.
+        attrs = ['ttp:timeBase="smpte"', f'ttp:frameRate="{nominal}"',
+                 f'ttp:frameRateMultiplier="{multiplier or "1 1"}"', 'ttp:markerMode="continuous"',
+                 f'ttp:dropMode="{drop}"']
+    elif fps:
         rate, multiplier = _frame_rate(fps)
         attrs.append(f'ttp:frameRate="{rate}"')
         if multiplier:
@@ -2044,6 +2199,112 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, f
         attrs.append('ttp:cellResolution="32 15"')
     attrs.append(f'xml:lang={quoteattr(export_options.language_tag(language))}')
     return ' '.join(namespaces + attrs)
+
+
+def _stamps(fps, start=None, drop_frame=False):
+    """(seconds -> a TTML time, the SMPTE timing or None). Without `fps`,
+    clock times in media time; with it, SMPTE timecode labels counted from
+    `start`: (nominal rate, multiplier, drop mode, the start's label)."""
+    if not fps:
+        return format_time, None
+    nominal, multiplier = _frame_rate(fps)
+    real = nominal * (1000 / 1001 if multiplier else 1)
+    drop = 'dropNTSC' if drop_frame and multiplier and nominal == 30 else 'nonDrop'
+    label = _CLOCK.match(str(start or '').strip().replace(';', ':'))
+    offset = timecode_frames(int(label.group(1)), int(label.group(2)), int(label.group(3)), int(label.group(5) or 0),
+                             nominal, drop) if label else 0
+    # Half a frame up, whatever Python's rounding does with halves.
+    return (lambda seconds: timecode_label(int(float(seconds) * real + 0.5) + offset, nominal, drop),
+            (nominal, multiplier, drop, timecode_label(offset, nominal, drop)))
+
+
+# What EBU-TT Part 1 lets a <style> say (Tech 3350, Annex G).
+_EBU_TT_STYLE = ('tts:direction', 'tts:fontFamily', 'tts:fontSize', 'tts:lineHeight', 'tts:textAlign', 'tts:color',
+                 'tts:backgroundColor', 'tts:fontStyle', 'tts:fontWeight', 'tts:textDecoration', 'tts:unicodeBidi',
+                 'tts:wrapOption', 'tts:padding', 'ebutts:multiRowAlign', 'ebutts:linePadding')
+_START_TAG = re.compile(r'<(p|span)((?:\s+[\w:.-]+=(?:"[^"]*"|\'[^\']*\'))*)\s*>')
+_ATTRIBUTE = re.compile(r'([\w:.-]+)=("[^"]*"|\'[^\']*\')')
+
+
+def _referenced(fragment, hoisted):
+    """`fragment` (TTML this module wrote) with the styles its <p> and
+    <span> elements state inline moved into styles they name, as EBU-TT
+    Part 1 asks: `hoisted` {the attributes: the id of their <style>} gathers
+    them. What EBU-TT has no word for goes: line-through (its
+    textDecoration is none or underline), an outline, an isolate."""
+    def tag(match):
+        kept, styled, named = [], [], []
+        for name, value in _ATTRIBUTE.findall(match.group(2)):
+            if name == 'style':
+                named += value[1:-1].split()
+            elif name.startswith('tts:'):
+                inner = value[1:-1]
+                if name == 'tts:textDecoration':
+                    inner = 'underline' if 'underline' in inner.split() else ''
+                if name in _EBU_TT_STYLE and inner and not (name == 'tts:unicodeBidi' and inner == 'isolate'):
+                    styled.append(f'{name}={value[0]}{inner}{value[0]}')
+            else:
+                kept.append(f'{name}={value}')
+        if styled:
+            named.append(hoisted.setdefault(' '.join(styled), f'inline{len(hoisted) + 1}'))
+        if named:
+            kept.append(f'style="{" ".join(named)}"')
+        return f'<{match.group(1)}{"".join(" " + attribute for attribute in kept)}>'
+    return _START_TAG.sub(tag, fragment)
+
+
+# The GSI fields of an EBU STL file (modules.ebustl) and the metadata EBU
+# Tech 3360 carries them in, as EBU-TT Part M (Tech 3390) names it.
+_STL_METADATA = (('OPT', 'documentOriginalProgrammeTitle'), ('OET', 'documentOriginalEpisodeTitle'),
+                 ('TPT', 'documentTranslatedProgrammeTitle'), ('TET', 'documentTranslatedEpisodeTitle'),
+                 ('TN', 'documentTranslatorsName'), ('TCD', 'documentTranslatorsContactDetails'),
+                 ('SLR', 'documentSubtitleListReferenceCode'), ('CD', 'stlCreationDate'),
+                 ('RD', 'stlRevisionDate'), ('RN', 'stlRevisionNumber'), ('TNS', 'documentTotalNumberOfSubtitles'),
+                 ('MNC', 'documentMaximumNumberOfDisplayableCharacterInAnyRow'),
+                 ('TCP', 'documentStartOfProgramme'), ('CO', 'documentCountryOfOrigin'),
+                 ('PUB', 'documentPublisher'), ('EN', 'documentEditorsName'),
+                 ('ECD', 'documentEditorsContactDetails'), ('UDA', 'documentUserDefinedArea'))
+# The names read as well: Tech 3360's own spelling of one, and the element
+# Part 1 version 1.0 had before ttm:copyright.
+_STL_READ = dict({name: key for key, name in _STL_METADATA}, documentTotalNumbersOfSubtitles='TNS')
+_EBU_TT_STANDARD = 'urn:ebu:tt:exchange:2017-05'
+
+
+def _stl_date(value):
+    """An STL date (YYMMDD) as xs:date, or '' for one that is not."""
+    found = re.fullmatch(r'(\d\d)(\d\d)(\d\d)', str(value or '').strip())
+    if not found or not ('01' <= found.group(2) <= '12' and '01' <= found.group(3) <= '31'):
+        return ''
+    year = int(found.group(1))
+    return f'{2000 + year if year < 70 else 1900 + year}-{found.group(2)}-{found.group(3)}'
+
+
+def _ebu_tt_metadata(metadata, count, widest, smpte):
+    """The ebuttm elements of an EBU-TT Part 1 document's <head>: the
+    standard it conforms to, and what EBU Tech 3360 carries over from an STL
+    file's GSI (`metadata['stl']`, as modules.ebustl reads it), the number
+    of subtitles and, without the STL's, the widest row this file's own.
+    Each directly in <metadata>, as Part M has them since
+    ebuttm:documentMetadata was deprecated."""
+    stl = dict((metadata or {}).get('stl') or {})
+    stl['TNS'] = str(count)
+    stl.setdefault('MNC', str(widest))
+    if smpte:
+        stl['TCP'] = smpte[3]
+    else:
+        stl.pop('TCP', None)                    # a start of programme is a timecode's, and this file has none
+    lines = [f'      <ebuttm:conformsToStandard>{_EBU_TT_STANDARD}</ebuttm:conformsToStandard>']
+    for key, name in _STL_METADATA:
+        value = str(stl.get(key) or '').strip()
+        if key in ('CD', 'RD'):
+            value = _stl_date(value)
+        elif key in ('RN', 'TNS', 'MNC'):
+            value = str(int(value)) if value.isdigit() else ''
+        elif key == 'TCP' and re.fullmatch(r'\d{8}', value):
+            value = ':'.join(value[i:i + 2] for i in range(0, 8, 2))
+        if value:
+            lines.append(f'      <ebuttm:{name}>{escape(value)}</ebuttm:{name}>')
+    return lines
 
 
 def _tunnel_608(segments):
@@ -2066,12 +2327,15 @@ def _tunnel_608(segments):
 
 
 def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None,
-          *, fps=None, tunnel=False):
+          *, fps=None, tunnel=False, start=None, drop_frame=False):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
     `fps`, the video's frame rate, is stated where it is given; with
     `tunnel`, a SMPTE-TT file carries the subtitles as CEA-608 captions too.
+    EBU-TT with a frame rate is timed in SMPTE timecode, from a programme
+    start of `start` ("HH:MM:SS:FF", 00:00:00:00 without one), drop-frame
+    at 29.97 with `drop_frame`.
 
     A Japanese file in an IMSC profile writes its italics as tts:shear:
     that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
@@ -2090,6 +2354,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     # And one for each box, which goes on a span rather than the paragraph.
     boxings = {}
     style_lines, box = _styles(look, preview, profile)
+    stamp, smpte = _stamps(fps if profile == 'ebu-tt' else None, start, drop_frame)
+    widest = 0
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
         lead, rest = markup.split_lead(raw)
@@ -2099,12 +2365,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         keypad = markup.alignment(lead)
         placed = position.of(segment)
         styling = subtitld_look.of(segment)
+        widest = max([widest] + [len(line) for line in markup.plain(rest).split('\n')])
         # Opacity belongs to a region, so a subtitle only part shown takes
         # a region of its own rather than fading the ones beside it.
         # And writing down the picture is a region's, so a subtitle written
         # in columns takes one of its own too.
         spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v),
-                None if profile == 'ebu-tt-d' else styling.get('opacity'), position.writing(segment))
+                None if profile in _EBU_PROFILES else styling.get('opacity'), position.writing(segment))
         if spot not in places:
             # One region for each place used. A subtitle placed more finely
             # than the nine takes a region of its own, named after the place
@@ -2116,9 +2383,9 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                             if f'{name}-{number}' not in taken)
             places[spot] = name
         region = places[spot]
-        start = float(segment.get('start', 0))
-        end = max(start, float(segment.get('end', start)))
-        attrs = f'begin="{format_time(start)}" end="{format_time(end)}" region="{region}"'
+        begin = float(segment.get('start', 0))
+        end = max(begin, float(segment.get('end', begin)))
+        attrs = f'begin="{stamp(begin)}" end="{stamp(end)}" region="{region}"'
         speaker = str(segment.get('speaker') or '').strip()
         if agents and speaker:
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
@@ -2126,13 +2393,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             attrs += f' tts:direction="{segment["direction"]}"'
         # EBU-TT-D's schema has normal, embed and bidiOverride, and no
         # isolate, so a file written for it says nothing of an isolate.
-        if segment.get('bidi') in _BIDI_OUT and not (profile == 'ebu-tt-d' and segment['bidi'] == 'isolate'):
+        if segment.get('bidi') in _BIDI_OUT and not (profile in _EBU_PROFILES and segment['bidi'] == 'isolate'):
             attrs += f' tts:unicodeBidi="{_BIDI_OUT[segment["bidi"]]}"'
         if segment.get('forced') and profile != 'ebu-tt-d':
             attrs += ' itts:forcedDisplay="true"'
         # EBU-TT-D's spec lists tts:display among the attributes it does not
         # use, so there a hidden subtitle is written as an ordinary one.
-        if segment.get('hidden') and profile != 'ebu-tt-d':
+        if segment.get('hidden') and profile not in _EBU_PROFILES:
             attrs += ' tts:display="none"'
         looking = _look_attributes(styling, profile)
         if looking:
@@ -2147,8 +2414,16 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             content = f'<span style="{around}">{content}</span>'
         cues.append(f'      <p {attrs}>{content}</p>')
 
+    if profile == 'ebu-tt':
+        # EBU-TT Part 1 styles by reference only: what a paragraph or a span
+        # says inline goes into a <style> of its own, which it names.
+        hoisted = {}
+        cues = [_referenced(cue, hoisted) for cue in cues]
+        lookings.update(hoisted)
     head = ['  <head>']
     meta_lines = []
+    if profile == 'ebu-tt':
+        meta_lines += _ebu_tt_metadata(metadata, len(cues), widest, smpte)
     if profile == 'ebu-tt-d':
         meta_lines.append(f'      <ebuttm:documentMetadata>'
                           f'<ebuttm:conformsToStandard>{_EBUTTD_STANDARD}</ebuttm:conformsToStandard>'
@@ -2156,7 +2431,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     # What the file says about itself, in TTML's own words for it.
     for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
         said = str((metadata or {}).get(key) or '').strip()
-        if said:
+        if said and not (profile == 'ebu-tt' and key == 'copyright'):
             meta_lines.append(f'      <{name}>{escape(said)}</{name}>')
     for name, agent_id in speakers.items():
         meta_lines.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
@@ -2170,9 +2445,15 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                           f'm608:channel="CC1" m608:fieldStart="1"/>')
     if meta_lines:
         head += ['    <metadata>', *meta_lines, '    </metadata>']
+    copyright_said = str((metadata or {}).get('copyright') or '').strip()
+    if profile == 'ebu-tt' and copyright_said:
+        # EBU-TT Part 1 has ttm:copyright in <head> itself, after its
+        # <metadata>, and nowhere else.
+        head.append(f'    <ttm:copyright>{escape(copyright_said)}</ttm:copyright>')
     style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>'
                                  for looking, name in list(lookings.items()) + list(boxings.items())]
-    head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
+    aligned = []
+    region_lines = []
     for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0,
                                                  spot[3] if spot[3] is not None else 1, spot[4])):
         keypad, across, down, alpha, writing = spot
@@ -2190,13 +2471,25 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         (x, y), (width, height) = _box(keypad, across, down)
         faded = f' tts:opacity="{alpha:.4g}"' if alpha is not None else ''
         written = f' tts:writingMode="{_WRITING_OUT[writing]}"' if writing else ''
-        head.append(f'      <region xml:id="{places[spot]}" '
-                    f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
-                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{written}{faded}/>')
-    head += ['    </layout>', '  </head>']
+        if profile == 'ebu-tt':
+            # A region in EBU-TT Part 1 takes no textAlign of its own: it
+            # names a style that holds it, which its text inherits.
+            if align not in aligned:
+                aligned.append(align)
+            aligning = f'tts:displayAlign="{display}" style="align-{align}"'
+        else:
+            aligning = f'tts:displayAlign="{display}" tts:textAlign="{align}"'
+        region_lines.append(f'      <region xml:id="{places[spot]}" '
+                            f'tts:origin="{_percent(x)} {_percent(y)}" '
+                            f'tts:extent="{_percent(width)} {_percent(height)}" {aligning}{written}{faded}/>')
+    style_lines += [f'<style xml:id="align-{align}" tts:textAlign="{align}"/>' for align in aligned]
+    head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>',
+             *region_lines, '    </layout>', '  </head>']
     forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
     imsc_styling = forced or any('itts:' in looking for looking in lookings)
     ebu_styling = any('ebutts:' in looking for looking in lookings)
+    root = _root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling,
+                            fps=fps if not smpte else None, tunnel=bool(tunnels), smpte=smpte)
     # The tunnelled captions, each run in a <div> of its own that begins on
     # its first frame: RP 2052-11's way, which RP 2052-10 shares, of saying
     # where data in the body belongs on the timeline.
@@ -2214,7 +2507,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                     '    </div>']
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<tt {_root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling, fps=fps, tunnel=bool(tunnels))}>',
+        f'<tt {root}>',
         *head,
         '  <body style="text">',
         '    <div>',

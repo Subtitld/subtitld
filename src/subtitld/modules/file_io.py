@@ -892,6 +892,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # ttm:copyright): kept on the subtitle, written out again.
             if ttml_metadata:
                 session.SUBTITLE['metadata'] = ttml_metadata
+            # An EBU-TT file's programme start (EBU Tech 3360's TCP), kept for
+            # saving it as EBU STL or EBU-TT again.
+            programme = ((ttml_metadata or {}).get('stl') or {}).get('TCP', '')
+            label = ':'.join(programme[i:i + 2] for i in range(0, 8, 2)) if len(programme) == 8 else ''
+            if label in ebustl.STARTS:
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, start=label)
 
         elif subtitle_file.lower().endswith('.smi') and legacy.kind(_text_of(subtitle_file)) == 'smiltext':
             # SMIL and SAMI both answer to .smi, and only one of them is
@@ -1043,6 +1049,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = _known_language(stl_settings['language'])
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
                                              display=stl_settings['display'], start=stl_settings['start'])
+            # What its GSI says of who made it and for what, which EBU-TT
+            # carries (EBU Tech 3360) and a save as STL writes back.
+            with open(subtitle_file, 'rb') as stl_file:
+                gsi = ebustl.gsi_values(stl_file.read(ebustl.GSI_SIZE))
+            if gsi:
+                session.SUBTITLE['metadata'] = dict({'title': gsi['OPT']} if gsi.get('OPT') else {}, stl=gsi)
 
         elif subtitle_file.lower().endswith('.cap') and _is_lambda_cap(subtitle_file):
             # Lambda CAP, Japanese subtitles: frames at the video's rate, else
@@ -1916,6 +1928,18 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 if VIDEO.get('framerate'):
                     extra['fps'] = float(VIDEO['framerate'])
                 extra['tunnel'] = bool(options.get('tunnel_608'))
+            # EBU-TT is timed in timecode where there is a frame rate (the
+            # video's, else the STL's it came from), from the programme
+            # start the file was opened with; in media time without one.
+            if profile == 'ebu-tt':
+                stl = (SUBTITLE.get('metadata') or {}).get('stl') or {}
+                stl_rate = {'STL25.01': 25.0, 'STL30.01': 30000 / 1001}.get(stl.get('DFC'))
+                rate = float(VIDEO.get('framerate') or 0) or stl_rate
+                if rate:
+                    extra['fps'] = rate
+                    programme = stl.get('TCP', '')
+                    extra['start'] = options.get('start') or (
+                        ':'.join(programme[i:i + 2] for i in range(0, 8, 2)) if len(programme) == 8 else None)
             ttml.save(final_file, segments,
                       language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                       else language,
@@ -1987,7 +2011,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         start=options.get('start') if options.get('start') in ebustl.STARTS else ebustl.STARTS[0],
                         language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                         else language,
-                        title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+                        title=os.path.splitext(os.path.basename(VIDEO.get('filepath')))[0] if VIDEO.get('filepath')
+                        else (SUBTITLE.get('metadata') or {}).get('title')
+                        or os.path.splitext(os.path.basename(final_file))[0],
+                        gsi=(SUBTITLE.get('metadata') or {}).get('stl'))
 
         elif subtitle_format in dvd_scripts.SESSION_FORMATS:
             # The DVD authoring scripts: frames at the export's rate (the

@@ -575,6 +575,7 @@
     "export_dialog.ttml_profile_imsc11": "IMSC 1.1 Text",
     "export_dialog.ttml_profile_ebuttd": "EBU-TT-D",
     "export_dialog.ttml_profile_smptett": "SMPTE-TT",
+    "export_dialog.ttml_profile_ebutt": "EBU-TT Part 1 (production, archive)",
     "export_dialog.ttml_tunnel_608": "Carry the subtitles as CEA-608 captions too (for what takes captions, not text)",
     "export_dialog.ttml_profile_imsc1_image": "IMSC 1.0.1 Image",
     "export_dialog.ttml_profile_imsc11_image": "IMSC 1.1 Image",

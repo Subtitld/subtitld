@@ -356,7 +356,7 @@ class _SubtitlesPanel(QWidget):
         self.profile_combo = utils.LabeledComboBox()
         self.profile_combo.setLabel(_('export_dialog.ttml_profile'))
         for profile, name in (('ttml1', 'ttml1'), ('imsc1', 'imsc1'), ('imsc1.1', 'imsc11'), ('ebu-tt-d', 'ebuttd'),
-                              ('smpte-tt', 'smptett'),
+                              ('smpte-tt', 'smptett'), ('ebu-tt', 'ebutt'),
                               ('imsc1-image', 'imsc1_image'), ('imsc1.1-image', 'imsc11_image')):
             self.profile_combo.combobox.addItem(_(f'export_dialog.ttml_profile_{name}'), profile)
         row.addWidget(self.profile_combo, 1)
