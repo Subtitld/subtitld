@@ -27,6 +27,7 @@ from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
 from subtitld.modules import ebustl
 from subtitld.modules import hls
+from subtitld.modules import isobmff_text
 from subtitld.modules import fcpxml
 from subtitld.modules import timecode
 from subtitld.modules import export_options
@@ -731,8 +732,23 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             if _known_language(hls_settings['language']):
                 session.SUBTITLE['language'] = _known_language(hls_settings['language'])
-            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mpegts=hls_settings['mpegts'],
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mpegts=hls_settings.get('mpegts', 0),
                                              segment_duration=hls_settings['segment_duration'])
+
+        elif subtitle_file.lower().endswith(('.cmft', '.mpd')):
+            # WebVTT or TTML in fragmented MP4, in a CMAF track file or the
+            # segments a DASH manifest names: what it carries, in which
+            # profile, and its segments' length kept to save it again.
+            subtitle_format = 'DASH' if subtitle_file.lower().endswith('.mpd') else 'CMFT'
+            try:
+                segments_list, mp4_settings = isobmff_text.read(subtitle_file, language=session.SUBTITLE.get('language'))
+            except (ValueError, OSError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(mp4_settings['language']):
+                session.SUBTITLE['language'] = _known_language(mp4_settings['language'])
+            carriage = 'wvtt' if mp4_settings['codec'] == 'wvtt' else mp4_settings['profile'] or 'imsc1.1'
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mp4_text=carriage,
+                                             segment_duration=mp4_settings['segment_duration'] or isobmff_text.SEGMENT_DURATION)
 
         elif subtitle_file.lower().endswith('.lrc'):
             # Lyrics: word stamps as karaoke codes, the ID tags (title,
@@ -1807,6 +1823,22 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                      mpegts=int(options.get('mpegts', hls.MPEGTS) or 0),
                      voices=options.get('speakers') == 'voice',
                      total=float(VIDEO.get('duration') or 0) if VIDEO.get('filepath') else 0.0)
+
+        elif subtitle_format in ('CMFT', 'DASH'):
+            # A CMAF text track, WebVTT or TTML in the profile asked for, or
+            # a DASH manifest with its segments in a folder beside it; in the
+            # language of the text written, for as long as the video lasts.
+            carriage = options.get('mp4_text') if options.get('mp4_text') in isobmff_text.CARRIAGES else 'wvtt'
+            (isobmff_text.save if subtitle_format == 'CMFT' else isobmff_text.save_dash)(
+                final_file, segments, codec='wvtt' if carriage == 'wvtt' else 'stpp',
+                duration=float(options.get('segment_duration') or isobmff_text.SEGMENT_DURATION),
+                language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                else language,
+                voices=options.get('speakers') == 'voice',
+                profile=carriage if carriage != 'wvtt' else 'imsc1.1',
+                look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
+                preview=subtitle_styles.preview_look(), metadata=SUBTITLE.get('metadata'),
+                total=float(VIDEO.get('duration') or 0) if VIDEO.get('filepath') else 0.0)
 
         elif subtitle_format in ['DFXP', 'TTML'] and options.get('profile') in ttml.IMAGE_PROFILES:
             # IMSC's Image Profile: each subtitle drawn as the preview draws

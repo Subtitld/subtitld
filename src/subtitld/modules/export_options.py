@@ -1,11 +1,12 @@
 """What an export of subtitles writes, by the options the export dialog sets.
 
 The options apply to the formats that hold only timed text (SRT, VTT, HLS,
-ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP, CAVENA890,
-AVID, FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC,
-UltraStar, KAR, TTXT and the player-era formats); USF, USFX and JSON keep the
-project as it is. Karaoke timing is formatting (modules.karaoke): removing
-the formatting takes the word timing of LRC, UltraStar, KAR and TTXT with it.
+CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
+CAVENA890, AVID, FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML,
+LRC, UltraStar, KAR, TTXT and the player-era formats); USF, USFX and JSON
+keep the project as it is. Karaoke timing is formatting (modules.karaoke):
+removing the formatting takes the word timing of LRC, UltraStar, KAR and
+TTXT with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -74,7 +75,7 @@ And for a format of its own:
                  the text) or one of modules.pac.CODE_PAGES ('latin',
                  'greek', 'cyrillic', 'korean' ...); a page that does not
                  hold the text gives way to one that does
-    look         ASS and TTML: their style 'clean' (white, a black
+    look         ASS, TTML, and CMFT and DASH's TTML: their style 'clean' (white, a black
                  outline) or as Subtitld's 'preview' draws (modules.ass,
                  modules.ttml)
     profile      TTML and DFXP: the profile the file declares itself to be,
@@ -83,8 +84,12 @@ And for a format of its own:
                  ('imsc1-image', 'imsc1.1-image'), which draw each
                  subtitle as a PNG beside the file
     segment_duration
-                 HLS: the seconds each segment lasts (6, as Apple
-                 recommends; modules.hls.SEGMENT_DURATIONS)
+                 HLS, CMFT and DASH: the seconds each segment (a fragment
+                 of a CMAF track) lasts (6, as Apple recommends;
+                 modules.hls.SEGMENT_DURATIONS)
+    mp4_text     CMFT and DASH: what the track carries, 'wvtt' (WebVTT) or
+                 TTML in a profile, 'imsc1.1', 'imsc1' or 'ebu-tt-d'
+                 (modules.isobmff_text.CARRIAGES)
     mpegts       HLS: the MPEG-2 timestamp each segment maps its cue time
                  0 to (900000, 10 s at 90 kHz, where most encoders start
                  a stream's clock; or 0)
@@ -92,7 +97,7 @@ And for a format of its own:
 
 from subtitld.modules import markup
 
-TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',

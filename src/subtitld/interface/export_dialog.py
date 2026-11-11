@@ -17,6 +17,7 @@ from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
 from subtitld.modules import export_options
 from subtitld.modules import hls
+from subtitld.modules import isobmff_text
 from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import session
@@ -24,7 +25,7 @@ from subtitld.modules import soft_subtitles
 from subtitld.modules import ttml
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC']
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
@@ -273,10 +274,18 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.cavena_options)
 
-        # HLS: how long each segment is, and the timestamp its cue times map to.
+        # HLS, CMAF and DASH: how long each segment is; HLS's timestamp its
+        # cue times map to; what a CMAF track carries, WebVTT or TTML.
         self.stream_options = QWidget()
         row = QHBoxLayout(self.stream_options)
         row.setContentsMargins(0, 0, 0, 0)
+        self.carriage_combo = utils.LabeledComboBox()
+        self.carriage_combo.setLabel(_('export_dialog.mp4_text'))
+        for carriage in isobmff_text.CARRIAGES:
+            self.carriage_combo.combobox.addItem(_(f'export_dialog.mp4_text_{carriage.replace(".", "").replace("-", "")}'),
+                                                 carriage)
+        self.carriage_combo.combobox.currentIndexChanged.connect(lambda _index: self._refresh_options())
+        row.addWidget(self.carriage_combo, 1)
         self.segment_combo = utils.LabeledComboBox()
         self.segment_combo.setLabel(_('export_dialog.segment_duration'))
         for seconds in hls.SEGMENT_DURATIONS:
@@ -372,6 +381,7 @@ class _SubtitlesPanel(QWidget):
         _select(self.cavena_start_combo, remembered.get('cavena_start', '00:00:00:00'))
         _select(self.segment_combo, remembered.get('segment_duration', hls.SEGMENT_DURATION))
         _select(self.mpegts_combo, remembered.get('mpegts', hls.MPEGTS))
+        _select(self.carriage_combo, remembered.get('mp4_text', 'wvtt'))
         _select(self.pac_code_page_combo, remembered.get('pac_code_page', 'auto'))
         self.usf_embed_images.setChecked(bool(remembered.get('embed_speaker_images', False)))
         self.usf_embed_dubs.setChecked(bool(remembered.get('embed_audio_clips', False)))
@@ -390,9 +400,10 @@ class _SubtitlesPanel(QWidget):
         combo.clear()
         combo.addItem(_('export_dialog.speaker_names_none'), 'none')
         combo.addItem(_('export_dialog.speaker_names_prefix'), 'prefix')
-        if fmt in ('VTT', 'HLS'):
+        wvtt = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() == 'wvtt'
+        if fmt in ('VTT', 'HLS') or wvtt:
             combo.addItem(_('export_dialog.speaker_names_voice'), 'voice')
-        elif fmt in ('DFXP', 'TTML'):
+        elif fmt in ('DFXP', 'TTML', 'CMFT', 'DASH'):
             combo.addItem(_('export_dialog.speaker_names_agent'), 'voice')
         elif fmt == 'SAMI':
             combo.addItem(_('export_dialog.speaker_names_source'), 'voice')
@@ -425,7 +436,10 @@ class _SubtitlesPanel(QWidget):
         self.cavena_options.setVisible(fmt == 'CAVENA890')
         self.pac_options.setVisible(fmt == 'PAC')
         self.stl_options.setVisible(fmt == 'STL')
-        self.stream_options.setVisible(fmt == 'HLS')
+        self.stream_options.setVisible(fmt in ('HLS', 'CMFT', 'DASH'))
+        self.mpegts_combo.setVisible(fmt == 'HLS')
+        self.carriage_combo.setVisible(fmt in ('CMFT', 'DASH'))
+        stpp = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() != 'wvtt'
         self.dcp_options.setVisible(fmt == 'DCP')
         self.mcc_options.setVisible(fmt == 'MCC')
         # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
@@ -447,7 +461,7 @@ class _SubtitlesPanel(QWidget):
         # formatting to keep.
         self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
                                                      'DVDPRODUCER'))
-        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML'))
+        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML') or stpp)
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
                                              else _('export_dialog.ttml_look_preview'))
@@ -510,6 +524,7 @@ class _SubtitlesPanel(QWidget):
             'cavena_start': self.cavena_start_combo.combobox.currentData(),
             'segment_duration': self.segment_combo.combobox.currentData(),
             'mpegts': self.mpegts_combo.combobox.currentData(),
+            'mp4_text': self.carriage_combo.combobox.currentData(),
             'pac_code_page': self.pac_code_page_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
@@ -548,6 +563,10 @@ class _SubtitlesPanel(QWidget):
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
         if fmt == 'HLS':
             options.update(segment_duration=choices['segment_duration'], mpegts=choices['mpegts'])
+        if fmt in ('CMFT', 'DASH'):
+            options.update(segment_duration=choices['segment_duration'], mp4_text=choices['mp4_text'])
+            if choices['mp4_text'] != 'wvtt':
+                options['look'] = choices['look']
         if fmt == 'DCP':
             options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'])
         if fmt == 'MCC':

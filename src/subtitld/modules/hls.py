@@ -30,6 +30,8 @@ segments each start their cues at 0 and map that to where the segment
 starts, read the same. A cue repeated in the segments it spans is one
 cue again, as is one a segmenter cut in two at a segment's edge. A
 segment in a part of a file (#EXT-X-BYTERANGE) is read from that part.
+Segments in fragmented MP4 (an #EXT-X-MAP for their initialization, as
+Apple asks of IMSC) are read by modules.isobmff_text.
 
 Writing gives the playlist (a VOD one: version 3, for durations to the
 millisecond) and its segments, beside it in a folder named after it, every
@@ -79,7 +81,9 @@ def resolve(base, uri):
         return urllib.parse.urljoin(base, uri)
     if uri.startswith('file:'):
         return urllib.request.url2pathname(urllib.parse.urlsplit(uri).path)
-    return os.path.join(os.path.dirname(os.path.abspath(base)), urllib.parse.unquote(uri))
+    # A base ending in a slash (a DASH BaseURL) is a folder itself.
+    where = os.path.abspath(base) if str(base).endswith(('/', os.sep)) else os.path.dirname(os.path.abspath(base))
+    return os.path.join(where, urllib.parse.unquote(uri))
 
 
 def fetch(address, byterange=None):
@@ -231,7 +235,11 @@ def read(path, language=None):
     if not found['segments']:
         raise ValueError('This playlist lists no subtitles: neither segments nor a subtitles rendition.')
     if found['segments'][0]['map']:
-        raise ValueError('This playlist\'s subtitles are in fragmented MP4, not WebVTT.')
+        # IMSC (or WebVTT) in fragmented MP4, as DASH carries it too.
+        from subtitld.modules import isobmff_text
+        segments, settings = isobmff_text.read_hls(path, found)
+        settings['language'] = rendition.get('LANGUAGE') or settings['language']
+        return segments, settings
     pieces = []
     first = None
     starts = []

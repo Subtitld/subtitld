@@ -133,6 +133,10 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'FPC': {'description': 'Screen UniPac Subtitle format', 'extensions': ['fpc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
     'HLS': {'description': 'HLS playlist of WebVTT segments', 'extensions': ['m3u8']},
+    # WebVTT or TTML in fragmented MP4 (modules.isobmff_text). Not .mp4,
+    # which is a video's; the bytes of a .cmft say which it carries.
+    'CMFT': {'description': 'CMAF text track (WebVTT or TTML in MP4)', 'extensions': ['cmft']},
+    'DASH': {'description': 'DASH manifest of a WebVTT or TTML track', 'extensions': ['mpd']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
