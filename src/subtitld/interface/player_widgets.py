@@ -609,7 +609,7 @@ class Transport(QWidget):
     other. The keys are buttons laid over their areas (masked to them)."""
 
     H = 51
-    PANEL_TOP, PANEL_BOTTOM = 2, 48
+    PANEL_TOP, PANEL_BOTTOM = 0, 48      # flush with the top: no band of the dark line above the light panel
     LIGHT = '#bfd3e3'
     GROUP = '#93abbf'                 # the hanging keys' own colour
     GROUP_ON = '#7f92a3'
