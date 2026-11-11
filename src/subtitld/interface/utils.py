@@ -3,9 +3,10 @@ import re
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent
 
 
+from subtitld.interface import shapes
 from subtitld.interface.translation import _
 
 
@@ -447,29 +448,80 @@ class SimpleDialog(QDialog):
 
     
 class LabeledComboBox(QWidget):
+    """A combo box with its label in front of it, in one 26px raised field: the
+    label sits in a darker segment cut off by a 75° slant, as wide as its own
+    text. The combo box (and anything added to bottom_line after it) is drawn
+    on the field's own background."""
     activated = Signal()
+    HEIGHT = 26
+    LABEL_PADDING = 9                 # before and after the label's text, measured at mid-height
+
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
         widget.setObjectName('labeled_combobox')
-        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.setAttribute(Qt.WA_StyledBackground)
+        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        widget.setFixedHeight(widget.HEIGHT)
+        widget.setAttribute(Qt.WA_Hover)
 
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.setLayout(QHBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 1)
         widget.layout().setSpacing(0)
 
         widget.label = QLabel()
-        widget.layout().addWidget(widget.label, 1)
+        widget.layout().addWidget(widget.label)
 
         widget.bottom_line = QHBoxLayout()
         widget.bottom_line.setContentsMargins(0, 0, 0, 0)
         widget.bottom_line.setSpacing(0)
-        widget.layout().addLayout(widget.bottom_line)
+        widget.layout().addLayout(widget.bottom_line, 1)
 
         widget.combobox = QComboBox()
         widget.bottom_line.addWidget(widget.combobox, 1)
 
         widget.combobox.activated.connect(widget.activated)
+        widget._fit_label()
+
+    def _run(widget):
+        return widget.HEIGHT * shapes.RUN15
+
+    def _fit_label(widget):
+        """The label segment fits its own text: padding, the text, padding, then the slant."""
+        text = widget.label.text().upper()
+        width = widget.label.fontMetrics().horizontalAdvance(text) if text else 0
+        widget._label_width = width + 2 * widget.LABEL_PADDING if text else 0
+        widget.label.setVisible(bool(text))
+        widget.label.setFixedWidth(int(widget._label_width + widget._run() / 2) if text else 0)
+
+    def setLabel(widget, label):
+        widget.label.setText(label)
+        widget._fit_label()
+        widget.update()
+
+    def changeEvent(widget, event):
+        if event.type() in (QEvent.StyleChange, QEvent.FontChange):
+            widget._fit_label()
+        super().changeEvent(event)
+
+    def paintEvent(widget, event):
+        painter = QPainter(widget)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(widget.rect())
+        field = shapes.rounded_path(rect)
+        if not widget.isEnabled():
+            painter.fillPath(field, QColor('#25323d'))
+        else:
+            hovered = widget.underMouse() or widget.combobox.view().isVisible()
+            base = '#3e5363' if not hovered else shapes.RAISED
+            shapes.fill_raised(painter, field, rect, base, contact=False)
+            if widget._label_width:
+                run = widget._run()
+                segment = QPainterPath(QPointF(0, 0))
+                segment.lineTo(widget._label_width + run / 2, 0)
+                segment.lineTo(widget._label_width - run / 2, rect.height())
+                segment.lineTo(0, rect.height())
+                segment.closeSubpath()
+                shapes.fill_raised(painter, segment.intersected(field), rect, shapes.NEST, contact=False)
+            painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
 
     def clear(widget):
         widget.combobox.clear()
@@ -479,9 +531,6 @@ class LabeledComboBox(QWidget):
     
     def addItem(widget, item):
         widget.combobox.addItem(item)
-
-    def setLabel(widget, label):
-        widget.label.setText(label)
 
     def setCurrentText(widget, text):
         widget.combobox.setCurrentText(text)

@@ -1,14 +1,14 @@
 import os
 import subprocess
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QProgressBar, QPushButton, QApplication
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QPushButton, QApplication
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QIcon
 
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
-from subtitld.interface.scope_selector import ScopeFooter
+from subtitld.interface.scope_selector import ScopeFooter, SlantProgressBar
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import history
@@ -234,7 +234,7 @@ def load(self):
     self.translation_footer.add_action(self.global_panel_translation_invert_translation_button,
                                       Qt.AlignLeft | Qt.AlignBottom)
 
-    self.global_panel_translation_start_translation_progress = QProgressBar()
+    self.global_panel_translation_start_translation_progress = SlantProgressBar()
     self.global_panel_translation_start_translation_progress.setProperty('class', 'secondary')
     self.translation_footer.set_progress_bar(self.global_panel_translation_start_translation_progress)
 

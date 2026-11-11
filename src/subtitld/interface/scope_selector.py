@@ -16,12 +16,13 @@ State persists per host under ``session.CONFIG[<section>]`` (``scope``,
 its own scope independently.
 """
 
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
                                QSizePolicy, QStackedWidget, QStyle, QStyleOption,
                                QVBoxLayout, QWidget)
-from PySide6.QtCore import Qt, QEasingCurve, QPropertyAnimation, QSize, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import Qt, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Signal
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPolygonF
 
+from subtitld.interface import shapes
 from subtitld.interface.translation import _
 from subtitld.modules import session
 
@@ -593,6 +594,48 @@ class ScopeSelector(QWidget):
         self.combobox.setMinimumContentsLength(max(len(text) for text in labels))
         self.combobox.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.refresh()
+
+
+class SlantProgressBar(QProgressBar):
+    """The footer's progress bar: square and flush in its row, a sunken track
+    whose fill ends in a 75° edge. The fill is the primary button's gradient
+    turned upside down, at half strength, under a 1px shadow along the top —
+    the bar reads as sunk into the row. The fill's edge is placed at
+    mid-height and runs from half a slant before the start to half a slant
+    past the end, so 0% is exactly empty and 100% exactly full."""
+
+    TRACK = '#2e3e4c'
+    FILL = '#566f84'
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect())
+        height = rect.height()
+        painter.fillRect(rect, shapes.gradient(0, height, self.TRACK, 'sunken'))
+
+        span = self.maximum() - self.minimum()
+        fraction = (self.value() - self.minimum()) / span if span > 0 else 0
+        run = height * shapes.RUN15
+        edge = -run / 2 + (rect.width() + run) * max(0.0, min(1.0, fraction))
+        fill = QPainterPath()
+        fill.addPolygon(QPolygonF([QPointF(-run, 0), QPointF(edge + run / 2, 0),
+                                   QPointF(edge - run / 2, height), QPointF(-run, height)]))
+        painter.setOpacity(0.5)
+        flipped = QLinearGradient(0, 0, 0, height)
+        flipped.setColorAt(0, shapes.shade(self.FILL, -shapes.DEPTH))
+        flipped.setColorAt(1, shapes.shade(self.FILL, shapes.DEPTH))
+        painter.fillPath(fill.intersected(shapes.rect_path(rect)), flipped)
+        painter.setOpacity(1.0)
+        painter.fillRect(QRectF(0, 0, rect.width(), 1), shapes.CONTACT)
+
+        if self.isTextVisible() and self.text():
+            font = QFont(self.font())
+            font.setPixelSize(10)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor('#e1ebf2'))
+            painter.drawText(rect, Qt.AlignCenter, self.text())
 
 
 class ScopeFooter(QWidget):
