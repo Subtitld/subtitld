@@ -70,6 +70,9 @@ And for a format of its own:
                  (SMPTE ST 428-7's <SubtitleReel>; modules.dcp)
     dcp_fps      DCP: the frame rate a SMPTE reel counts its times in, one
                  of modules.dcp.RATES (24, 25, 30, 48, 50, 60)
+    dcp_content  DCP: 'text', or 'pictures': each subtitle drawn as a PNG
+                 beside the file, named in Interop, by UUID in SMPTE
+                 (modules.dcp.CONTENTS)
     bdn_fps      BDN: the frame rate its events count in, one of
                  modules.bdn.RATES (23.976, 24, 25, 29.97, 50, 59.94); each
                  subtitle is drawn as a PNG beside the file

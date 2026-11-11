@@ -71,7 +71,17 @@ counted from 00:00:00:00, with no fade in or out: the subtitle shows when
 its times say. No <LoadFont> is written, as Subtitld has no font file to
 put beside the subtitles: the projector's own font draws them, and a
 mastering tool that wraps the file into a package adds the one it ships.
-Pictures are not written; a picture subtitle is text again once read.
+
+Or the subtitles go as pictures (`write_images`, CONTENTS): each drawn as
+Subtitld's preview draws it (interface.subtitle_pictures), a PNG beside the
+file, an <Image> a subtitle, centred across where the picture's middle is
+and placed down from the top or up from the bottom, whichever edge it is
+nearer. Interop's <Image> names its PNG, which a package carries beside the
+XML. SMPTE's names a PNG by urn:uuid, and ST 429-5 asks for the PNGs to be
+in the MXF track file with the XML; Subtitld does not wrap MXF, so it
+writes the XML with the PNGs loose beside it, each named <uuid>.png (as
+`image_files` looks for them), for a mastering tool to wrap; a projector
+does not play the loose files.
 """
 
 import datetime
@@ -84,6 +94,8 @@ from subtitld.modules import export_options, look as subtitld_look, markup, posi
 
 INTEROP, SMPTE = 'interop', 'smpte'
 STANDARDS = (INTEROP, SMPTE)
+# What the subtitles are written as: their text, or pictures of it.
+CONTENTS = ('text', 'pictures')
 SMPTE_NAMESPACE = 'http://www.smpte-ra.org/schemas/428-7/2010/DCST'
 # The frame rates a DCP plays at, which a SMPTE reel counts its times in.
 RATES = (24, 25, 30, 48, 50, 60)
@@ -699,34 +711,99 @@ def write(segments, standard=SMPTE, fps=DEFAULT_RATE, language='en', title='', r
     for the film called `title`. `identifier` (a UUID) and `issued` (a
     datetime) are new ones where not given."""
     standard = standard if standard in STANDARDS else SMPTE
-    rate = TICKS if standard == INTEROP else (int(fps) if int(_number(fps, 0) or 0) in RATES else rate_for(fps))
-    identifier = str(identifier or uuid.uuid4())
+    rate = _rate(standard, fps)
     subtitles = []
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         written = _subtitle_xml(segment, len(subtitles) + 1, rate, standard)
         if written:
             subtitles.append(written)
+    return _reel(subtitles, standard, rate, language, title, reel, identifier, issued)
+
+
+def _rate(standard, fps):
+    """What a reel counts its times in: Interop's ticks, or a SMPTE reel's
+    frames at `fps` (one of RATES, else the nearest)."""
+    return TICKS if standard == INTEROP else (int(fps) if int(_number(fps, 0) or 0) in RATES else rate_for(fps))
+
+
+def _reel(subtitles, standard, rate, language, title, reel, identifier, issued, baseline=True):
+    """The whole file around its <Subtitle>s (written four spaces in): the
+    reel's head, and where `baseline` asks, the one <Font> around them
+    that says the baseline."""
+    identifier = str(identifier or uuid.uuid4())
     tag = export_options.language_tag(language)
-    baseline = (f'Color="FFFFFFFF" Effect="border" EffectColor="FF000000" Italic="no" Size="{DEFAULT_SIZE}" '
-                f'Weight="normal" ' + ('Underlined' if standard == INTEROP else 'Underline') + '="no"')
+    font = (f'Color="FFFFFFFF" Effect="border" EffectColor="FF000000" Italic="no" Size="{DEFAULT_SIZE}" '
+            f'Weight="normal" ' + ('Underlined' if standard == INTEROP else 'Underline') + '="no"')
     if standard == INTEROP:
         head = ['<?xml version="1.0" encoding="UTF-8"?>', '<DCSubtitle Version="1.0">',
                 f'  <SubtitleID>{identifier}</SubtitleID>', f'  <MovieTitle>{escape(title or "")}</MovieTitle>',
-                f'  <ReelNumber>{int(reel)}</ReelNumber>', f'  <Language>{escape(tag)}</Language>',
-                f'  <Font {baseline}>']
-        tail = ['  </Font>', '</DCSubtitle>', '']
-        return '\n'.join(head + subtitles + tail)
+                f'  <ReelNumber>{int(reel)}</ReelNumber>', f'  <Language>{escape(tag)}</Language>']
+        if not baseline:
+            # Straight under the root: one level of indentation less.
+            subtitles = ['\n'.join(line[2:] for line in subtitle.split('\n')) for subtitle in subtitles]
+            return '\n'.join(head + subtitles + ['</DCSubtitle>', ''])
+        return '\n'.join(head + [f'  <Font {font}>'] + subtitles + ['  </Font>', '</DCSubtitle>', ''])
     issued = (issued or datetime.datetime.now(datetime.timezone.utc)).replace(microsecond=0)
     head = ['<?xml version="1.0" encoding="UTF-8"?>', f'<SubtitleReel xmlns={quoteattr(SMPTE_NAMESPACE)}>',
             f'  <Id>urn:uuid:{identifier}</Id>', f'  <ContentTitleText>{escape(title or "")}</ContentTitleText>',
             f'  <IssueDate>{issued.isoformat()}</IssueDate>', f'  <ReelNumber>{int(reel)}</ReelNumber>',
             f'  <Language>{escape(tag)}</Language>', f'  <EditRate>{rate} 1</EditRate>',
             f'  <TimeCodeRate>{rate}</TimeCodeRate>', '  <StartTime>00:00:00:00</StartTime>',
-            '  <SubtitleList>', f'    <Font {baseline}>']
+            '  <SubtitleList>']
+    if not baseline:
+        return '\n'.join(head + subtitles + ['  </SubtitleList>', '</SubtitleReel>', ''])
     # One more level of indentation inside <SubtitleList>.
     subtitles = ['\n'.join('  ' + line for line in subtitle.split('\n')) for subtitle in subtitles]
-    tail = ['    </Font>', '  </SubtitleList>', '</SubtitleReel>', '']
-    return '\n'.join(head + subtitles + tail)
+    return '\n'.join(head + [f'    <Font {font}>'] + subtitles + ['    </Font>', '  </SubtitleList>', '</SubtitleReel>', ''])
+
+
+def image_place(x, y, width, height, screen):
+    """(valign, vposition, halign, hposition) of the <Image> that puts a
+    `width` x `height` picture at x, y on a picture `screen` (width,
+    height) pixels, as place_picture reads it back: across from the
+    middle, and down from the top or up from the bottom, whichever is
+    nearer the picture's middle; in % to the hundredth."""
+    screen_width, screen_height = screen
+    across = ((x + width / 2) / screen_width - 0.5) * 100
+    if y + height / 2 < screen_height / 2:
+        valign, down = 'top', y / screen_height * 100
+    else:
+        valign, down = 'bottom', (screen_height - y - height) / screen_height * 100
+
+    def clamp(value):
+        value = max(-100.0, min(100.0, round(value, 2)))
+        return 0.0 if value == 0 else value
+    return valign, clamp(down), 'center', clamp(across)
+
+
+def write_images(pictures, size, standard=SMPTE, fps=DEFAULT_RATE, language='en', title='', reel=1,
+                 identifier=None, issued=None):
+    """DCP subtitle XML for subtitles that are pictures: [{'start', 'end',
+    'href', 'x', 'y', 'width', 'height'}], each a PNG at x, y on a picture
+    `size` (width, height) pixels, as big as it is. `href` is what its
+    <Image> holds: the PNG's file name beside the file (Interop), or
+    "urn:uuid:" and the UUID the PNG is known by (SMPTE). The rest as
+    write() takes it. No <Font> is written: there is no text to style."""
+    standard = standard if standard in STANDARDS else SMPTE
+    rate = _rate(standard, fps)
+    names = ('VAlign', 'VPosition', 'HAlign', 'HPosition') if standard == INTEROP else \
+        ('Valign', 'Vposition', 'Halign', 'Hposition')
+    fade = '0' if standard == INTEROP else '00:00:00:00'
+    subtitles = []
+    for picture in sorted(pictures, key=lambda p: (float(p['start']), float(p['end']))):
+        valign, down, halign, across = image_place(int(picture['x']), int(picture['y']), int(picture['width']),
+                                                   int(picture['height']), size)
+        start = float(picture['start'])
+        end = max(start, float(picture['end']))
+        attributes = f'{names[0]}="{valign}" {names[1]}="{down:g}" {names[2]}="{halign}"'
+        if across:
+            attributes += f' {names[3]}="{across:g}"'
+        subtitles.append('\n'.join([
+            f'    <Subtitle SpotNumber="{len(subtitles) + 1}" TimeIn="{_time(start, rate, standard)}" '
+            f'TimeOut="{_time(end, rate, standard)}" FadeUpTime="{fade}" FadeDownTime="{fade}">',
+            f'      <Image {attributes}>{escape(str(picture["href"]))}</Image>',
+            '    </Subtitle>']))
+    return _reel(subtitles, standard, rate, language, title, reel, identifier, issued, baseline=False)
 
 
 def save(path, segments, **options):
@@ -734,3 +811,10 @@ def save(path, segments, **options):
     write() takes them."""
     with open(path, 'w', encoding='utf-8', newline='\n') as dcp_file:
         dcp_file.write(write(segments, **options))
+
+
+def save_images(path, pictures, size, **options):
+    """Write picture subtitles to `path` as DCP subtitles, in UTF-8;
+    `pictures`, `size` and `options` as write_images() takes them."""
+    with open(path, 'w', encoding='utf-8', newline='\n') as dcp_file:
+        dcp_file.write(write_images(pictures, size, **options))

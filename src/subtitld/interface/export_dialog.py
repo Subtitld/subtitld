@@ -251,6 +251,12 @@ class _SubtitlesPanel(QWidget):
         self.dcp_standard_combo.combobox.addItem(_('export_dialog.dcp_standard_smpte'), dcp.SMPTE)
         self.dcp_standard_combo.combobox.addItem(_('export_dialog.dcp_standard_interop'), dcp.INTEROP)
         row.addWidget(self.dcp_standard_combo, 1)
+        # Text the projector draws, or pictures drawn here.
+        self.dcp_content_combo = utils.LabeledComboBox()
+        self.dcp_content_combo.setLabel(_('export_dialog.dcp_content'))
+        self.dcp_content_combo.combobox.addItem(_('export_dialog.dcp_content_text'), 'text')
+        self.dcp_content_combo.combobox.addItem(_('export_dialog.dcp_content_pictures'), 'pictures')
+        row.addWidget(self.dcp_content_combo, 1)
         self.dcp_rate_combo = utils.LabeledComboBox()
         self.dcp_rate_combo.setLabel(_('export_dialog.frame_rate'))
         for rate in dcp.RATES:
@@ -261,6 +267,8 @@ class _SubtitlesPanel(QWidget):
         row.addWidget(self.dcp_rate_combo, 1)
         self.dcp_standard_combo.combobox.currentIndexChanged.connect(
             lambda _index: self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE))
+        self.dcp_standard_combo.combobox.currentIndexChanged.connect(self._run_check)
+        self.dcp_content_combo.combobox.currentIndexChanged.connect(self._run_check)
         self.layout().addWidget(self.dcp_options)
 
         # BDN: the frame rate its events count in, a Blu-ray's.
@@ -390,6 +398,7 @@ class _SubtitlesPanel(QWidget):
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         _select(self.timeline_start_combo, remembered.get('timeline_start', '00:00:00:00'))
         _select(self.dcp_standard_combo, remembered.get('dcp_standard', dcp.SMPTE))
+        _select(self.dcp_content_combo, remembered.get('dcp_content', 'text'))
         # The video's rate, as near as a DCP plays; else the last used, else 24.
         _select(self.dcp_rate_combo, dcp.rate_for(video_fps) if video_fps
                 else remembered.get('dcp_fps', dcp.DEFAULT_RATE))
@@ -500,6 +509,12 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setText(_('export_dialog.bdn_note'))
             self.check_label.setVisible(True)
             return
+        if fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures':
+            smpte = self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE
+            self.check_label.setText(_('export_dialog.dcp_pictures_note_smpte' if smpte
+                                       else 'export_dialog.dcp_pictures_note_interop'))
+            self.check_label.setVisible(True)
+            return
         if fmt not in ('DFXP', 'TTML') or not segments:
             self.check_label.setVisible(False)
             return
@@ -546,6 +561,7 @@ class _SubtitlesPanel(QWidget):
             'timeline_start': self.timeline_start_combo.combobox.currentData(),
             'dcp_standard': self.dcp_standard_combo.combobox.currentData(),
             'dcp_fps': self.dcp_rate_combo.combobox.currentData(),
+            'dcp_content': self.dcp_content_combo.combobox.currentData(),
             'bdn_fps': self.bdn_rate_combo.combobox.currentData(),
             'cavena_start': self.cavena_start_combo.combobox.currentData(),
             'segment_duration': self.segment_combo.combobox.currentData(),
@@ -594,7 +610,8 @@ class _SubtitlesPanel(QWidget):
             if choices['mp4_text'] != 'wvtt':
                 options['look'] = choices['look']
         if fmt == 'DCP':
-            options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'])
+            options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'],
+                           dcp_content=choices['dcp_content'])
         if fmt == 'BDN':
             options['bdn_fps'] = choices['bdn_fps']
         if fmt == 'MCC':

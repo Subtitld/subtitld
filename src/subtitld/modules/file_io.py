@@ -7,6 +7,7 @@ import sys
 import threading
 import zipfile
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from docx import Document
 import datetime
@@ -2016,6 +2017,46 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                      else language,
                      title=(SUBTITLE.get('metadata') or {}).get('title')
                      or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
+            # A cinema's subtitles as pictures: each drawn as the preview
+            # draws it, on a picture the video's size, else 1920x1080, a
+            # PNG beside the XML. Interop's <Image> names it by its file;
+            # SMPTE's by a urn:uuid, and its PNG is <uuid>.png, loose, for a
+            # mastering tool to wrap with the XML into the MXF SMPTE asks for.
+            from subtitld.interface import subtitle_pictures
+            size = (int(VIDEO.get('width') or 0) or 1920, int(VIDEO.get('height') or 0) or 1080)
+            standard = options.get('dcp_standard') if options.get('dcp_standard') in dcp.STANDARDS else dcp.SMPTE
+            folder = os.path.dirname(os.path.abspath(final_file))
+            stem = os.path.splitext(os.path.basename(final_file))[0]
+            # The PNGs a SMPTE reel written here before named by UUID: its
+            # own, which a new export would leave behind under other names.
+            if os.path.isfile(final_file) and dcp.is_dcp(final_file):
+                try:
+                    earlier = dcp.read_images(final_file)[0]
+                except (OSError, ValueError):
+                    earlier = []
+                for image in earlier:
+                    if image['href'].lower().startswith('urn:uuid:'):
+                        named = os.path.join(folder, dcp.image_files(image['href'])[0])
+                        if os.path.isfile(named):
+                            os.remove(named)
+            pictures = subtitle_pictures.draw(segments, size, folder, stem=f'{stem}_')
+            for picture in pictures:
+                if standard == dcp.SMPTE:
+                    identifier = str(uuid.uuid4())
+                    renamed = os.path.join(folder, f'{identifier}.png')
+                    os.replace(picture['path'], renamed)
+                    picture['path'], picture['href'] = renamed, f'urn:uuid:{identifier}'
+                else:
+                    picture['href'] = os.path.basename(picture['path'])
+            dcp.save_images(final_file, pictures, size, standard=standard,
+                            fps=options.get('dcp_fps') if options.get('dcp_fps') in dcp.RATES
+                            else dcp.rate_for(VIDEO.get('framerate')),
+                            language=options.get('language') if options.get('text') == 'translation'
+                            and options.get('language') else language,
+                            title=(SUBTITLE.get('metadata') or {}).get('title')
+                            or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
         elif subtitle_format == 'DCP':
             # Interop or SMPTE as the export asks (the generation of a file
