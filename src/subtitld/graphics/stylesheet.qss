@@ -2339,6 +2339,11 @@ QMenu#subtitle_formatting_menu::separator {
     icon: url(graphics:add_subtitle_to_next_start_checked.svg);
 }
 
+/* ADD paints itself (player_widgets.AddSubtitleButton); its label takes this colour. */
+#playercontrols_widget_top_line #add_subtitle_button {
+    color: #cddbe7;
+}
+
 /* ADD's duration: a normal 26px field (the player's compact field look aside). */
 #playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #324350, stop:1 #445b6c);

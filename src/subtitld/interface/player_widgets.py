@@ -528,7 +528,7 @@ class AddSubtitleButton(QAbstractButton):
         # icon and label
         self._icon.render(painter, QRectF(12, (self.H - self.ICON) / 2, self.ICON, self.ICON))
         painter.setFont(self._label_font())
-        painter.setPen(QColor('#cddbe7'))
+        painter.setPen(self.palette().color(self.foregroundRole()))     # the stylesheet's color
         painter.drawText(QRectF(12 + self.ICON + 8, 0, self.notch_x - 40, self.H), Qt.AlignVCenter | Qt.AlignLeft,
                          self.text().strip().upper())
         # the switches: one raised group, then only the zones that differ are painted over
