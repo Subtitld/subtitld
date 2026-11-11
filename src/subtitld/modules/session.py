@@ -129,6 +129,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'STL': {'description': 'EBU STL Subtitle format', 'extensions': ['stl']},
     'MCC': {'description': 'MacCaption Subtitle format', 'extensions': ['mcc']},
     'DCP': {'description': 'DCP Subtitle format (Interop or SMPTE)', 'extensions': ['xml']},
+    # A Blu-ray's authoring files: the XML and a PNG a picture. .xml is a
+    # DCP's above, which keeps it; file_io tells them apart by the root.
+    'BDN': {'description': 'Blu-ray BDN XML with PNG pictures', 'extensions': ['xml']},
     'PAC': {'description': 'Screen PAC Subtitle format', 'extensions': ['pac']},
     'FPC': {'description': 'Screen UniPac Subtitle format', 'extensions': ['fpc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},

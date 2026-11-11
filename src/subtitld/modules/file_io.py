@@ -18,6 +18,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
+from subtitld.modules import bdn
 from subtitld.modules import cavena890
 from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
@@ -65,11 +66,11 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (a VobSub's .idx or .sub, a PGS .sup, a TTML file in IMSC's
-    Image Profile with pictures it gives no words for, DCP subtitles with
-    <Image>s), not text: nothing is wrong with it, but only an OCR add-on
-    can make text of it (picture_ocr). `path` is the file, `kind`
-    'vobsub', 'pgs', 'imsc' or 'dcp'."""
+    pictures (a VobSub's .idx or .sub, a PGS .sup, a BDN's PNGs, a TTML
+    file in IMSC's Image Profile with pictures it gives no words for, DCP
+    subtitles with <Image>s), not text: nothing is wrong with it, but only
+    an OCR add-on can make text of it (picture_ocr). `path` is the file,
+    `kind` 'vobsub', 'pgs', 'bdn', 'imsc' or 'dcp'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -845,6 +846,23 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # Subtitles that are pictures are for an OCR add-on, as a disc's are.
             if dcp.has_images(subtitle_file):
                 raise PictureSubtitlesError(subtitle_file, 'dcp')
+
+        elif subtitle_file.lower().endswith('.xml') and bdn.is_bdn(subtitle_file):
+            # A Blu-ray's subtitles as they are authored: PNGs beside the
+            # XML, and no words anywhere, so an OCR add-on reads them. Its
+            # frame rate kept for the next save as BDN.
+            subtitle_format = 'BDN'
+            try:
+                graphics, bdn_settings = bdn.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                             bdn_fps=bdn.rate_for(bdn_settings['fps']))
+            if bdn_settings['title']:
+                session.SUBTITLE['metadata'] = {'title': bdn_settings['title']}
+            segments_list = []
+            if graphics:
+                raise PictureSubtitlesError(subtitle_file, 'bdn')
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
@@ -1976,6 +1994,28 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         else fcpxml.STARTS[0],
                         title=os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file.rstrip('/\\')))[0],
                         width=VIDEO.get('width') or 1920, height=VIDEO.get('height') or 1080)
+
+        elif subtitle_format == 'BDN':
+            # A Blu-ray's authoring files: each subtitle drawn as the
+            # preview draws it, a PNG beside the XML named after it (as
+            # BDSup2Sub names them), on a picture the video's size, else a
+            # 1920x1080 one; times at the export's rate, else the video's
+            # nearest a Blu-ray plays.
+            from subtitld.interface import subtitle_pictures
+            size = (int(VIDEO.get('width') or 0) or bdn.DEFAULT_SIZE[0],
+                    int(VIDEO.get('height') or 0) or bdn.DEFAULT_SIZE[1])
+            stem = os.path.splitext(os.path.basename(final_file))[0]
+            pictures = subtitle_pictures.draw(segments, size, os.path.dirname(os.path.abspath(final_file)),
+                                              stem=f'{stem}_')
+            for picture in pictures:
+                picture['href'] = os.path.basename(picture['path'])
+            bdn.save(final_file, pictures, size,
+                     fps=options.get('bdn_fps') if options.get('bdn_fps') in bdn.RATES
+                     else bdn.rate_for(VIDEO.get('framerate')),
+                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                     else language,
+                     title=(SUBTITLE.get('metadata') or {}).get('title')
+                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
         elif subtitle_format == 'DCP':
             # Interop or SMPTE as the export asks (the generation of a file

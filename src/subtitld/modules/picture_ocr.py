@@ -1,9 +1,10 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a TTML file in
-IMSC's Image Profile or a DCP's subtitles with pictures in them, or reading
-a picture track of a video, Subtitld decodes each subtitle into a picture
-(vobsub, pgs, `imsc_pictures`, `dcp_pictures`), and an
+Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a BDN's PNGs, a
+TTML file in IMSC's Image Profile or a DCP's subtitles with pictures in
+them, or reading a picture track of a video, Subtitld decodes each subtitle
+into a picture (vobsub, pgs, `bdn_pictures`, `imsc_pictures`,
+`dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
 file's words are better than any reading of them. `OCRJob` runs the whole
@@ -72,6 +73,8 @@ def read_file(path):
         return pgs.read(path), ''
     if str(path).lower().endswith('.xml') and _is_dcp(path):
         return dcp_pictures(path)
+    if str(path).lower().endswith('.xml') and _is_bdn(path):
+        return bdn_pictures(path)
     if str(path).lower().endswith(TTML_EXTENSIONS):
         return imsc_pictures(path)
     found, track = vobsub.read(path)
@@ -148,6 +151,37 @@ def dcp_pictures(path):
         top = markup.alignment(lead) >= 7
         pictures.append(picture_subtitles.Picture(segment['start'], segment['end'], 0, 0 if top else screen[1] - 1,
                                                   1, 1, b'\x00', [(0, 0, 0, 0)], False, screen[0], screen[1], words))
+    pictures.sort(key=lambda picture: (picture.start, picture.end))
+    from subtitld.modules import file_io
+    return pictures, file_io._language_like_project(settings['language']) or settings['language']
+
+
+def _is_bdn(path):
+    from subtitld.modules import bdn
+    return bdn.is_bdn(path)
+
+
+def bdn_pictures(path):
+    """(pictures, language) of a BDN: each PNG where its <Graphic> puts it,
+    as big as the PNG is, on the picture VideoFormat gives the size of,
+    else a 1920x1080 one; forced where its event is."""
+    from subtitld.modules import bdn
+    graphics, settings = bdn.read(path)
+    screen = settings['size'] or bdn.DEFAULT_SIZE
+    folder = os.path.dirname(os.path.abspath(path))
+    pictures = []
+    for graphic in graphics:
+        try:
+            with open(os.path.join(folder, graphic['href']), 'rb') as handle:
+                decoded = png_picture(handle.read())
+        except OSError:
+            decoded = None
+        if decoded is None:
+            continue
+        width, height, indices, colours = decoded
+        pictures.append(picture_subtitles.Picture(graphic['start'], graphic['end'], graphic['x'], graphic['y'],
+                                                  width, height, indices, colours, graphic['forced'],
+                                                  screen[0], screen[1], ''))
     pictures.sort(key=lambda picture: (picture.start, picture.end))
     from subtitld.modules import file_io
     return pictures, file_io._language_like_project(settings['language']) or settings['language']

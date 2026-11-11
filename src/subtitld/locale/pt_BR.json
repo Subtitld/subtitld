@@ -609,6 +609,7 @@
     "export_dialog.dcp_standard": "Padrão",
     "export_dialog.dcp_standard_smpte": "SMPTE (ST 428-7)",
     "export_dialog.dcp_standard_interop": "Interop (CineCanvas)",
+    "export_dialog.bdn_note": "Cada legenda é desenhada como a pré-visualização a desenha, num PNG ao lado do arquivo, com o nome dele, numa imagem do tamanho do vídeo; o XML diz quando cada uma aparece e onde.",
     "export_dialog.pac_code_page": "Página de código",
     "export_dialog.pac_code_page_auto": "Automática (pelo idioma e pelo texto)",
     "export_dialog.pac_code_page_latin": "Latino",

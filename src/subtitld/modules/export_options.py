@@ -2,11 +2,11 @@
 
 The options apply to the formats that hold only timed text (SRT, VTT, HLS,
 CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
-CAVENA890, AVID, FCPXML, DCP, the DVD authoring scripts, SBV, SUB, BCC, XML,
-LRC, UltraStar, KAR, TTXT and the player-era formats); USF, USFX and JSON
-keep the project as it is. Karaoke timing is formatting (modules.karaoke):
-removing the formatting takes the word timing of LRC, UltraStar, KAR and
-TTXT with it.
+CAVENA890, AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
+XML, LRC, UltraStar, KAR, TTXT and the player-era formats); USF, USFX and
+JSON keep the project as it is. Karaoke timing is formatting
+(modules.karaoke): removing the formatting takes the word timing of LRC,
+UltraStar, KAR and TTXT with it.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -70,6 +70,9 @@ And for a format of its own:
                  (SMPTE ST 428-7's <SubtitleReel>; modules.dcp)
     dcp_fps      DCP: the frame rate a SMPTE reel counts its times in, one
                  of modules.dcp.RATES (24, 25, 30, 48, 50, 60)
+    bdn_fps      BDN: the frame rate its events count in, one of
+                 modules.bdn.RATES (23.976, 24, 25, 29.97, 50, 59.94); each
+                 subtitle is drawn as a PNG beside the file
     pac_code_page
                  PAC: 'auto' (the language's, else the first that holds
                  the text) or one of modules.pac.CODE_PAGES ('latin',
@@ -98,7 +101,7 @@ And for a format of its own:
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
-                'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
+                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML')

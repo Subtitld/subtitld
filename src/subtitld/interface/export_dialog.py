@@ -12,6 +12,7 @@ from PySide6.QtGui import QFontDatabase
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.modules import bdn
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
@@ -26,7 +27,7 @@ from subtitld.modules import ttml
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
-                    'AVID', 'FCPXML', 'DCP', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC']
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
 # drop-frame for the two whose tools write it.
@@ -262,6 +263,21 @@ class _SubtitlesPanel(QWidget):
             lambda _index: self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE))
         self.layout().addWidget(self.dcp_options)
 
+        # BDN: the frame rate its events count in, a Blu-ray's.
+        self.bdn_options = QWidget()
+        row = QHBoxLayout(self.bdn_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.bdn_rate_combo = utils.LabeledComboBox()
+        self.bdn_rate_combo.setLabel(_('export_dialog.frame_rate'))
+        for rate in bdn.RATES:
+            label = f'{rate:g} fps'
+            if video_fps and rate == bdn.rate_for(video_fps):
+                label = _('export_dialog.frame_rate_video').format(fps=label)
+            self.bdn_rate_combo.combobox.addItem(label, rate)
+        row.addWidget(self.bdn_rate_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.bdn_options)
+
         # Cavena 890: the programme's start its frames count from.
         self.cavena_options = QWidget()
         row = QHBoxLayout(self.cavena_options)
@@ -378,6 +394,9 @@ class _SubtitlesPanel(QWidget):
         _select(self.dcp_rate_combo, dcp.rate_for(video_fps) if video_fps
                 else remembered.get('dcp_fps', dcp.DEFAULT_RATE))
         self.dcp_rate_combo.setVisible(self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE)
+        # The video's rate, as near as a Blu-ray plays; else the last used.
+        _select(self.bdn_rate_combo, bdn.rate_for(video_fps) if video_fps
+                else remembered.get('bdn_fps', bdn.DEFAULT_RATE))
         _select(self.cavena_start_combo, remembered.get('cavena_start', '00:00:00:00'))
         _select(self.segment_combo, remembered.get('segment_duration', hls.SEGMENT_DURATION))
         _select(self.mpegts_combo, remembered.get('mpegts', hls.MPEGTS))
@@ -441,6 +460,7 @@ class _SubtitlesPanel(QWidget):
         self.carriage_combo.setVisible(fmt in ('CMFT', 'DASH'))
         stpp = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() != 'wvtt'
         self.dcp_options.setVisible(fmt == 'DCP')
+        self.bdn_options.setVisible(fmt == 'BDN')
         self.mcc_options.setVisible(fmt == 'MCC')
         # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
         # both fields, so it has all four.
@@ -475,6 +495,11 @@ class _SubtitlesPanel(QWidget):
         the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
+        if fmt == 'BDN':
+            # Drawn when the file is written: what is said is where they go.
+            self.check_label.setText(_('export_dialog.bdn_note'))
+            self.check_label.setVisible(True)
+            return
         if fmt not in ('DFXP', 'TTML') or not segments:
             self.check_label.setVisible(False)
             return
@@ -521,6 +546,7 @@ class _SubtitlesPanel(QWidget):
             'timeline_start': self.timeline_start_combo.combobox.currentData(),
             'dcp_standard': self.dcp_standard_combo.combobox.currentData(),
             'dcp_fps': self.dcp_rate_combo.combobox.currentData(),
+            'bdn_fps': self.bdn_rate_combo.combobox.currentData(),
             'cavena_start': self.cavena_start_combo.combobox.currentData(),
             'segment_duration': self.segment_combo.combobox.currentData(),
             'mpegts': self.mpegts_combo.combobox.currentData(),
@@ -569,6 +595,8 @@ class _SubtitlesPanel(QWidget):
                 options['look'] = choices['look']
         if fmt == 'DCP':
             options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'])
+        if fmt == 'BDN':
+            options['bdn_fps'] = choices['bdn_fps']
         if fmt == 'MCC':
             options.update(mcc_rate=choices['mcc_rate'], mcc_captions=choices['mcc_captions'],
                            caption_service_language=choices['caption_service_language']

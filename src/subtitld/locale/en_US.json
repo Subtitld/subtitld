@@ -609,6 +609,7 @@
     "export_dialog.dcp_standard": "Standard",
     "export_dialog.dcp_standard_smpte": "SMPTE (ST 428-7)",
     "export_dialog.dcp_standard_interop": "Interop (CineCanvas)",
+    "export_dialog.bdn_note": "Each subtitle is drawn as the preview draws it, in a PNG beside the file, named after it, on a picture the video's size; the XML says when each is shown and where.",
     "export_dialog.pac_code_page": "Code page",
     "export_dialog.pac_code_page_auto": "Automatic (from the language and the text)",
     "export_dialog.pac_code_page_latin": "Latin",
