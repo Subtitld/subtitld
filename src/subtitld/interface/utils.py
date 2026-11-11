@@ -447,24 +447,24 @@ class SimpleDialog(QDialog):
         super().accept()
 
     
-class LabeledComboBox(QWidget):
-    """A combo box with its label in front of it, in one 26px raised field: the
-    label sits in a darker segment cut off by a 75° slant, as wide as its own
-    text. The combo box (and anything added to bottom_line after it) is drawn
-    on the field's own background."""
-    activated = Signal()
+class SlantLabeledField(QWidget):
+    """A value with its label in front of it, in one 26px field: the label
+    sits in a darker segment cut off by a 75° slant, as wide as its own text.
+    The value widget (and anything added to bottom_line after it) is drawn on
+    the field's own background. A choice (combo box) is raised like a button;
+    a value typed in (spin box, line edit) is sunken like any field."""
     HEIGHT = 26
     LABEL_PADDING = 9                 # before and after the label's text, measured at mid-height
+    RAISED = True
 
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
-        widget.setObjectName('labeled_combobox')
         widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         widget.setFixedHeight(widget.HEIGHT)
         widget.setAttribute(Qt.WA_Hover)
 
         widget.setLayout(QHBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 1)
+        widget.layout().setContentsMargins(0, 0, 0, 1 if widget.RAISED else 0)
         widget.layout().setSpacing(0)
 
         widget.label = QLabel()
@@ -474,11 +474,6 @@ class LabeledComboBox(QWidget):
         widget.bottom_line.setContentsMargins(0, 0, 0, 0)
         widget.bottom_line.setSpacing(0)
         widget.layout().addLayout(widget.bottom_line, 1)
-
-        widget.combobox = QComboBox()
-        widget.bottom_line.addWidget(widget.combobox, 1)
-
-        widget.combobox.activated.connect(widget.activated)
         widget._fit_label()
 
     def _run(widget):
@@ -502,6 +497,9 @@ class LabeledComboBox(QWidget):
             widget._fit_label()
         super().changeEvent(event)
 
+    def _active(widget):
+        return widget.underMouse()
+
     def paintEvent(widget, event):
         painter = QPainter(widget)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -509,19 +507,37 @@ class LabeledComboBox(QWidget):
         field = shapes.rounded_path(rect)
         if not widget.isEnabled():
             painter.fillPath(field, QColor('#25323d'))
+            return
+        active = widget._active()
+        if widget.RAISED:
+            shapes.fill_raised(painter, field, rect, shapes.RAISED if active else '#3e5363', contact=False)
         else:
-            hovered = widget.underMouse() or widget.combobox.view().isVisible()
-            base = '#3e5363' if not hovered else shapes.RAISED
-            shapes.fill_raised(painter, field, rect, base, contact=False)
-            if widget._label_width:
-                run = widget._run()
-                segment = QPainterPath(QPointF(0, 0))
-                segment.lineTo(widget._label_width + run / 2, 0)
-                segment.lineTo(widget._label_width - run / 2, rect.height())
-                segment.lineTo(0, rect.height())
-                segment.closeSubpath()
-                shapes.fill_raised(painter, segment.intersected(field), rect, shapes.NEST, contact=False)
+            painter.fillPath(field, shapes.gradient(rect.top(), rect.bottom(), '#46596a' if active else '#3e5363', 'sunken'))
+        if widget._label_width:
+            run = widget._run()
+            segment = QPainterPath(QPointF(0, 0))
+            segment.lineTo(widget._label_width + run / 2, 0)
+            segment.lineTo(widget._label_width - run / 2, rect.height())
+            segment.lineTo(0, rect.height())
+            segment.closeSubpath()
+            shapes.fill_raised(painter, segment.intersected(field), rect, shapes.NEST, contact=False)
+        if widget.RAISED:
             painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
+
+
+class LabeledComboBox(SlantLabeledField):
+    """A combo box with its label in front of it (see SlantLabeledField)."""
+    activated = Signal()
+
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setObjectName('labeled_combobox')
+        widget.combobox = QComboBox()
+        widget.bottom_line.addWidget(widget.combobox, 1)
+        widget.combobox.activated.connect(widget.activated)
+
+    def _active(widget):
+        return widget.underMouse() or widget.combobox.view().isVisible()
 
     def clear(widget):
         widget.combobox.clear()
@@ -539,25 +555,16 @@ class LabeledComboBox(QWidget):
         return widget.combobox.currentText()
     
 
-class LabeledDoubleSpinBox(QWidget):
-    """A number with its label above it, in the labelled combo boxes' look."""
+class LabeledDoubleSpinBox(SlantLabeledField):
+    """A number with its label in front of it (see SlantLabeledField)."""
     valueChanged = Signal(float)
+    RAISED = False
 
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
-        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.setAttribute(Qt.WA_StyledBackground)
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
-        widget.layout().setSpacing(0)
-        widget.label = QLabel()
-        widget.layout().addWidget(widget.label, 1)
         widget.spinbox = QDoubleSpinBox()
-        widget.layout().addWidget(widget.spinbox)
+        widget.bottom_line.addWidget(widget.spinbox, 1)
         widget.spinbox.valueChanged.connect(widget.valueChanged)
-
-    def setLabel(widget, label):
-        widget.label.setText(label)
 
     def setRange(widget, minimum, maximum):
         widget.spinbox.setRange(minimum, maximum)
@@ -609,33 +616,17 @@ class LabeledLabel(QWidget):
         widget.top_label.setText(text)
     
 
-class LabeledLineEdit(QWidget):
+class LabeledLineEdit(SlantLabeledField):
+    """A text with its label in front of it (see SlantLabeledField)."""
     editingFinished = Signal(str)
+    RAISED = False
+
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
         widget.setObjectName('labeled_lineedit')
-        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.setAttribute(Qt.WA_StyledBackground)
-
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
-        widget.layout().setSpacing(0)
-
-        widget.label = QLabel()
-        widget.label.setObjectName('top_label')
-        widget.layout().addWidget(widget.label, 1)
-
-        widget.bottom_line = QHBoxLayout()
-        widget.bottom_line.setContentsMargins(0, 0, 0, 0)
-        widget.bottom_line.setSpacing(0)
-        widget.layout().addLayout(widget.bottom_line)
-
         widget.lineedit = QLineEdit()
         widget.lineedit.editingFinished.connect(lambda: widget.editing_finished())
         widget.bottom_line.addWidget(widget.lineedit, 1)
-
-    def setLabel(widget, label):
-        widget.label.setText(label)
 
     def setText(widget, text):
         widget.lineedit.setText(text)

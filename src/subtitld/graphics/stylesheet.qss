@@ -1048,33 +1048,37 @@ LabeledComboBox QLabel:disabled {
     color: #50b8cee0;
 }
 
+/* The labelled number and text fields are the same field, sunken: the spin
+   box and the line edit sit on it, transparent. */
 LabeledDoubleSpinBox,
 LabeledLineEdit {
-    background-color: #304251; 
-    border-radius: 3px;
+    background: transparent;
 }
 
 LabeledDoubleSpinBox QDoubleSpinBox,
-LabeledLineEdit QLineEdit {
-    background-color: #304251; 
+LabeledDoubleSpinBox QDoubleSpinBox:hover,
+LabeledLineEdit QLineEdit,
+LabeledLineEdit QLineEdit:hover {
+    background: transparent;
     border: 0;
-    border-bottom-left-radius: 3px;
-    border-bottom-right-radius: 3px;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    font-size: 12px;
-    color:#b8cee0;
-    padding: 6px;
-}
-
-LabeledDoubleSpinBox QDoubleSpinBox::hover,
-LabeledLineEdit QLineEdit::hover {
-    background-color: #3e5363; 
+    border-radius: 0;
+    padding: 0 4px 0 8px;
+    font-size: 11px;
+    color: #c8dbe9;
 }
 
 LabeledDoubleSpinBox QLabel,
-LabeledLabel #top_label,
-LabeledLineEdit #top_label {
+LabeledLineEdit QLabel {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    color: #b8cee0;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 0 0 0 9px;
+    background: transparent;
+}
+
+LabeledLabel #top_label {
     font-family: 'Montserrat';
     font-size: 9px;
     color:#b8cee0;
