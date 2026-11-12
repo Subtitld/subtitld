@@ -301,9 +301,9 @@ session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language
 panel = _VideoPanel()
 panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('TS'))
 panel._refresh_format()
-check('a transport stream with teletext: no codec, nor forced, to choose',
-      (panel.get_config()['format'], panel.tracks_codec_combo.isHidden(), panel.tracks_forced.isHidden()),
-      ('TS', True, True))
+check('a transport stream with teletext: teletext or DVB, but no codec, nor forced, to choose',
+      (panel.get_config()['format'], panel.tracks_codec_combo.isHidden(), panel.tracks_ts_combo.isHidden(),
+       panel.tracks_forced.isHidden()), ('TS', True, False, True))
 check('its file name', session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS['TS']['extensions'], ['ts'])
 
 print()

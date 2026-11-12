@@ -847,12 +847,23 @@ class _VideoPanel(QWidget):
         # captions inside the file, or a subtitle track of its own. The
         # options below are the ones that format takes.
         remembered = session.CONFIG.get('export_video') or {}
+        # The list names the files alone, under what they carry: a format
+        # can do either, so its name is found under both.
         self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
-        for key, label in (('MOV', 'video_mov'), ('MXF', 'video_mxf'), ('MP4 A53', 'video_mp4_a53'),
-                           ('TS A53', 'video_ts_a53'), ('MP4', 'video_mp4_track'), ('MOV TEXT', 'video_mov_track'),
-                           ('MKV', 'video_mkv_track'), ('TS', 'video_ts_teletext'), ('TS DVB', 'video_ts_dvb')):
-            self.format_combo.combobox.addItem(_(f'export_dialog.{label}'), key)
+        combobox = self.format_combo.combobox
+        for group, formats in (('category_captions', (('MOV', 'video_mov'), ('MXF', 'video_mxf'),
+                                                      ('MP4 A53', 'video_mp4_a53'), ('TS A53', 'video_ts_a53'))),
+                               ('category_subtitle_track', (('MP4', 'video_mp4_track'), ('MOV TEXT', 'video_mov_track'),
+                                                            ('MKV', 'video_mkv_track'), ('TS', 'video_ts_track')))):
+            combobox.addItem(_(f'export_dialog.{group}'))
+            heading = combobox.model().item(combobox.count() - 1)
+            heading.setFlags(Qt.NoItemFlags)
+            font = heading.font()
+            font.setBold(True)
+            heading.setFont(font)
+            for key, label in formats:
+                combobox.addItem(_(f'export_dialog.{label}'), key)
         self.format_combo.activated.connect(self._refresh_format)
         self.layout().addWidget(self.format_combo)
 
@@ -1183,10 +1194,6 @@ class _VideoPanel(QWidget):
         self.captions_teletext = QCheckBox(_('export_dialog.video_captions_teletext'))
         self.captions_panel.layout().addWidget(self.captions_teletext)
 
-        self.captions_note = QLabel()
-        self.captions_note.setWordWrap(True)
-        self.captions_note.setProperty('class', 'widget_label')
-        self.captions_panel.layout().addWidget(self.captions_note)
         self.captions_panel.layout().addStretch()
 
         _select(self.captions_mode_combo, remembered.get('caption_mode', 'pop'))
@@ -1211,6 +1218,13 @@ class _VideoPanel(QWidget):
         self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_ass'), 'ass')
         self.tracks_codec_combo.activated.connect(self._refresh_tracks)
         self.tracks_panel.layout().addWidget(self.tracks_codec_combo)
+        # A transport stream's subtitles: teletext pages, or DVB's pictures.
+        self.tracks_ts_combo = utils.LabeledComboBox()
+        self.tracks_ts_combo.setLabel(_('export_dialog.subtitle_codec'))
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_teletext'), 'TS')
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_dvb'), 'TS DVB')
+        self.tracks_ts_combo.activated.connect(self._refresh_tracks)
+        self.tracks_panel.layout().addWidget(self.tracks_ts_combo)
 
         self.tracks_translations = QCheckBox(_('export_dialog.subtitle_tracks_translations'))
         self._has_translations = bool(export_options.translation_languages(session.SUBTITLE.get('segments')))
@@ -1219,10 +1233,6 @@ class _VideoPanel(QWidget):
         self.tracks_forced = QCheckBox(_('export_dialog.subtitle_track_forced'))
         self.tracks_panel.layout().addWidget(self.tracks_forced)
 
-        self.tracks_note = QLabel()
-        self.tracks_note.setWordWrap(True)
-        self.tracks_note.setProperty('class', 'widget_label')
-        self.tracks_panel.layout().addWidget(self.tracks_note)
         self.tracks_panel.layout().addStretch()
 
         _select(self.tracks_codec_combo, remembered.get('subtitle_codec', 'srt'))
@@ -1230,7 +1240,9 @@ class _VideoPanel(QWidget):
         self.tracks_forced.setChecked(bool(remembered.get('forced')))
         self.video_pages.addWidget(self.tracks_panel)
 
-        _select(self.format_combo, remembered.get('format', 'MOV'))
+        if remembered.get('format') in ('TS', 'TS DVB'):
+            _select(self.tracks_ts_combo, remembered['format'])
+        _select(self.format_combo, 'TS' if remembered.get('format') == 'TS DVB' else remembered.get('format', 'MOV'))
         self._refresh_format()
         self.layout().addWidget(self.video_pages, 0)
 
@@ -1292,7 +1304,10 @@ class _VideoPanel(QWidget):
         return super().showEvent(event)
 
     def _container(self):
-        return self.format_combo.combobox.currentData() or 'MOV'
+        container = self.format_combo.combobox.currentData() or 'MOV'
+        if container == 'TS':
+            return self.tracks_ts_combo.combobox.currentData() or 'TS'
+        return container
 
     def _refresh_format(self, *_args):
         """The options of the format chosen: a subtitle track's, or the
@@ -1312,8 +1327,6 @@ class _VideoPanel(QWidget):
         container = self._container()
         self.captions_codec_combo.setVisible(container == 'MXF')
         self.captions_teletext.setVisible(container == 'MXF')
-        note = 'mxf' if container == 'MXF' else 'a53' if container.endswith('A53') else 'mov'
-        self.captions_note.setText(_(f'export_dialog.video_captions_note_{note}'))
 
     def _refresh_tracks(self):
         """What the chosen kind of file does with the subtitles: an MP4's
@@ -1322,18 +1335,10 @@ class _VideoPanel(QWidget):
         stream, teletext pages or DVB subtitles, pictures."""
         container = self._container()
         self.tracks_codec_combo.setVisible(container == 'MKV')
+        self.tracks_ts_combo.setVisible(container in ('TS', 'TS DVB'))
         # Teletext and DVB subtitles have no forced pages: a viewer chooses
         # one or none.
         self.tracks_forced.setVisible(container not in soft_subtitles.UNFORCED)
-        if container == 'MKV':
-            key = 'export_dialog.subtitle_track_note_' + (self.tracks_codec_combo.combobox.currentData() or 'srt')
-        elif container == 'TS':
-            key = 'export_dialog.subtitle_track_note_teletext'
-        elif container == 'TS DVB':
-            key = 'export_dialog.subtitle_track_note_dvb'
-        else:
-            key = 'export_dialog.subtitle_track_note_mov_text'
-        self.tracks_note.setText(_(key))
 
     def get_config(self):
         container = self._container()

@@ -467,11 +467,15 @@ session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
 session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
 panel = _VideoPanel()
-panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('TS DVB'))
+panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('TS'))
+panel.tracks_ts_combo.combobox.setCurrentIndex(panel.tracks_ts_combo.combobox.findData('TS DVB'))
 panel._refresh_format()
 check('a transport stream with DVB subtitles: no codec, nor forced, to choose',
       (panel.get_config()['format'], panel.tracks_codec_combo.isHidden(), panel.tracks_forced.isHidden(),
        soft_subtitles.is_soft('TS DVB')), ('TS DVB', True, True, True))
+again = _VideoPanel()
+check('remembered: the transport stream, with DVB subtitles',
+      (again.format_combo.combobox.currentData(), again.get_config()['format']), ('TS', 'TS DVB'))
 check('its file name', session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS['TS DVB']['extensions'], ['ts'])
 
 print()

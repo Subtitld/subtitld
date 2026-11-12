@@ -162,18 +162,16 @@ print('the dialog')
 session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 30000 / 1001, 'duration': 10.0, 'filepath': 'video.mp4'}
 from subtitld.interface.export_dialog import _VideoPanel
-from subtitld.interface.translation import _
 panel = _VideoPanel()
 combo = panel.format_combo.combobox
 check('offered beside QuickTime and MXF, before the subtitle tracks',
       [combo.itemData(index) for index in range(combo.count())],
-      ['MOV', 'MXF', 'MP4 A53', 'TS A53', 'MP4', 'MOV TEXT', 'MKV', 'TS', 'TS DVB'])
-combo.setCurrentIndex(2)
+      [None, 'MOV', 'MXF', 'MP4 A53', 'TS A53', None, 'MP4', 'MOV TEXT', 'MKV', 'TS'])
+combo.setCurrentIndex(combo.findData('MP4 A53'))
 panel._refresh_format()
 config = panel.get_config()
-check('the picture copied: no codec, no teletext, a note of its own',
-      (config['format'], panel.captions_codec_combo.isHidden(), panel.captions_teletext.isHidden(),
-       panel.captions_note.text() == _('export_dialog.video_captions_note_a53')), ('MP4 A53', True, True, True))
+check('the picture copied: no codec, no teletext',
+      (config['format'], panel.captions_codec_combo.isHidden(), panel.captions_teletext.isHidden()), ('MP4 A53', True, True))
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
