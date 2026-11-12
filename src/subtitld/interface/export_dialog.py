@@ -1478,10 +1478,9 @@ class _PreviewPanel(QWidget):
         self._plain(text or '')
         self.file.setVisible(text is not None)
 
-    def show_still(self, image, area=None):
+    def show_still(self, image):
         """`image`, a frame of the video as the export writes it, scaled to
-        the panel's width; under it, the subtitles' `area` of it (x, y,
-        width, height, 0..1) as large as it is or as the panel allows."""
+        the panel's width."""
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * image.height() / max(1, image.width())))
@@ -1491,17 +1490,7 @@ class _PreviewPanel(QWidget):
         self.picture.setPixmap(pixmap)
         self.picture.setFixedSize(width, height)
         self.picture.setVisible(True)
-        self.crop.setVisible(area is not None)
-        if area is not None:
-            source = QRectF(area[0] * image.width(), area[1] * image.height(),
-                            area[2] * image.width(), area[3] * image.height())
-            scale = min(1.0, width / max(1.0, source.width()))
-            size = (max(1, round(source.width() * scale)), max(1, round(source.height() * scale)))
-            painter, pixmap = self._rounded(*size)
-            painter.drawImage(QRectF(0, 0, *size), image, source)
-            painter.end()
-            self.crop.setPixmap(pixmap)
-            self.crop.setFixedSize(*size)
+        self.crop.setVisible(False)
         self.file.setVisible(False)
 
     def _plain(self, text):
@@ -1811,7 +1800,7 @@ class ExportDialog(utils.SimpleDialog):
                                   float(session.SUBTITLE.get('position') or 0), path, self._still_done,
                                   language=session.SUBTITLE.get('language') or '')
 
-    def _still_done(self, path, area, error):
+    def _still_done(self, path, error):
         if self._still is None or self._still[1] != path:
             return                                             # the dialog closed, or let it go
         self._still = None
@@ -1824,7 +1813,7 @@ class ExportDialog(utils.SimpleDialog):
         if image.isNull():
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
         else:
-            self.preview_panel.show_still(image, area)
+            self.preview_panel.show_still(image)
         try:
             os.unlink(path)
         except OSError:

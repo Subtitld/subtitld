@@ -49,10 +49,8 @@ def shifted(segments, start, length):
 def still(container, options, segments, cue, at, output, video=None, info=None, language=''):
     """Write to `output` (a PNG) the frame of the `container` export at the
     subtitle `cue` (the cursor `at`, when it is on it), with what that file
-    shows drawn on it, and return where on it the subtitles are: (x, y,
-    width, height), of the frame, 0..1; None when nothing is drawn. Raises
-    ValueError for what the export would refuse too, and StillError when
-    FFmpeg cannot do its part."""
+    shows drawn on it. Raises ValueError for what the export would refuse
+    too, and StillError when FFmpeg cannot do its part."""
     from subtitld.modules import a53, bounce, embedded_captions
     info = dict(info if info is not None else (session.VIDEO or {}))
     video = video or info.get('filepath')
@@ -79,36 +77,10 @@ def still(container, options, segments, cue, at, output, video=None, info=None, 
         clip = os.path.join(folder, 'clip.' + extension)
         bounce.write_captioned_video(source, clip, container, options, shifted(segments, start, length),
                                      dict(info, duration=length), language)
-        shown = _draw(clip, container, when - start, output, folder, float(cue['start']) - start)
-        bare = os.path.join(folder, 'bare.png')
-        _ffmpeg(['-i', clip, '-map', '0:v:0', '-ss', f'{shown:.3f}', '-frames:v', '1', '-update', '1', bare])
-        return drawn_area(output, bare)
+        _draw(clip, container, when - start, output, folder, float(cue['start']) - start)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
-
-
-def drawn_area(still_path, bare_path, threshold=48):
-    """Where `still_path` differs from `bare_path`, the same frame with
-    nothing drawn on it: (x, y, width, height), 0..1, around what changed
-    by more than `threshold` (an MXF's picture is encoded again, and
-    differs from its source a little everywhere, and the same frame
-    decoded twice may not be); None when nothing did."""
-    import numpy as np
-    from PySide6.QtGui import QImage
-    images = [QImage(path).convertToFormat(QImage.Format_RGB888) for path in (still_path, bare_path)]
-    if any(image.isNull() for image in images) or images[0].size() != images[1].size():
-        return None
-    width, height = images[0].width(), images[0].height()
-    arrays = [np.frombuffer(image.constBits(), np.uint8).reshape(height, image.bytesPerLine())[:, :width * 3]
-              .reshape(height, width, 3).astype(np.int16) for image in images]
-    changed = (np.abs(arrays[0] - arrays[1]).max(axis=2) > threshold)
-    rows, columns = np.where(changed.sum(axis=1) >= 2)[0], np.where(changed.sum(axis=0) >= 2)[0]
-    if not len(rows) or not len(columns):
-        return None
-    pad = 6
-    left, top = max(0, columns[0] - pad), max(0, rows[0] - pad)
-    right, bottom = min(width, columns[-1] + 1 + pad), min(height, rows[-1] + 1 + pad)
-    return (float(left / width), float(top / height), float((right - left) / width), float((bottom - top) / height))
+    return output
 
 
 def _track_extension(container):
@@ -118,8 +90,7 @@ def _track_extension(container):
 
 def _draw(clip, container, when, output, folder, cue_start=0.0):
     """The frame of `clip` at `when` seconds, its subtitles drawn on it; a
-    teletext page, at the first moment after `cue_start` it is shown.
-    Returns when the frame is."""
+    teletext page, at the first moment after `cue_start` it is shown."""
     from subtitld.modules import embedded_captions
     if container == 'TS':
         when = _page_shown(clip, cue_start, folder, when)
@@ -144,7 +115,6 @@ def _draw(clip, container, when, output, folder, cue_start=0.0):
         _ffmpeg(['-i', clip, '-vf', f'subtitles={_escaped(clip)}:si=0'] + at)
     if not os.path.isfile(output) or not os.path.getsize(output):
         raise StillError('FFmpeg drew no frame')
-    return when
 
 
 def _page_shown(clip, after, folder, default):
@@ -189,28 +159,27 @@ _running = []
 
 
 def still_async(container, options, segments, cue, at, output, on_done, language=''):
-    """`still` off the main thread; `on_done(output, area, error)` is called
-    on the main thread when it is done, `error` empty when the still was
-    drawn."""
+    """`still` off the main thread; `on_done(output, error)` is called on the
+    main thread when it is done, `error` empty when the still was drawn."""
     from PySide6.QtCore import Qt, QThread, Signal
 
     class StillThread(QThread):
-        done = Signal(str, object, str)
+        done = Signal(str, str)
 
         def run(self):
             try:
-                area = still(container, options, segments, cue, at, output, language=language)
-                self.done.emit(output, area, '')
+                still(container, options, segments, cue, at, output, language=language)
+                self.done.emit(output, '')
             except Exception as exc:
-                self.done.emit(output, None, str(exc) or exc.__class__.__name__)
+                self.done.emit(output, str(exc) or exc.__class__.__name__)
 
     thread = StillThread()
 
-    def _finished(path, area, error):
+    def _finished(path, error):
         if thread in _running:
             _running.remove(thread)
         thread.deleteLater()
-        on_done(path, area, error)
+        on_done(path, error)
 
     thread.done.connect(_finished, Qt.QueuedConnection)
     _running.append(thread)

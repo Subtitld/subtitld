@@ -52,12 +52,8 @@ else:
     print('the still')
     for container, options in (('MOV', {}), ('MKV', {'subtitle_codec': 'srt'})):
         out = str(folder / f'{container}.png')
-        area = video_preview.still(container, options, segments, segments[1], 3.0, out, language='en-us')
-        check(f'{container}: a frame, the subtitles found low on it', (os.path.getsize(out) > 0, area is not None
-                                                                        and area[1] > 0.5 and area[2] < 1.0),
-              (True, True))
-    check('no subtitle on the frame: no area', video_preview.drawn_area(str(folder / 'MOV.png'), str(folder / 'MOV.png')),
-          None)
+        video_preview.still(container, options, segments, segments[1], 3.0, out, language='en-us')
+        check(f'{container}: a frame', os.path.getsize(out) > 0, True)
 
     print('the dialog')
     from subtitld.interface import export_dialog
@@ -80,8 +76,8 @@ else:
 
     settle()
     preview = dialog.preview_panel
-    check('the frame and the subtitles\' part of it, no well',
-          (preview.picture.isVisible(), preview.crop.isVisible(), preview.file.isVisible()), (True, True, False))
+    check('the frame alone: no part of it under it, no well',
+          (preview.picture.isVisible(), preview.crop.isVisible(), preview.file.isVisible()), (True, False, False))
     combo = dialog.video_panel.format_combo.combobox
     combo.setCurrentIndex(combo.findData('MKV'))
     dialog.video_panel._refresh_format()
