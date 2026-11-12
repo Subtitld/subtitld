@@ -2965,7 +2965,7 @@ QMenu#subtitle_formatting_menu::separator {
     font-weight: 700;
     text-transform: uppercase;
     color: rgba(184, 206, 224, 90);
-    padding-left: 4px;
+    padding: 0;
 }
 
 #export_dialog_preview_file {
