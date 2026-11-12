@@ -1086,18 +1086,18 @@ LabeledComboBox QLabel:disabled {
     color: #50b8cee0;
 }
 
-/* A page's header (utils.HeaderComboBox): the same field, larger. The label starts on the page's 20px content
-   edge, the chosen option is bold, and the arrow sits 20px from the right edge. Its list keeps the usual size. */
+/* A page's header (utils.HeaderComboBox): the same field, larger. The chosen option is bold, and the arrow
+   sits 20px from the right edge. Its list keeps the usual size. */
 HeaderComboBox QLabel {
-    font-size: 11px;
-    padding: 0 0 0 20px;     /* HeaderComboBox.LABEL_LEFT */
+    font-size: 10px;
+    padding: 0 0 0 12px;     /* HeaderComboBox.LABEL_LEFT */
 }
 
 HeaderComboBox QComboBox,
 HeaderComboBox QComboBox:hover,
 HeaderComboBox QComboBox:on,
 HeaderComboBox QComboBox:disabled {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
     padding: 0 4px 0 12px;
 }

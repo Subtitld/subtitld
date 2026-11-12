@@ -572,11 +572,10 @@ class HeaderComboBox(LabeledComboBox):
     """The choice a page is about (an export page's format), as the page's
     header: 42px tall, edge to edge, flush with the page's top; its corners
     are square but the top left, a 6px curve. The label is larger and the chosen option bold (the
-    stylesheet's HeaderComboBox rules); the label's text starts on the
-    page's 20px content edge. Subclass it for headers of other pages."""
+    stylesheet's HeaderComboBox rules). Subclass it for headers of other pages."""
     HEIGHT = 42
-    LABEL_LEFT = 20
-    LABEL_PADDING = 14
+    LABEL_LEFT = 12
+    LABEL_PADDING = 12
     ROUNDED = False
 
     def __init__(widget, parent=None):
