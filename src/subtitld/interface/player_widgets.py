@@ -755,6 +755,9 @@ class Transport(QWidget):
     GROUP_ON = '#7f92a3'
     PLAYING = '#5d778c'
     RECORDING = '#c8393f'
+    REC_LIGHT = '#dbc3c8'             # the record part at rest: the panel's light, tinted red
+    REC_GROUP = '#b89aa1'             # its mode key at rest
+    REC_GROUP_ON = '#a3858c'
     MARGIN = 30                       # under the neighbouring lines, which overlap this piece
     ROOM = 64                         # room around the play and record icons, at mid-height
     KEY = 32
@@ -905,6 +908,7 @@ class Transport(QWidget):
         cy = y0 + h / 2
         panel = self.outline
         painter.fillPath(panel, shapes.gradient(y0, yb, self.LIGHT))
+        painter.fillPath(self.record_area, shapes.gradient(y0, yb, self.REC_LIGHT))
         playing = self.play_key.isChecked()
         recording = self.record_key.isChecked()
         enabled = self.isEnabled()
@@ -917,7 +921,7 @@ class Transport(QWidget):
                 painter.fillPath(area.intersected(shapes.rect_path(QRectF(0, y0, self.width(), 1))), QColor(0, 0, 0, 45))
         # under the ▶|▶ group, play blends into record where their colours differ
         play_c = shapes.bottom_colour(self.PLAYING, 'sunken') if playing else shapes.bottom_colour(self.LIGHT)
-        rec_c = shapes.bottom_colour(self.RECORDING, 'sunken') if recording else shapes.bottom_colour(self.LIGHT)
+        rec_c = shapes.bottom_colour(self.RECORDING, 'sunken') if recording else shapes.bottom_colour(self.REC_LIGHT)
         if play_c != rec_c:
             strip = self.play_area.intersected(shapes.rect_path(QRectF(self.pg_x - 20, self.ny + self.nh - 1, self.pg_w + 40,
                                                                        yb - (self.ny + self.nh - 1) + 2)))
@@ -970,7 +974,7 @@ class Transport(QWidget):
         painter.drawEllipse(QPointF(self.rec_dot_x, cy), 11, 11)
         # the mode key: one key, its icon pushed left, flush with the right slant; red while recording
         self._group(painter, self.mode_notch, [(self.mode_notch, self.mode_key)],
-                    '#d4555b' if recording else self.GROUP, '#a62c32' if recording else self.GROUP_ON,
+                    '#d4555b' if recording else self.REC_GROUP, '#a62c32' if recording else self.REC_GROUP_ON,
                     22 if recording else 60, all_sunk=recording)
         icon_rect = QRectF(self.rec_gx + self.rg, iy, 24, 24)
         renderer = self._icons['transcript' if self.mode == 'transcript' else 'audio']
