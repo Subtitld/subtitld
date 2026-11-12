@@ -555,19 +555,8 @@ class _SubtitlesPanel(QWidget):
         the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
-        if fmt == 'BDN':
-            # Drawn when the file is written: what is said is where they go.
-            self.check_label.setText(_('export_dialog.bdn_note'))
-            self.check_label.setVisible(True)
-            return
-        if fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures':
-            smpte = self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE
-            self.check_label.setText(_('export_dialog.dcp_pictures_note_smpte' if smpte
-                                       else 'export_dialog.dcp_pictures_note_interop'))
-            self.check_label.setVisible(True)
-            return
-        if fmt in ('VOBSUB', 'PGS'):
-            # A disc's pictures: the preview shows one, nothing to say here.
+        if fmt in ('BDN', 'VOBSUB', 'PGS') or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
+            # Pictures: the preview shows one, nothing to say here.
             self.check_label.setVisible(False)
             return
         if fmt not in ('DFXP', 'TTML') or not segments:
@@ -576,9 +565,8 @@ class _SubtitlesPanel(QWidget):
         profile = self.profile_combo.combobox.currentData() or 'ttml1'
         if profile in ttml.IMAGE_PROFILES:
             # Pictures are drawn when the file is written, not to check it
-            # here: what is said instead is where they will go.
-            self.check_label.setText(_('export_dialog.ttml_image_note'))
-            self.check_label.setVisible(True)
+            # here; the preview shows one.
+            self.check_label.setVisible(False)
             return
         written = ttml.write(segments, session.SUBTITLE.get('language') or 'en', profile=profile,
                              metadata=session.SUBTITLE.get('metadata'))
