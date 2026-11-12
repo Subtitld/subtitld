@@ -755,8 +755,11 @@ class Transport(QWidget):
         self._areas()
 
     # -- geometry ------------------------------------------------------------------------------------------------------
-    def panel(self):
+    def panel(self, top=None):
+        """The panel's outline from `top` (the widget's top by default): its slants curve into the top line."""
         x0, x1, y0, y1 = self.x0, self.x0 + self.W, self.PANEL_TOP, self.PANEL_BOTTOM
+        if top is not None:                                   # the same slants, cut lower
+            x0, x1, y0 = x0 + (top - y0) * shapes.RUN15, x1 - (top - y0) * shapes.RUN15, top
         run = (y1 - y0) * shapes.RUN15
         dl, dr = shapes.unit(run, y1 - y0), shapes.unit(run, -(y1 - y0))
         p = QPainterPath(QPointF(x0 - shapes.T6, y0))
@@ -770,14 +773,19 @@ class Transport(QWidget):
     def _notch(self, gx, w, flush_left=False, flush_right=False):
         lx = 60 if flush_left else 0
         rx = 60 if flush_right else 0
-        return shapes.hanging_trap(gx - lx, self.ny, w + lx + rx, self.nh).intersected(self.panel())
+        return shapes.hanging_trap(gx - lx, self.ny, w + lx + rx, self.nh).intersected(self.panel().united(self.base))
 
     def _areas(self):
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
-        panel = self.panel()
+        # The outline: below the panel's 1px edge line its slants curve into that line (6px, as everywhere); only
+        # the play and record tabs rise above it, to the top.
+        self.base = self.panel(self.TAB - 1)
         self.begin_notch = self._notch(self.lg_gx, self.KEY + 2 * self.rg, flush_left=True)
         self.group_notch = self._notch(self.pg_x, self.pg_w)
         self.mode_notch = self._notch(self.rec_gx, self.KEY + 2 * self.rg, flush_right=True)
+        notches = self.begin_notch.united(self.group_notch).united(self.mode_notch)
+        tabs = self.panel().intersected(shapes.rect_path(QRectF(0, 0, self.width(), self.TAB))).subtracted(notches)
+        self.outline = panel = self.base.united(tabs)
         xl_top = self.pg_x + self.pg_w
         self.edge_at = lambda yy: xl_top - (yy - self.ny) * shapes.RUN15     # the group's right slant, carried on
         rec = QPainterPath()
@@ -792,8 +800,7 @@ class Transport(QWidget):
         # Above TAB only play and record show, as two tabs: the keys' slants carried up are their sides, and what
         # was the keys' curve into the top edge rounds the tabs' top corners.
         below = shapes.rect_path(QRectF(-100, self.TAB, self.width() + 200, self.H))
-        notches = self.begin_notch.united(self.group_notch).united(self.mode_notch)
-        self.visible = below.united(panel.subtracted(notches))
+        self.visible = below.united(tabs)
         for key, path in ((self.play_key, self.play_area.subtracted(self.begin_notch).subtracted(self.group_notch)),
                           (self.record_key, self.record_area.subtracted(self.mode_notch)),
                           (self.begin_key, self.begin_notch.intersected(below)), (self.last_key, self.last_zone.intersected(below)),
@@ -840,16 +847,16 @@ class Transport(QWidget):
         # the panel's top edge line, which runs along the side lines' second row, goes round this piece's outline
         stroker = QPainterPathStroker()
         stroker.setWidth(2)
-        ring = stroker.createStroke(self.panel()).subtracted(self.panel())
+        ring = stroker.createStroke(self.base).subtracted(self.outline)
         painter.fillPath(ring.intersected(shapes.rect_path(QRectF(0, 1, self.width(), self.H))), EDGE)
         # inside the outline, above the keys, the band is clear: cover the edge line running behind
         band = shapes.rect_path(QRectF(0, 0, self.width(), self.TAB))
-        painter.fillPath(self.panel().intersected(band).subtracted(self.visible), BAND)
+        painter.fillPath(self.outline.intersected(band).subtracted(self.visible), BAND)
         painter.setClipPath(self.visible)
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
         h = yb - y0
         cy = y0 + h / 2
-        panel = self.panel()
+        panel = self.outline
         painter.fillPath(panel, shapes.gradient(y0, yb, self.LIGHT))
         playing = self.play_key.isChecked()
         recording = self.record_key.isChecked()
