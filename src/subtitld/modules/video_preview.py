@@ -79,7 +79,9 @@ def still(container, options, segments, cue, at, output, video=None, info=None, 
         clip = os.path.join(folder, 'clip.' + extension)
         bounce.write_captioned_video(source, clip, container, options, shifted(segments, start, length),
                                      dict(info, duration=length), language)
-        _draw(clip, container, when - start, output, folder)
+        vp9 = burned_video.is_burned(container) and \
+            burned_video.codec_of(container, (options or {}).get('video_codec')) == 'vp9'
+        _draw(clip, container, when - start, output, folder, vp9)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return output
@@ -90,14 +92,14 @@ def _track_extension(container):
     return soft_subtitles.CONTAINERS[container]['extension']
 
 
-def _draw(clip, container, when, output, folder):
-    """The frame of `clip` at `when` seconds, its subtitles drawn on it."""
+def _draw(clip, container, when, output, folder, vp9=False):
+    """The frame of `clip` at `when` seconds, its subtitles drawn on it;
+    `vp9`, its picture is VP9, whose clear parts libvpx alone reads."""
     from subtitld.modules import burned_video, embedded_captions
     at = ['-ss', f'{when:.3f}', '-frames:v', '1', '-update', '1', output]
     if burned_video.is_burned(container):
-        # In the picture already; alone, its clear parts kept (VP9's alpha
-        # is read by libvpx alone).
-        decoder = ['-c:v', 'libvpx-vp9'] if container == 'ALPHA WEBM' else []
+        # In the picture already; alone, its clear parts kept.
+        decoder = ['-c:v', 'libvpx-vp9'] if vp9 else []
         rgba = ['-pix_fmt', 'rgba'] if burned_video.is_alpha(container) else []
         _ffmpeg(decoder + ['-i', clip, '-map', '0:v:0'] + rgba + at)
     elif container in embedded_captions.CONTAINERS:

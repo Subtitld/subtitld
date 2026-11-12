@@ -78,28 +78,39 @@ else:
         return sum(1 for y in range(image.height() // 2, image.height()) for x in range(image.width())
                    if image.pixelColor(x, y).lightness() > 128)
 
-    print('burned in')
-    out = folder / 'burned.mp4'
-    burned_video.write_video(str(out), 'BURN MP4', segments, video=str(video), size=(640, 360), duration=4.0)
-    check('the subtitle in the picture while it is on, and not before',
-          (lit(frame_at(out, 1.5)) > 20, lit(frame_at(out, 0.5))), (True, 0))
-    probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', str(out)],
-                           capture_output=True, text=True).stdout.split()
-    check('H.264, the sound kept', probe, ['h264', 'aac'])
+    def codecs_of(path):
+        return subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0',
+                               str(path)], capture_output=True, text=True).stdout.split()
+
+    print('burned in: every format and codec')
+    for container, holder in burned_video.CONTAINERS.items():
+        if holder['alpha']:
+            continue
+        for codec in holder['codecs']:
+            out = folder / f'burned_{codec}.{holder["extension"]}'
+            burned_video.write_video(str(out), container, segments, video=str(video), size=(640, 360), duration=4.0,
+                                     codec=codec)
+            check(f'{container}, {codec}: the subtitle in the picture while it is on, not before; the sound kept',
+                  (lit(frame_at(out, 1.5)) > 20, lit(frame_at(out, 0.5)), len(set(codecs_of(out)))), (True, 0, 2))
+    check('the codec asked for', codecs_of(folder / 'burned_hevc.mp4')[0], 'hevc')
     try:
         burned_video.write_video(str(folder / 'none.mp4'), 'BURN MP4', segments)
         check('burned into nothing: an error', None, 'ValueError')
     except ValueError:
         check('burned into nothing: an error', True, True)
 
-    print('alone')
-    for container, webm in (('ALPHA MOV', False), ('ALPHA WEBM', True)):
-        out = folder / f'alone.{burned_video.CONTAINERS[container]["extension"]}'
-        burned_video.write_video(str(out), container, segments, size=(320, 180), fps=25, duration=3.0)
-        on, off = frame_at(out, 1.5, True, webm), frame_at(out, 0.5, True, webm)
-        opaque = sum(1 for y in range(0, 180, 2) for x in range(0, 320, 2) if on.pixelColor(x, y).alpha() > 200)
-        check(f'{container}: clear but for the subtitle, and clear before it',
-              (0 < opaque < 320 * 180 // 8, off.pixelColor(160, 160).alpha()), (True, 0))
+    print('alone: every format and codec')
+    for container, holder in burned_video.CONTAINERS.items():
+        if not holder['alpha']:
+            continue
+        for codec in holder['codecs']:
+            out = folder / f'alone_{codec}.{holder["extension"]}'
+            burned_video.write_video(str(out), container, segments, size=(320, 180), fps=25, duration=3.0, codec=codec)
+            vp9 = codec == 'vp9'
+            on, off = frame_at(out, 1.5, True, vp9), frame_at(out, 0.5, True, vp9)
+            opaque = sum(1 for y in range(0, 180, 2) for x in range(0, 320, 2) if on.pixelColor(x, y).alpha() > 200)
+            check(f'{container}, {codec}: clear but for the subtitle, and clear before it',
+                  (0 < opaque < 320 * 180 // 8, off.pixelColor(160, 160).alpha()), (True, 0))
 
     print('the export')
     from subtitld.modules import bounce
@@ -125,31 +136,55 @@ else:
     from subtitld.interface import export_dialog
     session.CONFIG.pop('export_video', None)
     panel = export_dialog._VideoPanel()
-    combo = panel.format_combo.combobox
-    check('burned in and alone, after the captions and tracks',
-          [combo.itemData(index) for index in range(combo.count())][-6:],
-          [None, 'BURN MP4', 'BURN MOV', None, 'ALPHA MOV', 'ALPHA WEBM'])
+    ways, codecs = panel.way_combo.combobox, panel.codec_combo.combobox
 
-    def choose(key):
-        combo.setCurrentIndex(combo.findData(key))
+    def listed(combobox):
+        return [combobox.itemData(index) for index in range(combobox.count())]
+
+    panel.choose('MOV')
+    check('QuickTime: every way', listed(ways), ['cc', 'track', 'burn', 'alpha'])
+    panel.choose('MKV')
+    check('Matroska: no captions', listed(ways), ['track', 'burn', 'alpha'])
+    panel.choose('MXF')
+    check('MXF: captions alone, nothing to ask', (listed(ways), panel.way_combo.isHidden()), (['cc'], True))
+    panel.choose('BURN MP4')
+    check('MP4 burned in: H.264 or HEVC, a style and a quality, no size',
+          (listed(codecs), panel.video_pages.currentWidget() is panel.burn_panel, panel.quality_row.isHidden(),
+           panel.alpha_options.isHidden(), panel.export_choices()),
+          (['h264', 'hevc'], True, False, True,
+           ('BURN MP4', {'video_codec': 'h264', 'style': 'subtitld.classic', 'quality': 'balanced'})))
+    panel.choose('BURN MOV')
+    check('QuickTime burned in: ProRes first, no quality for it', (listed(codecs), panel.quality_row.isHidden()),
+          (['prores', 'h264'], True))
+    codecs.setCurrentIndex(codecs.findData('h264'))
+    panel._codec_chosen()
+    check('H.264 in QuickTime: a quality', panel.quality_row.isHidden(), False)
+    panel.choose('BURN TS')
+    check('one codec: not asked', (listed(codecs), panel.codec_combo.isHidden()), (['h264'], True))
+    panel.choose('ALPHA MKV')
+    check('Matroska alone: FFV1 first, no quality for it', (listed(codecs), panel.quality_row.isHidden()),
+          (['ffv1', 'vp9', 'prores4444', 'png'], True))
+    def back_to(panel, video_file):
+        combo = panel.format_combo.combobox
+        combo.setCurrentIndex(combo.findData(video_file))
         panel._refresh_format()
 
-    choose('BURN MP4')
-    check('MP4: a style and a quality, no size', (panel.video_pages.currentWidget() is panel.burn_panel,
-                                                 panel.quality_combo.isHidden(), panel.alpha_options.isHidden(),
-                                                 panel.export_choices()),
-          (True, False, True, ('BURN MP4', {'style': 'subtitld.classic', 'quality': 'balanced'})))
-    choose('BURN MOV')
-    check('ProRes: no quality to choose', panel.quality_combo.isHidden(), True)
-    choose('ALPHA WEBM')
+    back_to(panel, 'MOV')
+    check('QuickTime again: the way and codec chosen for it kept', (panel._container(), codecs.currentData()),
+          ('BURN MOV', 'h264'))
+    panel.choose('ALPHA WEBM')
     check('alone: the video\'s size and rate first', panel.export_choices(),
-          ('ALPHA WEBM', {'style': 'subtitld.classic', 'quality': 'balanced', 'width': 640, 'height': 360, 'fps': 25.0}))
+          ('ALPHA WEBM', {'video_codec': 'vp9', 'style': 'subtitld.classic', 'quality': 'balanced', 'width': 640,
+                          'height': 360, 'fps': 25.0}))
     panel.alpha_size_combo.combobox.setCurrentIndex(panel.alpha_size_combo.combobox.findData('1920x1080'))
     config = panel.get_config()
     session.VIDEO = {}
     again = export_dialog._VideoPanel()
     check('remembered, with no video: the size chosen', (again.export_choices()[0], again.export_choices()[1]['width']),
           ('ALPHA WEBM', 1920))
+    back_to(again, 'MOV')
+    check('and the way and codec chosen for each format', (again._container(), again.codec_combo.combobox.currentData()),
+          ('BURN MOV', 'h264'))
 
     print('its preview')
     session.SUBTITLE = {'segments': segments, 'language': 'en-us', 'position': 1.2}

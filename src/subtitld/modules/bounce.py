@@ -373,7 +373,8 @@ def write_captioned_video(video, output, container, options, segments, info, lan
         duration = float(info.get('duration') or 0) or None
         burned_video.write_video(output, container, prepared, video=video, size=size,
                                  fps=(options.get('fps') if alpha else None) or info.get('framerate'),
-                                 duration=duration, quality=options.get('quality'), style_id=options.get('style'))
+                                 duration=duration, quality=options.get('quality'), style_id=options.get('style'),
+                                 codec=options.get('video_codec'))
         return
     if soft_subtitles.is_soft(container):
         _write_tracks(video, output, container, options, segments, info, language)

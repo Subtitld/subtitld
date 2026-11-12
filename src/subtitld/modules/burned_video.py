@@ -18,25 +18,72 @@ import tempfile
 
 from subtitld.modules import session
 
-# The kinds of file, by the key the export and its dialog know them by.
-CONTAINERS = {
-    'BURN MP4': {'extension': 'mp4', 'alpha': False,
-                 'video': ['-c:v', 'libx264', '-preset', 'medium', '-pix_fmt', 'yuv420p'],
-                 'audio': ['-c:a', 'aac', '-b:a', '192k'], 'format': 'mp4'},
-    'BURN MOV': {'extension': 'mov', 'alpha': False,
-                 'video': ['-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le'],
-                 'audio': ['-c:a', 'pcm_s16le'], 'format': 'mov'},
-    'ALPHA MOV': {'extension': 'mov', 'alpha': True,
-                  'video': ['-c:v', 'prores_ks', '-profile:v', '4444', '-pix_fmt', 'yuva444p10le'], 'format': 'mov'},
-    'ALPHA WEBM': {'extension': 'webm', 'alpha': True,
-                   'video': ['-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-b:v', '0', '-crf', '30', '-row-mt', '1'],
-                   'format': 'webm'},
+# The picture codecs, by the key the export's options name them by: what
+# FFmpeg writes them with, opaque and with their clear parts kept, and the
+# constant rate factor of each quality, for those that take one (lower is
+# better and larger).
+CODECS = {
+    'h264': {'args': ['-c:v', 'libx264', '-preset', 'medium'], 'pix_fmt': 'yuv420p',
+             'crf': {'small': 26, 'balanced': 21, 'best': 16}},
+    'hevc': {'args': ['-c:v', 'libx265', '-preset', 'medium'], 'pix_fmt': 'yuv420p',
+             'crf': {'small': 30, 'balanced': 25, 'best': 20}},
+    'vp9': {'args': ['-c:v', 'libvpx-vp9', '-b:v', '0', '-row-mt', '1'], 'pix_fmt': 'yuv420p',
+            'alpha_pix_fmt': 'yuva420p', 'crf': {'small': 38, 'balanced': 31, 'best': 24}},
+    'prores': {'args': ['-c:v', 'prores_ks', '-profile:v', '3'], 'pix_fmt': 'yuv422p10le'},
+    'prores4444': {'args': ['-c:v', 'prores_ks', '-profile:v', '4444'], 'pix_fmt': 'yuv444p10le',
+                   'alpha_pix_fmt': 'yuva444p10le'},
+    'ffv1': {'args': ['-c:v', 'ffv1', '-level', '3'], 'pix_fmt': 'yuv420p', 'alpha_pix_fmt': 'yuva420p'},
+    'png': {'args': ['-c:v', 'png'], 'pix_fmt': 'rgb24', 'alpha_pix_fmt': 'rgba'},
+    'qtrle': {'args': ['-c:v', 'qtrle'], 'pix_fmt': 'rgb24', 'alpha_pix_fmt': 'argb'},
 }
-# H.264's constant rate factor for each quality: lower is better and larger.
-QUALITIES = {'small': 26, 'balanced': 21, 'best': 16}
+# The kinds of file, by the key the export and its dialog know them by: the
+# codecs each takes (the first is the one chosen when none is), and, burned
+# in, what the sound is written as.
+CONTAINERS = {
+    'BURN MP4': {'extension': 'mp4', 'format': 'mp4', 'alpha': False, 'codecs': ('h264', 'hevc'),
+                 'audio': ['-c:a', 'aac', '-b:a', '192k']},
+    'BURN MOV': {'extension': 'mov', 'format': 'mov', 'alpha': False, 'codecs': ('prores', 'h264'),
+                 'audio': ['-c:a', 'pcm_s16le']},
+    'BURN MKV': {'extension': 'mkv', 'format': 'matroska', 'alpha': False, 'codecs': ('h264', 'ffv1', 'vp9'),
+                 'audio': ['-c:a', 'aac', '-b:a', '192k']},
+    'BURN TS': {'extension': 'ts', 'format': 'mpegts', 'alpha': False, 'codecs': ('h264',),
+                'audio': ['-c:a', 'aac', '-b:a', '192k']},
+    'BURN WEBM': {'extension': 'webm', 'format': 'webm', 'alpha': False, 'codecs': ('vp9',),
+                  'audio': ['-c:a', 'libopus', '-b:a', '160k']},
+    'ALPHA MOV': {'extension': 'mov', 'format': 'mov', 'alpha': True, 'codecs': ('prores4444', 'png', 'qtrle')},
+    'ALPHA MKV': {'extension': 'mkv', 'format': 'matroska', 'alpha': True,
+                  'codecs': ('ffv1', 'vp9', 'prores4444', 'png')},
+    'ALPHA WEBM': {'extension': 'webm', 'format': 'webm', 'alpha': True, 'codecs': ('vp9',)},
+}
+QUALITIES = ('small', 'balanced', 'best')
 DEFAULT_QUALITY = 'balanced'
 DEFAULT_SIZE = (1920, 1080)
 DEFAULT_FPS = 25.0
+
+
+def codec_of(container, codec=None):
+    """`codec` if `container` takes it, else the container's first."""
+    codecs = CONTAINERS[container]['codecs']
+    return codec if codec in codecs else codecs[0]
+
+
+def has_quality(codec):
+    """Whether `codec` takes a quality: the lossless and fixed-rate ones do not."""
+    return 'crf' in CODECS.get(codec, {})
+
+
+def video_arguments(container, codec=None, quality=None):
+    """What FFmpeg writes the picture of `container` with: `codec`, at
+    `quality`, its clear parts kept when the container is an alpha one."""
+    codec = codec_of(container, codec)
+    spec = CODECS[codec]
+    alpha = CONTAINERS[container]['alpha']
+    arguments = spec['args'] + ['-pix_fmt', spec['alpha_pix_fmt'] if alpha else spec['pix_fmt']]
+    if 'crf' in spec:
+        arguments += ['-crf', str(spec['crf'].get(quality or DEFAULT_QUALITY, spec['crf'][DEFAULT_QUALITY]))]
+    if codec == 'hevc' and container in ('BURN MP4', 'BURN MOV'):
+        arguments += ['-tag:v', 'hvc1']                     # as Apple's players look for it
+    return arguments
 
 
 def is_burned(container):
@@ -93,10 +140,11 @@ def _quoted(path):
 
 
 def write_video(output, container, segments, video=None, size=None, fps=None, duration=None, quality=None,
-                style_id=None):
+                style_id=None, codec=None):
     """Write `output`: `video` with `segments` burned into its picture, or
     (an alpha container) the subtitles alone on a clear picture `size`
-    (width, height) at `fps`, `duration` seconds long. Raises ValueError
+    (width, height) at `fps`, `duration` seconds long; the picture in
+    `codec` (CODECS), at `quality`, when the container takes it. Raises ValueError
     for a burn-in without a video, RuntimeError when the subtitles cannot
     be drawn or FFmpeg cannot write."""
     from subtitld.interface import subtitle_pictures
@@ -113,24 +161,17 @@ def write_video(output, container, segments, video=None, size=None, fps=None, du
         listed = concat_list(pictures, size, duration, folder)
         overlay = ['-f', 'concat', '-safe', '0', '-i', listed]
         if holder['alpha']:
-            command = overlay + ['-vf', f'fps={fps:.6f},format={_alpha_format(holder)}', '-t', f'{float(duration):.3f}']
+            command = overlay + ['-vf', f'fps={fps:.6f}', '-t', f'{float(duration):.3f}']
         else:
-            crf = QUALITIES.get(quality or DEFAULT_QUALITY, QUALITIES[DEFAULT_QUALITY])
             command = ['-i', str(video)] + overlay + [
                 '-filter_complex', '[1:v]format=rgba[subtitles];[0:v:0][subtitles]overlay=eof_action=pass[out]',
                 '-map', '[out]', '-map', '0:a?'] + holder['audio']
-            if container == 'BURN MP4':
-                command += ['-crf', str(crf)]
-        _run(command + holder['video'] + ['-f', holder['format'], str(output)])
+        _run(command + video_arguments(container, codec, quality) + ['-f', holder['format'], str(output)])
         if not os.path.isfile(output) or not os.path.getsize(output):
             raise RuntimeError('FFmpeg could not write the video')
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return output
-
-
-def _alpha_format(holder):
-    return holder['video'][holder['video'].index('-pix_fmt') + 1]
 
 
 def _run(arguments):

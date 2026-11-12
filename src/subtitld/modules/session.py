@@ -244,7 +244,11 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     # The subtitles in the picture, drawn in a style (modules.burned_video).
     'BURN MP4': {'description': 'MP4 video with the subtitles burned in', 'extensions': ['mp4']},
     'BURN MOV': {'description': 'QuickTime video with the subtitles burned in', 'extensions': ['mov']},
+    'BURN MKV': {'description': 'Matroska video with the subtitles burned in', 'extensions': ['mkv']},
+    'BURN TS': {'description': 'MPEG transport stream with the subtitles burned in', 'extensions': ['ts']},
+    'BURN WEBM': {'description': 'WebM video with the subtitles burned in', 'extensions': ['webm']},
     'ALPHA MOV': {'description': 'QuickTime video of the subtitles alone, transparent', 'extensions': ['mov']},
+    'ALPHA MKV': {'description': 'Matroska video of the subtitles alone, transparent', 'extensions': ['mkv']},
     'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
 }
 
