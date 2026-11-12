@@ -21,6 +21,8 @@ from subtitld.modules import session
 
 ICON_H = 20                           # the strips' subtitle icons are 20px tall
 CONTACT = QColor(0, 0, 0, 64)         # the player pieces' contact line: softer than the 45% of other buttons
+EDGE = QColor('#3a4e5f')              # the player panel's 1px top edge line (stylesheet: #playercontrols_widget_top_line)
+BAND = QColor('#161e24')              # the window behind the clear 2px band above the player panel
 
 
 def graphic(name):
@@ -835,6 +837,14 @@ class Transport(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        # the panel's top edge line, which runs along the side lines' second row, goes round this piece's outline
+        stroker = QPainterPathStroker()
+        stroker.setWidth(2)
+        ring = stroker.createStroke(self.panel()).subtracted(self.panel())
+        painter.fillPath(ring.intersected(shapes.rect_path(QRectF(0, 1, self.width(), self.H))), EDGE)
+        # inside the outline, above the keys, the band is clear: cover the edge line running behind
+        band = shapes.rect_path(QRectF(0, 0, self.width(), self.TAB))
+        painter.fillPath(self.panel().intersected(band).subtracted(self.visible), BAND)
         painter.setClipPath(self.visible)
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
         h = yb - y0

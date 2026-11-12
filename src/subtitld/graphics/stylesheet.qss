@@ -1895,10 +1895,13 @@ QMenu#subtitle_formatting_menu::separator {
     border-image: url(graphics:horizontal_splitter_right_pressed.svg) 1 1 1 4 stretch stretch;
 }
 
-/* behind the transport, under its panel's foot. The top 2px stay clear:
-   only the transport's play and record tabs rise into them. */
+/* behind the transport, under its panel's foot. The top 2px stay clear but
+   for the panel's 1px edge line on the second (the transport carries it on
+   round its own outline, player_widgets.EDGE): only the transport's play and
+   record tabs rise above it. */
 #playercontrols_widget_top_line {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 transparent, stop:0.039 transparent, stop:0.0393 #283844, stop:1 #283844);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 transparent, stop:0.0195 transparent,
+                                stop:0.0197 #3a4e5f, stop:0.0391 #3a4e5f, stop:0.0393 #283844, stop:1 #283844);
 }
 
 #playercontrols_widget_left_top_line {
