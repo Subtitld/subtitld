@@ -7,8 +7,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
                                QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QFontDatabase, QTextCharFormat
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF
+from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QColor
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -20,6 +20,7 @@ from subtitld.modules import export_options
 from subtitld.modules import file_io
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
+from subtitld.modules import markup
 from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import session
@@ -1373,7 +1374,8 @@ class _VideoPanel(QWidget):
 
 class _PreviewPanel(QWidget):
     """The export's preview, beside every page: the start of the file as it
-    will be written, or a faded note where there is no text to show."""
+    will be written, or a faded note where there is no text to show. For
+    an export of pictures, one of them on its frame, and what it is."""
 
     WIDTH = 300
 
@@ -1392,6 +1394,13 @@ class _PreviewPanel(QWidget):
         label = QLabel(_('export_dialog.preview'))
         label.setObjectName('export_dialog_preview_label')
         file_page.layout().addWidget(label)
+        self.picture = QLabel()
+        self.picture.setVisible(False)
+        file_page.layout().addWidget(self.picture)
+        # and the picture itself, as large as it is or as the panel allows, its clear parts checkered
+        self.crop = QLabel()
+        self.crop.setVisible(False)
+        file_page.layout().addWidget(self.crop)
         self.file = QPlainTextEdit()
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
@@ -1406,11 +1415,18 @@ class _PreviewPanel(QWidget):
         self.layout().addWidget(shadow, 0, 0)
 
     def show_text(self, text):
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
         self.file.setPlainText(text)
 
     def show_note(self, note):
         """`note` in the well, faded: no file to show."""
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
         self.file.clear()
+        self._faded(note)
+
+    def _faded(self, note):
         faded = QTextCharFormat()
         color = self.file.palette().text().color()
         color.setAlpha(110)
@@ -1419,7 +1435,58 @@ class _PreviewPanel(QWidget):
         self.file.textCursor().insertText(note, faded)
 
     def show_nothing(self):
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
         self.file.clear()
+
+    def show_picture(self, rect, image, frame, cue):
+        """`image`, drawn at `rect` (of the frame, 0..1) on a frame `frame`
+        (width, height) pixels, scaled to the panel's width; under it, in the
+        well, when `cue` shows and the picture's size."""
+        margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
+        width = self.WIDTH - margins.left() - margins.right()
+        height = max(1, round(width * frame[1] / frame[0]))
+        ratio = self.devicePixelRatioF()
+        pixmap = QPixmap(round(width * ratio), round(height * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(QColor(0, 0, 0, 110))
+        if rect is not None and image is not None:
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.drawImage(QRectF(rect.x() * width, rect.y() * height, rect.width() * width, rect.height() * height), image)
+            painter.end()
+        self.picture.setPixmap(pixmap)
+        self.picture.setFixedSize(width, height)
+        self.picture.setVisible(True)
+        self.crop.setVisible(image is not None)
+        if image is not None:
+            scale = min(1.0, width / image.width())
+            size = (max(1, round(image.width() * scale)), max(1, round(image.height() * scale)))
+            pixmap = QPixmap(round(size[0] * ratio), round(size[1] * ratio))
+            pixmap.setDevicePixelRatio(ratio)
+            painter = QPainter(pixmap)
+            square = 6
+            for row in range(0, size[1], square):
+                for column in range(0, size[0], square):
+                    light = (row // square + column // square) % 2
+                    painter.fillRect(column, row, square, square, QColor(90, 90, 90) if light else QColor(60, 60, 60))
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.drawImage(QRectF(0, 0, *size), image)
+            painter.end()
+            self.crop.setPixmap(pixmap)
+            self.crop.setFixedSize(*size)
+        self.file.clear()
+        lines = [f'{_clock(cue["start"])} \u2192 {_clock(cue["end"])}']
+        if image is not None:
+            lines.append(_('export_dialog.preview_picture_size').format(
+                width=image.width(), height=image.height(), frame_width=frame[0], frame_height=frame[1]))
+        self._faded('\n'.join(lines))
+
+
+def _clock(seconds):
+    """`seconds` as h:mm:ss.mmm."""
+    milliseconds = int(round(max(0.0, float(seconds)) * 1000))
+    return f'{milliseconds // 3600000}:{milliseconds // 60000 % 60:02d}:{milliseconds // 1000 % 60:02d}.{milliseconds % 1000:03d}'
 
 
 class ExportDialog(utils.SimpleDialog):
@@ -1503,6 +1570,15 @@ class ExportDialog(utils.SimpleDialog):
         self._preview_timer.setInterval(200)
         self._preview_timer.timeout.connect(self.refresh_preview)
         self.subtitles_panel.changed.connect(self._preview_timer.start)
+        # An export of pictures shows one, drawn by a renderer of the dialog's
+        # own, started the first time one is asked for.
+        self._renderer = None
+        self._picture = None                                   # (key, cue, frame) of the picture shown or awaited
+        self._picture_timeout = QTimer(self)
+        self._picture_timeout.setSingleShot(True)
+        self._picture_timeout.setInterval(30_000)
+        self._picture_timeout.timeout.connect(self._picture_late)
+        self.finished.connect(self._close_renderer)
 
         start = initial_category if initial_category in self.CATEGORY_KEYS else 'subtitles'
         self._select_category(self.CATEGORY_KEYS.index(start), start)
@@ -1635,14 +1711,17 @@ class ExportDialog(utils.SimpleDialog):
         """The preview for the page shown: the start of the subtitles file
         the choices write; nothing yet for audio, video and documents."""
         self._preview_timer.stop()
+        self._picture = None
+        self._picture_timeout.stop()
         if self._current_category() != 'subtitles' or not session.SUBTITLE.get('segments'):
             self.preview_panel.show_nothing()
             return
         try:
             fmt, _choices, options = self.subtitles_panel.export_choices()
-            if fmt in ('DFXP', 'TTML') and options.get('profile') in ttml.IMAGE_PROFILES:
-                # Drawing every picture is for the export, not a preview.
-                self.preview_panel.show_note(_('export_dialog.preview_pictures'))
+            frame = file_io.picture_frame(fmt, options)
+            if frame is not None:
+                # Drawing every picture is for the export: the preview draws one.
+                self._preview_picture(fmt, options, frame)
                 return
             text = file_io.preview_file(fmt, options, session.CONFIG.get('selected_language') or 'en')
         except file_io.PreviewBusy:
@@ -1655,6 +1734,67 @@ class ExportDialog(utils.SimpleDialog):
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
         self.preview_panel.show_text(text)
+
+    def _picture_cue(self, fmt, options):
+        """The subtitle under the timeline's cursor, else the next after it,
+        as the export writes it; None when there is none to draw."""
+        position = float(session.SUBTITLE.get('position') or 0)
+        segments = sorted(session.SUBTITLE.get('segments') or [], key=lambda segment: float(segment.get('start', 0)))
+        under = [segment for segment in segments if float(segment['start']) <= position < float(segment['end'])]
+        after = [segment for segment in segments if float(segment['start']) > position]
+        for segment in under + after:
+            prepared = (export_options.prepare([segment], options) if fmt in export_options.TEXT_FORMATS
+                        else [dict(segment)])
+            if prepared and markup.plain(str(prepared[0].get('text') or '')).strip():
+                return prepared[0]
+        return None
+
+    def _preview_picture(self, fmt, options, frame):
+        from subtitld.interface import subtitle_renderer
+        if not subtitle_renderer.available():
+            self.preview_panel.show_note(_('export_dialog.preview_pictures'))
+            return
+        cue = self._picture_cue(fmt, options)
+        if cue is None:
+            self.preview_panel.show_nothing()
+            return
+        if self._renderer is None:
+            self._renderer = subtitle_renderer.SubtitleRenderer(self, disk_cache=None)
+            self._renderer.layer_ready.connect(self._picture_ready)
+        # Drawn on the export's own frame, as the export draws it.
+        self._renderer.size = (int(frame[0]), int(frame[1]))
+        key, _job = self._renderer._job(cue, float(cue['start']), *self._renderer._style())
+        self._picture = (key, cue, frame)
+        if not self._picture_ready():
+            self._renderer.layers([cue], float(cue['start']))
+            self.preview_panel.show_note(_('export_dialog.preview_drawing'))
+            self._picture_timeout.start()
+
+    def _picture_ready(self):
+        """Shows the picture awaited once the renderer has it; whether it had."""
+        if self._picture is None or self._renderer is None:
+            return False
+        key, cue, frame = self._picture
+        layer = self._renderer.cache.get(key)
+        if layer is None:
+            return False
+        self._picture = None
+        self._picture_timeout.stop()
+        self.preview_panel.show_picture(layer[0], layer[1], frame, cue)
+        return True
+
+    def _picture_late(self):
+        if self._picture is not None:
+            self._picture = None
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+
+    def _close_renderer(self, *_args):
+        self._picture = None
+        self._picture_timeout.stop()
+        if self._renderer is not None:
+            renderer, self._renderer = self._renderer, None
+            renderer.close()
+            renderer.deleteLater()
 
     def _current_category(self):
         for index, key in enumerate(self.CATEGORY_KEYS):

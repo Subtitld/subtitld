@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "İkili dosya: metin önizlemesi yok",
     "export_dialog.preview_pictures": "Resimler: metin önizlemesi yok",
     "export_dialog.preview_failed": "Önizleme yok: dosya yazılamadı",
+    "export_dialog.preview_drawing": "Resim çiziliyor…",
+    "export_dialog.preview_picture_size": "{frame_width} × {frame_height} kare üzerinde {width} × {height} px",
     "export_dialog.output_mode": "Çıktı modu",
     "export_dialog.category_subtitles": "Altyazılar",
     "export_dialog.category_audio": "Ses",

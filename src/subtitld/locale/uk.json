@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "Двійковий файл: текстового перегляду немає",
     "export_dialog.preview_pictures": "Зображення: текстового перегляду немає",
     "export_dialog.preview_failed": "Перегляду немає: не вдалося записати файл",
+    "export_dialog.preview_drawing": "Малюється зображення…",
+    "export_dialog.preview_picture_size": "{width} × {height} пікс. на кадрі {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Режим виведення",
     "export_dialog.category_subtitles": "Субтитри",
     "export_dialog.category_audio": "Аудіо",

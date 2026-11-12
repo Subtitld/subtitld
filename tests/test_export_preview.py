@@ -105,6 +105,50 @@ check('audio: empty', preview.toPlainText(), '')
 dialog._select_category(0, 'subtitles')
 check('back to subtitles: the file', preview.toPlainText().startswith('WEBVTT'), True)
 
+print('pictures: the frame the export draws on')
+session.VIDEO = {}
+check('PGS, no video', file_io.picture_frame('PGS', {}), (1920, 1080))
+check('VobSub PAL', file_io.picture_frame('VOBSUB', {'vobsub_size': 'pal'}), (720, 576))
+check('IMSC image profile', file_io.picture_frame('TTML', {'profile': next(iter(file_io.ttml.IMAGE_PROFILES))}), (1920, 1080))
+check('DCP as text', file_io.picture_frame('DCP', {}), None)
+check('DCP as pictures', file_io.picture_frame('DCP', {'dcp_content': 'pictures'}), (1920, 1080))
+check('SRT', file_io.picture_frame('SRT', {}), None)
+
+print('pictures: the subtitle under the cursor, else the next')
+saved_segments = session.SUBTITLE
+session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'one'}, {'start': 3.0, 'end': 4.0, 'text': ' '},
+                                 {'start': 5.0, 'end': 6.0, 'text': 'three'}], 'position': 1.5}
+cue = dialog._picture_cue('PGS', {})
+check('under the cursor', cue['text'], 'one')
+session.SUBTITLE['position'] = 2.5
+check('between: the next with words', dialog._picture_cue('PGS', {})['text'], 'three')
+check('shifted as written', dialog._picture_cue('PGS', {'offset': 1.0})['start'], 6.0)
+session.SUBTITLE['position'] = 9.0
+check('after the last: none', dialog._picture_cue('PGS', {}), None)
+
+print('pictures: one drawn')
+from subtitld.interface import subtitle_renderer
+if subtitle_renderer.available():
+    import time
+    session.SUBTITLE['position'] = 0.0
+    panel.offset_spin.setValue(0)
+    panel.format_combo.combobox.setCurrentText('PGS')
+    dialog.refresh_preview()
+    deadline = time.time() + 40
+    while dialog._picture is not None and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.02)
+    check('the picture shows', dialog.preview_panel.picture.isVisibleTo(dialog.preview_panel), True)
+    check('when and how large', preview.toPlainText().split('\n')[0], '0:00:01.000 \u2192 0:00:02.000')
+    check('on the export\'s frame', preview.toPlainText().endswith('1920 \u00d7 1080 frame'), True)
+    dialog._select_category(1, 'audio')
+    check('audio: no picture', dialog.preview_panel.picture.isVisibleTo(dialog.preview_panel), False)
+    dialog.done(0)
+    check('the renderer goes with the dialog', dialog._renderer, None)
+else:
+    print('  (no QtWebEngine: not drawn)')
+session.SUBTITLE = saved_segments
+
 print('the session is as it was')
 check('SUBTITLE', session.SUBTITLE, before[0])
 check('FORMAT', session.FORMAT, before[1])

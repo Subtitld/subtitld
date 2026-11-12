@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "Binární soubor: bez textového náhledu",
     "export_dialog.preview_pictures": "Obrázky: bez textového náhledu",
     "export_dialog.preview_failed": "Bez náhledu: soubor nelze zapsat",
+    "export_dialog.preview_drawing": "Kreslí se obrázek…",
+    "export_dialog.preview_picture_size": "{width} × {height} px na snímku {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Režim výstupu",
     "export_dialog.category_subtitles": "Titulky",
     "export_dialog.category_audio": "Zvuk",

@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "Berkas biner: tanpa pratinjau teks",
     "export_dialog.preview_pictures": "Gambar: tanpa pratinjau teks",
     "export_dialog.preview_failed": "Tanpa pratinjau: berkas tidak dapat ditulis",
+    "export_dialog.preview_drawing": "Menggambar gambar…",
+    "export_dialog.preview_picture_size": "{width} × {height} px pada bingkai {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Mode keluaran",
     "export_dialog.category_subtitles": "Subtitle",
     "export_dialog.category_audio": "Audio",

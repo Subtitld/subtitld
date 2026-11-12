@@ -529,6 +529,8 @@
     "export_dialog.preview_binary": "Arquivo binário: sem prévia em texto",
     "export_dialog.preview_pictures": "Imagens: sem prévia em texto",
     "export_dialog.preview_failed": "Sem prévia: não foi possível gravar o arquivo",
+    "export_dialog.preview_drawing": "Desenhando a imagem…",
+    "export_dialog.preview_picture_size": "{width} × {height} px em um quadro de {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Modo de saída",
     "export_dialog.category_subtitles": "Legendas",
     "export_dialog.category_audio": "Áudio",

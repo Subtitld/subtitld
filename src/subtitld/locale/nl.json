@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "Binair bestand: geen tekstvoorbeeld",
     "export_dialog.preview_pictures": "Afbeeldingen: geen tekstvoorbeeld",
     "export_dialog.preview_failed": "Geen voorbeeld: het bestand kon niet worden geschreven",
+    "export_dialog.preview_drawing": "Afbeelding wordt getekend…",
+    "export_dialog.preview_picture_size": "{width} × {height} px op een beeld van {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Uitvoermodus",
     "export_dialog.category_subtitles": "Ondertitels",
     "export_dialog.category_audio": "Audio",

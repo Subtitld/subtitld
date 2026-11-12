@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "Binärdatei: keine Textvorschau",
     "export_dialog.preview_pictures": "Bilder: keine Textvorschau",
     "export_dialog.preview_failed": "Keine Vorschau: Die Datei konnte nicht geschrieben werden",
+    "export_dialog.preview_drawing": "Bild wird gezeichnet …",
+    "export_dialog.preview_picture_size": "{width} × {height} px auf einem {frame_width} × {frame_height}-Bild",
     "export_dialog.output_mode": "Ausgabemodus",
     "export_dialog.category_subtitles": "Untertitel",
     "export_dialog.category_audio": "Audio",

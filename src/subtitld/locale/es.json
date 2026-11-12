@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "Archivo binario: sin vista previa de texto",
     "export_dialog.preview_pictures": "Imágenes: sin vista previa de texto",
     "export_dialog.preview_failed": "Sin vista previa: no se pudo escribir el archivo",
+    "export_dialog.preview_drawing": "Dibujando la imagen…",
+    "export_dialog.preview_picture_size": "{width} × {height} px en un cuadro de {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Modo de salida",
     "export_dialog.category_subtitles": "Subtítulos",
     "export_dialog.category_audio": "Audio",

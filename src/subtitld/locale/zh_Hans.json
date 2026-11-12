@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "二进制文件：无文本预览",
     "export_dialog.preview_pictures": "图片：无文本预览",
     "export_dialog.preview_failed": "无预览：无法写入文件",
+    "export_dialog.preview_drawing": "正在绘制图片…",
+    "export_dialog.preview_picture_size": "{frame_width} × {frame_height} 画面上的 {width} × {height} 像素",
     "export_dialog.output_mode": "输出模式",
     "export_dialog.category_subtitles": "字幕",
     "export_dialog.category_audio": "音频",

@@ -529,6 +529,8 @@
     "export_dialog.preview_binary": "Binary file: no text preview",
     "export_dialog.preview_pictures": "Pictures: no text preview",
     "export_dialog.preview_failed": "No preview: the file could not be written",
+    "export_dialog.preview_drawing": "Drawing the picture…",
+    "export_dialog.preview_picture_size": "{width} × {height} px on a {frame_width} × {frame_height} frame",
     "export_dialog.output_mode": "Output mode",
     "export_dialog.category_subtitles": "Subtitles",
     "export_dialog.category_audio": "Audio",

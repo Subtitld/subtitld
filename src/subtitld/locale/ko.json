@@ -430,6 +430,8 @@
     "export_dialog.preview_binary": "바이너리 파일: 텍스트 미리보기 없음",
     "export_dialog.preview_pictures": "이미지: 텍스트 미리보기 없음",
     "export_dialog.preview_failed": "미리보기 없음: 파일을 쓸 수 없습니다",
+    "export_dialog.preview_drawing": "이미지를 그리는 중…",
+    "export_dialog.preview_picture_size": "{frame_width} × {frame_height} 프레임 위 {width} × {height} px",
     "export_dialog.output_mode": "출력 방식",
     "export_dialog.category_subtitles": "자막",
     "export_dialog.category_audio": "오디오",
