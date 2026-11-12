@@ -711,9 +711,6 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     collab_state.opening(None)
     # Only USF and USFX files remember a subtitld.cc origin; any other file starts without one.
     session.SUBTITLE.pop('origin', None)
-    # So do what its media speaks: only they say it, and the file opened
-    # before must not say it for this one.
-    session.SUBTITLE.pop('source_language', None)
     # What a file says about itself belongs to that file: the one opened
     # before must not lend its title to the next.
     session.SUBTITLE.pop('metadata', None)
@@ -1164,8 +1161,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            # What its media speaks goes with the language it names: a file
+            # that names only its own leaves none of the last project's.
             if reader.source_language:
                 session.SUBTITLE['source_language'] = reader.source_language
+            elif reader.language:
+                session.SUBTITLE.pop('source_language', None)
             if reader.metadata:
                 session.SUBTITLE['metadata'] = reader.metadata
             # Speaker color/dubbing metadata is cheap — set synchronously.
@@ -1261,8 +1262,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            # What its media speaks goes with the language it names: a file
+            # that names only its own leaves none of the last project's.
             if reader.source_language:
                 session.SUBTITLE['source_language'] = reader.source_language
+            elif reader.language:
+                session.SUBTITLE.pop('source_language', None)
             if reader.metadata:
                 session.SUBTITLE['metadata'] = reader.metadata
 
