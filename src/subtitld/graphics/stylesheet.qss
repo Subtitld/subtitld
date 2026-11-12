@@ -1426,8 +1426,9 @@ QGroupBox::title {
 }
 
 #tilteBar_subtitld_label {
-    border-width: 0 1 1 36;
-    border-image: url(graphics:titleBar_right_version_background.svg) 0 1 1 36 stretch stretch;
+    /* the left slice is just the slant (it ends 21px in), so the mark starts where the slant meets the bottom */
+    border-width: 0 1 1 21;
+    border-image: url(graphics:titleBar_right_version_background.svg) 0 1 1 21 stretch stretch;
     color: white;
     /* The slanted edge is gap enough before the mark. */
     padding: 0 10px 0 0;
