@@ -21,11 +21,13 @@ from subtitld.interface import utils
 from subtitld.modules import session
 
 BINS = 48                             # steps in a row's timeline
-FRAME_W, FRAME_H = 96, 54             # the frame on the left, 16:9
+FRAME_W, FRAME_H = 96, 54             # the frame kept for the left of a card, 16:9 (saved at twice that)
 ROW_H = 66
-WELL = ('#1a232b', '#26333e')         # the timeline's track, top to bottom
+CARD_RADIUS = 4
+BORDER = QColor(255, 255, 255, 22)    # round each card
+TRACK = QColor(255, 255, 255, 14)     # the timeline's strip
 CUE = QColor('#7f94a6')
-MARK = QColor('#e8f1f7')              # where you stopped
+MARK = QColor(235, 70, 70, 170)       # where you stopped: thin, faded red
 
 
 def _cache_dir():
@@ -97,8 +99,9 @@ def clean_title(path):
 
 
 class RecentCard(QWidget):
-    """One recent project, painted: the frame; beside it the name, and under
-    that the timeline with the age at its end."""
+    """One recent project, painted as a bordered card: the frame filling its
+    left side; beside it the name, and under that the timeline with the age
+    at its end."""
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -122,12 +125,15 @@ class RecentCard(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform | QPainter.TextAntialiasing)
-        top = (ROW_H - FRAME_H) / 2
 
-        # the frame, or the dark slate it would sit on
-        box = QRectF(6, top, FRAME_W, FRAME_H)
-        clip = QPainterPath()
-        clip.addRoundedRect(box, shapes.RADIUS, shapes.RADIUS)
+        # the card: a 1px border round the row, with a gap to the next one
+        card = QRectF(0.5, 2.5, self.width() - 1, ROW_H - 5)
+        outline = QPainterPath()
+        outline.addRoundedRect(card, CARD_RADIUS, CARD_RADIUS)
+
+        # the frame fills the card's left side: round where the card is, square toward the name
+        box = QRectF(card.left(), card.top(), card.height() * 16 / 9, card.height())
+        clip = outline.intersected(shapes.rect_path(box))
         if not self.frame.isNull():
             painter.save()
             painter.setClipPath(clip)
@@ -138,10 +144,14 @@ class RecentCard(QWidget):
             empty.setColorAt(0, QColor('#2a3743'))
             empty.setColorAt(1, QColor('#141b21'))
             painter.fillPath(clip, empty)
+        painter.setPen(BORDER)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(outline)
 
         # the name beside the frame, in up to two lines
         left = box.right() + 10
-        right = self.width() - 8
+        right = card.right() - 9
+        top = card.top() + 7
         name = QFont('Montserrat')
         name.setPixelSize(11)
         name.setWeight(QFont.Bold)
@@ -154,40 +164,31 @@ class RecentCard(QWidget):
         # under it, the timeline, and at its end how long ago it was opened
         small = QFont('Montserrat')
         small.setPixelSize(9)
-        small.setWeight(QFont.Bold)
         age = self.age.upper()
         age_w = QFontMetrics(small).horizontalAdvance(age)
-        track = QRectF(left, box.bottom() - 10, right - left - (age_w + 8 if age else 0), 10)
+        track = QRectF(left, card.bottom() - 13, right - left - (age_w + 8 if age else 0), 6)
         painter.setFont(small)
         painter.setPen(QColor(184, 206, 224, 130))
-        painter.drawText(QRectF(right - age_w, track.top() - 2, age_w, track.height() + 4), Qt.AlignRight | Qt.AlignVCenter, age)
+        painter.drawText(QRectF(right - age_w, track.top() - 4, age_w, track.height() + 8), Qt.AlignRight | Qt.AlignVCenter, age)
 
-        # the timeline: a sunken track, the subtitles on it, where you stopped
-        well = QPainterPath()
-        well.addRoundedRect(track, shapes.RADIUS, shapes.RADIUS)
-        gradient = QLinearGradient(0, track.top(), 0, track.bottom())
-        gradient.setColorAt(0, QColor(WELL[0]))
-        gradient.setColorAt(1, QColor(WELL[1]))
-        painter.fillPath(well, gradient)
+        # the timeline: a flat strip, the subtitles on it, a thin red line where you stopped
+        painter.fillRect(track, TRACK)
         cues = str(self.config.get('cues') or '')
         if cues:
             step = track.width() / len(cues)
-            painter.save()
-            painter.setClipPath(well)
             for index, digit in enumerate(cues):
                 if digit.isdigit() and digit != '0':
                     color = QColor(CUE)
-                    color.setAlpha(80 + int(digit) * 19)
-                    painter.fillRect(QRectF(track.left() + index * step, track.top() + 2, step - 1, track.height() - 4), color)
-            painter.restore()
+                    color.setAlpha(60 + int(digit) * 15)
+                    painter.fillRect(QRectF(track.left() + index * step, track.top(), step, track.height()), color)
         try:
             duration = float(self.config.get('duration') or 0)
             position = float(self.config.get('last_position') or 0)
         except (TypeError, ValueError):
             duration = position = 0
         if duration > 0 and position > 0:
-            x = track.left() + track.width() * min(1.0, position / duration)
-            painter.fillRect(QRectF(x - 1, track.top() - 2, 2, track.height() + 4), MARK)
+            x = round(track.left() + track.width() * min(1.0, position / duration))
+            painter.fillRect(QRectF(x, track.top() - 3, 1, track.height() + 6), MARK)
 
     @staticmethod
     def _wrap(text, metrics, width, count):
