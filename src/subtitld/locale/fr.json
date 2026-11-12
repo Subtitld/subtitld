@@ -426,6 +426,7 @@
     "export_dialog.title": "Exporter",
     "export_dialog.export_button": "Exporter",
     "export_dialog.format": "Format",
+    "export_dialog.preview": "Aperçu",
     "export_dialog.output_mode": "Mode de sortie",
     "export_dialog.category_subtitles": "Sous-titres",
     "export_dialog.category_audio": "Audio",

@@ -1204,7 +1204,11 @@ class _PreviewPanel(QWidget):
 
         file_page = QWidget()
         file_page.setLayout(QVBoxLayout())
-        file_page.layout().setContentsMargins(12, 12, 12, 12)
+        file_page.layout().setContentsMargins(12, 8, 12, 12)
+        file_page.layout().setSpacing(4)
+        label = QLabel(_('export_dialog.preview'))
+        label.setObjectName('export_dialog_preview_label')
+        file_page.layout().addWidget(label)
         self.file = QPlainTextEdit(self.SAMPLE_FILE)
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)

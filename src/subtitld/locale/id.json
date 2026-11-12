@@ -426,6 +426,7 @@
     "export_dialog.title": "Ekspor",
     "export_dialog.export_button": "Ekspor",
     "export_dialog.format": "Format",
+    "export_dialog.preview": "Pratinjau",
     "export_dialog.output_mode": "Mode keluaran",
     "export_dialog.category_subtitles": "Subtitle",
     "export_dialog.category_audio": "Audio",
