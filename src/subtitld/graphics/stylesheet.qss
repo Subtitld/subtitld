@@ -1029,7 +1029,19 @@ QComboBox QAbstractItemView {
     color: #b8cee0;
     selection-background-color: #4a5f70;
     outline: 0;
-    padding: 2px;
+    padding: 3px;
+}
+
+QComboBox QAbstractItemView::item {
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 3px;
+}
+
+QComboBox QAbstractItemView::item:selected,
+QComboBox QAbstractItemView::item:hover {
+    background: #4a5f70;
+    color: #ffffff;
 }
 
 /* QComboBox::drop-down:on {
@@ -1087,7 +1099,7 @@ LabeledComboBox QLabel:disabled {
 }
 
 /* A page's header (utils.HeaderComboBox): the same field, larger. The chosen option is bold, and the arrow
-   sits 20px from the right edge. Its list keeps the usual size. */
+   sits 20px from the right edge. Its list keeps the usual font (utils.HeaderComboBox._plain_items). */
 HeaderComboBox QLabel {
     font-size: 10px;
     padding: 0 0 0 12px;     /* HeaderComboBox.LABEL_LEFT */
@@ -1104,11 +1116,6 @@ HeaderComboBox QComboBox:disabled {
 
 HeaderComboBox QComboBox::drop-down {
     width: 44px;
-}
-
-HeaderComboBox QComboBox QAbstractItemView {
-    font-size: 11px;
-    font-weight: 400;
 }
 
 /* The labelled number and text fields are the same field, sunken: the spin

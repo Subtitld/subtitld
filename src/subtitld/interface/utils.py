@@ -2,7 +2,7 @@ import html
 import re
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
-from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
+from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor, QFont
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent, QTimer
 
 
@@ -581,6 +581,15 @@ class HeaderComboBox(LabeledComboBox):
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
         widget.setObjectName('header_combobox')
+        # the list draws its items in the box's font unless they carry their own: give them the usual one
+        widget.combobox.model().rowsInserted.connect(widget._plain_items)
+
+    def _plain_items(widget, _parent=None, first=0, last=-1):
+        font = QFont(widget.font())
+        font.setPixelSize(11)
+        font.setWeight(QFont.Normal)
+        for row in range(first, last + 1):
+            widget.combobox.setItemData(row, font, Qt.FontRole)
 
     def _field(widget, rect):
         # square, but for a 6px curve at the top left, where the header meets the sidebar under the title bar
