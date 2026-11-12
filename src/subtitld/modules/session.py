@@ -241,6 +241,11 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
     'TS': {'description': 'MPEG transport stream with teletext subtitles', 'extensions': ['ts']},
     'TS DVB': {'description': 'MPEG transport stream with DVB subtitles', 'extensions': ['ts']},
+    # The subtitles in the picture, drawn in a style (modules.burned_video).
+    'BURN MP4': {'description': 'MP4 video with the subtitles burned in', 'extensions': ['mp4']},
+    'BURN MOV': {'description': 'QuickTime video with the subtitles burned in', 'extensions': ['mov']},
+    'ALPHA MOV': {'description': 'QuickTime video of the subtitles alone, transparent', 'extensions': ['mov']},
+    'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
 }
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {

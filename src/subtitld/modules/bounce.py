@@ -342,8 +342,9 @@ class CaptionsThread(QThread):
 
     def run(self):
         try:
+            from subtitld.modules import burned_video
             video = (session.VIDEO or {}).get('filepath')
-            if not video:
+            if not video and not burned_video.is_alpha(self._container):
                 raise ValueError('No video loaded to write captions into')
             write_captioned_video(video, self._output_path, self._container, self._options,
                                   session.SUBTITLE.get('segments'), session.VIDEO,
@@ -360,8 +361,20 @@ def write_captioned_video(video, output, container, options, segments, info, lan
     and 'height'); `language`, what the subtitles are in. The export runs
     it on the whole video, and the export dialog's preview on a few seconds
     of it."""
-    from subtitld.modules import embedded_captions, export_options, soft_subtitles
+    from subtitld.modules import burned_video, embedded_captions, export_options, soft_subtitles
     options = dict(options or {})
+    if burned_video.is_burned(container):
+        # The subtitles in the picture, drawn in a style: over the video, or
+        # alone on a clear picture the video's size (or the size asked for).
+        alpha = burned_video.is_alpha(container)
+        size = (options.get('width'), options.get('height')) if alpha and options.get('width') else \
+            (info.get('width'), info.get('height')) if info.get('width') else None
+        prepared = export_options.prepare(segments, options)
+        duration = float(info.get('duration') or 0) or None
+        burned_video.write_video(output, container, prepared, video=video, size=size,
+                                 fps=(options.get('fps') if alpha else None) or info.get('framerate'),
+                                 duration=duration, quality=options.get('quality'), style_id=options.get('style'))
+        return
     if soft_subtitles.is_soft(container):
         _write_tracks(video, output, container, options, segments, info, language)
         return
