@@ -3,7 +3,7 @@ import re
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent, QTimer
 
 
 from subtitld.interface import shapes
@@ -454,7 +454,8 @@ class SlantLabeledField(QWidget):
     the field's own background. A choice (combo box) is raised like a button;
     a value typed in (spin box, line edit) is sunken like any field."""
     HEIGHT = 26
-    LABEL_PADDING = 9                 # before and after the label's text, measured at mid-height
+    LABEL_LEFT = 6                    # before the label's text (the stylesheet's padding-left on the label)
+    LABEL_PADDING = 9                 # after it, measured at mid-height
     RAISED = True
 
     def __init__(widget, parent=None):
@@ -480,10 +481,10 @@ class SlantLabeledField(QWidget):
         return widget.HEIGHT * shapes.RUN15
 
     def _fit_label(widget):
-        """The label segment fits its own text: padding, the text, padding, then the slant."""
+        """The label segment fits its own text: a little padding, the text, more padding, then the slant."""
         text = widget.label.text().upper()
         width = widget.label.fontMetrics().horizontalAdvance(text) if text else 0
-        widget._label_width = width + 2 * widget.LABEL_PADDING if text else 0
+        widget._label_width = width + widget.LABEL_LEFT + widget.LABEL_PADDING if text else 0
         widget.label.setVisible(bool(text))
         widget.label.setFixedWidth(int(widget._label_width + widget._run() / 2) if text else 0)
 
@@ -535,9 +536,17 @@ class LabeledComboBox(SlantLabeledField):
         widget.combobox = QComboBox()
         widget.bottom_line.addWidget(widget.combobox, 1)
         widget.combobox.activated.connect(widget.activated)
+        # the field is lit while the list is open: repaint all of it when the list opens or closes, or the part
+        # under the combo box alone keeps the other state
+        widget.combobox.view().window().installEventFilter(widget)
 
     def _active(widget):
         return widget.underMouse() or widget.combobox.view().isVisible()
+
+    def eventFilter(widget, watched, event):
+        if event.type() in (QEvent.Show, QEvent.Hide):
+            QTimer.singleShot(0, widget.update)
+        return False
 
     def clear(widget):
         widget.combobox.clear()

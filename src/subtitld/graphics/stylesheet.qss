@@ -1015,8 +1015,16 @@ QComboBox::down-arrow {
     height: 6px;
 }
 
+/* The list drops below the box (not over it, which paints a square menu panel behind the list and scroll
+   strips above and below it). Its window is transparent (__main__.RoundedPopups), so the list's own 3px
+   corners show. */
+QComboBox {
+    combobox-popup: 0;
+}
+
 QComboBox QAbstractItemView {
     border: 0;
+    border-radius: 3px;
     background: #304251;
     color: #b8cee0;
     selection-background-color: #4a5f70;
@@ -1070,7 +1078,7 @@ LabeledComboBox QLabel {
     color: #b8cee0;
     text-transform: uppercase;
     font-weight: 700;
-    padding: 0 0 0 9px;
+    padding: 0 0 0 6px;      /* SlantLabeledField.LABEL_LEFT */
     background: transparent;
 }
 
@@ -1104,7 +1112,7 @@ LabeledLineEdit QLabel {
     color: #b8cee0;
     text-transform: uppercase;
     font-weight: 700;
-    padding: 0 0 0 9px;
+    padding: 0 0 0 6px;      /* SlantLabeledField.LABEL_LEFT */
     background: transparent;
 }
 
@@ -1686,6 +1694,38 @@ QPushButton[class="subtitle_formatting_swatch"]:hover {
 
 QPushButton[class="subtitle_formatting_swatch"]:checked {
     border-color: #b8cee0;
+}
+
+/* Menus as the formatting menu: 3px corners (their windows are transparent, see __main__.RoundedPopups),
+   no outline, 3px items */
+QMenu {
+    background-color: #1a232b;
+    border: 0;
+    border-radius: 3px;
+    padding: 2px;
+    color: #b8cee0;
+    font-family: 'Montserrat';
+    font-size: 12px;
+}
+
+QMenu::item {
+    padding: 6px 12px;
+    border-radius: 3px;
+}
+
+QMenu::item:selected {
+    background-color: #3e5363;
+    color: #ffffff;
+}
+
+QMenu::item:disabled {
+    color: rgba(184, 206, 224, 90);
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #304251;
+    margin: 4px 6px;
 }
 
 QMenu#subtitle_formatting_menu {
@@ -2725,8 +2765,9 @@ QMenu#subtitle_formatting_menu::separator {
    widths do not move a plain widget's children, so SimpleDialog places the
    close button with layout margins; it starts inside the slant slice, where
    the notch body already begins, to keep the notch narrow. */
+/* At rest the close button has no background; hovered, the notch shows (below). */
 #dialog_title_notch {
-    border-image: url(graphics:dialog_title_close_background.svg) 0 4 1 36 stretch stretch;
+    border-image: none;
     border-width: 0 4px 1px 36px;
     background-color: transparent;
 }
@@ -2841,16 +2882,15 @@ QMenu#subtitle_formatting_menu::separator {
     border-right: 1px solid #1f2b35;
 }
 
-/* Labels on the dialogs' 15px text edge: the sidebar sits 1px in, then the
-   3px accent border, then 11px of padding. */
+/* Like the left panel's navigation: the chosen category is lit, with a light bar along its left edge. */
 #export_dialog_sidebar QPushButton {
     background: transparent;
     color: #b8cee0;
     text-align: left;
-    padding: 9px 12px 9px 10px;
+    padding: 10px 16px 10px 11px;
     border: none;
     border-radius: 0;
-    margin: 1px 4px;
+    border-left: 3px solid transparent;
     font-family: 'Montserrat';
     font-size: 11px;
     font-weight: 700;
@@ -2860,13 +2900,12 @@ QMenu#subtitle_formatting_menu::separator {
 #export_dialog_sidebar QPushButton:hover {
     background: rgba(255, 255, 255, 8);
     color: #ffffff;
-    border-radius: 3px;
 }
 
 #export_dialog_sidebar QPushButton:checked {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
+    background: #3e5363;
     color: #ffffff;
-    border-radius: 3px;
+    border-left: 3px solid #b8cee0;
 }
 
 #export_dialog_pages QLabel {
