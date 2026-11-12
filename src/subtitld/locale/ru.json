@@ -427,8 +427,6 @@
     "export_dialog.export_button": "Экспортировать",
     "export_dialog.format": "Формат",
     "export_dialog.preview": "Предпросмотр",
-    "export_dialog.preview_look": "Вид",
-    "export_dialog.preview_file": "Файл",
     "export_dialog.output_mode": "Режим вывода",
     "export_dialog.category_subtitles": "Субтитры",
     "export_dialog.category_audio": "Звук",

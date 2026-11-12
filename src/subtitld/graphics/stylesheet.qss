@@ -2962,47 +2962,9 @@ QMenu#subtitle_formatting_menu::separator {
     border-left: 3px solid #b8cee0;
 }
 
-/* The preview beside the pages: a darker column; Look and File are a joined strip in its header, the chosen
-   one sunk. */
+/* The preview beside the pages: a darker column. */
 #export_dialog_preview {
     background-color: rgba(0, 0, 0, 40);
-}
-
-#export_dialog_preview_views QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
-    border: 0;
-    border-bottom: 1px solid rgba(0, 0, 0, 115);
-    border-left: 1px solid rgba(0, 0, 0, 50);
-    border-radius: 0;
-    min-height: 21px;
-    max-height: 21px;
-    padding: 0 10px;
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #e1ebf2;
-}
-
-#export_dialog_preview_views QPushButton[segment="first"] {
-    border-left: 0;
-    border-top-left-radius: 3px;
-    border-bottom-left-radius: 3px;
-}
-
-#export_dialog_preview_views QPushButton[segment="last"] {
-    border-top-right-radius: 3px;
-    border-bottom-right-radius: 3px;
-}
-
-#export_dialog_preview_views QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
-}
-
-#export_dialog_preview_views QPushButton:checked {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222e39, stop:1 #344656);
-    color: #ffffff;
-    border-bottom-color: transparent;
-    border-left-color: transparent;
 }
 
 #export_dialog_preview_file {

@@ -7,8 +7,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
                                QGroupBox, QSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
-from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QFontDatabase, QPainter, QPainterPath, QColor, QFont, QLinearGradient, QPen
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontDatabase
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -1185,37 +1185,9 @@ class _VideoPanel(QWidget):
         return {'category': 'video', 'format': container, 'captions': captions}
 
 
-class _LookPreview(QWidget):
-    """The Look view: a frame with a subtitle on it, as it will show.
-    A drawing for now: the frame and the subtitle are samples."""
-
-    SAMPLE = 'Hello there.'
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        width = self.width() - 24
-        frame = QRectF(12, 12, width, width * 9 / 16)
-        path = QPainterPath()
-        path.addRoundedRect(frame, 3, 3)
-        gradient = QLinearGradient(0, frame.top(), 0, frame.bottom())
-        gradient.setColorAt(0, QColor('#324556'))
-        gradient.setColorAt(1, QColor('#141c22'))
-        painter.fillPath(path, gradient)
-        font = QFont('Montserrat')
-        font.setPixelSize(max(11, int(frame.height() / 11)))
-        font.setWeight(QFont.DemiBold)
-        text = QPainterPath()
-        text.addText(0, 0, font, self.SAMPLE)
-        box = text.boundingRect()
-        text.translate(frame.center().x() - box.center().x(), frame.bottom() - frame.height() * 0.1 - box.bottom())
-        painter.strokePath(text, QPen(QColor('#000000'), 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        painter.fillPath(text, QColor('#ffffff'))
-
-
 class _PreviewPanel(QWidget):
-    """The export's preview, beside every page: Look shows the result, File
-    the file as written. Drawn only for now: nothing feeds it yet."""
+    """The export's preview, beside every page: the file as it will be
+    written. Drawn only for now: nothing feeds it yet."""
 
     WIDTH = 300
     SAMPLE_FILE = ('1\n00:00:01,200 --> 00:00:03,400\nHello there.\n\n'
@@ -1234,29 +1206,6 @@ class _PreviewPanel(QWidget):
         self.header = utils.PanelHeader(_('export_dialog.preview'))
         self.layout().addWidget(self.header)
 
-        views = QWidget()
-        views.setObjectName('export_dialog_preview_views')
-        views.setLayout(QHBoxLayout())
-        views.layout().setContentsMargins(0, 0, 8, 0)
-        views.layout().setSpacing(0)
-        self._view_group = QButtonGroup(self)
-        self.view_buttons = []
-        for index, key in enumerate(('look', 'file')):
-            button = QPushButton(_(f'export_dialog.preview_{key}'))
-            button.setCheckable(True)
-            button.setProperty('segment', 'first' if index == 0 else 'last')
-            button.clicked.connect(lambda _checked=False, i=index: self.views.setCurrentIndex(i))
-            self._view_group.addButton(button)
-            views.layout().addWidget(button)
-            self.view_buttons.append(button)
-        self.header.bottom_line.addWidget(views, 0, Qt.AlignVCenter)
-
-        self.views = QStackedWidget()
-        self.layout().addWidget(self.views, 1)
-
-        self.look = _LookPreview()
-        self.views.addWidget(self.look)
-
         file_page = QWidget()
         file_page.setLayout(QVBoxLayout())
         file_page.layout().setContentsMargins(12, 12, 12, 12)
@@ -1264,9 +1213,7 @@ class _PreviewPanel(QWidget):
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
         file_page.layout().addWidget(self.file)
-        self.views.addWidget(file_page)
-
-        self.view_buttons[0].setChecked(True)
+        self.layout().addWidget(file_page, 1)
 
 
 class ExportDialog(utils.SimpleDialog):
