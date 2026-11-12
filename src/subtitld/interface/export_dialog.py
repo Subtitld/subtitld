@@ -550,8 +550,7 @@ class _SubtitlesPanel(QWidget):
 
     def _run_check(self, *_args):
         """What the TTML this export writes would break in its profile:
-        the file written as it will be, then read back by ttml.check. For
-        VobSub and PGS, only that this build cannot draw their pictures."""
+        the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
         if fmt == 'BDN':
@@ -566,11 +565,8 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setVisible(True)
             return
         if fmt in ('VOBSUB', 'PGS'):
-            # A disc's pictures show in the preview; said here only when this
-            # build cannot draw them.
-            from subtitld.interface import subtitle_renderer
-            self.check_label.setText(_('export_dialog.picture_no_renderer'))
-            self.check_label.setVisible(not subtitle_renderer.available())
+            # A disc's pictures: the preview shows one, nothing to say here.
+            self.check_label.setVisible(False)
             return
         if fmt not in ('DFXP', 'TTML') or not segments:
             self.check_label.setVisible(False)
@@ -1374,7 +1370,7 @@ class _VideoPanel(QWidget):
 class _PreviewPanel(QWidget):
     """The export's preview, beside every page: the start of the file as it
     will be written, or a faded note where there is no text to show. For
-    an export of pictures, one of them on its frame, and what it is."""
+    an export of pictures, one of them on its frame, and as itself."""
 
     WIDTH = 300
 
@@ -1403,7 +1399,8 @@ class _PreviewPanel(QWidget):
         self.file = QPlainTextEdit()
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
-        file_page.layout().addWidget(self.file)
+        file_page.layout().addWidget(self.file, 1)
+        file_page.layout().addStretch()                        # where the well was, under a picture
         self.layout().addWidget(file_page, 0, 0)
 
         # over it, the sidebar's shadow mirrored: falling into the panel from its left edge
@@ -1416,12 +1413,14 @@ class _PreviewPanel(QWidget):
     def show_text(self, text):
         self.picture.setVisible(False)
         self.crop.setVisible(False)
+        self.file.setVisible(True)
         self.file.setPlainText(text)
 
     def show_note(self, note):
         """`note` in the well, faded: no file to show."""
         self.picture.setVisible(False)
         self.crop.setVisible(False)
+        self.file.setVisible(True)
         self.file.clear()
         self._faded(note)
 
@@ -1436,12 +1435,13 @@ class _PreviewPanel(QWidget):
     def show_nothing(self):
         self.picture.setVisible(False)
         self.crop.setVisible(False)
+        self.file.setVisible(True)
         self.file.clear()
 
-    def show_picture(self, rect, image, frame, cue):
+    def show_picture(self, rect, image, frame):
         """`image`, drawn at `rect` (of the frame, 0..1) on a frame `frame`
-        (width, height) pixels, scaled to the panel's width; under it, in the
-        well, when `cue` shows and the picture's size."""
+        (width, height) pixels, scaled to the panel's width; under it, the
+        picture itself."""
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * frame[1] / frame[0]))
@@ -1475,17 +1475,7 @@ class _PreviewPanel(QWidget):
             self.crop.setPixmap(pixmap)
             self.crop.setFixedSize(*size)
         self.file.clear()
-        lines = [f'{_clock(cue["start"])} \u2192 {_clock(cue["end"])}']
-        if image is not None:
-            lines.append(_('export_dialog.preview_picture_size').format(
-                width=image.width(), height=image.height(), frame_width=frame[0], frame_height=frame[1]))
-        self._faded('\n'.join(lines))
-
-
-def _clock(seconds):
-    """`seconds` as h:mm:ss.mmm."""
-    milliseconds = int(round(max(0.0, float(seconds)) * 1000))
-    return f'{milliseconds // 3600000}:{milliseconds // 60000 % 60:02d}:{milliseconds // 1000 % 60:02d}.{milliseconds % 1000:03d}'
+        self.file.setVisible(False)
 
 
 class ExportDialog(utils.SimpleDialog):
@@ -1572,7 +1562,7 @@ class ExportDialog(utils.SimpleDialog):
         # An export of pictures shows one, drawn by a renderer of the dialog's
         # own, started the first time one is asked for.
         self._renderer = None
-        self._picture = None                                   # (key, cue, frame) of the picture shown or awaited
+        self._picture = None                                   # (key, frame) of the picture awaited
         self._picture_timeout = QTimer(self)
         self._picture_timeout.setSingleShot(True)
         self._picture_timeout.setInterval(30_000)
@@ -1763,7 +1753,7 @@ class ExportDialog(utils.SimpleDialog):
         # Drawn on the export's own frame, as the export draws it.
         self._renderer.size = (int(frame[0]), int(frame[1]))
         key, _job = self._renderer._job(cue, float(cue['start']), *self._renderer._style())
-        self._picture = (key, cue, frame)
+        self._picture = (key, frame)
         if not self._picture_ready():
             self._renderer.layers([cue], float(cue['start']))
             self.preview_panel.show_note(_('export_dialog.preview_drawing'))
@@ -1773,13 +1763,13 @@ class ExportDialog(utils.SimpleDialog):
         """Shows the picture awaited once the renderer has it; whether it had."""
         if self._picture is None or self._renderer is None:
             return False
-        key, cue, frame = self._picture
+        key, frame = self._picture
         layer = self._renderer.cache.get(key)
         if layer is None:
             return False
         self._picture = None
         self._picture_timeout.stop()
-        self.preview_panel.show_picture(layer[0], layer[1], frame, cue)
+        self.preview_panel.show_picture(layer[0], layer[1], frame)
         return True
 
     def _picture_late(self):

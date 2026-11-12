@@ -431,7 +431,6 @@
     "export_dialog.preview_pictures": "Hình ảnh: không có bản xem trước văn bản",
     "export_dialog.preview_failed": "Không có bản xem trước: không thể ghi tệp",
     "export_dialog.preview_drawing": "Đang vẽ hình…",
-    "export_dialog.preview_picture_size": "{width} × {height} px trên khung {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Chế độ đầu ra",
     "export_dialog.category_subtitles": "Phụ đề",
     "export_dialog.category_audio": "Âm thanh",

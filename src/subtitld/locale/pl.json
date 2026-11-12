@@ -431,7 +431,6 @@
     "export_dialog.preview_pictures": "Obrazy: brak podglądu tekstu",
     "export_dialog.preview_failed": "Brak podglądu: nie udało się zapisać pliku",
     "export_dialog.preview_drawing": "Rysowanie obrazu…",
-    "export_dialog.preview_picture_size": "{width} × {height} px na klatce {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Tryb wyjścia",
     "export_dialog.category_subtitles": "Napisy",
     "export_dialog.category_audio": "Audio",

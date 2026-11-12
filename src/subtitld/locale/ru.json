@@ -431,7 +431,6 @@
     "export_dialog.preview_pictures": "Изображения: текстовый предпросмотр недоступен",
     "export_dialog.preview_failed": "Нет предпросмотра: не удалось записать файл",
     "export_dialog.preview_drawing": "Рисуется изображение…",
-    "export_dialog.preview_picture_size": "{width} × {height} пикс. на кадре {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Режим вывода",
     "export_dialog.category_subtitles": "Субтитры",
     "export_dialog.category_audio": "Звук",

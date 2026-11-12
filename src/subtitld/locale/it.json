@@ -431,7 +431,6 @@
     "export_dialog.preview_pictures": "Immagini: nessuna anteprima del testo",
     "export_dialog.preview_failed": "Nessuna anteprima: impossibile scrivere il file",
     "export_dialog.preview_drawing": "Disegno dell’immagine…",
-    "export_dialog.preview_picture_size": "{width} × {height} px su un fotogramma {frame_width} × {frame_height}",
     "export_dialog.output_mode": "Modalità di output",
     "export_dialog.category_subtitles": "Sottotitoli",
     "export_dialog.category_audio": "Audio",
