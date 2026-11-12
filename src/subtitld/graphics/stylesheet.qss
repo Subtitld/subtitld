@@ -2119,17 +2119,18 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 /* The bottom line's groups in the top line's piece colours (player_widgets
-   PIECE, WELL): raised #2f404d, a pressed or checked button sinks. Their
-   outer top corners keep 3px (set per group below); they stand on the
-   timeline, so no contact line. */
+   PIECE, WELL): raised #2f404d, but half as deep (±3%) so their bottoms
+   stay clear of the panel's dark bottom border; a pressed or checked button
+   sinks. Their outer top corners keep 3px (set per group below); they stand
+   on the timeline, so no contact line. */
 #playercontrols_widget_bottom_line QPushButton {
     border-radius: 0;
     padding: 0;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3b5060, stop:1 #23303a);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #354857, stop:1 #293843);
 }
 
 #playercontrols_widget_bottom_line QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #495c6b, stop:1 #333f48);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #435563, stop:1 #384650);
 }
 
 #playercontrols_widget_bottom_line QPushButton:pressed,
@@ -2147,7 +2148,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_bottom_line QComboBox {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3b5060, stop:1 #23303a);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #354857, stop:1 #293843);
 }
 
 #timelinescrolling_container #timelinescrolling_none_button {
