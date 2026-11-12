@@ -1188,8 +1188,8 @@ class _VideoPanel(QWidget):
 class _SidebarShadow(QWidget):
     """The sidebar's shadow (the stylesheet's border-image: the start
     screen's, turned), laid over the categories. Beside the chosen category
-    its 1px light line along the right edge is left out: that column takes
-    the shadow of the one inside it."""
+    its light line along the right edge is left out: the last 2px take the
+    shadow from just inside them."""
 
     def __init__(self, buttons, parent=None):
         super().__init__(parent)
@@ -1207,12 +1207,12 @@ class _SidebarShadow(QWidget):
         for button in self._buttons:
             if button.isChecked():
                 top = button.mapTo(self.window(), QPoint(0, 0)).y() - self.mapTo(self.window(), QPoint(0, 0)).y()
-                column += QRegion(QRect(self.width() - 1, top, 1, button.height()))
+                column += QRegion(QRect(self.width() - 2, top, 2, button.height()))
         painter.setClipRegion(QRegion(self.rect()) - column)
         self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
         if not column.isEmpty():
             painter.setClipRegion(column)
-            painter.translate(1, 0)
+            painter.translate(2, 0)
             self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
 
 
