@@ -1952,7 +1952,7 @@ QMenu#subtitle_formatting_menu::separator {
     background: transparent;
     border: 0;
     border-radius: 0;
-    padding-left: 156;
+    padding-left: 188;            /* 16 + the strip (24 + 72 + 24) + the 46px value + 6: the icon sits in what is left */
     padding-right: 16;
 }
 
@@ -1964,7 +1964,7 @@ QMenu#subtitle_formatting_menu::separator {
 #playercontrols_widget_left_top_line #change_playback_speed #change_playback_speed_label {
     font-weight:bold;
     color: #B8C6E0;
-    padding-left: 1;
+    padding-left: 6;
 }
 
 #timeline_speaker_container #timeline_show_speaker_color_button {
@@ -1991,6 +1991,24 @@ QMenu#subtitle_formatting_menu::separator {
 
 #change_playback_speed QPushButton {
     border-radius: 0;
+    padding: 0;
+}
+
+/* between the −/+ keys, the slider is a full-height sunken well, filled raised up to its grip */
+#change_playback_speed QSlider::groove:horizontal {
+    height: 26px;
+    border-radius: 0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #23303a, stop:1 #354856);
+}
+
+#change_playback_speed QSlider::sub-page:horizontal {
+    height: 26px;
+    border-radius: 0;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #5a7184, stop:1 #465b6c);
+}
+
+#change_playback_speed QSlider::handle:horizontal {
+    width: 2px;
 }
 
 #change_playback_speed #change_playback_speed_decrease {

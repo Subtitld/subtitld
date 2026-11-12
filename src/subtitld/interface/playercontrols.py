@@ -7,6 +7,7 @@ import subprocess
 from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
+from PySide6.QtGui import QIcon
 
 # Follow-mode scrolls repaint the viewport, so ignore drift smaller than this
 # rather than scrolling on every tick.
@@ -518,14 +519,15 @@ def load(self):
     self.change_playback_speed.setLayout(QHBoxLayout())
     self.change_playback_speed.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
     self.change_playback_speed.setIconSize(QSize(22, 22))
-    self.change_playback_speed.layout().setContentsMargins(16, 12, 30, 13)
+    self.change_playback_speed.layout().setContentsMargins(16, 8, 30, 8)      # the joined strip: 26px, centred in the 42px frame
     self.change_playback_speed.layout().setSpacing(0)
     self.change_playback_speed.clicked.connect(lambda: change_playback_speed_clicked(self))
 
-    self.change_playback_speed_decrease = QPushButton('-')
+    self.change_playback_speed_decrease = QPushButton()
     self.change_playback_speed_decrease.setObjectName('change_playback_speed_decrease')
-    self.change_playback_speed_decrease.setFixedWidth(20)
-    self.change_playback_speed_decrease.setStyleSheet('QPushButton {padding:0;}')
+    self.change_playback_speed_decrease.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playback_speed_decrease.svg')))
+    self.change_playback_speed_decrease.setIconSize(QSize(10, 10))
+    self.change_playback_speed_decrease.setFixedSize(24, 26)
     self.change_playback_speed_decrease.clicked.connect(lambda: change_playback_speed_decrease_clicked(self))
     self.change_playback_speed_decrease.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_decrease)
@@ -534,16 +536,17 @@ def load(self):
     self.change_playback_speed_slider.setMinimum(5)
     self.change_playback_speed_slider.setMaximum(300)
     self.change_playback_speed_slider.setPageStep(10)
-    # self.change_playback_speed_slider.setFixedWidth(60)
+    self.change_playback_speed_slider.setFixedSize(72, 26)
     self.change_playback_speed_slider.setValue(int(session.CONFIG.get('playback_speed', 1) * 100))
     self.change_playback_speed_slider.sliderReleased.connect(lambda: change_playback_speed_slider(self))
     self.change_playback_speed_slider.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_slider)
 
-    self.change_playback_speed_increase = QPushButton('+')
+    self.change_playback_speed_increase = QPushButton()
     self.change_playback_speed_increase.setObjectName('change_playback_speed_increase')
-    self.change_playback_speed_increase.setFixedWidth(20)
-    self.change_playback_speed_increase.setStyleSheet('QPushButton {padding:0;}')
+    self.change_playback_speed_increase.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playback_speed_increase.svg')))
+    self.change_playback_speed_increase.setIconSize(QSize(10, 10))
+    self.change_playback_speed_increase.setFixedSize(24, 26)
     self.change_playback_speed_increase.clicked.connect(lambda: change_playback_speed_increase_clicked(self))
     self.change_playback_speed_increase.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_increase)
@@ -552,8 +555,9 @@ def load(self):
     self.change_playback_speed_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed_label.setObjectName('change_playback_speed_label')
     self.change_playback_speed_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-    self.change_playback_speed_label.setFixedWidth(50)
+    self.change_playback_speed_label.setFixedWidth(46)       # fits the widest value, '0.05×'
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_label)
+    self.change_playback_speed.layout().addStretch()         # the frame's spare width goes after the value, not between the keys
 
     _attach_collapsible(self.change_playback_speed,
                         self.change_playback_speed_decrease,
@@ -1963,7 +1967,8 @@ def update_snap_buttons(self):
 def update_playback_speed_buttons(self, animate=False):
     if not session.CONFIG['playback_speed'] == 1.0 and not self.change_playback_speed.isChecked():
         self.change_playback_speed.setChecked(True)
-    self.change_playback_speed_label.setText('x' + str(session.CONFIG['playback_speed']))
+    speed = f"{session.CONFIG['playback_speed']:.2f}".rstrip('0')
+    self.change_playback_speed_label.setText((speed + '0' if speed.endswith('.') else speed) + '×')
     self.change_playback_speed_slider.setValue(int(session.CONFIG['playback_speed'] * 100))
     _set_collapsed(self.change_playback_speed,
                    not self.change_playback_speed.isChecked(),
