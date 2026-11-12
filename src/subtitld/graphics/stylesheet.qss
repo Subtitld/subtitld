@@ -550,13 +550,15 @@ QLabel[class='metadata_badge'] {
 
 /* The add-ons filters (addons_dialog.AddonsPanel): a sunken search field and a raised Filters button on one
    26px row; under them the state strip, one joined row where the chosen state sinks, each with how many add-ons
-   it holds; then the chosen filters as tags that clear them, and a quiet note on this computer's graphics. */
+   it holds; then the chosen filters as tags that clear them. */
 QLineEdit#addons_search {
     min-height: 26px;
     max-height: 26px;
     padding: 0 6px 0 2px;
     border: 0;
-    border-radius: 3px;
+    border-radius: 0;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
     font-size: 11px;
     color: #e3edf5;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2830, stop:1 #2b3a46);
@@ -564,6 +566,9 @@ QLineEdit#addons_search {
 
 QPushButton#addons_filters_button {
     padding: 0;
+    border-radius: 0;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
 }
 
 QLabel#addons_filters_text {
@@ -574,13 +579,18 @@ QLabel#addons_filters_text {
     background: transparent;
 }
 
+/* How many filters are on: a small pill inside the button. */
 QLabel#addons_filters_count {
+    min-height: 14px;
+    max-height: 14px;
+    min-width: 6px;
     font-size: 9px;
     font-weight: 700;
-    color: #1f2b35;
-    background: #c8dbe9;
-    border-radius: 3px;
-    padding: 0 5px;
+    color: #e3edf5;
+    background: rgba(0, 0, 0, 70);
+    border-radius: 7px;
+    padding: 0 4px;
+    qproperty-alignment: AlignCenter;
 }
 
 #addons_state_strip _StateSegment {
@@ -646,12 +656,6 @@ QPushButton#addons_filter_tag:hover {
     background: rgba(255, 255, 255, 34);
 }
 
-QLabel#addons_hardware_note {
-    font-size: 10px;
-    color: rgba(184, 206, 224, 130);
-    background: transparent;
-}
-
 /* The Filters popover: a dark 4px panel, like the menus, holding the three labelled fields. */
 #addons_filters_popover_frame {
     background: #1f2b35;
@@ -668,90 +672,74 @@ QLabel[class='addons_empty_state'] {
     padding: 24px;
 }
 
-/* Add-on card — one widget per add-on in the list. Replaces the older
-   QListWidgetItem-based row so each entry can host its own action buttons
-   and word-wrap nicely on narrow widths. */
-QWidget[class='addon_card'] {
-    background-color: rgba(184, 206, 224, 0.05);
+/* Add-on card (addons_dialog._AddonCard): it paints its own face (the band, the task label, the contact line), so
+   the frame is transparent; these are the words and the buttons on it. */
+QFrame[class='addon_card'] {
+    background: transparent;
     border: 0;
-    border-radius: 4px;
 }
 
-QWidget[class='addon_card']:hover {
-    background-color: rgba(184, 206, 224, 0.08);
-    border-color: rgba(184, 206, 224, 0.25);
+QLabel[class='addon_card_task'] {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #e3edf5;
+    background: transparent;
+}
+
+QLabel[class='addon_card_task_icon'] {
+    background: transparent;
 }
 
 QLabel[class='addon_card_title'] {
-    font-family: 'Montserrat';
-    font-size: 13px;
-    font-weight: 600;
-    color: #e8f0f8;
+    font-size: 14px;
+    font-weight: 700;
+    color: #f4f8fb;
     background: transparent;
 }
 
+QLabel[class='addon_card_aside'],
 QLabel[class='addon_card_version'] {
-    font-family: 'Montserrat';
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
-    color: #98b0c4;
+    color: #a9bfd0;
     background: transparent;
-}
-
-QLabel[class='addon_card_badge'] {
-    font-family: 'Montserrat';
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #1a2632;
-    background-color: #b8cee0;
-    border-radius: 3px;
-    padding: 2px 6px;
-}
-
-QLabel[class='addon_card_badge_update'] {
-    font-family: 'Montserrat';
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #1a2632;
-    background-color: #f0c060;
-    border-radius: 3px;
-    padding: 2px 6px;
-}
-
-/* What the add-on runs on, here: CPU, Cloud, "Uses your NVIDIA GPU"... Quieter
-   than the state badge, an outline; the warning one says it needs a card this
-   computer was found not to have. */
-QLabel[class='addon_card_compute'] {
-    font-family: 'Montserrat';
-    font-size: 10px;
-    font-weight: 600;
-    color: #b8cee0;
-    background: rgba(184, 206, 224, 0.12);
-    border: 0;
-    border-radius: 3px;
-    padding: 1px 6px;
-}
-
-QLabel[class='addon_card_compute_warning'] {
-    font-family: 'Montserrat';
-    font-size: 10px;
-    font-weight: 600;
-    color: #f0c060;
-    background: rgba(240, 192, 96, 0.14);
-    border: 0;
-    border-radius: 3px;
-    padding: 1px 6px;
 }
 
 QLabel[class='addon_card_summary'] {
-    font-family: 'Montserrat';
-    font-size: 11px;
-    color: #c8d8e8;
+    font-size: 12px;
+    color: #e1ebf2;
     background: transparent;
 }
 
+/* The tags: what the add-on runs on here (green when that's fine, amber when it needs a graphics card this
+   computer was found not to have) and its licence. */
+QLabel[class='addon_card_compute'],
+QLabel[class='addon_card_compute_warning'],
+QLabel[class='addon_card_licence'] {
+    font-size: 10px;
+    font-weight: 600;
+    border: 0;
+    border-radius: 3px;
+    padding: 3px 7px;
+}
+
+QLabel[class='addon_card_compute'] {
+    color: #a8dcb5;
+    background: rgba(159, 211, 172, 36);
+}
+
+QLabel[class='addon_card_compute_warning'] {
+    color: #f4cf85;
+    background: rgba(240, 198, 116, 36);
+}
+
+QLabel[class='addon_card_licence'] {
+    color: #d5e3ee;
+    background: rgba(0, 0, 0, 46);
+}
+
+/* Help text under an add-on's settings (the config dialog and the inline settings). */
 QLabel[class='addon_card_meta'] {
     font-family: 'Montserrat';
     font-size: 10px;
@@ -759,12 +747,37 @@ QLabel[class='addon_card_meta'] {
     background: transparent;
 }
 
-QLabel[class='addon_card_state'] {
-    font-family: 'Montserrat';
-    font-size: 10px;
-    font-style: italic;
-    color: #88a0b4;
+/* The footer's icons: plain on the card, lit on hover. */
+QPushButton[class='addon_card_icon'] {
     background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+}
+
+QPushButton[class='addon_card_icon']:hover {
+    background: rgba(255, 255, 255, 20);
+}
+
+QPushButton[class='addon_card_icon']:disabled {
+    background: transparent;
+}
+
+/* The main action, on the dialogs' light slanted tab in the card's corner. */
+QPushButton[class='addon_card_tab'] {
+    border-image: url(graphics:dialog_bottom_right.svg) 5 5 5 24 stretch stretch;
+    border-width: 5px 5px 5px 24px;
+    border-radius: 0;
+    padding: 0 11px 0 2px;
+    background: transparent;
+    color: #1e2b36;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+QPushButton[class='addon_card_tab']:disabled {
+    color: rgba(30, 43, 54, 120);
 }
 
 QScrollArea#addons_panel_scroll {
