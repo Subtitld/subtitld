@@ -3,12 +3,14 @@ Video / Documents). Each tab exposes a format selector plus the
 options that apply to that format. The dialog returns a single config
 dict; the caller is responsible for the final file picker and dispatch."""
 
+import os
+
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
                                QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
-from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QColor
+from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -1414,7 +1416,7 @@ class _PreviewPanel(QWidget):
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
-        self.file.setPlainText(text)
+        self._plain(text)
 
     def show_note(self, note):
         """`note` in the well, faded: no file to show."""
@@ -1438,22 +1440,21 @@ class _PreviewPanel(QWidget):
         self.file.setVisible(True)
         self.file.clear()
 
-    def show_picture(self, rect, image, frame):
+    RADIUS = 3                                                 # the well's corners
+
+    def show_picture(self, rect, image, frame, text=None):
         """`image`, drawn at `rect` (of the frame, 0..1) on a frame `frame`
         (width, height) pixels, scaled to the panel's width; under it, the
-        picture itself."""
+        picture itself; and under that, in the well, `text`: the file the
+        pictures go with, when there is one."""
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * frame[1] / frame[0]))
-        ratio = self.devicePixelRatioF()
-        pixmap = QPixmap(round(width * ratio), round(height * ratio))
-        pixmap.setDevicePixelRatio(ratio)
-        pixmap.fill(QColor(0, 0, 0, 110))
+        painter, pixmap = self._rounded(width, height)
+        painter.fillRect(QRectF(0, 0, width, height), QColor(0, 0, 0, 110))
         if rect is not None and image is not None:
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.SmoothPixmapTransform)
             painter.drawImage(QRectF(rect.x() * width, rect.y() * height, rect.width() * width, rect.height() * height), image)
-            painter.end()
+        painter.end()
         self.picture.setPixmap(pixmap)
         self.picture.setFixedSize(width, height)
         self.picture.setVisible(True)
@@ -1461,21 +1462,38 @@ class _PreviewPanel(QWidget):
         if image is not None:
             scale = min(1.0, width / image.width())
             size = (max(1, round(image.width() * scale)), max(1, round(image.height() * scale)))
-            pixmap = QPixmap(round(size[0] * ratio), round(size[1] * ratio))
-            pixmap.setDevicePixelRatio(ratio)
-            painter = QPainter(pixmap)
+            painter, pixmap = self._rounded(*size)
             square = 6
             for row in range(0, size[1], square):
                 for column in range(0, size[0], square):
                     light = (row // square + column // square) % 2
                     painter.fillRect(column, row, square, square, QColor(90, 90, 90) if light else QColor(60, 60, 60))
-            painter.setRenderHint(QPainter.SmoothPixmapTransform)
             painter.drawImage(QRectF(0, 0, *size), image)
             painter.end()
             self.crop.setPixmap(pixmap)
             self.crop.setFixedSize(*size)
+        self._plain(text or '')
+        self.file.setVisible(text is not None)
+
+    def _plain(self, text):
+        """`text` in the well as it is: not in the faded look a note left."""
         self.file.clear()
-        self.file.setVisible(False)
+        self.file.setCurrentCharFormat(QTextCharFormat())
+        self.file.setPlainText(text)
+
+    def _rounded(self, width, height):
+        """A clear pixmap `width` x `height` at the screen's density, and a
+        painter on it that paints only inside its rounded corners."""
+        ratio = self.devicePixelRatioF()
+        pixmap = QPixmap(round(width * ratio), round(height * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, width, height), self.RADIUS, self.RADIUS)
+        painter.setClipPath(path)
+        return painter, pixmap
 
 
 class ExportDialog(utils.SimpleDialog):
@@ -1738,6 +1756,9 @@ class ExportDialog(utils.SimpleDialog):
                 return prepared[0]
         return None
 
+    # The BDN preview's XML holds the pictures of its first events: so many are drawn for it.
+    BDN_EVENTS = 6
+
     def _preview_picture(self, fmt, options, frame):
         from subtitld.interface import subtitle_renderer
         if not subtitle_renderer.available():
@@ -1752,25 +1773,69 @@ class ExportDialog(utils.SimpleDialog):
             self._renderer.layer_ready.connect(self._picture_ready)
         # Drawn on the export's own frame, as the export draws it.
         self._renderer.size = (int(frame[0]), int(frame[1]))
-        key, _job = self._renderer._job(cue, float(cue['start']), *self._renderer._style())
-        self._picture = (key, frame)
+        style = self._renderer._style()
+        wanted = [(self._renderer._job(cue, float(cue['start']), *style)[0], cue)]
+        drawable = None
+        if fmt == 'BDN':
+            # Its XML too, which says where each picture is and how large:
+            # the first ones drawn for it, numbered as the export numbers them.
+            drawable = [segment for segment in export_options.prepare(session.SUBTITLE.get('segments') or [], options)
+                        if markup.plain(str(segment.get('text') or '')).strip()]
+            wanted += [(self._renderer._job(segment, float(segment['start']), *style)[0], segment)
+                       for segment in drawable[:self.BDN_EVENTS]]
+        self._picture = {'keys': [key for key, _segment in wanted], 'frame': frame, 'fmt': fmt,
+                         'options': options, 'drawable': drawable}
         if not self._picture_ready():
-            self._renderer.layers([cue], float(cue['start']))
+            for key, segment in wanted:
+                if key not in self._renderer.cache:
+                    self._renderer.layers([segment], float(segment['start']))
             self.preview_panel.show_note(_('export_dialog.preview_drawing'))
             self._picture_timeout.start()
 
     def _picture_ready(self):
-        """Shows the picture awaited once the renderer has it; whether it had."""
+        """Shows the picture awaited once the renderer has all it waits
+        for; whether it had."""
         if self._picture is None or self._renderer is None:
             return False
-        key, frame = self._picture
-        layer = self._renderer.cache.get(key)
-        if layer is None:
+        layers = [self._renderer.cache.get(key) for key in self._picture['keys']]
+        if any(layer is None for layer in layers):
             return False
-        self._picture = None
+        picture, self._picture = self._picture, None
         self._picture_timeout.stop()
-        self.preview_panel.show_picture(layer[0], layer[1], frame)
+        text = None
+        if picture['fmt'] == 'BDN':
+            text = self._bdn_start(picture['drawable'], layers[1:], picture['frame'], picture['options'])
+        self.preview_panel.show_picture(layers[0][0], layers[0][1], picture['frame'], text)
         return True
+
+    @staticmethod
+    def _bdn_start(drawable, layers, frame, options):
+        """The start of the BDN XML the export writes: its description, for
+        every subtitle, and the events of the first, whose `layers` are drawn."""
+        source = session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath') or ''
+        stem = os.path.splitext(os.path.basename(source))[0] or 'subtitle'
+        unknown = '\0'                                        # a picture not drawn: where the start stops
+        pictures = []
+        for number, segment in enumerate(drawable, start=1):
+            layer = layers[number - 1] if number <= len(layers) else None
+            if layer is not None and (layer[0] is None or layer[1] is None):
+                continue                                       # nothing drawn: the export leaves it out too
+            rect, image = layer if layer is not None else (None, None)
+            pictures.append({'start': float(segment['start']), 'end': float(segment['end']),
+                             'href': f'{stem}_{number:05d}.png' if image is not None else unknown,
+                             'x': round(rect.x() * frame[0]) if rect is not None else 0,
+                             'y': round(rect.y() * frame[1]) if rect is not None else 0,
+                             'width': image.width() if image is not None else 0,
+                             'height': image.height() if image is not None else 0,
+                             'forced': bool(segment.get('forced'))})
+        language = (session.SUBTITLE.get('language') or '').strip() or session.CONFIG.get('selected_language') or 'en'
+        lines = bdn.write(pictures, frame, **file_io.bdn_options(options, language, stem + '.xml')).split('\n')
+        cut = next((index for index, line in enumerate(lines) if unknown in line), None)
+        if cut is not None:
+            while cut > 0 and not lines[cut].lstrip().startswith('<Event '):
+                cut -= 1
+            lines = lines[:cut]
+        return '\n'.join(lines[:200])
 
     def _picture_late(self):
         if self._picture is not None:

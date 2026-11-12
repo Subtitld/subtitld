@@ -141,6 +141,33 @@ if subtitle_renderer.available():
     check('the picture shows', dialog.preview_panel.picture.isVisibleTo(dialog.preview_panel), True)
     check('the picture itself under it', dialog.preview_panel.crop.isVisibleTo(dialog.preview_panel), True)
     check('no well, nothing but the picture', preview.isVisibleTo(dialog.preview_panel), False)
+    check('no text under a PGS picture', preview.isVisibleTo(dialog.preview_panel), False)
+
+    print('pictures: BDN, the picture and the start of its XML')
+    session.SUBTITLE['segments'] = [{'start': 1.0 + 2 * index, 'end': 2.0 + 2 * index, 'text': f'Line {index}'}
+                                    for index in range(10)]
+    panel.format_combo.combobox.setCurrentText('BDN')
+    dialog.refresh_preview()
+    deadline = time.time() + 40
+    while dialog._picture is not None and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.02)
+    shown = preview.toPlainText()
+    _fmt, _choices, bdn_options = panel.export_choices()
+    folder = tempfile.mkdtemp()
+    saved_format = session.FORMAT
+    session.FORMAT = {'format': 'BDN', 'options': bdn_options}
+    file_io.save_file(os.path.join(folder, 'subtitle.xml'), 'BDN', 'en')
+    session.FORMAT = saved_format
+    with open(os.path.join(folder, 'subtitle.xml'), encoding='utf-8') as written_file:
+        whole = written_file.read()
+    check('the XML shows under the picture', preview.isVisibleTo(dialog.preview_panel), True)
+    check('it is the start of the file written', whole.startswith(shown) and len(shown) > 200, True)
+    check('as many events as the file', 'NumberofEvents="10"' in shown, True)
+    check('the first pictures with their sizes', shown.count('<Graphic '), export_dialog.ExportDialog.BDN_EVENTS)
+    check('not in a note\'s faded look', preview.document().firstBlock().charFormat().fontItalic()
+          or any(f.format.fontItalic() for f in preview.document().firstBlock().layout().formats()), False)
+
     dialog._select_category(1, 'audio')
     check('audio: no picture', dialog.preview_panel.picture.isVisibleTo(dialog.preview_panel), False)
     dialog.done(0)
