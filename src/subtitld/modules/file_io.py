@@ -1161,6 +1161,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            # What its media speaks goes with the language it names: a file
+            # that names only its own leaves none of the last project's.
+            if reader.source_language:
+                session.SUBTITLE['source_language'] = reader.source_language
+            elif reader.language:
+                session.SUBTITLE.pop('source_language', None)
             if reader.metadata:
                 session.SUBTITLE['metadata'] = reader.metadata
             # Speaker color/dubbing metadata is cheap — set synchronously.
@@ -1256,6 +1262,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            # What its media speaks goes with the language it names: a file
+            # that names only its own leaves none of the last project's.
+            if reader.source_language:
+                session.SUBTITLE['source_language'] = reader.source_language
+            elif reader.language:
+                session.SUBTITLE.pop('source_language', None)
             if reader.metadata:
                 session.SUBTITLE['metadata'] = reader.metadata
 
@@ -2304,6 +2316,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 embed_audio_clips=embed_audio_clips,
                 origin=SUBTITLE.get('origin'),
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
+                source_language=SUBTITLE.get('source_language'),
             ))
 
         elif subtitle_format in ['USFX']:
@@ -2422,6 +2435,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 embed_audio_clips=False,
                 origin=SUBTITLE.get('origin'),
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
+                source_language=SUBTITLE.get('source_language'),
             )
 
             def _mime_for(path_in_zip):
