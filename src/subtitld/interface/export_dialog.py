@@ -42,7 +42,7 @@ class _SubtitlesPanel(QWidget):
         self.layout().setSpacing(10)
         remembered = session.CONFIG.get('export_subtitles') or {}
 
-        self.format_combo = utils.LabeledComboBox()
+        self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         self.format_combo.addItems(SUBTITLE_FORMATS)
         self.format_combo.activated.connect(self._refresh_options)
@@ -548,7 +548,7 @@ class _AudioPanel(QWidget):
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.format_combo = utils.LabeledComboBox()
+        self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         self.format_combo.addItems(self._formats)
         self.layout().addWidget(self.format_combo)
@@ -634,7 +634,7 @@ class _DocumentsPanel(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(10)
 
-        self.format_combo = utils.LabeledComboBox()
+        self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         self.format_combo.addItems(DOCUMENT_FORMATS)
         self.format_combo.combobox.currentIndexChanged.connect(self._refresh_options)
@@ -1214,6 +1214,7 @@ class ExportDialog(utils.SimpleDialog):
         self._category_buttons = {}
         self._category_group = QButtonGroup(self)
         self._category_group.setExclusive(True)
+        sidebar.layout().addStretch()                          # the categories sit at the sidebar's middle
         for key in self.CATEGORY_KEYS:
             btn = QPushButton(_(f'export_dialog.category_{key}'))
             btn.setObjectName('export_dialog_category_button')
@@ -1227,23 +1228,18 @@ class ExportDialog(utils.SimpleDialog):
         right = QWidget()
         right.setObjectName('export_dialog_pages')
         right.setLayout(QVBoxLayout())
-        right.layout().setContentsMargins(20, 16, 20, 16)
+        right.layout().setContentsMargins(0, 0, 0, 0)          # each page's header runs edge to edge
         body.layout().addWidget(right, 1)
 
         self._pages = QStackedWidget()
         right.layout().addWidget(self._pages)
 
         self.subtitles_panel = _SubtitlesPanel()
-        self._pages.addWidget(self.subtitles_panel)
-
         self.audio_panel = _AudioPanel(has_background=has_background, has_vocals=has_vocals)
-        self._pages.addWidget(self.audio_panel)
-
         self.video_panel = _VideoPanel()
-        self._pages.addWidget(self.video_panel)
-
         self.documents_panel = _DocumentsPanel()
-        self._pages.addWidget(self.documents_panel)
+        for panel in (self.subtitles_panel, self.audio_panel, self.video_panel, self.documents_panel):
+            self._pages.addWidget(self._page(panel))
 
         for index, key in enumerate(self.CATEGORY_KEYS):
             self._category_buttons[key].clicked.connect(lambda _checked=False, i=index, k=key: self._select_category(i, k))
@@ -1263,6 +1259,24 @@ class ExportDialog(utils.SimpleDialog):
         self._form_buttons_parent = self.bottom_line
         self._processing_widget = None
         self._processing_label = None
+
+    @staticmethod
+    def _page(panel):
+        """A page: the panel's format as its header, flush with the top and edge to edge, then the rest of the
+        panel inside the page's margins."""
+        page = QWidget()
+        page.setLayout(QVBoxLayout())
+        page.layout().setContentsMargins(0, 0, 0, 0)
+        page.layout().setSpacing(0)
+        header = getattr(panel, 'format_combo', None)
+        if isinstance(header, utils.HeaderComboBox):
+            page.layout().addWidget(header)
+        form = QWidget()
+        form.setLayout(QVBoxLayout())
+        form.layout().setContentsMargins(20, 16, 20, 16)
+        form.layout().addWidget(panel)
+        page.layout().addWidget(form, 1)
+        return page
 
     # ------------------------------------------------------------------
     # Processing-state UI

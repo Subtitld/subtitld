@@ -1086,6 +1086,31 @@ LabeledComboBox QLabel:disabled {
     color: #50b8cee0;
 }
 
+/* A page's header (utils.HeaderComboBox): the same field, larger. The label starts on the page's 20px content
+   edge, the chosen option is bold, and the arrow sits 20px from the right edge. Its list keeps the usual size. */
+HeaderComboBox QLabel {
+    font-size: 11px;
+    padding: 0 0 0 20px;     /* HeaderComboBox.LABEL_LEFT */
+}
+
+HeaderComboBox QComboBox,
+HeaderComboBox QComboBox:hover,
+HeaderComboBox QComboBox:on,
+HeaderComboBox QComboBox:disabled {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 0 4px 0 12px;
+}
+
+HeaderComboBox QComboBox::drop-down {
+    width: 44px;
+}
+
+HeaderComboBox QComboBox QAbstractItemView {
+    font-size: 11px;
+    font-weight: 400;
+}
+
 /* The labelled number and text fields are the same field, sunken: the spin
    box and the line edit sit on it, transparent. */
 LabeledDoubleSpinBox,
@@ -2878,7 +2903,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #export_dialog_sidebar {
-    background-color: #2b3a47;
+    background-color: transparent;
     border-right: 1px solid #1f2b35;
 }
 

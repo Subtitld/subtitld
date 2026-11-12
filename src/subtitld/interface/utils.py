@@ -452,11 +452,13 @@ class SlantLabeledField(QWidget):
     sits in a darker segment cut off by a 75° slant, as wide as its own text.
     The value widget (and anything added to bottom_line after it) is drawn on
     the field's own background. A choice (combo box) is raised like a button;
-    a value typed in (spin box, line edit) is sunken like any field."""
+    a value typed in (spin box, line edit) is sunken like any field. Both
+    have the 1px contact line along the bottom."""
     HEIGHT = 26
     LABEL_LEFT = 6                    # before the label's text (the stylesheet's padding-left on the label)
     LABEL_PADDING = 9                 # after it, measured at mid-height
     RAISED = True
+    ROUNDED = True
 
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
@@ -465,7 +467,7 @@ class SlantLabeledField(QWidget):
         widget.setAttribute(Qt.WA_Hover)
 
         widget.setLayout(QHBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 1 if widget.RAISED else 0)
+        widget.layout().setContentsMargins(0, 0, 0, 1)       # the contact line's row
         widget.layout().setSpacing(0)
 
         widget.label = QLabel()
@@ -501,11 +503,14 @@ class SlantLabeledField(QWidget):
     def _active(widget):
         return widget.underMouse()
 
+    def _field(widget, rect):
+        return shapes.rounded_path(rect) if widget.ROUNDED else shapes.rect_path(rect)
+
     def paintEvent(widget, event):
         painter = QPainter(widget)
         painter.setRenderHint(QPainter.Antialiasing)
         rect = QRectF(widget.rect())
-        field = shapes.rounded_path(rect)
+        field = widget._field(rect)
         if not widget.isEnabled():
             painter.fillPath(field, QColor('#25323d'))
             return
@@ -522,8 +527,7 @@ class SlantLabeledField(QWidget):
             segment.lineTo(0, rect.height())
             segment.closeSubpath()
             shapes.fill_raised(painter, segment.intersected(field), rect, shapes.NEST, contact=False)
-        if widget.RAISED:
-            painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
+        painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
 
 
 class LabeledComboBox(SlantLabeledField):
@@ -563,6 +567,33 @@ class LabeledComboBox(SlantLabeledField):
     def currentText(widget):
         return widget.combobox.currentText()
     
+
+class HeaderComboBox(LabeledComboBox):
+    """The choice a page is about (an export page's format), as the page's
+    header: 42px tall, edge to edge, flush with the page's top; its corners
+    are square but the top left, a 6px curve. The label is larger and the chosen option bold (the
+    stylesheet's HeaderComboBox rules); the label's text starts on the
+    page's 20px content edge. Subclass it for headers of other pages."""
+    HEIGHT = 42
+    LABEL_LEFT = 20
+    LABEL_PADDING = 14
+    ROUNDED = False
+
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setObjectName('header_combobox')
+
+    def _field(widget, rect):
+        # square, but for a 6px curve at the top left, where the header meets the sidebar under the title bar
+        r = 6
+        path = QPainterPath(QPointF(rect.left(), rect.top() + r))
+        path.quadTo(rect.left(), rect.top(), rect.left() + r, rect.top())
+        path.lineTo(rect.right(), rect.top())
+        path.lineTo(rect.right(), rect.bottom())
+        path.lineTo(rect.left(), rect.bottom())
+        path.closeSubpath()
+        return path
+
 
 class LabeledDoubleSpinBox(SlantLabeledField):
     """A number with its label in front of it (see SlantLabeledField)."""
