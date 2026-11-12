@@ -1958,7 +1958,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed[expanded="false"] {
-    padding-left: 16;
+    padding-left: 8;
     padding-right: 16;
 }
 
