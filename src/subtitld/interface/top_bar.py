@@ -197,10 +197,11 @@ def load(self):
     self.titleBar_left_save_button.setProperty('class', 'saved')
     self.titleBar_left_save_button.setIconSize(QSize(16, 16))
     self.titleBar_left_save_button.setFixedWidth(50)
+    self.titleBar_left_save_button.setFixedHeight(35)     # the bar's full height above its bottom line, as the export tab
     self.titleBar_left_save_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
     self.titleBar_left_save_button.clicked.connect(lambda: toppanel_save_button_clicked(self))
     session._unsaved_change_callbacks.append(self.titleBar_left_save_button.update_state)
-    self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+    self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignTop)
 
     # Save is gated on the USFX background extractor: if the user hits
     # Save while dubs/FLAC/waveform are still inside the original zip,
@@ -237,7 +238,7 @@ def load(self):
             widget.setAutoFillBackground(True)
             widget.layout().setContentsMargins(0, 0, 0, 0)
             widget.layout().setSpacing(0)
-            widget.setMinimumWidth(64)
+            widget.setMinimumWidth(48)        # the icon and the slant; quick export, when shown, widens it
             widget.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
             widget_icon = QLabel()
             widget_icon.setObjectName('titleBar_left_export_button_icon')
