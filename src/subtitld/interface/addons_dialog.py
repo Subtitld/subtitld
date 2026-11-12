@@ -1378,8 +1378,17 @@ class AddonsPanel(QWidget):
         super().__init__(parent)
         self.setProperty('class', 'transparent_panel')
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(10, 10, 10, 10)
-        self.layout().setSpacing(8)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+
+        # The header: the search, the filters and the state strip, edge to edge and always in view above the list.
+        self._header = QWidget()
+        self._header.setObjectName('addons_header')
+        self._header.setAttribute(Qt.WA_StyledBackground)
+        self._header.setLayout(QVBoxLayout())
+        self._header.layout().setContentsMargins(10, 10, 10, 10)
+        self._header.layout().setSpacing(8)
+        self.layout().addWidget(self._header)
 
         self._state_filter = self._STATE_ALL
         self._task_filter = self._TASK_ANY
@@ -1414,7 +1423,7 @@ class AddonsPanel(QWidget):
         self._filters_button.setFixedHeight(26)
         self._filters_button.clicked.connect(self._open_filters)
         search_row.addWidget(self._filters_button)
-        self.layout().addLayout(search_row)
+        self._header.layout().addLayout(search_row)
 
         # The task, the language and the hardware live in the popover. The
         # fields' combo boxes keep the names the rest of the panel uses.
@@ -1455,10 +1464,22 @@ class AddonsPanel(QWidget):
         self._state_pills[self._STATE_ALL].setChecked(True)
         state_row.addWidget(self._state_strip)
         state_row.addStretch()
-        self.layout().addLayout(state_row)
+
+        # In the header's bottom-right corner, as icons: install from a file, refresh the catalog.
+        self.install_from_file_button = self._header_icon('addons_from_file.svg')
+        self.install_from_file_button.setProperty('segment', 'first')
+        self.install_from_file_button.clicked.connect(self._install_from_file)
+        self.refresh_button = self._header_icon('addons_refresh.svg')
+        self.refresh_button.setProperty('segment', 'last')
+        self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
+        state_row.addWidget(self.install_from_file_button)
+        state_row.addWidget(self.refresh_button)
+        self._header.layout().addLayout(state_row)
 
         # --- The chosen filters, each a tag that clears it
-        tags_row = QHBoxLayout()
+        self._tags_row = QWidget()
+        tags_row = QHBoxLayout(self._tags_row)
+        tags_row.setContentsMargins(0, 0, 0, 0)
         tags_row.setSpacing(6)
         self._tags = QHBoxLayout()
         self._tags.setSpacing(6)
@@ -1467,7 +1488,8 @@ class AddonsPanel(QWidget):
         # What this computer has: not shown on the panel, but the Hardware field's tooltip
         self._hardware_info = QLabel('')
         self._hardware_info.setVisible(False)
-        self.layout().addLayout(tags_row)
+        self._tags_row.setVisible(False)                # shown while a filter is chosen
+        self._header.layout().addWidget(self._tags_row)
 
         # --- Scrollable card list + empty-state placeholder --------------
         # The list and the placeholder share the same slot in the layout
@@ -1504,7 +1526,11 @@ class AddonsPanel(QWidget):
         self._empty_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._list_stack.addWidget(self._empty_label)  # page 1
 
-        self.layout().addWidget(self._list_stack, 1)
+        list_area = QWidget()
+        list_area.setLayout(QVBoxLayout())
+        list_area.layout().setContentsMargins(10, 10, 10, 10)
+        list_area.layout().addWidget(self._list_stack)
+        self.layout().addWidget(list_area, 1)
 
         # Overall fetch state, drives placeholder copy when the list is
         # empty: 'loading' (initial), 'ok' (catalog loaded), 'error' (last
@@ -1515,23 +1541,6 @@ class AddonsPanel(QWidget):
         # Now that the inner layout exists, hook up the strip's handlers.
         for value, segment in self._state_pills.items():
             segment.toggled.connect(lambda checked, v=value: self._on_state_toggled(v, checked))
-
-        # --- Bottom utility row -----------------------------------------
-        # Per-row actions live inside the cards now; this row only carries
-        # the panel-wide actions (Install from file…, Refresh).
-        actions_row = QHBoxLayout()
-        actions_row.setSpacing(6)
-        actions_row.addStretch()
-
-        self.install_from_file_button = QPushButton(_('addons_dialog.actions.from_file'))
-        self.install_from_file_button.clicked.connect(self._install_from_file)
-
-        self.refresh_button = QPushButton(_('addons_dialog.actions.refresh'))
-        self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
-
-        actions_row.addWidget(self.install_from_file_button)
-        actions_row.addWidget(self.refresh_button)
-        self.layout().addLayout(actions_row)
 
         # --- Internal state ------------------------------------------
         # Progress feedback now lives inside the active card — see
@@ -1559,6 +1568,15 @@ class AddonsPanel(QWidget):
             thread.finished.connect(lambda: self._release_thread('_hardware_thread'))
             self._hardware_thread = thread
             thread.start()
+
+    @staticmethod
+    def _header_icon(icon: str) -> QPushButton:
+        button = QPushButton()
+        button.setObjectName('addons_header_icon')
+        button.setIcon(_graphic(icon))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(30, 26)
+        return button
 
     # -- Filter handlers ---------------------------------------------------
     def _on_state_toggled(self, value: str, checked: bool):
@@ -1804,6 +1822,7 @@ class AddonsPanel(QWidget):
         if self._hardware_filter != self._HARDWARE_ANY:
             chosen.append((self._hardware_combo.currentText(), lambda: self._hardware_combo.setCurrentIndex(0)))
         self._filters_count.setText(str(len(chosen)))
+        self._tags_row.setVisible(bool(chosen))
         self._filters_count.setVisible(bool(chosen))
         while self._tags.count():
             item = self._tags.takeAt(0)
@@ -2001,8 +2020,9 @@ class AddonsPanel(QWidget):
         self._hardware_info.setText(_hardware_text(self._hardware))
         self._filters_popover.hardware.setToolTip(self._hardware_info.text())
 
-        self.install_from_file_button.setText(_('addons_dialog.actions.from_file'))
-        self.refresh_button.setText(_('addons_dialog.actions.refresh'))
+        for button, key in ((self.install_from_file_button, 'from_file'), (self.refresh_button, 'refresh')):
+            button.setToolTip(_(f'addons_dialog.actions.{key}'))
+            button.setAccessibleName(button.toolTip())
 
         # Card buttons re-translate themselves on the next render.
         self._render_list()

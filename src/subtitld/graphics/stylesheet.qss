@@ -656,6 +656,30 @@ QPushButton#addons_filter_tag:hover {
     background: rgba(255, 255, 255, 34);
 }
 
+/* The header the filters sit in: edge to edge, a shade darker than the panel, its contact line under it. */
+QWidget#addons_header {
+    background: rgba(0, 0, 0, 38);
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+}
+
+/* Install from a file and refresh the catalog: two icons joined, in the header's bottom-right corner. */
+QPushButton#addons_header_icon {
+    padding: 0;
+    border-radius: 0;
+}
+
+QPushButton#addons_header_icon[segment="first"] {
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+QPushButton#addons_header_icon[segment="last"] {
+    border-left: 1px solid rgba(0, 0, 0, 50);
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
 /* The Filters popover: a dark 4px panel, like the menus, holding the three labelled fields. */
 #addons_filters_popover_frame {
     background: #1f2b35;
