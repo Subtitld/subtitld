@@ -1226,6 +1226,7 @@ class ExportDialog(utils.SimpleDialog):
         self._category_buttons = {}
         self._category_group = QButtonGroup(self)
         self._category_group.setExclusive(True)
+        sidebar.layout().addStretch()                          # the categories sit at the sidebar's middle
         for key in self.CATEGORY_KEYS:
             btn = QPushButton(_(f'export_dialog.category_{key}'))
             btn.setObjectName('export_dialog_category_button')
