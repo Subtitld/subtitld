@@ -423,6 +423,8 @@ class Window(_MainWindowBase):
             self.record_controller.shutdown()
 
         session.persist_current_playback_position()
+        from subtitld.interface import recent_cards
+        recent_cards.remember(self)
         session.CONFIG.save()
 
         event.accept()

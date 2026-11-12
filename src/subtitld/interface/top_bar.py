@@ -414,6 +414,8 @@ def toppanel_save_button_clicked(self):
         if success:
             session.add_to_recent_files(session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath', ''))
             session.persist_current_playback_position()
+            from subtitld.interface import recent_cards
+            recent_cards.remember(self)
             session.notify_save_success()
             # Re-render the title bar so the path/filename labels pick
             # up `session.SUBTITLE['filepath']` (just set by the

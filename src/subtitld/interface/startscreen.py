@@ -2,7 +2,7 @@ import pathlib
 import datetime
 
 from PySide6.QtWidgets import QPushButton, QLabel, QListWidget, QVBoxLayout, QWidget, QHBoxLayout, QSizePolicy, QFileDialog, QListWidgetItem, QAbstractItemView, QGraphicsOpacityEffect
-from PySide6.QtCore import QPropertyAnimation, Qt, QEasingCurve, QTimer
+from PySide6.QtCore import QPropertyAnimation, Qt, QEasingCurve, QTimer, QSize
 from PySide6.QtGui import QIcon, QPixmap
 
 from subtitld.modules import collab_state
@@ -14,6 +14,7 @@ from subtitld.interface import productionscreen
 from subtitld.interface import utils
 from subtitld.interface import top_bar
 from subtitld.interface import playercontrols
+from subtitld.interface import recent_cards
 
 from subtitld.interface.translation import _
 
@@ -345,6 +346,7 @@ def load_productionscreen(self, collab=None):
                     QTimer.singleShot(0, _center_on_restored_position)
 
             session.add_to_recent_files(session.SUBTITLE['filepath'], session.VIDEO.get('filepath', ''))
+            recent_cards.remember(self)
 
         self.timeline_widget.load_waveform()
 
@@ -381,9 +383,8 @@ def translate(self):
     self.start_screen_adver_label.setText((_('startscreen.version_number').format(__version__)))
     self.start_screen_adver_label_details.setText(_('startscreen.visit_website'))
     self.open_link_card.retranslate()
-    for label in self.start_screen_recent_listwidget.findChildren(QLabel):
-        if label.property('class') == 'age':
-            label.setText(utils.friendly_time(label.property('last_opened')))
+    for card in self.start_screen_recent_listwidget.findChildren(recent_cards.RecentCard):
+        card.retranslate()
 
 
 def update_recent_files_list(self):
@@ -404,46 +405,12 @@ def update_recent_files_list(self):
             config['subtitle_filepath'] = str(subtitle_path)
 
             if subtitle_path.exists() and video_path.exists():    
-                try:            
-                    item_widget = QWidget()
-                    item_widget.setLayout(QHBoxLayout())
-                    item_widget.layout().setContentsMargins(5, 5, 5, 5)
-                                    
-                    item_icon = QLabel()
-                    item_icon.setFixedSize(24, 24)
-                    item_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-                    item_icon.setAlignment(Qt.AlignCenter)
-                    if subtitle_path.suffix.lower() == '.usfx':
-                        # A project: its own icon, as the file manager shows it
-                        # (the @2x one beside it on a high-DPI screen).
-                        item_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'usfx_file.png')).pixmap(16, 16))
-                    else:
-                        item_icon.opacity = QGraphicsOpacityEffect()
-                        item_icon.opacity.setOpacity(0.5)
-                        item_icon.setGraphicsEffect(item_icon.opacity)
-                        item_icon.setPixmap(QPixmap(session.PATH_SUBTITLD_GRAPHICS / 'file.svg').scaled(16, 16, Qt.KeepAspectRatioByExpanding))
-                    item_widget.layout().addWidget(item_icon, 0, Qt.AlignTop)
-
-                    item_widget_title_line = QLabel()
-                    item_widget_title_line.setAlignment(Qt.AlignLeft)
-                    item_widget_title_line.setWordWrap(True)
-                    item_widget_title_line.setText(f'<b>{subtitle_path.name}</b><br /><small>{video_path.name}</small>')
-                    
-                    item_widget.layout().addWidget(item_widget_title_line, 1)
-
-                    age = utils.friendly_time(datetime.datetime.fromtimestamp(float(config['last_opened'])))
-                    item_widget_age_line = QLabel()
-                    item_widget_age_line.setProperty('class', 'age')
-                    # For translate() to say it again in another language.
-                    item_widget_age_line.setProperty('last_opened', float(config['last_opened']))
-                    item_widget_age_line.setAlignment(Qt.AlignRight)
-                    item_widget_age_line.setText(age)
-                    item_widget.layout().addWidget(item_widget_age_line, 0, Qt.AlignRight | Qt.AlignTop)
-                    
+                try:
+                    card = recent_cards.RecentCard(config)
                     list_widget_item = QListWidgetItem(self.start_screen_recent_listwidget)
                     list_widget_item.setData(Qt.UserRole, config)
-                    list_widget_item.setSizeHint(item_widget.sizeHint())
+                    list_widget_item.setSizeHint(QSize(0, recent_cards.ROW_H))
                     self.start_screen_recent_listwidget.addItem(list_widget_item)
-                    self.start_screen_recent_listwidget.setItemWidget(list_widget_item, item_widget)
+                    self.start_screen_recent_listwidget.setItemWidget(list_widget_item, card)
                 except Exception as e:
                     continue
