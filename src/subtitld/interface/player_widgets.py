@@ -929,7 +929,7 @@ class Transport(QWidget):
 
         # play from the beginning: its own colour, a 1px start line, the ▶ on its own, the first subtitle clipped
         self._group(painter, self.begin_notch, [(self.begin_notch, self.begin_key)], self.GROUP, self.GROUP_ON, 60)
-        iy = self.TAB + (self.nh - self.TAB - 24) / 2 + 1
+        iy = cy - 14         # the keys' icons carry their blocks 4–24px down: centred on the play icon and the dot
         ix = self.lg_gx + self.rg + 4
         painter.save()
         painter.setClipPath(self.begin_notch)
