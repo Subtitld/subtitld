@@ -235,47 +235,45 @@ def send_text_picture(painter, rect):
 
 class GapControl(QWidget):
     """One 42px raised piece hanging from the top line: add gap on the left,
-    remove gap on the right, and between them the duration field hanging from
-    the top edge as a sunken 75° notch. The icons' subtitle blocks run into
-    the notch's slanted sides and out to the piece's ends, where they fade in.
-    The field is the given spin box, laid over the notch."""
+    remove gap on the right, and between them the duration field, a sunken
+    26px field with 3px corners like ADD's. The icons' subtitle blocks run in
+    to the field and out to the piece's ends, where they fade in. The field
+    is the given spin box, laid over the painted field."""
 
     H = 42
     KEY_W = 40
-    FIELD_W = 36                      # the notch's flat bottom
+    FIELD_W = 50                      # as ADD's duration field
+    FIELD_H = 26
     ICON = 20
 
     def __init__(self, name, spinbox, parent=None):
         super().__init__(parent)
         self.setObjectName(name)
         self.setAttribute(Qt.WA_Hover)
-        self.notch_h = self.H - 3
-        self.run = self.notch_h * shapes.RUN15
-        self.setFixedSize(int(round(2 * self.KEY_W + self.FIELD_W + 2 * self.run)), self.H)
-        w = self.width()
+        self.setFixedSize(2 * self.KEY_W + self.FIELD_W, self.H)
+        self.field_rect = QRectF(self.KEY_W, (self.H - self.FIELD_H) // 2, self.FIELD_W, self.FIELD_H)
         self.add_key = StripKey('gap_add_subtitle_button', self)
-        self.add_key.setGeometry(0, 0, int(self.KEY_W + self.run), self.H)
+        self.add_key.setGeometry(0, 0, self.KEY_W, self.H)
         self.remove_key = StripKey('gap_remove_subtitle_button', self)
-        self.remove_key.setGeometry(int(w - self.KEY_W - self.run), 0, int(self.KEY_W + self.run), self.H)
+        self.remove_key.setGeometry(self.KEY_W + self.FIELD_W, 0, self.KEY_W, self.H)
         self.spinbox = spinbox
         spinbox.setParent(self)
-        # as wide as the notch at mid-height, where the text sits
-        spinbox.setGeometry(int(self.KEY_W + self.run / 2), 0, int(self.FIELD_W + self.run), self.notch_h)
+        spinbox.setGeometry(self.field_rect.toRect())
         spinbox.raise_()
         self._icons = {'add': graphic('gap_add_icon.svg'), 'remove': graphic('gap_remove_icon.svg')}
 
     def shape(self):
         return shapes.hanging_rect(0, 0, self.width(), self.height())
 
-    def notch(self):
-        return shapes.hanging_trap(self.KEY_W, 0, self.FIELD_W + 2 * self.run, self.notch_h).intersected(self.shape())
+    def field(self):
+        return shapes.rounded_path(self.field_rect)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
         rect = QRectF(self.rect())
-        shape, notch = self.shape(), self.notch()
+        shape, field = self.shape(), self.field()
         if not self.isEnabled():
             painter.fillPath(shape, QColor('#25323d'))
             painter.setOpacity(0.35)
@@ -283,28 +281,30 @@ class GapControl(QWidget):
             painter.fillPath(shape, shapes.gradient(0, rect.height(), '#3e5363'))
         line = shape.subtracted(shape.translated(0, -1))
         for key in (self.add_key, self.remove_key):
-            zone = shape.intersected(shapes.rect_path(QRectF(key.geometry()))).subtracted(notch)
+            zone = shape.intersected(shapes.rect_path(QRectF(key.geometry())))
             state = key.state()
             if state == 'sunk':
                 shapes.fill_sunk(painter, zone, QRectF(key.geometry()))
                 line = line.subtracted(shapes.rect_path(QRectF(key.geometry()).adjusted(0, 0, 0, 1)))
             elif state == 'hover':
                 painter.fillPath(zone, shapes.HOVER)
-        # icons: inner blocks run under the notch (clipped by it), outer blocks out to the piece's ends, fading in
+        # icons: inner blocks run in to the field, outer blocks out to the piece's ends, fading in
         painter.save()
-        painter.setClipPath(shape.subtracted(notch))
+        painter.setClipPath(shape.subtracted(field))
         iy = (self.H - self.ICON) / 2
         ax = self.KEY_W - 22
         shapes.draw_stretched_icon(painter, self._icons['add'], ax, iy, self.ICON, self.ICON, extend_left=0,
-                                   extend_right=self.KEY_W + self.run + 8, fade_left=(ax + 3) / 2)
+                                   extend_right=self.KEY_W + 2, fade_left=(ax + 3) / 2)
         rx = self.width() - self.KEY_W + 2
         shapes.draw_stretched_icon(painter, self._icons['remove'], rx, iy, self.ICON, self.ICON,
-                                   extend_left=self.width() - self.KEY_W - self.run - 8, extend_right=self.width(),
+                                   extend_left=self.width() - self.KEY_W - 2, extend_right=self.width(),
                                    fade_right=(self.width() - rx - self.ICON + 3) / 2)
         painter.restore()
-        # the field: sunken, 1px shadow under the piece's top edge
-        painter.fillPath(notch, shapes.gradient(0, self.notch_h, shapes.FIELD, 'sunken'))
-        painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 90))
+        # the field, sunken, as ADD's
+        g = QLinearGradient(0, self.field_rect.top(), 0, self.field_rect.bottom())
+        g.setColorAt(0, QColor('#324350'))
+        g.setColorAt(1, QColor('#445b6c'))
+        painter.fillPath(field, g)
         if self.isEnabled():
             painter.fillPath(line, CONTACT)
 

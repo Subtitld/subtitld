@@ -34,18 +34,21 @@ QPushButton:hover {
 /* The gap control's duration field lies in its painted notch: transparent,
    the value left of the 6×3 arrows, which sit 5px from the notch's edge. */
 #gap_hbox #gap_subtitle_duration {
-    background: transparent;
+    background: transparent;          /* GapControl paints the field, as ADD's */
     border: 0;
+    border-radius: 3px;
     min-width: 0;
-    padding: 0;
+    padding: 0 0 0 6px;
     font-size: 10px;
     color: #c8dbe9;
 }
 
 #gap_hbox #gap_subtitle_duration::up-button,
 #gap_hbox #gap_subtitle_duration::down-button {
-    width: 11px;
+    width: 14px;
     height: 13px;
+    padding: 0;
+    margin: 0;
     background: transparent;
 }
 
