@@ -2746,6 +2746,26 @@ def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=N
     return thread
 
 
+def picture_frame(subtitle_format, options=None, video=None):
+    """The frame (width, height) an export in `subtitle_format` with
+    `options` draws its subtitles on as pictures, as save_file sizes it; None
+    for an export that writes no pictures. `video`: session.VIDEO's kind."""
+    options = options or {}
+    video = session.VIDEO if video is None else video
+    width, height = int(video.get('width') or 0), int(video.get('height') or 0)
+    if subtitle_format in ('DFXP', 'TTML') and options.get('profile') in ttml.IMAGE_PROFILES:
+        return width or 1920, height or 1080
+    if subtitle_format == 'PGS':
+        return width or 1920, height or 1080
+    if subtitle_format == 'VOBSUB':
+        return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
+    if subtitle_format == 'BDN':
+        return width or bdn.DEFAULT_SIZE[0], height or bdn.DEFAULT_SIZE[1]
+    if subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
+        return width or 1920, height or 1080
+    return None
+
+
 class PreviewBinary(Exception):
     """The file a preview wrote is not text."""
 
