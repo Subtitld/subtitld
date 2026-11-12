@@ -48,26 +48,33 @@ def shifted(segments, start, length):
 def still(container, options, segments, cue, at, output, video=None, info=None, language=''):
     """Write to `output` (a PNG) the frame of the `container` export at the
     subtitle `cue` (the cursor `at`, when it is on it), with what that file
-    shows drawn on it. Raises ValueError for what the export would refuse
-    too, and StillError when FFmpeg cannot do its part."""
-    from subtitld.modules import a53, bounce, embedded_captions
+    shows drawn on it; for the subtitles alone, with its clear parts kept.
+    Raises ValueError for what the export would refuse too, and StillError
+    when FFmpeg cannot do its part."""
+    from subtitld.modules import a53, bounce, burned_video, embedded_captions
     info = dict(info if info is not None else (session.VIDEO or {}))
     video = video or info.get('filepath')
-    if not video:
+    alpha = burned_video.is_alpha(container)
+    if not video and not alpha:
         raise ValueError('No video loaded')
     if container in ('MP4 A53', 'TS A53'):
         codec = a53.probe(video, session.FFPROBE_EXECUTABLE, session.STARTUPINFO)[0]
         if codec not in a53.CODECS:
             raise ValueError(f'Captions go in the frames of H.264, HEVC or MPEG-2 video, not {codec or "this video"}')
     when = moment(cue, at)
-    start = max(0.0, min(when, float(cue['start'])) - LEAD)
+    # Drawn subtitles need nothing sent ahead of them.
+    lead = 0.2 if burned_video.is_burned(container) else LEAD
+    start = max(0.0, min(when, float(cue['start'])) - lead)
     length = when - start + TAIL
     folder = tempfile.mkdtemp(prefix='subtitld-still-')
     try:
-        source = os.path.join(folder, 'source.mp4')
-        _ffmpeg(['-ss', f'{start:.3f}', '-i', str(video), '-t', f'{length:.3f}', '-map', '0:v:0', '-map', '0:a:0?',
-                 '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', source])
-        holder = embedded_captions.CONTAINERS.get(container)
+        source = None
+        if not alpha:
+            source = os.path.join(folder, 'source.mp4')
+            _ffmpeg(['-ss', f'{start:.3f}', '-i', str(video), '-t', f'{length:.3f}', '-map', '0:v:0',
+                     '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac',
+                     source])
+        holder = embedded_captions.CONTAINERS.get(container) or burned_video.CONTAINERS.get(container)
         extension = holder['extension'] if holder else _track_extension(container)
         clip = os.path.join(folder, 'clip.' + extension)
         bounce.write_captioned_video(source, clip, container, options, shifted(segments, start, length),
@@ -85,9 +92,15 @@ def _track_extension(container):
 
 def _draw(clip, container, when, output, folder):
     """The frame of `clip` at `when` seconds, its subtitles drawn on it."""
-    from subtitld.modules import embedded_captions
+    from subtitld.modules import burned_video, embedded_captions
     at = ['-ss', f'{when:.3f}', '-frames:v', '1', '-update', '1', output]
-    if container in embedded_captions.CONTAINERS:
+    if burned_video.is_burned(container):
+        # In the picture already; alone, its clear parts kept (VP9's alpha
+        # is read by libvpx alone).
+        decoder = ['-c:v', 'libvpx-vp9'] if container == 'ALPHA WEBM' else []
+        rgba = ['-pix_fmt', 'rgba'] if burned_video.is_alpha(container) else []
+        _ffmpeg(decoder + ['-i', clip, '-map', '0:v:0'] + rgba + at)
+    elif container in embedded_captions.CONTAINERS:
         # The captions a decoder reads, as the text it shows, drawn by libass.
         captions = os.path.join(folder, 'captions.ass')
         if container in ('MP4 A53', 'TS A53'):

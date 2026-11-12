@@ -166,7 +166,8 @@ panel = _VideoPanel()
 combo = panel.format_combo.combobox
 check('offered beside QuickTime and MXF, before the subtitle tracks',
       [combo.itemData(index) for index in range(combo.count())],
-      [None, 'MOV', 'MXF', 'MP4 A53', 'TS A53', None, 'MP4', 'MOV TEXT', 'MKV', 'TS'])
+      [None, 'MOV', 'MXF', 'MP4 A53', 'TS A53', None, 'MP4', 'MOV TEXT', 'MKV', 'TS',
+       None, 'BURN MP4', 'BURN MOV', None, 'ALPHA MOV', 'ALPHA WEBM'])
 combo.setCurrentIndex(combo.findData('MP4 A53'))
 panel._refresh_format()
 config = panel.get_config()

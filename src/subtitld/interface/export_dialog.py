@@ -11,13 +11,14 @@ import tempfile
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QGridLayout,
-                               QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
+                               QSpinBox, QDoubleSpinBox, QComboBox, QProgressBar, QPlainTextEdit)
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
-from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor, QImage
+from PySide6.QtGui import QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor, QImage
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import bdn
+from subtitld.modules import burned_video
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
@@ -30,6 +31,7 @@ from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import session
 from subtitld.modules import soft_subtitles
+from subtitld.modules import subtitle_styles
 from subtitld.modules import ttml
 from subtitld.modules import vobsub
 
@@ -831,13 +833,9 @@ class _DocumentsPanel(QWidget):
 
 
 class _VideoPanel(QWidget):
-    """Video export panel.
-
-    Lifted verbatim (in structure) from ``left_panel_export.load`` —
-    the FFmpeg sub-tab and the standalone "generate transparent video"
-    button. Signals are wired to local placeholder slots; the user will
-    re-implement actual behaviour later.
-    """
+    """The video tab: the kind of file, and the options it takes. The
+    subtitles go in as closed captions, as a track of their own, burned into
+    the picture, or drawn alone on a clear video."""
     changed = Signal()                                         # a choice the export is made with
 
     def __init__(self, parent=None):
@@ -859,7 +857,9 @@ class _VideoPanel(QWidget):
         for group, formats in (('category_captions', (('MOV', 'video_mov'), ('MXF', 'video_mxf'),
                                                       ('MP4 A53', 'video_mp4_a53'), ('TS A53', 'video_ts_a53'))),
                                ('category_subtitle_track', (('MP4', 'video_mp4_track'), ('MOV TEXT', 'video_mov_track'),
-                                                            ('MKV', 'video_mkv_track'), ('TS', 'video_ts_track')))):
+                                                            ('MKV', 'video_mkv_track'), ('TS', 'video_ts_track'))),
+                               ('category_burned', (('BURN MP4', 'video_mp4_track'), ('BURN MOV', 'video_mov'))),
+                               ('category_alpha', (('ALPHA MOV', 'video_mov'), ('ALPHA WEBM', 'video_webm')))):
             combobox.addItem(_(f'export_dialog.{group}'))
             heading = combobox.model().item(combobox.count() - 1)
             heading.setFlags(Qt.NoItemFlags)
@@ -873,297 +873,6 @@ class _VideoPanel(QWidget):
 
         self.video_pages = QStackedWidget()
 
-        # FFmpeg sub-tab ---------------------------------------------------
-        self.ffmpeg_panel = QWidget()
-        self.ffmpeg_panel.setLayout(QGridLayout())
-        self.ffmpeg_panel.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_panel.layout().setSpacing(20)
-
-        self.ffmpeg_left_panel = QWidget()
-        self.ffmpeg_left_panel.setLayout(QVBoxLayout())
-        self.ffmpeg_left_panel.layout().setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_left_panel.layout().setSpacing(20)
-
-        # Font group ------------------------------------------------------
-        self.ffmpeg_font_group = QGroupBox(_('units.font'))
-        self.ffmpeg_font_group.setLayout(QHBoxLayout())
-        self.ffmpeg_font_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_font_group.layout().setSpacing(20)
-
-        self.ffmpeg_fontsize_line = QVBoxLayout()
-        self.ffmpeg_fontsize_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontsize_line.setSpacing(2)
-
-        self.ffmpeg_fontsize_label = QLabel()
-        self.ffmpeg_fontsize_label.setProperty('class', 'widget_label')
-        self.ffmpeg_fontsize_line.addWidget(self.ffmpeg_fontsize_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontsize_line_2 = QHBoxLayout()
-        self.ffmpeg_fontsize_line_2.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontsize_line_2.setSpacing(5)
-
-        self.ffmpeg_fontsize_spinbox = QSpinBox()
-        self.ffmpeg_fontsize_spinbox.setMinimum(1)
-        self.ffmpeg_fontsize_spinbox.setMaximum(999)
-        self.ffmpeg_fontsize_spinbox.valueChanged.connect(self._fontsize_changed)
-        self.ffmpeg_fontsize_line_2.addWidget(self.ffmpeg_fontsize_spinbox, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontsize_seconds_label = QLabel()
-        self.ffmpeg_fontsize_seconds_label.setProperty('class', 'units_label')
-        self.ffmpeg_fontsize_line_2.addWidget(self.ffmpeg_fontsize_seconds_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontsize_line.addLayout(self.ffmpeg_fontsize_line_2)
-        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_fontsize_line)
-
-        self.ffmpeg_fontfamily_line = QVBoxLayout()
-        self.ffmpeg_fontfamily_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontfamily_line.setSpacing(2)
-
-        self.ffmpeg_fontfamily_label = QLabel()
-        self.ffmpeg_fontfamily_label.setProperty('class', 'widget_label')
-        self.ffmpeg_fontfamily_line.addWidget(self.ffmpeg_fontfamily_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontfamily_line_2 = QHBoxLayout()
-        self.ffmpeg_fontfamily_line_2.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontfamily_line_2.setSpacing(5)
-
-        fonts = QFontDatabase().families()
-        self.ffmpeg_fontfamily_combobox = QComboBox()
-        self.ffmpeg_fontfamily_combobox.addItems(fonts)
-        self.ffmpeg_fontfamily_combobox.activated.connect(self._fontfamily_changed)
-        self.ffmpeg_fontfamily_line_2.addWidget(self.ffmpeg_fontfamily_combobox, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontfamily_line.addLayout(self.ffmpeg_fontfamily_line_2)
-        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_fontfamily_line)
-
-        self.ffmpeg_color_vbox = QVBoxLayout()
-        self.ffmpeg_color_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_color_vbox.setSpacing(2)
-
-        self.ffmpeg_color_label = QLabel()
-        self.ffmpeg_color_label.setProperty('class', 'widget_label')
-        self.ffmpeg_color_vbox.addWidget(self.ffmpeg_color_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_color_button = QPushButton()
-        self.ffmpeg_color_button.setProperty('class', 'color_pick_button')
-        self.ffmpeg_color_button.setFixedWidth(80)
-        self.ffmpeg_color_button.clicked.connect(self._color_button_clicked)
-        self.ffmpeg_color_vbox.addWidget(self.ffmpeg_color_button, 0, Qt.AlignLeft)
-
-        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_color_vbox)
-        self.ffmpeg_font_group.layout().addStretch()
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_font_group)
-
-        # Outline ---------------------------------------------------------
-        self.ffmpeg_outline_group = QGroupBox()
-        self.ffmpeg_outline_group.setCheckable(True)
-        self.ffmpeg_outline_group.setLayout(QHBoxLayout())
-        self.ffmpeg_outline_group.toggled.connect(self._outline_group_toggled)
-        self.ffmpeg_outline_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_outline_group.layout().setSpacing(20)
-
-        self.ffmpeg_outline_vbox = QVBoxLayout()
-        self.ffmpeg_outline_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_outline_vbox.setSpacing(2)
-
-        self.ffmpeg_outline_label = QLabel()
-        self.ffmpeg_outline_label.setProperty('class', 'widget_label')
-        self.ffmpeg_outline_vbox.addWidget(self.ffmpeg_outline_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_outline_line = QHBoxLayout()
-        self.ffmpeg_outline_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_outline_line.setSpacing(5)
-
-        self.ffmpeg_outline_value = QSpinBox()
-        self.ffmpeg_outline_value.setMinimum(0)
-        self.ffmpeg_outline_value.setMaximum(99999)
-        self.ffmpeg_outline_value.valueChanged.connect(self._outline_value_changed)
-        self.ffmpeg_outline_line.addWidget(self.ffmpeg_outline_value, 0, Qt.AlignLeft)
-
-        self.ffmpeg_outline_value_pixels_label = QLabel()
-        self.ffmpeg_outline_value_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_outline_line.addWidget(self.ffmpeg_outline_value_pixels_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_outline_vbox.addLayout(self.ffmpeg_outline_line)
-        self.ffmpeg_outline_group.layout().addLayout(self.ffmpeg_outline_vbox)
-        self.ffmpeg_outline_group.layout().addStretch()
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_outline_group)
-
-        # Shadow ----------------------------------------------------------
-        self.ffmpeg_shadow_group = QGroupBox()
-        self.ffmpeg_shadow_group.setCheckable(True)
-        self.ffmpeg_shadow_group.setLayout(QHBoxLayout())
-        self.ffmpeg_shadow_group.toggled.connect(self._shadow_group_toggled)
-        self.ffmpeg_shadow_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_shadow_group.layout().setSpacing(20)
-
-        self.ffmpeg_shadow_vbox = QVBoxLayout()
-        self.ffmpeg_shadow_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_shadow_vbox.setSpacing(2)
-
-        self.ffmpeg_shadow_label = QLabel()
-        self.ffmpeg_shadow_label.setProperty('class', 'widget_label')
-        self.ffmpeg_shadow_vbox.addWidget(self.ffmpeg_shadow_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_shadow_line = QHBoxLayout()
-        self.ffmpeg_shadow_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_shadow_line.setSpacing(5)
-
-        self.ffmpeg_shadow_distance = QSpinBox()
-        self.ffmpeg_shadow_distance.setMinimum(-99999)
-        self.ffmpeg_shadow_distance.setMaximum(99999)
-        self.ffmpeg_shadow_distance.valueChanged.connect(self._shadow_distance_changed)
-        self.ffmpeg_shadow_line.addWidget(self.ffmpeg_shadow_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_shadow_distance_pixels_label = QLabel()
-        self.ffmpeg_shadow_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_shadow_line.addWidget(self.ffmpeg_shadow_distance_pixels_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_shadow_vbox.addLayout(self.ffmpeg_shadow_line)
-        self.ffmpeg_shadow_group.layout().addLayout(self.ffmpeg_shadow_vbox)
-        self.ffmpeg_shadow_group.layout().addStretch()
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_shadow_group)
-
-        # Margins ---------------------------------------------------------
-        self.ffmpeg_margins_group = QGroupBox()
-        self.ffmpeg_margins_group.setLayout(QGridLayout())
-        self.ffmpeg_margins_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_margins_group.layout().setSpacing(20)
-
-        # Left
-        self.ffmpeg_margins_left_vbox = QVBoxLayout()
-        self.ffmpeg_margins_left_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_left_vbox.setSpacing(2)
-
-        self.ffmpeg_margins_left_label = QLabel()
-        self.ffmpeg_margins_left_label.setProperty('class', 'widget_label')
-        self.ffmpeg_margins_left_vbox.addWidget(self.ffmpeg_margins_left_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_left_line = QHBoxLayout()
-        self.ffmpeg_margins_left_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_left_line.setSpacing(5)
-
-        self.ffmpeg_margins_left_distance = QSpinBox()
-        self.ffmpeg_margins_left_distance.setMinimum(-99999)
-        self.ffmpeg_margins_left_distance.setMaximum(99999)
-        self.ffmpeg_margins_left_distance.valueChanged.connect(self._margins_left_changed)
-        self.ffmpeg_margins_left_line.addWidget(self.ffmpeg_margins_left_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_left_distance_pixels_label = QLabel()
-        self.ffmpeg_margins_left_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_margins_left_line.addWidget(self.ffmpeg_margins_left_distance_pixels_label, 0, Qt.AlignLeft)
-        self.ffmpeg_margins_left_line.addStretch()
-
-        self.ffmpeg_margins_left_vbox.addLayout(self.ffmpeg_margins_left_line)
-        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_left_vbox, 1, 1, 1, 1)
-
-        # Bottom
-        self.ffmpeg_margins_bottom_vbox = QVBoxLayout()
-        self.ffmpeg_margins_bottom_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_bottom_vbox.setSpacing(2)
-
-        self.ffmpeg_margins_bottom_label = QLabel()
-        self.ffmpeg_margins_bottom_label.setProperty('class', 'widget_label')
-        self.ffmpeg_margins_bottom_vbox.addWidget(self.ffmpeg_margins_bottom_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_bottom_line = QHBoxLayout()
-        self.ffmpeg_margins_bottom_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_bottom_line.setSpacing(5)
-
-        self.ffmpeg_margins_bottom_distance = QSpinBox()
-        self.ffmpeg_margins_bottom_distance.setMinimum(-99999)
-        self.ffmpeg_margins_bottom_distance.setMaximum(99999)
-        self.ffmpeg_margins_bottom_distance.valueChanged.connect(self._margins_bottom_changed)
-        self.ffmpeg_margins_bottom_line.addWidget(self.ffmpeg_margins_bottom_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_bottom_distance_pixels_label = QLabel()
-        self.ffmpeg_margins_bottom_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_margins_bottom_line.addWidget(self.ffmpeg_margins_bottom_distance_pixels_label, 0, Qt.AlignLeft)
-        self.ffmpeg_margins_bottom_line.addStretch()
-
-        self.ffmpeg_margins_bottom_vbox.addLayout(self.ffmpeg_margins_bottom_line)
-        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_bottom_vbox, 2, 2, 1, 1)
-
-        # Right
-        self.ffmpeg_margins_right_vbox = QVBoxLayout()
-        self.ffmpeg_margins_right_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_right_vbox.setSpacing(2)
-
-        self.ffmpeg_margins_right_label = QLabel()
-        self.ffmpeg_margins_right_label.setProperty('class', 'widget_label')
-        self.ffmpeg_margins_right_vbox.addWidget(self.ffmpeg_margins_right_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_right_line = QHBoxLayout()
-        self.ffmpeg_margins_right_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_right_line.setSpacing(5)
-
-        self.ffmpeg_margins_right_distance = QSpinBox()
-        self.ffmpeg_margins_right_distance.setMinimum(-99999)
-        self.ffmpeg_margins_right_distance.setMaximum(99999)
-        self.ffmpeg_margins_right_distance.valueChanged.connect(self._margins_right_changed)
-        self.ffmpeg_margins_right_line.addWidget(self.ffmpeg_margins_right_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_right_distance_pixels_label = QLabel()
-        self.ffmpeg_margins_right_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_margins_right_line.addWidget(self.ffmpeg_margins_right_distance_pixels_label, 0, Qt.AlignLeft)
-        self.ffmpeg_margins_right_line.addStretch()
-
-        self.ffmpeg_margins_right_vbox.addLayout(self.ffmpeg_margins_right_line)
-        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_right_vbox, 1, 3, 1, 1)
-
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_margins_group)
-
-        # Final command + export button ----------------------------------
-        self.ffmpeg_final_line = QHBoxLayout()
-        self.ffmpeg_final_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_final_line.setSpacing(20)
-
-        self.ffmpeg_command_line = QVBoxLayout()
-        self.ffmpeg_command_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_command_line.setSpacing(5)
-
-        self.ffmpeg_command_label = QLabel()
-        self.ffmpeg_command_label.setProperty('class', 'widget_label')
-        self.ffmpeg_command_line.addWidget(self.ffmpeg_command_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_command_qlineedit = QLineEdit()
-        self.ffmpeg_command_qlineedit.textEdited.connect(self._command_text_edited)
-        self.ffmpeg_command_line.addWidget(self.ffmpeg_command_qlineedit)
-
-        self.ffmpeg_final_line.addLayout(self.ffmpeg_command_line)
-
-        self.ffmpeg_export_button = QPushButton()
-        self.ffmpeg_export_button.setProperty('class', 'button_dark')
-        self.ffmpeg_export_button.clicked.connect(self._export_button_clicked)
-        self.ffmpeg_export_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-        self.ffmpeg_final_line.addWidget(self.ffmpeg_export_button)
-
-        self.ffmpeg_left_panel.layout().addLayout(self.ffmpeg_final_line)
-        self.ffmpeg_left_panel.layout().addStretch()
-
-        self.ffmpeg_panel.layout().addWidget(self.ffmpeg_left_panel, 1, 1, 1, 2)
-
-        # Preview ---------------------------------------------------------
-        self.ffmpeg_preview_panel = QWidget()
-        self.ffmpeg_preview_panel.setLayout(QVBoxLayout())
-        self.ffmpeg_preview_panel.layout().setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_preview_panel.layout().setSpacing(20)
-
-        self.ffmpeg_preview_label = QLabel()
-        self.ffmpeg_preview_label.setProperty('class', 'widget_label')
-        self.ffmpeg_preview_panel.layout().addWidget(self.ffmpeg_preview_label, 0)
-
-        self.ffmpeg_preview_image = QLabel()
-        self.ffmpeg_preview_image.setProperty('class', 'widget_label')
-        self.ffmpeg_preview_image.setAlignment(Qt.AlignTop)
-        self.ffmpeg_preview_panel.layout().addWidget(self.ffmpeg_preview_image, 1)
-
-        self.ffmpeg_preview_panel.layout().addStretch()
-
-        self.ffmpeg_panel.layout().addWidget(self.ffmpeg_preview_panel, 1, 3, 1, 1)
-
-        # The burned-in subtitles' form waits for its export: no format
-        # shows it yet.
 
         # Closed captions sub-tab ------------------------------------------
         # The captions go inside the file, as a broadcast master carries
@@ -1246,71 +955,76 @@ class _VideoPanel(QWidget):
 
         if remembered.get('format') in ('TS', 'TS DVB'):
             _select(self.tracks_ts_combo, remembered['format'])
+        # Burned in, or alone on a clear video: drawn in a subtitle style, as
+        # the preview draws them (burned_video).
+        self.burn_panel = QWidget()
+        self.burn_panel.setLayout(QVBoxLayout())
+        self.burn_panel.layout().setContentsMargins(0, 0, 0, 0)
+        self.burn_panel.layout().setSpacing(10)
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.style_combo = utils.LabeledComboBox()
+        self.style_combo.setLabel(_('export_dialog.subtitle_style'))
+        for style in sorted(subtitle_styles.available().values(), key=lambda style: style.name):
+            self.style_combo.combobox.addItem(style.name, style.id)
+        line.addWidget(self.style_combo, 1)
+        self.quality_combo = utils.LabeledComboBox()
+        self.quality_combo.setLabel(_('export_dialog.video_quality'))
+        for quality in burned_video.QUALITIES:
+            self.quality_combo.combobox.addItem(_(f'export_dialog.video_quality_{quality}'), quality)
+        line.addWidget(self.quality_combo, 1)
+        self.burn_panel.layout().addWidget(row)
+        # Alone, the picture is the video's, or any other when there is none.
+        self.alpha_options = QWidget()
+        line = QHBoxLayout(self.alpha_options)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.alpha_size_combo = utils.LabeledComboBox()
+        self.alpha_size_combo.setLabel(_('export_dialog.picture_size'))
+        video_size = (int(session.VIDEO.get('width') or 0), int(session.VIDEO.get('height') or 0))
+        if all(video_size):
+            self.alpha_size_combo.combobox.addItem(
+                _('export_dialog.picture_size_video').format(size=f'{video_size[0]}x{video_size[1]}'),
+                f'{video_size[0]}x{video_size[1]}')
+        for size in ('3840x2160', '1920x1080', '1280x720', '1080x1920'):
+            if size != f'{video_size[0]}x{video_size[1]}':
+                self.alpha_size_combo.combobox.addItem(size, size)
+        line.addWidget(self.alpha_size_combo, 1)
+        self.alpha_fps_combo = utils.LabeledComboBox()
+        self.alpha_fps_combo.setLabel(_('export_dialog.frame_rate'))
+        video_fps = float(session.VIDEO.get('framerate') or 0)
+        rates = list(export_options.FRAME_RATES)
+        if video_fps and not any(abs(video_fps - rate) < 0.01 for rate in rates):
+            rates = sorted(rates + [round(video_fps, 3)])
+        for rate in rates:
+            label = f'{rate:g} fps'
+            if video_fps and abs(video_fps - rate) < 0.01:
+                label = _('export_dialog.frame_rate_video').format(fps=label)
+                rate = video_fps
+            self.alpha_fps_combo.combobox.addItem(label, rate)
+        line.addWidget(self.alpha_fps_combo, 1)
+        self.burn_panel.layout().addWidget(self.alpha_options)
+        self.burn_panel.layout().addStretch()
+        _select(self.style_combo, remembered.get('style') or subtitle_styles.get().id)
+        _select(self.quality_combo, remembered.get('quality', burned_video.DEFAULT_QUALITY))
+        if not all(video_size):
+            _select(self.alpha_size_combo, remembered.get('size') or '{}x{}'.format(*burned_video.DEFAULT_SIZE))
+        if not (video_fps and _select(self.alpha_fps_combo, video_fps)):
+            fps = remembered.get('fps') or burned_video.DEFAULT_FPS
+            if not _select(self.alpha_fps_combo, fps):
+                _select(self.alpha_fps_combo, burned_video.DEFAULT_FPS)
+        self.video_pages.addWidget(self.burn_panel)
+
         _select(self.format_combo, 'TS' if remembered.get('format') == 'TS DVB' else remembered.get('format', 'MOV'))
         self._refresh_format()
         for combo in (self.format_combo, self.captions_mode_combo, self.captions_channel_combo,
-                      self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo):
+                      self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo, self.style_combo,
+                      self.quality_combo, self.alpha_size_combo, self.alpha_fps_combo):
             combo.combobox.currentIndexChanged.connect(self.changed)
         for check in (self.captions_teletext, self.tracks_translations, self.tracks_forced):
             check.toggled.connect(self.changed)
         self.layout().addWidget(self.video_pages, 0)
 
-        # Standalone "generate transparent video" button -----------------
-        self.generate_transparent_video_button = QPushButton()
-        self.generate_transparent_video_button.setProperty('class', 'button_dark')
-        self.generate_transparent_video_button.clicked.connect(self._generate_transparent_video_clicked)
-        self.generate_transparent_video_button.setVisible(False)
-        self.layout().addWidget(self.generate_transparent_video_button)
-
-    # ------------------------------------------------------------------
-    # Placeholder slots — user will rewire actual behaviour later.
-    # ------------------------------------------------------------------
-    def _fontsize_changed(self):
-        pass
-
-    def _fontfamily_changed(self):
-        pass
-
-    def _color_button_clicked(self):
-        pass
-
-    def _outline_group_toggled(self):
-        pass
-
-    def _outline_value_changed(self):
-        pass
-
-    def _shadow_group_toggled(self):
-        pass
-
-    def _shadow_distance_changed(self):
-        pass
-
-    def _margins_left_changed(self):
-        pass
-
-    def _margins_bottom_changed(self):
-        pass
-
-    def _margins_right_changed(self):
-        pass
-
-    def _command_text_edited(self):
-        pass
-
-    def _export_button_clicked(self):
-        pass
-
-    def _generate_transparent_video_clicked(self):
-        pass
-
-    def _update_preview(self):
-        # Placeholder; user will reconnect to a worker thread later.
-        pass
-
-    def showEvent(self, event):
-        self._update_preview()
-        return super().showEvent(event)
 
     def _container(self):
         container = self.format_combo.combobox.currentData() or 'MOV'
@@ -1321,7 +1035,14 @@ class _VideoPanel(QWidget):
     def _refresh_format(self, *_args):
         """The options of the format chosen: a subtitle track's, or the
         captions'."""
-        soft = self._container() in soft_subtitles.CONTAINERS
+        container = self._container()
+        if burned_video.is_burned(container):
+            self.video_pages.setCurrentWidget(self.burn_panel)
+            # ProRes has one quality; an alpha video is the size asked for.
+            self.quality_combo.setVisible(container == 'BURN MP4')
+            self.alpha_options.setVisible(burned_video.is_alpha(container))
+            return
+        soft = container in soft_subtitles.CONTAINERS
         self.video_pages.setCurrentWidget(self.tracks_panel if soft else self.captions_panel)
         if soft:
             self._refresh_tracks()
@@ -1351,13 +1072,25 @@ class _VideoPanel(QWidget):
 
     def get_config(self):
         container, captions = self.export_choices()
-        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **captions, format=container)
+        remembered = dict(captions)
+        if 'width' in remembered:
+            remembered['size'] = f"{remembered.pop('width')}x{remembered.pop('height')}"
+        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **remembered, format=container)
         return {'category': 'video', 'format': container, 'captions': captions}
 
     def export_choices(self):
         """(format, the options it is written with), as chosen: nothing
         remembered."""
         container = self._container()
+        if burned_video.is_burned(container):
+            choices = {'style': self.style_combo.combobox.currentData() or subtitle_styles.DEFAULT_STYLE,
+                       'quality': self.quality_combo.combobox.currentData() or burned_video.DEFAULT_QUALITY}
+            if burned_video.is_alpha(container):
+                size = str(self.alpha_size_combo.combobox.currentData() or '{}x{}'.format(*burned_video.DEFAULT_SIZE))
+                width, height = (int(value) for value in size.split('x'))
+                choices.update(width=width, height=height,
+                               fps=float(self.alpha_fps_combo.combobox.currentData() or burned_video.DEFAULT_FPS))
+            return container, choices
         if container in soft_subtitles.CONTAINERS:
             return container, {
                 'subtitle_codec': self.tracks_codec_combo.combobox.currentData() or 'srt',
@@ -1466,11 +1199,7 @@ class _PreviewPanel(QWidget):
             scale = min(1.0, width / image.width())
             size = (max(1, round(image.width() * scale)), max(1, round(image.height() * scale)))
             painter, pixmap = self._rounded(*size)
-            square = 6
-            for row in range(0, size[1], square):
-                for column in range(0, size[0], square):
-                    light = (row // square + column // square) % 2
-                    painter.fillRect(column, row, square, square, QColor(90, 90, 90) if light else QColor(60, 60, 60))
+            self._checkers(painter, *size)
             painter.drawImage(QRectF(0, 0, *size), image)
             painter.end()
             self.crop.setPixmap(pixmap)
@@ -1480,11 +1209,13 @@ class _PreviewPanel(QWidget):
 
     def show_still(self, image):
         """`image`, a frame of the video as the export writes it, scaled to
-        the panel's width."""
+        the panel's width; its clear parts, if it has them, checkered."""
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * image.height() / max(1, image.width())))
         painter, pixmap = self._rounded(width, height)
+        if image.hasAlphaChannel():
+            self._checkers(painter, width, height)
         painter.drawImage(QRectF(0, 0, width, height), image)
         painter.end()
         self.picture.setPixmap(pixmap)
@@ -1492,6 +1223,14 @@ class _PreviewPanel(QWidget):
         self.picture.setVisible(True)
         self.crop.setVisible(False)
         self.file.setVisible(False)
+
+    @staticmethod
+    def _checkers(painter, width, height, square=6):
+        """A checkerboard under a picture's clear parts."""
+        for row in range(0, height, square):
+            for column in range(0, width, square):
+                light = (row // square + column // square) % 2
+                painter.fillRect(column, row, square, square, QColor(90, 90, 90) if light else QColor(60, 60, 60))
 
     def _plain(self, text):
         """`text` in the well as it is: not in the faded look a note left."""
@@ -1778,7 +1517,8 @@ class ExportDialog(utils.SimpleDialog):
         it, in the background; one at a time, the last asked for drawn
         next."""
         from subtitld.modules import video_preview
-        if not (session.VIDEO or {}).get('filepath'):
+        container, captions = self.video_panel.export_choices()
+        if not (session.VIDEO or {}).get('filepath') and not burned_video.is_alpha(container):
             self.preview_panel.show_nothing()
             return
         if self._still is not None:
@@ -1788,7 +1528,6 @@ class ExportDialog(utils.SimpleDialog):
         if cue is None:
             self.preview_panel.show_nothing()
             return
-        container, captions = self.video_panel.export_choices()
         captions.setdefault('speakers', (session.CONFIG.get('export_subtitles') or {}).get('speakers'))
         if self._still_folder is None:
             self._still_folder = tempfile.mkdtemp(prefix='subtitld-stills-')
