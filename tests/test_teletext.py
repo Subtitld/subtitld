@@ -310,8 +310,7 @@ session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
 session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
 panel = _VideoPanel()
-panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('TS'))
-panel._refresh_format()
+panel.choose('TS')
 check('a transport stream with teletext: teletext or DVB, but no codec, nor forced, to choose',
       (panel.get_config()['format'], panel.tracks_codec_combo.isHidden(), panel.tracks_ts_combo.isHidden(),
        panel.tracks_forced.isHidden()), ('TS', True, False, True))

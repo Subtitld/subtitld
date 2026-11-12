@@ -164,12 +164,14 @@ session.VIDEO = {'framerate': 30000 / 1001, 'duration': 10.0, 'filepath': 'video
 from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
 combo = panel.format_combo.combobox
-check('offered beside QuickTime and MXF, before the subtitle tracks',
-      [combo.itemData(index) for index in range(combo.count())],
-      [None, 'MOV', 'MXF', 'MP4 A53', 'TS A53', None, 'MP4', 'MOV TEXT', 'MKV', 'TS',
-       None, 'BURN MP4', 'BURN MOV', None, 'ALPHA MOV', 'ALPHA WEBM'])
-combo.setCurrentIndex(combo.findData('MP4 A53'))
-panel._refresh_format()
+check('the formats alone, no groups', [combo.itemData(index) for index in range(combo.count())],
+      ['MP4', 'MOV', 'MKV', 'MXF', 'TS', 'WEBM'])
+ways = panel.way_combo.combobox
+panel.choose('MP4')
+check('MP4: in its frames, as a track, or burned in', [ways.itemData(index) for index in range(ways.count())],
+      ['cc', 'track', 'burn'])
+ways.setCurrentIndex(ways.findData('cc'))
+panel._refresh_way()
 config = panel.get_config()
 check('the picture copied: no codec, no teletext',
       (config['format'], panel.captions_codec_combo.isHidden(), panel.captions_teletext.isHidden()), ('MP4 A53', True, True))

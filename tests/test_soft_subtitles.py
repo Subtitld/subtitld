@@ -178,14 +178,12 @@ session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
 session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a', 'translations': {'fr-fr': 'b'}}], 'language': 'en-us'}
 from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
-panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('MP4'))
-panel._refresh_format()
+panel.choose('MP4')
 config = panel.get_config()
 check('MP4 first, with no codec to choose',
       (config['format'], panel.tracks_codec_combo.isHidden(), config['captions']),
       ('MP4', True, {'subtitle_codec': 'srt', 'translations': False, 'forced': False}))
-panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('MKV'))
-panel._refresh_format()
+panel.choose('MKV')
 panel.tracks_codec_combo.combobox.setCurrentIndex(1)
 panel._refresh_tracks()
 panel.tracks_translations.setChecked(True)

@@ -832,6 +832,36 @@ class _DocumentsPanel(QWidget):
         return config
 
 
+# The video page's formats, as its header lists them: the ways the subtitles
+# can go in each, and the export each way makes (a transport stream's track
+# is teletext, 'TS', or DVB subtitles, 'TS DVB', as its track format says).
+VIDEO_FILES = {
+    'MP4': {'label': 'video_mp4_track', 'ways': {'cc': 'MP4 A53', 'track': 'MP4', 'burn': 'BURN MP4'}},
+    'MOV': {'label': 'video_mov', 'ways': {'cc': 'MOV', 'track': 'MOV TEXT', 'burn': 'BURN MOV', 'alpha': 'ALPHA MOV'}},
+    'MKV': {'label': 'video_mkv_track', 'ways': {'track': 'MKV', 'burn': 'BURN MKV', 'alpha': 'ALPHA MKV'}},
+    'MXF': {'label': 'video_mxf', 'ways': {'cc': 'MXF'}},
+    'TS': {'label': 'video_ts_track', 'ways': {'cc': 'TS A53', 'track': 'TS', 'burn': 'BURN TS'}},
+    'WEBM': {'label': 'video_webm', 'ways': {'burn': 'BURN WEBM', 'alpha': 'ALPHA WEBM'}},
+}
+
+
+def _video_file_of(export):
+    """(format, way) of the video page that make `export`; None for none."""
+    export = 'TS' if export == 'TS DVB' else export
+    for video_file, spec in VIDEO_FILES.items():
+        for way, key in spec['ways'].items():
+            if key == export:
+                return video_file, way
+    return None
+
+
+def _codec_label(codec):
+    """A picture codec's name as the list shows it."""
+    names = {'h264': 'H.264', 'hevc': 'HEVC', 'vp9': 'VP9', 'prores': 'ProRes 422 HQ', 'prores4444': 'ProRes 4444',
+             'png': 'PNG', 'qtrle': 'QuickTime Animation'}
+    return names.get(codec) or _(f'export_dialog.video_codec_{codec}')
+
+
 class _VideoPanel(QWidget):
     """The video tab: the kind of file, and the options it takes. The
     subtitles go in as closed captions, as a track of their own, burned into
@@ -845,31 +875,24 @@ class _VideoPanel(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(10)
 
-        # The file's format, the page's header: a caption track or the
-        # captions inside the file, or a subtitle track of its own. The
-        # options below are the ones that format takes.
+        # The file's format, the page's header; then how the subtitles go in
+        # it, of the ways that format has; then the options that way takes.
         remembered = session.CONFIG.get('export_video') or {}
-        # The list names the files alone, under what they carry: a format
-        # can do either, so its name is found under both.
         self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
-        combobox = self.format_combo.combobox
-        for group, formats in (('category_captions', (('MOV', 'video_mov'), ('MXF', 'video_mxf'),
-                                                      ('MP4 A53', 'video_mp4_a53'), ('TS A53', 'video_ts_a53'))),
-                               ('category_subtitle_track', (('MP4', 'video_mp4_track'), ('MOV TEXT', 'video_mov_track'),
-                                                            ('MKV', 'video_mkv_track'), ('TS', 'video_ts_track'))),
-                               ('category_burned', (('BURN MP4', 'video_mp4_track'), ('BURN MOV', 'video_mov'))),
-                               ('category_alpha', (('ALPHA MOV', 'video_mov'), ('ALPHA WEBM', 'video_webm')))):
-            combobox.addItem(_(f'export_dialog.{group}'))
-            heading = combobox.model().item(combobox.count() - 1)
-            heading.setFlags(Qt.NoItemFlags)
-            font = heading.font()
-            font.setBold(True)
-            heading.setFont(font)
-            for key, label in formats:
-                combobox.addItem(_(f'export_dialog.{label}'), key)
+        for key, spec in VIDEO_FILES.items():
+            self.format_combo.combobox.addItem(_(f'export_dialog.{spec["label"]}'), key)
         self.format_combo.activated.connect(self._refresh_format)
         self.layout().addWidget(self.format_combo)
+
+        self.way_combo = utils.LabeledComboBox()
+        self.way_combo.setLabel(_('export_dialog.video_subtitles'))
+        self.way_combo.activated.connect(self._refresh_way)
+        self.layout().addWidget(self.way_combo)
+        # The way chosen for each format, and the codec for each export, so
+        # going to another and back keeps them.
+        self._ways = dict(remembered.get('ways') or {})
+        self._codecs = dict(remembered.get('codecs') or {})
 
         self.video_pages = QStackedWidget()
 
@@ -897,7 +920,7 @@ class _VideoPanel(QWidget):
             self.captions_channel_combo.combobox.addItem(f'CC{number}', number)
         line.addWidget(self.captions_channel_combo, 1)
         self.captions_codec_combo = utils.LabeledComboBox()
-        self.captions_codec_combo.setLabel(_('export_dialog.video_codec'))
+        self.captions_codec_combo.setLabel(_('export_dialog.codec'))
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_dnxhr'), 'dnxhr')
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_mpeg2'), 'mpeg2')
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_prores'), 'prores')
@@ -953,8 +976,6 @@ class _VideoPanel(QWidget):
         self.tracks_forced.setChecked(bool(remembered.get('forced')))
         self.video_pages.addWidget(self.tracks_panel)
 
-        if remembered.get('format') in ('TS', 'TS DVB'):
-            _select(self.tracks_ts_combo, remembered['format'])
         # Burned in, or alone on a clear video: drawn in a subtitle style, as
         # the preview draws them (burned_video).
         self.burn_panel = QWidget()
@@ -964,17 +985,26 @@ class _VideoPanel(QWidget):
         row = QWidget()
         line = QHBoxLayout(row)
         line.setContentsMargins(0, 0, 0, 0)
+        self.codec_combo = utils.LabeledComboBox()
+        self.codec_combo.setLabel(_('export_dialog.codec'))
+        self.codec_combo.activated.connect(self._codec_chosen)
+        line.addWidget(self.codec_combo, 1)
         self.style_combo = utils.LabeledComboBox()
         self.style_combo.setLabel(_('export_dialog.subtitle_style'))
         for style in sorted(subtitle_styles.available().values(), key=lambda style: style.name):
             self.style_combo.combobox.addItem(style.name, style.id)
         line.addWidget(self.style_combo, 1)
+        self.burn_panel.layout().addWidget(row)
+        self.quality_row = QWidget()
+        line = QHBoxLayout(self.quality_row)
+        line.setContentsMargins(0, 0, 0, 0)
         self.quality_combo = utils.LabeledComboBox()
         self.quality_combo.setLabel(_('export_dialog.video_quality'))
         for quality in burned_video.QUALITIES:
             self.quality_combo.combobox.addItem(_(f'export_dialog.video_quality_{quality}'), quality)
         line.addWidget(self.quality_combo, 1)
-        self.burn_panel.layout().addWidget(row)
+        line.addStretch(1)
+        self.burn_panel.layout().addWidget(self.quality_row)
         # Alone, the picture is the video's, or any other when there is none.
         self.alpha_options = QWidget()
         line = QHBoxLayout(self.alpha_options)
@@ -1015,32 +1045,74 @@ class _VideoPanel(QWidget):
                 _select(self.alpha_fps_combo, burned_video.DEFAULT_FPS)
         self.video_pages.addWidget(self.burn_panel)
 
-        _select(self.format_combo, 'TS' if remembered.get('format') == 'TS DVB' else remembered.get('format', 'MOV'))
-        self._refresh_format()
-        for combo in (self.format_combo, self.captions_mode_combo, self.captions_channel_combo,
-                      self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo, self.style_combo,
-                      self.quality_combo, self.alpha_size_combo, self.alpha_fps_combo):
+        self.choose(remembered.get('format') if _video_file_of(remembered.get('format')) else 'MOV')
+        for combo in (self.format_combo, self.way_combo, self.captions_mode_combo, self.captions_channel_combo,
+                      self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo, self.codec_combo,
+                      self.style_combo, self.quality_combo, self.alpha_size_combo, self.alpha_fps_combo):
             combo.combobox.currentIndexChanged.connect(self.changed)
         for check in (self.captions_teletext, self.tracks_translations, self.tracks_forced):
             check.toggled.connect(self.changed)
         self.layout().addWidget(self.video_pages, 0)
 
 
+    def choose(self, export):
+        """Show the choices that make `export` (a key of
+        session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS): its format, its
+        way, and a transport stream's kind of track."""
+        found = _video_file_of(export)
+        if found is None:
+            return False
+        video_file, way = found
+        if export in ('TS', 'TS DVB'):
+            _select(self.tracks_ts_combo, export)
+        _select(self.format_combo, video_file)
+        self._ways[video_file] = way
+        self._refresh_format()
+        return True
+
+    def _video_file(self):
+        return self.format_combo.combobox.currentData() or 'MOV'
+
     def _container(self):
-        container = self.format_combo.combobox.currentData() or 'MOV'
-        if container == 'TS':
+        """The export the choices make."""
+        ways = VIDEO_FILES[self._video_file()]['ways']
+        export = ways.get(self.way_combo.combobox.currentData()) or next(iter(ways.values()))
+        if export == 'TS':
             return self.tracks_ts_combo.combobox.currentData() or 'TS'
-        return container
+        return export
 
     def _refresh_format(self, *_args):
-        """The options of the format chosen: a subtitle track's, or the
-        captions'."""
+        """The ways the chosen format has, the one last chosen with it
+        first; a choice of one is not asked."""
+        video_file = self._video_file()
+        ways = VIDEO_FILES[video_file]['ways']
+        combobox = self.way_combo.combobox
+        combobox.blockSignals(True)
+        combobox.clear()
+        for way in ways:
+            combobox.addItem(_(f'export_dialog.video_subtitles_{way}'), way)
+        _select(self.way_combo, self._ways.get(video_file))
+        combobox.blockSignals(False)
+        self.way_combo.setVisible(len(ways) > 1)
+        self._refresh_way()
+
+    def _refresh_way(self, *_args):
+        """The options of the way chosen: the captions', a subtitle track's,
+        or those of the subtitles drawn in the picture."""
+        self._ways[self._video_file()] = self.way_combo.combobox.currentData()
         container = self._container()
         if burned_video.is_burned(container):
             self.video_pages.setCurrentWidget(self.burn_panel)
-            # ProRes has one quality; an alpha video is the size asked for.
-            self.quality_combo.setVisible(container == 'BURN MP4')
+            combobox = self.codec_combo.combobox
+            combobox.blockSignals(True)
+            combobox.clear()
+            for codec in burned_video.CONTAINERS[container]['codecs']:
+                combobox.addItem(_codec_label(codec), codec)
+            _select(self.codec_combo, self._codecs.get(container))
+            combobox.blockSignals(False)
+            self.codec_combo.setVisible(combobox.count() > 1)
             self.alpha_options.setVisible(burned_video.is_alpha(container))
+            self._codec_chosen()
             return
         soft = container in soft_subtitles.CONTAINERS
         self.video_pages.setCurrentWidget(self.tracks_panel if soft else self.captions_panel)
@@ -1049,7 +1121,14 @@ class _VideoPanel(QWidget):
         else:
             self._refresh_captions()
 
-    def _refresh_captions(self):
+    def _codec_chosen(self, *_args):
+        """A quality for the codecs that take one; lossless and fixed-rate
+        ones do not."""
+        codec = self.codec_combo.combobox.currentData()
+        self._codecs[self._container()] = codec
+        self.quality_row.setVisible(burned_video.has_quality(codec))
+
+    def _refresh_captions(self, *_args):
         """What the chosen container can hold: a QuickTime caption track
         carries CEA-608 and keeps the picture as it is; an MXF's ancillary
         data carries CEA-708 beside it, but takes a picture of its own; the
@@ -1058,7 +1137,7 @@ class _VideoPanel(QWidget):
         self.captions_codec_combo.setVisible(container == 'MXF')
         self.captions_teletext.setVisible(container == 'MXF')
 
-    def _refresh_tracks(self):
+    def _refresh_tracks(self, *_args):
         """What the chosen kind of file does with the subtitles: an MP4's
         timed text keeps a run's formatting alone; Matroska takes SRT,
         which every player reads, or ASS, which keeps the look; a transport
@@ -1075,7 +1154,9 @@ class _VideoPanel(QWidget):
         remembered = dict(captions)
         if 'width' in remembered:
             remembered['size'] = f"{remembered.pop('width')}x{remembered.pop('height')}"
-        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **remembered, format=container)
+        remembered.pop('video_codec', None)
+        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **remembered, format=container,
+                                              ways=dict(self._ways), codecs=dict(self._codecs))
         return {'category': 'video', 'format': container, 'captions': captions}
 
     def export_choices(self):
@@ -1083,7 +1164,8 @@ class _VideoPanel(QWidget):
         remembered."""
         container = self._container()
         if burned_video.is_burned(container):
-            choices = {'style': self.style_combo.combobox.currentData() or subtitle_styles.DEFAULT_STYLE,
+            choices = {'video_codec': burned_video.codec_of(container, self.codec_combo.combobox.currentData()),
+                       'style': self.style_combo.combobox.currentData() or subtitle_styles.DEFAULT_STYLE,
                        'quality': self.quality_combo.combobox.currentData() or burned_video.DEFAULT_QUALITY}
             if burned_video.is_alpha(container):
                 size = str(self.alpha_size_combo.combobox.currentData() or '{}x{}'.format(*burned_video.DEFAULT_SIZE))

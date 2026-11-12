@@ -78,12 +78,9 @@ else:
     preview = dialog.preview_panel
     check('the frame alone: no part of it under it, no well',
           (preview.picture.isVisible(), preview.crop.isVisible(), preview.file.isVisible()), (True, False, False))
-    combo = dialog.video_panel.format_combo.combobox
-    combo.setCurrentIndex(combo.findData('MKV'))
-    dialog.video_panel._refresh_format()
+    dialog.video_panel.choose('MKV')
     dialog.refresh_preview()
-    combo.setCurrentIndex(combo.findData('MP4'))                # asked for while MKV is drawn: drawn next
-    dialog.video_panel._refresh_format()
+    dialog.video_panel.choose('MP4')                            # asked for while MKV is drawn: drawn next
     dialog.refresh_preview()
     check('one at a time, the last asked for after it', (dialog._still is not None, dialog._still_again), (True, True))
     settle()
