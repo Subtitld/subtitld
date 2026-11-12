@@ -1206,7 +1206,7 @@ class ExportDialog(utils.SimpleDialog):
         sidebar = QWidget()
         sidebar.setObjectName('export_dialog_sidebar')
         sidebar.setLayout(QVBoxLayout())
-        sidebar.layout().setContentsMargins(0, 10, 1, 10)      # clear of the sidebar's 1px right border
+        sidebar.layout().setContentsMargins(0, 10, 1, 10)      # clear of the light line along the sidebar's right edge
         sidebar.layout().setSpacing(0)
         sidebar.setFixedWidth(140)
         body.layout().addWidget(sidebar)

@@ -2902,9 +2902,12 @@ QMenu#subtitle_formatting_menu::separator {
     icon: url(graphics:dialog_close_icon.svg);
 }
 
+/* The start screen's shadow, turned to run down the right edge: a faint light line there, the shadow falling
+   into the sidebar (its layout keeps 1px clear of the line). */
 #export_dialog_sidebar {
     background-color: transparent;
-    border-right: 1px solid #1f2b35;
+    border-image: url(graphics:export_dialog_sidebar_shadow.svg) 0 150 0 0 stretch stretch;
+    border-width: 0 140px 0 0;
 }
 
 /* Like the left panel's navigation: the chosen category is lit, with a light bar along its left edge. */
