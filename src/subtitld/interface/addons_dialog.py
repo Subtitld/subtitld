@@ -17,7 +17,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QPoint
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -435,19 +436,6 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
         key=lambda r: r.display_name.lower(),
     )
     return builtin_rows + installed_rows + available_only
-
-
-# ---------------------------------------------------------------------------
-# Filter pill — checkable QPushButton with the QSS `filter_pill` class
-# ---------------------------------------------------------------------------
-def _make_pill(text: str) -> QPushButton:
-    btn = QPushButton(text)
-    btn.setProperty('class', 'filter_pill')
-    btn.setCheckable(True)
-    btn.setCursor(Qt.PointingHandCursor)
-    btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-    btn.setFixedHeight(24)
-    return btn
 
 
 # ---------------------------------------------------------------------------
@@ -1231,8 +1219,63 @@ class AddonConfigInlineWidget(QWidget):
 # ---------------------------------------------------------------------------
 # Embeddable panel
 # ---------------------------------------------------------------------------
+class _LaidOutButton(QPushButton):
+    """A button whose face is the labels in its layout: as wide as they are."""
+
+    def sizeHint(self):
+        return self.layout().sizeHint() if self.layout() is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+
+class _StateSegment(_LaidOutButton):
+    """One segment of the state strip: its name and, quieter, how many
+    add-ons it holds under the other filters."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setLayout(QHBoxLayout())
+        self.layout().setContentsMargins(11, 0, 11, 0)
+        self.layout().setSpacing(5)
+        self.name = QLabel()
+        self.name.setObjectName('addons_state_name')
+        self.count = QLabel()
+        self.count.setObjectName('addons_state_count')
+        for label in (self.name, self.count):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self.layout().addWidget(label)
+        self.setFixedHeight(26)
+
+
+class _FiltersPopover(QFrame):
+    """What the Filters button opens: the task, the language and the
+    hardware, as labelled fields."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setObjectName('addons_filters_popover')
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        frame = QFrame()
+        frame.setObjectName('addons_filters_popover_frame')
+        frame.setAttribute(Qt.WA_StyledBackground)
+        frame.setLayout(QVBoxLayout())
+        frame.layout().setContentsMargins(10, 10, 10, 10)
+        frame.layout().setSpacing(8)
+        self.layout().addWidget(frame)
+        self.task = utils.LabeledComboBox()
+        self.language = utils.LabeledComboBox()
+        self.hardware = utils.LabeledComboBox()
+        for field_widget in (self.task, self.language, self.hardware):
+            frame.layout().addWidget(field_widget)
+        self.setFixedWidth(320)
+
+
 class AddonsPanel(QWidget):
-    """Single-list add-ons manager. Filter pills (install state + task type)
+    """Single-list add-ons manager. Search, a Filters popover (task, language, hardware) and the state strip
     on top, scrollable list of cards in the middle, install-from-file +
     refresh + progress at the bottom."""
 
@@ -1260,92 +1303,95 @@ class AddonsPanel(QWidget):
         self.layout().setContentsMargins(10, 10, 10, 10)
         self.layout().setSpacing(8)
 
-        # --- State pills row (mutually exclusive) -------------------------
         self._state_filter = self._STATE_ALL
         self._task_filter = self._TASK_ANY
         self._language_filter = self._LANG_ANY
         self._hardware_filter = self._HARDWARE_ANY
+        self._search_text = ''
 
-        # The initial setChecked() below fires `toggled`, which triggers
-        # _render_list() — but the inner scroll layout doesn't exist yet at
-        # that point. Block signals while seeding the default state, then
-        # connect the handlers afterwards.
-        state_row = QHBoxLayout()
-        state_row.setSpacing(4)
-        self._state_group = QButtonGroup(self)
-        self._state_group.setExclusive(True)
-        self._state_pills: dict[str, QPushButton] = {}
-        for value in (self._STATE_ALL, self._STATE_INSTALLED, self._STATE_AVAILABLE, self._STATE_UPDATES):
-            pill = _make_pill('')  # text set in retranslate()
-            pill.blockSignals(True)
-            self._state_group.addButton(pill)
-            state_row.addWidget(pill)
-            self._state_pills[value] = pill
-        self._state_pills[self._STATE_ALL].setChecked(True)
-        state_row.addStretch()
-        self.layout().addLayout(state_row)
+        # --- Search, and the Filters button that opens the rest ---------
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        self._search = QLineEdit()
+        self._search.setObjectName('addons_search')
+        self._search.setClearButtonEnabled(True)
+        self._search.addAction(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')), QLineEdit.LeadingPosition)
+        self._search.textChanged.connect(self._on_search_changed)
+        search_row.addWidget(self._search, 1)
 
-        # --- Task pills row (mutually exclusive) --------------------------
-        task_row = QHBoxLayout()
-        task_row.setSpacing(4)
-        self._task_group = QButtonGroup(self)
-        self._task_group.setExclusive(True)
-        self._task_pills: dict[object, QPushButton] = {}  # value -> pill, key None for "any"
+        self._filters_button = _LaidOutButton()
+        self._filters_button.setObjectName('addons_filters_button')
+        self._filters_button.setLayout(QHBoxLayout())
+        self._filters_button.layout().setContentsMargins(10, 0, 8, 0)
+        self._filters_button.layout().setSpacing(6)
+        filters_icon = QLabel()
+        filters_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_filters.svg')).pixmap(14, 14))
+        self._filters_text = QLabel()
+        self._filters_text.setObjectName('addons_filters_text')
+        self._filters_count = QLabel()
+        self._filters_count.setObjectName('addons_filters_count')
+        for label in (filters_icon, self._filters_text, self._filters_count):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self._filters_button.layout().addWidget(label)
+        self._filters_button.setFixedHeight(26)
+        self._filters_button.clicked.connect(self._open_filters)
+        search_row.addWidget(self._filters_button)
+        self.layout().addLayout(search_row)
+
+        # The task, the language and the hardware live in the popover. The
+        # fields' combo boxes keep the names the rest of the panel uses.
+        self._filters_popover = _FiltersPopover(self)
+        self._task_combo = self._filters_popover.task.combobox
         for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_AUDIO_SEPARATE, TASK_TRANSLATE,
                       TASK_OCR_RECOGNIZE):
-            pill = _make_pill('')
-            pill.blockSignals(True)
-            self._task_group.addButton(pill)
-            task_row.addWidget(pill)
-            self._task_pills[value] = pill
-        self._task_pills[self._TASK_ANY].setChecked(True)
-        task_row.addStretch()
-        self.layout().addLayout(task_row)
-
-        # --- Language filter combobox ------------------------------------
-        # Populated from the union of all rows' declared languages, so the
-        # dropdown only shows tags the user can actually filter by. The
-        # default "Any language" entry uses an empty string as data so the
-        # filter logic can early-out cheaply.
-        lang_row = QHBoxLayout()
-        lang_row.setSpacing(4)
-        self._language_label = QLabel('')  # text set in retranslate()
-        self._language_combo = QComboBox()
-        # Match the surrounding state/task pills so the filter row reads as
-        # one visual cluster. The QSS rule for QComboBox[class='filter_pill']
-        # mirrors the QPushButton pill (rounded, same colors), with extra
-        # right padding to leave room for the dropdown arrow.
-        self._language_combo.setProperty('class', 'filter_pill')
-        self._language_combo.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            self._task_combo.addItem('', value)
+        self._task_combo.currentIndexChanged.connect(self._on_task_changed)
         # `userData` is the canonical lowercased tag we match against.
-        # Wired up below after we have a stable initial state.
+        self._language_combo = self._filters_popover.language.combobox
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
-        lang_row.addWidget(self._language_label)
-        lang_row.addWidget(self._language_combo, 1)
-        lang_row.addStretch()
-        self.layout().addLayout(lang_row)
-
-        # --- Hardware filter combobox + what this computer has -----------
         # "Runs on this computer" hides only the add-ons that need a
         # graphics card this computer was found not to have.
-        hardware_row = QHBoxLayout()
-        hardware_row.setSpacing(4)
-        self._hardware_label = QLabel('')  # text set in retranslate()
-        self._hardware_combo = QComboBox()
-        self._hardware_combo.setProperty('class', 'filter_pill')
-        self._hardware_combo.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self._hardware_combo = self._filters_popover.hardware.combobox
         self._hardware_combo.addItem('', self._HARDWARE_ANY)
         self._hardware_combo.addItem('', self._HARDWARE_HERE)
         self._hardware_combo.currentIndexChanged.connect(self._on_hardware_changed)
-        hardware_row.addWidget(self._hardware_label)
-        hardware_row.addWidget(self._hardware_combo, 1)
-        hardware_row.addStretch()
-        self.layout().addLayout(hardware_row)
 
+        # --- The state strip: one exclusive row, the chosen one sunk ----
+        state_row = QHBoxLayout()
+        state_row.setSpacing(0)
+        self._state_strip = QWidget()
+        self._state_strip.setObjectName('addons_state_strip')
+        self._state_strip.setLayout(QHBoxLayout())
+        self._state_strip.layout().setContentsMargins(0, 0, 0, 0)
+        self._state_strip.layout().setSpacing(0)
+        self._state_group = QButtonGroup(self)
+        self._state_group.setExclusive(True)
+        self._state_pills: dict[str, _StateSegment] = {}
+        states = (self._STATE_ALL, self._STATE_INSTALLED, self._STATE_AVAILABLE, self._STATE_UPDATES)
+        for index, value in enumerate(states):
+            segment = _StateSegment()
+            segment.setProperty('segment', 'first' if index == 0 else ('last' if index == len(states) - 1 else 'middle'))
+            self._state_group.addButton(segment)
+            self._state_strip.layout().addWidget(segment)
+            self._state_pills[value] = segment
+        self._state_pills[self._STATE_ALL].setChecked(True)
+        state_row.addWidget(self._state_strip)
+        state_row.addStretch()
+        self.layout().addLayout(state_row)
+
+        # --- The chosen filters, each a tag that clears it; what this computer has
+        tags_row = QHBoxLayout()
+        tags_row.setSpacing(6)
+        self._tags = QHBoxLayout()
+        self._tags.setSpacing(6)
+        tags_row.addLayout(self._tags)
+        tags_row.addStretch()
         self._hardware_info = QLabel('')
+        self._hardware_info.setObjectName('addons_hardware_note')
+        self._hardware_info.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self._hardware_info.setWordWrap(True)
-        self._hardware_info.setProperty('class', 'addon_card_meta')
-        self.layout().addWidget(self._hardware_info)
+        tags_row.addWidget(self._hardware_info, 1)
+        self.layout().addLayout(tags_row)
 
         # --- Scrollable card list + empty-state placeholder --------------
         # The list and the placeholder share the same slot in the layout
@@ -1390,14 +1436,9 @@ class AddonsPanel(QWidget):
         self._fetch_state = 'loading'
         self._fetch_error_msg = ''
 
-        # Now that the inner layout exists, hook up the pill `toggled`
-        # handlers and re-enable signal delivery.
-        for value, pill in self._state_pills.items():
-            pill.toggled.connect(lambda checked, v=value: self._on_state_toggled(v, checked))
-            pill.blockSignals(False)
-        for value, pill in self._task_pills.items():
-            pill.toggled.connect(lambda checked, v=value: self._on_task_toggled(v, checked))
-            pill.blockSignals(False)
+        # Now that the inner layout exists, hook up the strip's handlers.
+        for value, segment in self._state_pills.items():
+            segment.toggled.connect(lambda checked, v=value: self._on_state_toggled(v, checked))
 
         # --- Bottom utility row -----------------------------------------
         # Per-row actions live inside the cards now; this row only carries
@@ -1450,11 +1491,21 @@ class AddonsPanel(QWidget):
         self._state_filter = value
         self._render_list()
 
-    def _on_task_toggled(self, value, checked: bool):
-        if not checked:
-            return
-        self._task_filter = value
+    def _on_task_changed(self, _index: int):
+        self._task_filter = self._task_combo.currentData()
         self._render_list()
+
+    def _on_search_changed(self, text: str):
+        self._search_text = text.strip().lower()
+        self._render_list()
+
+    def _open_filters(self):
+        popover = self._filters_popover
+        popover.adjustSize()
+        below = self._filters_button.mapToGlobal(QPoint(self._filters_button.width() - popover.width(),
+                                                        self._filters_button.height() + 4))
+        popover.move(below)
+        popover.show()
 
     def _on_language_changed(self, _index: int):
         # Combobox stores normalized BCP-47 tags as userData; '' means "any".
@@ -1571,14 +1622,26 @@ class AddonsPanel(QWidget):
         self._render_list()
 
     # -- Render ------------------------------------------------------------
+    def _state_pass(self, row: _Row, state: str) -> bool:
+        if state == self._STATE_INSTALLED and not row.is_installed:
+            return False
+        if state == self._STATE_AVAILABLE and row.is_installed:
+            return False
+        if state == self._STATE_UPDATES and not row.has_update:
+            return False
+        return True
+
     def _filter_pass(self, row: _Row) -> bool:
-        # State filter
-        if self._state_filter == self._STATE_INSTALLED and not row.is_installed:
-            return False
-        if self._state_filter == self._STATE_AVAILABLE and row.is_installed:
-            return False
-        if self._state_filter == self._STATE_UPDATES and not row.has_update:
-            return False
+        return self._state_pass(row, self._state_filter) and self._other_filters_pass(row)
+
+    def _other_filters_pass(self, row: _Row) -> bool:
+        """Everything but the state: what the strip's counts are taken under."""
+        if self._search_text:
+            haystack = ' '.join((row.addon_id, row.display_name, row.summary,
+                                 _addon_localized(row.addon_id, 'display_name', row.display_name),
+                                 _addon_localized(row.addon_id, 'summary', row.summary))).lower()
+            if self._search_text not in haystack:
+                return False
         # Task filter
         if self._task_filter is not None and self._task_filter not in row.tasks:
             return False
@@ -1639,6 +1702,8 @@ class AddonsPanel(QWidget):
             self._cards_by_id[row.addon_id] = card
             rendered += 1
 
+        self._update_filter_chrome()
+
         # Page 0 = list, Page 1 = empty-state placeholder. Pick the
         # message based on what's actually going on (loading / fetch
         # error / filtered-out / fully empty).
@@ -1647,6 +1712,35 @@ class AddonsPanel(QWidget):
         else:
             self._empty_label.setText(self._empty_state_text())
             self._list_stack.setCurrentIndex(1)
+
+    def _update_filter_chrome(self):
+        """The strip's counts, the Filters button's count and the tags of the
+        filters chosen in it."""
+        others = [row for row in self._rows if self._other_filters_pass(row)]
+        for value, segment in self._state_pills.items():
+            segment.count.setText(str(sum(1 for row in others if self._state_pass(row, value))))
+        chosen = []
+        if self._task_filter is not None:
+            chosen.append((self._task_combo.currentText(), lambda: self._task_combo.setCurrentIndex(0)))
+        if self._language_filter:
+            chosen.append((self._language_combo.currentText(), lambda: self._language_combo.setCurrentIndex(0)))
+        if self._hardware_filter != self._HARDWARE_ANY:
+            chosen.append((self._hardware_combo.currentText(), lambda: self._hardware_combo.setCurrentIndex(0)))
+        self._filters_count.setText(str(len(chosen)))
+        self._filters_count.setVisible(bool(chosen))
+        while self._tags.count():
+            item = self._tags.takeAt(0)
+            if item.widget() is not None:
+                item.widget().hide()                       # gone now, not when the deletion comes round
+                item.widget().deleteLater()
+        for text, clear in chosen:
+            tag = QPushButton(text)
+            tag.setObjectName('addons_filter_tag')
+            tag.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_tag_clear.svg')))
+            tag.setLayoutDirection(Qt.RightToLeft)          # the ✕ after the text
+            tag.setToolTip(_('addons_dialog.filter.clear'))
+            tag.clicked.connect(clear)
+            self._tags.addWidget(tag)
 
     def _empty_state_text(self) -> str:
         """Pick the right placeholder copy. Loading state takes priority,
@@ -1809,25 +1903,22 @@ class AddonsPanel(QWidget):
 
     # -- Translate ---------------------------------------------------------
     def retranslate(self):
-        self._state_pills[self._STATE_ALL].setText(_('addons_dialog.filter.state.all'))
-        self._state_pills[self._STATE_INSTALLED].setText(_('addons_dialog.filter.state.installed'))
-        self._state_pills[self._STATE_AVAILABLE].setText(_('addons_dialog.filter.state.available'))
-        self._state_pills[self._STATE_UPDATES].setText(_('addons_dialog.filter.state.updates'))
+        for value, key in ((self._STATE_ALL, 'all'), (self._STATE_INSTALLED, 'installed'),
+                           (self._STATE_AVAILABLE, 'available'), (self._STATE_UPDATES, 'updates')):
+            self._state_pills[value].name.setText(_(f'addons_dialog.filter.state.{key}'))
+        self._search.setPlaceholderText(_('addons_dialog.filter.search'))
+        self._filters_text.setText(_('addons_dialog.filter.button'))
 
-        self._task_pills[self._TASK_ANY].setText(_('addons_dialog.filter.task.any'))
-        self._task_pills[TASK_TTS_SYNTHESIZE].setText(_('addons_dialog.filter.task.tts'))
-        self._task_pills[TASK_ASR_TRANSCRIBE].setText(_('addons_dialog.filter.task.asr'))
-        self._task_pills[TASK_AUDIO_SEPARATE].setText(_('addons_dialog.filter.task.separation'))
-        self._task_pills[TASK_TRANSLATE].setText(_('addons_dialog.filter.task.translate'))
-        self._task_pills[TASK_OCR_RECOGNIZE].setText(_('addons_dialog.filter.task.ocr'))
-
+        popover = self._filters_popover
+        popover.task.setLabel(_('addons_dialog.filter.task.label'))
+        for index, key in enumerate(('any', 'tts', 'asr', 'separation', 'translate', 'ocr')):
+            self._task_combo.setItemText(index, _(f'addons_dialog.filter.task.{key}'))
         # Language filter — only the "Any" entry needs translation; the rest
         # of the rows are raw BCP-47 tags. We rebuild the combobox so the
         # entry text picks up the current locale.
-        self._language_label.setText(_('addons_dialog.filter.lang.label'))
+        popover.language.setLabel(_('addons_dialog.filter.lang.label').rstrip(':： '))
         self._repopulate_language_combo()
-
-        self._hardware_label.setText(_('addons_dialog.filter.hardware.label'))
+        popover.hardware.setLabel(_('addons_dialog.filter.hardware.label').rstrip(':： '))
         for index, key in enumerate(('any', 'this_computer')):
             self._hardware_combo.setItemText(index, _(f'addons_dialog.filter.hardware.{key}'))
         self._hardware_info.setText(_hardware_text(self._hardware))

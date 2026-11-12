@@ -548,101 +548,116 @@ QLabel[class='metadata_badge'] {
     padding: 2px 10px;
 }
 
-QPushButton[class='filter_pill'] {
-    font-family: 'Montserrat';
-    font-size: 10px;
-    font-weight: 600;
-    color: #b8cee0;
-    background-color: rgba(184, 206, 224, 0.06);
+/* The add-ons filters (addons_dialog.AddonsPanel): a sunken search field and a raised Filters button on one
+   26px row; under them the state strip, one joined row where the chosen state sinks, each with how many add-ons
+   it holds; then the chosen filters as tags that clear them, and a quiet note on this computer's graphics. */
+QLineEdit#addons_search {
+    min-height: 26px;
+    max-height: 26px;
+    padding: 0 6px 0 2px;
     border: 0;
     border-radius: 3px;
-    padding: 3px 12px;
-    text-transform: none;
+    font-size: 11px;
+    color: #e3edf5;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2830, stop:1 #2b3a46);
 }
 
-QPushButton[class='filter_pill']:hover {
-    background-color: rgba(184, 206, 224, 0.12);
-    border-color: rgba(184, 206, 224, 0.28);
+QPushButton#addons_filters_button {
+    padding: 0;
 }
 
-QPushButton[class='filter_pill']:checked {
-    color: #1a2632;
-    background-color: #b8cee0;
-    border-color: #b8cee0;
-}
-
-QPushButton[class='filter_pill']:checked:hover {
-    background-color: #c8d8e8;
-    border-color: #c8d8e8;
-}
-
-/* Combobox flavour of the filter pill — used for the language picker
-   so it sits visually inside the same row as the toggle pills. We
-   mirror the closed-state look of the QPushButton variant (rounded,
-   same color tokens, same font) and reserve a strip of right padding
-   for the dropdown arrow. The :on selector fires while the popup is
-   open and matches the QPushButton :checked treatment so the picker
-   reads "active" the same way an active toggle does. */
-QComboBox[class='filter_pill'] {
-    font-family: 'Montserrat';
+QLabel#addons_filters_text {
     font-size: 10px;
-    font-weight: 600;
-    color: #b8cee0;
-    background-color: rgba(184, 206, 224, 0.06);
-    border: 0;
-    border-radius: 3px;
-    padding: 3px 22px 3px 12px;
-    min-height: 16px;
-}
-
-QComboBox[class='filter_pill']:hover {
-    background-color: rgba(184, 206, 224, 0.12);
-    border-color: rgba(184, 206, 224, 0.28);
-}
-
-QComboBox[class='filter_pill']:on {
-    color: #1a2632;
-    background-color: #b8cee0;
-    border-color: #b8cee0;
-}
-
-QComboBox[class='filter_pill']::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-    width: 18px;
-    border: none;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #e1ebf2;
     background: transparent;
 }
 
-/* Tiny CSS-only chevron via border tricks so we don't have to ship a
-   PNG. Color matches the pill text in both rest and active states. */
-QComboBox[class='filter_pill']::down-arrow {
-    image: none;
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 4px solid #b8cee0;
-    margin-right: 8px;
+QLabel#addons_filters_count {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1f2b35;
+    background: #c8dbe9;
+    border-radius: 3px;
+    padding: 0 5px;
 }
 
-QComboBox[class='filter_pill']:on::down-arrow {
-    border-top-color: #1a2632;
+#addons_state_strip _StateSegment {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-left: 1px solid rgba(0, 0, 0, 50);
+    border-radius: 0;
+    padding: 0;
 }
 
-/* The popup list itself — keep it readable rather than pill-shaped.
-   Slightly lifted background so it stands off the dialog's surface. */
-QComboBox[class='filter_pill'] QAbstractItemView {
-    font-family: 'Montserrat';
-    font-size: 11px;
-    color: #d8e6f2;
-    background-color: #2a3845;
+#addons_state_strip _StateSegment[segment="first"] {
+    border-left: 0;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+
+#addons_state_strip _StateSegment[segment="last"] {
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+#addons_state_strip _StateSegment:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+}
+
+#addons_state_strip _StateSegment:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2830, stop:1 #2e3e4b);
+    border-bottom-color: transparent;
+    border-left-color: transparent;
+}
+
+QLabel#addons_state_name {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #e1ebf2;
+    background: transparent;
+}
+
+QLabel#addons_state_count {
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(184, 206, 224, 150);
+    background: transparent;
+}
+
+QPushButton#addons_filter_tag {
+    min-height: 22px;
+    max-height: 22px;
+    padding: 0 6px 0 9px;
     border: 0;
     border-radius: 3px;
-    padding: 2px;
-    selection-background-color: #b8cee0;
-    selection-color: #1a2632;
-    outline: none;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: none;
+    color: #d5e3ee;
+    background: rgba(255, 255, 255, 18);
+    icon-size: 10px;
+}
+
+QPushButton#addons_filter_tag:hover {
+    background: rgba(255, 255, 255, 34);
+}
+
+QLabel#addons_hardware_note {
+    font-size: 10px;
+    color: rgba(184, 206, 224, 130);
+    background: transparent;
+}
+
+/* The Filters popover: a dark 4px panel, like the menus, holding the three labelled fields. */
+#addons_filters_popover_frame {
+    background: #1f2b35;
+    border: 0;
+    border-radius: 4px;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
 }
 
 QLabel[class='addons_empty_state'] {
