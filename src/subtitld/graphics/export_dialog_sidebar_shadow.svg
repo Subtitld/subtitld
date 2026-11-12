@@ -1,5 +1,5 @@
 <svg width="150" height="50" version="1.1" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
- <!-- start_screen_top_shadow.svg turned 90° clockwise: without its light line; the shadow falls to the left from the right edge -->
+ <!-- start_screen_top_shadow.svg turned 90° clockwise: the light line runs down the right edge, the shadow falls to the left -->
  <defs>
   <radialGradient id="b" cx="638.97" cy="1999.6" r="640" gradientTransform="matrix(-1 8.5158e-6 1.781e-8 -.23281 3238.6 933.04)" gradientUnits="userSpaceOnUse" xlink:href="#a"/>
   <linearGradient id="a">
@@ -14,12 +14,13 @@
    <stop stop-color="#fff" stop-opacity="0" offset="1"/>
   </radialGradient>
  </defs>
- <g transform="translate(151 0) rotate(90)" opacity=".8">
+ <g transform="translate(150 0) rotate(90)" opacity=".8">
  <g transform="matrix(.039062 0 0 1 -76.548 -466.52)" fill-rule="evenodd">
   <path d="m1959.6 467.52v149h1280v-149z" fill="url(#b)" opacity=".08"/>
   <path d="m1959.6 467.52v20h1280v-20z" fill="url(#d)" opacity=".3"/>
   <path d="m1959.6 467.52v10h1280v-10z" fill="url(#f)" opacity=".08"/>
   <path d="m1959.6 467.52v5h1280v-5z" fill="url(#e)" opacity=".1"/>
+  <path d="m1959.6 466.52v1h1280v-1z" fill="url(#c)" opacity=".1"/>
  </g>
  </g>
 </svg>

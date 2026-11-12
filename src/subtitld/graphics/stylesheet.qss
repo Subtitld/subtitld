@@ -2913,8 +2913,8 @@ QMenu#subtitle_formatting_menu::separator {
     background-color: transparent;
 }
 
-/* Laid over the categories: the start screen's shadow without its light line, turned to fall into the sidebar
-   from its right edge. */
+/* Laid over the categories: the start screen's shadow, turned to run down the right edge (a faint light line
+   there, the shadow falling into the sidebar). */
 #export_dialog_sidebar_shadow {
     background-color: transparent;
     border-image: url(graphics:export_dialog_sidebar_shadow.svg) 0 150 0 0 stretch stretch;
