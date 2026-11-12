@@ -686,6 +686,7 @@ class Transport(QWidget):
     MARGIN = 30                       # under the neighbouring lines, which overlap this piece
     ROOM = 64                         # room around the play and record icons, at mid-height
     KEY = 32
+    KEY_DROP = 2
     INK = QColor('#304251')
 
     def __init__(self, name, parent=None):
@@ -694,7 +695,8 @@ class Transport(QWidget):
         self.setAttribute(Qt.WA_Hover)
         self.setMouseTracking(True)
         h = self.PANEL_BOTTOM - self.PANEL_TOP
-        self.nh = h - 3                                       # keys hang to 3px above the panel's bottom
+        self.ny = self.PANEL_TOP + self.KEY_DROP                   # the keys hang from 2px below the top: play and record show above them
+        self.nh = h - 3 - self.KEY_DROP                       # ...to 3px above the panel's bottom
         self.run = h * shapes.RUN15
         self.rg = self.nh * shapes.RUN15
         x = self.MARGIN
@@ -743,7 +745,7 @@ class Transport(QWidget):
     def _notch(self, gx, w, flush_left=False, flush_right=False):
         lx = 60 if flush_left else 0
         rx = 60 if flush_right else 0
-        return shapes.hanging_trap(gx - lx, self.PANEL_TOP, w + lx + rx, self.nh).intersected(self.panel())
+        return shapes.hanging_trap(gx - lx, self.ny, w + lx + rx, self.nh).intersected(self.panel())
 
     def _areas(self):
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
@@ -752,11 +754,11 @@ class Transport(QWidget):
         self.group_notch = self._notch(self.pg_x, self.pg_w)
         self.mode_notch = self._notch(self.rec_gx, self.KEY + 2 * self.rg, flush_right=True)
         xl_top = self.pg_x + self.pg_w
-        self.edge_at = lambda yy: xl_top - (yy - y0) * shapes.RUN15
+        self.edge_at = lambda yy: xl_top - (yy - self.ny) * shapes.RUN15     # the group's right slant, carried on
         rec = QPainterPath()
         rec.addPolygon(QPolygonF([QPointF(self.edge_at(y0 - 2), y0 - 2), QPointF(self.width() + 40, y0 - 2),
                                   QPointF(self.width() + 40, yb + 2), QPointF(self.edge_at(yb + 2), yb + 2)]))
-        self.record_area = rec.subtracted(shapes.hanging_trap(self.pg_x, y0, self.pg_w, self.nh)).intersected(panel)
+        self.record_area = rec.subtracted(shapes.hanging_trap(self.pg_x, self.ny, self.pg_w, self.nh)).intersected(panel)
         self.play_area = panel.subtracted(self.record_area)
         # keys over their areas, masked to them
         group_edges = [self.pg_x - shapes.T6, self.pg_x + self.rg + 24, self.pg_x + self.pg_w + shapes.T6]
@@ -789,14 +791,14 @@ class Transport(QWidget):
     # -- painting ------------------------------------------------------------------------------------------------------
     def _group(self, painter, notch, zones, bg, on, hover_alpha, all_sunk=False):
         """A hanging group of keys: one raised fill, then the zones that differ."""
-        painter.fillPath(notch, shapes.gradient(self.PANEL_TOP, self.PANEL_TOP + self.nh, bg))
-        painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.PANEL_TOP + self.nh - 1, self.width(), 1))),
+        painter.fillPath(notch, shapes.gradient(self.ny, self.ny + self.nh, bg))
+        painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.ny + self.nh - 1, self.width(), 1))),
                          QColor(0, 0, 0, 30))
         for zone, key in zones:
             state = key.state()
             if state == 'sunk' or all_sunk:
-                painter.fillPath(zone, shapes.gradient(self.PANEL_TOP, self.PANEL_TOP + self.nh, on, 'sunken'))
-                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.PANEL_TOP, self.width(), 1))),
+                painter.fillPath(zone, shapes.gradient(self.ny, self.ny + self.nh, on, 'sunken'))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.ny, self.width(), 1))),
                                  QColor(0, 0, 0, 45))
             if state == 'hover':
                 painter.fillPath(zone, QColor(255, 255, 255, hover_alpha))
@@ -824,9 +826,9 @@ class Transport(QWidget):
         play_c = shapes.bottom_colour(self.PLAYING, 'sunken') if playing else shapes.bottom_colour(self.LIGHT)
         rec_c = shapes.bottom_colour(self.RECORDING, 'sunken') if recording else shapes.bottom_colour(self.LIGHT)
         if play_c != rec_c:
-            strip = self.play_area.intersected(shapes.rect_path(QRectF(self.pg_x - 20, y0 + self.nh - 1, self.pg_w + 40,
-                                                                       yb - (y0 + self.nh - 1) + 2)))
-            strip = strip.subtracted(shapes.hanging_trap(self.pg_x, y0, self.pg_w, self.nh))
+            strip = self.play_area.intersected(shapes.rect_path(QRectF(self.pg_x - 20, self.ny + self.nh - 1, self.pg_w + 40,
+                                                                       yb - (self.ny + self.nh - 1) + 2)))
+            strip = strip.subtracted(shapes.hanging_trap(self.pg_x, self.ny, self.pg_w, self.nh))
             g = QLinearGradient(self.pg_x + self.rg, 0, self.edge_at(yb), 0)
             clear = QColor(rec_c)
             clear.setAlpha(0)
@@ -836,7 +838,7 @@ class Transport(QWidget):
 
         # play from the beginning: its own colour, a 1px start line, the ▶ on its own, the first subtitle clipped
         self._group(painter, self.begin_notch, [(self.begin_notch, self.begin_key)], self.GROUP, self.GROUP_ON, 60)
-        iy = y0 + (self.nh - 24) / 2 + 1
+        iy = self.ny + (self.nh - 24) / 2 + 1
         ix = self.lg_gx + self.rg + 4
         painter.save()
         painter.setClipPath(self.begin_notch)
