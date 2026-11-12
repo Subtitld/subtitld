@@ -570,10 +570,10 @@ class LabeledComboBox(SlantLabeledField):
 
 class HeaderComboBox(LabeledComboBox):
     """The choice a page is about (an export page's format), as the page's
-    header: 42px tall, edge to edge, flush with the page's top; its corners
+    header: 34px tall, edge to edge, flush with the page's top; its corners
     are square but the top left, a 6px curve. The label is larger and the chosen option bold (the
     stylesheet's HeaderComboBox rules). Subclass it for headers of other pages."""
-    HEIGHT = 42
+    HEIGHT = 34                       # as tall as the export dialog's categories
     LABEL_LEFT = 12
     LABEL_PADDING = 12
     ROUNDED = False

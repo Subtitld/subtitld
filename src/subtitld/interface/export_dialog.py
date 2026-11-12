@@ -1188,8 +1188,9 @@ class _VideoPanel(QWidget):
 class _SidebarShadow(QWidget):
     """The sidebar's shadow (the stylesheet's border-image: the start
     screen's, turned), laid over the categories. Beside the chosen category
-    its light line along the right edge is left out: the last GAP columns
-    take the shadow of the column just inside them."""
+    its light line along the right edge is left out: the edge column is left
+    bare, the GAP - 1 columns inside it take the shadow of the column just
+    inside them."""
 
     GAP = 3
 
@@ -1213,8 +1214,9 @@ class _SidebarShadow(QWidget):
         painter.setClipRegion(QRegion(self.rect()) - gap)
         self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
         if not gap.isEmpty():
-            # each column of the gap takes the shadow of the column just inside it, so the gap is flat
-            for shift in range(1, self.GAP + 1):
+            # each column of the gap takes the shadow of the column just inside it, so the gap is flat; the edge
+            # column beside the chosen category (which stops 1px short) is left bare, the page's colour
+            for shift in range(1, self.GAP):
                 painter.save()
                 painter.setClipRegion(gap.intersected(QRect(self.width() - self.GAP - 1 + shift, 0, 1, self.height())))
                 painter.translate(shift, 0)
