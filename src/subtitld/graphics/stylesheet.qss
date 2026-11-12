@@ -2014,7 +2014,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 #playercontrols_widget_top_line #repeat_playback[expanded="false"] {
     padding-left: 16;
-    padding-right: 16;
+    padding-right: 8;
 }
 
 #playercontrols_widget_top_line #repeat_playback #repeat_playback_x_label {
