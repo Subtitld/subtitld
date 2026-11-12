@@ -342,55 +342,67 @@ class CaptionsThread(QThread):
 
     def run(self):
         try:
-            from subtitld.modules import embedded_captions, export_options, soft_subtitles
             video = (session.VIDEO or {}).get('filepath')
             if not video:
                 raise ValueError('No video loaded to write captions into')
-            if soft_subtitles.is_soft(self._container):
-                self._write_tracks(video)
-                self.captions_finished.emit(self._output_path, True, '')
-                return
-            segments = export_options.prepare(session.SUBTITLE.get('segments'), self._options)
-            # OP-47 asked for in an MXF: the same subtitles as teletext page 888.
-            teletext_tracks = [{'segments': segments, 'language': session.SUBTITLE.get('language') or ''}] \
-                if self._options.get('teletext') and self._container == 'MXF' else None
-            embedded_captions.write_video(
-                video, self._output_path, segments,
-                fps=float(session.VIDEO.get('framerate') or 0),
-                duration=float(session.VIDEO.get('duration') or 0),
-                container=self._container,
-                codec=self._options.get('codec') or embedded_captions.DEFAULT_CODEC,
-                mode=self._options.get('caption_mode') or 'pop',
-                channel=self._options.get('caption_channel') or 1,
-                speaker_changes=self._options.get('speakers') == 'voice',
-                ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO, teletext_tracks=teletext_tracks,
-                ffprobe=session.FFPROBE_EXECUTABLE)
+            write_captioned_video(video, self._output_path, self._container, self._options,
+                                  session.SUBTITLE.get('segments'), session.VIDEO,
+                                  session.SUBTITLE.get('language') or '')
             self.captions_finished.emit(self._output_path, True, '')
         except Exception as exc:
             self.captions_finished.emit(self._output_path, False, str(exc))
 
-    def _write_tracks(self, video):
-        """The video written out with the subtitles as a track of their own
-        (soft_subtitles): the project's language, and, when asked, a track
-        for each of its translations, each named by its language."""
-        from subtitld.modules import export_options, soft_subtitles, subtitle_styles
-        segments = session.SUBTITLE.get('segments')
-        names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
-        original = str(session.SUBTITLE.get('language') or '')
-        tracks = [{'segments': export_options.prepare(segments, dict(self._options, text='original')),
-                   'language': original, 'title': names.get(original, '')}]
-        if self._options.get('translations'):
-            for language in export_options.translation_languages(segments):
-                tracks.append({'segments': export_options.prepare(segments, dict(self._options, text='translation',
-                                                                                 language=language)),
-                               'language': language, 'title': names.get(language, '')})
-        soft_subtitles.write_video(
-            video, self._output_path, tracks, container=self._container,
-            codec=self._options.get('subtitle_codec'),
-            forced=bool(self._options.get('forced')) and self._container not in soft_subtitles.UNFORCED,
-            width=session.VIDEO.get('width'), height=session.VIDEO.get('height'),
-            look='preview', preview=subtitle_styles.preview_look(),
-            ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
+
+def write_captioned_video(video, output, container, options, segments, info, language=''):
+    """Write `video` out as `output` with `segments` in it: as closed
+    captions, or (soft_subtitles) as a track of their own. `info` is what
+    is known of the video (session.VIDEO's 'framerate', 'duration', 'width'
+    and 'height'); `language`, what the subtitles are in. The export runs
+    it on the whole video, and the export dialog's preview on a few seconds
+    of it."""
+    from subtitld.modules import embedded_captions, export_options, soft_subtitles
+    options = dict(options or {})
+    if soft_subtitles.is_soft(container):
+        _write_tracks(video, output, container, options, segments, info, language)
+        return
+    prepared = export_options.prepare(segments, options)
+    # OP-47 asked for in an MXF: the same subtitles as teletext page 888.
+    teletext_tracks = [{'segments': prepared, 'language': language}] \
+        if options.get('teletext') and container == 'MXF' else None
+    embedded_captions.write_video(
+        video, output, prepared,
+        fps=float(info.get('framerate') or 0),
+        duration=float(info.get('duration') or 0),
+        container=container,
+        codec=options.get('codec') or embedded_captions.DEFAULT_CODEC,
+        mode=options.get('caption_mode') or 'pop',
+        channel=options.get('caption_channel') or 1,
+        speaker_changes=options.get('speakers') == 'voice',
+        ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO, teletext_tracks=teletext_tracks,
+        ffprobe=session.FFPROBE_EXECUTABLE)
+
+
+def _write_tracks(video, output, container, options, segments, info, original):
+    """The video written out with the subtitles as a track of their own
+    (soft_subtitles): the project's language, and, when asked, a track
+    for each of its translations, each named by its language."""
+    from subtitld.modules import export_options, soft_subtitles, subtitle_styles
+    names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+    original = str(original or '')
+    tracks = [{'segments': export_options.prepare(segments, dict(options, text='original')),
+               'language': original, 'title': names.get(original, '')}]
+    if options.get('translations'):
+        for language in export_options.translation_languages(segments):
+            tracks.append({'segments': export_options.prepare(segments, dict(options, text='translation',
+                                                                             language=language)),
+                           'language': language, 'title': names.get(language, '')})
+    soft_subtitles.write_video(
+        video, output, tracks, container=container,
+        codec=options.get('subtitle_codec'),
+        forced=bool(options.get('forced')) and container not in soft_subtitles.UNFORCED,
+        width=info.get('width'), height=info.get('height'),
+        look='preview', preview=subtitle_styles.preview_look(),
+        ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
 
 
 def captioned_video_async(output_path, container, options=None, on_done=None, parent=None):
