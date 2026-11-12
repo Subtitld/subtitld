@@ -2947,9 +2947,9 @@ QMenu#subtitle_formatting_menu::separator {
     border-left: 3px solid #b8cee0;
 }
 
-/* The preview beside the pages: a darker column. */
+/* The preview beside the pages: no background of its own, only its faded well. */
 #export_dialog_preview {
-    background-color: rgba(0, 0, 0, 40);
+    background-color: transparent;
 }
 
 /* The sidebar's shadow mirrored, laid over the preview: its light line down the left edge, the shadow falling
@@ -2961,7 +2961,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #export_dialog_preview_file {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a232b, stop:1 #222e38);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0, 0, 0, 70), stop:1 rgba(0, 0, 0, 25));
     border: 0;
     border-radius: 3px;
     padding: 6px 4px;

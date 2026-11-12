@@ -1228,6 +1228,7 @@ class ExportDialog(utils.SimpleDialog):
     def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None):
         super().__init__(parent, _('export_dialog.title'))
         self.setMinimumSize(900, 420)
+        self.make_resizable()
 
         self.content.layout().setContentsMargins(0, 0, 0, 0)
 

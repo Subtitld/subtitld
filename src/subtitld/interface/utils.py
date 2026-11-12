@@ -170,6 +170,66 @@ class _HoverMirror(QObject):
         return False
 
 
+class _ResizeEdge(QWidget):
+    """A thin strip along one edge (or a square at one corner) of a frameless
+    window, over its contents: dragging it resizes the window, through the
+    window system where it can (Wayland), by hand otherwise."""
+    THICKNESS = 4
+    CORNER = 10
+    CURSORS = {
+        Qt.LeftEdge: Qt.SizeHorCursor, Qt.RightEdge: Qt.SizeHorCursor,
+        Qt.TopEdge: Qt.SizeVerCursor, Qt.BottomEdge: Qt.SizeVerCursor,
+        Qt.LeftEdge | Qt.TopEdge: Qt.SizeFDiagCursor, Qt.RightEdge | Qt.BottomEdge: Qt.SizeFDiagCursor,
+        Qt.RightEdge | Qt.TopEdge: Qt.SizeBDiagCursor, Qt.LeftEdge | Qt.BottomEdge: Qt.SizeBDiagCursor,
+    }
+
+    def __init__(self, window, edges):
+        super().__init__(window)
+        self.edges = edges
+        self.setCursor(self.CURSORS[edges])
+        self._start = None
+
+    def place(self):
+        w, h = self.parentWidget().width(), self.parentWidget().height()
+        t, c = self.THICKNESS, self.CORNER
+        left, right = bool(self.edges & Qt.LeftEdge), bool(self.edges & Qt.RightEdge)
+        top, bottom = bool(self.edges & Qt.TopEdge), bool(self.edges & Qt.BottomEdge)
+        if (left or right) and (top or bottom):
+            self.setGeometry(0 if left else w - c, 0 if top else h - c, c, c)
+        elif left or right:
+            self.setGeometry(0 if left else w - t, c, t, h - 2 * c)
+        else:
+            self.setGeometry(c, 0 if top else h - t, w - 2 * c, t)
+        self.raise_()
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return
+        handle = self.window().windowHandle()
+        if handle is not None and handle.startSystemResize(self.edges):
+            return
+        self._start = (event.globalPosition().toPoint(), self.window().geometry())
+
+    def mouseMoveEvent(self, event):
+        if self._start is None:
+            return
+        origin, geometry = self._start
+        delta = event.globalPosition().toPoint() - origin
+        rect = QRect(geometry)
+        if self.edges & Qt.LeftEdge:
+            rect.setLeft(min(rect.left() + delta.x(), rect.right() - self.window().minimumWidth()))
+        if self.edges & Qt.RightEdge:
+            rect.setRight(rect.right() + delta.x())
+        if self.edges & Qt.TopEdge:
+            rect.setTop(min(rect.top() + delta.y(), rect.bottom() - self.window().minimumHeight()))
+        if self.edges & Qt.BottomEdge:
+            rect.setBottom(rect.bottom() + delta.y())
+        self.window().setGeometry(rect)
+
+    def mouseReleaseEvent(self, event):
+        self._start = None
+
+
 class SimpleDialog(QDialog):
     def __init__(self, parent=None, title='', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -418,8 +478,31 @@ class SimpleDialog(QDialog):
 
     def title_mouse_press_event(self, event):
         if event.button() == Qt.LeftButton:
+            # the window system moves the window (Wayland lets no window place itself); moved by hand otherwise
+            handle = self.windowHandle()
+            if handle is not None and handle.startSystemMove():
+                event.accept()
+                return
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
+
+    def make_resizable(self):
+        """Let the dialog be resized from its edges and corners: it has no
+        window frame, so thin strips along them hand the resize to the
+        window system."""
+        self._resize_edges = [_ResizeEdge(self, edges) for edges in (
+            Qt.LeftEdge, Qt.RightEdge, Qt.TopEdge, Qt.BottomEdge,
+            Qt.LeftEdge | Qt.TopEdge, Qt.RightEdge | Qt.TopEdge,
+            Qt.LeftEdge | Qt.BottomEdge, Qt.RightEdge | Qt.BottomEdge)]
+        self._place_resize_edges()
+
+    def _place_resize_edges(self):
+        for edge in getattr(self, '_resize_edges', []):
+            edge.place()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_resize_edges()
 
     def title_mouse_move_event(self, event):
         if event.buttons() == Qt.LeftButton:
