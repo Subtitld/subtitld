@@ -528,7 +528,8 @@ class AddSubtitleButton(QAbstractButton):
 
     def _layout(self):
         text_w = QFontMetricsF(self._label_font()).horizontalAdvance(self.text().strip().upper())
-        self.notch_x = 12 + self.ICON + 8 + text_w + 12 + shapes.T6
+        # the switches' notch right after the label: its slant leans in going down, clearing the text by ~4px
+        self.notch_x = 12 + self.ICON + 8 + text_w - 1
         n = len(self.switches)
         notch_w = n * self.ZONE + 2 * self.run
         # zone edges: the outer zones take the notch's slanted sides (and their curves), the inner ones split the
