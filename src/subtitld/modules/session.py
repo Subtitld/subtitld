@@ -129,9 +129,17 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'STL': {'description': 'EBU STL Subtitle format', 'extensions': ['stl']},
     'MCC': {'description': 'MacCaption Subtitle format', 'extensions': ['mcc']},
     'DCP': {'description': 'DCP Subtitle format (Interop or SMPTE)', 'extensions': ['xml']},
+    # A Blu-ray's authoring files: the XML and a PNG a picture. .xml is a
+    # DCP's above, which keeps it; file_io tells them apart by the root.
+    'BDN': {'description': 'Blu-ray BDN XML with PNG pictures', 'extensions': ['xml']},
     'PAC': {'description': 'Screen PAC Subtitle format', 'extensions': ['pac']},
     'FPC': {'description': 'Screen UniPac Subtitle format', 'extensions': ['fpc']},
     'VTT': {'description': 'VTT Subtitle format', 'extensions': ['webvtt', 'vtt']},
+    'HLS': {'description': 'HLS playlist of WebVTT segments', 'extensions': ['m3u8']},
+    # WebVTT or TTML in fragmented MP4 (modules.isobmff_text). Not .mp4,
+    # which is a video's; the bytes of a .cmft say which it carries.
+    'CMFT': {'description': 'CMAF text track (WebVTT or TTML in MP4)', 'extensions': ['cmft']},
+    'DASH': {'description': 'DASH manifest of a WebVTT or TTML track', 'extensions': ['mpd']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
@@ -144,12 +152,30 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # UltraStar's songs are .txt, as VPlayer's and its kin's are below; the
     # bytes tell them apart (file_io).
     'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
+    # Karaoke MIDI: the words of a .kar, or the lyrics of any MIDI file.
+    'KAR': {'description': 'KAR MIDI Karaoke format', 'extensions': ['kar', 'mid', 'midi']},
     # Video editors' own: Avid SubCap's .txt is told from the player-era
     # .txt formats below by its bytes, in file_io.
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
     'FCPXML': {'description': 'Final Cut Pro XML captions', 'extensions': ['fcpxml', 'fcpxmld']},
     'CAP': {'description': 'Cheetah CAP Caption format', 'extensions': ['cap']},
+    # Lambda's .cap is text and Cheetah's binary: the bytes tell them apart
+    # (file_io), and Cheetah's, first here, keeps the extension.
+    'LAMBDACAP': {'description': 'Lambda CAP Japanese Subtitle format', 'extensions': ['cap']},
     'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
+    # The DVD authoring tools' scripts (modules.dvd_scripts). DVD Studio
+    # Pro's .stl is EBU STL's extension and Spruce's; the rest share .txt,
+    # .sub and .sst with formats above and below. The bytes decide, in
+    # file_io.
+    'DVDSTUDIOPRO': {'description': 'DVD Studio Pro STL Subtitle script', 'extensions': ['stl']},
+    'ENCORE': {'description': 'Adobe Encore Subtitle script', 'extensions': ['txt']},
+    'DVDARCHITECT': {'description': 'Sony DVD Architect Subtitle script', 'extensions': ['sub', 'txt']},
+    'SCENARIST': {'description': 'Sonic Scenarist Subtitle script', 'extensions': ['sst', 'txt']},
+    'DVDPRODUCER': {'description': 'Sonic DVD Producer Subtitle script', 'extensions': ['txt']},
+    'AVIDDVD': {'description': 'Avid DVD Subtitle script', 'extensions': ['txt']},
+    # MP4Box's text tracks as XML; CCExtractor's transcripts share .ttxt and
+    # are told apart by their bytes (file_io).
+    'TTXT': {'description': 'GPAC TTXT (MP4 Timed Text) format', 'extensions': ['ttxt']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.
@@ -187,8 +213,11 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
 }
 
 # Subtitles drawn as pictures, which open through an OCR add-on
-# (modules.picture_ocr) and are never saved as such. A VobSub's .sub is in
-# the list above, as MicroDVD's, whose extension it shares.
+# (modules.picture_ocr). They are exported, each subtitle drawn as the
+# preview draws it (modules.vobsub, modules.pgs), but are not a format to
+# save a project in, as its text would not come back. A VobSub's .sub is
+# in the list above, as MicroDVD's, whose extension it shares; its .idx
+# names both.
 LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     'VOBSUB': {'description': 'DVD VobSub subtitles (pictures)', 'extensions': ['idx']},
     'PGS': {'description': 'Blu-ray PGS subtitles (pictures)', 'extensions': ['sup']},
@@ -203,11 +232,15 @@ LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MOV': {'description': 'QuickTime video with closed captions', 'extensions': ['mov']},
     'MXF': {'description': 'MXF video with closed captions', 'extensions': ['mxf']},
+    # Captions in the video's own frames, as ATSC has them (modules.a53).
+    'MP4 A53': {'description': 'MP4 video with closed captions in its frames', 'extensions': ['mp4']},
+    'TS A53': {'description': 'MPEG transport stream with closed captions in its frames', 'extensions': ['ts']},
     # The subtitles as a track of their own (modules.soft_subtitles).
     'MP4': {'description': 'MP4 video with a subtitle track', 'extensions': ['mp4', 'm4v']},
     'MOV TEXT': {'description': 'QuickTime video with a subtitle track', 'extensions': ['mov']},
     'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
     'TS': {'description': 'MPEG transport stream with teletext subtitles', 'extensions': ['ts']},
+    'TS DVB': {'description': 'MPEG transport stream with DVB subtitles', 'extensions': ['ts']},
 }
 
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {

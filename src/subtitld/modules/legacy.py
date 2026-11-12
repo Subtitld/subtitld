@@ -30,7 +30,9 @@ What is read, and written:
 - **Spruce** (.stl): "00:00:01:00 , 00:00:03:00 , text", frames after the
   seconds, "|" between lines. Read and written. **Not EBU STL**, which is
   binary and shares the extension: `kind` separates them, and so must
-  anything else that opens a .stl.
+  anything else that opens a .stl. It is DVD Studio Pro's script too, and
+  modules.dvd_scripts reads it, with its settings, its "^I" italics and
+  its places; written here as Spruce wrote it, with no header.
 - **RealText** (.rt): RealPlayer's HTML, "<time begin=...>" and the text
   until the next time or a <clear/>. Read and written, though nothing has
   played it in twenty years: a format Subtitld reads and cannot write back
@@ -57,6 +59,7 @@ file, so a wrong guess shifts them whole, as MicroDVD does.
 import re
 import xml.etree.ElementTree as ElementTree
 
+from subtitld.modules import dvd_scripts
 from subtitld.modules import markup
 from subtitld.modules.srt import decode
 
@@ -129,8 +132,9 @@ _MPL2 = re.compile(r'^\s*\[(\d+)\]\[(\d+)\](.*)$')
 _PJS = re.compile(r'^\s*(\d+)\s*,\s*(\d+)\s*,\s*"(.*)"\s*$')
 _AQT = re.compile(r'^\s*-->>\s*(\d+)\s*$')
 _SUBVIEWER1 = re.compile(r'^\s*\[(\d{1,3}):(\d{1,2}):(\d{1,2})(?:[.,](\d+))?\]\s*$')
-_SPRUCE = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})[:.](\d{1,3})\s*,\s*'
-                     r'(\d{1,3}):(\d{2}):(\d{2})[:.](\d{1,3})\s*,\s*(.*)$')
+# A ";" before the frames is DVD Studio Pro's drop-frame.
+_SPRUCE = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})[:;.](\d{1,3})\s*,\s*'
+                     r'(\d{1,3}):(\d{2}):(\d{2})[:;.](\d{1,3})\s*,\s*(.*)$')
 # VPlayer and TMPlayer are the same shape: a clock, a separator, the text.
 # The separator is what the players differed on, so all of them are taken.
 _CLOCK = re.compile(r'^\s*(\d{1,3}):(\d{1,2})[:,.](\d{1,2})(?:[:,.](\d{1,3}))?\s*[:=;]\s?(.*)$')
@@ -466,43 +470,13 @@ def _write_subviewer1(segments, fps=DEFAULT_FPS):
 
 
 def _parse_spruce(text, fps=DEFAULT_FPS):
-    rate = float(fps or DEFAULT_FPS)
-    segments = []
-    for line in text.split('\n'):
-        if line.lstrip().startswith(('$', '//')):
-            continue                # Spruce's settings and comments
-        match = _SPRUCE.match(line)
-        if not match:
-            continue
-        body = _lines_of(match.group(9))
-        if not body:
-            continue
-        start = _clock_seconds(*match.groups()[0:4], frames=True, fps=rate)
-        end = _clock_seconds(*match.groups()[4:8], frames=True, fps=rate)
-        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
-    return segments
+    """DVD Studio Pro's reader: the settings, "^I" and the places read."""
+    return dvd_scripts.parse(text, 'dvdstudiopro', fps)[0]
 
 
 def _write_spruce(segments, fps=DEFAULT_FPS):
-    rate = float(fps or DEFAULT_FPS)
-
-    def stamp(seconds):
-        total = max(0.0, float(seconds))
-        whole = int(total)
-        frames = int(round((total - whole) * rate))
-        if frames >= int(round(rate)):
-            whole, frames = whole + 1, 0
-        hours, rest = divmod(whole, 3600)
-        minutes, secs = divmod(rest, 60)
-        return f'{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}'
-
-    lines = []
-    for segment in _ordered(segments):
-        body = _packed(segment)
-        if not body:
-            continue
-        lines.append(f'{stamp(segment.get("start", 0))} , {stamp(segment.get("end", 0))} , {body}')
-    return '\n'.join(lines) + '\n' if lines else ''
+    """" , " between the fields and no header, as Spruce's own lines are."""
+    return dvd_scripts.write(segments, 'dvdstudiopro', fps, layout='space', header=False)
 
 
 # -------------------------------------------------------------- RealText

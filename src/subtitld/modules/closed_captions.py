@@ -22,7 +22,9 @@ whose packets hold the same caption distribution packets an MCC file
 does). `from_video` asks ffprobe for whichever it finds, the times
 counted from the video's start; a track of its own and ancillary data
 are read as they are, which is quick, the frames' own only by decoding
-them.
+them. Ancillary data may carry OP-47 teletext subtitles as well, which
+the teletext module reads: the 'teletext' track, and what 'auto' reads
+when there are no captions.
 """
 
 import json
@@ -32,8 +34,9 @@ import tempfile
 
 from subtitld.modules import cea708
 from subtitld.modules import scc
+from subtitld.modules import teletext
 
-TRACKS = ('auto', '708-1', '708-2', '708-3', '708-4', '708-5', '708-6', 'cc1', 'cc2', 'cc3', 'cc4')
+TRACKS = ('auto', '708-1', '708-2', '708-3', '708-4', '708-5', '708-6', 'cc1', 'cc2', 'cc3', 'cc4', 'teletext')
 _PAIR_RATE = 30000 / 1001                # CEA-608 pairs a second, whatever the video's rate
 _HEX_ROW = re.compile(r'[0-9a-fA-F]{8}: ((?:[0-9a-fA-F]{2,4} ?)+)')
 
@@ -126,11 +129,11 @@ def _samples(payload, coding, count):
     return bytes(payload[:count])
 
 
-def anc_frame(data):
-    """[(cc_type, byte, byte)] in a frame of ancillary data as SMPTE ST 436
-    wraps it, which is how MXF files carry captions: a count of ancillary
-    packets, then each one's line, how it is wrapped and coded, and its
-    words."""
+def anc_packets(data):
+    """The ancillary data packets (DID, SDID, data count, words) in a frame
+    of ancillary data as SMPTE ST 436 wraps it, which is how MXF files carry
+    captions and OP-47 teletext: a count of packets, then each one's line,
+    how it is wrapped and coded, and its words."""
     if len(data) < 2:
         return []
     out, index = [], 2
@@ -142,9 +145,15 @@ def anc_frame(data):
         size = int.from_bytes(data[index + 6:index + 10], 'big') * max(1, int.from_bytes(
             data[index + 10:index + 14], 'big'))
         index += 14
-        out.extend(anc_triplets(_samples(data[index:index + size], coding, count))[0])
+        out.append(_samples(data[index:index + size], coding, count))
         index += size
     return out
+
+
+def anc_frame(data):
+    """[(cc_type, byte, byte)] in a frame of ancillary data as SMPTE ST 436
+    wraps it."""
+    return [triplet for packet in anc_packets(data) for triplet in anc_triplets(packet)[0]]
 
 
 def _filter_path(path):
@@ -207,7 +216,7 @@ def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, startupinfo=startupinfo)
     if started:
         started(process)
-    batches = []
+    batches, subtitles = [], []
     for line in process.stdout:
         when, _bar, dump = line.decode('ascii', 'replace').strip().partition('|')
         try:
@@ -218,11 +227,22 @@ def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress
         entries = entries_of(data)
         if entries:
             batches.append((max(0, round(seconds * rate)), entries))
+        if ancillary is not None and caption_track is None:
+            fields = [field for packet in anc_packets(data) for field in teletext.op47_fields(packet)]
+            if fields:
+                subtitles.append((max(0, round(seconds * rate)), fields))
         if progress and duration:
             progress(min(1.0, max(0.0, seconds / duration)))
-    if process.wait() != 0 and not batches:
+    if process.wait() != 0 and not batches and not subtitles:
         errors.seek(0)
         raise RuntimeError(errors.read().decode('utf-8', 'replace').strip() or 'ffprobe could not read the video')
     errors.close()
     batches.sort(key=lambda batch: batch[0])
-    return decode(batches, rate, track)
+    if track != 'teletext':
+        segments, found = decode(batches, rate, track)
+        if segments or track != 'auto' or not subtitles:
+            return segments, found
+    # OP-47 teletext in the ancillary data: asked for, or the only
+    # subtitles there.
+    segments = teletext.op47_decode(subtitles, rate)[0]
+    return segments, 'teletext' if segments else None

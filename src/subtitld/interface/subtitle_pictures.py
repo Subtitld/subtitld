@@ -15,6 +15,7 @@ import re
 import time
 
 from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtGui import QImage
 
 from subtitld.interface import subtitle_renderer
 from subtitld.modules import markup
@@ -79,3 +80,18 @@ def draw(segments, size, folder, stem='', wait=WAIT):
     finally:
         renderer.close()
     return pictures
+
+
+def rgba(path):
+    """The pixels of a PNG `draw` wrote, for the encoders of a disc's
+    pictures (vobsub, pgs): four bytes a pixel, row after row, alpha not
+    premultiplied."""
+    image = QImage(path)
+    if image.isNull():
+        raise OSError(f'Could not read {path}')
+    image = image.convertToFormat(QImage.Format_RGBA8888)
+    width, height, line = image.width(), image.height(), image.bytesPerLine()
+    data = bytes(image.constBits())[:line * height]
+    if line == width * 4:
+        return data
+    return b''.join(data[row * line:row * line + width * 4] for row in range(height))

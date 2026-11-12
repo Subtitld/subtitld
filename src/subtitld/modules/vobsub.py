@@ -13,16 +13,31 @@ picture run-length coded, interlaced: even rows, then odd rows.
 `decode_spu` and `parse_program_stream` are also used for the VobSub
 tracks inside videos (video_subtitles), which FFmpeg hands over packet by
 packet with the .idx text as the track's extradata.
+
+`save(path, pictures, size)` writes one: the subtitles drawn as pictures
+(interface.subtitle_pictures), one on screen at a time (disc_pictures),
+each cut to the four colours an SPU has: transparent, and as the drawing
+has them, mostly the fill, the outline and the soft edge between. The
+colours of every SPU are gathered into the .idx's palette of sixteen, the
+opacity of each kept in the SPU (in sixteen steps), and each SPU is
+wrapped in the 2048-byte packs of a program stream, as a DVD holds them.
 """
 
 import os
 import re
+import zlib
 
+from subtitld.modules import disc_pictures
 from subtitld.modules.picture_subtitles import Picture
 
 SPU_TICK = 1024 / 90000          # a control sequence's date unit, in seconds
 DEFAULT_DURATION = 5.0           # a subtitle that never says when it ends
 DEFAULT_PALETTE = [(0, 0, 0), (255, 255, 255), (128, 128, 128), (32, 32, 32)] + [(128, 128, 128)] * 12
+# DVD's two frame sizes. A VobSub kept beside a video file may be as big
+# as the video instead.
+SIZES = {'pal': (720, 576), 'ntsc': (720, 480)}
+PACK = 2048                      # a program stream pack, a DVD sector
+MAX_SPU = 0xFFFF                 # an SPU says its size in 16 bits
 
 _TIMESTAMP = re.compile(r'timestamp:\s*(-?)(\d+):(\d+):(\d+)[:.,](\d+),\s*filepos:\s*([0-9a-fA-F]+)')
 _DELAY = re.compile(r'delay:\s*(-?)(\d+):(\d+):(\d+)[:.,](\d+)')
@@ -342,3 +357,190 @@ def read(path, track=None):
         found = pictures(units.get(chosen['index'], []), info)
     return found, {'index': chosen['index'], 'language': chosen['language'],
                    'tracks': [{'index': t['index'], 'language': t['language']} for t in tracks]}
+
+
+# Writing ------------------------------------------------------------------
+
+def frame_size(choice=None, width=0, height=0, fps=0):
+    """The frame a VobSub's pictures are placed on: DVD's PAL or NTSC frame
+    when `choice` names one ('pal', 'ntsc'), else the video's (`width` x
+    `height`), else the DVD frame of the video's rate: NTSC's for 29.97 and
+    the film rates a DVD pulls down to it, PAL's for 25 and 50 and when
+    there is no rate to go by."""
+    if choice in SIZES:
+        return SIZES[choice]
+    if width and height:
+        return int(width), int(height)
+    if fps and min(abs(float(fps) - rate) for rate in (25, 50)) > 0.5:
+        return SIZES['ntsc']
+    return SIZES['pal']
+
+
+def _encode_field(rows):
+    """The rows of one field (2-bit values, a numpy row each) run-length
+    coded: a run in 4, 8, 12 or 16 bits as its length needs, 255 pixels at
+    most, the last run of a row longer than that written as "to the end of
+    the line", each row starting on a byte."""
+    import numpy
+    nibbles = []
+    for row in rows:
+        width = len(row)
+        edges = (numpy.flatnonzero(row[1:] != row[:-1]) + 1).tolist()
+        for start, end in zip([0] + edges, edges + [width]):
+            colour = int(row[start])
+            run = end - start
+            if end == width and run > 255:
+                nibbles += (0, 0, 0, colour)
+                continue
+            while run:
+                count = min(run, 255)
+                run -= count
+                value = count << 2 | colour
+                digits = 1 if count < 4 else 2 if count < 16 else 3 if count < 64 else 4
+                nibbles += [(value >> (4 * k)) & 15 for k in range(digits - 1, -1, -1)]
+        if len(nibbles) % 2:
+            nibbles.append(0)
+    return bytes(nibbles[i] << 4 | nibbles[i + 1] for i in range(0, len(nibbles), 2))
+
+
+def encode_spu(indices, width, height, x, y, duration, colours, alphas, forced=False):
+    """An SPU of `indices` (width x height values from 0 to 3) placed at x, y
+    on the frame, shown from the unit's time for `duration` seconds.
+    `colours` are the palette entries of the values 0 to 3 and `alphas`
+    their opacities, 0 (clear) to 15. A forced one (shown even with
+    subtitles off) starts with the command DVD players keep for those."""
+    import numpy
+    rows = numpy.frombuffer(indices, numpy.uint8).reshape(height, width)
+    top, bottom = _encode_field(rows[0::2]), _encode_field(rows[1::2])
+    top_offset = 4
+    bottom_offset = top_offset + len(top)
+    control = bottom_offset + len(bottom)
+    if control + 30 > MAX_SPU:          # and the two control sequences, 30 bytes
+        raise VobSubError(f'a subtitle of {width}x{height} pixels takes more than a DVD subpicture holds')
+    x2, y2 = x + width - 1, y + height - 1
+    # The first control sequence, at once: the colours and their opacities
+    # (the values 3, 2, 1, 0 in that order), the area, where each field's
+    # rows begin, and the start. The second, `duration` later, the stop.
+    first = bytes([0x03, colours[3] << 4 | colours[2], colours[1] << 4 | colours[0],
+                   0x04, alphas[3] << 4 | alphas[2], alphas[1] << 4 | alphas[0],
+                   0x05, x >> 4, (x & 15) << 4 | x2 >> 8, x2 & 255, y >> 4, (y & 15) << 4 | y2 >> 8, y2 & 255,
+                   0x06, top_offset >> 8, top_offset & 255, bottom_offset >> 8, bottom_offset & 255,
+                   0x00 if forced else 0x01, 0xFF])
+    second = control + 4 + len(first)
+    stop = max(1, min(0xFFFF, round(duration / SPU_TICK)))
+    sequences = bytes([0, 0, second >> 8 & 255, second & 255]) + first + \
+        bytes([stop >> 8, stop & 255, second >> 8 & 255, second & 255, 0x02, 0xFF])
+    size = control + len(sequences)
+    return bytes([size >> 8, size & 255, control >> 8, control & 255]) + top + bottom + sequences
+
+
+def _pack_header(scr):
+    """An MPEG-2 pack header, its clock at `scr` (90 kHz), 10.08 Mbit/s."""
+    return bytes([0, 0, 1, 0xBA,
+                  0x44 | (scr >> 27 & 0x38) | (scr >> 28 & 3), scr >> 20 & 255,
+                  (scr >> 12 & 0xF8) | 4 | (scr >> 13 & 3), scr >> 5 & 255, (scr << 3 & 0xF8) | 4, 1,
+                  0x01, 0x89, 0xC3, 0xF8])
+
+
+def packs(spu, seconds, track=0):
+    """`spu` in the 2048-byte packs of a program stream: a PES packet of
+    private stream 1 in each, substream 0x20 + `track`, the first carrying
+    the PTS. The last pack is filled out with a padding packet, or, when
+    the room left is too small for one, with stuffing in its PES header."""
+    pts = max(0, int(round(seconds * 90000))) & 0x1FFFFFFFF
+    stamp = bytes([0x21 | (pts >> 29 & 0x0E), pts >> 22 & 255, (pts >> 14 & 0xFE) | 1, pts >> 7 & 255,
+                   (pts << 1 & 0xFE) | 1])
+    out = bytearray()
+    position = 0
+    while position < len(spu):
+        header = bytes([0x81, 0x80, 0x05]) + stamp if position == 0 else bytes([0x81, 0x00, 0x00])
+        room = PACK - 14 - 6 - len(header) - 1
+        chunk = spu[position:position + room]
+        position += len(chunk)
+        gap = room - len(chunk)
+        if 0 < gap < 6:
+            header = header[:2] + bytes([header[2] + gap]) + header[3:] + b'\xff' * gap
+            gap = 0
+        body = header + bytes([0x20 + track]) + chunk
+        out += _pack_header(pts) + bytes([0, 0, 1, 0xBD, len(body) >> 8, len(body) & 255]) + body
+        if gap:
+            out += bytes([0, 0, 1, 0xBE, (gap - 6) >> 8, (gap - 6) & 255]) + b'\xff' * (gap - 6)
+    return bytes(out)
+
+
+def _idx_time(seconds):
+    ms = max(0, int(round(seconds * 1000)))
+    return f'{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}:{ms % 1000:03d}'
+
+
+def _language_id(language):
+    """The .idx's language id: ISO 639-1, as DVDs name theirs ('pt' for 'pt-br')."""
+    code = str(language or 'en').replace('_', '-').split('-')[0].lower()
+    return {'cmn': 'zh', 'yue': 'zh'}.get(code, code) if code.isalpha() else 'en'
+
+
+def save(path, pictures, size, language='en'):
+    """Write the VobSub of `pictures` (disc_pictures' dicts, in order of
+    start) on a frame of `size`: the .idx at `path` (or beside it, when
+    `path` is the .sub) and the .sub beside it. One track, in `language`."""
+    import numpy
+    stem = os.path.splitext(path)[0]
+    width, height = int(size[0]), int(size[1])
+    # Each subtitle cut to four colours first, as the palette is made of
+    # all of them; its pixels kept compressed until then, a film's worth
+    # being large.
+    units = []
+    for picture in disc_pictures.timeline(pictures):
+        fitted = disc_pictures.fit(picture, (width, height))
+        if fitted is None:
+            continue
+        x, y, w, h, rgba = fitted
+        indices, colours = disc_pictures.reduce(rgba, 4)
+        counts = numpy.bincount(numpy.frombuffer(indices, numpy.uint8), minlength=4)
+        units.append({'start': picture['start'], 'duration': picture['end'] - picture['start'],
+                      'x': x, 'y': y, 'width': w, 'height': h, 'indices': zlib.compress(indices, 1),
+                      'colours': colours, 'counts': counts, 'forced': bool(picture.get('forced'))})
+    # The palette: every SPU's colours, the more pixels and the more opaque
+    # the more they weigh, as they are when there are sixteen or fewer,
+    # else the sixteen k-means finds for them.
+    weights = {}
+    for unit in units:
+        for (r, g, b, a), count in zip(unit['colours'][1:], unit['counts'][1:]):
+            weights[(r, g, b)] = weights.get((r, g, b), 0) + int(count) * a
+    found = [colour for colour, weight in weights.items() if weight > 0]
+    if len(found) <= 16:
+        palette = found
+    else:
+        centres, _labels = disc_pictures.cluster(found, [weights[colour] for colour in found], 16)
+        palette = [tuple(int(round(v)) for v in centre) for centre in centres]
+    palette = (palette + [colour for colour in DEFAULT_PALETTE if colour not in palette])[:16]
+    palette += DEFAULT_PALETTE[len(palette):]
+    table = numpy.array(palette, numpy.float64)
+
+    def entry(colour):
+        return int(numpy.argmin(((table - colour[:3]) ** 2).sum(1)))
+
+    data = bytearray()
+    entries = []
+    for unit in units:
+        colours = [0] + [entry(colour) for colour in unit['colours'][1:]]
+        alphas = [0] + [int(round(colour[3] / 17)) for colour in unit['colours'][1:]]
+        colours += [0] * (4 - len(colours))
+        alphas += [0] * (4 - len(alphas))
+        spu = encode_spu(zlib.decompress(unit['indices']), unit['width'], unit['height'], unit['x'], unit['y'], unit['duration'],
+                         colours, alphas, unit['forced'])
+        entries.append((unit['start'], len(data)))
+        data += packs(spu, unit['start'])
+    with open(stem + '.sub', 'wb') as handle:
+        handle.write(bytes(data))
+    lines = ['# VobSub index file, v7 (do not modify this line!)',
+             '# Written by Subtitld',
+             f'size: {width}x{height}', 'org: 0, 0', 'scale: 100%, 100%', 'alpha: 100%', 'smooth: OFF',
+             'fadein/out: 0, 0', 'align: OFF at LEFT TOP', 'time offset: 0', 'forced subs: OFF',
+             'palette: ' + ', '.join(f'{r:02x}{g:02x}{b:02x}' for r, g, b in palette),
+             'custom colors: OFF, tridx: 0000, colors: 000000, 000000, 000000, 000000',
+             '', 'langidx: 0', '', f'id: {_language_id(language)}, index: 0']
+    lines += [f'timestamp: {_idx_time(start)}, filepos: {position:09x}' for start, position in entries]
+    with open(stem + '.idx', 'w', encoding='utf-8', newline='\n') as handle:
+        handle.write('\n'.join(lines) + '\n')
+    return stem + '.idx', stem + '.sub'

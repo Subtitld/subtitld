@@ -253,7 +253,7 @@ def load_productionscreen(self, collab=None):
             try:
                 session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
             except file_io.PictureSubtitlesError as pictures:
-                # VobSub, PGS, IMSC's or a DCP's pictures: read by an OCR add-on, which the dialog runs
+                # VobSub, PGS, a BDN's, IMSC's or a DCP's pictures: read by an OCR add-on, which the dialog runs
                 # (or says to install). Stopped, the open stops as for a
                 # file that cannot be read, with nothing more to say.
                 from subtitld.interface import picture_ocr_dialog
@@ -265,7 +265,8 @@ def load_productionscreen(self, collab=None):
                     return
                 session.SUBTITLE['segments'], info = read
                 # Saved as text: TTML again for an IMSC file, DCP subtitles
-                # again (in text) for a DCP's, SRT for a disc's.
+                # again (in text) for a DCP's, SRT for a disc's and a BDN's
+                # (saved as BDN, its own PNGs would be drawn over).
                 session.CONFIG['format_to_save'] = {'imsc': 'TTML', 'dcp': 'DCP'}.get(pictures.kind, 'SRT')
                 if info.get('language'):
                     session.SUBTITLE['language'] = info['language']

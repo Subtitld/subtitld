@@ -70,18 +70,24 @@ def _resolve_source_language() -> str | None:
       1. Explicit `SUBTITLE['source_language']` — preferred, set at
          transcription time and preserved through invert.
       2. Fallback to `SUBTITLE['language']` — correct for projects that
-         have not been inverted (the common case), and the only
+         have not been translated (the common case), and the only
          reasonable guess for legacy projects that predate the
          `source_language` field.
 
-    Returns None only when the project has no language at all (no
-    transcription, no manifest), in which case the caller should skip
-    `voice_ref_text` entirely rather than feed the model a wrong-language
-    transcript.
+    Returns None when the project has no language at all (no
+    transcription, no manifest), and when it has translations but does
+    not say which language is spoken: a project saved before USF kept
+    `source_language` may have been inverted, its subtitles a
+    translation of what the audio says. In both cases the caller should
+    skip `voice_ref_text` entirely rather than feed the model a
+    wrong-language transcript.
     """
     explicit = (session.SUBTITLE.get('source_language') or '').strip()
     if explicit:
         return explicit
+    if any(isinstance(seg, dict) and seg.get('translations')
+           for seg in session.SUBTITLE.get('segments') or []):
+        return None
     current = (session.SUBTITLE.get('language') or '').strip()
     return current or None
 

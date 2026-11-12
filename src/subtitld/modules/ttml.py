@@ -49,13 +49,29 @@ Reading:
   or on what holds it, tts:visibility="hidden", a region at tts:opacity 0
   — is read like any other and marked hidden, not left out;
 - the document's xml:lang is the subtitles' language, and its <metadata>'s
-  ttm:title, ttm:desc and ttm:copyright what it says about itself;
+  ttm:title, ttm:desc and ttm:copyright what it says about itself (in
+  <head> itself too, where EBU-TT puts its copyright); the ebuttm
+  elements EBU Tech 3360 maps an STL file's GSI to are kept by their STL
+  names, as metadata['stl'], and an EBU-TT file timed in timecode counts
+  from the documentStartOfProgramme it names, as an STL from its TCP;
 - a subtitle that is a picture (IMSC's Image Profile, SMPTE-TT: a <div>
   with smpte:backgroundImage, a PNG beside the file or one the file holds
   in a smpte:image) is read as the text its ittm:altText gives, placed
   where its region is; `read_images` gives the pictures themselves, for
   the ones with no text to read (modules.picture_ocr reads them with an
-  OCR add-on);
+  OCR add-on); SMPTE-TT's own example puts the picture's words in a <p>
+  inside its <div>, and those are its words too;
+- with ttp:timeBase="smpte", a clock time with frames is a timecode's
+  label, counted at the nominal rate, the labels ttp:dropMode's dropNTSC
+  or dropPAL skip left out (timecode_frames);
+- what RP 2052-10 makes of CEA-608: a region with a tts:origin and no
+  extent holds text starting there, and the <set> inside a region moves
+  it from caption to caption; a document that holds no text but the
+  CEA-608 or CEA-708 captions it was converted from, tunnelled in
+  smpte:data (RP 2052-10, RP 2052-11), is read from those, decoded as an
+  SCC or a video's captions are;
+- a DAPT script is read as the dubbing session it describes (see the
+  'dapt' profile below, and _dapt_document);
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -78,6 +94,33 @@ a service that checks what it is given accepts it (PROFILES):
     'ebu-tt-d'  EBU-TT-D, declared in ebuttm:conformsToStandard, the way
                 the EBU's own spec asks for and which forbids
                 ttp:contentProfiles
+    'smpte-tt'  SMPTE-TT (ST 2052-1), declared in ttp:profile: TTML 1 with
+                ttp:timeBase="media" and clock times, the form Premiere
+                and the broadcast tools import; the video's frame rate in
+                ttp:frameRate where it is known, and, when asked
+                (`tunnel`), the subtitles as CEA-608 captions in CC1,
+                tunnelled in smpte:data as RP 2052-10 stores them
+    'ebu-tt'    EBU-TT Part 1 (EBU Tech 3350 v1.2), the production and
+                archive profile, declared in ebuttm:conformsToStandard:
+                styled by reference only (what a paragraph or a span says
+                goes into a <style> it names, a region's textAlign too), in
+                SMPTE timecode where a frame rate is given (ttp:timeBase,
+                frameRate, frameRateMultiplier, markerMode, dropMode; from
+                the programme start in ebuttm:documentStartOfProgramme),
+                ttm:copyright in <head>, and the GSI fields EBU Tech 3360
+                carries over from an STL file (metadata['stl'], by their STL
+                names) as Part M's ebuttm elements
+    'dapt'      DAPT, W3C's Dubbing and Audio description Profiles of TTML2
+                (a Candidate Recommendation), declared in
+                ttp:contentProfiles: a script, not subtitles to show. Each
+                subtitle is a Script Event, a <div> with an xml:id; its
+                speaker a character (a ttm:agent of type character, named
+                by its alias, its talent a person agent); its text a <p>
+                in the subtitle's language and each translation a <p>
+                translated from it (xml:lang and daptm:langSrc); the dub
+                heard for it an <audio> for each clip of a file. Written
+                by _write_dapt, read by _dapt_document, which says what a
+                subtitle has no room for and keeps it
 
 The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
 instead, a PNG beside the file drawn as Subtitld's preview draws it, with
@@ -126,7 +169,13 @@ _TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve'
 # How much of those each profile takes: none in the two built on TTML 1,
 # IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
 # all of it in TTML itself.
-_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none'}
+_ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none', 'smpte-tt': 'none',
+                'ebu-tt': 'flat', 'dapt': 'full'}
+# The profiles built on TTML 1, which has none of TTML2's styling.
+_TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt')
+# The EBU's two, which leave out what EBU-TT does not use: an outline, a
+# region's opacity, tts:display.
+_EBU_PROFILES = ('ebu-tt-d', 'ebu-tt')
 # The words a tts:textEmphasis may hold that are neither a colour nor a mark
 # of its own: what IMSC 1.1's #textEmphasis-minimal allows.
 _EMPHASIS_WORDS = frozenset(('none', 'auto', 'filled', 'open', 'circle', 'dot', 'sesame',
@@ -150,7 +199,7 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
 
-PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d')
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'dapt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
 IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
@@ -165,6 +214,18 @@ _IMSC1_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1/image'
 _IMSC11_IMAGE = 'http://www.w3.org/ns/ttml/profile/imsc1.1/image'
 # Where a picture's file is named (SMPTE-TT) and its words kept (IMSC).
 _SMPTE_NS = 'http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt'
+# SMPTE-TT (ST 2052-1). The 2013 edition moved its vocabulary to a 2013
+# namespace; IMSC, and the tools that read SMPTE-TT, name the 2010 one, which
+# is what Subtitld writes. Both are read. The profile is declared in
+# ttp:profile; RP 2052-10 and -11 add CEA-608's and CEA-708's metadata
+# attributes, in namespaces of their own, and name the data they tunnel.
+_SMPTE_NAMESPACES = (_SMPTE_NS, 'http://www.smpte-ra.org/schemas/2052-1/2013/smpte-tt')
+_SMPTE_PROFILE = 'http://www.smpte-ra.org/schemas/2052-1/2010/profiles/smpte-tt-full'
+_SMPTE_PROFILES = (_SMPTE_PROFILE, 'http://www.smpte-ra.org/schemas/2052-1/2013/profiles/smpte-tt-full')
+_M608_NS = _SMPTE_NS + '#cea608'
+_CEA608_DATA = _SMPTE_NS + '#cea608'
+# CEA-608's pairs come at NTSC's rate, whatever the document's (RP 2052-10).
+_CEA608_RATE = 30000 / 1001
 _ITTM_NS = 'http://www.w3.org/ns/ttml/profile/imsc1#metadata'
 _EBUTTD_STANDARD = 'urn:ebu:tt:distribution:2018-04'
 _EBUTTM_NS = 'urn:ebu:tt:metadata'
@@ -216,6 +277,52 @@ def _text_of(data):
     return decode(data)
 
 
+def _dropped(minutes, drop):
+    """How many frame labels a drop-frame count has skipped by the start of
+    minute `minutes` (counted from 00:00): TTML's ttp:dropMode. dropNTSC
+    skips 00 and 01 at each minute but every tenth; dropPAL 00 to 03 at
+    each even minute but 00, 20 and 40."""
+    if drop == 'dropNTSC':
+        return 2 * (minutes - minutes // 10)
+    if drop == 'dropPAL':
+        return 4 * (minutes // 2 - minutes // 20)
+    return 0
+
+
+def timecode_frames(hours, minutes, seconds, frames, nominal, drop=''):
+    """The frame a SMPTE timecode label names, counted from 00:00:00:00, at
+    `nominal` frames a second, the labels `drop` ('dropNTSC', 'dropPAL' or
+    '') skips left out."""
+    return int(round(((hours * 60 + minutes) * 60 + seconds) * nominal + frames)) - \
+        _dropped(hours * 60 + minutes, drop)
+
+
+def timecode_label(count, nominal, drop=''):
+    """'HH:MM:SS:FF' for the frame `count`, the inverse of timecode_frames."""
+    nominal = int(round(nominal))
+    count = max(0, int(count))
+    if drop in ('dropNTSC', 'dropPAL'):
+        skip = 2 if drop == 'dropNTSC' else 4
+
+        def drops(minute):
+            return minute % 10 != 0 if drop == 'dropNTSC' else minute % 2 == 0 and minute % 20 != 0
+        # Walk to the minute the frame falls in: each minute is a full one,
+        # less the labels it skips at its start.
+        minute = 0
+        while count >= nominal * 60 - (skip if drops(minute) else 0):
+            count -= nominal * 60 - (skip if drops(minute) else 0)
+            minute += 1
+        if drops(minute):
+            count += skip                       # this minute's first labels are not used
+        hours, minutes = divmod(minute, 60)
+        seconds, frames = divmod(count, nominal)
+        return f'{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}'
+    seconds, frames = divmod(count, nominal)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f'{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}'
+
+
 class _Clock:
     """Turns TTML times into seconds, by the document's parameters."""
 
@@ -230,12 +337,19 @@ class _Clock:
             ratio = float(multiplier[0]) / float(multiplier[1]) if len(multiplier) == 2 else 1.0
         except (ValueError, ZeroDivisionError):
             ratio = 1.0
-        self.fps = number('frameRate', 30) * (ratio or 1.0)
+        self.nominal = number('frameRate', 30)
+        self.fps = self.nominal * (ratio or 1.0)
         self.subframes = number('subFrameRate', 1)
         if _attr(root, 'tickRate'):
             self.tick_rate = number('tickRate', 1)
         else:
             self.tick_rate = self.fps * self.subframes if _attr(root, 'frameRate') else 1
+        # A time base of "smpte" makes a clock time a timecode's label: its
+        # hours, minutes and seconds count frames at the nominal rate (30
+        # for 29.97), with the labels a drop-frame count skips, and the
+        # frame it names comes at the real rate.
+        self.smpte = (_attr(root, 'timeBase') or '').strip() == 'smpte'
+        self.drop = (_attr(root, 'dropMode') or '').strip() if self.smpte else ''
 
     def seconds(self, text):
         """Seconds for a time expression, or None for none."""
@@ -243,6 +357,10 @@ class _Clock:
         clock = _CLOCK.match(text)
         if clock:
             hours, minutes, seconds, fraction, frames, subframes = clock.groups()
+            if self.smpte and fraction is None:
+                count = timecode_frames(int(hours), int(minutes), int(seconds), int(frames or 0),
+                                        self.nominal, self.drop)
+                return (count + (int(subframes) / self.subframes if subframes else 0)) / self.fps
             value = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
             if fraction:
                 value += int(fraction) / 10 ** len(fraction)
@@ -1010,7 +1128,7 @@ def _runs(element, styles, props, preserve, out, agent):
             out.append(('\n', _look(props)))
         elif name == 'span':
             _runs(child, styles, styles.of(child, props), preserve, out, agent)
-        elif name and name not in ('metadata', 'set', 'animate', 'style', 'region'):
+        elif name and name not in ('metadata', 'set', 'animate', 'style', 'region', 'audio', 'source', 'data', 'desc'):
             _runs(child, styles, props, preserve, out, agent)
         text(child.tail)
 
@@ -1044,10 +1162,652 @@ def _alt_text(element):
     return '\n'.join(lines)
 
 
-def _document(text, images=None):
+def _region_props(element, styles, clock, at):
+    """A region's properties at `at` seconds: its own, then those of a
+    <set> inside it that is active then, which is how RP 2052-10 moves the
+    one region a CEA-608 conversion uses from caption to caption."""
+    if element is None:
+        return {}
+    props = styles.of(element, {})
+    base = clock.seconds(element.get('begin')) or 0.0
+    for child in element:
+        if _local(child.tag) != 'set':
+            continue
+        start, stop = _span_of(child, base, None, clock)
+        if start <= at + 0.0005 and (stop is None or at < stop - 0.0005):
+            props.update(_properties(child))
+    return props
+
+
+def _plain_paragraph(element, styles, props):
+    """A paragraph's words, its lines kept apart and its formatting not."""
+    runs = []
+    _runs(element, styles, styles.of(element, props), False, runs, [None])
+    return '\n'.join(line.strip() for line in markup.plain(markup.tidy(runs)).split('\n') if line.strip())
+
+
+def _data_kind(datatype):
+    """'608' or '708' for the captions a smpte:data tunnels, by the datatype
+    RP 2052-10 and -11 give them (in either edition's namespace, or as the
+    private x-cea608 some tools write), else ''."""
+    datatype = (datatype or '').strip().lower()
+    for kind in ('608', '708'):
+        if datatype.endswith('#cea' + kind) or datatype == 'x-cea' + kind:
+            return kind
+    return ''
+
+
+def _tunnelled(root, clock):
+    """[(seconds, '608' or '708', bytes)] for the captions the document
+    tunnels in smpte:data, each from when the element whose metadata holds
+    it begins (the document's start, for the head's)."""
+    found = []
+
+    def walk(element, base, limit):
+        start, stop = (_span_of(element, base, limit, clock)
+                       if _local(element.tag) in ('body', 'div', 'p', 'span') else (base, limit))
+        for child in element:
+            name = _local(child.tag)
+            if name == 'metadata':
+                for data in child:
+                    kind = _data_kind(data.get('datatype')) if _local(data.tag) == 'data' else ''
+                    if not kind:
+                        continue
+                    try:
+                        found.append((start, kind, base64.b64decode(''.join((data.text or '').split()), validate=True)))
+                    except (binascii.Error, ValueError):
+                        continue
+            elif name in ('head', 'body', 'div', 'p', 'span'):
+                walk(child, start, stop)
+
+    walk(root, 0.0, None)
+    return found
+
+
+# The frame rate a cc_data() holding this many entries is sent at: CEA-708
+# carries 9600 bits a second, 20 entries a frame at 29.97.
+_CC_COUNT_RATES = {10: 60000 / 1001, 20: 30000 / 1001, 25: 24000 / 1001}
+
+
+def _captions_of(root, clock, tunnels):
+    """The subtitles in the CEA-608 or CEA-708 data a document tunnels,
+    decoded as an SCC or a video's captions are (modules.closed_captions):
+    CEA-708's first service with captions, else the CEA-608 channel the
+    smpte:information names, else the first with captions.
+
+    RP 2052-10 stores CEA-608 as its byte pairs, field 1's and field 2's
+    by turns, m608:fieldStart saying which comes first, at NTSC's rate.
+    RP 2052-11 stores CEA-708 as its cc_data() structures, one a frame."""
+    from subtitld.modules import closed_captions
+    info = next((element for element in root.iter() if _local(element.tag) == 'information'), None)
+    field_start = 2 if info is not None and (_attr(info, 'fieldStart') or '').strip() == '2' else 1
+    channel = (_attr(info, 'channel') or '').strip().lower() if info is not None else ''
+    pairs, frames, rate = {}, {}, None
+    for start, kind, raw in tunnels:
+        if kind == '608':
+            first = round(start * _CEA608_RATE)
+            for index in range(len(raw) // 2):
+                slot = index + field_start - 1
+                pairs.setdefault(first + slot // 2, []).append((slot % 2, raw[2 * index], raw[2 * index + 1]))
+            continue
+        # One cc_data() a frame, from the frame the element begins on.
+        offset, frame = 0, None
+        while offset + 2 <= len(raw):
+            count = raw[offset] & 0x1F
+            if rate is None:
+                rate = clock.fps if _attr(root, 'frameRate') else _CC_COUNT_RATES.get(count, 30000 / 1001)
+            frame = round(start * rate) if frame is None else frame + 1
+            entries = closed_captions.triplets(raw[offset + 2:offset + 2 + 3 * count])
+            if entries:
+                frames.setdefault(frame, []).extend(entries)
+            offset += 2 + 3 * count
+    dtvcc = sorted(frames.items())
+    if dtvcc:
+        segments, _track = closed_captions.decode(dtvcc, rate, 'auto')
+        if segments:
+            return segments
+    batches = sorted(pairs.items())
+    if channel in ('cc1', 'cc2', 'cc3', 'cc4'):
+        segments, _track = closed_captions.decode(batches, _CEA608_RATE, channel)
+        if segments:
+            return segments
+    return closed_captions.decode(batches, _CEA608_RATE, 'auto')[0]
+
+
+# DAPT (W3C's Dubbing and Audio description Profiles of TTML2, a Candidate
+# Recommendation): a script for dubbing or audio description, whose
+# events are <div>s with an xml:id, each holding a <p> for each language its
+# text is in, the characters ttm:agents in <head>, recordings <audio>.
+_DAPT_CONTENT = 'http://www.w3.org/ns/ttml/profile/dapt1.0/content'
+_DAPTM_NS = 'http://www.w3.org/ns/ttml/profile/dapt#metadata'
+_TTA_NS = 'http://www.w3.org/ns/ttml#audio'
+_TTM_NS = 'http://www.w3.org/ns/ttml#metadata'
+DAPT_SCRIPT_TYPES = ('originalTranscript', 'translatedTranscript', 'preRecording', 'asRecorded')
+# The registry of what a script and its events represent (DAPT, H.2.2). A
+# value of one's own begins "x-", or extends one of these with an "x-" part.
+DAPT_REPRESENTS = ('audio', 'audio.dialogue', 'audio.nonDialogueSounds', 'visual', 'visual.dialogue',
+                   'visual.nonText', 'visual.text', 'visual.text.title', 'visual.text.credit', 'visual.text.location')
+_DAPT_ON_SCREEN = ('ON', 'OFF', 'ON_OFF', 'OFF_ON')
+# What a text's source language says when it names no language: content
+# with none (zxx), or one not yet determined ('' or und). Such text is
+# original, as is text whose source is its own language.
+_NO_LANGUAGE = ('', 'zxx', 'und')
+_BCP47 = re.compile(r'^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$')
+_DESCRIPTOR = re.compile(r'^[^\s.]+(?:\.[^\s.]+)*$')
+_AUDIO_TYPES = {'.wav': 'audio/wave', '.wave': 'audio/wave', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
+                '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.flac': 'audio/flac', '.m4a': 'audio/mp4',
+                '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff'}
+
+
+def is_dapt(root_or_text):
+    """Whether a document (its root element, or its text) is a DAPT script:
+    it says so in ttp:contentProfiles, or carries DAPT's script type."""
+    root = root_or_text
+    if isinstance(root_or_text, str):
+        try:
+            root = ET.fromstring(re.sub(r'^\s*<\?xml[^>]*\?>', '', _ENTITY.sub(_entity, root_or_text.lstrip('﻿'))))
+        except ET.ParseError:
+            return False
+    return any('/ttml/profile/dapt' in value for value in (_attr(root, 'contentProfiles') or '').split()) \
+        or root.get(f'{{{_DAPTM_NS}}}scriptType') is not None
+
+
+def _dapt(element, name):
+    return element.get(f'{{{_DAPTM_NS}}}{name}')
+
+
+def _original(language, source):
+    """Whether text in `language` from `source` (its daptm:langSrc) is
+    original rather than a translation (DAPT 4.5)."""
+    return source.strip().lower() in _NO_LANGUAGE or source.strip().lower() == language.strip().lower()
+
+
+def _dapt_agents(root):
+    """({character id: name}, {character id: the talent's name}): DAPT's
+    characters are ttm:agents of type character named by an alias, the
+    actor who voices one a person agent its ttm:actor names."""
+    names, persons, actors = {}, {}, {}
+    for element in root.iter():
+        if _local(element.tag) != 'agent' or not _xml_id(element):
+            continue
+        found = {child.get('type'): (child.text or '').strip() for child in element
+                 if _local(child.tag) == 'name' and (child.text or '').strip()}
+        if element.get('type') == 'person':
+            persons[_xml_id(element)] = found.get('full') or next(iter(found.values()), '')
+        else:
+            names[_xml_id(element)] = found.get('alias') or found.get('full') or next(iter(found.values()), '') \
+                or _xml_id(element)
+            actor = next((child.get('agent') for child in element if _local(child.tag) == 'actor'), None)
+            if actor:
+                actors[_xml_id(element)] = actor
+    return names, {key: persons[actor] for key, actor in actors.items() if persons.get(actor)}
+
+
+def _dapt_document(root, clock, styles, folder=None):
+    """(subtitles, language, metadata) of a DAPT script.
+
+    Each Script Event is a subtitle: its times, its character as its
+    speaker, its text in the subtitle's language and the rest as its
+    translations, its recordings, where the files are there to be had, as
+    its dub. The subtitle's language is the one most of the events' original
+    text is in (the text whose daptm:langSrc is its own language, or none),
+    else the document's. What has no home in a subtitle — what an event
+    represents, whether its subject is on screen, its descriptions, the
+    source language of its text, a second character, the mixing of its
+    audio, a recording that is not there — is kept in its 'dapt', and what
+    the script says of itself in metadata['dapt'], for a DAPT written again.
+    """
+    characters, talents = _dapt_agents(root)
+    language = (root.get(_XML_NS + 'lang') or '').strip()
+    events = []
+
+    def lang_of(element, inherited):
+        return (element.get(_XML_NS + 'lang') if element.get(_XML_NS + 'lang') is not None else inherited).strip()
+
+    def source_of(element, inherited):
+        return _dapt(element, 'langSrc') if _dapt(element, 'langSrc') is not None else inherited
+
+    def audio_in(element, base, limit, found, mixing):
+        """The recordings in a text, each timed from the text's start, and
+        the mixing instructions on it."""
+        for child in element:
+            name = _local(child.tag)
+            if name == 'audio':
+                start, stop = _span_of(child, base, limit, clock)
+                sources = [child.get('src')] if child.get('src') else \
+                    [source.get('src') for source in child if _local(source.tag) == 'source' and source.get('src')]
+                found.append({'sources': [source for source in sources if source], 'start': start, 'end': stop,
+                              'type': child.get('type') or '',
+                              'clip_begin': clock.seconds(child.get('clipBegin')),
+                              'clip_end': clock.seconds(child.get('clipEnd'))})
+            elif name == 'animate':
+                said = {_local(key): value for key, value in child.attrib.items()
+                        if _local(key) in ('begin', 'end', 'dur', 'fill', 'gain', 'pan')}
+                if 'gain' in said or 'pan' in said:
+                    mixing.append(said)
+            elif name == 'span':
+                start, stop = _span_of(child, base, limit, clock)
+                audio_in(child, start, stop, found, mixing)
+
+    def walk(element, base, limit, lang, source, represents, agent):
+        name = _local(element.tag)
+        start, stop = _span_of(element, base, limit, clock) if name in ('body', 'div') else (base, limit)
+        lang, source = lang_of(element, lang), source_of(element, source)
+        represents = _dapt(element, 'represents') or represents
+        agent = element.get(f'{{{_TTM_NS}}}agent') or agent
+        children = [child for child in element if _local(child.tag) in ('body', 'div')]
+        if name == 'div' and _xml_id(element) and not children:
+            texts, mixing = [], []
+            for p in (child for child in element if _local(child.tag) == 'p'):
+                p_lang, p_source = lang_of(p, lang), source_of(p, source)
+                runs = []
+                _runs(p, styles, styles.of(p, {}), False, runs, [None])
+                found = []
+                p_start, p_stop = _span_of(p, start, stop, clock)
+                audio_in(p, p_start, p_stop, found, mixing)
+                speak = next((value for inner in p.iter() for key, value in inner.attrib.items()
+                              if _namespace(key) == _TTA_NS and _local(key) == 'speak' and value != 'none'), '')
+                texts.append({'lang': p_lang, 'source': p_source, 'text': markup.tidy(runs).strip(),
+                              'audio': found, 'speak': speak, 'represents': _dapt(p, 'represents') or '',
+                              'agent': p.get(f'{{{_TTM_NS}}}agent') or ''})
+            audio_in(element, start, stop, [], mixing)
+            descriptions = [{'text': (child.text or '').strip(),
+                             **({'type': _dapt(child, 'descType')} if _dapt(child, 'descType') else {})}
+                            for child in element if _local(child.tag) == 'desc' and (child.text or '').strip()]
+            events.append({'id': _xml_id(element), 'start': start, 'end': stop, 'texts': texts,
+                           'represents': represents, 'said': _dapt(element, 'represents') is not None, 'on_screen': (_dapt(element, 'onScreen') or '').strip(),
+                           'agents': (agent or next((text['agent'] for text in texts if text['agent']), '')).split(),
+                           'descriptions': descriptions, 'mixing': mixing})
+            return
+        for child in children:
+            walk(child, start, stop, lang, source, represents, agent)
+
+    body = next((element for element in root if _local(element.tag) == 'body'), None)
+    root_source = _dapt(root, 'langSrc') or ''
+    root_represents = _dapt(root, 'represents') or ''
+    if body is not None:
+        walk(body, 0.0, None, language, root_source, root_represents, root.get(f'{{{_TTM_NS}}}agent'))
+
+    counted = {}
+    for event in events:
+        for text in event['texts']:
+            if text['text'] and _original(text['lang'], text['source']):
+                counted[text['lang']] = counted.get(text['lang'], 0) + 1
+    main = max(counted, key=lambda key: (counted[key], key == language)) if counted else language
+    body_represents = (_dapt(body, 'represents') if body is not None else None) or root_represents
+
+    segments = []
+    for event in events:
+        if event['end'] is None:
+            continue
+        mine = [text for text in event['texts'] if text['lang'].lower() == main.lower()]
+        chosen = next((text for text in mine if _original(text['lang'], text['source'])), mine[0] if mine else None)
+        segment = {'start': round(event['start'], 3), 'end': round(max(event['start'], event['end']), 3),
+                   'text': chosen['text'] if chosen else ''}
+        names = [characters.get(agent, agent) for agent in event['agents']]
+        if names:
+            segment['speaker'] = names[0]
+        translations = {}
+        for text in event['texts']:
+            if text is not chosen and text['text']:
+                translations[text['lang']] = '\n'.join(part for part in (translations.get(text['lang']), text['text'])
+                                                       if part)
+        if translations:
+            segment['translations'] = translations
+        kept = {'id': event['id']}
+        # What it represents, where the event says or it differs from what
+        # the script's body says for all of them.
+        if event['represents'] and (event['said'] or event['represents'] != body_represents):
+            kept['represents'] = event['represents']
+        if event['on_screen'] and event['on_screen'] != 'ON':
+            kept['on_screen'] = event['on_screen']
+        if chosen and chosen['source'] and chosen['source'] != root_source:
+            kept['lang_src'] = chosen['source']
+        if len(names) > 1:
+            kept['characters'] = names
+        if event['descriptions']:
+            kept['descriptions'] = event['descriptions']
+        if event['mixing']:
+            kept['mixing'] = event['mixing']
+        if chosen and chosen['speak']:
+            kept['speak'] = chosen['speak']
+        # The recordings of the subtitle's own text, as its dub, where the
+        # files are there: each a clip of its file, placed where it plays.
+        clips, missing = [], []
+        for audio in (chosen['audio'] if chosen else []):
+            path = _audio_path(audio['sources'], folder)
+            if path is None:
+                missing.append({key: value for key, value in audio.items() if value not in (None, '', [])})
+                continue
+            clips.append((path, audio))
+        if clips:
+            segment['dubbing'] = [_dub_of(clips)]
+        if missing:
+            kept['audio'] = missing
+        segment['dapt'] = kept
+        segments.append(segment)
+    segments.sort(key=lambda segment: (segment['start'], segment['end']))
+
+    about = _metadata(root)
+    script = {'script_type': (_dapt(root, 'scriptType') or '').strip(),
+              'script_represents': ' '.join((_dapt(root, 'scriptRepresents') or '').split()),
+              'lang_src': root_source, 'represents': body_represents}
+    if talents:
+        script['talents'] = {characters.get(key, key): name for key, name in talents.items()}
+    about['dapt'] = {key: value for key, value in script.items() if value}
+    return segments, main, about
+
+
+def _audio_path(sources, folder):
+    """The local file one of an <audio>'s sources names, or None: a path
+    or a file: URL, relative to the script's folder; an embedded or a
+    remote recording is not one."""
+    import os
+    import urllib.parse
+    for source in sources:
+        if source.startswith('#'):
+            continue
+        parsed = urllib.parse.urlparse(source)
+        if parsed.scheme not in ('', 'file') and len(parsed.scheme) > 1:
+            continue
+        path = urllib.parse.unquote(parsed.path if parsed.scheme else source)
+        if folder and not os.path.isabs(path):
+            path = os.path.join(folder, path)
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
+
+
+def _dub_of(clips):
+    """A dub (subtitle['dubbing'][0], modules.dub_clip) of a text's
+    recordings [(path, audio)]: one file played whole is the dub's path, as
+    a recorded take is; more, or a clip of one, are its subclips."""
+    first = min(audio['start'] for _path, audio in clips)
+    if len(clips) == 1 and clips[0][1]['clip_begin'] is None and clips[0][1]['clip_end'] is None:
+        return {'path': clips[0][0], 'start': round(first, 3)}
+    subclips = []
+    for path, audio in clips:
+        begin = audio['clip_begin'] or 0.0
+        end = audio['clip_end']
+        if end is None and audio['end'] is not None:
+            end = begin + (audio['end'] - audio['start'])
+        if end is None or end <= begin:
+            continue
+        subclips.append({'type': 'audio', 'path': path, 'start': round(begin, 3), 'end': round(end, 3),
+                         'offset': round(audio['start'] - first, 3)})
+    dub = {'path': clips[0][0], 'start': round(first, 3)}
+    if subclips:
+        dub['segments'] = subclips
+    return dub
+
+
+def _dapt_problems(root, declared_profile, content_profiles):
+    """What breaks DAPT in a document: its profile and what the script
+    must say of itself, its characters, its events, the languages and what
+    they represent, its timing, its recordings."""
+    problems = []
+    if _DAPT_CONTENT not in content_profiles:
+        problems.append(f'ttp:contentProfiles does not name DAPT\'s content profile ({_DAPT_CONTENT})')
+    if declared_profile:
+        problems.append('ttp:profile is present: DAPT, built on TTML2, prohibits it')
+    script_represents = (_dapt(root, 'scriptRepresents') or '').split()
+    if not script_represents:
+        problems.append('<tt> has no daptm:scriptRepresents: a script says what it is an alternative for')
+
+    def valid(descriptor):
+        if not _DESCRIPTOR.match(descriptor):
+            return False
+        if descriptor in DAPT_REPRESENTS or descriptor.startswith('x-'):
+            return True
+        parts = descriptor.split('.')
+        return any(parts[index].startswith('x-') and '.'.join(parts[:index]) in DAPT_REPRESENTS
+                   for index in range(1, len(parts)))
+    unknown = sorted({value for value in script_represents if not valid(value)})
+    if unknown:
+        problems.append(f'daptm:scriptRepresents names what DAPT\'s registry has not ({", ".join(unknown)}): '
+                        'one of its own begins "x-"')
+    script_type = _dapt(root, 'scriptType')
+    if script_type is None:
+        problems.append('<tt> has no daptm:scriptType')
+    elif script_type.strip() not in DAPT_SCRIPT_TYPES:
+        problems.append(f'daptm:scriptType="{script_type}": it is {", ".join(DAPT_SCRIPT_TYPES)}')
+    if (_attr(root, 'timeBase') or 'media').strip() != 'media':
+        problems.append('DAPT is timed in media time: ttp:timeBase is "media" or not said')
+    if any((element.get('timeContainer') or 'par') != 'par' for element in root.iter()):
+        problems.append('timeContainer other than "par": DAPT has none')
+    framed = any(re.fullmatch(r'\d+(?:\.\d+)?f|\d+:\d{2}:\d{2}:\d+(?:\.\d+)?', (element.get(name) or '').strip())
+                 for element in root.iter() for name in ('begin', 'end', 'dur', 'clipBegin', 'clipEnd'))
+    if framed and _attr(root, 'frameRate') is None:
+        problems.append('Times in frames, but <tt> has no ttp:frameRate')
+
+    parents = {child: parent for parent in root.iter() for child in parent}
+    ids = [_xml_id(element) for element in root.iter() if _xml_id(element)]
+    twice = sorted({value for value in ids if ids.count(value) > 1})
+    if twice:
+        problems.append(f'xml:ids used twice ({", ".join(twice)}): each identifier is the script\'s once')
+    agents = {_xml_id(element): element for element in root.iter() if _local(element.tag) == 'agent'}
+    persons = {key for key, element in agents.items() if element.get('type') == 'person'}
+    for key, element in agents.items():
+        holder = parents.get(element)
+        if holder is None or _local(holder.tag) != 'metadata' or _local(parents.get(holder, holder).tag) != 'head':
+            problems.append(f'ttm:agent {key or "(no xml:id)"} outside <head>\'s <metadata>')
+        if element.get('type') == 'character':
+            if not key:
+                problems.append('A character with no xml:id: events name characters by it')
+            if not any(_local(child.tag) == 'name' and child.get('type') == 'alias' for child in element):
+                problems.append(f'Character {key} has no ttm:name of type alias')
+            for actor in (child for child in element if _local(child.tag) == 'actor'):
+                if actor.get('agent') not in persons:
+                    problems.append(f'Character {key}\'s ttm:actor names no person agent the script has')
+        if element.get('type') == 'person' and not any(_local(child.tag) == 'name' and child.get('type') == 'full'
+                                                       for child in element):
+            problems.append(f'Person {key} has no ttm:name of type full')
+    named = sorted({value for element in root.iter() for value in (element.get(f'{{{_TTM_NS}}}agent') or '').split()
+                    if value not in agents})
+    if named:
+        problems.append(f'Events name characters the script does not have: {", ".join(named)}')
+
+    homeless, unrepresented, wide, sources, screens = 0, 0, set(), set(), set()
+
+    def walk(element, represents, inside_event):
+        nonlocal homeless, unrepresented
+        represents = _dapt(element, 'represents') or represents
+        value = _dapt(element, 'represents')
+        if value is not None and not (valid(value) and any(value == top or value.startswith(top + '.')
+                                                          for top in script_represents)):
+            wide.add(value)
+        source = _dapt(element, 'langSrc')
+        if source is not None and source.strip() and not _BCP47.match(source.strip()):
+            sources.add(source)
+        name = _local(element.tag)
+        if name == 'div' and _dapt(element, 'onScreen') is not None and \
+                _dapt(element, 'onScreen').strip() not in _DAPT_ON_SCREEN:
+            screens.add(_dapt(element, 'onScreen'))
+        event = inside_event or (name == 'div' and bool(_xml_id(element)))
+        if name == 'p':
+            if not inside_event:
+                homeless += 1
+            elif not represents:
+                unrepresented += 1
+        for child in element:
+            walk(child, represents, event)
+    walk(root, '', False)
+    if homeless:
+        problems.append(f'{homeless} <p> element(s) in no <div> with an xml:id: text belongs to a Script Event')
+    if unrepresented:
+        problems.append(f'{unrepresented} text(s) with no daptm:represents, said or inherited')
+    if wide:
+        problems.append(f'daptm:represents that is not one of the script\'s daptm:scriptRepresents, or below one '
+                        f'({", ".join(sorted(wide))})')
+    if sources:
+        problems.append(f'daptm:langSrc that is not a language tag ({", ".join(sorted(sources))})')
+    if screens:
+        problems.append(f'daptm:onScreen="{", ".join(sorted(screens))}": it is ON, OFF, ON_OFF or OFF_ON')
+    untyped = 0
+    for element in root.iter():
+        if _local(element.tag) != 'audio':
+            continue
+        for holder in [element] + [child for child in element if _local(child.tag) == 'source']:
+            if holder.get('src') and not holder.get('src').startswith('#') and not holder.get('type'):
+                untyped += 1
+    if untyped:
+        problems.append(f'{untyped} recording(s) linked with no type: DAPT asks for the audio\'s MIME type')
+    return problems
+
+
+def _dapt_text(text):
+    """A subtitle's text as a DAPT <p> holds it: its formatting as TTML's
+    spans, without the place a subtitle sits in, which a script has not."""
+    _lead, rest = markup.split_lead(str(text or '').replace('\r\n', '\n').replace('\r', '\n'))
+    rest = '\n'.join(line.strip() for line in rest.split('\n') if line.strip())
+    return _content(rest) if markup.plain(rest).strip() else ''
+
+
+def _dapt_audio(segment, start, audio_base):
+    """<audio> elements for the dub of `segment` that is heard (its first
+    un-muted take), each clip of a file placed where it plays, from the
+    text's start, and linked relative to `audio_base`."""
+    import os
+    import urllib.parse
+    dubs = segment.get('dubbing') or []
+    dub = next((take for index, take in enumerate(dubs) if not take.get('muted', index != 0)), dubs[0] if dubs else None)
+    if not isinstance(dub, dict):
+        return []
+    begin = float(dub.get('start', start) or start)
+    clips = [clip for clip in (dub.get('segments') or []) if isinstance(clip, dict) and clip.get('path')]
+    if not clips and dub.get('path'):
+        clips = [{'path': dub['path'], 'offset': 0.0}]
+    out = []
+    for clip in clips:
+        path = str(clip['path'])
+        if audio_base:
+            try:
+                path = os.path.relpath(path, audio_base)
+            except ValueError:
+                pass
+        source = urllib.parse.quote(path.replace(os.sep, '/'))
+        kind = _AUDIO_TYPES.get(os.path.splitext(path)[1].lower(), 'audio/wave')
+        attrs = [f'src={quoteattr(source)}', f'type="{kind}"']
+        at = begin + float(clip.get('offset') or 0) - start
+        if at > 0.0005:
+            attrs.append(f'begin="{format_time(at)}"')
+        if clip.get('start') is not None and 'end' in clip:
+            attrs.append(f'clipBegin="{format_time(float(clip["start"]))}"')
+            if clip.get('end') is not None:
+                attrs.append(f'clipEnd="{format_time(float(clip["end"]))}"')
+        out.append(f'<audio {" ".join(attrs)}/>')
+    return out
+
+
+def _write_dapt(segments, language, metadata=None, audio_base=None):
+    """A DAPT script of `segments`: each subtitle a Script Event, its
+    speaker its character, its text the original <p> in `language` and its
+    translations a <p> each, translated from it; the dub heard for it, an
+    <audio> for each clip. What the script said of itself when it was read
+    (metadata['dapt']) and what each event said (its 'dapt') is written
+    again; a new script is a dubbing script of dialogue, as recorded where
+    there are dubs, translated where there are translations."""
+    tag = export_options.language_tag(language)
+    script = dict((metadata or {}).get('dapt') or {})
+    ordered = sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0))))
+    translated = sorted({code for segment in ordered for code, text in (segment.get('translations') or {}).items()
+                         if isinstance(segment.get('translations'), dict) and str(text or '').strip()})
+    dubbed = any(segment.get('dubbing') for segment in ordered)
+    script_type = script.get('script_type') if script.get('script_type') in DAPT_SCRIPT_TYPES else \
+        'asRecorded' if dubbed else 'translatedTranscript' if translated else 'originalTranscript'
+    script_represents = ' '.join(str(script.get('script_represents') or 'audio.dialogue').split())
+    represents = script.get('represents') or script_represents.split()[0]
+    source = script.get('lang_src') if script.get('lang_src') is not None and 'lang_src' in script else tag
+
+    characters, persons = {}, {}
+    talents = script.get('talents') or {}
+    for segment in ordered:
+        for name in [str(segment.get('speaker') or '').strip()] + list((segment.get('dapt') or {}).get('characters') or [])[1:]:
+            if name and name not in characters:
+                characters[name] = f'character_{len(characters) + 1}'
+                if talents.get(name) and talents[name] not in persons:
+                    persons[talents[name]] = f'actor_{len(persons) + 1}'
+    head = []
+    for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
+        said = str((metadata or {}).get(key) or '').strip()
+        if said:
+            head.append(f'      <{name}>{escape(said)}</{name}>')
+    # The talents before the characters they voice, all in the first
+    # <metadata>, as DAPT recommends.
+    for name, agent_id in persons.items():
+        head.append(f'      <ttm:agent type="person" xml:id="{agent_id}"><ttm:name type="full">{escape(name)}'
+                    f'</ttm:name></ttm:agent>')
+    for name, agent_id in characters.items():
+        actor = f'<ttm:actor agent="{persons[talents[name]]}"/>' if talents.get(name) in persons else ''
+        head.append(f'      <ttm:agent type="character" xml:id="{agent_id}"><ttm:name type="alias">{escape(name)}'
+                    f'</ttm:name>{actor}</ttm:agent>')
+
+    used = set(characters.values()) | set(persons.values())
+    events, audio_used = [], False
+    for number, segment in enumerate(ordered, start=1):
+        kept = segment.get('dapt') if isinstance(segment.get('dapt'), dict) else {}
+        event_id = str(kept.get('id') or '')
+        if not re.fullmatch(r'[A-Za-z_][\w.-]*', event_id) or event_id in used:
+            event_id = next(f'e{n}' for n in range(number, number + len(ordered) + 2) if f'e{n}' not in used)
+        used.add(event_id)
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', start)))
+        attrs = [f'xml:id="{event_id}"', f'begin="{format_time(start)}"', f'end="{format_time(end)}"']
+        names = list(kept.get('characters') or []) or [str(segment.get('speaker') or '').strip()]
+        agents = [characters[name] for name in names if name in characters]
+        if agents:
+            attrs.append(f'ttm:agent="{" ".join(agents)}"')
+        if kept.get('represents'):
+            attrs.append(f'daptm:represents={quoteattr(str(kept["represents"]))}')
+        if kept.get('on_screen') in _DAPT_ON_SCREEN and kept['on_screen'] != 'ON':
+            attrs.append(f'daptm:onScreen="{kept["on_screen"]}"')
+        lines = [f'    <div {" ".join(attrs)}>']
+        for description in kept.get('descriptions') or []:
+            if isinstance(description, dict) and str(description.get('text') or '').strip():
+                kind = f' daptm:descType={quoteattr(str(description["type"]))}' if description.get('type') else ''
+                lines.append(f'      <ttm:desc{kind}>{escape(str(description["text"]).strip())}</ttm:desc>')
+        inner = []
+        for mix in kept.get('mixing') or []:
+            if isinstance(mix, dict):
+                said = ' '.join(f'{"tta:" if key in ("gain", "pan") else ""}{key}={quoteattr(str(value))}'
+                                for key, value in mix.items() if key in ('begin', 'end', 'dur', 'fill', 'gain', 'pan'))
+                inner.append(f'<animate {said}/>')
+        recordings = _dapt_audio(segment, start, audio_base)
+        audio_used = audio_used or bool(recordings or inner or kept.get('speak'))
+        speak = f' tta:speak={quoteattr(str(kept["speak"]))}' if kept.get('speak') else ''
+        own_source = kept.get('lang_src') if kept.get('lang_src') is not None else source
+        text = _dapt_text(segment.get('text'))
+        lines.append(f'      <p xml:lang="{tag}" daptm:langSrc={quoteattr(str(own_source))}{speak}>'
+                     f'{"".join(inner + recordings)}{text}</p>')
+        for code in translated:
+            other = _dapt_text((segment.get('translations') or {}).get(code))
+            if other:
+                # Translated from the subtitle's own language: DAPT names the
+                # source by the language of the text it came from.
+                lines.append(f'      <p xml:lang="{export_options.language_tag(code)}" daptm:langSrc="{tag}">'
+                             f'{other}</p>')
+        lines.append('    </div>')
+        events += lines
+
+    namespaces = ['xmlns="http://www.w3.org/ns/ttml"', 'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
+                  'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"', f'xmlns:ttm="{_TTM_NS}"',
+                  f'xmlns:daptm="{_DAPTM_NS}"']
+    if audio_used:
+        namespaces.append(f'xmlns:tta="{_TTA_NS}"')
+    root = ' '.join(namespaces + [f'ttp:contentProfiles="{_DAPT_CONTENT}"', f'xml:lang="{tag}"',
+                                  f'daptm:langSrc={quoteattr(str(source))}',
+                                  f'daptm:scriptRepresents={quoteattr(script_represents)}',
+                                  f'daptm:scriptType="{script_type}"'])
+    return '\n'.join(['<?xml version="1.0" encoding="UTF-8"?>', f'<tt {root}>', '  <head>', '    <metadata>', *head,
+                      '    </metadata>', '  </head>', f'  <body daptm:represents={quoteattr(represents)}>', *events,
+                      '  </body>', '</tt>', ''])
+
+
+def _document(text, images=None, folder=None):
     """(subtitles, language, metadata) in TTML text; with `images`, a dict,
     the pictures go in it as 'pictures' and the picture's size as 'size',
-    as `read_images` gives them."""
+    as `read_images` gives them. A DAPT script's recordings are found in
+    `folder`, where the script is."""
     text = _ENTITY.sub(_entity, text.lstrip('﻿'))
     # The text is decoded already: the declaration's encoding no longer applies.
     text = re.sub(r'^\s*<\?xml[^>]*\?>', '', text)
@@ -1057,6 +1817,8 @@ def _document(text, images=None):
     clock = _Clock(root)
     frame = _Frame(root)
     styles = _Styles(root)
+    if images is None and is_dapt(root):
+        return _dapt_document(root, clock, styles, folder)
     regions = {_xml_id(element): element for element in root.iter()
                if _local(element.tag) == 'region' and _xml_id(element)}
     agents = _agents(root)
@@ -1075,9 +1837,13 @@ def _document(text, images=None):
         its region puts it, and the picture itself for `images`."""
         if stop is None:
             return
-        region_props = styles.of(regions[region], {}) if region in regions else {}
+        region_props = _region_props(regions.get(region), styles, clock, start)
         own = styles.of(element, dict(region_props, **props))
-        alt = _alt_text(element)
+        # Its words: IMSC's alt text, else the text SMPTE-TT may put in the
+        # picture's <div> beside it, which is read and not drawn.
+        alt = _alt_text(element) or '\n'.join(
+            text for text in (_plain_paragraph(inner, styles, own) for inner in element.iter()
+                              if _local(inner.tag) == 'p') if text)
         keypad = _keypad(own, frame)
         forced = str(own.get('forcedDisplay') or '').strip().lower() == 'true'
         if alt:
@@ -1096,7 +1862,9 @@ def _document(text, images=None):
     base_sizes = (base_props['fontSize'],) if base_props.get('fontSize') else ()
 
     def paragraph(element, start, stop, props, region, preserve, outer_agent, unshown=False, sizes=()):
-        region_props = styles.of(regions[region], {}) if region in regions else {}
+        # The region as it is when the subtitle begins: a region converted
+        # from CEA-608 is moved about by <set> (RP 2052-10).
+        region_props = _region_props(regions.get(region), styles, clock, start)
         # The region's styles first: what the body, div or paragraph says
         # goes over them.
         p_props = styles.of(element, dict(region_props, **props))
@@ -1110,7 +1878,24 @@ def _document(text, images=None):
         # A file that states both alignments means them; one that leaves
         # them out is read by where its region sits, as before.
         stated = p_props.get('displayAlign') is not None and p_props.get('textAlign') is not None
-        keypad = _keypad(p_props, frame, geometry=not stated)
+        at = frame.percent(p_props.get('origin')) \
+            if not p_props.get('extent') and not p_props.get('position') else None
+        if at:
+            # A region with a place and no size, as RP 2052-10 converts
+            # CEA-608's rows and columns: the text starts there, as tall as
+            # its lines and reaching to the right edge. Its column is the
+            # one its textAlign says, so a line indented from the left stays
+            # a left-aligned line with a margin, as an SCC is read.
+            lines = markup.plain(body).count('\n') + 1
+            height = max(1.0, min(100.0 - at[1], lines * 100.0 / frame.cells[1]))
+            p_props = dict(p_props, extent=f'{100.0 - at[0]:.4g}% {height:.4g}%',
+                           displayAlign=p_props.get('displayAlign') or 'before')
+            align = p_props.get('textAlign') or 'start'
+            near, far = (2, 0) if p_props.get('direction') == 'rtl' else (0, 2)
+            column = {'left': 0, 'right': 2, 'start': near, 'end': far}.get(align, 1)
+            keypad = (_keypad(dict(p_props, textAlign='left'), frame) - 1) // 3 * 3 + 1 + column
+        else:
+            keypad = _keypad(p_props, frame, geometry=not stated)
         segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
                    'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + body}
         speaker = agent[0] or outer_agent
@@ -1212,11 +1997,30 @@ def _document(text, images=None):
         return stop
 
     walk(root, 0.0, None, {}, None, False, None)
+    if not segments:
+        # SMPTE-TT may carry the captions it was converted from, CEA-608 or
+        # CEA-708, tunnelled in smpte:data; a document that holds them and
+        # no text is read from them.
+        tunnels = _tunnelled(root, clock)
+        if tunnels:
+            segments.extend(_captions_of(root, clock, tunnels))
+    about = _metadata(root)
+    # Timecodes from the start of the programme an EBU-TT file names
+    # (ebuttm:documentStartOfProgramme, 10:00:00:00 as often as not): its
+    # subtitles count from there, as an STL's from its TCP, when they all
+    # come after it.
+    programme = (about.get('stl') or {}).get('TCP', '')
+    shift = clock.seconds(':'.join(programme[i:i + 2] for i in range(0, 8, 2))) if clock.smpte and programme else 0
+    found = segments + (images.get('pictures', []) if images is not None else [])
+    if shift and found and min(float(item['start']) for item in found) >= shift - 0.0005:
+        for item in found:
+            item['start'] = round(max(0.0, item['start'] - shift), 3)
+            item['end'] = round(max(0.0, item['end'] - shift), 3)
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     if images is not None:
         images.setdefault('pictures', []).sort(key=lambda image: (image['start'], image['end']))
         images['size'] = frame.pixels
-    return segments, (root.get(_XML_NS + 'lang') or '').strip(), _metadata(root)
+    return segments, (root.get(_XML_NS + 'lang') or '').strip(), about
 
 
 def _metadata(root):
@@ -1226,14 +2030,41 @@ def _metadata(root):
     into = {'title': 'title', 'desc': 'description', 'copyright': 'copyright'}
     found = {}
     # Inside a <metadata> block, so a ttm:desc describing one subtitle is
-    # not read as what the whole document is.
-    for block in root.iter():
-        if _local(block.tag) != 'metadata':
+    # not read as what the whole document is — or in <head> itself, where
+    # TTML 1 permits them and EBU-TT Part 1 puts its ttm:copyright.
+    head = next((element for element in root if _local(element.tag) == 'head'), None)
+    for block in [head] + [element for element in root.iter() if _local(element.tag) == 'metadata']:
+        if block is None:
             continue
         for element in block:
             key = into.get(_local(element.tag))
             if key and (element.text or '').strip():
                 found.setdefault(key, (element.text or '').strip())
+    # What EBU Tech 3360 carries over from an STL file's GSI, kept by the
+    # STL's names for it (modules.ebustl), in <head>'s metadata or in the
+    # ebuttm:documentMetadata that EBU-TT 1.0 kept it in.
+    stl = {}
+    for element in (head.iter() if head is not None else ()):
+        key = _STL_READ.get(_local(element.tag)) if _namespace(element.tag) == _EBUTTM_NS else None
+        value = (element.text or '').strip()
+        if not key or not value or key in stl:
+            continue
+        if key in ('CD', 'RD'):
+            date = re.fullmatch(r'\d\d(\d\d)-(\d\d)-(\d\d)', value)
+            value = ''.join(date.groups()) if date else ''
+        elif key == 'TCP':
+            label = _CLOCK.match(value)
+            value = ''.join(f'{int(part or 0):02d}' for part in label.group(1, 2, 3, 5)) if label else ''
+        if value:
+            stl[key] = value
+    if stl:
+        found['stl'] = stl
+        if stl.get('OPT'):
+            found.setdefault('title', stl['OPT'])
+    copyright_old = next((element.text.strip() for element in (head.iter() if head is not None else ())
+                          if _local(element.tag) == 'documentCopyright' and (element.text or '').strip()), '')
+    if copyright_old:
+        found.setdefault('copyright', copyright_old)
     return found
 
 
@@ -1252,8 +2083,9 @@ def read(path):
     """(subtitles, language, metadata) in the TTML file at `path`: the
     language as the file's xml:lang gives it, or '', and what the file says
     about itself (its title, description and copyright)."""
+    import os
     with open(path, 'rb') as ttml_file:
-        return _document(_text_of(ttml_file.read()))
+        return _document(_text_of(ttml_file.read()), folder=os.path.dirname(os.path.abspath(path)))
 
 
 def read_images(path):
@@ -1290,7 +2122,13 @@ def check(text, profile='imsc1.1'):
         return [f'The document is <{_local(root.tag)}>, not <tt>']
 
     problems = []
-    if not (root.get(_XML_NS + 'lang') or '').strip():
+    if profile == 'smpte-tt':
+        # TTML 1 asks for the attribute, and RP 2052-10 for it empty where a
+        # conversion's language is not known.
+        if root.get(_XML_NS + 'lang') is None:
+            problems.append('<tt> has no xml:lang: TTML 1 asks a file to say what language it is in, '
+                            'if only as ""')
+    elif not (root.get(_XML_NS + 'lang') or '').strip():
         problems.append('<tt> has no xml:lang: every profile asks a file to say what language it is in')
 
     declared_profile = _attr(root, 'profile') or ''
@@ -1308,6 +2146,12 @@ def check(text, profile='imsc1.1'):
             problems.append('ttp:contentProfiles is prohibited in EBU-TT-D')
         if (_attr(root, 'timeBase') or 'media') != 'media':
             problems.append('EBU-TT-D asks for ttp:timeBase="media"')
+    if profile == 'smpte-tt':
+        problems += _smpte_problems(root, declared_profile)
+    if profile == 'ebu-tt':
+        problems += _ebu_tt_problems(root, standards)
+    if profile == 'dapt':
+        problems += _dapt_problems(root, declared_profile, content_profiles)
 
     cells = (_attr(root, 'cellResolution') or '').split()
     if cells:
@@ -1392,7 +2236,7 @@ def check(text, profile='imsc1.1'):
     # has the minimal sets: no colour or mark of its own for an emphasis
     # (#textEmphasis-minimal), no spreading a reading with its base
     # (#rubyAlign-minimal).
-    if profile in ('imsc1', 'ebu-tt-d'):
+    if profile in _TTML1_PROFILES:
         annotated = sorted({name for element in root.iter() for name in _TTML2_ANNOTATIONS
                             if _attr(element, name) is not None})
         if annotated:
@@ -1419,6 +2263,168 @@ def check(text, profile='imsc1.1'):
                       if element.get('region') and element.get('region') not in regions})
     if missing:
         problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    return problems
+
+
+def _namespace(name):
+    return name[1:].split('}', 1)[0] if isinstance(name, str) and name.startswith('{') else ''
+
+
+def _smpte_problems(root, declared_profile):
+    """What breaks SMPTE-TT (ST 2052-1) in a document: the profile it
+    declares, its time base and offsets, and its own vocabulary — the data
+    it tunnels, the pictures it holds, the one smpte:information — as the
+    standard and RP 2052-10 lay them down."""
+    problems = []
+    if declared_profile not in _SMPTE_PROFILES:
+        problems.append(f'ttp:profile does not name SMPTE-TT\'s profile ({_SMPTE_PROFILE})')
+    if (_attr(root, 'timeBase') or 'media').strip() != 'media':
+        problems.append('SMPTE-TT asks for ttp:timeBase="media": "smpte" and "clock" should not be used')
+    units = sorted({offset.group(2) for element in root.iter() for name in ('begin', 'end', 'dur')
+                    for offset in [_OFFSET.match((element.get(name) or '').strip())] if offset and offset.group(2) != 't'})
+    if units:
+        problems.append(f'Offset times in {", ".join(units)}: an offset time in SMPTE-TT is counted in ticks (t)')
+    parents = {child: parent for parent in root.iter() for child in parent}
+    ours = [element for element in root.iter() if 'smpte-ra.org' in _namespace(element.tag)]
+    stray = sorted({_namespace(element.tag) for element in ours if _namespace(element.tag) not in _SMPTE_NAMESPACES})
+    if stray:
+        problems.append(f'SMPTE vocabulary in a namespace SMPTE-TT does not have: {", ".join(stray)}')
+    images = {}
+    tunnels_608 = 0
+    for element in ours:
+        name = _local(element.tag)
+        if name not in ('data', 'image', 'information'):
+            continue
+        parent = parents.get(element)
+        if parent is None or _local(parent.tag) != 'metadata':
+            problems.append(f'smpte:{name} outside a <metadata>: it is metadata\'s, and nowhere else')
+        if name == 'information':
+            continue
+        if (element.get('encoding') or '').strip() != 'Base64':
+            problems.append(f'smpte:{name} with encoding="{element.get("encoding") or ""}": it is Base64, and says so')
+        try:
+            payload = base64.b64decode(''.join((element.text or '').split()), validate=True)
+        except (binascii.Error, ValueError):
+            problems.append(f'smpte:{name} {_xml_id(element) or ""} holds what is not Base64'.replace('  ', ' '))
+            payload = None
+        if name == 'image':
+            images[_xml_id(element)] = element
+            if (element.get('imageType') or '').strip() != 'PNG':
+                problems.append(f'smpte:image with imageType="{element.get("imageType") or ""}": SMPTE-TT\'s pictures are PNG')
+            elif payload is not None and not payload.startswith(b'\x89PNG\r\n\x1a\n'):
+                problems.append(f'smpte:image {_xml_id(element) or ""} is not a PNG'.replace('  ', ' '))
+            continue
+        datatype = (element.get('datatype') or '').strip()
+        if not (datatype.startswith('x-') and len(datatype) > 2) and datatype not in \
+                [namespace + suffix for namespace in _SMPTE_NAMESPACES for suffix in ('#cea608', '#cea708')]:
+            problems.append(f'smpte:data with datatype="{element.get("datatype") or ""}": the datatype is one '
+                            'SMPTE defines (CEA-608\'s, CEA-708\'s), or a private one beginning "x-"')
+        tunnels_608 += _data_kind(datatype) == '608'
+    informations = [element for element in ours if _local(element.tag) == 'information']
+    if len(informations) > 1:
+        problems.append(f'{len(informations)} smpte:information elements: a document has one, in <head>')
+    for info in informations:
+        holder = parents.get(parents.get(info))
+        if holder is None or _local(holder.tag) != 'head':
+            problems.append('smpte:information outside <head>\'s <metadata>')
+        mode = info.get('mode')
+        if mode is not None and mode.strip() not in ('Enhanced', 'Preserved'):
+            problems.append(f'smpte:information mode="{mode}": it is Enhanced or Preserved')
+    if tunnels_608 and not any(_attr(info, 'fieldStart') for info in informations):
+        problems.append('CEA-608 data tunnelled, but no m608:fieldStart says which field its first pair is from')
+    pictures = [element for element in root.iter() if _attr(element, 'backgroundImage')]
+    for element in pictures:
+        if _local(element.tag) != 'div':
+            problems.append(f'smpte:backgroundImage on a <{_local(element.tag)}>: it applies to a <div>')
+        source = _attr(element, 'backgroundImage').strip()
+        if source.startswith('#') and source[1:] not in images:
+            problems.append(f'smpte:backgroundImage="{source}" names no smpte:image the file holds')
+    origin = next((info.get('origin') or '' for info in informations), '')
+    if _data_kind(origin) == '608' and (images or pictures):
+        problems.append('Pictures in a document converted from CEA-608: RP 2052-10 has no smpte:image or '
+                        'smpte:backgroundImage in one')
+    return problems
+
+
+# What EBU-TT Part 1 lets a region say itself (Tech 3350, Annex G), and the
+# words some of its style attributes are limited to.
+_EBU_TT_REGION = ('tts:displayAlign', 'tts:extent', 'tts:origin', 'tts:overflow', 'tts:padding',
+                  'tts:showBackground', 'tts:writingMode')
+_EBU_TT_WORDS = {'fontStyle': ('normal', 'italic'), 'textDecoration': ('none', 'underline'),
+                 'unicodeBidi': ('normal', 'embed', 'bidiOverride'), 'fontWeight': ('normal', 'bold'),
+                 'multiRowAlign': ('start', 'center', 'end', 'auto'), 'wrapOption': ('wrap', 'noWrap'),
+                 'direction': ('ltr', 'rtl')}
+_TTS_NS = 'http://www.w3.org/ns/ttml#styling'
+
+
+def _ebu_tt_problems(root, standards):
+    """What breaks EBU-TT Part 1 (EBU Tech 3350 v1.2) in a document: the
+    conformance it declares, the time base and the parameters timecode
+    needs, styling by reference only, what a <style> and a <region> may
+    say and in which words, a <head> with its styling and layout."""
+    problems = []
+    if not any(standard.startswith('urn:ebu:tt:exchange') for standard in standards) and \
+            not any(_local(element.tag) == 'documentEbuttVersion' for element in root.iter()):
+        problems.append(f'No ebuttm:conformsToStandard naming EBU-TT Part 1 ({_EBU_TT_STANDARD})')
+    base = _attr(root, 'timeBase')
+    if base is None:
+        problems.append('<tt> has no ttp:timeBase: EBU-TT asks a file to say it')
+    elif base.strip() not in ('media', 'smpte', 'clock'):
+        problems.append(f'ttp:timeBase="{base}": it is media, smpte or clock')
+    if (base or '').strip() == 'smpte':
+        missing = [name for name in ('frameRate', 'frameRateMultiplier', 'markerMode', 'dropMode') if _attr(root, name) is None]
+        if missing:
+            problems.append(f'Timed in timecode, without {", ".join("ttp:" + name for name in missing)}: '
+                            'EBU-TT asks for each with ttp:timeBase="smpte"')
+        if (_attr(root, 'frameRateMultiplier') or '1 1').split() in (['1', '1'], ['1000', '1000']) and \
+                (_attr(root, 'dropMode') or 'nonDrop').strip() != 'nonDrop':
+            problems.append(f'ttp:dropMode="{_attr(root, "dropMode")}" at a whole frame rate: '
+                            'EBU-TT asks for nonDrop there')
+        unlabelled = sorted({value for element in root.iter() for name in ('begin', 'end')
+                             for value in [(element.get(name) or '').strip()]
+                             if value and not re.fullmatch(r'\d{2,}:\d{2}:\d{2}:\d{2}', value)})
+        if unlabelled:
+            problems.append(f'Times that are not timecodes ({", ".join(unlabelled[:3])}): with ttp:timeBase="smpte" '
+                            'EBU-TT writes HH:MM:SS:FF')
+    extent = (_attr(root, 'extent') or '').split()
+    if extent and not all(part.endswith('px') for part in extent):
+        problems.append('tts:extent on <tt> in what is not px: EBU-TT gives the picture\'s size in pixels')
+    head = next((element for element in root if _local(element.tag) == 'head'), None)
+    for name, inside in (('styling', 'style'), ('layout', 'region')):
+        holder = next((element for element in (head if head is not None else ()) if _local(element.tag) == name), None)
+        if holder is None or not any(_local(element.tag) == inside for element in holder):
+            problems.append(f'<head> has no <{name}> with a <{inside}> in it: EBU-TT asks for one')
+    inline, worded = set(), set()
+    for element in root.iter():
+        name = _local(element.tag)
+        styled = [key for key in element.attrib if _namespace(key) == _TTS_NS]
+        if name in ('body', 'div', 'p', 'span', 'br') and styled:
+            inline.add(name)
+        if name == 'region':
+            if not (_attr(element, 'origin') and _attr(element, 'extent')):
+                problems.append(f'Region {_xml_id(element) or "(unnamed)"} without a tts:origin and a tts:extent: '
+                                'EBU-TT asks every region for both')
+            others = sorted({'tts:' + _local(key) for key in styled} - set(_EBU_TT_REGION))
+            if others:
+                problems.append(f'Region {_xml_id(element) or "(unnamed)"} says {", ".join(others)}: '
+                                'EBU-TT puts that in a <style> the region names')
+        if name == 'style':
+            others = sorted({'tts:' + _local(key) for key in styled} - set(_EBU_TT_STYLE))
+            if others:
+                problems.append(f'Style {_xml_id(element) or "(unnamed)"} says {", ".join(others)}, '
+                                'which EBU-TT does not have')
+        for key, value in element.attrib.items():
+            words = _EBU_TT_WORDS.get(_local(key)) if _namespace(key) in (_TTS_NS, _EBUTTS_NS) else None
+            if words and value.strip() not in words:
+                worded.add(f'{"ebutts" if _namespace(key) == _EBUTTS_NS else "tts"}:{_local(key)}="{value}"')
+        padding = _attr(element, 'linePadding')
+        if padding is not None and not re.fullmatch(r'\d+(?:\.\d+)?c', padding.strip()):
+            worded.add(f'ebutts:linePadding="{padding}"')
+    if inline:
+        problems.append(f'Styles stated on {", ".join(f"<{name}>" for name in sorted(inline))} itself: EBU-TT styles '
+                        'content by naming a <style>, never inline')
+    if worded:
+        problems.append(f'{", ".join(sorted(worded))}: not a value EBU-TT has')
     return problems
 
 
@@ -1488,11 +2494,11 @@ def _open_span(tags, style, shear=False, annotations='full'):
             # TTML draws an edge as an outline; the kinds it has no word for
             # are written as the outline nearest them.
             attrs.append(f'tts:textOutline="{font.edge_color or "#000000"} 4%"')
-        if font.emphasis and annotations != 'none':
+        if font.emphasis and annotations not in ('none', 'flat'):
             # markup's words are TTML's: a fill and a shape, or auto, and
             # before or after.
             attrs.append(f'tts:textEmphasis="{font.emphasis}"')
-        if font.combine and annotations != 'none':
+        if font.combine and annotations not in ('none', 'flat'):
             attrs.append(f'tts:textCombine="{font.combine}"')
     if 'i' in names:
         attrs.append(f'tts:shear="{_SHEAR}"' if shear else 'tts:fontStyle="italic"')
@@ -1543,6 +2549,11 @@ def _content(text, shear=False, annotations='full'):
         if not (base and reading):
             out.append(base + reading)
             continue
+        if annotations == 'flat':
+            # A profile with no ruby at all: the reading after its base, in
+            # brackets, as a line of text gives one.
+            out.append(f'{base}({reading})')
+            continue
         said = markup.ruby_attributes(group) if annotations != 'none' else markup.Ruby()
         # Spreading a reading with its base is beyond IMSC 1.1's minimal set.
         spread = f' tts:rubyAlign="{_RUBY_ALIGN_OUT[said.align]}"' \
@@ -1562,7 +2573,7 @@ def _styles(look, preview, profile='ttml1'):
     style and leave the outline out.
     """
     if look != 'preview':
-        outline = '' if profile == 'ebu-tt-d' else ' tts:textOutline="black 5%"'
+        outline = '' if profile in _EBU_PROFILES else ' tts:textOutline="black 5%"'
         return [f'<style xml:id="text" tts:fontFamily="proportionalSansSerif" tts:fontSize="100%" '
                 f'tts:color="white"{outline}/>'], None
     preview = preview or {}
@@ -1617,7 +2628,7 @@ def _look_attributes(styling, profile='ttml1', inline=False):
     EBU-TT-D's spec names tts:textOutline and tts:opacity among the
     attributes it does not use, so a file written for it says neither.
     """
-    ebu = profile == 'ebu-tt-d'
+    ebu = profile in _EBU_PROFILES
     out = []
     if inline:
         if styling.get('background'):
@@ -1668,7 +2679,7 @@ def _look_attributes(styling, profile='ttml1', inline=False):
     # EBU-TT-D, which are built on TTML 1.
     reserve = styling.get('ruby_reserve') or {}
     if isinstance(reserve, dict) and reserve.get('position') in subtitld_look.RESERVE_POSITIONS \
-            and profile not in ('imsc1', 'ebu-tt-d'):
+            and profile not in _TTML1_PROFILES:
         length = f' {_cells(reserve["length"])}' if reserve.get('length') else ''
         out.append(f'tts:rubyReserve="{reserve["position"]}{length}"')
     return ' '.join(out)
@@ -1678,27 +2689,57 @@ def _japanese(language):
     return str(language or '').replace('_', '-').split('-')[0].lower() == 'ja'
 
 
-def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
+def _frame_rate(fps):
+    """(ttp:frameRate, ttp:frameRateMultiplier or None) for a frame rate:
+    29.97 is 30 frames at 1000/1001 of the speed, as TTML writes it."""
+    fps = float(fps)
+    nominal = int(round(fps))
+    if abs(fps - nominal) < 0.005:
+        return nominal, None
+    return int(round(fps * 1.001)), '1000 1001'
+
+
+def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, fps=None, tunnel=False, smpte=None):
     """What <tt> carries: the namespaces and parameters, and the profile
     the file declares itself to be. `imsc_styling` brings IMSC's styling
     namespace in, for a forced subtitle to mark or a box that reaches from
     one line to the next, and `ebu_styling` the EBU's, for a look that
-    states one of its two."""
+    states one of its two. `fps` states the video's frame rate, and
+    `tunnel` the namespaces of the CEA-608 data a SMPTE-TT file carries.
+    `smpte` (nominal rate, multiplier or None, drop mode) times the file in
+    SMPTE timecode, with the parameters EBU-TT asks of it."""
     namespaces = ['xmlns="http://www.w3.org/ns/ttml"',
                   'xmlns:tts="http://www.w3.org/ns/ttml#styling"',
                   'xmlns:ttp="http://www.w3.org/ns/ttml#parameter"',
                   'xmlns:ttm="http://www.w3.org/ns/ttml#metadata"']
     if imsc_styling:
         namespaces.append(f'xmlns:itts="{_ITTS_NS}"')
-    if profile == 'ebu-tt-d':
+    if profile in _EBU_PROFILES:
         namespaces.append(f'xmlns:ebuttm="{_EBUTTM_NS}"')
     if ebu_styling:
         namespaces.append(f'xmlns:ebutts="{_EBUTTS_NS}"')
+    if profile == 'smpte-tt' and tunnel:
+        namespaces += [f'xmlns:smpte="{_SMPTE_NS}"', f'xmlns:m608="{_M608_NS}"']
     attrs = ['ttp:timeBase="media"']
+    if smpte:
+        nominal, multiplier, drop = smpte[:3]
+        # EBU-TT Part 1 asks a file timed in timecode for all four. The
+        # times run on as the subtitles do, so the markers are continuous.
+        attrs = ['ttp:timeBase="smpte"', f'ttp:frameRate="{nominal}"',
+                 f'ttp:frameRateMultiplier="{multiplier or "1 1"}"', 'ttp:markerMode="continuous"',
+                 f'ttp:dropMode="{drop}"']
+    elif fps:
+        rate, multiplier = _frame_rate(fps)
+        attrs.append(f'ttp:frameRate="{rate}"')
+        if multiplier:
+            attrs.append(f'ttp:frameRateMultiplier="{multiplier}"')
     if profile == 'imsc1':
         attrs.append(f'ttp:profile="{_IMSC1_TEXT}"')
     elif profile == 'imsc1.1':
         attrs.append(f'ttp:contentProfiles="{_IMSC11_TEXT}"')
+    elif profile == 'smpte-tt':
+        # SMPTE-TT names its profile the way TTML 1 does, in ttp:profile.
+        attrs.append(f'ttp:profile="{_SMPTE_PROFILE}"')
     if profile != 'ttml1':
         # What the percentages in this file are measured against. It is
         # TTML's default, but EBU-TT-D asks for it in writing and a file
@@ -1708,15 +2749,150 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False):
     return ' '.join(namespaces + attrs)
 
 
-def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None):
+def _stamps(fps, start=None, drop_frame=False):
+    """(seconds -> a TTML time, the SMPTE timing or None). Without `fps`,
+    clock times in media time; with it, SMPTE timecode labels counted from
+    `start`: (nominal rate, multiplier, drop mode, the start's label)."""
+    if not fps:
+        return format_time, None
+    nominal, multiplier = _frame_rate(fps)
+    real = nominal * (1000 / 1001 if multiplier else 1)
+    drop = 'dropNTSC' if drop_frame and multiplier and nominal == 30 else 'nonDrop'
+    label = _CLOCK.match(str(start or '').strip().replace(';', ':'))
+    offset = timecode_frames(int(label.group(1)), int(label.group(2)), int(label.group(3)), int(label.group(5) or 0),
+                             nominal, drop) if label else 0
+    # Half a frame up, whatever Python's rounding does with halves.
+    return (lambda seconds: timecode_label(int(float(seconds) * real + 0.5) + offset, nominal, drop),
+            (nominal, multiplier, drop, timecode_label(offset, nominal, drop)))
+
+
+# What EBU-TT Part 1 lets a <style> say (Tech 3350, Annex G).
+_EBU_TT_STYLE = ('tts:direction', 'tts:fontFamily', 'tts:fontSize', 'tts:lineHeight', 'tts:textAlign', 'tts:color',
+                 'tts:backgroundColor', 'tts:fontStyle', 'tts:fontWeight', 'tts:textDecoration', 'tts:unicodeBidi',
+                 'tts:wrapOption', 'tts:padding', 'ebutts:multiRowAlign', 'ebutts:linePadding')
+_START_TAG = re.compile(r'<(p|span)((?:\s+[\w:.-]+=(?:"[^"]*"|\'[^\']*\'))*)\s*>')
+_ATTRIBUTE = re.compile(r'([\w:.-]+)=("[^"]*"|\'[^\']*\')')
+
+
+def _referenced(fragment, hoisted):
+    """`fragment` (TTML this module wrote) with the styles its <p> and
+    <span> elements state inline moved into styles they name, as EBU-TT
+    Part 1 asks: `hoisted` {the attributes: the id of their <style>} gathers
+    them. What EBU-TT has no word for goes: line-through (its
+    textDecoration is none or underline), an outline, an isolate."""
+    def tag(match):
+        kept, styled, named = [], [], []
+        for name, value in _ATTRIBUTE.findall(match.group(2)):
+            if name == 'style':
+                named += value[1:-1].split()
+            elif name.startswith('tts:'):
+                inner = value[1:-1]
+                if name == 'tts:textDecoration':
+                    inner = 'underline' if 'underline' in inner.split() else ''
+                if name in _EBU_TT_STYLE and inner and not (name == 'tts:unicodeBidi' and inner == 'isolate'):
+                    styled.append(f'{name}={value[0]}{inner}{value[0]}')
+            else:
+                kept.append(f'{name}={value}')
+        if styled:
+            named.append(hoisted.setdefault(' '.join(styled), f'inline{len(hoisted) + 1}'))
+        if named:
+            kept.append(f'style="{" ".join(named)}"')
+        return f'<{match.group(1)}{"".join(" " + attribute for attribute in kept)}>'
+    return _START_TAG.sub(tag, fragment)
+
+
+# The GSI fields of an EBU STL file (modules.ebustl) and the metadata EBU
+# Tech 3360 carries them in, as EBU-TT Part M (Tech 3390) names it.
+_STL_METADATA = (('OPT', 'documentOriginalProgrammeTitle'), ('OET', 'documentOriginalEpisodeTitle'),
+                 ('TPT', 'documentTranslatedProgrammeTitle'), ('TET', 'documentTranslatedEpisodeTitle'),
+                 ('TN', 'documentTranslatorsName'), ('TCD', 'documentTranslatorsContactDetails'),
+                 ('SLR', 'documentSubtitleListReferenceCode'), ('CD', 'stlCreationDate'),
+                 ('RD', 'stlRevisionDate'), ('RN', 'stlRevisionNumber'), ('TNS', 'documentTotalNumberOfSubtitles'),
+                 ('MNC', 'documentMaximumNumberOfDisplayableCharacterInAnyRow'),
+                 ('TCP', 'documentStartOfProgramme'), ('CO', 'documentCountryOfOrigin'),
+                 ('PUB', 'documentPublisher'), ('EN', 'documentEditorsName'),
+                 ('ECD', 'documentEditorsContactDetails'), ('UDA', 'documentUserDefinedArea'))
+# The names read as well: Tech 3360's own spelling of one, and the element
+# Part 1 version 1.0 had before ttm:copyright.
+_STL_READ = dict({name: key for key, name in _STL_METADATA}, documentTotalNumbersOfSubtitles='TNS')
+_EBU_TT_STANDARD = 'urn:ebu:tt:exchange:2017-05'
+
+
+def _stl_date(value):
+    """An STL date (YYMMDD) as xs:date, or '' for one that is not."""
+    found = re.fullmatch(r'(\d\d)(\d\d)(\d\d)', str(value or '').strip())
+    if not found or not ('01' <= found.group(2) <= '12' and '01' <= found.group(3) <= '31'):
+        return ''
+    year = int(found.group(1))
+    return f'{2000 + year if year < 70 else 1900 + year}-{found.group(2)}-{found.group(3)}'
+
+
+def _ebu_tt_metadata(metadata, count, widest, smpte):
+    """The ebuttm elements of an EBU-TT Part 1 document's <head>: the
+    standard it conforms to, and what EBU Tech 3360 carries over from an STL
+    file's GSI (`metadata['stl']`, as modules.ebustl reads it), the number
+    of subtitles and, without the STL's, the widest row this file's own.
+    Each directly in <metadata>, as Part M has them since
+    ebuttm:documentMetadata was deprecated."""
+    stl = dict((metadata or {}).get('stl') or {})
+    stl['TNS'] = str(count)
+    stl.setdefault('MNC', str(widest))
+    if smpte:
+        stl['TCP'] = smpte[3]
+    else:
+        stl.pop('TCP', None)                    # a start of programme is a timecode's, and this file has none
+    lines = [f'      <ebuttm:conformsToStandard>{_EBU_TT_STANDARD}</ebuttm:conformsToStandard>']
+    for key, name in _STL_METADATA:
+        value = str(stl.get(key) or '').strip()
+        if key in ('CD', 'RD'):
+            value = _stl_date(value)
+        elif key in ('RN', 'TNS', 'MNC'):
+            value = str(int(value)) if value.isdigit() else ''
+        elif key == 'TCP' and re.fullmatch(r'\d{8}', value):
+            value = ':'.join(value[i:i + 2] for i in range(0, 8, 2))
+        if value:
+            lines.append(f'      <ebuttm:{name}>{escape(value)}</ebuttm:{name}>')
+    return lines
+
+
+def _tunnel_608(segments):
+    """[(first frame, bytes)] for `segments` as CEA-608 pop-on captions in
+    CC1 (modules.scc), stored as RP 2052-10 stores them: field 1's pair and
+    field 2's (empty) by turns, a frame each, at NTSC's rate. A run of
+    frames is broken where a second or more goes by with nothing sent, so
+    the file holds the captions and not the silence between them."""
+    from subtitld.modules import scc
+    words, _breaks, _shows = scc.frame_words(segments, _CEA608_RATE, mode='pop', channel=1)
+    runs = []
+    for frame in sorted(words):
+        if runs and frame - runs[-1][1] <= 30:
+            runs[-1][1] = frame
+        else:
+            runs.append([frame, frame])
+    return [(first, b''.join(bytes.fromhex(words.get(frame, '8080')) + b'\x80\x80'
+                             for frame in range(first, last + 1)))
+            for first, last in runs]
+
+
+def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None,
+          *, fps=None, tunnel=False, start=None, drop_frame=False, audio_base=None):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
+    `fps`, the video's frame rate, is stated where it is given; with
+    `tunnel`, a SMPTE-TT file carries the subtitles as CEA-608 captions too.
+    EBU-TT with a frame rate is timed in SMPTE timecode, from a programme
+    start of `start` ("HH:MM:SS:FF", 00:00:00:00 without one), drop-frame
+    at 29.97 with `drop_frame`. A DAPT script links its recordings relative
+    to `audio_base`, the folder it is written in.
 
     A Japanese file in an IMSC profile writes its italics as tts:shear:
     that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
+    if profile == 'dapt':
+        return _write_dapt(segments, language, metadata, audio_base)
+    tunnel = bool(tunnel) and profile == 'smpte-tt'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     annotations = _ANNOTATIONS[profile]
     cues = []
@@ -1729,6 +2905,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     # And one for each box, which goes on a span rather than the paragraph.
     boxings = {}
     style_lines, box = _styles(look, preview, profile)
+    stamp, smpte = _stamps(fps if profile == 'ebu-tt' else None, start, drop_frame)
+    widest = 0
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
         lead, rest = markup.split_lead(raw)
@@ -1738,12 +2916,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         keypad = markup.alignment(lead)
         placed = position.of(segment)
         styling = subtitld_look.of(segment)
+        widest = max([widest] + [len(line) for line in markup.plain(rest).split('\n')])
         # Opacity belongs to a region, so a subtitle only part shown takes
         # a region of its own rather than fading the ones beside it.
         # And writing down the picture is a region's, so a subtitle written
         # in columns takes one of its own too.
         spot = (keypad, position.as_percent(placed.h), position.as_percent(placed.v),
-                None if profile == 'ebu-tt-d' else styling.get('opacity'), position.writing(segment))
+                None if profile in _EBU_PROFILES else styling.get('opacity'), position.writing(segment))
         if spot not in places:
             # One region for each place used. A subtitle placed more finely
             # than the nine takes a region of its own, named after the place
@@ -1755,9 +2934,9 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
                             if f'{name}-{number}' not in taken)
             places[spot] = name
         region = places[spot]
-        start = float(segment.get('start', 0))
-        end = max(start, float(segment.get('end', start)))
-        attrs = f'begin="{format_time(start)}" end="{format_time(end)}" region="{region}"'
+        begin = float(segment.get('start', 0))
+        end = max(begin, float(segment.get('end', begin)))
+        attrs = f'begin="{stamp(begin)}" end="{stamp(end)}" region="{region}"'
         speaker = str(segment.get('speaker') or '').strip()
         if agents and speaker:
             attrs += f' ttm:agent="{speakers.setdefault(speaker, f"speaker{len(speakers) + 1}")}"'
@@ -1765,13 +2944,13 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             attrs += f' tts:direction="{segment["direction"]}"'
         # EBU-TT-D's schema has normal, embed and bidiOverride, and no
         # isolate, so a file written for it says nothing of an isolate.
-        if segment.get('bidi') in _BIDI_OUT and not (profile == 'ebu-tt-d' and segment['bidi'] == 'isolate'):
+        if segment.get('bidi') in _BIDI_OUT and not (profile in _EBU_PROFILES and segment['bidi'] == 'isolate'):
             attrs += f' tts:unicodeBidi="{_BIDI_OUT[segment["bidi"]]}"'
         if segment.get('forced') and profile != 'ebu-tt-d':
             attrs += ' itts:forcedDisplay="true"'
         # EBU-TT-D's spec lists tts:display among the attributes it does not
         # use, so there a hidden subtitle is written as an ordinary one.
-        if segment.get('hidden') and profile != 'ebu-tt-d':
+        if segment.get('hidden') and profile not in _EBU_PROFILES:
             attrs += ' tts:display="none"'
         looking = _look_attributes(styling, profile)
         if looking:
@@ -1786,8 +2965,16 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
             content = f'<span style="{around}">{content}</span>'
         cues.append(f'      <p {attrs}>{content}</p>')
 
+    if profile == 'ebu-tt':
+        # EBU-TT Part 1 styles by reference only: what a paragraph or a span
+        # says inline goes into a <style> of its own, which it names.
+        hoisted = {}
+        cues = [_referenced(cue, hoisted) for cue in cues]
+        lookings.update(hoisted)
     head = ['  <head>']
     meta_lines = []
+    if profile == 'ebu-tt':
+        meta_lines += _ebu_tt_metadata(metadata, len(cues), widest, smpte)
     if profile == 'ebu-tt-d':
         meta_lines.append(f'      <ebuttm:documentMetadata>'
                           f'<ebuttm:conformsToStandard>{_EBUTTD_STANDARD}</ebuttm:conformsToStandard>'
@@ -1795,16 +2982,29 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     # What the file says about itself, in TTML's own words for it.
     for key, name in (('title', 'ttm:title'), ('description', 'ttm:desc'), ('copyright', 'ttm:copyright')):
         said = str((metadata or {}).get(key) or '').strip()
-        if said:
+        if said and not (profile == 'ebu-tt' and key == 'copyright'):
             meta_lines.append(f'      <{name}>{escape(said)}</{name}>')
     for name, agent_id in speakers.items():
         meta_lines.append(f'      <ttm:agent xml:id="{agent_id}" type="character">'
                           f'<ttm:name type="full">{escape(name)}</ttm:name></ttm:agent>')
+    tunnels = _tunnel_608(segments) if tunnel else []
+    if tunnels:
+        # What the tunnelled data is (RP 2052-10): CEA-608's CC1, its first
+        # pair field 1's. The text was not translated from it, so the mode
+        # is Enhanced: the captions are the text's, in what 608 can say.
+        meta_lines.append(f'      <smpte:information origin="{_CEA608_DATA}" mode="Enhanced" '
+                          f'm608:channel="CC1" m608:fieldStart="1"/>')
     if meta_lines:
         head += ['    <metadata>', *meta_lines, '    </metadata>']
+    copyright_said = str((metadata or {}).get('copyright') or '').strip()
+    if profile == 'ebu-tt' and copyright_said:
+        # EBU-TT Part 1 has ttm:copyright in <head> itself, after its
+        # <metadata>, and nowhere else.
+        head.append(f'    <ttm:copyright>{escape(copyright_said)}</ttm:copyright>')
     style_lines = style_lines + [f'<style xml:id="{name}" {looking}/>'
                                  for looking, name in list(lookings.items()) + list(boxings.items())]
-    head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>']
+    aligned = []
+    region_lines = []
     for spot in sorted(places, key=lambda spot: (-((spot[0] - 1) // 3), spot[0], spot[1] or 0, spot[2] or 0,
                                                  spot[3] if spot[3] is not None else 1, spot[4])):
         keypad, across, down, alpha, writing = spot
@@ -1822,21 +3022,49 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         (x, y), (width, height) = _box(keypad, across, down)
         faded = f' tts:opacity="{alpha:.4g}"' if alpha is not None else ''
         written = f' tts:writingMode="{_WRITING_OUT[writing]}"' if writing else ''
-        head.append(f'      <region xml:id="{places[spot]}" '
-                    f'tts:origin="{_percent(x)} {_percent(y)}" tts:extent="{_percent(width)} {_percent(height)}" '
-                    f'tts:displayAlign="{display}" tts:textAlign="{align}"{written}{faded}/>')
-    head += ['    </layout>', '  </head>']
+        if profile == 'ebu-tt':
+            # A region in EBU-TT Part 1 takes no textAlign of its own: it
+            # names a style that holds it, which its text inherits.
+            if align not in aligned:
+                aligned.append(align)
+            aligning = f'tts:displayAlign="{display}" style="align-{align}"'
+        else:
+            aligning = f'tts:displayAlign="{display}" tts:textAlign="{align}"'
+        region_lines.append(f'      <region xml:id="{places[spot]}" '
+                            f'tts:origin="{_percent(x)} {_percent(y)}" '
+                            f'tts:extent="{_percent(width)} {_percent(height)}" {aligning}{written}{faded}/>')
+    style_lines += [f'<style xml:id="align-{align}" tts:textAlign="{align}"/>' for align in aligned]
+    head += ['    <styling>', *('      ' + line for line in style_lines), '    </styling>', '    <layout>',
+             *region_lines, '    </layout>', '  </head>']
     forced = any(segment.get('forced') for segment in segments) and profile != 'ebu-tt-d'
     imsc_styling = forced or any('itts:' in looking for looking in lookings)
     ebu_styling = any('ebutts:' in looking for looking in lookings)
+    root = _root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling,
+                            fps=fps if not smpte else None, tunnel=bool(tunnels), smpte=smpte)
+    # The tunnelled captions, each run in a <div> of its own that begins on
+    # its first frame: RP 2052-11's way, which RP 2052-10 shares, of saying
+    # where data in the body belongs on the timeline.
+    carried = []
+    for first, data in tunnels:
+        encoded = base64.b64encode(data).decode('ascii')
+        lines = '\n'.join('          ' + encoded[i:i + 76] for i in range(0, len(encoded), 76))
+        carried += [f'    <div begin="{format_time(first / _CEA608_RATE)}" '
+                    f'end="{format_time((first + len(data) // 4) / _CEA608_RATE)}">',
+                    '      <metadata>',
+                    f'        <smpte:data encoding="Base64" datatype="{_CEA608_DATA}">',
+                    lines,
+                    '        </smpte:data>',
+                    '      </metadata>',
+                    '    </div>']
     return '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<tt {_root_attributes(profile, language, imsc_styling=imsc_styling, ebu_styling=ebu_styling)}>',
+        f'<tt {root}>',
         *head,
         '  <body style="text">',
         '    <div>',
         *cues,
         '    </div>',
+        *carried,
         '  </body>',
         '</tt>',
         ''])
@@ -1896,7 +3124,11 @@ def write_images(pictures, size, language='en', profile='imsc1.1-image', metadat
 
 
 def save(path, segments, language='en', agents=False, look='clean', preview=None, profile='ttml1',
-         metadata=None):
-    """Write `segments` to `path` as TTML, in UTF-8."""
+         metadata=None, **options):
+    """Write `segments` to `path` as TTML, in UTF-8; `options` as write()
+    takes them. A DAPT script's recordings are linked from where it is."""
+    import os
+    if profile == 'dapt':
+        options.setdefault('audio_base', os.path.dirname(os.path.abspath(path)))
     with open(path, 'w', encoding='utf-8', newline='\n') as ttml_file:
-        ttml_file.write(write(segments, language, agents, look, preview, profile, metadata))
+        ttml_file.write(write(segments, language, agents, look, preview, profile, metadata, **options))

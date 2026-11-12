@@ -11,6 +11,15 @@ objects clears the screen; each composition holds until the next.
 it shows drawn into one picture (two objects, top and bottom lines, make
 one picture with the space between). `parse(data)` reads bytes, for the
 PGS tracks inside videos, which FFmpeg writes out as a .sup.
+
+`save(path, pictures, size)` writes one: the subtitles drawn as pictures
+(interface.subtitle_pictures), one on screen at a time (disc_pictures).
+Each is an epoch of its own, which a player can start reading at: a
+composition of one object in one window as big as it, forced where the
+subtitle is, a palette of up to 255 of the picture's colours and
+transparent, and the object, split over segments when it is larger than
+one holds. A composition with no object clears it at its end, unless the
+next subtitle starts there and takes its place.
 """
 
 from subtitld.modules.picture_subtitles import Picture
@@ -196,3 +205,153 @@ def read(path):
     if data[:2] != b'PG':
         raise PGSError(f'{path} is not a PGS (.sup) file')
     return parse(data)
+
+
+# Writing ------------------------------------------------------------------
+
+# The frame rates a composition names, by their code.
+FRAME_RATES = {23.976: 0x10, 24.0: 0x20, 25.0: 0x30, 29.97: 0x40, 50.0: 0x60, 59.94: 0x70}
+MAX_SEGMENT = 0xFFFF            # a segment says its length in 16 bits
+FORCED = 0x40                   # a composition object's flag for a forced one
+EPOCH_START = 0x80
+
+
+def rate_code(fps):
+    """The composition's code for `fps`, the nearest Blu-ray has (23.976 when
+    there is none to go by)."""
+    if not fps:
+        return FRAME_RATES[23.976]
+    return FRAME_RATES[min(FRAME_RATES, key=lambda rate: abs(rate - float(fps)))]
+
+
+def _ycbcr(r, g, b, alpha, hd):
+    """(Y, Cr, Cb, alpha) for a colour, in video range: BT.709 for HD, BT.601
+    below, as _rgba reads them back."""
+    kr, kb = (0.2126, 0.0722) if hd else (0.299, 0.114)
+    luma = kr * r + (1 - kr - kb) * g + kb * b
+    clamp = lambda v, low, high: max(low, min(high, int(round(v))))  # noqa: E731
+    return (clamp(16 + luma * 219 / 255, 16, 235), clamp(128 + (r - luma) * 112 / 255 / (1 - kr), 16, 240),
+            clamp(128 + (b - luma) * 112 / 255 / (1 - kb), 16, 240), alpha)
+
+
+def encode_rle(indices, width, height):
+    """An object's picture run-length coded, as decode_rle reads it: a byte
+    for one or two pixels of a colour other than 0, a run of 0 in two or
+    three bytes, of another colour in three or four, and 00 00 at each
+    line's end."""
+    import numpy
+    rows = numpy.frombuffer(indices, numpy.uint8).reshape(height, width)
+    out = bytearray()
+    for row in rows:
+        edges = (numpy.flatnonzero(row[1:] != row[:-1]) + 1).tolist()
+        for start, end in zip([0] + edges, edges + [width]):
+            colour = int(row[start])
+            run = end - start
+            while run:
+                count = min(run, 0x3FFF)
+                run -= count
+                if colour and count <= 2:
+                    out += bytes([colour]) * count
+                elif colour == 0:
+                    out += bytes([0, count]) if count < 64 else bytes([0, 0x40 | count >> 8, count & 255])
+                elif count < 64:
+                    out += bytes([0, 0x80 | count, colour])
+                else:
+                    out += bytes([0, 0xC0 | count >> 8, count & 255, colour])
+        out += b'\x00\x00'
+    return bytes(out)
+
+
+def _segment(kind, payload, pts, dts=0):
+    return b'PG' + (pts & 0xFFFFFFFF).to_bytes(4, 'big') + (dts & 0xFFFFFFFF).to_bytes(4, 'big') + \
+        bytes([kind]) + len(payload).to_bytes(2, 'big') + payload
+
+
+def _composition(size, rate, number, state, objects=()):
+    """A PCS: the frame, its rate, the composition's number and state, and
+    the objects shown [(x, y, forced)], object and window 0 the first."""
+    payload = int(size[0]).to_bytes(2, 'big') + int(size[1]).to_bytes(2, 'big') + bytes([rate]) + \
+        (number & 0xFFFF).to_bytes(2, 'big') + bytes([state, 0, 0, len(objects)])
+    for index, (x, y, forced) in enumerate(objects):
+        payload += index.to_bytes(2, 'big') + bytes([index, FORCED if forced else 0]) + \
+            int(x).to_bytes(2, 'big') + int(y).to_bytes(2, 'big')
+    return payload
+
+
+def _window(x, y, width, height):
+    return bytes([1, 0]) + b''.join(int(v).to_bytes(2, 'big') for v in (x, y, width, height))
+
+
+def display_sets(x, y, width, height, indices, colours, start, end, size, rate, number, forced=False):
+    """The bytes of one subtitle: an epoch's display set that shows it at
+    `start` and one that clears it at `end` (None: none, the next subtitle
+    taking its place). Its composition numbers are `number` and the next.
+
+    The times before the PTS are a decoder's, by the HDMV model as
+    authoring tools reckon it: the plane cleared at 9 ticks of 90 kHz a 3200
+    pixels, the object decoded at 9 a 1600, the DTS that long before."""
+    hd = size[1] >= 720
+    begin = int(round(start * 90000))
+    clear = (9 * size[0] * size[1] + 3199) // 3200
+    decode = (9 * width * height + 1599) // 1600
+    window_time = (9 * width * height + 3199) // 3200
+    dts = max(0, begin - clear - decode - window_time)
+    decoded = min(begin, dts + clear + decode)
+    out = _segment(PCS, _composition(size, rate, number, EPOCH_START, [(x, y, forced)]), begin, dts)
+    out += _segment(WDS, _window(x, y, width, height), dts)
+    out += _segment(PDS, bytes([0, 0]) + b''.join(bytes([entry]) + bytes(_ycbcr(*colour, hd))
+                                               for entry, colour in enumerate(colours)), dts)
+    # The object in fragments a segment can hold: the first says how long
+    # the whole is, and how big the picture.
+    data = encode_rle(indices, width, height)
+    head = (len(data) + 4).to_bytes(3, 'big') + width.to_bytes(2, 'big') + height.to_bytes(2, 'big')
+    pieces = [data[:MAX_SEGMENT - 11]]
+    rest = data[MAX_SEGMENT - 11:]
+    while rest:
+        pieces.append(rest[:MAX_SEGMENT - 4])
+        rest = rest[MAX_SEGMENT - 4:]
+    for piece_number, piece in enumerate(pieces):
+        flags = (0x80 if piece_number == 0 else 0) | (0x40 if piece_number == len(pieces) - 1 else 0)
+        payload = bytes([0, 0, 0, flags]) + (head if piece_number == 0 else b'') + piece
+        out += _segment(ODS, payload, decoded, dts)
+    out += _segment(END, b'', decoded, decoded)
+    if end is not None:
+        finish = max(begin + 1, int(round(end * 90000)))
+        dts = max(begin, finish - window_time)
+        out += _segment(PCS, _composition(size, rate, number + 1, 0), finish, dts)
+        out += _segment(WDS, _window(x, y, width, height), dts)
+        out += _segment(END, b'', dts, dts)
+    return out
+
+
+def save(path, pictures, size, fps=None):
+    """Write the .sup of `pictures` (disc_pictures' dicts, in order of
+    start) on a frame of `size` at the rate nearest `fps`: each subtitle an
+    epoch of its own, in up to 255 colours and transparent, cleared at its
+    end unless the next one starts there."""
+    from subtitld.modules import disc_pictures
+    size = (int(size[0]), int(size[1]))
+    rate = rate_code(fps)
+    number = 0
+    previous = None
+
+    def written(unit, following):
+        end = None if following is not None and unit['end'] >= following else unit['end']
+        return display_sets(*unit['fitted'][:4], unit['indices'], unit['colours'], unit['start'], end,
+                            size, rate, number, forced=unit['forced'])
+
+    with open(path, 'wb') as handle:
+        # Each written once the next is known: whether it is cleared, or
+        # the next takes its place at once.
+        for picture in disc_pictures.timeline(pictures):
+            fitted = disc_pictures.fit(picture, size)
+            if fitted is None:
+                continue
+            if previous is not None:
+                handle.write(written(previous, picture['start']))
+                number += 2
+            indices, colours = disc_pictures.reduce(fitted[4], 256)
+            previous = {'fitted': fitted, 'indices': indices, 'colours': colours, 'start': picture['start'],
+                        'end': picture['end'], 'forced': bool(picture.get('forced'))}
+        if previous is not None:
+            handle.write(written(previous, None))

@@ -24,7 +24,11 @@ Reading:
   break for any run of CR/LFs; the row
   (against the rows the GSI says it has) and the justification as one of
   the nine places;
-- the language the GSI's code names, as ISO 639-1.
+- the language the GSI's code names, as ISO 639-1;
+- the GSI fields that say who made the file and for what (its titles,
+  translator, editor, publisher, reference code, dates, country, the
+  User-Defined Area: GSI_FIELDS), which EBU Tech 3360 carries into
+  EBU-TT's metadata and a save as STL writes back.
 
 Writing gives one TTI block a subtitle (extension blocks when its text
 does not fit), in its order of start, and a GSI that counts them: frames
@@ -40,6 +44,8 @@ Background, then the colour the text itself is in. Rows count up from the
 bottom, or down from the top, as the subtitle sits.
 """
 
+import base64
+import binascii
 import datetime
 import re
 import struct
@@ -55,6 +61,13 @@ _RATES = {'STL23.01': (24, 24000 / 1001), 'STL24.01': (24, 24.0), 'STL25.01': (2
 RATES = (25, 30)
 DISPLAYS = ('teletext', 'open')
 STARTS = ('00:00:00:00', '10:00:00:00')
+# The GSI fields that say who made the subtitles and for what, which EBU
+# Tech 3360 carries into EBU-TT's metadata, and the frame rate the file
+# counts in: (mnemonic, offset, size).
+GSI_FIELDS = (('DFC', 3, 8), ('OPT', 16, 32), ('OET', 48, 32), ('TPT', 80, 32), ('TET', 112, 32), ('TN', 144, 32),
+              ('TCD', 176, 32), ('SLR', 208, 16), ('CD', 224, 6), ('RD', 230, 6), ('RN', 236, 2), ('TNS', 243, 5),
+              ('MNC', 251, 2), ('TCP', 256, 8), ('CO', 274, 3), ('PUB', 277, 32), ('EN', 309, 32), ('ECD', 341, 32),
+              ('UDA', 448, 576))
 
 # EBU Tech 3264's language codes, as ISO 639-1.
 LANGUAGES = {
@@ -273,6 +286,33 @@ def parse(data):
                       'start': STARTS[1] if start == _frames(10, 0, 0, 0, nominal) else STARTS[0]}
 
 
+def gsi_values(data):
+    """{mnemonic: value} for the GSI fields of EBU STL bytes `data` that are
+    filled in (GSI_FIELDS):
+    text in the code page the CPN names, trailing spaces gone; the
+    timecode only where the TCS says it is in use; the User-Defined Area
+    as Base64, as Tech 3360 keeps it."""
+    gsi = data[:GSI_SIZE]
+    try:
+        codec = 'cp' + str(int(gsi[0:3]))
+        ''.encode(codec)
+    except (ValueError, LookupError):
+        codec = 'cp850'
+    found = {}
+    for name, offset, size in GSI_FIELDS:
+        raw = gsi[offset:offset + size]
+        if name == 'UDA':
+            if raw.strip(b' \x00'):
+                found[name] = base64.b64encode(raw.rstrip(b' ')).decode('ascii')
+            continue
+        if name == 'TCP' and gsi[255:256] != b'1':
+            continue
+        value = raw.decode(codec, 'replace').strip()
+        if value:
+            found[name] = value
+    return found
+
+
 def read(path):
     """(subtitles, its settings) in the EBU STL file at `path`, as parse()
     gives them."""
@@ -416,10 +456,15 @@ def _gsi_field(value, size, encoding='cp850'):
     return str(value).encode(encoding, 'replace')[:size].ljust(size, b' ')
 
 
-def write(segments, fps=25, display='teletext', start='00:00:00:00', language='', title=''):
+def write(segments, fps=25, display='teletext', start='00:00:00:00', language='', title='', gsi=None):
     """EBU STL bytes for `segments`: frames at 25 or 30 (29.97) a second,
     for teletext or open subtitles, from a programme start of `start`
-    ("HH:MM:SS:FF")."""
+    ("HH:MM:SS:FF"). `gsi` {mnemonic: value} fills in the GSI fields a file
+    was opened with (GSI_FIELDS), the ones Tech 3360 carries through EBU-TT:
+    the titles, the translator, the editor, the publisher, the reference
+    code, the country, the creation date and revision number, the
+    User-Defined Area. The counts, the revision date and the start are this
+    file's own."""
     nominal = 30 if int(round(float(fps))) == 30 else 25
     dfc = f'STL{nominal}.01'
     rate = _RATES[dfc][1]
@@ -460,16 +505,28 @@ def write(segments, fps=25, display='teletext', start='00:00:00:00', language=''
     today = datetime.date.today().strftime('%y%m%d')
     first = _timecode(subtitles[0][0] + offset, nominal) if subtitles else _timecode(offset, nominal)
     primary = str(language or '').replace('_', '-').split('-')[0].lower()
+    kept = {key: str(value) for key, value in (gsi or {}).items() if value not in (None, '')}
+    created = kept.get('CD', '') if re.fullmatch(r'\d{6}', kept.get('CD', '')) else today
+    revision = kept.get('RN', '') if re.fullmatch(r'\d{1,2}', kept.get('RN', '')) else '00'
+    widest = kept.get('MNC', '') if re.fullmatch(r'\d{1,2}', kept.get('MNC', '')) else '40'
     fields = [
         ('850', 3), (dfc, 8), ('1' if teletext else '0', 1), (cct, 2), (_LANGUAGE_CODES.get(primary, '00'), 2),
-        (title, 32), ('', 32), ('', 32), ('', 32), ('', 32), ('', 32), ('', 16), (today, 6), (today, 6), ('00', 2),
-        (f'{len(blocks):05d}', 5), (f'{len(subtitles):05d}', 5), ('001', 3), ('40', 2), (f'{LAST_ROW:02d}', 2),
-        ('1', 1), ('%02d%02d%02d%02d' % _timecode(offset, nominal), 8), ('%02d%02d%02d%02d' % first, 8),
-        ('1', 1), ('1', 1), ('', 3), ('', 32), ('', 32), ('', 32), ('', 75), ('', 576),
+        (title or kept.get('OPT', ''), 32), (kept.get('OET', ''), 32), (kept.get('TPT', ''), 32),
+        (kept.get('TET', ''), 32), (kept.get('TN', ''), 32), (kept.get('TCD', ''), 32), (kept.get('SLR', ''), 16),
+        (created, 6), (today, 6), (revision.rjust(2, '0'), 2),
+        (f'{len(blocks):05d}', 5), (f'{len(subtitles):05d}', 5), ('001', 3), (widest.rjust(2, '0'), 2),
+        (f'{LAST_ROW:02d}', 2), ('1', 1), ('%02d%02d%02d%02d' % _timecode(offset, nominal), 8),
+        ('%02d%02d%02d%02d' % first, 8), ('1', 1), ('1', 1), (kept.get('CO', ''), 3), (kept.get('PUB', ''), 32),
+        (kept.get('EN', ''), 32), (kept.get('ECD', ''), 32), ('', 75),
     ]
-    gsi = b''.join(_gsi_field(value, size) for value, size in fields)
-    assert len(gsi) == GSI_SIZE
-    return gsi + b''.join(blocks)
+    header = b''.join(_gsi_field(value, size) for value, size in fields)
+    try:
+        area = base64.b64decode(kept.get('UDA', ''), validate=True)
+    except (binascii.Error, ValueError):
+        area = b''
+    header += area[:576].ljust(576, b' ')
+    assert len(header) == GSI_SIZE
+    return header + b''.join(blocks)
 
 
 def save(path, segments, **options):

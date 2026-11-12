@@ -136,7 +136,7 @@ panel._refresh_captions()
 config = panel.get_config()
 check('MXF: a picture to choose, and what it writes',
       (config['format'], panel.captions_codec_combo.isHidden(), config['captions']),
-      ('MXF', False, {'caption_mode': 'pop', 'caption_channel': 1, 'codec': 'dnxhr'}))
+      ('MXF', False, {'caption_mode': 'pop', 'caption_channel': 1, 'codec': 'dnxhr', 'teletext': False}))
 panel.captions_mode_combo.combobox.setCurrentIndex(1)
 panel.get_config()
 check('remembered', (_VideoPanel().get_config()['format'], _VideoPanel().get_config()['captions']['caption_mode']),

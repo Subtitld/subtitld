@@ -249,8 +249,10 @@ check('written down the picture, a line becomes a column',
       (lambda rows, columns: rows[1] - rows[0] > columns[1] - columns[0])(lit_rows(down), lit_columns(down)), True)
 check('and sits where its keypad says, against the right edge',
       lit_columns(down)[1] > 560 and abs(lit_columns(down)[1] - lit_columns(across)[1]) <= 12, True)
+# Columns of different lengths, so the order shows even where no CJK font
+# draws the letters and every one is the same box (the CI runner).
 check('a column from the left is drawn the other way round',
-      render('{\\an6}一行目\n二行目', writing='vertical-lr') != render('{\\an6}一行目\n二行目', writing='vertical-rl'),
+      render('{\\an6}一\n二行目', writing='vertical-lr') != render('{\\an6}一\n二行目', writing='vertical-rl'),
       True)
 check('the digits of a number set upright take one character\'s room down the column',
       (lambda plain, upright: upright[1] - upright[0] < plain[1] - plain[0] - 4)(

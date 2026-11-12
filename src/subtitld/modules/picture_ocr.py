@@ -1,9 +1,10 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a TTML file in
-IMSC's Image Profile or a DCP's subtitles with pictures in them, or reading
-a picture track of a video, Subtitld decodes each subtitle into a picture
-(vobsub, pgs, `imsc_pictures`, `dcp_pictures`), and an
+Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a BDN's PNGs, a
+TTML file in IMSC's Image Profile or a DCP's subtitles with pictures in
+them, or reading a picture track of a video (a DVB subtitle stream among
+them), Subtitld decodes each subtitle into a picture (vobsub, pgs, dvbsub,
+`bdn_pictures`, `imsc_pictures`, `dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
 file's words are better than any reading of them. `OCRJob` runs the whole
@@ -35,6 +36,8 @@ from subtitld.modules.addons.provider import TASK_OCR_RECOGNIZE
 # Pictures read with less confidence than this are read again the other way.
 RETRY_BELOW = 0.6
 PICTURE_EXTENSIONS = ('.sup', '.idx')
+# Transport streams, whose DVB subtitles read_file reads.
+TRANSPORT_STREAM_EXTENSIONS = ('.ts', '.m2ts', '.mts')
 
 
 def ocr_provider():
@@ -67,11 +70,17 @@ _IMSC_SCREEN = (1920, 1080)
 
 def read_file(path):
     """(pictures, language tag the file gives or '') of a picture subtitle file."""
-    from subtitld.modules import pgs, vobsub
+    from subtitld.modules import dvbsub, pgs, vobsub
     if str(path).lower().endswith('.sup'):
         return pgs.read(path), ''
+    if str(path).lower().endswith(TRANSPORT_STREAM_EXTENSIONS):
+        # The first DVB subtitle service the PMT lists.
+        pictures, info = dvbsub.read(path)
+        return pictures, info['language']
     if str(path).lower().endswith('.xml') and _is_dcp(path):
         return dcp_pictures(path)
+    if str(path).lower().endswith('.xml') and _is_bdn(path):
+        return bdn_pictures(path)
     if str(path).lower().endswith(TTML_EXTENSIONS):
         return imsc_pictures(path)
     found, track = vobsub.read(path)
@@ -148,6 +157,37 @@ def dcp_pictures(path):
         top = markup.alignment(lead) >= 7
         pictures.append(picture_subtitles.Picture(segment['start'], segment['end'], 0, 0 if top else screen[1] - 1,
                                                   1, 1, b'\x00', [(0, 0, 0, 0)], False, screen[0], screen[1], words))
+    pictures.sort(key=lambda picture: (picture.start, picture.end))
+    from subtitld.modules import file_io
+    return pictures, file_io._language_like_project(settings['language']) or settings['language']
+
+
+def _is_bdn(path):
+    from subtitld.modules import bdn
+    return bdn.is_bdn(path)
+
+
+def bdn_pictures(path):
+    """(pictures, language) of a BDN: each PNG where its <Graphic> puts it,
+    as big as the PNG is, on the picture VideoFormat gives the size of,
+    else a 1920x1080 one; forced where its event is."""
+    from subtitld.modules import bdn
+    graphics, settings = bdn.read(path)
+    screen = settings['size'] or bdn.DEFAULT_SIZE
+    folder = os.path.dirname(os.path.abspath(path))
+    pictures = []
+    for graphic in graphics:
+        try:
+            with open(os.path.join(folder, graphic['href']), 'rb') as handle:
+                decoded = png_picture(handle.read())
+        except OSError:
+            decoded = None
+        if decoded is None:
+            continue
+        width, height, indices, colours = decoded
+        pictures.append(picture_subtitles.Picture(graphic['start'], graphic['end'], graphic['x'], graphic['y'],
+                                                  width, height, indices, colours, graphic['forced'],
+                                                  screen[0], screen[1], ''))
     pictures.sort(key=lambda picture: (picture.start, picture.end))
     from subtitld.modules import file_io
     return pictures, file_io._language_like_project(settings['language']) or settings['language']
@@ -261,13 +301,16 @@ class OCRJob(QObject):
         return cls(lambda _decoder: read_file(path), provider, language, parent)
 
     @classmethod
-    def for_track(cls, video, index, codec, language, provider, parent=None):
+    def for_track(cls, video, index, codec, language, provider, parent=None, pid=None, page=None):
+        """A picture track of a video; `pid` and `page` choose a DVB
+        subtitle stream of a transport stream and a service in it."""
         from subtitld.modules import video_subtitles
 
         def read(decoder):
             return video_subtitles.extract_pictures(
                 video, index, codec, ffmpeg=session.FFMPEG_EXECUTABLE, ffprobe=session.FFPROBE_EXECUTABLE,
-                folder=session.PATH_TEMP, startupinfo=session.STARTUPINFO, started=decoder.started_process), ''
+                folder=session.PATH_TEMP, startupinfo=session.STARTUPINFO, started=decoder.started_process,
+                pid=pid, page=page), ''
         return cls(read, provider, language, parent)
 
     def start(self):

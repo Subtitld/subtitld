@@ -40,6 +40,12 @@ from subtitld.modules import position as subtitld_position
 # <subtitldcc:origin share-id="Xk3pQ9aZ2bT" version="3"/> inside <metadata>,
 # and each subtitle's stable ID as <subtitle subtitldcc:id="…">.
 SUBTITLDCC_NAMESPACE = 'https://subtitld.cc/ns/usf/1'
+# The language spoken in the media, which a translation inverted into the
+# <metadata>'s <language> no longer says: <subtitldcc:source-language
+# code="eng">English (United States)</subtitldcc:source-language>, a
+# <language> in Subtitld's namespace. Voice cloning pairs the speaker's
+# audio with the subtitles in it (modules.clone_ref).
+SUBTITLDCC_SOURCE_LANGUAGE = 'source-language'
 SUBTITLDCC_ID = 'subtitldcc:id'
 # Forced: shown even where a viewer asked for no subtitles. USF has no word
 # for it, so it is Subtitld's own, in Subtitld's namespace.
@@ -265,6 +271,7 @@ class USFReader():
         self.language = None
         self.speakers = {}  # name -> {'color': '#RRGGBB'}
         self.origin = None  # {'share_id', 'version'} when the file came from subtitld.cc
+        self.source_language = None  # what the media speaks, when the file says
         self.has_embedded_images = False
         self.has_embedded_audio_clips = False
         self._styles = {}   # name -> {'italic', 'bold', 'underline', 'color', 'alignment'}
@@ -286,6 +293,7 @@ class USFReader():
         self.language = None
         self.speakers = {}
         self.origin = None
+        self.source_language = None
         self.has_embedded_images = False
         self.has_embedded_audio_clips = False
         self._styles = {}
@@ -322,6 +330,9 @@ class USFReader():
                     'share_id': origin.attrs['share-id'],
                     'version': _parse_numeric(origin.attrs.get('version'), int),
                 }
+            spoken = meta.find(SUBTITLDCC_SOURCE_LANGUAGE)
+            if spoken is not None and spoken.namespace == SUBTITLDCC_NAMESPACE and spoken.attrs.get('code'):
+                self.source_language = self.language_of(spoken.attrs['code'], spoken.text.strip())
 
         for style in soup.select('styles > style'):
             name = style.attrs.get('name')
@@ -548,7 +559,7 @@ class USFWriter():
         super(USFWriter, self).__init__(*args, **kwargs)
 
     def write(self, subtitles, speakers=None, language=None, metadata=None,
-              embed_audio_clips=False, origin=None, names=None):
+              embed_audio_clips=False, origin=None, names=None, source_language=None):
         """Serialize subtitles to USF XML.
 
         Parameters:
@@ -567,13 +578,16 @@ class USFWriter():
                      came from, so it can be published back as a new version.
           names:     {Subtitld's language code: its name}, written as each
                      <language>'s text beside its ISO 639-2 code.
+          source_language: the language spoken in the media, when it is
+                     known (it is not `language` once a translation is
+                     inverted).
         """
         speakers = speakers or {}
         metadata = metadata or {}
         names = names or {}
 
-        def language_tag(code):
-            tag = usf.new_tag('language')
+        def language_tag(code, tag_name='language', **namespace):
+            tag = usf.new_tag(tag_name, **namespace)
             tag['code'] = iso639_2(code)
             name = names.get(code) or names.get(str(code).lower().replace('_', '-'))
             if name:
@@ -611,7 +625,7 @@ class USFWriter():
                                                       or subtitle.get('direction') or subtitle.get('bidi')
                                                       or subtitld_position.writing(subtitle)
                                                       for subtitle in subtitles) \
-                or str(metadata.get('copyright') or '').strip():
+                or str(metadata.get('copyright') or '').strip() or source_language:
             usf.find('USFSubtitles')['xmlns:subtitldcc'] = SUBTITLDCC_NAMESPACE
         if origin and origin.get('share_id'):
             origin_tag = usf.new_tag('origin', namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc')
@@ -619,6 +633,9 @@ class USFWriter():
             if origin.get('version') is not None:
                 origin_tag['version'] = str(origin['version'])
             meta_tag.append(origin_tag)
+        if source_language:
+            meta_tag.append(language_tag(source_language, SUBTITLDCC_SOURCE_LANGUAGE,
+                                         namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc'))
 
         # No "Default" style: one would override the player's own look for
         # every subtitle (Subtitld's used to be pale blue, outlined in blue).

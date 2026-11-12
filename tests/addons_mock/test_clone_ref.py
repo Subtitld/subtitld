@@ -326,6 +326,14 @@ def case_extract_with_text():
         assert text_inv == 'this is a good ref', f'inverted ref_text wrong: {text_inv!r}'
         print(f'  PASS — inverted project ref_text={text_inv!r}')
 
+        # The same project saved before USF kept `source_language`: it has
+        # translations, so the displayed language may not be the audio's,
+        # and no transcript is sent rather than the Portuguese one.
+        del session.SUBTITLE['source_language']
+        _path_old, text_old = clone_ref.extract_speaker_reference_with_text('A')
+        assert text_old is None, f'expected no ref_text for an unsaid source, got {text_old!r}'
+        print('  PASS — translations, no source_language → ref_text None')
+
         # Concat case: first two A subs join. Each text contributes;
         # both are kept verbatim with a single space separator.
         # Force re-extraction by pointing at a fresh cache dir so the

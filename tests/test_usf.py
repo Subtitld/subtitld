@@ -117,6 +117,21 @@ check('and the filename where the document has no title of its own',
 reopened, _fmt = file_io.process_subtitles_file(str(folder / 'export.usf'))
 check("reopened: the names tell Brazil's Portuguese from Portugal's", (session.SUBTITLE['language'], reopened[0]['translations']),
       ('en-us', {'pt-br': 'Olá', 'pt-pt': 'Olá!'}))
+check('none spoken said, none read', session.SUBTITLE.get('source_language'), None)
+
+print('what the media speaks survives a save, once a translation is inverted')
+session.SUBTITLE['segments'] = [{'start': 0, 'end': 1, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]
+session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE['source_language'] = 'en-us'
+for name, kind in (('inverted.usf', 'USF'), ('inverted.usfx', 'USFX')):
+    file_io.save_file(str(folder / name), kind)
+    session.SUBTITLE.pop('source_language')
+    _segments, _fmt = file_io.process_subtitles_file(str(folder / name))
+    check(f'{kind}: read back', (session.SUBTITLE['language'], session.SUBTITLE.get('source_language')), ('pt-br', 'en-us'))
+check('in our namespace, as a language', '<subtitldcc:source-language code="eng">English (United States)</subtitldcc:source-language>'
+      in (folder / 'inverted.usf').read_text(encoding='utf-8'), True)
+file_io.process_subtitles_file(str(folder / 'other.usf'))
+check('the next file opened does not say it', session.SUBTITLE.get('source_language'), None)
 (folder / 'not.usf').write_text('<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml"/>', encoding='utf-8')
 try:
     file_io.process_subtitles_file(str(folder / 'not.usf'))
