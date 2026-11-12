@@ -1188,8 +1188,10 @@ class _VideoPanel(QWidget):
 class _SidebarShadow(QWidget):
     """The sidebar's shadow (the stylesheet's border-image: the start
     screen's, turned), laid over the categories. Beside the chosen category
-    its light line along the right edge is left out: the last 2px take the
-    shadow from just inside them."""
+    its light line along the right edge is left out: the last GAP columns
+    take the shadow of the column just inside them."""
+
+    GAP = 3
 
     def __init__(self, buttons, parent=None):
         super().__init__(parent)
@@ -1203,17 +1205,21 @@ class _SidebarShadow(QWidget):
         option = QStyleOption()
         option.initFrom(self)
         painter = QPainter(self)
-        column = QRegion()
+        gap = QRegion()
         for button in self._buttons:
             if button.isChecked():
                 top = button.mapTo(self.window(), QPoint(0, 0)).y() - self.mapTo(self.window(), QPoint(0, 0)).y()
-                column += QRegion(QRect(self.width() - 2, top, 2, button.height()))
-        painter.setClipRegion(QRegion(self.rect()) - column)
+                gap = QRegion(QRect(self.width() - self.GAP, top, self.GAP, button.height()))
+        painter.setClipRegion(QRegion(self.rect()) - gap)
         self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
-        if not column.isEmpty():
-            painter.setClipRegion(column)
-            painter.translate(2, 0)
-            self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+        if not gap.isEmpty():
+            # each column of the gap takes the shadow of the column just inside it, so the gap is flat
+            for shift in range(1, self.GAP + 1):
+                painter.save()
+                painter.setClipRegion(gap.intersected(QRect(self.width() - self.GAP - 1 + shift, 0, 1, self.height())))
+                painter.translate(shift, 0)
+                self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+                painter.restore()
 
 
 class ExportDialog(utils.SimpleDialog):
