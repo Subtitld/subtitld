@@ -512,7 +512,7 @@ def load(self):
         setattr(self, name, key)
     self.playercontrols_widget_left_top_line.layout().addWidget(self.start_end_moving_frame, 0, Qt.AlignTop)
 
-    self.change_playback_speed = QPushButton()
+    self.change_playback_speed = player_widgets.SlantFrameButton('right', 'playback_speed.svg')
     self.change_playback_speed.setObjectName('change_playback_speed')
     self.change_playback_speed.setCheckable(True)
     self.change_playback_speed.setLayout(QHBoxLayout())
@@ -633,7 +633,7 @@ def load(self):
     self.playercontrols_widget_right_top_line.layout().setSpacing(8)
     self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
-    self.repeat_playback = QPushButton()
+    self.repeat_playback = player_widgets.SlantFrameButton('left', 'playback_repeat.svg')
     self.repeat_playback.setObjectName('repeat_playback')
     self.repeat_playback.setCheckable(True)
     self.repeat_playback.setLayout(QHBoxLayout())

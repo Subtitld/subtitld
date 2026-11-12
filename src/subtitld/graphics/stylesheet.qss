@@ -1937,28 +1937,16 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed {
-    icon: url(graphics:playback_speed.svg);
     background: transparent;
-    border-width: 0 16 0 16;
+    border: 0;
     border-radius: 0;
-    border-image: url(graphics:playbackspeed_border.svg) 0 16 0 16 stretch stretch;
-    padding-left: 140;
-    padding-right: 0;
+    padding-left: 156;
+    padding-right: 16;
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed[expanded="false"] {
-    padding-left: 0;
-    padding-right: 0;
-}
-
-#playercontrols_widget_left_top_line #change_playback_speed:hover:pressed,
-#playercontrols_widget_left_top_line #change_playback_speed:hover {
-    border-image: url(graphics:playbackspeed_border_hover.svg) 0 16 0 16 stretch stretch;
-}
-
-#playercontrols_widget_left_top_line #change_playback_speed:checked:hover,
-#playercontrols_widget_left_top_line #change_playback_speed:checked {
-    border-image: url(graphics:playbackspeed_border_checked.svg) 0 16 0 16 stretch stretch;
+    padding-left: 16;
+    padding-right: 16;
 }
 
 #playercontrols_widget_left_top_line #change_playback_speed #change_playback_speed_label {
@@ -2004,28 +1992,16 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_top_line #repeat_playback {
-    icon: url(graphics:playback_repeat.svg);
     background: transparent;
-    border-width: 0 16 0 16;
+    border: 0;
     border-radius: 0;
-    border-image: url(graphics:repeat_playback_border.svg) 0 16 0 16 stretch stretch;
-    padding-right: 140;
-    padding-left: 0;
+    padding-right: 156;
+    padding-left: 16;
 }
 
 #playercontrols_widget_top_line #repeat_playback[expanded="false"] {
-    padding-left: 0;
-    padding-right: 0;
-}
-
-#playercontrols_widget_top_line #repeat_playback:hover:pressed,
-#playercontrols_widget_top_line #repeat_playback:hover {
-    border-image: url(graphics:repeat_playback_border_hover.svg) 0 16 0 16 stretch stretch;
-}
-
-#playercontrols_widget_top_line #repeat_playback:checked:hover,
-#playercontrols_widget_top_line #repeat_playback:checked {
-    border-image: url(graphics:repeat_playback_border_checked.svg) 0 16 0 16 stretch stretch;
+    padding-left: 16;
+    padding-right: 16;
 }
 
 #playercontrols_widget_top_line #repeat_playback #repeat_playback_x_label {

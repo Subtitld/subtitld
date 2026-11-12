@@ -7,13 +7,14 @@ The keys paint nothing themselves: the piece paints their hover, pressed and
 checked looks, so a group reads as one object.
 """
 
+import math
 import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import (QColor, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
-                           QRegion)
+from PySide6.QtGui import (QColor, QFontMetricsF, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
+                           QRegion, QTransform)
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QSizePolicy, QWidget
+from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QPushButton, QSizePolicy, QStyleOptionButton, QWidget
 
 from subtitld.interface import shapes
 from subtitld.modules import session
@@ -576,6 +577,68 @@ class AddSubtitleButton(QAbstractButton):
 
 
 # --- transport: play from the beginning · play/pause ▶|▶ · record ◉ mode ------------------------------------------
+
+class SlantFrameButton(QPushButton):
+    """Playback speed and repeat: a button drawn as a 75° slanted frame
+    (no edge lines, 6px curves inside every corner) holding its own
+    controls in its layout, its icon in the room the stylesheet's paddings
+    leave. lean='right' slants like \\ (the speed, left of the transport),
+    'left' like // (the repeat, right of it). Checked, the frame turns light,
+    as the controls inside are showing."""
+
+    NORMAL = '#374a5a'                # the old frame's 50% tint over the panel
+    HOVERED = '#3b5061'
+    CHECKED = '#748898'
+
+    def __init__(self, lean, icon, parent=None):
+        super().__init__(parent)
+        self.lean = lean
+        self.setAttribute(Qt.WA_Hover)
+        self.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, icon)))
+
+    def frame(self):
+        w, h = self.width(), self.height()
+        run = h * shapes.RUN15
+        down, up = shapes.unit(run, h), shapes.unit(-run, -h)
+        # each corner with the side that comes into it and the side that leaves it, going round clockwise
+        corners = (((0, 0), up, (1, 0)), ((w - run, 0), (1, 0), down), ((w, h), down, (-1, 0)), ((run, h), (-1, 0), up))
+
+        def reach(d1, d2):           # how far a 6px curve reaches along each side of this turn
+            return shapes.CURVE * math.tan(math.acos(d1[0] * d2[0] + d1[1] * d2[1]) / 2)
+
+        (x, y), d1, d2 = corners[0]
+        t = reach(d1, d2)
+        p = QPainterPath(QPointF(x + d2[0] * t, y + d2[1] * t))
+        for corner, d1, d2 in corners[1:] + corners[:1]:
+            shapes.fillet(p, corner, d1, d2, reach(d1, d2))
+        p.closeSubpath()
+        if self.lean == 'left':
+            p = QTransform(-1, 0, 0, 1, w, 0).map(p)
+        return p
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        frame = self.frame()
+        base = self.CHECKED if self.isChecked() else (self.HOVERED if self.underMouse() else self.NORMAL)
+        painter.fillPath(frame, shapes.gradient(0, self.height(), base))
+        if self.isDown():
+            painter.fillPath(frame, QColor(0, 0, 0, 30))
+        elif self.underMouse() and self.isChecked():
+            painter.fillPath(frame, shapes.HOVER)
+        if not self.icon().isNull():
+            size = self.iconSize()
+            pad = self.style().subElementRect(self.style().SubElement.SE_PushButtonContents, self._option(), self)
+            cx = pad.center().x() + 0.5 if pad.isValid() else self.width() / 2
+            mode = QIcon.Normal if self.isEnabled() else QIcon.Disabled
+            pixmap = self.icon().pixmap(size, self.devicePixelRatioF(), mode)
+            painter.drawPixmap(QPointF(cx - size.width() / 2, (self.height() - size.height()) / 2), pixmap)
+
+    def _option(self):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        return option
+
 
 def _tinted(renderer, rect, color, scale=4):
     """An icon in one colour (white on the red recording state)."""
