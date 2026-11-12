@@ -3,14 +3,17 @@ Video / Documents). Each tab exposes a format selector plus the
 options that apply to that format. The dialog returns a single config
 dict; the caller is responsible for the final file picker and dispatch."""
 
+import copy
 import os
+import shutil
+import tempfile
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QGridLayout,
                                QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
-from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor
+from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor, QImage
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -835,6 +838,7 @@ class _VideoPanel(QWidget):
     button. Signals are wired to local placeholder slots; the user will
     re-implement actual behaviour later.
     """
+    changed = Signal()                                         # a choice the export is made with
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1244,6 +1248,11 @@ class _VideoPanel(QWidget):
             _select(self.tracks_ts_combo, remembered['format'])
         _select(self.format_combo, 'TS' if remembered.get('format') == 'TS DVB' else remembered.get('format', 'MOV'))
         self._refresh_format()
+        for combo in (self.format_combo, self.captions_mode_combo, self.captions_channel_combo,
+                      self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo):
+            combo.combobox.currentIndexChanged.connect(self.changed)
+        for check in (self.captions_teletext, self.tracks_translations, self.tracks_forced):
+            check.toggled.connect(self.changed)
         self.layout().addWidget(self.video_pages, 0)
 
         # Standalone "generate transparent video" button -----------------
@@ -1341,23 +1350,26 @@ class _VideoPanel(QWidget):
         self.tracks_forced.setVisible(container not in soft_subtitles.UNFORCED)
 
     def get_config(self):
+        container, captions = self.export_choices()
+        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **captions, format=container)
+        return {'category': 'video', 'format': container, 'captions': captions}
+
+    def export_choices(self):
+        """(format, the options it is written with), as chosen: nothing
+        remembered."""
         container = self._container()
         if container in soft_subtitles.CONTAINERS:
-            tracks = {
+            return container, {
                 'subtitle_codec': self.tracks_codec_combo.combobox.currentData() or 'srt',
                 'translations': self._has_translations and self.tracks_translations.isChecked(),
                 'forced': self.tracks_forced.isChecked(),
             }
-            session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **tracks, format=container)
-            return {'category': 'video', 'format': container, 'captions': tracks}
-        captions = {
+        return container, {
             'caption_mode': self.captions_mode_combo.combobox.currentData() or 'pop',
             'caption_channel': self.captions_channel_combo.combobox.currentData() or 1,
             'codec': self.captions_codec_combo.combobox.currentData() or 'dnxhr',
             'teletext': container == 'MXF' and self.captions_teletext.isChecked(),
         }
-        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **captions, format=container)
-        return {'category': 'video', 'format': container, 'captions': captions}
 
 
 class _PreviewPanel(QWidget):
@@ -1466,6 +1478,32 @@ class _PreviewPanel(QWidget):
         self._plain(text or '')
         self.file.setVisible(text is not None)
 
+    def show_still(self, image, area=None):
+        """`image`, a frame of the video as the export writes it, scaled to
+        the panel's width; under it, the subtitles' `area` of it (x, y,
+        width, height, 0..1) as large as it is or as the panel allows."""
+        margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
+        width = self.WIDTH - margins.left() - margins.right()
+        height = max(1, round(width * image.height() / max(1, image.width())))
+        painter, pixmap = self._rounded(width, height)
+        painter.drawImage(QRectF(0, 0, width, height), image)
+        painter.end()
+        self.picture.setPixmap(pixmap)
+        self.picture.setFixedSize(width, height)
+        self.picture.setVisible(True)
+        self.crop.setVisible(area is not None)
+        if area is not None:
+            source = QRectF(area[0] * image.width(), area[1] * image.height(),
+                            area[2] * image.width(), area[3] * image.height())
+            scale = min(1.0, width / max(1.0, source.width()))
+            size = (max(1, round(source.width() * scale)), max(1, round(source.height() * scale)))
+            painter, pixmap = self._rounded(*size)
+            painter.drawImage(QRectF(0, 0, *size), image, source)
+            painter.end()
+            self.crop.setPixmap(pixmap)
+            self.crop.setFixedSize(*size)
+        self.file.setVisible(False)
+
     def _plain(self, text):
         """`text` in the well as it is: not in the faded look a note left."""
         self.file.clear()
@@ -1568,6 +1606,12 @@ class ExportDialog(utils.SimpleDialog):
         self._preview_timer.setInterval(200)
         self._preview_timer.timeout.connect(self.refresh_preview)
         self.subtitles_panel.changed.connect(self._preview_timer.start)
+        self.video_panel.changed.connect(self._preview_timer.start)
+        # A video export's still: a few seconds written in the background, one at a time.
+        self._still = None                                     # the request being drawn: (number, path)
+        self._still_count = 0
+        self._still_again = False                              # asked for while one was being drawn
+        self._still_folder = None
         # An export of pictures shows one, drawn by a renderer of the dialog's
         # own, started the first time one is asked for.
         self._renderer = None
@@ -1577,6 +1621,7 @@ class ExportDialog(utils.SimpleDialog):
         self._picture_timeout.setInterval(30_000)
         self._picture_timeout.timeout.connect(self._picture_late)
         self.finished.connect(self._close_renderer)
+        self.finished.connect(self._drop_stills)
 
         start = initial_category if initial_category in self.CATEGORY_KEYS else 'subtitles'
         self._select_category(self.CATEGORY_KEYS.index(start), start)
@@ -1707,10 +1752,15 @@ class ExportDialog(utils.SimpleDialog):
 
     def refresh_preview(self):
         """The preview for the page shown: the start of the subtitles file
-        the choices write; nothing yet for audio, video and documents."""
+        the choices write, or a frame of the video export; nothing yet for
+        audio and documents."""
         self._preview_timer.stop()
         self._picture = None
         self._picture_timeout.stop()
+        self._still_again = False
+        if self._current_category() == 'video' and session.SUBTITLE.get('segments'):
+            self._preview_still()
+            return
         if self._current_category() != 'subtitles' or not session.SUBTITLE.get('segments'):
             self.preview_panel.show_nothing()
             return
@@ -1732,6 +1782,60 @@ class ExportDialog(utils.SimpleDialog):
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
         self.preview_panel.show_text(text)
+
+    def _preview_still(self):
+        """The video export's frame at the subtitle under the cursor, else
+        the next: a few seconds of the video written as the export writes
+        it, in the background; one at a time, the last asked for drawn
+        next."""
+        from subtitld.modules import video_preview
+        if not (session.VIDEO or {}).get('filepath'):
+            self.preview_panel.show_nothing()
+            return
+        if self._still is not None:
+            self._still_again = True
+            return
+        cue = self._picture_cue('', {})
+        if cue is None:
+            self.preview_panel.show_nothing()
+            return
+        container, captions = self.video_panel.export_choices()
+        captions.setdefault('speakers', (session.CONFIG.get('export_subtitles') or {}).get('speakers'))
+        if self._still_folder is None:
+            self._still_folder = tempfile.mkdtemp(prefix='subtitld-stills-')
+        self._still_count += 1
+        path = os.path.join(self._still_folder, f'{self._still_count}.png')
+        self._still = (self._still_count, path)
+        self.preview_panel.show_note(_('export_dialog.preview_drawing'))
+        video_preview.still_async(container, captions, copy.deepcopy(session.SUBTITLE.get('segments')), cue,
+                                  float(session.SUBTITLE.get('position') or 0), path, self._still_done,
+                                  language=session.SUBTITLE.get('language') or '')
+
+    def _still_done(self, path, area, error):
+        if self._still is None or self._still[1] != path:
+            return                                             # the dialog closed, or let it go
+        self._still = None
+        if self._still_again:
+            self.refresh_preview()
+            return
+        if self._current_category() != 'video':
+            return
+        image = QImage(path) if not error else QImage()
+        if image.isNull():
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+        else:
+            self.preview_panel.show_still(image, area)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    def _drop_stills(self, *_args):
+        """A still still being drawn is let go; its folder goes once it is."""
+        self._still = None
+        if self._still_folder is not None:
+            shutil.rmtree(self._still_folder, ignore_errors=True)
+            self._still_folder = None
 
     def _picture_cue(self, fmt, options):
         """The subtitle under the timeline's cursor, else the next after it,
