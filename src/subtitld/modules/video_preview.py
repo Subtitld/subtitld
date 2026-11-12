@@ -9,7 +9,6 @@ Run it off the main thread: it encodes a few seconds of video, and an MXF
 re-encodes them again."""
 
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -63,10 +62,6 @@ def still(container, options, segments, cue, at, output, video=None, info=None, 
     when = moment(cue, at)
     start = max(0.0, min(when, float(cue['start'])) - LEAD)
     length = when - start + TAIL
-    if container == 'TS':
-        # A teletext decoder shows a page once the next one's header ends
-        # it, at the subtitle's end: the clip runs past it.
-        length = max(length, float(cue['end']) - start + TAIL)
     folder = tempfile.mkdtemp(prefix='subtitld-still-')
     try:
         source = os.path.join(folder, 'source.mp4')
@@ -77,7 +72,7 @@ def still(container, options, segments, cue, at, output, video=None, info=None, 
         clip = os.path.join(folder, 'clip.' + extension)
         bounce.write_captioned_video(source, clip, container, options, shifted(segments, start, length),
                                      dict(info, duration=length), language)
-        _draw(clip, container, when - start, output, folder, float(cue['start']) - start)
+        _draw(clip, container, when - start, output, folder)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return output
@@ -88,12 +83,9 @@ def _track_extension(container):
     return soft_subtitles.CONTAINERS[container]['extension']
 
 
-def _draw(clip, container, when, output, folder, cue_start=0.0):
-    """The frame of `clip` at `when` seconds, its subtitles drawn on it; a
-    teletext page, at the first moment after `cue_start` it is shown."""
+def _draw(clip, container, when, output, folder):
+    """The frame of `clip` at `when` seconds, its subtitles drawn on it."""
     from subtitld.modules import embedded_captions
-    if container == 'TS':
-        when = _page_shown(clip, cue_start, folder, when)
     at = ['-ss', f'{when:.3f}', '-frames:v', '1', '-update', '1', output]
     if container in embedded_captions.CONTAINERS:
         # The captions a decoder reads, as the text it shows, drawn by libass.
@@ -115,24 +107,6 @@ def _draw(clip, container, when, output, folder, cue_start=0.0):
         _ffmpeg(['-i', clip, '-vf', f'subtitles={_escaped(clip)}:si=0'] + at)
     if not os.path.isfile(output) or not os.path.getsize(output):
         raise StillError('FFmpeg drew no frame')
-
-
-def _page_shown(clip, after, folder, default):
-    """When the teletext decoder first shows a page with text on it, from
-    `after` seconds into `clip` on; `default` if it shows none."""
-    pages = os.path.join(folder, 'pages.ass')
-    _ffmpeg(['-txt_page', '888', '-txt_format', 'ass', '-i', clip, '-map', '0:s:0', pages])
-    with open(pages, encoding='utf-8', errors='replace') as handle:
-        for line in handle:
-            if not line.startswith('Dialogue:'):
-                continue
-            fields = line.split(',', 9)
-            text = re.sub(r'{[^}]*}|\\[Nnh]', '', fields[9]).strip()
-            hours, minutes, seconds = fields[1].split(':')
-            shown = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-            if text and shown >= after - 0.01:
-                return shown + 0.05
-    return default
 
 
 def _escaped(path):
