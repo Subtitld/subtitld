@@ -711,6 +711,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     collab_state.opening(None)
     # Only USF and USFX files remember a subtitld.cc origin; any other file starts without one.
     session.SUBTITLE.pop('origin', None)
+    # So do what its media speaks: only they say it, and the file opened
+    # before must not say it for this one.
+    session.SUBTITLE.pop('source_language', None)
     # What a file says about itself belongs to that file: the one opened
     # before must not lend its title to the next.
     session.SUBTITLE.pop('metadata', None)
@@ -1161,6 +1164,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            if reader.source_language:
+                session.SUBTITLE['source_language'] = reader.source_language
             if reader.metadata:
                 session.SUBTITLE['metadata'] = reader.metadata
             # Speaker color/dubbing metadata is cheap — set synchronously.
@@ -1256,6 +1261,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = reader.language
             if reader.origin:
                 session.SUBTITLE['origin'] = reader.origin
+            if reader.source_language:
+                session.SUBTITLE['source_language'] = reader.source_language
             if reader.metadata:
                 session.SUBTITLE['metadata'] = reader.metadata
 
@@ -2304,6 +2311,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 embed_audio_clips=embed_audio_clips,
                 origin=SUBTITLE.get('origin'),
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
+                source_language=SUBTITLE.get('source_language'),
             ))
 
         elif subtitle_format in ['USFX']:
@@ -2422,6 +2430,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 embed_audio_clips=False,
                 origin=SUBTITLE.get('origin'),
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
+                source_language=SUBTITLE.get('source_language'),
             )
 
             def _mime_for(path_in_zip):
