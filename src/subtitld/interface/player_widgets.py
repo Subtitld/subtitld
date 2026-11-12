@@ -78,10 +78,10 @@ class ActionStrip(QWidget):
     keys: (object name, icon file or None, stretch side 'left'/'right'/None).
     picture: optional callable(painter, rect) drawing the strip's icons in
     one go, for icons that cannot line up on their own.
-    nested: True makes the first and last keys sub-keys of the ones between,
-    as on the transport: each hangs from the top edge, flush with its end of
-    the strip, a step darker, its inner side a 75° slant centred on the old
-    split; the keys between take the rest.
+    nested: True makes the first and last keys sub-keys of the ones between:
+    each hangs from the top edge, flush with its end of the strip, a step
+    darker, its inner side a 75° slant leaning out as it goes down, centred
+    on the old split; the keys between take the rest.
     """
 
     KEY_W = 32
@@ -115,9 +115,19 @@ class ActionStrip(QWidget):
         run = nh * shapes.RUN15
         shape = self.shape()
         k = self.KEY_W
-        # flush with the strip's ends: the hanging notch runs on past them and is cut there
-        self.subzones = [shapes.hanging_trap(-60, 0, 60 + k + run / 2, nh).intersected(shape),
-                         shapes.hanging_trap(w - k - run / 2, 0, k + run / 2 + 60, nh).intersected(shape)]
+        # flush with the strip's ends (the notch runs on past them and is cut there); the inner side leans OUT going
+        # down, centred on the old split: a 6px curve inside at the bottom, and at the top the side curves into the
+        # top edge, rounding the main key's corner there
+        up = shapes.unit(-run, -nh)
+        turn = math.acos(-up[0])                              # between the bottom edge and the slant: 105°
+        t = shapes.CURVE * math.tan(turn / 2)
+        left = QPainterPath(QPointF(-60, 0))
+        left.lineTo(-60, nh)
+        shapes.fillet(left, (k + run / 2, nh), (1, 0), up, t)
+        shapes.fillet(left, (k - run / 2, 0), up, (1, 0), t)
+        left.closeSubpath()
+        right = QTransform(-1, 0, 0, 1, w, 0).map(left)
+        self.subzones = [left.intersected(shape), right.intersected(shape)]
         self.sub_h = nh
         subs = self.subzones[0].united(self.subzones[1])
         inner = self.keys[1:-1]
