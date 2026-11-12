@@ -21,6 +21,9 @@ from subtitld.modules import session
 
 ICON_H = 20                           # the strips' subtitle icons are 20px tall
 CONTACT = QColor(0, 0, 0, 64)         # the player pieces' contact line: softer than the 45% of other buttons
+PIECE = '#2f404d'                     # the player pieces' raised colour (strips, gap, ADD, speed and repeat)
+PIECE_NEST = '#273540'                # their nested keys, a step darker
+WELL = ('#23303a', '#354856')         # their sunken fields (ADD's and the gap's duration), top to bottom
 EDGE = QColor('#3a4e5f')              # the player panel's 1px top edge line (stylesheet: #playercontrols_widget_top_line)
 BAND = QColor('#161e24')              # the window behind the clear 2px band above the player panel
 
@@ -151,7 +154,7 @@ class ActionStrip(QWidget):
             painter.fillPath(shape, QColor('#25323d'))
             painter.setOpacity(0.35)
         else:
-            painter.fillPath(shape, shapes.gradient(0, rect.height(), '#3e5363'))
+            painter.fillPath(shape, shapes.gradient(0, rect.height(), PIECE))
         line = shape.subtracted(shape.translated(0, -1))
         subs = (self.keys[0], self.keys[-1]) if self.nested else ()
         for key in self.keys:
@@ -171,7 +174,7 @@ class ActionStrip(QWidget):
                 painter.fillPath(zone, shapes.gradient(top, self.height(), shapes.SUNK, 'sunken'))
                 painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, top, self.width(), 1))), QColor(0, 0, 0, 46))
             else:
-                painter.fillPath(zone, shapes.gradient(top, self.height(), shapes.NEST))
+                painter.fillPath(zone, shapes.gradient(top, self.height(), PIECE_NEST))
                 if key.state() == 'hover':
                     painter.fillPath(zone, QColor(255, 255, 255, 14))
         painter.save()
@@ -325,7 +328,7 @@ class GapControl(QWidget):
             painter.fillPath(shape, QColor('#25323d'))
             painter.setOpacity(0.35)
         else:
-            painter.fillPath(shape, shapes.gradient(0, rect.height(), '#3e5363'))
+            painter.fillPath(shape, shapes.gradient(0, rect.height(), PIECE))
         line = shape.subtracted(shape.translated(0, -1))
         for key in (self.add_key, self.remove_key):
             zone = shape.intersected(shapes.rect_path(QRectF(key.geometry())))
@@ -349,8 +352,8 @@ class GapControl(QWidget):
         painter.restore()
         # the field, sunken, as ADD's
         g = QLinearGradient(0, self.field_rect.top(), 0, self.field_rect.bottom())
-        g.setColorAt(0, QColor('#324350'))
-        g.setColorAt(1, QColor('#445b6c'))
+        g.setColorAt(0, QColor(WELL[0]))
+        g.setColorAt(1, QColor(WELL[1]))
         painter.fillPath(field, g)
         if self.isEnabled():
             painter.fillPath(line, CONTACT)
@@ -594,7 +597,7 @@ class AddSubtitleButton(QAbstractButton):
         elif self.isDown():
             shapes.fill_sunk(painter, shape, rect)
         else:
-            painter.fillPath(shape, shapes.gradient(0, self.H, '#3e5363'))
+            painter.fillPath(shape, shapes.gradient(0, self.H, PIECE))
             over_child = any(k.underMouse() for k in self.switches) or self.spinbox.underMouse()
             if self.underMouse() and not over_child:
                 painter.fillPath(shape, shapes.HOVER)
@@ -605,7 +608,7 @@ class AddSubtitleButton(QAbstractButton):
         painter.drawText(QRectF(12 + self.ICON + 8, 0, self.notch_x - 40, self.H), Qt.AlignVCenter | Qt.AlignLeft,
                          self.text().strip().upper())
         # the switches: one raised group, then only the zones that differ are painted over
-        painter.fillPath(notch, shapes.gradient(0, self.NOTCH_H, shapes.NEST))
+        painter.fillPath(notch, shapes.gradient(0, self.NOTCH_H, PIECE_NEST))
         painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.NOTCH_H - 1, self.width(), 1))),
                          QColor(0, 0, 0, 30))
         iy = (self.NOTCH_H - self.ICON) / 2 + 1
@@ -634,8 +637,8 @@ class AddSubtitleButton(QAbstractButton):
             painter.restore()
         # the duration field, sunken, against the notch's slant
         field = QLinearGradient(0, self.field_box.top(), 0, self.field_box.bottom())
-        field.setColorAt(0, QColor('#324350'))
-        field.setColorAt(1, QColor('#445b6c'))
+        field.setColorAt(0, QColor(WELL[0]))
+        field.setColorAt(1, QColor(WELL[1]))
         painter.fillPath(self.field_path(), field)
         if self.isEnabled() and not self.isDown():
             painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
@@ -668,7 +671,7 @@ class SlantFrameButton(QPushButton):
 
     H = 42
     SLANT_H = 46                      # the transport's slant below the frame's top (2px under the transport's)
-    NORMAL = '#2f404d'                # a light tint over the panel
+    NORMAL = PIECE
     HOVERED = '#334654'
     CHECKED = '#748898'
 

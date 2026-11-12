@@ -2105,13 +2105,13 @@ QMenu#subtitle_formatting_menu::separator {
     border-bottom: 1px solid rgba(0, 0, 0, 64);
     border-radius: 0;
     border-bottom-right-radius: 3px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3b5060, stop:1 #23303a);
     color: #cddbe7;
     qproperty-icon: url(graphics:remove_selected_subtitle_icon.svg);
 }
 
 #playercontrols_widget_top_line #remove_selected_subtitle_button:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #576e80, stop:1 #40505c);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #495c6b, stop:1 #333f48);
 }
 
 #playercontrols_widget_top_line #remove_selected_subtitle_button:pressed {
