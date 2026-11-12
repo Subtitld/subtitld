@@ -164,11 +164,12 @@ session.VIDEO = {'framerate': 30000 / 1001, 'duration': 10.0, 'filepath': 'video
 from subtitld.interface.export_dialog import _VideoPanel
 from subtitld.interface.translation import _
 panel = _VideoPanel()
-combo = panel.captions_format_combo.combobox
-check('offered beside QuickTime and MXF', [combo.itemData(index) for index in range(combo.count())],
-      ['MOV', 'MXF', 'MP4 A53', 'TS A53'])
+combo = panel.format_combo.combobox
+check('offered beside QuickTime and MXF, before the subtitle tracks',
+      [combo.itemData(index) for index in range(combo.count())],
+      ['MOV', 'MXF', 'MP4 A53', 'TS A53', 'MP4', 'MOV TEXT', 'MKV', 'TS', 'TS DVB'])
 combo.setCurrentIndex(2)
-panel._refresh_captions()
+panel._refresh_format()
 config = panel.get_config()
 check('the picture copied: no codec, no teletext, a note of its own',
       (config['format'], panel.captions_codec_combo.isHidden(), panel.captions_teletext.isHidden(),

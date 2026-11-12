@@ -131,8 +131,8 @@ from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
 check('QuickTime first, with no picture to choose: it keeps the one it has',
       (panel.get_config()['format'], panel.captions_codec_combo.isHidden()), ('MOV', True))
-panel.captions_format_combo.combobox.setCurrentIndex(1)
-panel._refresh_captions()
+panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('MXF'))
+panel._refresh_format()
 config = panel.get_config()
 check('MXF: a picture to choose, and what it writes',
       (config['format'], panel.captions_codec_combo.isHidden(), config['captions']),

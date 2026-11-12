@@ -159,8 +159,8 @@ from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
 check('QuickTime: no teletext to choose', (panel.captions_teletext.isHidden(), panel.get_config()['captions']['teletext']),
       (True, False))
-panel.captions_format_combo.combobox.setCurrentIndex(1)
-panel._refresh_captions()
+panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('MXF'))
+panel._refresh_format()
 panel.captions_teletext.setChecked(True)
 check('MXF: teletext beside the captions, asked for', (panel.captions_teletext.isHidden(),
                                                        panel.get_config()['captions']['teletext']), (False, True))

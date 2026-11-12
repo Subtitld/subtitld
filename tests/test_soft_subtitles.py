@@ -178,12 +178,14 @@ session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
 session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a', 'translations': {'fr-fr': 'b'}}], 'language': 'en-us'}
 from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
-panel.video_tabwidget.setCurrentWidget(panel.tracks_panel)
+panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('MP4'))
+panel._refresh_format()
 config = panel.get_config()
 check('MP4 first, with no codec to choose',
       (config['format'], panel.tracks_codec_combo.isHidden(), config['captions']),
       ('MP4', True, {'subtitle_codec': 'srt', 'translations': False, 'forced': False}))
-panel.tracks_format_combo.combobox.setCurrentIndex(2)
+panel.format_combo.combobox.setCurrentIndex(panel.format_combo.combobox.findData('MKV'))
+panel._refresh_format()
 panel.tracks_codec_combo.combobox.setCurrentIndex(1)
 panel._refresh_tracks()
 panel.tracks_translations.setChecked(True)
@@ -192,7 +194,7 @@ check('Matroska: SRT or ASS, and a track for each translation',
       (config['format'], panel.tracks_codec_combo.isHidden(), config['captions']),
       ('MKV', False, {'subtitle_codec': 'ass', 'translations': True, 'forced': False}))
 again = _VideoPanel()
-check('remembered, on its own tab', (again.video_tabwidget.currentWidget() is again.tracks_panel,
+check('remembered, on its own tab', (again.video_pages.currentWidget() is again.tracks_panel,
                                      again.get_config()['format'], again.get_config()['captions']['subtitle_codec']),
       (True, 'MKV', 'ass'))
 check('a file name for each', [session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS[key]['extensions'][0]

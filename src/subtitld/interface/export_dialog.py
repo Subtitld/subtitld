@@ -7,7 +7,7 @@ import os
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
-                               QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
+                               QLabel, QSizePolicy, QDialog, QGridLayout,
                                QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
 from PySide6.QtGui import QFontDatabase, QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor
@@ -840,10 +840,23 @@ class _VideoPanel(QWidget):
         super().__init__(parent)
 
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(10, 10, 10, 10)
-        self.layout().setSpacing(20)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
 
-        self.video_tabwidget = QTabWidget()
+        # The file's format, the page's header: a caption track or the
+        # captions inside the file, or a subtitle track of its own. The
+        # options below are the ones that format takes.
+        remembered = session.CONFIG.get('export_video') or {}
+        self.format_combo = utils.HeaderComboBox()
+        self.format_combo.setLabel(_('export_dialog.format'))
+        for key, label in (('MOV', 'video_mov'), ('MXF', 'video_mxf'), ('MP4 A53', 'video_mp4_a53'),
+                           ('TS A53', 'video_ts_a53'), ('MP4', 'video_mp4_track'), ('MOV TEXT', 'video_mov_track'),
+                           ('MKV', 'video_mkv_track'), ('TS', 'video_ts_teletext'), ('TS DVB', 'video_ts_dvb')):
+            self.format_combo.combobox.addItem(_(f'export_dialog.{label}'), key)
+        self.format_combo.activated.connect(self._refresh_format)
+        self.layout().addWidget(self.format_combo)
+
+        self.video_pages = QStackedWidget()
 
         # FFmpeg sub-tab ---------------------------------------------------
         self.ffmpeg_panel = QWidget()
@@ -1134,7 +1147,8 @@ class _VideoPanel(QWidget):
 
         self.ffmpeg_panel.layout().addWidget(self.ffmpeg_preview_panel, 1, 3, 1, 1)
 
-        self.video_tabwidget.addTab(self.ffmpeg_panel, 'FFMPEG')
+        # The burned-in subtitles' form waits for its export: no format
+        # shows it yet.
 
         # Closed captions sub-tab ------------------------------------------
         # The captions go inside the file, as a broadcast master carries
@@ -1142,18 +1156,8 @@ class _VideoPanel(QWidget):
         # ancillary data of an MXF (embedded_captions).
         self.captions_panel = QWidget()
         self.captions_panel.setLayout(QVBoxLayout())
-        self.captions_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.captions_panel.layout().setContentsMargins(0, 0, 0, 0)
         self.captions_panel.layout().setSpacing(10)
-        remembered = session.CONFIG.get('export_video') or {}
-
-        self.captions_format_combo = utils.LabeledComboBox()
-        self.captions_format_combo.setLabel(_('export_dialog.format'))
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mov'), 'MOV')
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mxf'), 'MXF')
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mp4_a53'), 'MP4 A53')
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_ts_a53'), 'TS A53')
-        self.captions_format_combo.activated.connect(self._refresh_captions)
-        self.captions_panel.layout().addWidget(self.captions_format_combo)
 
         row = QWidget()
         line = QHBoxLayout(row)
@@ -1185,13 +1189,11 @@ class _VideoPanel(QWidget):
         self.captions_panel.layout().addWidget(self.captions_note)
         self.captions_panel.layout().addStretch()
 
-        _select(self.captions_format_combo, remembered.get('format', 'MOV'))
         _select(self.captions_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.captions_channel_combo, remembered.get('caption_channel', 1))
         _select(self.captions_codec_combo, remembered.get('codec', 'dnxhr'))
         self.captions_teletext.setChecked(bool(remembered.get('teletext')))
-        self._refresh_captions()
-        self.video_tabwidget.addTab(self.captions_panel, _('export_dialog.category_captions'))
+        self.video_pages.addWidget(self.captions_panel)
 
         # Subtitle track sub-tab -------------------------------------------
         # The subtitles as a track of their own, which a player lists and
@@ -1200,28 +1202,15 @@ class _VideoPanel(QWidget):
         # teletext, dvbsub).
         self.tracks_panel = QWidget()
         self.tracks_panel.setLayout(QVBoxLayout())
-        self.tracks_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.tracks_panel.layout().setContentsMargins(0, 0, 0, 0)
         self.tracks_panel.layout().setSpacing(10)
 
-        row = QWidget()
-        line = QHBoxLayout(row)
-        line.setContentsMargins(0, 0, 0, 0)
-        self.tracks_format_combo = utils.LabeledComboBox()
-        self.tracks_format_combo.setLabel(_('export_dialog.format'))
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mp4_track'), 'MP4')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mov_track'), 'MOV TEXT')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mkv_track'), 'MKV')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_ts_teletext'), 'TS')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_ts_dvb'), 'TS DVB')
-        self.tracks_format_combo.activated.connect(self._refresh_tracks)
-        line.addWidget(self.tracks_format_combo, 2)
         self.tracks_codec_combo = utils.LabeledComboBox()
         self.tracks_codec_combo.setLabel(_('export_dialog.subtitle_codec'))
         self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_srt'), 'srt')
         self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_ass'), 'ass')
         self.tracks_codec_combo.activated.connect(self._refresh_tracks)
-        line.addWidget(self.tracks_codec_combo, 1)
-        self.tracks_panel.layout().addWidget(row)
+        self.tracks_panel.layout().addWidget(self.tracks_codec_combo)
 
         self.tracks_translations = QCheckBox(_('export_dialog.subtitle_tracks_translations'))
         self._has_translations = bool(export_options.translation_languages(session.SUBTITLE.get('segments')))
@@ -1236,17 +1225,14 @@ class _VideoPanel(QWidget):
         self.tracks_panel.layout().addWidget(self.tracks_note)
         self.tracks_panel.layout().addStretch()
 
-        soft = remembered.get('format') in soft_subtitles.CONTAINERS
-        _select(self.tracks_format_combo, remembered.get('format') if soft else 'MP4')
         _select(self.tracks_codec_combo, remembered.get('subtitle_codec', 'srt'))
         self.tracks_translations.setChecked(bool(remembered.get('translations')))
         self.tracks_forced.setChecked(bool(remembered.get('forced')))
-        self._refresh_tracks()
-        self.video_tabwidget.addTab(self.tracks_panel, _('export_dialog.category_subtitle_track'))
-        if soft:
-            self.video_tabwidget.setCurrentWidget(self.tracks_panel)
+        self.video_pages.addWidget(self.tracks_panel)
 
-        self.layout().addWidget(self.video_tabwidget, 0)
+        _select(self.format_combo, remembered.get('format', 'MOV'))
+        self._refresh_format()
+        self.layout().addWidget(self.video_pages, 0)
 
         # Standalone "generate transparent video" button -----------------
         self.generate_transparent_video_button = QPushButton()
@@ -1305,12 +1291,25 @@ class _VideoPanel(QWidget):
         self._update_preview()
         return super().showEvent(event)
 
+    def _container(self):
+        return self.format_combo.combobox.currentData() or 'MOV'
+
+    def _refresh_format(self, *_args):
+        """The options of the format chosen: a subtitle track's, or the
+        captions'."""
+        soft = self._container() in soft_subtitles.CONTAINERS
+        self.video_pages.setCurrentWidget(self.tracks_panel if soft else self.captions_panel)
+        if soft:
+            self._refresh_tracks()
+        else:
+            self._refresh_captions()
+
     def _refresh_captions(self):
         """What the chosen container can hold: a QuickTime caption track
         carries CEA-608 and keeps the picture as it is; an MXF's ancillary
         data carries CEA-708 beside it, but takes a picture of its own; the
         video's own frames carry both, the picture copied."""
-        container = self.captions_format_combo.combobox.currentData() or 'MOV'
+        container = self._container()
         self.captions_codec_combo.setVisible(container == 'MXF')
         self.captions_teletext.setVisible(container == 'MXF')
         note = 'mxf' if container == 'MXF' else 'a53' if container.endswith('A53') else 'mov'
@@ -1321,7 +1320,7 @@ class _VideoPanel(QWidget):
         timed text keeps a run's formatting alone; Matroska takes SRT,
         which every player reads, or ASS, which keeps the look; a transport
         stream, teletext pages or DVB subtitles, pictures."""
-        container = self.tracks_format_combo.combobox.currentData() or 'MP4'
+        container = self._container()
         self.tracks_codec_combo.setVisible(container == 'MKV')
         # Teletext and DVB subtitles have no forced pages: a viewer chooses
         # one or none.
@@ -1337,8 +1336,8 @@ class _VideoPanel(QWidget):
         self.tracks_note.setText(_(key))
 
     def get_config(self):
-        if self.video_tabwidget.currentWidget() is self.tracks_panel:
-            container = self.tracks_format_combo.combobox.currentData() or 'MP4'
+        container = self._container()
+        if container in soft_subtitles.CONTAINERS:
             tracks = {
                 'subtitle_codec': self.tracks_codec_combo.combobox.currentData() or 'srt',
                 'translations': self._has_translations and self.tracks_translations.isChecked(),
@@ -1346,7 +1345,6 @@ class _VideoPanel(QWidget):
             }
             session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **tracks, format=container)
             return {'category': 'video', 'format': container, 'captions': tracks}
-        container = self.captions_format_combo.combobox.currentData() or 'MOV'
         captions = {
             'caption_mode': self.captions_mode_combo.combobox.currentData() or 'pop',
             'caption_channel': self.captions_channel_combo.combobox.currentData() or 1,
