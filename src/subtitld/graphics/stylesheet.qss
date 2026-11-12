@@ -1897,7 +1897,7 @@ QMenu#subtitle_formatting_menu::separator {
 
 /* behind the transport, under its panel's foot */
 #playercontrols_widget_top_line {
-    background: #304251;
+    background: #283844;
 }
 
 #playercontrols_widget_left_top_line {
@@ -2093,7 +2093,7 @@ QMenu#subtitle_formatting_menu::separator {
 #playercontrols_widget_top_line #remove_selected_subtitle_button {
     padding: 0 12 0 10;
     border: 0;
-    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-bottom: 1px solid rgba(0, 0, 0, 64);
     border-radius: 0;
     border-bottom-right-radius: 3px;
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);

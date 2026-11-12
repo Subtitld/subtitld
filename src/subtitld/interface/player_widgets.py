@@ -20,6 +20,7 @@ from subtitld.interface import shapes
 from subtitld.modules import session
 
 ICON_H = 20                           # the strips' subtitle icons are 20px tall
+CONTACT = QColor(0, 0, 0, 64)         # the player pieces' contact line: softer than the 45% of other buttons
 
 
 def graphic(name):
@@ -132,7 +133,7 @@ class ActionStrip(QWidget):
             self._paint_icons(painter)
         painter.restore()
         if self.isEnabled():
-            painter.fillPath(line, shapes.CONTACT)
+            painter.fillPath(line, CONTACT)
 
     def _paint_icons(self, painter):
         n = len(self.keys)
@@ -303,7 +304,7 @@ class GapControl(QWidget):
         painter.fillPath(notch, shapes.gradient(0, self.notch_h, shapes.FIELD, 'sunken'))
         painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 90))
         if self.isEnabled():
-            painter.fillPath(line, shapes.CONTACT)
+            painter.fillPath(line, CONTACT)
 
     def sizeHint(self):
         return self.size()
@@ -426,7 +427,7 @@ class BalanceSlider(QAbstractSlider):
         painter.setBrush(QColor(0, 0, 0, 70))
         painter.drawPie(QRectF(mid - 2, -2, 4, 4), 180 * 16, 180 * 16)
         if self.isEnabled():
-            painter.fillPath(shape.subtracted(shape.translated(0, -1)), shapes.CONTACT)
+            painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
 
     def sizeHint(self):
         return self.size()
@@ -565,7 +566,7 @@ class AddSubtitleButton(QAbstractButton):
                     painter.fillRect(ext, QColor('#b8cee0'))
             painter.restore()
         if self.isEnabled() and not self.isDown():
-            painter.fillPath(shape.subtracted(shape.translated(0, -1)), shapes.CONTACT)
+            painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
 
     def sizeHint(self):
         return QSize(self.width(), self.H)
@@ -595,8 +596,8 @@ class SlantFrameButton(QPushButton):
 
     H = 42
     SLANT_H = 48                      # the transport panel's height: the inner slant is on its slant from the top
-    NORMAL = '#374a5a'                # the old frame's 50% tint over the panel
-    HOVERED = '#3b5061'
+    NORMAL = '#2f404d'                # a light tint over the panel
+    HOVERED = '#334654'
     CHECKED = '#748898'
 
     def __init__(self, lean, icon, parent=None):
@@ -624,7 +625,8 @@ class SlantFrameButton(QPushButton):
         painter.setRenderHint(QPainter.Antialiasing)
         frame = self.frame()
         base = self.CHECKED if self.isChecked() else (self.HOVERED if self.underMouse() else self.NORMAL)
-        shapes.fill_raised(painter, frame, QRectF(0, 0, self.width(), self.H), base)
+        shapes.fill_raised(painter, frame, QRectF(0, 0, self.width(), self.H), base, contact=False)
+        painter.fillPath(frame.subtracted(frame.translated(0, -1)), CONTACT)
         if self.isDown():
             painter.fillPath(frame, QColor(0, 0, 0, 30))
         elif self.underMouse() and self.isChecked():
