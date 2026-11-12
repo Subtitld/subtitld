@@ -6,15 +6,16 @@ dict; the caller is responsible for the final file picker and dispatch."""
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
-                               QGroupBox, QSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontDatabase
+                               QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit, QProgressBar, QPlainTextEdit)
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QFontDatabase, QTextCharFormat
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
 from subtitld.modules import export_options
+from subtitld.modules import file_io
 from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import session
@@ -34,6 +35,9 @@ class _SubtitlesPanel(QWidget):
     of timed text share what text is written and how (export_options); SRT,
     SUB and USF have options of their own. The choices are remembered
     (CONFIG['export_subtitles']), except the shift, which is for one export."""
+
+    # The format or one of its options changed: what the export writes did.
+    changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -349,6 +353,14 @@ class _SubtitlesPanel(QWidget):
         # Drop-frame or not is only a choice at the rates that have it.
         self.fps_combo.combobox.currentIndexChanged.connect(self._refresh_options)
         self._refresh_options()
+        # Any choice made changes the file: the combos (the format's among
+        # them), the shift, the boxes.
+        for combo in self.findChildren(QComboBox):
+            combo.currentIndexChanged.connect(self.changed)
+        for spin in self.findChildren(QSpinBox) + self.findChildren(QDoubleSpinBox):
+            spin.valueChanged.connect(self.changed)
+        for box in self.findChildren(QCheckBox):
+            box.toggled.connect(self.changed)
 
     def _speaker_choices(self, fmt):
         """The speaker choices for `fmt`: leave out, before the text and the
@@ -450,6 +462,15 @@ class _SubtitlesPanel(QWidget):
         self.check_label.setVisible(True)
 
     def get_config(self):
+        fmt, choices, options = self.export_choices()
+        # The speaker choice as last made: voice tags stay wanted for WebVTT
+        # even when another format wrote names before the text.
+        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted)
+        return {'category': 'subtitles', 'format': fmt, 'options': options}
+
+    def export_choices(self):
+        """The format, every choice made and the options the export takes
+        of them, remembering nothing: the preview asks for them too."""
         fmt = self.format_combo.currentText()
         text, language = self.text_combo.combobox.currentData() or ('original', '')
         choices = {
@@ -479,9 +500,6 @@ class _SubtitlesPanel(QWidget):
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
-        # The speaker choice as last made: voice tags stay wanted for WebVTT
-        # even when another format wrote names before the text.
-        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted)
 
         # Every export sets its options, so none is left over from the last.
         options = {}
@@ -518,7 +536,7 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
-        return {'category': 'subtitles', 'format': fmt, 'options': options}
+        return fmt, choices, options
 
 
 def _has_drop_frame(rate):
@@ -1186,13 +1204,10 @@ class _VideoPanel(QWidget):
 
 
 class _PreviewPanel(QWidget):
-    """The export's preview, beside every page: the file as it will be
-    written. Drawn only for now: nothing feeds it yet."""
+    """The export's preview, beside every page: the start of the file as it
+    will be written, or a faded note where there is no text to show."""
 
     WIDTH = 300
-    SAMPLE_FILE = ('1\n00:00:01,200 --> 00:00:03,400\nHello there.\n\n'
-                   '2\n00:00:04,000 --> 00:00:06,150\nHow are you?\n\n'
-                   '3\n00:00:06,900 --> 00:00:09,000\nFine, thanks.\n')
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1209,7 +1224,7 @@ class _PreviewPanel(QWidget):
         label = QLabel(_('export_dialog.preview'))
         label.setObjectName('export_dialog_preview_label')
         file_page.layout().addWidget(label)
-        self.file = QPlainTextEdit(self.SAMPLE_FILE)
+        self.file = QPlainTextEdit()
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
         file_page.layout().addWidget(self.file)
@@ -1221,6 +1236,22 @@ class _PreviewPanel(QWidget):
         shadow.setAttribute(Qt.WA_StyledBackground)
         shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.layout().addWidget(shadow, 0, 0)
+
+    def show_text(self, text):
+        self.file.setPlainText(text)
+
+    def show_note(self, note):
+        """`note` in the well, faded: no file to show."""
+        self.file.clear()
+        faded = QTextCharFormat()
+        color = self.file.palette().text().color()
+        color.setAlpha(110)
+        faded.setForeground(color)
+        faded.setFontItalic(True)
+        self.file.textCursor().insertText(note, faded)
+
+    def show_nothing(self):
+        self.file.clear()
 
 
 class ExportDialog(utils.SimpleDialog):
@@ -1297,6 +1328,13 @@ class ExportDialog(utils.SimpleDialog):
 
         for index, key in enumerate(self.CATEGORY_KEYS):
             self._category_buttons[key].clicked.connect(lambda _checked=False, i=index, k=key: self._select_category(i, k))
+
+        # The preview follows the subtitles' choices a moment after the last.
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(200)
+        self._preview_timer.timeout.connect(self.refresh_preview)
+        self.subtitles_panel.changed.connect(self._preview_timer.start)
 
         start = initial_category if initial_category in self.CATEGORY_KEYS else 'subtitles'
         self._select_category(self.CATEGORY_KEYS.index(start), start)
@@ -1423,6 +1461,32 @@ class ExportDialog(utils.SimpleDialog):
         self._pages.setCurrentIndex(index)
         self._category_buttons[key].setChecked(True)
         self.title_line.label.setText(f'<b>{_("export_dialog.title").upper()}</b>  <span style="opacity:0.6">{_(f"export_dialog.category_{key}")}</span>')
+        self.refresh_preview()
+
+    def refresh_preview(self):
+        """The preview for the page shown: the start of the subtitles file
+        the choices write; nothing yet for audio, video and documents."""
+        self._preview_timer.stop()
+        if self._current_category() != 'subtitles' or not session.SUBTITLE.get('segments'):
+            self.preview_panel.show_nothing()
+            return
+        try:
+            fmt, _choices, options = self.subtitles_panel.export_choices()
+            if fmt in ('DFXP', 'TTML') and options.get('profile') in ttml.IMAGE_PROFILES:
+                # Drawing every picture is for the export, not a preview.
+                self.preview_panel.show_note(_('export_dialog.preview_pictures'))
+                return
+            text = file_io.preview_file(fmt, options, session.CONFIG.get('selected_language') or 'en')
+        except file_io.PreviewBusy:
+            self._preview_timer.start()                        # a save holds the files: again in a moment
+            return
+        except file_io.PreviewBinary:
+            self.preview_panel.show_note(_('export_dialog.preview_binary'))
+            return
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+            return
+        self.preview_panel.show_text(text)
 
     def _current_category(self):
         for index, key in enumerate(self.CATEGORY_KEYS):
