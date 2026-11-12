@@ -472,6 +472,9 @@ class _EdgeTTSSpeakerPanel(QWidget):
         if speeches_to_generate:
             session.set_unsaved(True)
             EdgeTTSEngine.generate_speeches(speeches_to_generate)
+            timeline_widget = getattr(widget.window(), 'timeline_widget', None)
+            if timeline_widget is not None:
+                timeline_widget.update()
 
     def update(widget):
         speaker_name = widget.property('speaker')
@@ -1153,6 +1156,9 @@ class _GenericTTSSpeakerPanel(QWidget):
             speeches_to_generate.append(entry)
         if speeches_to_generate:
             widget.provider.generate_speeches(speeches_to_generate)
+            timeline_widget = getattr(widget.window(), 'timeline_widget', None)
+            if timeline_widget is not None:
+                timeline_widget.update()
 
     def update(widget):
         speaker_name = widget.property('speaker')
