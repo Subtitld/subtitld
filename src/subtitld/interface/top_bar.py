@@ -5,7 +5,7 @@ import datetime
 import math
 
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget, QSizePolicy, QLabel, QSpacerItem, QGraphicsOpacityEffect, QFileDialog, QDialog, QCheckBox, QRadioButton, QButtonGroup, QApplication
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QTimer, Signal, QEvent, Property, QPointF
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, Signal, QEvent, Property, QPointF
 from PySide6.QtGui import QPainter, QColor, QRadialGradient
 
 import subtitld
@@ -338,13 +338,8 @@ def show(self):
     update(self)
     # Opacity = 1 immediately — see preview_panel.show() for rationale.
     self.titleBar_left_container.opacity.setOpacity(1.0)
-    # setUpdatesEnabled(False) suppresses paints while the layout
-    # overshoots to the final position; the animation reasserts pos
-    # via its property over a few ticks and by the time updates
-    # re-enable the widget is mid-slide.
-    self.titleBar_left_container.setUpdatesEnabled(False)
+    # animate_element keeps it from painting until the slide's first tick.
     utils.animate_element(self.titleBar_left_container.animation, duration=1000, effect='slide_from_left')
-    QTimer().singleShot(80, lambda: self.titleBar_left_container.setUpdatesEnabled(True))
 
 
 def translate(self):

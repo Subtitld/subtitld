@@ -88,11 +88,10 @@ def show(self):
     # setUpdatesEnabled(False) is the right tool: the widget still
     # participates in the layout (so size/geometry settles correctly while
     # the animation is starting), but Qt suppresses paint events entirely.
-    # We re-enable updates ~80 ms later (~5 animation ticks at 60 Hz),
-    # after the animation has firmly taken ownership of `pos` and the
-    # layout's final-position setGeometry has been overridden by the
-    # animation engine. By then the widget is mid-slide and the first
-    # paint shows it correctly animating in.
+    # `animate_element` turns updates back on at each slide's first tick,
+    # once the animation has moved the panel off its laid-out final
+    # position: a fixed delay was too short whenever the main thread was
+    # still busy with the open.
     panels = [w for w in (
         getattr(self, 'bottom_panel', None),
         getattr(self, 'preview_panel', None),
@@ -114,10 +113,6 @@ def show(self):
         left_panel.show(self)
         preview_panel.show(self)
         bottom_panel.show(self)
-        # Re-enable per-panel paints once the animations are firmly
-        # past the layout's "final position" overshoot.
-        for w in panels:
-            QTimer.singleShot(80, lambda w=w: w.setUpdatesEnabled(True))
     QTimer.singleShot(0, _start_animations)
     
 

@@ -3,7 +3,7 @@ import re
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent, QPropertyAnimation
 
 
 from subtitld.interface.translation import _
@@ -87,13 +87,53 @@ def animate_element(animation, duration=1000, effect='fadein'):
     if start_pos is not None:
         # Snap the widget to start_pos synchronously so any paint between
         # this call and the animation's first tick reads the off-screen
-        # origin rather than the laid-out final position. For widgets
-        # NOT under a layout this is enough; for layout-managed widgets
-        # (the production panels), `productionscreen.show` uses
-        # `setUpdatesEnabled(False)` for ~80 ms around this call to
-        # suppress paint while the layout pass overrides our move().
+        # origin rather than the laid-out final position.
         widget.move(start_pos)
+        # A layout-managed widget is put back at its final position by the
+        # next layout pass (the window being shown, a panel becoming
+        # visible), and the animation only moves it again on its first
+        # tick, which waits for the event loop: any startup work after
+        # this call left it painted in place first. So nothing paints
+        # until that tick has moved it, however long that takes.
+        widget.setUpdatesEnabled(False)
+    previous = getattr(animation, '_reveal_on_first_tick', None)
+    if previous is not None:
+        animation.valueChanged.disconnect(previous)
+        animation.stateChanged.disconnect(previous)
+        animation._reveal_on_first_tick = None
     animation.start()
+    if start_pos is not None:
+        def _reveal(*_):
+            animation.valueChanged.disconnect(_reveal)
+            animation.stateChanged.disconnect(_reveal)
+            animation._reveal_on_first_tick = None
+            widget.setUpdatesEnabled(True)
+        # Connected after start(), whose own t=0 value change would fire it.
+        # A stop before the first tick (hidden again at once) reveals too.
+        animation.valueChanged.connect(_reveal)
+        animation.stateChanged.connect(_reveal)
+        animation._reveal_on_first_tick = _reveal
+        # Layout passes during the slide (a panel filling in, the splitter
+        # settling) put the widget back at its final position too, and it
+        # would paint there until the next tick: put it back on the slide.
+        if not hasattr(animation, '_slide_guard'):
+            animation._slide_guard = _SlideGuard(animation)
+            widget.installEventFilter(animation._slide_guard)
+
+
+class _SlideGuard(QObject):
+    """Keeps a sliding widget where its animation has it while it runs."""
+
+    def __init__(self, animation):
+        super().__init__(animation)
+        self._animation = animation
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Move and self._animation.state() == QPropertyAnimation.Running and self._animation.propertyName() == b'pos':
+            value = self._animation.currentValue()
+            if value is not None and watched.pos() != value:
+                watched.move(value)
+        return False
 
 from datetime import datetime, timedelta
 
