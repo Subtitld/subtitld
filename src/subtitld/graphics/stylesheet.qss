@@ -2183,7 +2183,6 @@ QMenu#subtitle_formatting_menu::separator {
 
 #snap_controls_container #snap_button QLabel,
 #grid_controls_container #grid_button,
-#onset_controls_container #onset_button,
 #step_button_container #step_button {
     text-transform: uppercase;
     font-weight: 700;
@@ -2191,8 +2190,17 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #onset_controls_container #onset_button {
-    border-radius: 3px;
-    padding: 0 4 0 4;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    icon: url(graphics:onset_icon.svg);
+}
+
+#onset_controls_container #onset_button::checked {
+    icon: url(graphics:onset_icon_checked.svg);
+}
+
+#onset_controls_container #onset_button::disabled {
+    icon: url(graphics:onset_icon_disabled.svg);
 }
 
 #playercontrols_widget_bottom_line QDoubleSpinBox {

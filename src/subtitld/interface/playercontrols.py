@@ -1366,6 +1366,8 @@ def load(self):
     self.onset_button = QPushButton()
     self.onset_button.setObjectName('onset_button')
     self.onset_button.setCheckable(True)
+    self.onset_button.setIconSize(QSize(16, 16))
+    self.onset_button.setFixedWidth(24)
     self.onset_button.clicked.connect(lambda: onset_button_clicked(self))
     self.onset_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.onset_controls_container.layout().addWidget(self.onset_button)
@@ -2782,7 +2784,6 @@ def translate(self):
     self.step_button.setText(_('playercontrols.step'))
     self.remove_selected_subtitle_button.setText(' ' + _('playercontrols.remove'))
     self.grid_button.setText(_('playercontrols.grid'))
-    self.onset_button.setText(_('playercontrols.onset'))
 
     self.send_text_to_last_subtitle_button.setToolTip(_('playercontrols.send_text_to_last_subtitle'))
     self.send_text_to_last_subtitle_and_slice_button.setToolTip(_('playercontrols.send_text_to_last_subtitle_and_slice'))
