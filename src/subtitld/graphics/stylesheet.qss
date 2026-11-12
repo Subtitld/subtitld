@@ -1405,7 +1405,7 @@ QGroupBox::title {
     font-size: 7px;
     font-weight: 700;
     text-transform: uppercase;
-    padding: 0 1 0 5;
+    padding: 0 1 0 3;
 }
 
 #titleBar_left_export_button #titleBar_left_export_quick_button:hover {

@@ -197,7 +197,7 @@ def load(self):
     self.titleBar_left_save_button.setProperty('class', 'saved')
     self.titleBar_left_save_button.setIconSize(QSize(16, 16))
     self.titleBar_left_save_button.setFixedWidth(50)
-    self.titleBar_left_save_button.setFixedHeight(35)     # the bar's full height above its bottom line, as the export tab
+    self.titleBar_left_save_button.setFixedHeight(36)     # the bar's full height, over its bottom line, as the export tab
     self.titleBar_left_save_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
     self.titleBar_left_save_button.clicked.connect(lambda: toppanel_save_button_clicked(self))
     session._unsaved_change_callbacks.append(self.titleBar_left_save_button.update_state)
