@@ -79,9 +79,9 @@ class ActionStrip(QWidget):
     picture: optional callable(painter, rect) drawing the strip's icons in
     one go, for icons that cannot line up on their own.
     nested: True makes the first and last keys sub-keys of the ones between:
-    each hangs from the top edge, flush with its end of the strip, a step
-    darker, its inner side a 75° slant leaning out as it goes down, centred
-    on the old split; the keys between take the rest.
+    each stands on the bottom edge to 3px under the top, flush with its end
+    of the strip, a step darker, its inner side a 75° slant leaning in as it
+    rises, centred on the old split; the keys between take the rest.
     """
 
     KEY_W = 32
@@ -115,19 +115,12 @@ class ActionStrip(QWidget):
         run = nh * shapes.RUN15
         shape = self.shape()
         k = self.KEY_W
-        # flush with the strip's ends (the notch runs on past them and is cut there); the inner side leans OUT going
-        # down, centred on the old split: a 6px curve inside at the bottom, and at the top the side curves into the
-        # top edge, rounding the main key's corner there
-        up = shapes.unit(-run, -nh)
-        turn = math.acos(-up[0])                              # between the bottom edge and the slant: 105°
-        t = shapes.CURVE * math.tan(turn / 2)
-        left = QPainterPath(QPointF(-60, 0))
-        left.lineTo(-60, nh)
-        shapes.fillet(left, (k + run / 2, nh), (1, 0), up, t)
-        shapes.fillet(left, (k - run / 2, 0), up, (1, 0), t)
-        left.closeSubpath()
-        right = QTransform(-1, 0, 0, 1, w, 0).map(left)
-        self.subzones = [left.intersected(shape), right.intersected(shape)]
+        # flush with the strip's ends (the notch runs on past them and is cut there), standing on the bottom edge to
+        # 3px under the top: the hanging notch of the transport turned upside down, its inner side leaning in as it
+        # rises, centred on the old split, curving into the bottom edge
+        flip = QTransform(1, 0, 0, -1, 0, h)
+        self.subzones = [flip.map(shapes.hanging_trap(-60, 0, 60 + k + run / 2, nh)).intersected(shape),
+                         flip.map(shapes.hanging_trap(w - k - run / 2, 0, k + run / 2 + 60, nh)).intersected(shape)]
         self.sub_h = nh
         subs = self.subzones[0].united(self.subzones[1])
         inner = self.keys[1:-1]
@@ -171,15 +164,14 @@ class ActionStrip(QWidget):
                 line = line.subtracted(shapes.rect_path(QRectF(key.geometry()).adjusted(0, 0, 0, 1)))
             elif state == 'hover':
                 painter.fillPath(zone, shapes.HOVER)
+        top = self.height() - self.sub_h if subs else 0
         for key in subs:                   # the sub-keys: a darker raised notch each, sinking when pressed
             zone = self.zones[key]
             if key.state() == 'sunk':
-                painter.fillPath(zone, shapes.gradient(0, self.sub_h, shapes.SUNK, 'sunken'))
-                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 46))
+                painter.fillPath(zone, shapes.gradient(top, self.height(), shapes.SUNK, 'sunken'))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, top, self.width(), 1))), QColor(0, 0, 0, 46))
             else:
-                painter.fillPath(zone, shapes.gradient(0, self.sub_h, shapes.NEST))
-                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.sub_h - 1, self.width(), 1))),
-                                 QColor(0, 0, 0, 30))
+                painter.fillPath(zone, shapes.gradient(top, self.height(), shapes.NEST))
                 if key.state() == 'hover':
                     painter.fillPath(zone, QColor(255, 255, 255, 14))
         painter.save()
