@@ -815,7 +815,7 @@ def load(self):
     # self.playercontrols_widget_left_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
     self.playercontrols_widget_left_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_left_bottom_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_left_bottom_line.layout().setContentsMargins(0, 2, 0, 1)#0, 3, 0, 1)
+    self.playercontrols_widget_left_bottom_line.layout().setContentsMargins(0, 1, 0, 2)     # clear of the 1px edge under them
     self.playercontrols_widget_left_bottom_line.layout().setSpacing(6)
 
     self.playercontrols_widget_left_bottom_line.layout().addStretch()
@@ -1002,7 +1002,7 @@ def load(self):
         def __init__(widget, *args):
             super(playercontrols_timecode_label, widget).__init__(*args)
             widget.setAlignment(Qt.AlignCenter)
-            widget.setFixedWidth(120)
+            widget.setFixedWidth(136)        # room either side of the time within the tab
             widget.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
             widget.setObjectName('playercontrols_timecode_label')
         
@@ -1272,7 +1272,7 @@ def load(self):
     # self.playercontrols_widget_right_bottom_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_right_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_right_bottom_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_right_bottom_line.layout().setContentsMargins(0, 2, 0, 1)
+    self.playercontrols_widget_right_bottom_line.layout().setContentsMargins(0, 1, 0, 2)    # clear of the 1px edge under them
     self.playercontrols_widget_right_bottom_line.layout().setSpacing(6)
     
     self.timeline_cursor_next_frame = QPushButton()
