@@ -2917,7 +2917,7 @@ QMenu#subtitle_formatting_menu::separator {
    there, the shadow falling into the sidebar). */
 #export_dialog_sidebar_shadow {
     background-color: transparent;
-    border-image: url(graphics:export_dialog_sidebar_shadow.svg) 10 150 10 0 stretch stretch;      /* its even middle */
+    border-image: url(graphics:export_dialog_sidebar_shadow.svg) 0 150 0 0 stretch stretch;
     border-width: 0 140px 0 0;
 }
 

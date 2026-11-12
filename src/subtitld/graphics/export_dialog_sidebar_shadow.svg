@@ -14,7 +14,7 @@
    <stop stop-color="#fff" stop-opacity="0" offset="1"/>
   </radialGradient>
  </defs>
- <g transform="translate(150 0) rotate(90)" opacity=".6">
+ <g transform="translate(150 0) rotate(90)" opacity=".8">
  <g transform="matrix(.039062 0 0 1 -76.548 -466.52)" fill-rule="evenodd">
   <path d="m1959.6 467.52v149h1280v-149z" fill="url(#b)" opacity=".08"/>
   <path d="m1959.6 467.52v20h1280v-20z" fill="url(#d)" opacity=".3"/>
