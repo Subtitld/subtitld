@@ -580,14 +580,18 @@ class AddSubtitleButton(QAbstractButton):
 
 class SlantFrameButton(QPushButton):
     """Playback speed and repeat: a button drawn as a 75° slanted frame
-    hanging from the panel's top edge (no edge lines, square top corners,
-    6px curves inside the bottom ones), its inner slant running under the
-    transport's margin up to the transport's own slant, holding its own
-    controls in its layout, its icon in the room the stylesheet's paddings
-    leave. lean='right' slants like \\ (the speed, left of the transport),
-    'left' like // (the repeat, right of it). Checked, the frame turns light,
-    as the controls inside are showing."""
+    hanging from the panel's top edge, as tall as the other 42px pieces (no
+    edge lines, square top corners, the 1px contact line along its bottom).
+    Its inner slant runs under the transport's margin and lies on the
+    transport's own slant, so the corner where they meet is square too; the
+    outer bottom corner has the 6px curve. It holds its own controls in its
+    layout, its icon in the room the stylesheet's paddings leave.
+    lean='right' slants like \\ (the speed, left of the transport), 'left'
+    like // (the repeat, right of it). Checked, the frame turns light, as the
+    controls inside are showing."""
 
+    H = 42
+    SLANT_H = 48                      # the transport panel's height: the inner slant is on its slant from the top
     NORMAL = '#374a5a'                # the old frame's 50% tint over the panel
     HOVERED = '#3b5061'
     CHECKED = '#748898'
@@ -596,23 +600,17 @@ class SlantFrameButton(QPushButton):
         super().__init__(parent)
         self.lean = lean
         self.setAttribute(Qt.WA_Hover)
+        self.setFixedHeight(self.H)
         self.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, icon)))
 
     def frame(self):
-        w, h = self.width(), self.height()
+        w, h = self.width(), self.H
         run = h * shapes.RUN15
-        down, up = shapes.unit(run, h), shapes.unit(-run, -h)
-        # each corner with the side that comes into it and the side that leaves it, going round clockwise
-        corners = (((0, 0), up, (1, 0)), ((w - run, 0), (1, 0), down), ((w, h), down, (-1, 0)), ((run, h), (-1, 0), up))
-
-        def reach(corner, d1, d2):   # how far a 6px curve reaches along each side of this turn; none at the top
-            if corner[1] == 0:
-                return 0
-            return shapes.CURVE * math.tan(math.acos(d1[0] * d2[0] + d1[1] * d2[1]) / 2)
-
+        inner = w - self.SLANT_H * shapes.RUN15          # the inner slant's top, on the transport's slant
         p = QPainterPath(QPointF(0, 0))
-        for corner, d1, d2 in corners[1:]:
-            shapes.fillet(p, corner, d1, d2, reach(corner, d1, d2))
+        p.lineTo(inner, 0)
+        p.lineTo(inner + run, h)
+        shapes.fillet(p, (run, h), (-1, 0), shapes.unit(-run, -h), shapes.T6)     # the outer bottom corner
         p.closeSubpath()
         if self.lean == 'left':
             p = QTransform(-1, 0, 0, 1, w, 0).map(p)
@@ -623,7 +621,7 @@ class SlantFrameButton(QPushButton):
         painter.setRenderHint(QPainter.Antialiasing)
         frame = self.frame()
         base = self.CHECKED if self.isChecked() else (self.HOVERED if self.underMouse() else self.NORMAL)
-        painter.fillPath(frame, shapes.gradient(0, self.height(), base))
+        shapes.fill_raised(painter, frame, QRectF(0, 0, self.width(), self.H), base)
         if self.isDown():
             painter.fillPath(frame, QColor(0, 0, 0, 30))
         elif self.underMouse() and self.isChecked():

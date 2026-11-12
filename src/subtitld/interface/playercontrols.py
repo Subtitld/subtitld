@@ -517,9 +517,8 @@ def load(self):
     self.change_playback_speed.setCheckable(True)
     self.change_playback_speed.setLayout(QHBoxLayout())
     self.change_playback_speed.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.change_playback_speed.setFixedHeight(48) 
     self.change_playback_speed.setIconSize(QSize(22, 22))
-    self.change_playback_speed.layout().setContentsMargins(16, 15, 30, 16)
+    self.change_playback_speed.layout().setContentsMargins(16, 12, 30, 13)
     self.change_playback_speed.layout().setSpacing(0)
     self.change_playback_speed.clicked.connect(lambda: change_playback_speed_clicked(self))
 
@@ -641,9 +640,8 @@ def load(self):
     self.repeat_playback.setCheckable(True)
     self.repeat_playback.setLayout(QHBoxLayout())
     self.repeat_playback.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.repeat_playback.setFixedHeight(48)
     self.repeat_playback.setIconSize(QSize(22, 22))
-    self.repeat_playback.layout().setContentsMargins(50, 12, 16, 18)
+    self.repeat_playback.layout().setContentsMargins(50, 9, 16, 9)
     self.repeat_playback.layout().setSpacing(0)
     self.repeat_playback.clicked.connect(lambda: repeat_playback_clicked(self))
 
