@@ -202,6 +202,17 @@ else:
           [['Hello', 'yellow', 'world', 'Second', 'line'], ['Café', 'über', 'naïve', '—', '♪'], ['Straight', 'after']])
     check('and the German one', zvbi(folder / 'pages.ts', '889'), [['Grüße']])
 
+    def zvbi_shown(path, page):
+        out = subprocess.run([ffmpeg, '-v', 'error', '-txt_format', 'text', '-txt_page', page, '-i', str(path),
+                              '-map', '0:s:0', '-f', 'srt', '-'], capture_output=True, text=True).stdout
+        times = [line.split(' --> ')[0] for line in out.splitlines() if ' --> ' in line]
+        return [round(int(t[:2]) * 3600 + int(t[3:5]) * 60 + float(t[6:].replace(',', '.')), 1) for t in times]
+    # libzvbi takes a page as complete once the magazine's next header
+    # comes: without the time filling header after it, each would show
+    # when the transmission that erases it arrives.
+    check('libzvbi shows each page when it is sent, not when the next one is',
+          zvbi_shown(folder / 'pages.ts', '888'), [1.0, 3.0, 4.0])
+
 if not (ffmpeg and ffprobe):
     print('  [SKIP] FFmpeg is not installed: no video, no engine')
 else:
