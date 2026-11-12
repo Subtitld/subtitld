@@ -1932,18 +1932,18 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #playercontrols_widget_left_bottom_line {
-    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 28 2 0 stretch stretch;
+    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 39 2 0 stretch stretch;
     border-width: 0 0 2 0;
     margin-right: 12px;
 }
 
 #playercontrols_widget_center_bottom_line {
-    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 14 25 14 stretch stretch;
-    border-width: 0 14 25 14;
+    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 20 25 20 stretch stretch;
+    border-width: 0 20 25 20;
 }
 
 #playercontrols_widget_right_bottom_line {
-    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 0 2 28 stretch stretch;
+    border-image: url(graphics:playercontrols_widget_center_bottom_line.svg) 0 0 2 39 stretch stretch;
     border-width: 0 0 2 0;
     margin-left: 12px;
 }
