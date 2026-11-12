@@ -321,7 +321,7 @@ def load(self):
     mark = os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld_mark.png')
     self.tilteBar_subtitld_label.setText(
         f'<img src="{mark}" width="13" height="11" style="vertical-align: middle">'
-        f'&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
+        f'&nbsp;&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
 
 
 def update(self):
