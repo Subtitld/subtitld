@@ -2106,13 +2106,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                                               stem=f'{stem}_')
             for picture in pictures:
                 picture['href'] = os.path.basename(picture['path'])
-            bdn.save(final_file, pictures, size,
-                     fps=options.get('bdn_fps') if options.get('bdn_fps') in bdn.RATES
-                     else bdn.rate_for(VIDEO.get('framerate')),
-                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
-                     else language,
-                     title=(SUBTITLE.get('metadata') or {}).get('title')
-                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+            bdn.save(final_file, pictures, size, **bdn_options(options, language, final_file, SUBTITLE, VIDEO))
 
         elif subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
             # A cinema's subtitles as pictures: each drawn as the preview
@@ -2744,6 +2738,18 @@ def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=N
     _save_in_progress = True
     thread.start()
     return thread
+
+
+def bdn_options(options, language, final_file, subtitle=None, video=None):
+    """What bdn.write takes besides the pictures, for an export to
+    `final_file` with `options`: the rate, the language and the title."""
+    subtitle = session.SUBTITLE if subtitle is None else subtitle
+    video = session.VIDEO if video is None else video
+    return {'fps': options.get('bdn_fps') if options.get('bdn_fps') in bdn.RATES else bdn.rate_for(video.get('framerate')),
+            'language': options.get('language') if options.get('text') == 'translation' and options.get('language')
+            else language,
+            'title': (subtitle.get('metadata') or {}).get('title')
+            or os.path.splitext(os.path.basename(video.get('filepath') or final_file))[0]}
 
 
 def picture_frame(subtitle_format, options=None, video=None):
