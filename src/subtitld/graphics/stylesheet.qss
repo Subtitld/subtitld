@@ -1430,8 +1430,7 @@ QGroupBox::title {
     border-width: 0 1 1 21;
     border-image: url(graphics:titleBar_right_version_background.svg) 0 1 1 21 stretch stretch;
     color: white;
-    /* The slanted edge is gap enough before the mark. */
-    padding: 0 10px 0 0;
+    padding: 0 10px 0 4px;
     color: #26ffffff;
     font-size: 12px;
     font-family: Montserrat;
