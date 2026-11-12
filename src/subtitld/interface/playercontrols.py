@@ -466,7 +466,7 @@ def load(self):
         ('send_text_to_last_subtitle_and_slice_button', None, None),
         ('send_text_to_next_subtitle_and_slice_button', None, None),
         ('send_text_to_next_subtitle_button', None, None),
-    ], picture=player_widgets.send_text_picture)
+    ], picture=player_widgets.send_text_picture, nested=True)
     self.send_text_to_last_subtitle_button = self.send_text_buttons_container.key('send_text_to_last_subtitle_button')
     self.send_text_to_last_subtitle_button.clicked.connect(lambda: send_text_to_last_subtitle_button_clicked(self))
     self.send_text_to_last_subtitle_and_slice_button = self.send_text_buttons_container.key('send_text_to_last_subtitle_and_slice_button')

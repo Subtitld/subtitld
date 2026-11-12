@@ -78,13 +78,17 @@ class ActionStrip(QWidget):
     keys: (object name, icon file or None, stretch side 'left'/'right'/None).
     picture: optional callable(painter, rect) drawing the strip's icons in
     one go, for icons that cannot line up on their own.
+    nested: True makes the first and last keys sub-keys of the ones between,
+    as on the transport: each hangs from the top edge, flush with its end of
+    the strip, a step darker, its inner side a 75° slant centred on the old
+    split; the keys between take the rest.
     """
 
     KEY_W = 32
     TOP, BOTTOM = 11, 11              # around the 20px icons: as tall as the other 42px pieces
     FADE = 7                          # the ends fade in over this many pixels
 
-    def __init__(self, name, keys, picture=None, parent=None):
+    def __init__(self, name, keys, picture=None, nested=False, parent=None):
         super().__init__(parent)
         self.setObjectName(name)
         self.setAttribute(Qt.WA_Hover)
@@ -100,6 +104,33 @@ class ActionStrip(QWidget):
             self.keys.append(key)
             if icon:
                 self._icons[key_name] = graphic(icon)
+        self.nested = nested
+        self.zones = {}                    # key → its area, for the nested layout
+        if nested:
+            self._nest()
+
+    def _nest(self):
+        w, h = self.width(), self.height()
+        nh = h - 3                                            # sub-keys hang to 3px above the bottom, as elsewhere
+        run = nh * shapes.RUN15
+        shape = self.shape()
+        k = self.KEY_W
+        # flush with the strip's ends: the hanging notch runs on past them and is cut there
+        self.subzones = [shapes.hanging_trap(-60, 0, 60 + k + run / 2, nh).intersected(shape),
+                         shapes.hanging_trap(w - k - run / 2, 0, k + run / 2 + 60, nh).intersected(shape)]
+        self.sub_h = nh
+        subs = self.subzones[0].united(self.subzones[1])
+        inner = self.keys[1:-1]
+        for i, key in enumerate(inner):
+            x0 = 0 if i == 0 else (i + 1) * k
+            x1 = w if i == len(inner) - 1 else (i + 2) * k
+            self.zones[key] = shape.intersected(shapes.rect_path(QRectF(x0, 0, x1 - x0, h))).subtracted(subs)
+        self.zones[self.keys[0]], self.zones[self.keys[-1]] = self.subzones
+        for key, zone in self.zones.items():
+            key.setGeometry(zone.boundingRect().toAlignedRect())
+            key.setMask(_mask_of(zone, key))
+        for key in (self.keys[0], self.keys[-1]):
+            key.raise_()
 
     def key(self, name):
         return next(k for k in self.keys if k.objectName() == name)
@@ -119,14 +150,28 @@ class ActionStrip(QWidget):
         else:
             painter.fillPath(shape, shapes.gradient(0, rect.height(), '#3e5363'))
         line = shape.subtracted(shape.translated(0, -1))
+        subs = (self.keys[0], self.keys[-1]) if self.nested else ()
         for key in self.keys:
-            zone = shape.intersected(shapes.rect_path(QRectF(key.geometry())))
+            if key in subs:
+                continue
+            zone = self.zones.get(key) or shape.intersected(shapes.rect_path(QRectF(key.geometry())))
             state = key.state()
             if state == 'sunk':
                 shapes.fill_sunk(painter, zone, QRectF(key.geometry()))
                 line = line.subtracted(shapes.rect_path(QRectF(key.geometry()).adjusted(0, 0, 0, 1)))
             elif state == 'hover':
                 painter.fillPath(zone, shapes.HOVER)
+        for key in subs:                   # the sub-keys: a darker raised notch each, sinking when pressed
+            zone = self.zones[key]
+            if key.state() == 'sunk':
+                painter.fillPath(zone, shapes.gradient(0, self.sub_h, shapes.SUNK, 'sunken'))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 46))
+            else:
+                painter.fillPath(zone, shapes.gradient(0, self.sub_h, shapes.NEST))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.sub_h - 1, self.width(), 1))),
+                                 QColor(0, 0, 0, 30))
+                if key.state() == 'hover':
+                    painter.fillPath(zone, QColor(255, 255, 255, 14))
         painter.save()
         painter.setClipPath(shape)
         if self.picture:
