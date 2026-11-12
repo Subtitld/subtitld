@@ -603,6 +603,22 @@ class HeaderComboBox(LabeledComboBox):
         return path
 
 
+class PanelHeader(SlantLabeledField):
+    """A panel's header: the band of a HeaderComboBox (34px, square, the
+    label in its slanted segment) with no choice in it. Controls can follow
+    the label on bottom_line, after its stretch."""
+    HEIGHT = 34
+    LABEL_LEFT = 12
+    LABEL_PADDING = 12
+    ROUNDED = False
+
+    def __init__(widget, label='', parent=None):
+        super().__init__(parent=parent)
+        widget.setObjectName('panel_header')
+        widget.bottom_line.addStretch()
+        widget.setLabel(label)
+
+
 class LabeledDoubleSpinBox(SlantLabeledField):
     """A number with its label in front of it (see SlantLabeledField)."""
     valueChanged = Signal(float)
