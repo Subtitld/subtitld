@@ -6,9 +6,9 @@ dict; the caller is responsible for the final file picker and dispatch."""
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
-                               QGroupBox, QSpinBox, QComboBox, QLineEdit, QProgressBar)
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontDatabase
+                               QGroupBox, QSpinBox, QComboBox, QLineEdit, QProgressBar, QStyle, QStyleOption)
+from PySide6.QtCore import Qt, QPoint, QRect
+from PySide6.QtGui import QFontDatabase, QPainter, QRegion
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -1185,6 +1185,37 @@ class _VideoPanel(QWidget):
         return {'category': 'video', 'format': container, 'captions': captions}
 
 
+class _SidebarShadow(QWidget):
+    """The sidebar's shadow (the stylesheet's border-image: the start
+    screen's, turned), laid over the categories. Beside the chosen category
+    its 1px light line along the right edge is left out: that column takes
+    the shadow of the one inside it."""
+
+    def __init__(self, buttons, parent=None):
+        super().__init__(parent)
+        self._buttons = buttons
+        self.setObjectName('export_dialog_sidebar_shadow')
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        for button in buttons:
+            button.toggled.connect(self.update)
+
+    def paintEvent(self, event):
+        option = QStyleOption()
+        option.initFrom(self)
+        painter = QPainter(self)
+        column = QRegion()
+        for button in self._buttons:
+            if button.isChecked():
+                top = button.mapTo(self.window(), QPoint(0, 0)).y() - self.mapTo(self.window(), QPoint(0, 0)).y()
+                column += QRegion(QRect(self.width() - 1, top, 1, button.height()))
+        painter.setClipRegion(QRegion(self.rect()) - column)
+        self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+        if not column.isEmpty():
+            painter.setClipRegion(column)
+            painter.translate(1, 0)
+            self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+
+
 class ExportDialog(utils.SimpleDialog):
     """Universal export dialog. Returns a config dict via
     `exec_and_get_values()` or None when cancelled."""
@@ -1203,7 +1234,7 @@ class ExportDialog(utils.SimpleDialog):
         body.layout().setSpacing(0)
         self.content.layout().addWidget(body)
 
-        # the categories, and over them the sidebar's shadow (the chosen one lies beneath it)
+        # the categories, and over them the sidebar's shadow (the chosen one lies beneath it, see _SidebarShadow)
         side = QWidget()
         side.setLayout(QGridLayout())
         side.layout().setContentsMargins(0, 0, 0, 0)
@@ -1216,12 +1247,6 @@ class ExportDialog(utils.SimpleDialog):
         sidebar.layout().setContentsMargins(0, 10, 0, 10)
         sidebar.layout().setSpacing(0)
         side.layout().addWidget(sidebar, 0, 0)
-
-        shadow = QWidget()
-        shadow.setObjectName('export_dialog_sidebar_shadow')
-        shadow.setAttribute(Qt.WA_StyledBackground)
-        shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
-        side.layout().addWidget(shadow, 0, 0)
 
         self._category_buttons = {}
         self._category_group = QButtonGroup(self)
@@ -1236,6 +1261,7 @@ class ExportDialog(utils.SimpleDialog):
             self._category_group.addButton(btn)
             self._category_buttons[key] = btn
         sidebar.layout().addStretch()
+        side.layout().addWidget(_SidebarShadow(list(self._category_buttons.values())), 0, 0)
 
         right = QWidget()
         right.setObjectName('export_dialog_pages')
