@@ -719,7 +719,7 @@ class Transport(QWidget):
         self.setMouseTracking(True)
         h = self.PANEL_BOTTOM - self.PANEL_TOP
         self.ny = self.PANEL_TOP                              # the keys' slants run from the top (cut to TAB below it)
-        self.nh = h - 3                                       # ...to 3px above the panel's bottom
+        self.nh = h - 4                                       # ...to 4px above the panel's bottom: 42px shown, as the side pieces
         self.run = h * shapes.RUN15
         self.rg = self.nh * shapes.RUN15
         x = self.MARGIN
