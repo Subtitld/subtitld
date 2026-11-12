@@ -551,7 +551,7 @@ class _SubtitlesPanel(QWidget):
     def _run_check(self, *_args):
         """What the TTML this export writes would break in its profile:
         the file written as it will be, then read back by ttml.check. For
-        VobSub and PGS, what their pictures will be."""
+        VobSub and PGS, only that this build cannot draw their pictures."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
         if fmt == 'BDN':
@@ -566,12 +566,11 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setVisible(True)
             return
         if fmt in ('VOBSUB', 'PGS'):
-            # A disc's pictures: what they will be, or that this build
-            # cannot draw them.
+            # A disc's pictures show in the preview; said here only when this
+            # build cannot draw them.
             from subtitld.interface import subtitle_renderer
-            self.check_label.setText(_('export_dialog.picture_note_' + fmt.lower()) if subtitle_renderer.available()
-                                     else _('export_dialog.picture_no_renderer'))
-            self.check_label.setVisible(True)
+            self.check_label.setText(_('export_dialog.picture_no_renderer'))
+            self.check_label.setVisible(not subtitle_renderer.available())
             return
         if fmt not in ('DFXP', 'TTML') or not segments:
             self.check_label.setVisible(False)
