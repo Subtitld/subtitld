@@ -490,10 +490,28 @@ class AddSubtitleButton(QAbstractButton):
                  [self.notch_x + notch_w + shapes.T6])
         for key, left, right in zip(self.switches, edges, edges[1:]):
             key.setGeometry(int(left), 0, int(round(right - left)), self.NOTCH_H)
-        field_x = self.notch_x + notch_w + 10
-        self.spinbox.setGeometry(int(field_x), (self.H - 26) // 2, self.FIELD_W, 26)
-        self.setFixedWidth(int(field_x + self.FIELD_W + 8))
+        # the duration field: its left side lies on the notch's right slant, so the two meet edge to edge; the
+        # field is painted here (field_path) and the spin box over it is see-through
+        fy = (self.H - 26) // 2
+        slant_top = self.notch_x + notch_w                      # the notch's right side at the top edge
+        self.field_left = (slant_top - fy * shapes.RUN15, slant_top - (fy + 26) * shapes.RUN15)
+        field_right = self.field_left[0] + self.FIELD_W
+        self.field_box = QRectF(self.field_left[1], fy, field_right - self.field_left[1], 26)
+        self.spinbox.setGeometry(int(round(self.field_left[0])), fy, int(round(self.FIELD_W)), 26)
+        self.setFixedWidth(int(field_right + 8))
         self.update()
+
+    def field_path(self):
+        (top_x, bottom_x), r = self.field_left, shapes.RADIUS
+        y0, y1, x1 = self.field_box.top(), self.field_box.bottom(), self.field_box.right()
+        p = QPainterPath(QPointF(top_x, y0))
+        p.lineTo(x1 - r, y0)
+        p.quadTo(x1, y0, x1, y0 + r)
+        p.lineTo(x1, y1 - r)
+        p.quadTo(x1, y1, x1 - r, y1)
+        p.lineTo(bottom_x, y1)
+        p.closeSubpath()
+        return p
 
     def setText(self, text):
         super().setText(text)
@@ -565,6 +583,11 @@ class AddSubtitleButton(QAbstractButton):
                         ext = QRectF(ix + self.ICON - 0.5, iy + top, 40, bottom - top)
                     painter.fillRect(ext, QColor('#b8cee0'))
             painter.restore()
+        # the duration field, sunken, against the notch's slant
+        field = QLinearGradient(0, self.field_box.top(), 0, self.field_box.bottom())
+        field.setColorAt(0, QColor('#324350'))
+        field.setColorAt(1, QColor('#445b6c'))
+        painter.fillPath(self.field_path(), field)
         if self.isEnabled() and not self.isDown():
             painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
 

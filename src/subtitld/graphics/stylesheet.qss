@@ -2038,9 +2038,9 @@ QMenu#subtitle_formatting_menu::separator {
 
 /* ADD's duration: a normal 26px field (the player's compact field look aside). */
 #playercontrols_widget_top_line #add_subtitle_button #add_subtitle_duration {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #324350, stop:1 #445b6c);
+    background: transparent;          /* ADD paints the field, its left side on the notch's slant */
     border-radius: 3px;
-    padding: 0 0 0 6px;
+    padding: 0 0 0 2px;
     font-size: 10px;
     color: #c8dbe9;
 }
