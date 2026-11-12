@@ -1203,18 +1203,29 @@ class ExportDialog(utils.SimpleDialog):
         body.layout().setSpacing(0)
         self.content.layout().addWidget(body)
 
+        # the categories, and over them the sidebar's shadow (the chosen one lies beneath it)
+        side = QWidget()
+        side.setLayout(QGridLayout())
+        side.layout().setContentsMargins(0, 0, 0, 0)
+        side.setFixedWidth(140)
+        body.layout().addWidget(side)
+
         sidebar = QWidget()
         sidebar.setObjectName('export_dialog_sidebar')
         sidebar.setLayout(QVBoxLayout())
-        sidebar.layout().setContentsMargins(0, 10, 1, 10)      # clear of the light line along the sidebar's right edge
+        sidebar.layout().setContentsMargins(0, 10, 0, 10)
         sidebar.layout().setSpacing(0)
-        sidebar.setFixedWidth(140)
-        body.layout().addWidget(sidebar)
+        side.layout().addWidget(sidebar, 0, 0)
+
+        shadow = QWidget()
+        shadow.setObjectName('export_dialog_sidebar_shadow')
+        shadow.setAttribute(Qt.WA_StyledBackground)
+        shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
+        side.layout().addWidget(shadow, 0, 0)
 
         self._category_buttons = {}
         self._category_group = QButtonGroup(self)
         self._category_group.setExclusive(True)
-        sidebar.layout().addStretch()                          # the categories sit at the sidebar's middle
         for key in self.CATEGORY_KEYS:
             btn = QPushButton(_(f'export_dialog.category_{key}'))
             btn.setObjectName('export_dialog_category_button')
