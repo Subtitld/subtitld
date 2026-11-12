@@ -369,9 +369,9 @@ class BalanceSlider(QAbstractSlider):
     original mix): one 42px piece hanging from the top line, split into a
     music zone and a voice zone whose widths are their shares, each with its
     share printed in it. The split is the handle — a 2px light line, solid
-    for its top quarter, then fading out — and a small semicircle hanging from
-    the top edge marks the middle, where the value snaps. The music and voice
-    icons at the ends are keys (music_key / voice_key) that nudge the balance."""
+    for its top quarter, then fading out; the value snaps at the middle. The
+    music and voice icons at the ends are keys (music_key / voice_key) that
+    nudge the balance."""
 
     H = 42
     W = 132
@@ -473,11 +473,6 @@ class BalanceSlider(QAbstractSlider):
         painter.setClipPath(shape)
         painter.fillRect(QRectF(sx, 0, 2, self.H), g)
         painter.restore()
-        # the middle, where it snaps: a small semicircle hanging from the top edge, over the handle's place at 50/50
-        mid = self.END + 0.5 * (self.W - 2 * self.END) + 1
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 70))
-        painter.drawPie(QRectF(mid - 2, -2, 4, 4), 180 * 16, 180 * 16)
         if self.isEnabled():
             painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
 
