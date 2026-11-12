@@ -1895,19 +1895,22 @@ QMenu#subtitle_formatting_menu::separator {
     border-image: url(graphics:horizontal_splitter_right_pressed.svg) 1 1 1 4 stretch stretch;
 }
 
-/* behind the transport, under its panel's foot */
+/* behind the transport, under its panel's foot. The top 2px stay clear:
+   only the transport's play and record tabs rise into them. */
 #playercontrols_widget_top_line {
-    background: #283844;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 transparent, stop:0.039 transparent, stop:0.0393 #283844, stop:1 #283844);
 }
 
 #playercontrols_widget_left_top_line {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 53 0 0 stretch stretch;
     border-width: 0;
+    margin-top: 2px;                  /* the transport's tabs rise above (the children: layout margins) */
 }
 
 #playercontrols_widget_right_top_line {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 0 0 53 stretch stretch;
     border-width: 0;
+    margin-top: 2px;                  /* the transport's tabs rise above (the children: layout margins) */
 }
 
 #playercontrols_widget_top_line QPushButton {

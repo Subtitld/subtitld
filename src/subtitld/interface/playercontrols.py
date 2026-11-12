@@ -453,7 +453,7 @@ def load(self):
     # self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_left_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_left_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_left_top_line.layout().setContentsMargins(0, 0, 0, 0)
+    self.playercontrols_widget_left_top_line.layout().setContentsMargins(0, 2, 0, 0)     # under the transport's 2px tabs
     self.playercontrols_widget_left_top_line.layout().setSpacing(8)
     self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
@@ -631,7 +631,7 @@ def load(self):
     # self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_right_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_right_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_right_top_line.layout().setContentsMargins(0, 0, 0, 0)
+    self.playercontrols_widget_right_top_line.layout().setContentsMargins(0, 2, 0, 0)     # under the transport's 2px tabs
     self.playercontrols_widget_right_top_line.layout().setSpacing(8)
     self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 

@@ -595,7 +595,7 @@ class SlantFrameButton(QPushButton):
     controls inside are showing."""
 
     H = 42
-    SLANT_H = 48                      # the transport panel's height: the inner slant is on its slant from the top
+    SLANT_H = 46                      # the transport's slant below the frame's top (2px under the transport's)
     NORMAL = '#2f404d'                # a light tint over the panel
     HOVERED = '#334654'
     CHECKED = '#748898'
@@ -686,7 +686,7 @@ class Transport(QWidget):
     MARGIN = 30                       # under the neighbouring lines, which overlap this piece
     ROOM = 64                         # room around the play and record icons, at mid-height
     KEY = 32
-    KEY_DROP = 2
+    TAB = 2                           # play and record rise this much above the keys and the side pieces
     INK = QColor('#304251')
 
     def __init__(self, name, parent=None):
@@ -695,8 +695,8 @@ class Transport(QWidget):
         self.setAttribute(Qt.WA_Hover)
         self.setMouseTracking(True)
         h = self.PANEL_BOTTOM - self.PANEL_TOP
-        self.ny = self.PANEL_TOP + self.KEY_DROP                   # the keys hang from 2px below the top: play and record show above them
-        self.nh = h - 3 - self.KEY_DROP                       # ...to 3px above the panel's bottom
+        self.ny = self.PANEL_TOP                              # the keys' slants run from the top (cut to TAB below it)
+        self.nh = h - 3                                       # ...to 3px above the panel's bottom
         self.run = h * shapes.RUN15
         self.rg = self.nh * shapes.RUN15
         x = self.MARGIN
@@ -764,10 +764,15 @@ class Transport(QWidget):
         group_edges = [self.pg_x - shapes.T6, self.pg_x + self.rg + 24, self.pg_x + self.pg_w + shapes.T6]
         self.last_zone = self.group_notch.intersected(shapes.rect_path(QRectF(group_edges[0], 0, group_edges[1] - group_edges[0], self.H)))
         self.next_zone = self.group_notch.intersected(shapes.rect_path(QRectF(group_edges[1], 0, group_edges[2] - group_edges[1], self.H)))
+        # Above TAB only play and record show, as two tabs: the keys' slants carried up are their sides, and what
+        # was the keys' curve into the top edge rounds the tabs' top corners.
+        below = shapes.rect_path(QRectF(-100, self.TAB, self.width() + 200, self.H))
+        notches = self.begin_notch.united(self.group_notch).united(self.mode_notch)
+        self.visible = below.united(panel.subtracted(notches))
         for key, path in ((self.play_key, self.play_area.subtracted(self.begin_notch).subtracted(self.group_notch)),
                           (self.record_key, self.record_area.subtracted(self.mode_notch)),
-                          (self.begin_key, self.begin_notch), (self.last_key, self.last_zone),
-                          (self.next_key, self.next_zone), (self.mode_key, self.mode_notch)):
+                          (self.begin_key, self.begin_notch.intersected(below)), (self.last_key, self.last_zone.intersected(below)),
+                          (self.next_key, self.next_zone.intersected(below)), (self.mode_key, self.mode_notch.intersected(below))):
             box = path.boundingRect().toAlignedRect()
             key.setGeometry(box)
             key.setMask(_mask_of(path, key))
@@ -798,7 +803,7 @@ class Transport(QWidget):
             state = key.state()
             if state == 'sunk' or all_sunk:
                 painter.fillPath(zone, shapes.gradient(self.ny, self.ny + self.nh, on, 'sunken'))
-                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.ny, self.width(), 1))),
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.TAB, self.width(), 1))),
                                  QColor(0, 0, 0, 45))
             if state == 'hover':
                 painter.fillPath(zone, QColor(255, 255, 255, hover_alpha))
@@ -807,6 +812,7 @@ class Transport(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter.setClipPath(self.visible)
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
         h = yb - y0
         cy = y0 + h / 2
@@ -838,7 +844,7 @@ class Transport(QWidget):
 
         # play from the beginning: its own colour, a 1px start line, the ▶ on its own, the first subtitle clipped
         self._group(painter, self.begin_notch, [(self.begin_notch, self.begin_key)], self.GROUP, self.GROUP_ON, 60)
-        iy = self.ny + (self.nh - 24) / 2 + 1
+        iy = self.TAB + (self.nh - self.TAB - 24) / 2 + 1
         ix = self.lg_gx + self.rg + 4
         painter.save()
         painter.setClipPath(self.begin_notch)
