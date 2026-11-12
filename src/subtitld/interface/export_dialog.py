@@ -1250,7 +1250,7 @@ class ExportDialog(utils.SimpleDialog):
         sidebar = QWidget()
         sidebar.setObjectName('export_dialog_sidebar')
         sidebar.setLayout(QVBoxLayout())
-        sidebar.layout().setContentsMargins(0, 10, 0, 10)
+        sidebar.layout().setContentsMargins(0, 10, 1, 10)      # the chosen category stops 1px short of the edge
         sidebar.layout().setSpacing(0)
         side.layout().addWidget(sidebar, 0, 0)
 
