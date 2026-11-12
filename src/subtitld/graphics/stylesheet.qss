@@ -1897,13 +1897,13 @@ QMenu#subtitle_formatting_menu::separator {
 
 #playercontrols_widget_left_top_line {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 53 0 0 stretch stretch;
-    border-width: 2 0 0 0;
+    border-width: 0;
     margin-right: 28;
 }
 
 #playercontrols_widget_right_top_line {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 0 0 53 stretch stretch;
-    border-width: 2 0 0 0;
+    border-width: 0;
     margin-left: 28;
 }
 
