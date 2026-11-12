@@ -507,7 +507,10 @@ class AddSubtitleButton(QAbstractButton):
                                    self.NOTCH_H).intersected(self.shape())
 
     def shape(self):
-        return shapes.hanging_rect(0, 0, self.width(), self.H)
+        """Its bottom-right corner is square: REMOVE continues the piece there, as one group."""
+        w = self.width()
+        return shapes.hanging_rect(0, 0, w, self.H).united(
+            shapes.rect_path(QRectF(w - shapes.RADIUS - 1, 0, shapes.RADIUS + 1, self.H)))
 
     def hitButton(self, pos):
         return self.rect().contains(pos)
