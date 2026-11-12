@@ -654,13 +654,13 @@ class AddSubtitleButton(QAbstractButton):
 # --- transport: play from the beginning · play/pause ▶|▶ · record ◉ mode ------------------------------------------
 
 class SlantFrameButton(QPushButton):
-    """Playback speed and repeat: a button drawn as a 75° slanted frame
-    hanging from the panel's top edge, as tall as the other 42px pieces (no
-    edge lines, square top corners, the 1px contact line along its bottom).
-    Its inner slant runs under the transport's margin and lies on the
-    transport's own slant, so the corner where they meet is square too; the
-    outer bottom corner has the 6px curve. It holds its own controls in its
-    layout, its icon in the room the stylesheet's paddings leave.
+    """Playback speed and repeat: a button hanging from the panel's top edge,
+    as tall as the other 42px pieces (no edge lines, square top corners, the
+    1px contact line along its bottom). Its outer side is straight with a 3px
+    bottom corner, like the other pieces; its inner side is a 75° slant that
+    runs under the transport's margin and lies on the transport's own slant,
+    so the corner where they meet is square. It holds its own controls in
+    its layout, its icon in the room the stylesheet's paddings leave.
     lean='right' slants like \\ (the speed, left of the transport), 'left'
     like // (the repeat, right of it). Checked, the frame turns light, as the
     controls inside are showing."""
@@ -685,7 +685,8 @@ class SlantFrameButton(QPushButton):
         p = QPainterPath(QPointF(0, 0))
         p.lineTo(inner, 0)
         p.lineTo(inner + run, h)
-        shapes.fillet(p, (run, h), (-1, 0), shapes.unit(-run, -h), shapes.T6)     # the outer bottom corner
+        p.lineTo(shapes.RADIUS, h)                    # the outer side is straight, its bottom corner 3px like the others
+        p.quadTo(0, h, 0, h - shapes.RADIUS)
         p.closeSubpath()
         if self.lean == 'left':
             p = QTransform(-1, 0, 0, 1, w, 0).map(p)
