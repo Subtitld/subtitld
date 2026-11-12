@@ -1,9 +1,11 @@
 import os
+import codecs
 import copy
 import re
 import hashlib
 import shutil
 import sys
+import tempfile
 import threading
 import zipfile
 import time
@@ -2380,6 +2382,60 @@ def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=N
     _save_in_progress = True
     thread.start()
     return thread
+
+
+class PreviewBinary(Exception):
+    """The file a preview wrote is not text."""
+
+
+class PreviewBusy(Exception):
+    """A save holds the lock: the preview is to be tried again later."""
+
+
+def preview_file(subtitle_format, options, language='en', max_lines=200, max_bytes=20000):
+    """The start of the file `save_file` would write in `subtitle_format`
+    with `options`: at most `max_lines` lines and `max_bytes` bytes, as
+    text. Written to a folder of its own and thrown away; the session is
+    read through a snapshot (as a save thread reads it), so nothing in it
+    changes. Raises PreviewBinary for a file that is not text, PreviewBusy
+    while a save runs; whatever the writer raises otherwise."""
+    global _active_save_snapshot
+    snapshot = _snapshot_for_save()
+    if snapshot is None:
+        raise PreviewBusy()
+    snapshot['THUMBNAIL'] = None
+    snapshot['FORMAT'] = dict(snapshot['FORMAT'] if isinstance(snapshot['FORMAT'], dict) else {},
+                              format=subtitle_format, options=dict(options or {}))
+    if not _save_lock.acquire(blocking=False):
+        raise PreviewBusy()
+    folder = tempfile.mkdtemp(prefix='subtitld-preview-')
+    try:
+        _active_save_snapshot = snapshot
+        try:
+            path = os.path.join(folder, 'preview.' + subtitle_format.lower())
+            save_file(path, subtitle_format, language)
+        finally:
+            _active_save_snapshot = None
+        with open(path, 'rb') as written:
+            data = written.read(max_bytes)
+    finally:
+        _save_lock.release()
+        shutil.rmtree(folder, ignore_errors=True)
+
+    # SRT's encoding as chosen; the others write UTF-8, some with a mark.
+    encoding = 'utf-8-sig'
+    if subtitle_format == 'SRT' and options.get('encoding') in export_options.ENCODINGS:
+        encoding = 'utf-16' if options['encoding'] == 'utf-16' else options['encoding']
+        encoding = 'utf-8-sig' if encoding == 'utf-8' else encoding
+    try:
+        # Not final: the cut may fall inside a character.
+        text = codecs.getincrementaldecoder(encoding)().decode(data, final=False)
+    except (UnicodeDecodeError, LookupError):
+        raise PreviewBinary()
+    if any(ord(char) < 32 and char not in '\t\n\r\f' for char in text):
+        raise PreviewBinary()
+    lines = text.splitlines(keepends=True)
+    return ''.join(lines[:max_lines])
 
 
 def autosave_backup_timer_timeout(force=False):
