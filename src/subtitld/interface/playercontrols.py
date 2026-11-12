@@ -453,7 +453,7 @@ def load(self):
     # self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_left_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_left_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_left_top_line.layout().setContentsMargins(0, 2, 0, 0)
+    self.playercontrols_widget_left_top_line.layout().setContentsMargins(0, 0, 0, 0)
     self.playercontrols_widget_left_top_line.layout().setSpacing(8)
     self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
@@ -618,18 +618,21 @@ def load(self):
     except Exception:
         log.exception('could not watch add-on changes for the record button')
     
-    self.playercontrols_widget_top_line.layout().addSpacing(-30)
+    # the side lines run under the transport's margins to its slants' feet, so the playback speed and repeat frames
+    # at their ends meet the slants
+    overlap = -(transport.MARGIN + round(transport.run))
+    self.playercontrols_widget_top_line.layout().addSpacing(overlap)
 
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_center_top_line, 0)
 
-    self.playercontrols_widget_top_line.layout().addSpacing(-30)
+    self.playercontrols_widget_top_line.layout().addSpacing(overlap)
 
     self.playercontrols_widget_right_top_line = QWidget()
     self.playercontrols_widget_right_top_line.setObjectName('playercontrols_widget_right_top_line')
     # self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_right_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_right_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_right_top_line.layout().setContentsMargins(0, 2, 0, 0)
+    self.playercontrols_widget_right_top_line.layout().setContentsMargins(0, 0, 0, 0)
     self.playercontrols_widget_right_top_line.layout().setSpacing(8)
     self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
@@ -674,7 +677,7 @@ def load(self):
                         self.repeat_playback_x_label,
                         self.repeat_playback_times)
 
-    self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback)
+    self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback, 0, Qt.AlignTop)
 
     # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
     self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
@@ -795,9 +798,7 @@ def load(self):
     self.playercontrols_widget_right_top_line.layout().addStretch()
 
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_right_top_line, 1)
-
-    self.playercontrols_widget_left_top_line.raise_()
-    self.playercontrols_widget_right_top_line.raise_()
+    self.playercontrols_widget_center_top_line.raise_()     # over the side lines, which run under its margins
 
     self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_top_line, 0)
     

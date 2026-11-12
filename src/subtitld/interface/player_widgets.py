@@ -11,8 +11,8 @@ import math
 import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import (QColor, QFontMetricsF, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
-                           QRegion, QTransform)
+from PySide6.QtGui import (QColor, QFontMetricsF, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPainterPathStroker,
+                           QPolygonF, QRegion, QTransform)
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QPushButton, QSizePolicy, QStyleOptionButton, QWidget
 
@@ -580,7 +580,9 @@ class AddSubtitleButton(QAbstractButton):
 
 class SlantFrameButton(QPushButton):
     """Playback speed and repeat: a button drawn as a 75° slanted frame
-    (no edge lines, 6px curves inside every corner) holding its own
+    hanging from the panel's top edge (no edge lines, square top corners,
+    6px curves inside the bottom ones), its inner slant running under the
+    transport's margin up to the transport's own slant, holding its own
     controls in its layout, its icon in the room the stylesheet's paddings
     leave. lean='right' slants like \\ (the speed, left of the transport),
     'left' like // (the repeat, right of it). Checked, the frame turns light,
@@ -603,14 +605,14 @@ class SlantFrameButton(QPushButton):
         # each corner with the side that comes into it and the side that leaves it, going round clockwise
         corners = (((0, 0), up, (1, 0)), ((w - run, 0), (1, 0), down), ((w, h), down, (-1, 0)), ((run, h), (-1, 0), up))
 
-        def reach(d1, d2):           # how far a 6px curve reaches along each side of this turn
+        def reach(corner, d1, d2):   # how far a 6px curve reaches along each side of this turn; none at the top
+            if corner[1] == 0:
+                return 0
             return shapes.CURVE * math.tan(math.acos(d1[0] * d2[0] + d1[1] * d2[1]) / 2)
 
-        (x, y), d1, d2 = corners[0]
-        t = reach(d1, d2)
-        p = QPainterPath(QPointF(x + d2[0] * t, y + d2[1] * t))
-        for corner, d1, d2 in corners[1:] + corners[:1]:
-            shapes.fillet(p, corner, d1, d2, reach(d1, d2))
+        p = QPainterPath(QPointF(0, 0))
+        for corner, d1, d2 in corners[1:]:
+            shapes.fillet(p, corner, d1, d2, reach(corner, d1, d2))
         p.closeSubpath()
         if self.lean == 'left':
             p = QTransform(-1, 0, 0, 1, w, 0).map(p)
@@ -766,6 +768,11 @@ class Transport(QWidget):
             key.setMask(_mask_of(path, key))
         for key in (self.begin_key, self.last_key, self.next_key, self.mode_key):
             key.raise_()
+        # the margins are the neighbours': the playback speed and repeat frames run under them up to the slants,
+        # so outside the panel (and its antialiased edge) this piece neither paints nor takes clicks
+        stroker = QPainterPathStroker()
+        stroker.setWidth(3)
+        self.setMask(QRegion(panel.united(stroker.createStroke(panel)).toFillPolygon().toPolygon()))
 
     # -- state ---------------------------------------------------------------------------------------------------------
     def set_mode(self, mode):
@@ -798,7 +805,6 @@ class Transport(QWidget):
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
         h = yb - y0
         cy = y0 + h / 2
-        painter.fillRect(QRectF(0, 0, self.width(), self.H), QColor('#304251'))
         panel = self.panel()
         painter.fillPath(panel, shapes.gradient(y0, yb, self.LIGHT))
         playing = self.play_key.isChecked()

@@ -1895,16 +1895,19 @@ QMenu#subtitle_formatting_menu::separator {
     border-image: url(graphics:horizontal_splitter_right_pressed.svg) 1 1 1 4 stretch stretch;
 }
 
+/* behind the transport, under its panel's foot */
+#playercontrols_widget_top_line {
+    background: #304251;
+}
+
 #playercontrols_widget_left_top_line {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 53 0 0 stretch stretch;
     border-width: 0;
-    margin-right: 28;
 }
 
 #playercontrols_widget_right_top_line {
     border-image: url(graphics:playercontrols_widget_center_top_line.svg) 2 0 0 53 stretch stretch;
     border-width: 0;
-    margin-left: 28;
 }
 
 #playercontrols_widget_top_line QPushButton {
