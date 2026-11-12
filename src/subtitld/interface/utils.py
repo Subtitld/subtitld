@@ -571,7 +571,7 @@ class LabeledComboBox(SlantLabeledField):
 class HeaderComboBox(LabeledComboBox):
     """The choice a page is about (an export page's format), as the page's
     header: 34px tall, edge to edge, flush with the page's top; its corners
-    are square but the top left, a 6px curve. The label is larger and the chosen option bold (the
+    are square but the top two, 6px curves. The label is larger and the chosen option bold (the
     stylesheet's HeaderComboBox rules). Subclass it for headers of other pages."""
     HEIGHT = 34                       # as tall as the export dialog's categories
     LABEL_LEFT = 12
@@ -592,31 +592,16 @@ class HeaderComboBox(LabeledComboBox):
             widget.combobox.setItemData(row, font, Qt.FontRole)
 
     def _field(widget, rect):
-        # square, but for a 6px curve at the top left, where the header meets the sidebar under the title bar
+        # square, but for 6px curves at the top corners, where the header meets the columns on either side
         r = 6
         path = QPainterPath(QPointF(rect.left(), rect.top() + r))
         path.quadTo(rect.left(), rect.top(), rect.left() + r, rect.top())
-        path.lineTo(rect.right(), rect.top())
+        path.lineTo(rect.right() - r, rect.top())
+        path.quadTo(rect.right(), rect.top(), rect.right(), rect.top() + r)
         path.lineTo(rect.right(), rect.bottom())
         path.lineTo(rect.left(), rect.bottom())
         path.closeSubpath()
         return path
-
-
-class PanelHeader(SlantLabeledField):
-    """A panel's header: the band of a HeaderComboBox (34px, square, the
-    label in its slanted segment) with no choice in it. Controls can follow
-    the label on bottom_line, after its stretch."""
-    HEIGHT = 34
-    LABEL_LEFT = 12
-    LABEL_PADDING = 12
-    ROUNDED = False
-
-    def __init__(widget, label='', parent=None):
-        super().__init__(parent=parent)
-        widget.setObjectName('panel_header')
-        widget.bottom_line.addStretch()
-        widget.setLabel(label)
 
 
 class LabeledDoubleSpinBox(SlantLabeledField):

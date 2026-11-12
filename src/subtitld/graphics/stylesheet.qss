@@ -1118,21 +1118,6 @@ HeaderComboBox QComboBox::drop-down {
     width: 44px;
 }
 
-/* A panel's header (utils.PanelHeader): the band of HeaderComboBox, with only its label. */
-PanelHeader {
-    background: transparent;
-}
-
-PanelHeader QLabel {
-    font-family: 'Montserrat';
-    font-size: 10px;
-    color: #b8cee0;
-    text-transform: uppercase;
-    font-weight: 700;
-    padding: 0 0 0 12px;     /* PanelHeader.LABEL_LEFT */
-    background: transparent;
-}
-
 /* The labelled number and text fields are the same field, sunken: the spin
    box and the line edit sit on it, transparent. */
 LabeledDoubleSpinBox,
@@ -2965,6 +2950,14 @@ QMenu#subtitle_formatting_menu::separator {
 /* The preview beside the pages: a darker column. */
 #export_dialog_preview {
     background-color: rgba(0, 0, 0, 40);
+}
+
+/* The sidebar's shadow mirrored, laid over the preview: its light line down the left edge, the shadow falling
+   to the right. */
+#export_dialog_preview_shadow {
+    background-color: transparent;
+    border-image: url(graphics:export_dialog_preview_shadow.svg) 0 0 0 150 stretch stretch;
+    border-width: 0 0 0 150px;
 }
 
 #export_dialog_preview_file {

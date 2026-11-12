@@ -1199,12 +1199,8 @@ class _PreviewPanel(QWidget):
         self.setObjectName('export_dialog_preview')
         self.setAttribute(Qt.WA_StyledBackground)
         self.setFixedWidth(self.WIDTH)
-        self.setLayout(QVBoxLayout())
+        self.setLayout(QGridLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
-        self.layout().setSpacing(0)
-
-        self.header = utils.PanelHeader(_('export_dialog.preview'))
-        self.layout().addWidget(self.header)
 
         file_page = QWidget()
         file_page.setLayout(QVBoxLayout())
@@ -1213,7 +1209,14 @@ class _PreviewPanel(QWidget):
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
         file_page.layout().addWidget(self.file)
-        self.layout().addWidget(file_page, 1)
+        self.layout().addWidget(file_page, 0, 0)
+
+        # over it, the sidebar's shadow mirrored: falling into the panel from its left edge
+        shadow = QWidget()
+        shadow.setObjectName('export_dialog_preview_shadow')
+        shadow.setAttribute(Qt.WA_StyledBackground)
+        shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.layout().addWidget(shadow, 0, 0)
 
 
 class ExportDialog(utils.SimpleDialog):

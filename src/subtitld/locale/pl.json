@@ -426,7 +426,6 @@
     "export_dialog.title": "Eksport",
     "export_dialog.export_button": "Eksportuj",
     "export_dialog.format": "Format",
-    "export_dialog.preview": "Podgląd",
     "export_dialog.output_mode": "Tryb wyjścia",
     "export_dialog.category_subtitles": "Napisy",
     "export_dialog.category_audio": "Audio",

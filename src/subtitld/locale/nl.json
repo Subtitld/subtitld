@@ -426,7 +426,6 @@
     "export_dialog.title": "Exporteren",
     "export_dialog.export_button": "Exporteren",
     "export_dialog.format": "Formaat",
-    "export_dialog.preview": "Voorbeeld",
     "export_dialog.output_mode": "Uitvoermodus",
     "export_dialog.category_subtitles": "Ondertitels",
     "export_dialog.category_audio": "Audio",

@@ -426,7 +426,6 @@
     "export_dialog.title": "Export",
     "export_dialog.export_button": "Exportovat",
     "export_dialog.format": "Formát",
-    "export_dialog.preview": "Náhled",
     "export_dialog.output_mode": "Režim výstupu",
     "export_dialog.category_subtitles": "Titulky",
     "export_dialog.category_audio": "Zvuk",
