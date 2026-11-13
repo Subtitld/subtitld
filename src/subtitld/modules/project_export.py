@@ -28,6 +28,7 @@ from subtitld.modules import session
 # their project, and the module that writes it.
 FORMATS = {
     'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project'},
+    'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project'},
 }
 
 # What goes in, when nothing is chosen.
@@ -47,6 +48,14 @@ def rate_of(fps):
         if abs(fps - known) < 0.01:
             return fraction
     return Fraction(fps).limit_denominator(1001)
+
+
+def clock(frames, fps):
+    """`frames` at `fps` as MLT's clock time, "HH:MM:SS.mmm"."""
+    millis = int(round(frames * 1000 / float(fps)))
+    hours, rest = divmod(millis, 3600000)
+    minutes, rest = divmod(rest, 60000)
+    return f'{hours:02d}:{minutes:02d}:{rest // 1000:02d}.{rest % 1000:03d}'
 
 
 class Clip:

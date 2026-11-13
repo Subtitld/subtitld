@@ -264,6 +264,7 @@ LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
 # Projects of video and audio editors (modules.project_export).
 LIST_OF_SUPPORTED_PROJECT_EXTENSIONS = {
     'KDENLIVE': {'description': 'Kdenlive project', 'extensions': ['kdenlive']},
+    'SHOTCUT': {'description': 'Shotcut project', 'extensions': ['mlt']},
 }
 
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {

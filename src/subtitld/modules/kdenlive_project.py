@@ -80,11 +80,7 @@ class _Writer:
         return int(round(float(seconds) * self.fps))
 
     def clock(self, frames):
-        """`frames` as MLT's clock time, "HH:MM:SS.mmm"."""
-        millis = int(round(frames * 1000 / self.fps))
-        hours, rest = divmod(millis, 3600000)
-        minutes, rest = divmod(rest, 60000)
-        return f'{hours:02d}:{minutes:02d}:{rest // 1000:02d}.{rest % 1000:03d}'
+        return project_export.clock(frames, self.fps)
 
     def element(self, tag, attributes=None, properties=None, parent=None):
         node = etree.SubElement(parent if parent is not None else self.root, tag,

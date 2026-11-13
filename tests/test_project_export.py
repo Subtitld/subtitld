@@ -136,6 +136,39 @@ if shutil.which('melt'):
 else:
     print('  [SKIP] no melt to play it')
 
+print('Shotcut')
+from subtitld.modules import shotcut_project
+check('subtitle languages as Shotcut names them', [shotcut_project.iso639_2(code) for code in ('en', 'pt-br', 'xx', '')],
+      ['eng', 'por', '', ''])
+timeline = project_export.collect(subtitle, video)
+mlt = folder / 'shot' / 'film.mlt'
+project_export.gather(timeline, project_export.media_folder(str(mlt)), keep={video['filepath']})
+shotcut_project.save(str(mlt), timeline)
+root = etree.parse(str(mlt)).getroot()
+tractor = root.find('tractor')
+playlists = {node.get('id'): node for node in root.findall('playlist')}
+tracks = [playlists[t.get('producer')] for t in tractor.findall('track')]
+check('a Shotcut timeline: the background, the video, then the sound tracks, named and marked',
+      (prop(tractor, 'shotcut'), [(prop(p, 'shotcut:name'), 'video' if prop(p, 'shotcut:video') else 'audio')
+                                  for p in tracks[1:]], tracks[0].get('id')),
+      ('1', [('Video', 'video'), ('Audio', 'audio'), ('Ana 1', 'audio'), ('Ana 2', 'audio'), ('Bo', 'audio')],
+       'background'))
+feeds = [f for f in tractor.findall('filter') if prop(f, 'mlt_service') == 'subtitle_feed']
+check('its subtitle tracks, as SRT', [(prop(f, 'feed'), prop(f, 'lang'), prop(f, 'text').splitlines()[1]) for f in feeds],
+      [('Subtitles', 'eng', '00:00:01,000 --> 00:00:02,500'), ('pt-br', 'por', '00:00:01,000 --> 00:00:02,500')])
+chains = {c.get('id'): c for c in root.findall('chain')}
+check('the video\'s picture on V1 without its sound, its sound on A1',
+      [(prop(chains[e.get('producer')], 'video_index'), prop(chains[e.get('producer')], 'audio_index'))
+       for e in (tracks[1].find('entry'), tracks[2].find('entry'))], [('0', '-1'), ('-1', '1')])
+if shutil.which('melt'):
+    shot = folder / 'shot.mp4'
+    subprocess.run(['melt', str(mlt), '-consumer', f'avformat:{shot}', 'vcodec=libx264', 'acodec=aac'],
+                   capture_output=True, timeout=120, cwd=mlt.parent)
+    render = shot
+    check('melt plays it: the sound, and each speech at its time', (
+        220 in loudest(0.2, 0.8), 660 in loudest(1.2, 2.2), 440 in loudest(3.2, 3.8), 880 in loudest(5.4, 6.0)),
+        (True, True, True, True))
+
 print('through file_io')
 session.SUBTITLE = subtitle
 session.VIDEO = video
