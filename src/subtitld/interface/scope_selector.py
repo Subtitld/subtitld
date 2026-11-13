@@ -732,9 +732,9 @@ class ScopeFooter(QWidget):
 
     def as_corner_tab(self):
         """The ending a speaker card's dubbing section wears: the scope chip
-        moves to the action row's left, the hairline above the row goes, and the
-        main action becomes the dialogs' light slanted tab in the row's
-        bottom-right corner, flush with the edges."""
+        moves to the action row's left, the row loses its band and the
+        hairline above it, and the main action becomes the dialogs' light
+        slanted tab in the row's bottom-right corner, flush with the edges."""
         self.setProperty('corner_tab', True)
         self.divider.setVisible(False)
         actions = self.actions_page.layout()
