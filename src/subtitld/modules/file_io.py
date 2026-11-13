@@ -45,6 +45,7 @@ from subtitld.modules import microdvd
 from subtitld.modules import pac
 from subtitld.modules import pgs
 from subtitld.modules import plaintext
+from subtitld.modules import project_export
 from subtitld.modules import sami
 from subtitld.modules import sbv
 from subtitld.modules import scc
@@ -2097,6 +2098,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             text = plaintext.serialize(SUBTITLE.get('segments') or [], plaintext.JSON,
                                        language=SUBTITLE.get('language'))
             open(final_file, mode='w', encoding='utf-8').write(text)
+
+        elif subtitle_format in project_export.FORMATS:
+            # A project of another program, the subtitles and their dub on
+            # its timeline (modules.project_export).
+            project_export.save(final_file, subtitle_format, SUBTITLE, VIDEO, options.get('project'),
+                                names={key: _(f'export_dialog.project_track_{key}')
+                                       for key in ('video', 'audio', 'background', 'subtitles')})
 
         elif subtitle_format in documents.FORMATS:
             # A document to read, of what the Documents tab chose to hold

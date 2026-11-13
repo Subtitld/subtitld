@@ -30,6 +30,7 @@ from subtitld.modules import isobmff_text
 from subtitld.modules import markup
 from subtitld.modules import mcc
 from subtitld.modules import pac
+from subtitld.modules import project_export
 from subtitld.modules import session
 from subtitld.modules import soft_subtitles
 from subtitld.modules import subtitle_styles
@@ -921,6 +922,87 @@ class _DocumentsPanel(QWidget):
         return {'category': 'documents', 'format': fmt, 'options': {'document': chosen}}
 
 
+class _ProjectPanel(QWidget):
+    """The project tab: the program, then what goes on its timeline
+    (modules.project_export): the video, its sound or the background
+    separated from the voices, the dubbed speeches, the subtitles and
+    their translations; each offered when there is one."""
+    changed = Signal()                                         # a choice the project is written with
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_project') or {}
+        segments = session.SUBTITLE.get('segments') or []
+        has_video = bool((session.VIDEO or {}).get('filepath'))
+
+        self.format_combo = utils.HeaderComboBox()
+        self.format_combo.setLabel(_('export_dialog.format'))
+        for fmt in project_export.FORMATS:
+            self.format_combo.combobox.addItem(_(f'export_dialog.project_{fmt.lower()}'), fmt)
+        self.layout().addWidget(self.format_combo)
+
+        self.audio_combo = utils.LabeledComboBox()
+        self.audio_combo.setLabel(_('export_dialog.project_audio'))
+        self.audio_combo.combobox.addItem(_('export_dialog.project_audio_original'), 'original')
+        if project_export.background_path(session.VIDEO):
+            self.audio_combo.combobox.addItem(_('export_dialog.project_audio_background'), 'background')
+        self.audio_combo.combobox.addItem(_('export_dialog.project_audio_none'), 'none')
+        self.audio_combo.setVisible(has_video)
+        self.layout().addWidget(self.audio_combo)
+
+        self.video_check = QCheckBox(_('export_dialog.project_video'))
+        self.video_check.setVisible(has_video)
+        self.layout().addWidget(self.video_check)
+        self.speeches_check = QCheckBox(_('export_dialog.project_speeches'))
+        self.speeches_check.setVisible(any(s.get('dubbing') for s in segments))
+        self.layout().addWidget(self.speeches_check)
+        self.subtitles_check = QCheckBox(_('export_dialog.project_subtitles'))
+        self.layout().addWidget(self.subtitles_check)
+        self.translations_check = QCheckBox(_('export_dialog.project_translations'))
+        self._has_translations = bool(documents.languages_of(segments))
+        self.layout().addWidget(self.translations_check)
+        self.layout().addStretch()
+
+        _select(self.format_combo, remembered.get('format'))
+        _select(self.audio_combo, remembered.get('audio', project_export.DEFAULTS['audio']))
+        for key, check in (('video', self.video_check), ('speeches', self.speeches_check),
+                           ('subtitles', self.subtitles_check), ('translations', self.translations_check)):
+            check.setChecked(bool(remembered.get(key, project_export.DEFAULTS[key])))
+        self.subtitles_check.toggled.connect(self._refresh)
+        for combo in (self.format_combo, self.audio_combo):
+            combo.combobox.currentIndexChanged.connect(self.changed)
+        for check in (self.video_check, self.speeches_check, self.subtitles_check, self.translations_check):
+            check.toggled.connect(self.changed)
+        self._refresh()
+
+    def _refresh(self, *_args):
+        self.translations_check.setVisible(self._has_translations and self.subtitles_check.isChecked())
+
+    def choose(self, fmt):
+        _select(self.format_combo, fmt)
+
+    def export_choices(self):
+        """(program, what goes in), as chosen; what is not offered left out."""
+        choices = {'audio': self.audio_combo.combobox.currentData() if not self.audio_combo.isHidden() else 'none',
+                   'video': self.video_check.isChecked() and not self.video_check.isHidden(),
+                   'speeches': self.speeches_check.isChecked() and not self.speeches_check.isHidden(),
+                   'subtitles': self.subtitles_check.isChecked(),
+                   'translations': self.translations_check.isChecked() and not self.translations_check.isHidden()}
+        return self.format_combo.combobox.currentData(), choices
+
+    def get_config(self):
+        fmt, choices = self.export_choices()
+        remembered = {'format': fmt, 'audio': self.audio_combo.combobox.currentData()}
+        for key, check in (('video', self.video_check), ('speeches', self.speeches_check),
+                           ('subtitles', self.subtitles_check), ('translations', self.translations_check)):
+            remembered[key] = check.isChecked()
+        session.CONFIG['export_project'] = remembered
+        return {'category': 'project', 'format': fmt, 'options': {'project': choices}}
+
+
 # The video page's formats, as its header lists them: the ways the subtitles
 # can go in each, and the export each way makes (a transport stream's track
 # is teletext, 'TS', or DVB subtitles, 'TS DVB', as its track format says).
@@ -1428,7 +1510,7 @@ class ExportDialog(utils.SimpleDialog):
     """Universal export dialog. Returns a config dict via
     `exec_and_get_values()` or None when cancelled."""
 
-    CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents']
+    CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents', 'project']
 
     def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None):
         super().__init__(parent, _('export_dialog.title'))
@@ -1493,7 +1575,9 @@ class ExportDialog(utils.SimpleDialog):
         self.audio_panel = _AudioPanel(has_background=has_background, has_vocals=has_vocals)
         self.video_panel = _VideoPanel()
         self.documents_panel = _DocumentsPanel()
-        for panel in (self.subtitles_panel, self.audio_panel, self.video_panel, self.documents_panel):
+        self.project_panel = _ProjectPanel()
+        for panel in (self.subtitles_panel, self.audio_panel, self.video_panel, self.documents_panel,
+                      self.project_panel):
             self._pages.addWidget(self._page(panel))
 
         for index, key in enumerate(self.CATEGORY_KEYS):
@@ -1507,6 +1591,7 @@ class ExportDialog(utils.SimpleDialog):
         self.subtitles_panel.changed.connect(self._preview_timer.start)
         self.video_panel.changed.connect(self._preview_timer.start)
         self.documents_panel.changed.connect(self._preview_timer.start)
+        self.project_panel.changed.connect(self._preview_timer.start)
         # A video export's still: a few seconds written in the background, one at a time.
         self._still = None                                     # the request being drawn: (number, path)
         self._still_count = 0
@@ -1661,6 +1746,9 @@ class ExportDialog(utils.SimpleDialog):
         if self._current_category() == 'video' and session.SUBTITLE.get('segments'):
             self._preview_still()
             return
+        if self._current_category() == 'project':
+            self._preview_project()
+            return
         if self._current_category() == 'documents' and session.SUBTITLE.get('segments'):
             self._preview_document()
             return
@@ -1685,6 +1773,30 @@ class ExportDialog(utils.SimpleDialog):
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
         self.preview_panel.show_text(text)
+
+    def _preview_project(self):
+        """What the project's timeline holds: its tracks, each with how many
+        clips, and its subtitle tracks, each with how many subtitles."""
+        _fmt, choices = self.project_panel.export_choices()
+        try:
+            timeline = project_export.collect(
+                session.SUBTITLE, session.VIDEO, choices, project_export.background_path(session.VIDEO),
+                names={key: _(f'export_dialog.project_track_{key}') for key in ('video', 'audio', 'background',
+                                                                                 'subtitles')})
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+            return
+        # Numbered as the editors number them: V1, A1, A2...; S for subtitles.
+        lines, counts = [], {}
+        for letter, name, items in [('V' if track.kind == 'video' else 'A', track.name, track.clips)
+                                    for track in timeline.tracks] + [('S', name, cues)
+                                                                     for name, _lang, cues in timeline.subtitles]:
+            counts[letter] = counts.get(letter, 0) + 1
+            lines.append(f'{letter}{counts[letter]}  {name}  ({len(items)})')
+        if lines:
+            self.preview_panel.show_text('\n'.join(lines))
+        else:
+            self.preview_panel.show_nothing()
 
     def _preview_document(self):
         """The document as chosen: the start of its text, or its first
@@ -1893,4 +2005,6 @@ class ExportDialog(utils.SimpleDialog):
             cfg = self.video_panel.get_config()
             cfg['category'] = 'video'
             return cfg
+        if category == 'project':
+            return self.project_panel.get_config()
         return self.documents_panel.get_config()

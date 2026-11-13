@@ -261,6 +261,11 @@ LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
     'PDF': {'description': 'PDF document', 'extensions': ['pdf']},
 }
 
+# Projects of video and audio editors (modules.project_export).
+LIST_OF_SUPPORTED_PROJECT_EXTENSIONS = {
+    'KDENLIVE': {'description': 'Kdenlive project', 'extensions': ['kdenlive']},
+}
+
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {
     'WAV': {'description': 'WAV audio', 'extensions': ['wav']},
     'FLAC': {'description': 'FLAC lossless audio', 'extensions': ['flac']},
