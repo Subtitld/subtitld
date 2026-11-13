@@ -21,6 +21,7 @@ from subtitld.modules import bdn
 from subtitld.modules import burned_video
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
+from subtitld.modules import documents
 from subtitld.modules import dvd_scripts
 from subtitld.modules import export_options
 from subtitld.modules import file_io
@@ -45,7 +46,6 @@ DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
 DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
-DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
 
 
 class _SubtitlesPanel(QWidget):
@@ -788,48 +788,137 @@ class _AudioPanel(QWidget):
 
 
 class _DocumentsPanel(QWidget):
-    """The documents tab: the format and, for CSV, which table to write
-    (modules.csv_export)."""
+    """The documents tab: the format, then what the document holds, of what
+    that format can (modules.documents), then the options that takes."""
+    changed = Signal()                                         # a choice the document is written with
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_documents') or {}
 
         self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
-        self.format_combo.addItems(DOCUMENT_FORMATS)
-        self.format_combo.combobox.currentIndexChanged.connect(self._refresh_options)
+        for fmt in documents.FORMATS:
+            self.format_combo.combobox.addItem(_(f'export_dialog.document_{fmt.lower()}'), fmt)
+        self.format_combo.activated.connect(self._refresh_format)
         self.layout().addWidget(self.format_combo)
 
-        self.csv_type_combo = utils.LabeledComboBox()
-        self.csv_type_combo.setLabel(_('export_dialog.csv_type'))
-        for csv_type in csv_export.TYPES:
-            self.csv_type_combo.combobox.addItem(_(f'export_dialog.csv_{csv_type}'), csv_type)
-        self.layout().addWidget(self.csv_type_combo)
+        self.content_combo = utils.LabeledComboBox()
+        self.content_combo.setLabel(_('export_dialog.document_content'))
+        self.content_combo.activated.connect(self._refresh_content)
+        self.layout().addWidget(self.content_combo)
+        # What each format was last made to hold.
+        self._contents = dict(remembered.get('contents') or {})
 
-        self.note = QLabel(_('export_dialog.documents_placeholder'))
-        self.note.setWordWrap(True)
-        self.layout().addWidget(self.note)
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.times_combo = utils.LabeledComboBox()
+        self.times_combo.setLabel(_('export_dialog.document_times'))
+        for times in documents.TIMES:
+            self.times_combo.combobox.addItem(_(f'export_dialog.document_times_{times}'), times)
+        self.times_combo.activated.connect(self._refresh_content)
+        line.addWidget(self.times_combo, 1)
+        self.time_format_combo = utils.LabeledComboBox()
+        self.time_format_combo.setLabel(_('export_dialog.document_time_format'))
+        for time_format in documents.TIME_FORMATS:
+            self.time_format_combo.combobox.addItem(_(f'export_dialog.document_time_{time_format}'), time_format)
+        line.addWidget(self.time_format_combo, 1)
+        self.layout().addWidget(row)
+
+        # The translations a sheet has columns for: all, or one.
+        self.languages_combo = utils.LabeledComboBox()
+        self.languages_combo.setLabel(_('export_dialog.document_languages'))
+        self.languages_combo.combobox.addItem(_('export_dialog.document_languages_all'), '')
+        names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+        for language in documents.languages_of(session.SUBTITLE.get('segments')):
+            self.languages_combo.combobox.addItem(names.get(language, language), language)
+        self.layout().addWidget(self.languages_combo)
+
+        self.speakers_check = QCheckBox(_('export_dialog.document_speakers'))
+        self.layout().addWidget(self.speakers_check)
+        self.by_speaker_check = QCheckBox(_('export_dialog.document_by_speaker'))
+        self.layout().addWidget(self.by_speaker_check)
+        self.title_check = QCheckBox(_('export_dialog.document_title'))
+        self.layout().addWidget(self.title_check)
 
         self.layout().addStretch()
-        self._refresh_options()
 
-    def _refresh_options(self, *_args):
-        is_csv = self.format_combo.currentText() == 'CSV'
-        self.csv_type_combo.setVisible(is_csv)
-        self.note.setVisible(not is_csv)
+        _select(self.format_combo, remembered.get('format'))
+        _select(self.times_combo, remembered.get('times', documents.DEFAULTS['times']))
+        _select(self.time_format_combo, remembered.get('time_format', documents.DEFAULTS['time_format']))
+        _select(self.languages_combo, remembered.get('language', ''))
+        self.speakers_check.setChecked(bool(remembered.get('speakers', documents.DEFAULTS['speakers'])))
+        self.by_speaker_check.setChecked(bool(remembered.get('by_speaker', documents.DEFAULTS['by_speaker'])))
+        self.title_check.setChecked(bool(remembered.get('title', documents.DEFAULTS['title'])))
+        for combo in (self.format_combo, self.content_combo, self.times_combo, self.time_format_combo,
+                      self.languages_combo):
+            combo.combobox.currentIndexChanged.connect(self.changed)
+        for check in (self.speakers_check, self.by_speaker_check, self.title_check):
+            check.toggled.connect(self.changed)
+        self._refresh_format()
+
+    def choose(self, fmt, content=None):
+        """Select `fmt` and, if it can hold it, `content`."""
+        _select(self.format_combo, fmt)
+        if content:
+            self._contents[fmt] = content
+        self._refresh_format()
+
+    def _format(self):
+        return self.format_combo.combobox.currentData() or next(iter(documents.FORMATS))
+
+    def _content(self):
+        return documents.content_of(self._format(), self.content_combo.combobox.currentData())
+
+    def _refresh_format(self, *_args):
+        """The contents the format can hold, the one it held last chosen."""
+        fmt = self._format()
+        combo = self.content_combo.combobox
+        combo.blockSignals(True)
+        combo.clear()
+        for content in documents.contents_of(fmt):
+            combo.addItem(_(f'export_dialog.document_content_{content}'), content)
+        _select(self.content_combo, documents.content_of(fmt, self._contents.get(fmt)))
+        combo.blockSignals(False)
+        self._refresh_content()
+        self.changed.emit()
+
+    def _refresh_content(self, *_args):
+        """The options the chosen content takes in the chosen format."""
+        fmt, content = self._format(), self._content()
+        self._contents[fmt] = content
+        timed = content in (documents.TRANSCRIPT, documents.SCRIPT, documents.TRANSLATION)
+        self.times_combo.setVisible(timed)
+        self.time_format_combo.setVisible(content == documents.DUBBING or (
+            timed and self.times_combo.combobox.currentData() != 'none'))
+        self.languages_combo.setVisible(content == documents.TRANSLATION and self.languages_combo.combobox.count() > 2)
+        self.speakers_check.setVisible(content in (documents.TRANSCRIPT, documents.SCRIPT))
+        self.by_speaker_check.setVisible(content == documents.DUBBING)
+        self.title_check.setVisible(fmt != 'CSV' and content != documents.MARKERS)
+
+    def export_choices(self):
+        """(format, what the document holds and how), as chosen."""
+        language = self.languages_combo.combobox.currentData()
+        return self._format(), {
+            'content': self._content(),
+            'times': self.times_combo.combobox.currentData(),
+            'time_format': self.time_format_combo.combobox.currentData(),
+            'languages': [language] if language else None,
+            'speakers': self.speakers_check.isChecked(),
+            'by_speaker': self.by_speaker_check.isChecked(),
+            'title': self.title_check.isChecked(),
+        }
 
     def get_config(self):
-        fmt = self.format_combo.currentText()
-        config = {
-            'category': 'documents',
-            'format': fmt,
-        }
-        if fmt == 'CSV':
-            config['options'] = {'csv_type': self.csv_type_combo.combobox.currentData()}
-        return config
+        fmt, chosen = self.export_choices()
+        remembered = {key: value for key, value in chosen.items() if key not in ('content', 'languages')}
+        remembered['language'] = self.languages_combo.combobox.currentData() or ''
+        session.CONFIG['export_documents'] = dict(remembered, format=fmt, contents=dict(self._contents))
+        return {'category': 'documents', 'format': fmt, 'options': {'document': chosen}}
 
 
 # The video page's formats, as its header lists them: the ways the subtitles
@@ -1417,6 +1506,7 @@ class ExportDialog(utils.SimpleDialog):
         self._preview_timer.timeout.connect(self.refresh_preview)
         self.subtitles_panel.changed.connect(self._preview_timer.start)
         self.video_panel.changed.connect(self._preview_timer.start)
+        self.documents_panel.changed.connect(self._preview_timer.start)
         # A video export's still: a few seconds written in the background, one at a time.
         self._still = None                                     # the request being drawn: (number, path)
         self._still_count = 0
@@ -1571,6 +1661,9 @@ class ExportDialog(utils.SimpleDialog):
         if self._current_category() == 'video' and session.SUBTITLE.get('segments'):
             self._preview_still()
             return
+        if self._current_category() == 'documents' and session.SUBTITLE.get('segments'):
+            self._preview_document()
+            return
         if self._current_category() != 'subtitles' or not session.SUBTITLE.get('segments'):
             self.preview_panel.show_nothing()
             return
@@ -1592,6 +1685,31 @@ class ExportDialog(utils.SimpleDialog):
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
         self.preview_panel.show_text(text)
+
+    def _preview_document(self):
+        """The document as chosen: the start of its text, or its first
+        page as the PDF prints it."""
+        fmt, chosen = self.documents_panel.export_choices()
+        chosen = dict(chosen)
+        content = chosen.pop('content')
+        segments = session.SUBTITLE.get('segments')
+        try:
+            if content == documents.MARKERS:
+                self.preview_panel.show_text(csv_export.write(segments))
+                return
+            document = documents.build(
+                content, segments, chosen, fps=(session.VIDEO or {}).get('framerate'),
+                title=documents.title_for(session.SUBTITLE, session.VIDEO),
+                columns=None if fmt == 'CSV' else {key: _(f'export_dialog.document_column_{key}')
+                                                   for key in documents.COLUMNS})
+            if fmt == 'TXT':
+                self.preview_panel.show_text(documents.txt(document))
+            elif fmt == 'CSV':
+                self.preview_panel.show_text(documents.csv_text(document))
+            else:
+                self.preview_panel.show_still(documents.page_image(document, 2 * _PreviewPanel.WIDTH))
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
 
     def _preview_still(self):
         """The video export's frame at the subtitle under the cursor, else

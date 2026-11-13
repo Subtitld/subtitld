@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "Ses",
     "export_dialog.category_video": "Video",
     "export_dialog.category_documents": "Belgeler",
-    "export_dialog.documents_placeholder": "Belge dışa aktarma seçenekleri buraya eklenecek.",
     "export_dialog.processing": "{fmt} dışa aktarılıyor…",
     "export_dialog.processing_generic": "Dışa aktarılıyor…",
     "export_dialog.export_failed": "Dışa aktarma başarısız: {error}",

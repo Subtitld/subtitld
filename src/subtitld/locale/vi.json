@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "Âm thanh",
     "export_dialog.category_video": "Video",
     "export_dialog.category_documents": "Tài liệu",
-    "export_dialog.documents_placeholder": "Các tùy chọn xuất tài liệu sẽ được thêm vào đây.",
     "export_dialog.processing": "Đang xuất {fmt}…",
     "export_dialog.processing_generic": "Đang xuất…",
     "export_dialog.export_failed": "Xuất thất bại: {error}",

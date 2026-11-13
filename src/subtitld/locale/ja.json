@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "音声",
     "export_dialog.category_video": "動画",
     "export_dialog.category_documents": "ドキュメント",
-    "export_dialog.documents_placeholder": "ドキュメントのエクスポート設定は今後ここに追加されます。",
     "export_dialog.processing": "{fmt} をエクスポート中…",
     "export_dialog.processing_generic": "エクスポート中…",
     "export_dialog.export_failed": "エクスポートに失敗しました：{error}",

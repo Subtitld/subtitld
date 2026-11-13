@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "音频",
     "export_dialog.category_video": "视频",
     "export_dialog.category_documents": "文档",
-    "export_dialog.documents_placeholder": "文档导出选项稍后会加到这里。",
     "export_dialog.processing": "正在导出 {fmt}…",
     "export_dialog.processing_generic": "正在导出…",
     "export_dialog.export_failed": "导出失败：{error}",

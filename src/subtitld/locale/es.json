@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "Audio",
     "export_dialog.category_video": "Vídeo",
     "export_dialog.category_documents": "Documentos",
-    "export_dialog.documents_placeholder": "Aquí se añadirán las opciones de exportación de documentos.",
     "export_dialog.processing": "Exportando {fmt}…",
     "export_dialog.processing_generic": "Exportando…",
     "export_dialog.export_failed": "Error al exportar: {error}",

@@ -252,10 +252,13 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
 }
 
+# Documents to read (modules.documents).
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
-    'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
-    'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']},
     'CSV': {'description': 'CSV table', 'extensions': ['csv']},
+    'TXT': {'description': 'Plain text', 'extensions': ['txt']},
+    'DOCX': {'description': 'Word document', 'extensions': ['docx']},
+    'ODT': {'description': 'OpenDocument text', 'extensions': ['odt']},
+    'PDF': {'description': 'PDF document', 'extensions': ['pdf']},
 }
 
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {

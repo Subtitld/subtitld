@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "오디오",
     "export_dialog.category_video": "동영상",
     "export_dialog.category_documents": "문서",
-    "export_dialog.documents_placeholder": "문서 내보내기 옵션이 여기에 추가될 예정입니다.",
     "export_dialog.processing": "{fmt} 내보내는 중…",
     "export_dialog.processing_generic": "내보내는 중…",
     "export_dialog.export_failed": "내보내기 실패: {error}",

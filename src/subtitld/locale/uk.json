@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "Аудіо",
     "export_dialog.category_video": "Відео",
     "export_dialog.category_documents": "Документи",
-    "export_dialog.documents_placeholder": "Тут з’являться параметри експорту документів.",
     "export_dialog.processing": "Експортування {fmt}…",
     "export_dialog.processing_generic": "Експортування…",
     "export_dialog.export_failed": "Не вдалося експортувати: {error}",

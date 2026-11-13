@@ -436,7 +436,6 @@
     "export_dialog.category_audio": "Zvuk",
     "export_dialog.category_video": "Video",
     "export_dialog.category_documents": "Dokumenty",
-    "export_dialog.documents_placeholder": "Možnosti exportu dokumentů budou přidány sem.",
     "export_dialog.processing": "Exportuje se {fmt}…",
     "export_dialog.processing_generic": "Exportuje se…",
     "export_dialog.export_failed": "Export se nepodařil: {error}",
