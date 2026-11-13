@@ -10,7 +10,7 @@ checked looks, so a group reads as one object.
 import math
 import os
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (QColor, QFontMetricsF, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPainterPathStroker,
                            QPolygonF, QRegion, QTransform)
 from PySide6.QtSvg import QSvgRenderer
@@ -480,11 +480,47 @@ class BalanceSlider(QAbstractSlider):
         return self.size()
 
 
+# --- a row of the player bar that the window may be narrower than ---------------------------------------------------
+
+class CroppedRow(QWidget):
+    """Holds one row of the player bar without passing its minimum width on,
+    so the window can be made narrower than the row needs. The row keeps its
+    own minimum: narrower than that, its middle shows and both ends are
+    cropped alike, so the transport stays centred."""
+
+    def __init__(self, row, parent=None):
+        super().__init__(parent)
+        self.row = row
+        row.setParent(self)
+        self.setSizePolicy(QSizePolicy.Preferred, row.sizePolicy().verticalPolicy())
+        row.installEventFilter(self)
+
+    def sizeHint(self):
+        return self.row.sizeHint()
+
+    def minimumSizeHint(self):
+        return QSize(0, self.row.minimumSizeHint().height())
+
+    def eventFilter(self, obj, event):
+        if obj is self.row and event.type() == QEvent.LayoutRequest:
+            self.updateGeometry()
+            self._place()
+        return False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place()
+
+    def _place(self):
+        width = max(self.width(), self.row.minimumSizeHint().width())
+        self.row.setGeometry((self.width() - width) // 2, 0, width, self.height())
+
+
 # --- add subtitle: the button with its switches hanging in it -------------------------------------------------------
 
 class AddSubtitleButton(QAbstractButton):
-    """ADD: a 42px raised button hanging from the top line (its icon and
-    label on the left), with its three switches hanging from its top edge as
+    """ADD: a 42px raised button hanging from the top line (its icon on the
+    left, and a label after it if it is given one), with its three switches hanging from its top edge as
     one 75° notch of raised keys whose icons butt into one picture — a
     switched-on key sinks — and the new subtitle's duration field after
     them. The switches are StripKeys (checkable), the field the given spin

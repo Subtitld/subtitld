@@ -2283,7 +2283,7 @@ QMenu#subtitle_formatting_menu::separator {
 /* REMOVE continues ADD's piece (player_widgets.AddSubtitleButton) as one
    group: the same raised fill and contact line, square where they meet. */
 #playercontrols_widget_top_line #remove_selected_subtitle_button {
-    padding: 0 12 0 10;
+    padding: 0 11;
     border: 0;
     border-bottom: 1px solid rgba(0, 0, 0, 64);
     border-radius: 0;

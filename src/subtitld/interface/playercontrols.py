@@ -368,7 +368,8 @@ def load(self):
     self.playercontrols_widget.setLayout(QVBoxLayout())
     self.playercontrols_widget.layout().setContentsMargins(0, 0, 0, 0)
     self.playercontrols_widget.layout().setSpacing(0)
-    self.playercontrols_widget.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
+    # Preferred across: narrower than its rows' preferred width, they crop (player_widgets.CroppedRow).
+    self.playercontrols_widget.setSizePolicy(QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum))
     self.playercontrols_widget_animation = QPropertyAnimation(self.playercontrols_widget, b'minimumHeight')
     self.playercontrols_widget_animation.setEasingCurve(QEasingCurve.OutQuint)
 
@@ -802,7 +803,8 @@ def load(self):
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_right_top_line, 1)
     self.playercontrols_widget_center_top_line.raise_()     # over the side lines, which run under its margins
 
-    self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_top_line, 0)
+    # Both rows crop rather than keep the window from being made narrower than they need.
+    self.playercontrols_widget.layout().addWidget(player_widgets.CroppedRow(self.playercontrols_widget_top_line), 0)
     
     self.playercontrols_widget_bottom_line = QWidget()
     self.playercontrols_widget_bottom_line.setObjectName('playercontrols_widget_bottom_line')
@@ -1457,7 +1459,8 @@ def load(self):
 
     self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_right_bottom_line)
 
-    self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_bottom_line, 0)
+    self.playercontrols_widget_bottom_line_holder = player_widgets.CroppedRow(self.playercontrols_widget_bottom_line)
+    self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_bottom_line_holder, 0)
 
     self.playercontrols_widget.layout().addSpacing(-25)
 
@@ -1465,7 +1468,7 @@ def load(self):
     
     self.playercontrols_widget.layout().addWidget(self.timeline_scroll, 1)
 
-    self.playercontrols_widget_bottom_line.raise_()
+    self.playercontrols_widget_bottom_line_holder.raise_()
 
 
 def playercontrols_play_from_beginning_button_clicked(self):
@@ -2793,10 +2796,8 @@ def escape_actions(self):
 
 
 def translate(self):
-    self.add_subtitle_button.setText(' ' + _('playercontrols.add'))
     self.snap_button_label.setText(_('playercontrols.snap'))
     self.step_button.setText(_('playercontrols.step'))
-    self.remove_selected_subtitle_button.setText(' ' + _('playercontrols.remove'))
     self.grid_button.setText(_('playercontrols.grid'))
 
     self.send_text_to_last_subtitle_button.setToolTip(_('playercontrols.send_text_to_last_subtitle'))
