@@ -553,9 +553,9 @@ QLabel[class='metadata_badge'] {
    and standing on the header's bottom edge, the state strip, one joined row where the chosen state sinks, each
    with how many add-ons it holds. */
 QLineEdit#addons_search {
-    min-height: 26px;
-    max-height: 26px;
-    padding: 0 6px 0 4px;
+    min-height: 30px;
+    max-height: 30px;
+    padding: 0 6px 0 6px;
     border: 0;
     border-radius: 0;
     font-size: 11px;
@@ -565,19 +565,19 @@ QLineEdit#addons_search {
 
 /* Its left slice holds the slant (and the field's well beside it), so the field runs into the tab. */
 QPushButton#addons_filters_button {
-    border-image: url(graphics:addons_filters_tab.svg) 0 0 0 12 stretch stretch;
-    border-width: 0 0 0 12px;
+    border-image: url(graphics:addons_filters_tab.svg) 0 0 0 14 stretch stretch;
+    border-width: 0 0 0 14px;
     border-radius: 0;
     padding: 0;
     background: transparent;
 }
 
 QPushButton#addons_filters_button:hover {
-    border-image: url(graphics:addons_filters_tab_hover.svg) 0 0 0 12 stretch stretch;
+    border-image: url(graphics:addons_filters_tab_hover.svg) 0 0 0 14 stretch stretch;
 }
 
 QPushButton#addons_filters_button:pressed {
-    border-image: url(graphics:addons_filters_tab_pressed.svg) 0 0 0 12 stretch stretch;
+    border-image: url(graphics:addons_filters_tab_pressed.svg) 0 0 0 14 stretch stretch;
 }
 
 QLabel#addons_filters_text {
@@ -602,9 +602,10 @@ QLabel#addons_filters_count {
     qproperty-alignment: AlignCenter;
 }
 
-/* Standing on the header's bottom edge, like the player's bottom line: rounded on top only, no contact line. */
+/* Standing on the header's bottom edge, like the player's bottom line and in its colours (raised but half as
+   deep): rounded on top only, no contact line. */
 #addons_state_strip _StateSegment {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a6376, stop:1 #324350);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #354857, stop:1 #293843);
     border: 0;
     border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
@@ -621,11 +622,11 @@ QLabel#addons_filters_count {
 }
 
 #addons_state_strip _StateSegment:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #566f82, stop:1 #3e4f5e);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #435563, stop:1 #384650);
 }
 
 #addons_state_strip _StateSegment:checked {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d2830, stop:1 #2e3e4b);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1c2730, stop:1 #2b3a45);
     border-left-color: transparent;
 }
 
