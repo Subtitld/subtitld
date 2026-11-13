@@ -194,12 +194,12 @@ def _stacked_resize_to_current(stacked):
     the visible one contributes to the stack's sizeHint — Qt then collapses
     the empty rows that would otherwise be reserved for taller siblings.
 
-    The parent is signalled via updateGeometry() rather than adjustSize() —
-    adjustSize() snaps the parent's width down to its sizeHint, which then
-    shrinks any siblings (like the dubbing-engine combobox) whose policy
-    allows them to follow the parent's narrower width. updateGeometry()
-    invalidates the layout cache and lets Qt reflow vertically while
-    leaving the parent's horizontal extent alone."""
+    Nothing here calls adjustSize(): it snaps a widget's width down to its
+    sizeHint, and on the stack that left the engine panel narrower than the
+    section around it whenever an engine was picked again (the parent's own
+    size did not change, so its layout never set the stack's width back).
+    Invalidating the layouts lets Qt reflow vertically while every width
+    stays the layout's."""
     current = stacked.currentWidget()
     for i in range(stacked.count()):
         page = stacked.widget(i)
@@ -208,11 +208,11 @@ def _stacked_resize_to_current(stacked):
         policy = page.sizePolicy()
         policy.setVerticalPolicy(QSizePolicy.Preferred if page is current else QSizePolicy.Ignored)
         page.setSizePolicy(policy)
-    if current is not None:
-        current.adjustSize()
-    stacked.adjustSize()
+    stacked.updateGeometry()
     parent = stacked.parentWidget()
     if parent is not None:
+        if parent.layout() is not None:
+            parent.layout().invalidate()
         parent.updateGeometry()
 
 
