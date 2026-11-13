@@ -131,6 +131,8 @@ class ScopeSelector(QWidget):
     """
 
     changed = Signal()
+    # The bar opened (True) or closed (False), for a host that dresses itself to match.
+    expanded_changed = Signal(bool)
 
     def __init__(self, config_section, parent=None):
         super().__init__(parent)
@@ -302,6 +304,8 @@ class ScopeSelector(QWidget):
 
         prev = self._expanded_state
         self._expanded_state = expanded
+        if prev != expanded:
+            self.expanded_changed.emit(expanded)
 
         anim = self._bar_anim
         anim.stop()
@@ -504,9 +508,11 @@ class ScopeSelector(QWidget):
             self.combobox.setCurrentIndex(SCOPE_IDS.index(scope))
             self.combobox.blockSignals(False)
 
-            # Chip: "<SCOPE>  <icon>" — ≡ (expand) when collapsed, − (collapse) when open.
-            scope_name = self.combobox.currentText() or scope.upper()
-            self.chip.setText(f'{scope_name.upper()}   {"−" if expanded else "≡"}')
+            # Chip: "<SCOPE>  <icon>" — ≡ (expand) when collapsed, − (collapse) when open. Docked at a row's
+            # left (ScopeFooter.as_corner_tab), the icon leads.
+            scope_name = (self.combobox.currentText() or scope.upper()).upper()
+            icon = '−' if expanded else '≡'
+            self.chip.setText(f'{icon}   {scope_name}' if self.chip.property('docked') else f'{scope_name}   {icon}')
 
             self._set_expanded(expanded)
 
@@ -745,10 +751,20 @@ class ScopeFooter(QWidget):
             self.selector.layout().setContentsMargins(0, 0, 0, 0)
             actions.insertWidget(0, chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
             actions.insertStretch(1, 1)
+            self.selector.expanded_changed.connect(self._dress_open)
+            self.selector.refresh()
         primary = getattr(self, '_primary', None)
         if primary is not None:
             primary.setProperty('class', 'scope_action_tab')
             actions.setAlignment(primary, Qt.AlignRight | Qt.AlignBottom)
+
+    def _dress_open(self, expanded):
+        """A corner-tab footer takes the open bar's colour, so the two read
+        as one panel."""
+        self.row.setProperty('scope_open', bool(expanded))
+        self.row.style().unpolish(self.row)
+        self.row.style().polish(self.row)
+        self.row.update()
 
     def add_stretch(self):
         """Push the actions added after this to the row's far end."""
