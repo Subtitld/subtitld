@@ -494,7 +494,7 @@ QPushButton[class~="scope_action_tab"],
     border-image: url(graphics:dialog_bottom_right.svg) 5 5 5 24 stretch stretch;
     border-width: 5px 5px 5px 24px;
     border-radius: 0;
-    padding: 3px 7px 3px 0;
+    padding: 3px 7px 3px 4px;
     background: transparent;
     color: #1e2b36;
     font-family: 'Montserrat';
