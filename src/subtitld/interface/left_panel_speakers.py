@@ -328,7 +328,7 @@ class dubbing_container(QWidget):
 # so anything that reached left of it would render on top of the avatar.
 _AVATAR_SIZE = 48
 _TIMELINE_HEIGHT = 6
-_CORNER_RADIUS = 4
+_CORNER_RADIUS = 6
 # The item's BODY (background, timeline strip, text, option rows) is inset
 # this far from the list's left edge, so a strip of list background shows
 # behind the avatar. The avatar itself is NOT inset — it sits flush against
