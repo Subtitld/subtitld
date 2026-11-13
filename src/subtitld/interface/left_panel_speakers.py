@@ -463,7 +463,7 @@ class _SectionBody(_BodyClippedPanel):
     """An open section's body: its background, and along its foot a soft
     contact line (inside the card's outline, so it follows the rounded
     corner)."""
-    CONTACT = QColor(0, 0, 0, 70)
+    CONTACT = QColor(0, 0, 0, 115)          # the buttons' contact line
 
     def paintEvent(self, event):
         super().paintEvent(event)
