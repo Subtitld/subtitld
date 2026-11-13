@@ -459,6 +459,26 @@ class _BodyClippedPanel(QWidget):
             painter.end()
 
 
+class _SectionBody(_BodyClippedPanel):
+    """An open section's body: its background, and along its foot a soft
+    contact line (inside the card's outline, so it follows the rounded
+    corner)."""
+    CONTACT = QColor(0, 0, 0, 70)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            body = self._card_body()
+            if body is not None:
+                offset = self.mapTo(body, QPoint(0, 0))
+                painter.setClipPath(_card_body_outline(body).translated(-offset.x(), -offset.y()))
+            painter.fillRect(QRectF(0, self.height() - 1, self.width(), 1), self.CONTACT)
+        finally:
+            painter.end()
+
+
 class ShareBar(QWidget):
     """1px rule showing this speaker's share of the programme.
 
@@ -856,10 +876,10 @@ class CollapsibleSection(QWidget):
 
         # Clipped for the same reason as the header: when expanded, this is
         # the row that sits in the card body's rounded bottom-left corner.
-        self.body = _BodyClippedPanel()
+        self.body = _SectionBody()
         self.body.setObjectName('speaker_option_section_body')
         self.body.setLayout(QVBoxLayout())
-        self.body.layout().setContentsMargins(0, 0, 0, 0)    # its content runs edge to edge
+        self.body.layout().setContentsMargins(0, 0, 0, 1)    # its content runs edge to edge, over its contact line
         self.body.layout().setSpacing(6)
         self.body.setVisible(False)
         self.layout().addWidget(self.body)
