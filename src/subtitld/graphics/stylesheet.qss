@@ -349,6 +349,12 @@ QWidget#scope_footer[corner_tab="true"] QWidget#scope_footer_row[scope_open="tru
     border-bottom-left-radius: 4px;
 }
 
+/* On that lighter panel the SCOPE dropdown and the FROM/TO inputs stand on a soft contact line. */
+QWidget#scope_footer[corner_tab="true"] QComboBox#transcription_scope_combobox,
+QWidget#scope_footer[corner_tab="true"] QLineEdit#transcription_scope_input {
+    border-bottom: 1px solid rgba(0, 0, 0, 70);
+}
+
 /* Full-width delimiter that sits BELOW the scope row and ABOVE the Start
    button. It's its own edge-to-edge 1px strip, so it touches both panel
    edges while the chip and button keep their side padding. Same slate as

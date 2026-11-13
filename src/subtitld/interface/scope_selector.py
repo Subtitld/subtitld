@@ -752,8 +752,8 @@ class ScopeFooter(QWidget):
             actions.insertWidget(0, chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
             actions.insertStretch(1, 1)
             self.selector.expanded_changed.connect(self._dress_open)
-            # The bar and the chip were polished before this footer was named a corner tab.
-            for styled in (self.selector.bar, chip):
+            # The selector's pieces were polished before this footer was named a corner tab.
+            for styled in self.selector.findChildren(QWidget):
                 styled.style().unpolish(styled)
                 styled.style().polish(styled)
             self.selector.refresh()
