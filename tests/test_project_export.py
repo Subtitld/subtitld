@@ -196,6 +196,34 @@ labels = root.findall(f'{ns}labeltrack')
 check('the subtitles and the translation as label tracks', [(l.get('name'), [x.get('title') for x in l]) for l in labels],
       [('Subtitles', ['Hello there.', 'How are you?', 'Fine, thanks.', 'Wait!']), ('pt-br', ['Olá.', 'Como vai?'])])
 
+print('OpenShot')
+import json as _json
+from fractions import Fraction
+from subtitld.modules import openshot_project
+check('OpenShot\'s profile names', [openshot_project.profile_name(w, h, r) for w, h, r in (
+    (1280, 720, Fraction(25)), (1920, 1080, Fraction(30000, 1001)), (1920, 1080, Fraction(25)), (1000, 500, Fraction(25)))],
+    ['HD 720p 25 fps', 'FHD 1080p 29.97 fps', 'FHD PAL 1080p 25 fps', ''])
+timeline = project_export.collect(subtitle, video, {'translations': False})
+osp = folder / 'os' / 'film.osp'
+osp.parent.mkdir()
+project_export.gather(timeline, project_export.media_folder(str(osp)), keep={video['filepath']})
+openshot_project.save(str(osp), timeline)
+project = _json.loads(osp.read_text())
+check('a layer a track, named, the video on top', [(l['label'], l['number']) for l in project['layers']],
+      [('Bo', 1000000), ('Ana 2', 2000000), ('Ana 1', 3000000), ('Audio', 4000000), ('Video', 5000000)])
+by_layer = {}
+for clip in project['clips']:
+    by_layer.setdefault(clip['layer'], []).append(clip)
+check('Ana\'s clips at their places, the cut one from its own start',
+      [(c['position'], c['start'], c['end']) for c in by_layer[3000000]], [(1.0, 0.0, 1.5), (4.0, 0.0, 1.0), (5.2, 1.5, 2.5)])
+picture, sound = by_layer[5000000][0], by_layer[4000000][0]
+check('the video\'s picture without its sound, its sound without its picture',
+      (picture['has_audio']['Points'][0]['co']['Y'], sound['has_video']['Points'][0]['co']['Y']), (0.0, 0.0))
+check('the subtitles a Caption on the video', picture['effects'][0]['caption_text'].split('\n\n')[:2],
+      ['00:00:01:000 --> 00:00:02:500\nHello there.', '00:00:03:000 --> 00:00:05:000\nHow are you?'])
+check('the files as libopenshot reads them: the stream\'s own time base',
+      next(f for f in project['files'] if f['path'] == video['filepath'])['video_timebase'], {'num': 1, 'den': 12800})
+
 print('through file_io')
 session.SUBTITLE = subtitle
 session.VIDEO = video
@@ -221,6 +249,9 @@ config = panel.get_config()
 again = export_dialog._ProjectPanel()
 check('the export\'s options, remembered', (config['options']['project']['subtitles'], again.subtitles_check.isChecked()),
       (False, False))
+panel.subtitles_check.setChecked(True)
+panel.choose('OPENSHOT')
+check('OpenShot: one subtitle track, no translations', panel.translations_check.isHidden(), True)
 panel.choose('AUDACITY')
 check('an audio editor: no video offered', (panel.video_check.isHidden(), panel.export_choices()[1]['video']), (True, False))
 session.VIDEO = {}

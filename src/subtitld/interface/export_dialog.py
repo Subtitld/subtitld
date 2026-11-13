@@ -981,9 +981,11 @@ class _ProjectPanel(QWidget):
         self._refresh()
 
     def _refresh(self, *_args):
-        self.translations_check.setVisible(self._has_translations and self.subtitles_check.isChecked())
-        # An audio editor takes the sound alone.
+        # An audio editor takes the sound alone; a program with room for one
+        # subtitle track, the subtitles without their translations.
         fmt = self.format_combo.combobox.currentData()
+        self.translations_check.setVisible(self._has_translations and self.subtitles_check.isChecked() and
+                                           not project_export.FORMATS.get(fmt, {}).get('one_subtitle_track'))
         self.video_check.setVisible(self._has_video and not project_export.FORMATS.get(fmt, {}).get('audio_only'))
 
     def choose(self, fmt):

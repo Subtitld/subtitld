@@ -29,6 +29,7 @@ from subtitld.modules import session
 FORMATS = {
     'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project'},
     'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project'},
+    'OPENSHOT': {'extension': 'osp', 'writer': 'openshot_project', 'one_subtitle_track': True},
     'AUDACITY': {'extension': 'aup', 'writer': 'audacity_project', 'audio_only': True},
 }
 
@@ -300,6 +301,11 @@ def save(path, fmt, subtitle, video, options=None, names=None):
     Timeline of `subtitle` over `video` as `options` ask, the sound files
     copied beside it."""
     import importlib
+    options = dict(options or {})
+    if FORMATS[fmt].get('audio_only'):
+        options['video'] = False
+    if FORMATS[fmt].get('one_subtitle_track'):
+        options['translations'] = False
     timeline = collect(subtitle, video, options, background_path(video), names)
     keep = {(video or {}).get('filepath')}
     gather(timeline, media_folder(path), keep=keep)
