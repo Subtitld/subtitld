@@ -571,13 +571,15 @@ def update(self):
 
         if self.preview_panel_player.is_paused():
             position = session.SUBTITLE.get('position', 0)
-            if position > session.SUBTITLE['selected']['end'] or position < session.SUBTITLE['selected']['start']:
+            outside = position > session.SUBTITLE['selected']['end'] or position < session.SUBTITLE['selected']['start']
+            if outside:
                 position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 2)
-                if session.CONFIG.get('repeat_activated', False):
-                    duration = session.CONFIG.get('playback_repeat_duration', 10.0)
-                    times = session.CONFIG.get('playback_repeat_times', 1)
-                    session.REPEAT_DURATION_BUFFER = [[position, position + duration] for _ in range(times)]
-            self.preview_panel_player.set_position(position)
+            # The seek starts the repeat over, so the new stretch comes after it.
+            self.preview_panel_player.set_position(position, keep_repeat=not outside)
+            if outside and session.CONFIG.get('repeat_activated', False):
+                duration = session.CONFIG.get('playback_repeat_duration', 10.0)
+                times = session.CONFIG.get('playback_repeat_times', 1)
+                session.REPEAT_DURATION_BUFFER = [[position, position + duration] for _ in range(times)]
         
         self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE['selected'].get('speaker', 'A'))
 

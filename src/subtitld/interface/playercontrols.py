@@ -1405,6 +1405,10 @@ def load(self):
         if tl_widget is None:
             timeline.update(self)
             return
+        # Repeat playback goes back here, as the playhead moves: the full
+        # `timeline.update(self)` that used to do it no longer runs while
+        # playing. A changed stretch is drawn across the timeline.
+        repeat_changed = timeline.apply_repeat(self)
         smoothed = _smoothed_position_sec()
         # Write the smoothed value back so timeline.paintEvent draws the
         # cursor at the interpolated x (and so anything else that polls
@@ -1422,7 +1426,12 @@ def load(self):
         pad_left = 96
         pad_right = 8
         h = tl_widget.height()
-        if old_x < 0:
+        if repeat_changed:
+            tl_widget.update()
+            vtimeline = getattr(self, 'vtimeline_panel', None)
+            if vtimeline is not None:
+                vtimeline.canvas.update()
+        elif old_x < 0:
             # First frame after play() — we don't know the previous x, so
             # invalidate broadly. Still cheaper than full update because
             # we cap the strip width.

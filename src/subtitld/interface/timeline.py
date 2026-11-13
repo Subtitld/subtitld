@@ -3953,20 +3953,35 @@ def update_scrollbar(self, position=0):
     self.timeline_scroll.horizontalScrollBar().setValue(int(current_position_in_timeline_widget - offset))
 
 
+def apply_repeat(self):
+    """Repeat playback: each stretch of `playback_repeat_duration` seconds
+    plays `playback_repeat_times` times, then the next one starts. The
+    buffer holds a stretch per play left; past the end of one, the playhead
+    goes back to its start, unless that was its last play. True when the
+    buffer changed, so the timeline shows the stretch anew."""
+    if not session.CONFIG.get('repeat_activated'):
+        return False
+    position = session.SUBTITLE.get('position', 0)
+    duration = session.CONFIG['playback_repeat_duration']
+    times = session.CONFIG['playback_repeat_times']
+    buffer = session.REPEAT_DURATION_BUFFER
+    if not buffer:
+        session.REPEAT_DURATION_BUFFER = [[position, position + duration] for _ in range(times)]
+        return True
+    start, end = buffer[0]
+    if position <= end:
+        return False
+    del buffer[0]
+    if buffer:
+        self.preview_panel_player.set_position(start, keep_repeat=True)
+    else:
+        buffer.extend([end, end + duration] for _ in range(times))
+    return True
+
+
 def update(self):
     """Function to update timeline"""
-    if session.CONFIG['repeat_activated']:
-        if not session.REPEAT_DURATION_BUFFER:
-            session.REPEAT_DURATION_BUFFER = [[session.SUBTITLE.get('position', 0), session.SUBTITLE.get('position', 0) + session.CONFIG['playback_repeat_duration']] for i in range(session.CONFIG['playback_repeat_times'])]
-        else:
-            last_pos = session.REPEAT_DURATION_BUFFER[0][1]
-            if session.SUBTITLE.get('position', 0) > last_pos:
-                self.preview_panel_player.set_position(session.REPEAT_DURATION_BUFFER[0][0])
-                # self.timeline_widget.seek.emit(session.SUBTITLE.get('position', 0))
-                del session.REPEAT_DURATION_BUFFER[0]
-                if not len(session.REPEAT_DURATION_BUFFER):
-                    for i in range(session.CONFIG['playback_repeat_times']):
-                        session.REPEAT_DURATION_BUFFER.append([last_pos, last_pos + session.CONFIG['playback_repeat_duration']])
+    apply_repeat(self)
 
     if not self.preview_panel_player.is_paused():
         current_position_in_timeline_widget = (session.SUBTITLE.get('position', 0) * (self.timeline_widget.width() / session.VIDEO.get('duration', 0.01)))
