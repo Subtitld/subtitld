@@ -972,6 +972,8 @@ class _ProjectPanel(QWidget):
                            ('subtitles', self.subtitles_check), ('translations', self.translations_check)):
             check.setChecked(bool(remembered.get(key, project_export.DEFAULTS[key])))
         self.subtitles_check.toggled.connect(self._refresh)
+        self.format_combo.combobox.currentIndexChanged.connect(self._refresh)
+        self._has_video = has_video
         for combo in (self.format_combo, self.audio_combo):
             combo.combobox.currentIndexChanged.connect(self.changed)
         for check in (self.video_check, self.speeches_check, self.subtitles_check, self.translations_check):
@@ -980,6 +982,9 @@ class _ProjectPanel(QWidget):
 
     def _refresh(self, *_args):
         self.translations_check.setVisible(self._has_translations and self.subtitles_check.isChecked())
+        # An audio editor takes the sound alone.
+        fmt = self.format_combo.combobox.currentData()
+        self.video_check.setVisible(self._has_video and not project_export.FORMATS.get(fmt, {}).get('audio_only'))
 
     def choose(self, fmt):
         _select(self.format_combo, fmt)

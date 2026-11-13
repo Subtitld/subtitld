@@ -265,6 +265,7 @@ LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_PROJECT_EXTENSIONS = {
     'KDENLIVE': {'description': 'Kdenlive project', 'extensions': ['kdenlive']},
     'SHOTCUT': {'description': 'Shotcut project', 'extensions': ['mlt']},
+    'AUDACITY': {'description': 'Audacity project', 'extensions': ['aup']},
 }
 
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {

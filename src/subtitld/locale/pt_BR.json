@@ -538,6 +538,7 @@
     "export_dialog.category_project": "Projeto",
     "export_dialog.project_kdenlive": "Kdenlive",
     "export_dialog.project_shotcut": "Shotcut",
+    "export_dialog.project_audacity": "Audacity",
     "export_dialog.project_audio": "Som",
     "export_dialog.project_audio_original": "O som do vídeo",
     "export_dialog.project_audio_background": "Fundo sem vozes",

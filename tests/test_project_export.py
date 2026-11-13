@@ -169,6 +169,33 @@ if shutil.which('melt'):
         220 in loudest(0.2, 0.8), 660 in loudest(1.2, 2.2), 440 in loudest(3.2, 3.8), 880 in loudest(5.4, 6.0)),
         (True, True, True, True))
 
+print('Audacity')
+from subtitld.modules import audacity_project
+import soundfile
+timeline = project_export.collect(subtitle, video)
+aup = folder / 'aud' / 'film.aup'
+project_export.gather(timeline, project_export.media_folder(str(aup)), keep={video['filepath']})
+audacity_project.save(str(aup), timeline)
+root = etree.parse(str(aup)).getroot()
+ns = '{http://audacity.sourceforge.net/xml/}'
+media = folder / 'aud' / 'film media'
+check('its data folder the sound files\' folder, each a WAV at 48 kHz, the video\'s sound too',
+      (root.get('projname'), sorted(p.name for p in media.iterdir()), {soundfile.info(str(p)).samplerate for p in media.iterdir()}),
+      ('film media', ['0001 Ana 1.wav', '0002 Ana 1.wav', '0003 Ana 2.wav', 'film.wav'], {48000}))
+tracks = root.findall(f'{ns}wavetrack')
+check('a track for each sound track, no video', [t.get('name') for t in tracks], ['Audio', 'Ana 1', 'Ana 2', 'Bo'])
+ana = tracks[1].findall(f'{ns}waveclip')
+blocks = [b for b in root.iter(f'{ns}pcmaliasblockfile')]
+check('Ana\'s clips at their offsets, the cut one from its own part of the file',
+      [(round(float(c.get('offset')), 2), c.find(f'.//{ns}pcmaliasblockfile').get('aliasstart'),
+        c.find(f'{ns}sequence').get('numsamples')) for c in ana], [(1.0, '0', '72000'), (4.0, '0', '48000'), (5.2, '72000', '48000')])
+check('the 8 s of the video\'s sound in blocks of at most 262144 samples, every block named apart',
+      ([b.get('aliaslen') for b in tracks[0].iter(f'{ns}pcmaliasblockfile')], len({b.get('summaryfile') for b in blocks}) == len(blocks)),
+      (['262144', '121856'], True))
+labels = root.findall(f'{ns}labeltrack')
+check('the subtitles and the translation as label tracks', [(l.get('name'), [x.get('title') for x in l]) for l in labels],
+      [('Subtitles', ['Hello there.', 'How are you?', 'Fine, thanks.', 'Wait!']), ('pt-br', ['Olá.', 'Como vai?'])])
+
 print('through file_io')
 session.SUBTITLE = subtitle
 session.VIDEO = video
@@ -194,6 +221,8 @@ config = panel.get_config()
 again = export_dialog._ProjectPanel()
 check('the export\'s options, remembered', (config['options']['project']['subtitles'], again.subtitles_check.isChecked()),
       (False, False))
+panel.choose('AUDACITY')
+check('an audio editor: no video offered', (panel.video_check.isHidden(), panel.export_choices()[1]['video']), (True, False))
 session.VIDEO = {}
 bare = export_dialog._ProjectPanel()
 check('no video: neither the video nor its sound offered', bare.export_choices()[1],

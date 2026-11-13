@@ -29,6 +29,7 @@ from subtitld.modules import session
 FORMATS = {
     'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project'},
     'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project'},
+    'AUDACITY': {'extension': 'aup', 'writer': 'audacity_project', 'audio_only': True},
 }
 
 # What goes in, when nothing is chosen.
