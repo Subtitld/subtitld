@@ -24,7 +24,7 @@ BINS = 48                             # steps in a row's timeline
 FRAME_W, FRAME_H = 96, 54             # the frame kept for the left of a card, 16:9 (saved at twice that)
 ROW_H = 66
 CARD_RADIUS = 4
-BORDER = QColor(255, 255, 255, 22)    # round each card
+FACE = QColor(255, 255, 255, 14)      # each card's background, a shade lighter than the list
 TRACK = QColor(255, 255, 255, 14)     # the timeline's strip
 CUE = QColor('#7f94a6')
 MARK = QColor(235, 70, 70, 170)       # where you stopped: thin, faded red
@@ -99,9 +99,9 @@ def clean_title(path):
 
 
 class RecentCard(QWidget):
-    """One recent project, painted as a bordered card: the frame filling its
-    left side; beside it the name, and under that the timeline with the age
-    at its end."""
+    """One recent project, painted as a card on a lighter face: the frame
+    filling its left side; beside it the name, and under that the timeline
+    with the age at its end."""
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -126,10 +126,12 @@ class RecentCard(QWidget):
         painter = QPainter(self)
         painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform | QPainter.TextAntialiasing)
 
-        # the card: a 1px border round the row, with a gap to the next one
+        # the card: a lighter face for the row, with a gap to the next one
         card = QRectF(0.5, 2.5, self.width() - 1, ROW_H - 5)
         outline = QPainterPath()
         outline.addRoundedRect(card, CARD_RADIUS, CARD_RADIUS)
+
+        painter.fillPath(outline, FACE)
 
         # the frame fills the card's left side: round where the card is, square toward the name
         box = QRectF(card.left(), card.top(), card.height() * 16 / 9, card.height())
@@ -144,9 +146,6 @@ class RecentCard(QWidget):
             empty.setColorAt(0, QColor('#2a3743'))
             empty.setColorAt(1, QColor('#141b21'))
             painter.fillPath(clip, empty)
-        painter.setPen(BORDER)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPath(outline)
 
         # the name beside the frame, in up to two lines
         left = box.right() + 10
