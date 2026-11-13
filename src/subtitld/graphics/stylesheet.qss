@@ -338,9 +338,15 @@ QWidget#scope_footer[corner_tab="true"] QWidget#scope_footer_row {
     background: transparent;
 }
 
-/* ...until the scope bar above it opens: then it takes the bar's colour, and the two are one panel. */
+/* ...until the scope bar above it opens: then it takes the bar's colour, and the two are one panel, a lighter
+   one than in the side panels, ending in the card's rounded bottom-left corner. */
+QWidget#scope_footer[corner_tab="true"] QWidget#transcription_scope_bar,
 QWidget#scope_footer[corner_tab="true"] QWidget#scope_footer_row[scope_open="true"] {
-    background: #1e2832;
+    background: #2f404d;
+}
+
+QWidget#scope_footer[corner_tab="true"] QWidget#scope_footer_row[scope_open="true"] {
+    border-bottom-left-radius: 4px;
 }
 
 /* Full-width delimiter that sits BELOW the scope row and ABOVE the Start
