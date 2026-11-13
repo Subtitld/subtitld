@@ -265,6 +265,8 @@ LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
 LIST_OF_SUPPORTED_PROJECT_EXTENSIONS = {
     'KDENLIVE': {'description': 'Kdenlive project', 'extensions': ['kdenlive']},
     'SHOTCUT': {'description': 'Shotcut project', 'extensions': ['mlt']},
+    'RESOLVE': {'description': 'DaVinci Resolve timeline (FCPXML)', 'extensions': ['fcpxml']},
+    'FINALCUT': {'description': 'Final Cut Pro project (FCPXML)', 'extensions': ['fcpxml']},
     'OPENSHOT': {'description': 'OpenShot project', 'extensions': ['osp']},
     'ARDOUR': {'description': 'Ardour session', 'extensions': ['ardour']},
     'AUDACITY': {'description': 'Audacity project', 'extensions': ['aup']},

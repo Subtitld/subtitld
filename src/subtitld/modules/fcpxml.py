@@ -364,10 +364,17 @@ def _style_attributes(style):
     return attributes
 
 
-def write(tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles', width=1920, height=1080):
+def write(tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles', width=1920, height=1080,
+          media=None):
     """FCPXML text for `tracks`, [(language, segments)]: each language a
     caption role of its own, on the frames of `fps` (drop-frame timecode
-    when `drop` and the rate has it), the timeline starting at `start`."""
+    when `drop` and the rate has it), the timeline starting at `start`.
+
+    With `media`, a project of the files too: {'video': the video's clip or
+    None, 'muted': whether its sound is left out, 'lanes': lists of clips,
+    a lane each}, a clip being (path, at, source_in, length, has_video,
+    has_audio) in seconds. The video is the storyline and the captions are
+    anchored to it; each lane's clips are connected under it."""
     fps, (numerator, denominator) = _frame_duration(fps)
     nominal, _length = avid_subcap.rate(fps)
     drop = bool(drop) and numerator == 1001 and nominal in (30, 60)
@@ -391,6 +398,11 @@ def write(tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles'
     # reader takes the first role it meets for the subtitles' language.
     captions.sort(key=lambda caption: caption[:3])
     length = max([caption[2] for caption in captions] + [1])
+    media = media or {}
+    video = media.get('video')
+    sound_lanes = [lane for lane in media.get('lanes') or [] if lane]
+    for clip in ([video] if video else []) + [clip for lane in sound_lanes for clip in lane]:
+        length = max(length, frames(clip[1]) + max(1, frames(clip[3])))
 
     root = ET.Element('fcpxml', version=VERSION)
     resources = ET.SubElement(root, 'resources')
@@ -402,6 +414,29 @@ def write(tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles'
     format_attributes.update(frameDuration=f'{numerator}/{denominator}s', width=str(width), height=str(height),
                              colorSpace='1-1-1 (Rec. 709)')
     ET.SubElement(resources, 'format', format_attributes)
+    assets = {}
+
+    def asset_of(clip):
+        path, _at, _first, _length, has_video, has_audio = clip
+        if path not in assets:
+            assets[path] = f'r{len(assets) + 2}'
+            from urllib.parse import quote
+            from subtitld.modules import project_export
+            attributes = {'id': assets[path], 'name': os.path.splitext(os.path.basename(path))[0], 'start': '0s',
+                          'duration': when(max(1, frames(project_export.media_length(path)))),
+                          'hasVideo': '1' if has_video else '0', 'hasAudio': '1' if has_audio else '0'}
+            if has_video:
+                attributes['format'] = 'r1'
+            if has_audio:
+                attributes.update(audioSources='1', audioChannels=str(min(2, project_export.channels_of(path))),
+                                  audioRate='48000')
+            asset = ET.SubElement(resources, 'asset', attributes)
+            ET.SubElement(asset, 'media-rep', kind='original-media',
+                          src='file://' + quote(os.path.abspath(path).replace(os.sep, '/')))
+        return assets[path]
+
+    for clip in ([video] if video else []) + [clip for lane in sound_lanes for clip in lane]:
+        asset_of(clip)
     library = ET.SubElement(root, 'library')
     event = ET.SubElement(library, 'event', name='Subtitld')
     project = ET.SubElement(event, 'project', name=title or 'Subtitles')
@@ -409,7 +444,23 @@ def write(tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles'
         'format': 'r1', 'duration': when(length), 'tcStart': when(origin), 'tcFormat': 'DF' if drop else 'NDF',
         'audioLayout': 'stereo', 'audioRate': '48k'})
     spine = ET.SubElement(sequence, 'spine')
-    gap = ET.SubElement(spine, 'gap', {'name': 'Gap', 'offset': when(origin), 'start': '0s', 'duration': when(length)})
+    if video:
+        # The video, from its start, the captions and the sound anchored to it.
+        gap = ET.SubElement(spine, 'asset-clip', {
+            'ref': asset_of(video), 'name': os.path.splitext(os.path.basename(video[0]))[0], 'offset': when(origin),
+            'start': '0s', 'duration': when(length), 'tcFormat': 'DF' if drop else 'NDF', 'audioRole': 'dialogue'})
+        if media.get('muted'):
+            ET.SubElement(gap, 'adjust-volume', amount='-96dB')
+    else:
+        gap = ET.SubElement(spine, 'gap', {'name': 'Gap', 'offset': when(origin), 'start': '0s',
+                                           'duration': when(length)})
+    for number, lane in enumerate(sound_lanes, start=1):
+        for clip in lane:
+            path, at, first, size, _has_video, _has_audio = clip
+            ET.SubElement(gap, 'asset-clip', {
+                'ref': asset_of(clip), 'lane': str(-number), 'name': os.path.splitext(os.path.basename(path))[0],
+                'offset': when(frames(at)), 'start': when(frames(first)), 'duration': when(max(1, frames(size))),
+                'audioRole': 'dialogue'})
 
     lanes = []                                      # the frame each lane is free from
     style_number = 0
@@ -455,11 +506,12 @@ def write(tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles'
             + ET.tostring(root, encoding='unicode') + '\n')
 
 
-def save(path, tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles', width=1920, height=1080):
-    """Write `tracks` to `path` as FCPXML; a path ending in .fcpxmld is a
-    bundle, a folder with the document in it."""
+def save(path, tracks, fps=DEFAULT_FPS, drop=True, start=STARTS[0], title='Subtitles', width=1920, height=1080,
+         media=None):
+    """Write `tracks` (and `media`, see `write`) to `path` as FCPXML; a path
+    ending in .fcpxmld is a bundle, a folder with the document in it."""
     if path.lower().rstrip('/\\').endswith('.fcpxmld'):
         os.makedirs(path, exist_ok=True)
         path = os.path.join(path, BUNDLE_DOCUMENT)
     with open(path, 'w', encoding='utf-8', newline='\n') as fcpxml_file:
-        fcpxml_file.write(write(tracks, fps, drop, start, title, width, height))
+        fcpxml_file.write(write(tracks, fps, drop, start, title, width, height, media))

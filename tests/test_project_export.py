@@ -249,6 +249,31 @@ check('Ana\'s regions: the length counted from the position, in superclock ticks
 check('the subtitles as range markers', [l.get('name') for l in root.find('Locations') if l.get('flags') == 'IsRangeMarker'],
       ['Hello there.', 'How are you?', 'Fine, thanks.', 'Wait!'])
 
+print('Final Cut Pro and Resolve')
+from subtitld.modules import fcpxml, finalcut_project
+timeline = project_export.collect(subtitle, video)
+cut = folder / 'fc' / 'film.fcpxml'
+cut.parent.mkdir()
+project_export.gather(timeline, project_export.media_folder(str(cut)), keep={video['filepath']})
+finalcut_project.save(str(cut), timeline)
+root = etree.parse(str(cut)).getroot()
+storyline = root.find('.//spine')[0]
+check('the video as the storyline, its sound in it, the files as assets by their URL',
+      (storyline.tag, storyline.find('adjust-volume'), sorted(a.get('name') for a in root.iter('asset')),
+       next(a for a in root.iter('asset') if a.get('name') == 'film').find('media-rep').get('src')),
+      ('asset-clip', None, ['0001 Ana 1', '0002 Ana 1', '0003 Ana 2', 'film'], 'file://' + video['filepath']))
+speeches = [c for c in storyline.findall('asset-clip')]
+check('a lane under it for each speaker\'s track, each speech where it plays',
+      [(c.get('lane'), c.get('offset'), c.get('start')) for c in speeches],
+      [('-1', '1s', '0s'), ('-1', '4s', '0s'), ('-1', '13000/2500s', '3800/2500s'), ('-2', '11200/2500s', '0s'),
+       ('-3', '3s', '0s')])
+check('the captions on it, read back as Subtitld reads FCPXML', [len(s) for s in fcpxml.read(str(cut))[0].values()]
+      if isinstance(fcpxml.read(str(cut))[0], dict) else len(root.findall('.//caption')), 6)
+quiet = project_export.collect(subtitle, video, {'audio': 'none', 'speeches': False})
+finalcut_project.save(str(cut), quiet)
+check('another sound chosen: the video\'s turned down', etree.parse(str(cut)).getroot().find('.//spine')[0]
+      .find('adjust-volume').get('amount'), '-96dB')
+
 print('through file_io')
 session.SUBTITLE = subtitle
 session.VIDEO = video

@@ -29,6 +29,8 @@ from subtitld.modules import session
 FORMATS = {
     'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project'},
     'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project'},
+    'RESOLVE': {'extension': 'fcpxml', 'writer': 'finalcut_project'},
+    'FINALCUT': {'extension': 'fcpxml', 'writer': 'finalcut_project'},
     'OPENSHOT': {'extension': 'osp', 'writer': 'openshot_project', 'one_subtitle_track': True},
     'ARDOUR': {'extension': 'ardour', 'writer': 'ardour_project', 'audio_only': True, 'one_subtitle_track': True},
     'AUDACITY': {'extension': 'aup', 'writer': 'audacity_project', 'audio_only': True},
@@ -146,6 +148,18 @@ def has_audio(path):
         return bool(run.stdout.strip())
     except OSError:
         return False
+
+
+def channels_of(path):
+    """How many channels the sound of the file at `path` has (1 when it
+    has none, or FFprobe cannot say)."""
+    try:
+        run = subprocess.run([str(session.FFPROBE_EXECUTABLE), '-v', 'error', '-select_streams', 'a:0',
+                              '-show_entries', 'stream=channels', '-of', 'csv=p=0', str(path)],
+                             capture_output=True, text=True, startupinfo=session.STARTUPINFO, check=False)
+        return max(1, int((run.stdout.strip() or '1').split()[0]))
+    except (OSError, ValueError):
+        return 1
 
 
 def _playing_dub(dubs):

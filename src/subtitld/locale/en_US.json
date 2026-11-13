@@ -538,6 +538,8 @@
     "export_dialog.category_project": "Project",
     "export_dialog.project_kdenlive": "Kdenlive",
     "export_dialog.project_shotcut": "Shotcut",
+    "export_dialog.project_resolve": "DaVinci Resolve",
+    "export_dialog.project_finalcut": "Final Cut Pro",
     "export_dialog.project_openshot": "OpenShot",
     "export_dialog.project_ardour": "Ardour",
     "export_dialog.project_audacity": "Audacity",
