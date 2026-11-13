@@ -492,7 +492,7 @@ QPushButton[class~="scope_action_tab"]:disabled,
     color: rgba(30, 43, 54, 120);
 }
 
-/* Its scope chip, moved to the row's left: hanging from the hairline, so rounded at the bottom. */
+/* Its scope chip, moved to the row's left: under the bar it opens, so rounded at the bottom. */
 QPushButton#transcription_scope_chip[docked="true"] {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
