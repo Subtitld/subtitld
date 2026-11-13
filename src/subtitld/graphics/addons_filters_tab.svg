@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The add-ons Filters button: hanging from the header's top-right corner, its left edge a 75° slant with a
+     6px curve at the foot; left of the slant, the search field's sunken well, so the two meet seamlessly. -->
+<svg width="40" height="27" version="1.1" viewBox="0 0 40 27" xmlns="http://www.w3.org/2000/svg">
+ <defs>
+  <linearGradient id="w" x1="0" x2="0" y1="0" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2b3a46"/></linearGradient>
+  <linearGradient id="g" x1="0" x2="0" y1="0" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4a6376"/><stop offset="1" stop-color="#324350"/></linearGradient>
+ </defs>
+ <path d="M0 0L5.78 21.56Q6.97 26 11.57 26L0 26Z" fill="url(#w)"/>
+ <path d="M0 0L5.78 21.56Q6.97 26 11.57 26L40 26V0Z" transform="translate(0 1)" fill="#000" fill-opacity="0.45"/>
+ <path d="M0 0L5.78 21.56Q6.97 26 11.57 26L40 26V0Z" fill="url(#g)"/>
+</svg>

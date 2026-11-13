@@ -1382,11 +1382,13 @@ class AddonsPanel(QWidget):
         self.layout().setSpacing(0)
 
         # The header: the search, the filters and the state strip, edge to edge and always in view above the list.
+        # The search and the Filters tab run along its top edge, the state strip stands on its bottom one (above
+        # its 1px contact line), the chosen filters' tags between them.
         self._header = QWidget()
         self._header.setObjectName('addons_header')
         self._header.setAttribute(Qt.WA_StyledBackground)
         self._header.setLayout(QVBoxLayout())
-        self._header.layout().setContentsMargins(10, 10, 10, 10)
+        self._header.layout().setContentsMargins(0, 0, 0, 1)
         self._header.layout().setSpacing(8)
         self.layout().addWidget(self._header)
 
@@ -1404,12 +1406,12 @@ class AddonsPanel(QWidget):
         self._search.setClearButtonEnabled(True)
         self._search.addAction(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')), QLineEdit.LeadingPosition)
         self._search.textChanged.connect(self._on_search_changed)
-        search_row.addWidget(self._search, 1)
+        search_row.addWidget(self._search, 1, Qt.AlignTop)
 
         self._filters_button = _LaidOutButton()
         self._filters_button.setObjectName('addons_filters_button')
         self._filters_button.setLayout(QHBoxLayout())
-        self._filters_button.layout().setContentsMargins(10, 0, 8, 0)
+        self._filters_button.layout().setContentsMargins(18, 0, 10, 1)     # the slant, and the contact line
         self._filters_button.layout().setSpacing(6)
         filters_icon = QLabel()
         filters_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_filters.svg')).pixmap(14, 14))
@@ -1420,7 +1422,7 @@ class AddonsPanel(QWidget):
         for label in (filters_icon, self._filters_text, self._filters_count):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
             self._filters_button.layout().addWidget(label)
-        self._filters_button.setFixedHeight(26)
+        self._filters_button.setFixedHeight(27)
         self._filters_button.clicked.connect(self._open_filters)
         search_row.addWidget(self._filters_button)
         self._header.layout().addLayout(search_row)
@@ -1445,6 +1447,7 @@ class AddonsPanel(QWidget):
 
         # --- The state strip: one exclusive row, the chosen one sunk ----
         state_row = QHBoxLayout()
+        state_row.setContentsMargins(10, 0, 10, 0)
         state_row.setSpacing(0)
         self._state_strip = QWidget()
         self._state_strip.setObjectName('addons_state_strip')
@@ -1467,19 +1470,16 @@ class AddonsPanel(QWidget):
 
         # In the header's bottom-right corner, as icons: install from a file, refresh the catalog.
         self.install_from_file_button = self._header_icon('addons_from_file.svg')
-        self.install_from_file_button.setProperty('segment', 'first')
         self.install_from_file_button.clicked.connect(self._install_from_file)
         self.refresh_button = self._header_icon('addons_refresh.svg')
-        self.refresh_button.setProperty('segment', 'last')
         self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
         state_row.addWidget(self.install_from_file_button)
         state_row.addWidget(self.refresh_button)
-        self._header.layout().addLayout(state_row)
 
         # --- The chosen filters, each a tag that clears it
         self._tags_row = QWidget()
         tags_row = QHBoxLayout(self._tags_row)
-        tags_row.setContentsMargins(0, 0, 0, 0)
+        tags_row.setContentsMargins(10, 0, 10, 0)
         tags_row.setSpacing(6)
         self._tags = QHBoxLayout()
         self._tags.setSpacing(6)
@@ -1490,6 +1490,7 @@ class AddonsPanel(QWidget):
         self._hardware_info.setVisible(False)
         self._tags_row.setVisible(False)                # shown while a filter is chosen
         self._header.layout().addWidget(self._tags_row)
+        self._header.layout().addLayout(state_row)
 
         # --- Scrollable card list + empty-state placeholder --------------
         # The list and the placeholder share the same slot in the layout
