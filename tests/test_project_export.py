@@ -224,6 +224,31 @@ check('the subtitles a Caption on the video', picture['effects'][0]['caption_tex
 check('the files as libopenshot reads them: the stream\'s own time base',
       next(f for f in project['files'] if f['path'] == video['filepath'])['video_timebase'], {'num': 1, 'den': 12800})
 
+print('Ardour')
+from subtitld.modules import ardour_project
+timeline = project_export.collect(subtitle, video, {'translations': False})
+chosen = folder / 'ard' / 'film.ardour'
+chosen.parent.mkdir()
+project_export.gather(timeline, project_export.media_folder(str(chosen)), keep={video['filepath']})
+written = ardour_project.save(str(chosen), timeline)
+session_dir = folder / 'ard' / 'film'
+root = etree.parse(written).getroot()
+check('a session folder named after it, its sound files inside, the copies beside it gone',
+      (written == str(session_dir / 'film.ardour'), sorted(p.name for p in (session_dir / 'interchange' / 'film' / 'audiofiles').iterdir()),
+       (folder / 'ard' / 'film media').exists()),
+      (True, ['0001 Audio.wav', '0002 Ana 1.wav', '0003 Ana 1.wav', '0004 Ana 2.wav'], False))
+check('its sample format named, which Ardour reads a session\'s rate by',
+      [o.get('name') for o in root.find('Config')], ['native-file-data-format', 'native-file-header-format'])
+routes = {r.get('name'): r for r in root.find('Routes')}
+check('the Master and a track a sound track, wired to it', (sorted(routes), [c.get('other') for c in routes['Ana 1'].iter('Connection')]),
+      (['Ana 1', 'Ana 2', 'Audio', 'Bo', 'Master'], ['Master/audio_in 1', 'Master/audio_in 2']))
+playlist = next(p for p in root.find('Playlists') if p.get('orig-track-id') == routes['Ana 1'].get('id'))
+check('Ana\'s regions: the length counted from the position, in superclock ticks',
+      [(r.get('start'), r.get('length')) for r in playlist], [('a0', 'a423360000@a282240000'), ('a0', 'a282240000@a1128960000'),
+                                                              ('a423360000', 'a282240000@a1467648000')])
+check('the subtitles as range markers', [l.get('name') for l in root.find('Locations') if l.get('flags') == 'IsRangeMarker'],
+      ['Hello there.', 'How are you?', 'Fine, thanks.', 'Wait!'])
+
 print('through file_io')
 session.SUBTITLE = subtitle
 session.VIDEO = video

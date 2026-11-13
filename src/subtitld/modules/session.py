@@ -266,6 +266,7 @@ LIST_OF_SUPPORTED_PROJECT_EXTENSIONS = {
     'KDENLIVE': {'description': 'Kdenlive project', 'extensions': ['kdenlive']},
     'SHOTCUT': {'description': 'Shotcut project', 'extensions': ['mlt']},
     'OPENSHOT': {'description': 'OpenShot project', 'extensions': ['osp']},
+    'ARDOUR': {'description': 'Ardour session', 'extensions': ['ardour']},
     'AUDACITY': {'description': 'Audacity project', 'extensions': ['aup']},
 }
 

@@ -30,6 +30,7 @@ FORMATS = {
     'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project'},
     'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project'},
     'OPENSHOT': {'extension': 'osp', 'writer': 'openshot_project', 'one_subtitle_track': True},
+    'ARDOUR': {'extension': 'ardour', 'writer': 'ardour_project', 'audio_only': True, 'one_subtitle_track': True},
     'AUDACITY': {'extension': 'aup', 'writer': 'audacity_project', 'audio_only': True},
 }
 
