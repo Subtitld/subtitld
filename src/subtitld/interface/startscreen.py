@@ -116,6 +116,7 @@ def load(self):
     self.start_screen_recent_listwidget.setFocusPolicy(Qt.NoFocus)
     self.start_screen_recent_listwidget.setUniformItemSizes(False)
     self.start_screen_recent_listwidget.setViewportMargins(0, 0, 10, 0)
+    self.start_screen_recent_listwidget.setSpacing(recent_cards.GAP // 2)    # around each card, so cards are GAP apart
     self.start_screen_recent_listwidget.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
     self.start_screen_recent_listwidget.itemDoubleClicked.connect(lambda item: start_screen_recent_listwidget_item_clicked(self, item))
     self.start_screen_recentfiles_background.layout().addWidget(self.start_screen_recent_listwidget)

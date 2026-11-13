@@ -1601,7 +1601,7 @@ QGroupBox::title {
 
 #start_screen_recent_listwidget::item {
     padding: 0;
-    border-radius: 3px;
+    border-radius: 4px;               /* the card's (recent_cards.CARD_RADIUS) */
 }
 
 #start_screen_recent_listwidget::item QLabel {

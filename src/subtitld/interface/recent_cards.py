@@ -4,15 +4,16 @@ video on the left, the name, a small timeline of where the subtitles are
 
 What a row shows is remembered when the project is opened, saved and
 closed (remember()): the video's length and a summary of where its
-subtitles are go into the recent-files entry, a small frame into the
-cache. The start screen only reads them back, so it opens no file.
+subtitles are go into the recent-files entry, a small picture of the
+preview (a frame with a subtitle on it) into the cache. The start screen only reads them back, so it opens no file.
 """
 import datetime
 import hashlib
 import pathlib
 import re
+import time
 
-from PySide6.QtCore import Qt, QRectF
+from PySide6.QtCore import Qt, QEventLoop, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QFont, QFontMetrics, QImage, QLinearGradient
 from PySide6.QtWidgets import QWidget
 
@@ -22,7 +23,8 @@ from subtitld.modules import session
 
 BINS = 48                             # steps in a row's timeline
 FRAME_W, FRAME_H = 96, 54             # the frame kept for the left of a card, 16:9 (saved at twice that)
-ROW_H = 66
+ROW_H = 61
+GAP = 5                               # between two cards: the list's spacing, so a chosen row's light is the card's own
 CARD_RADIUS = 4
 FACE = QColor(255, 255, 255, 14)      # each card's background, a shade lighter than the list
 TRACK = QColor(255, 255, 255, 14)     # the timeline's strip
@@ -61,9 +63,14 @@ def summary(segments, duration):
     return ''.join(str(min(9, round(9 * c / step))) for c in cover)
 
 
-def remember(window):
+def remember(window, look_ahead=False):
     """Main thread. Note the open project's length, where its subtitles are
-    and a frame of its video, for its row on the start screen."""
+    and a picture of its video, for its row on the start screen.
+
+    The picture is the preview's: the frame with its subtitle drawn as the
+    preview draws it. With no subtitle under the playhead the frame alone
+    is kept only if there is no picture yet; with `look_ahead` (on closing)
+    the preview goes to the next subtitle for it instead, and back."""
     filepath = session.SUBTITLE.get('filepath')
     recent = session.CONFIG.get('recent_files') if isinstance(session.CONFIG, dict) else None
     if not filepath or not isinstance(recent, dict) or not isinstance(recent.get(str(filepath)), dict):
@@ -77,12 +84,83 @@ def remember(window):
         entry['duration'] = duration
         entry['cues'] = summary(session.SUBTITLE.get('segments'), duration)
     player = getattr(window, 'preview_panel_player', None)
+    if player is None:
+        return
+    segments = [s for s in session.SUBTITLE.get('segments') or [] if isinstance(s, dict)]
+    position = float(session.SUBTITLE.get('position') or 0.0)
+    showing = _showing(segments, position)
+    if showing is None and look_ahead:
+        following = sorted((s for s in segments if float(s.get('start', 0)) > position), key=lambda s: float(s['start']))
+        if following:
+            image = _picture_at(player, following[0])
+            if image is not None:
+                _save(image, filepath)
+                return
+    if showing is None and frame_path(filepath).exists():
+        return
+    image = _frame_image(player)
+    if image is not None:
+        _save(_with_subtitle(player, image, showing, position), filepath)
+
+
+def _showing(segments, at):
+    return next((s for s in segments if float(s.get('start', 0)) <= at < float(s.get('end', 0))), None)
+
+
+def _frame_image(player):
     frame = getattr(player, '_last_video_frame', None)
     if frame is None or not frame.isValid():
-        return
+        return None
     image = frame.toImage()
-    if image.isNull():
-        return
+    return None if image.isNull() else image
+
+
+def _with_subtitle(player, image, segment, at):
+    """`image` (a video frame) with `segment` drawn over it as the preview
+    draws it at `at` seconds (the renderer's layers)."""
+    renderer = getattr(player, '_subtitle_renderer', None)
+    if segment is None or renderer is None:
+        return image
+    layers = renderer.layers([segment], at)
+    if not layers:
+        return image
+    image = image.convertToFormat(QImage.Format_RGB32)
+    painter = QPainter(image)
+    painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+    for area, layer in layers:
+        painter.drawImage(QRectF(area.x() * image.width(), area.y() * image.height(),
+                                 area.width() * image.width(), area.height() * image.height()), layer)
+    painter.end()
+    return image
+
+
+def _picture_at(player, segment, timeout=3.0):
+    """The preview's picture in the middle of `segment`: it goes there, waits
+    for the frame and the subtitle's layer (at most `timeout` s), and goes
+    back where it was. None if either did not come."""
+    back = float(session.SUBTITLE.get('position') or 0.0)
+    start, end = float(segment.get('start', 0)), float(segment.get('end', 0))
+    target = start + (end - start) / 2
+    renderer = getattr(player, '_subtitle_renderer', None)
+    player.seek(target)
+    image = None
+    deadline = time.monotonic() + timeout
+    loop = QEventLoop()
+    while time.monotonic() < deadline:
+        loop.processEvents(QEventLoop.AllEvents, 50)
+        frame = getattr(player, '_last_video_frame', None)
+        if frame is None or not frame.isValid() or abs(frame.startTime() / 1_000_000 - target) > 0.5:
+            continue
+        if renderer is not None and not renderer.layers([segment], target):
+            continue
+        image = _with_subtitle(player, _frame_image(player), segment, target)
+        break
+    player.seek(back)
+    session.SUBTITLE['position'] = back
+    return image
+
+
+def _save(image, filepath):
     small = image.scaled(FRAME_W * 2, FRAME_H * 2, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
     small = small.copy((small.width() - FRAME_W * 2) // 2, (small.height() - FRAME_H * 2) // 2, FRAME_W * 2, FRAME_H * 2)
     try:
@@ -126,8 +204,8 @@ class RecentCard(QWidget):
         painter = QPainter(self)
         painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform | QPainter.TextAntialiasing)
 
-        # the card: a lighter face for the row, with a gap to the next one
-        card = QRectF(0.5, 2.5, self.width() - 1, ROW_H - 5)
+        # the card: a lighter face filling its row (the list keeps the gap between rows)
+        card = QRectF(0, 0, self.width(), ROW_H)
         outline = QPainterPath()
         outline.addRoundedRect(card, CARD_RADIUS, CARD_RADIUS)
 

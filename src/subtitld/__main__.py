@@ -424,7 +424,7 @@ class Window(_MainWindowBase):
 
         session.persist_current_playback_position()
         from subtitld.interface import recent_cards
-        recent_cards.remember(self)
+        recent_cards.remember(self, look_ahead=True)
         session.CONFIG.save()
 
         event.accept()
