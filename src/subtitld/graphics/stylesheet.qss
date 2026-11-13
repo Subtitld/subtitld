@@ -602,10 +602,10 @@ QLabel#addons_filters_count {
     qproperty-alignment: AlignCenter;
 }
 
-/* Standing on the header's bottom edge, like the player's bottom line and in its colours (raised but half as
-   deep): rounded on top only, no contact line. */
+/* Standing on the header's bottom edge, like the player's bottom line and in its colours, but flat: rounded on
+   top only, no contact line. */
 #addons_state_strip _StateSegment {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #354857, stop:1 #293843);
+    background: #2f404d;
     border: 0;
     border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
@@ -622,11 +622,11 @@ QLabel#addons_filters_count {
 }
 
 #addons_state_strip _StateSegment:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #435563, stop:1 #384650);
+    background: #3d4e5b;
 }
 
 #addons_state_strip _StateSegment:checked {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1c2730, stop:1 #2b3a45);
+    background: #24313b;
     border-left-color: transparent;
 }
 
