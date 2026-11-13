@@ -1345,6 +1345,27 @@ class _StateSegment(_LaidOutButton):
         self._fade()
 
 
+class _FadedIconButton(QPushButton):
+    """An icon in the header's corner: half faded, like the tabs beside it
+    that are not chosen (more opaque under the pointer)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setGraphicsEffect(QGraphicsOpacityEffect(self))
+        self._fade()
+
+    def _fade(self):
+        self.graphicsEffect().setOpacity(.75 if self.underMouse() else .5)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._fade()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self._fade()
+
+
 class _FiltersPopover(QFrame):
     """What the Filters button opens: the task, the language and the
     hardware, as labelled fields."""
@@ -1464,7 +1485,11 @@ class AddonsPanel(QWidget):
         self._hardware_combo.currentIndexChanged.connect(self._on_hardware_changed)
 
         # --- The state strip: one exclusive row, the chosen one sunk ----
-        state_row = QHBoxLayout()
+        # On a faint shadow rising from the header's bottom edge to the row's middle; the chosen tab stands over it.
+        self._state_row = QWidget()
+        self._state_row.setObjectName('addons_state_row')
+        self._state_row.setAttribute(Qt.WA_StyledBackground)
+        state_row = QHBoxLayout(self._state_row)
         state_row.setContentsMargins(10, 0, 10, 0)
         state_row.setSpacing(0)
         self._state_strip = QWidget()
@@ -1508,7 +1533,7 @@ class AddonsPanel(QWidget):
         self._hardware_info.setVisible(False)
         self._tags_row.setVisible(False)                # shown while a filter is chosen
         self._header.layout().addWidget(self._tags_row)
-        self._header.layout().addLayout(state_row)
+        self._header.layout().addWidget(self._state_row)
 
         # --- Scrollable card list + empty-state placeholder --------------
         # The list and the placeholder share the same slot in the layout
@@ -1590,7 +1615,7 @@ class AddonsPanel(QWidget):
 
     @staticmethod
     def _header_icon(icon: str) -> QPushButton:
-        button = QPushButton()
+        button = _FadedIconButton()
         button.setObjectName('addons_header_icon')
         button.setIcon(_graphic(icon))
         button.setIconSize(QSize(16, 16))
