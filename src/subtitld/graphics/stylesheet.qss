@@ -603,8 +603,7 @@ QLabel#addons_filters_count {
 }
 
 /* Tabs standing on the header's bottom edge: the others bare, their words half faded (_StateSegment dims them);
-   the chosen one a tab in the list's own colour, rounded on top, covering the header's contact line so it opens
-   into the list below. */
+   the chosen one a tab in the list's own colour, rounded on top, so it opens into the list below. */
 #addons_state_strip _StateSegment {
     background: transparent;
     border: 0;
@@ -656,11 +655,10 @@ QPushButton#addons_filter_tag:hover {
     background: rgba(255, 255, 255, 34);
 }
 
-/* The header the filters sit in: edge to edge, a shade darker than the panel, its contact line under it. */
+/* The header the filters sit in: edge to edge, a shade darker than the panel. */
 QWidget#addons_header {
     background: rgba(0, 0, 0, 38);
     border: 0;
-    border-bottom: 1px solid rgba(0, 0, 0, 115);
 }
 
 /* Install from a file and refresh the catalog: two bare icons in the header's bottom-right corner, like the

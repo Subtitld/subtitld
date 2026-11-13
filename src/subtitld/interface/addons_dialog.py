@@ -1327,7 +1327,7 @@ class _StateSegment(_LaidOutButton):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
             label.setGraphicsEffect(QGraphicsOpacityEffect(label))
             self.layout().addWidget(label)
-        self.setFixedHeight(27)                         # its last row over the header's contact line
+        self.setFixedHeight(27)
         self.toggled.connect(lambda _checked: self._fade())
         self._fade()
 
@@ -1421,8 +1421,8 @@ class AddonsPanel(QWidget):
         self.layout().setSpacing(0)
 
         # The header: the search, the filters and the state strip, edge to edge and always in view above the list.
-        # The search and the Filters tab run along its top edge, the state tabs stand on its bottom one (the chosen
-        # one over its 1px contact line), the chosen filters' tags between them.
+        # The search and the Filters tab run along its top edge, the state tabs stand on its bottom one, the chosen
+        # filters' tags between them.
         self._header = QWidget()
         self._header.setObjectName('addons_header')
         self._header.setAttribute(Qt.WA_StyledBackground)
@@ -1516,8 +1516,8 @@ class AddonsPanel(QWidget):
         self.install_from_file_button.clicked.connect(self._install_from_file)
         self.refresh_button = self._header_icon('addons_refresh.svg')
         self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
-        state_row.addWidget(self.install_from_file_button, 0, Qt.AlignTop)     # above the contact line
-        state_row.addWidget(self.refresh_button, 0, Qt.AlignTop)
+        state_row.addWidget(self.install_from_file_button)
+        state_row.addWidget(self.refresh_button)
 
         # --- The chosen filters, each a tag that clears it
         self._tags_row = QWidget()
