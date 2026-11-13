@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- The add-ons Filters button, pressed: hanging from the header's top-right corner, 1px taller than the search field,
      its left edge a 75° slant with a 6px curve at the foot; left of the slant, the search field's sunken well
-     (30px), so the two meet seamlessly. -->
-<svg width="40" height="32" version="1.1" viewBox="0 0 40 32" xmlns="http://www.w3.org/2000/svg">
+     (34px, the add-on cards' band), so the two meet seamlessly. -->
+<svg width="40" height="36" version="1.1" viewBox="0 0 40 36" xmlns="http://www.w3.org/2000/svg">
  <defs>
-  <linearGradient id="w" x1="0" x2="0" y1="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2b3a46"/></linearGradient>
-  <linearGradient id="g" x1="0" x2="0" y1="0" y2="31" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2e3e4b"/></linearGradient>
-  <clipPath id="c"><rect width="40" height="30"/></clipPath>
+  <linearGradient id="w" x1="0" x2="0" y1="0" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2b3a46"/></linearGradient>
+  <linearGradient id="g" x1="0" x2="0" y1="0" y2="35" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2e3e4b"/></linearGradient>
+  <clipPath id="c"><rect width="40" height="34"/></clipPath>
  </defs>
- <path d="M0 0L7.12 26.56Q8.31 31 12.91 31L0 31Z" fill="url(#w)" clip-path="url(#c)"/>
- <path d="M0 0L7.12 26.56Q8.31 31 12.91 31L40 31V0Z" fill="url(#g)"/>
+ <path d="M0 0L8.19 30.55Q9.38 35 13.98 35L0 35Z" fill="url(#w)" clip-path="url(#c)"/>
+ <path d="M0 0L8.19 30.55Q9.38 35 13.98 35L40 35V0Z" fill="url(#g)"/>
 </svg>

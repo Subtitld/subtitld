@@ -553,8 +553,8 @@ QLabel[class='metadata_badge'] {
    and standing on the header's bottom edge, the state strip, one joined row where the chosen state sinks, each
    with how many add-ons it holds. */
 QLineEdit#addons_search {
-    min-height: 30px;
-    max-height: 30px;
+    min-height: 34px;
+    max-height: 34px;
     padding: 0 6px 0 6px;
     border: 0;
     border-radius: 0;
@@ -565,19 +565,19 @@ QLineEdit#addons_search {
 
 /* Its left slice holds the slant (and the field's well beside it), so the field runs into the tab. */
 QPushButton#addons_filters_button {
-    border-image: url(graphics:addons_filters_tab.svg) 0 0 0 14 stretch stretch;
-    border-width: 0 0 0 14px;
+    border-image: url(graphics:addons_filters_tab.svg) 0 0 0 15 stretch stretch;
+    border-width: 0 0 0 15px;
     border-radius: 0;
     padding: 0;
     background: transparent;
 }
 
 QPushButton#addons_filters_button:hover {
-    border-image: url(graphics:addons_filters_tab_hover.svg) 0 0 0 14 stretch stretch;
+    border-image: url(graphics:addons_filters_tab_hover.svg) 0 0 0 15 stretch stretch;
 }
 
 QPushButton#addons_filters_button:pressed {
-    border-image: url(graphics:addons_filters_tab_pressed.svg) 0 0 0 14 stretch stretch;
+    border-image: url(graphics:addons_filters_tab_pressed.svg) 0 0 0 15 stretch stretch;
 }
 
 QLabel#addons_filters_text {

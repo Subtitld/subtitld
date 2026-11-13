@@ -1411,7 +1411,7 @@ class AddonsPanel(QWidget):
         self._filters_button = _LaidOutButton()
         self._filters_button.setObjectName('addons_filters_button')
         self._filters_button.setLayout(QHBoxLayout())
-        self._filters_button.layout().setContentsMargins(20, 0, 12, 1)     # the slant, and the contact line
+        self._filters_button.layout().setContentsMargins(21, 0, 12, 1)     # the slant, and the contact line
         self._filters_button.layout().setSpacing(6)
         filters_icon = QLabel()
         filters_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_filters.svg')).pixmap(14, 14))
@@ -1422,7 +1422,7 @@ class AddonsPanel(QWidget):
         for label in (filters_icon, self._filters_text, self._filters_count):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
             self._filters_button.layout().addWidget(label)
-        self._filters_button.setFixedHeight(32)
+        self._filters_button.setFixedHeight(36)
         self._filters_button.clicked.connect(self._open_filters)
         search_row.addWidget(self._filters_button)
         self._header.layout().addLayout(search_row)
