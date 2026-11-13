@@ -399,7 +399,7 @@ class PlayerWidget(QWidget):
         fps = widget._media_player.metaData().value(QMediaMetaData.VideoFrameRate)
         widget._media_player.setPosition(widget._media_player.position() - int(1000/fps))
 
-    def seek(widget, pos=0.0, method='absolute+exact'):
+    def seek(widget, pos=0.0, method='absolute+exact', keep_repeat=False):
         """Function to seek at some position. If the backing media
         isn't ready yet (setSource is async), the seek is queued and
         replayed by `_on_media_status_changed` once the player reaches
@@ -412,9 +412,15 @@ class PlayerWidget(QWidget):
         of media readiness. The timeline cursor draws from that field;
         without an immediate write, the queued-seek case would leave
         the cursor at 0 until the player's positionChanged signal
-        finally lands, well after the user can see the screen."""
+        finally lands, well after the user can see the screen.
+
+        A seek takes the playhead out of the stretch being repeated: the
+        repeat starts again from where it lands. Only the repeat's own
+        seeks back (`keep_repeat`) leave it be."""
         pos_f = float(pos)
         session.SUBTITLE['position'] = pos_f
+        if not keep_repeat:
+            session.REPEAT_DURATION_BUFFER = []
         status = widget._media_player.mediaStatus()
         if status not in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia,
                           QMediaPlayer.BufferingMedia, QMediaPlayer.EndOfMedia):
@@ -479,8 +485,8 @@ class PlayerWidget(QWidget):
         """Function to change volume"""
         None
     
-    def set_position(widget, pos):
-        widget.seek(pos)
+    def set_position(widget, pos, keep_repeat=False):
+        widget.seek(pos, keep_repeat=keep_repeat)
 
     def get_position(widget):
         return widget._media_player.position()
