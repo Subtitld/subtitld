@@ -252,8 +252,9 @@ def _install_fit_checkbox(widget):
 
 def _install_scope_footer(widget):
     """Close the panel the way transcription and translation close theirs:
-    the SCOPE chip + bar, a hairline, and "Generate all speeches" in the
-    action row under it. See interface/scope_selector.py.
+    the SCOPE bar, a hairline, and "Generate all speeches" in the action row
+    under it, on the dialogs' corner tab with the SCOPE chip at the row's
+    left. See interface/scope_selector.py.
 
     Both speaker panels persist under the same ``dubbing`` config section, so
     the scope a user picks holds when they switch engines."""
@@ -266,7 +267,8 @@ def _install_scope_footer(widget):
     margins = layout.contentsMargins()
     content = QWidget()
     content_layout = QVBoxLayout(content)
-    content_layout.setContentsMargins(margins.left(), 0, margins.right(), 0)
+    # The section around the panel has no padding (its engine field runs edge to edge), so the column carries it.
+    content_layout.setContentsMargins(10, 0, 10, 0)
     content_layout.setSpacing(layout.spacing())
     while layout.count():
         stretch = layout.stretch(0)
@@ -289,6 +291,7 @@ def _install_scope_footer(widget):
     widget.generate_all_speeches_button = QPushButton()
     widget.generate_all_speeches_button.clicked.connect(lambda: widget.generate_all_speeches_button_clicked())
     footer.add_action(widget.generate_all_speeches_button, primary=True)
+    footer.as_corner_tab()
 
 
 def _reconcile_generate_button(widget):

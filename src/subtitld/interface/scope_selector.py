@@ -730,6 +730,25 @@ class ScopeFooter(QWidget):
             self.actions_page.layout().addWidget(widget, stretch, alignment)
         return widget
 
+    def as_corner_tab(self):
+        """The ending a speaker card's dubbing section wears: the scope chip
+        moves to the action row's left, hanging from the hairline, and the
+        main action becomes the dialogs' light slanted tab in the row's
+        bottom-right corner, flush with the edges."""
+        self.setProperty('corner_tab', True)
+        actions = self.actions_page.layout()
+        actions.setContentsMargins(_SIDE_PADDING, 0, 0, 0)
+        if self.selector is not None:
+            chip = self.selector.chip
+            chip.setProperty('docked', True)
+            self.selector.layout().setContentsMargins(0, 0, 0, 0)
+            actions.insertWidget(0, chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            actions.insertStretch(1, 1)
+        primary = getattr(self, '_primary', None)
+        if primary is not None:
+            primary.setProperty('class', 'scope_action_tab')
+            actions.setAlignment(primary, Qt.AlignRight | Qt.AlignBottom)
+
     def add_stretch(self):
         """Push the actions added after this to the row's far end."""
         self.actions_page.layout().addStretch(1)

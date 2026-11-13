@@ -471,6 +471,35 @@ QPushButton[class~="scope_action"],
     text-transform: uppercase;
 }
 
+/* In a speaker card's dubbing section the main action is the dialogs' light slanted tab, in the row's
+   bottom-right corner (ScopeFooter.as_corner_tab), named with the card for the same reason as above. */
+QPushButton[class~="scope_action_tab"],
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action_tab"] {
+    border-image: url(graphics:dialog_bottom_right.svg) 5 5 5 24 stretch stretch;
+    border-width: 5px 5px 5px 24px;
+    border-radius: 0;
+    padding: 3px 7px 3px 0;
+    background: transparent;
+    color: #1e2b36;
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+QPushButton[class~="scope_action_tab"]:disabled,
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action_tab"]:disabled {
+    color: rgba(30, 43, 54, 120);
+}
+
+/* Its scope chip, moved to the row's left: hanging from the hairline, so rounded at the bottom. */
+QPushButton#transcription_scope_chip[docked="true"] {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
 /* The footer's quieter action (INVERT TRANSLATION): text on the band, the
    same idea as REPLACE in the Find & Replace footer, so the main action is
    the only filled button. Smaller than that one, so it sits inside the row

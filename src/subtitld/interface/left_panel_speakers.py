@@ -237,6 +237,7 @@ class dubbing_container(QWidget):
         widget.layout().addLayout(header_line)
 
         widget.combobox = utils.LabeledComboBox()
+        widget.combobox.ROUNDED = False                 # edge to edge across the section, square
         widget.combobox.activated.connect(lambda: widget.combobox_changed())
         header_line.addWidget(widget.combobox, 1)
 
@@ -858,7 +859,7 @@ class CollapsibleSection(QWidget):
         self.body = _BodyClippedPanel()
         self.body.setObjectName('speaker_option_section_body')
         self.body.setLayout(QVBoxLayout())
-        self.body.layout().setContentsMargins(10, 6, 10, 10)
+        self.body.layout().setContentsMargins(0, 0, 0, 0)    # its content runs edge to edge
         self.body.layout().setSpacing(6)
         self.body.setVisible(False)
         self.layout().addWidget(self.body)
