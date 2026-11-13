@@ -602,32 +602,20 @@ QLabel#addons_filters_count {
     qproperty-alignment: AlignCenter;
 }
 
-/* Standing on the header's bottom edge, like the player's bottom line and in its colours, but flat: rounded on
-   top only, no contact line. */
+/* Tabs standing on the header's bottom edge: the others bare, their words half faded (_StateSegment dims them);
+   the chosen one a tab in the list's own colour, rounded on top, covering the header's contact line so it opens
+   into the list below. */
 #addons_state_strip _StateSegment {
-    background: #2f404d;
+    background: transparent;
     border: 0;
-    border-left: 1px solid rgba(0, 0, 0, 50);
     border-radius: 0;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
     padding: 0;
 }
 
-#addons_state_strip _StateSegment[segment="first"] {
-    border-left: 0;
-    border-top-left-radius: 3px;
-}
-
-#addons_state_strip _StateSegment[segment="last"] {
-    border-top-right-radius: 3px;
-}
-
-#addons_state_strip _StateSegment:hover {
-    background: #3d4e5b;
-}
-
 #addons_state_strip _StateSegment:checked {
-    background: #24313b;
-    border-left-color: transparent;
+    background: #2b3a47;
 }
 
 QLabel#addons_state_name {

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QGraphicsOpacityEffect,
     QLabel,
     QLineEdit,
     QProgressBar,
@@ -1308,8 +1309,9 @@ class _LaidOutButton(QPushButton):
 
 
 class _StateSegment(_LaidOutButton):
-    """One segment of the state strip: its name and, quieter, how many
-    add-ons it holds under the other filters."""
+    """One tab of the state strip: its name and, quieter, how many
+    add-ons it holds under the other filters. Unless chosen, its words
+    are half faded (more opaque under the pointer)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1323,8 +1325,24 @@ class _StateSegment(_LaidOutButton):
         self.count.setObjectName('addons_state_count')
         for label in (self.name, self.count):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            label.setGraphicsEffect(QGraphicsOpacityEffect(label))
             self.layout().addWidget(label)
-        self.setFixedHeight(26)
+        self.setFixedHeight(27)                         # its last row over the header's contact line
+        self.toggled.connect(lambda _checked: self._fade())
+        self._fade()
+
+    def _fade(self):
+        opacity = 1.0 if self.isChecked() else (.75 if self.underMouse() else .5)
+        for label in (self.name, self.count):
+            label.graphicsEffect().setOpacity(opacity)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._fade()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self._fade()
 
 
 class _FiltersPopover(QFrame):
@@ -1382,13 +1400,13 @@ class AddonsPanel(QWidget):
         self.layout().setSpacing(0)
 
         # The header: the search, the filters and the state strip, edge to edge and always in view above the list.
-        # The search and the Filters tab run along its top edge, the state strip stands on its bottom one (above
-        # its 1px contact line), the chosen filters' tags between them.
+        # The search and the Filters tab run along its top edge, the state tabs stand on its bottom one (the chosen
+        # one over its 1px contact line), the chosen filters' tags between them.
         self._header = QWidget()
         self._header.setObjectName('addons_header')
         self._header.setAttribute(Qt.WA_StyledBackground)
         self._header.setLayout(QVBoxLayout())
-        self._header.layout().setContentsMargins(0, 0, 0, 1)
+        self._header.layout().setContentsMargins(0, 0, 0, 0)
         self._header.layout().setSpacing(8)
         self.layout().addWidget(self._header)
 
@@ -1473,8 +1491,8 @@ class AddonsPanel(QWidget):
         self.install_from_file_button.clicked.connect(self._install_from_file)
         self.refresh_button = self._header_icon('addons_refresh.svg')
         self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
-        state_row.addWidget(self.install_from_file_button)
-        state_row.addWidget(self.refresh_button)
+        state_row.addWidget(self.install_from_file_button, 0, Qt.AlignTop)     # above the contact line
+        state_row.addWidget(self.refresh_button, 0, Qt.AlignTop)
 
         # --- The chosen filters, each a tag that clears it
         self._tags_row = QWidget()
