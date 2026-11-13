@@ -565,19 +565,19 @@ QLineEdit#addons_search {
 
 /* Its left slice holds the slant (and the field's well beside it), so the field runs into the tab. */
 QPushButton#addons_filters_button {
-    border-image: url(graphics:addons_filters_tab.svg) 0 0 0 15 stretch stretch;
-    border-width: 0 0 0 15px;
+    border-image: url(graphics:addons_filters_tab.svg) 0 0 0 16 stretch stretch;
+    border-width: 0 0 0 16px;
     border-radius: 0;
     padding: 0;
     background: transparent;
 }
 
 QPushButton#addons_filters_button:hover {
-    border-image: url(graphics:addons_filters_tab_hover.svg) 0 0 0 15 stretch stretch;
+    border-image: url(graphics:addons_filters_tab_hover.svg) 0 0 0 16 stretch stretch;
 }
 
 QPushButton#addons_filters_button:pressed {
-    border-image: url(graphics:addons_filters_tab_pressed.svg) 0 0 0 15 stretch stretch;
+    border-image: url(graphics:addons_filters_tab_pressed.svg) 0 0 0 16 stretch stretch;
 }
 
 QLabel#addons_filters_text {
