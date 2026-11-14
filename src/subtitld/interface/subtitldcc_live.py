@@ -1327,12 +1327,12 @@ class LiveBar(QWidget):
         self.drawer.ensureWidgetVisible(widget)
 
     def start_sharing(self):
-        """Share it under the title the card holds (the project's own, unless changed there)."""
+        """Share it under the title the card holds (the project's own, unless changed there). The drawer stays
+        as it is: opening it here, only for it to close once shared (nothing left in it), made the bar jump."""
         card = self.panel.live_card
         card.refresh()
         if card.title_field.text().strip():
             card.share()
-        self._show_in_drawer(card)
 
     def retranslate(self):
         self.lock.setToolTip(_('collab.voice_latch'))
