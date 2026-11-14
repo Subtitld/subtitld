@@ -479,6 +479,40 @@ class _Switch(QAbstractButton):
         painter.drawEllipse(QRectF(16 if self.isChecked() else 2, 2, 14, 14))
 
 
+class _ElidedLabel(QLabel):
+    """A one-line label that gives up width before the panel does: short
+    of room, its text ends in "…" and the whole of it is the tooltip. A
+    plain label is never narrower than its text, so a long name or licence
+    kept a card, and the list, wider than the panel."""
+
+    def __init__(self, text='', least=24, parent=None):
+        super().__init__(text, parent)
+        self._full = text
+        self._least = least                     # it gives up width down to this (or its whole text, if shorter)
+        self._own_tooltip = ''
+
+    def setToolTip(self, text):
+        self._own_tooltip = text
+        super().setToolTip(text)
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        metrics = self.fontMetrics()
+        hint.setWidth(hint.width() + metrics.horizontalAdvance(self._full) - metrics.horizontalAdvance(self.text()))
+        return hint
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        return QSize(min(hint.width(), self._least), hint.height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        shown = self.fontMetrics().elidedText(self._full, Qt.ElideRight, self.contentsRect().width())
+        if shown != self.text():
+            QLabel.setText(self, shown)
+        QLabel.setToolTip(self, self._own_tooltip or (self._full if shown != self._full else ''))
+
+
 class _AddonCard(QFrame):
     """One `_Row` as a card. It paints its own face: a band along the top,
     the task on a dark label hanging from the top-left corner (75° slant,
@@ -566,15 +600,18 @@ class _AddonCard(QFrame):
         main, aside = name, ''
         if name.endswith(')') and ' (' in name:
             main, aside = name[:-1].split(' (', 1)
-        title = QLabel(main)
+        title = _ElidedLabel(main, least=60)           # the aside gives way first
         title.setProperty('class', 'addon_card_title')
         band.layout().addWidget(title)
         if aside:
-            note = QLabel(aside)
+            note = _ElidedLabel(aside)
             note.setProperty('class', 'addon_card_aside')
+            # it takes the room left after the name, so it gives way first
+            note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
             band.layout().addSpacing(6)
-            band.layout().addWidget(note)
-        band.layout().addStretch()
+            band.layout().addWidget(note, 1)
+        else:
+            band.layout().addStretch()
 
         if not row.is_builtin:
             version_text = ''
@@ -616,7 +653,7 @@ class _AddonCard(QFrame):
         verdict = _compute.assess(row.compute, row.accelerators, hardware)
         if verdict is not None:
             chip_text, chip_tooltip = _compute_texts(verdict, hardware)
-            chip = QLabel(chip_text)
+            chip = _ElidedLabel(chip_text, least=10_000)   # whole: the licence gives way
             chip.setToolTip(chip_tooltip)
             chip.setProperty(
                 'class',
@@ -627,7 +664,7 @@ class _AddonCard(QFrame):
             chip.setFixedHeight(22)
             tags.addWidget(chip)
         if row.license and row.license not in ('', '?', 'built-in'):
-            licence = QLabel(row.license)
+            licence = _ElidedLabel(row.license)
             licence.setProperty('class', 'addon_card_licence')
             licence.setToolTip(_('addons_dialog.details.license').format(license=row.license))
             licence.setAttribute(Qt.WA_StyledBackground)
