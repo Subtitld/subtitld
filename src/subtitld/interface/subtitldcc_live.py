@@ -707,8 +707,8 @@ class LiveBar(QWidget):
         self.setObjectName('live_bar')
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)   # as tall as it needs
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 8, 0, 0)
-        layout.setSpacing(4)
+        layout.setContentsMargins(0, 3, 0, 0)
+        layout.setSpacing(2)
 
         # The drawer: the live co-editing card (sharing, who it is shared with, the media), opened from the
         # toggle at the status line's end, under that line (which stays on top).
