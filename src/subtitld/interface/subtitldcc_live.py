@@ -701,6 +701,7 @@ class LiveBar(QWidget):
     the details (who it is shared with, the media, the chat itself); the bar's questions are asked there."""
 
     DRAWER_HEIGHT = 360                                 # at most: past it, the drawer scrolls
+    RISE = 4                                            # Share live stands this much above the bar's shade
 
     def __init__(self, panel):
         super().__init__()
@@ -708,7 +709,7 @@ class LiveBar(QWidget):
         self.setObjectName('live_bar')
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)   # as tall as it needs
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
         # The drawer: the live co-editing card (sharing, who it is shared with, the media), opened from the
@@ -727,15 +728,16 @@ class LiveBar(QWidget):
         # The status line: the drawer's toggle, whether it is shared and connected, the project, who is in it.
         # Not shared and closed, it shares the bottom line with Share live (_arrange).
         self.status_line = QWidget()
+        self.status_line.setFixedHeight(26)             # the shade's height
         status = QHBoxLayout(self.status_line)
         status.setContentsMargins(0, 0, 10, 0)
         status.setSpacing(6)
         self.toggle = self._icon('live_bar_menu.svg')
         self.toggle.setObjectName('live_bar_toggle')
-        self.toggle.setFixedSize(30, 30)                # the line's full height, from its left edge
+        self.toggle.setFixedSize(30, 26)                # the shade's full height, from its left edge
         self.toggle.setCheckable(True)
         self.toggle.toggled.connect(self.open_drawer)
-        status.addWidget(self.toggle, 0, Qt.AlignVCenter)
+        status.addWidget(self.toggle, 0, Qt.AlignBottom)
         self.dot = QLabel()
         self.dot.setObjectName('live_bar_dot')
         self.dot.setFixedSize(8, 8)
@@ -790,7 +792,10 @@ class LiveBar(QWidget):
 
     def paintEvent(self, event):
         from PySide6.QtGui import QColor, QPainter
-        QPainter(self).fillRect(self.rect(), AccountHeader.SHADE)     # the header's shade
+        painter = QPainter(self)
+        # the header's shade, under the strip Share live rises into (the cards' ground continues there)
+        painter.fillRect(self.rect().adjusted(0, 0, 0, -(self.height() - self.RISE)), QColor(184, 206, 224, 15))
+        painter.fillRect(self.rect().adjusted(0, self.RISE, 0, 0), AccountHeader.SHADE)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -894,12 +899,14 @@ class LiveBar(QWidget):
         layout = self.layout()
         if merged and self.controls.indexOf(self.status_line) < 0:
             layout.removeWidget(self.status_line)
-            self.controls.insertWidget(0, self.status_line, 1)
+            self.controls.insertWidget(0, self.status_line, 1, Qt.AlignBottom)
         elif not merged and layout.indexOf(self.status_line) < 0:
             self.controls.removeWidget(self.status_line)
             layout.insertWidget(0, self.status_line)
         self.status_line.show()
         self.controls.setContentsMargins(0 if merged else 8, 0, 0, 0)
+        # one line: Share live rises into the strip above the shade; otherwise the status line starts under it
+        layout.setContentsMargins(0, 0 if merged else self.RISE, 0, 0)
 
     def open_drawer(self, opened):
         self.drawer.setVisible(opened)

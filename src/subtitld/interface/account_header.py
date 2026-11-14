@@ -159,7 +159,8 @@ class HeaderShadow(QWidget):
         self.raise_()
 
     def place_over(self, footer):
-        self.setGeometry(0, footer.geometry().top() - self.HEIGHT, self.parentWidget().width(), self.HEIGHT)
+        top = footer.geometry().top() + getattr(footer, 'RISE', 0)      # where its shade starts
+        self.setGeometry(0, top - self.HEIGHT, self.parentWidget().width(), self.HEIGHT)
         self.raise_()
 
     def paintEvent(self, event):
