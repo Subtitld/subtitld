@@ -137,6 +137,69 @@ class _HoverRow(QWidget):
         self.button.setVisible(False)
 
 
+class _MemberBadge(QWidget):
+    """Someone it is shared with: their initial in a circle and their @handle; for whoever manages it, a ×
+    removing them, shown while the pointer is on the badge (its room kept)."""
+    AVATAR = 18
+
+    def __init__(self, member, manage):
+        super().__init__()
+        self.setObjectName('live_member_badge')
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setToolTip(member.get('name') or '')
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(3, 3, 3 if manage else 8, 3)
+        layout.setSpacing(5)
+        avatar = QLabel()
+        avatar.setFixedSize(self.AVATAR, self.AVATAR)
+        avatar.setPixmap(self._avatar((member.get('name') or member['handle'])[:1].upper()))
+        layout.addWidget(avatar)
+        handle = QLabel(f"@{member['handle']}")
+        handle.setObjectName('live_member_handle')
+        layout.addWidget(handle)
+        self.remove = QPushButton('×')
+        self.remove.setObjectName('live_member_remove')
+        self.remove.setFixedSize(18, 18)
+        self.remove.setCursor(Qt.PointingHandCursor)
+        self.remove.setToolTip(_('collab.remove'))
+        self.remove.setAccessibleName(_('collab.remove'))
+        policy = self.remove.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.remove.setSizePolicy(policy)
+        self.remove.setVisible(False)
+        self._manage = manage
+        if manage:
+            layout.addWidget(self.remove)
+
+    def _avatar(self, initial):
+        from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+        ratio = self.devicePixelRatioF() or 1
+        pixmap = QPixmap(int(self.AVATAR * ratio), int(self.AVATAR * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor('#4a6376'))
+        painter.drawEllipse(0, 0, self.AVATAR, self.AVATAR)
+        font = QFont('Montserrat')
+        font.setPixelSize(9)
+        font.setWeight(QFont.Bold)
+        painter.setFont(font)
+        painter.setPen(QColor('#e3edf5'))
+        painter.drawText(0, 0, self.AVATAR, self.AVATAR, Qt.AlignCenter, initial)
+        painter.end()
+        return pixmap
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.remove.setVisible(self._manage)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.remove.setVisible(False)
+
+
 class _SectionCard(QWidget):
     """A card in the live bar's drawer: a header (its title, + or −) that opens a list under it, as tall as
     the list up to HEIGHT, then scrolling. `box` is the list's layout; `opened` says it opened or closed."""
@@ -274,18 +337,41 @@ class LiveCard(QWidget):
         shared.addWidget(self.conflicts)
         self.conflicts_box = QVBoxLayout()
         shared.addLayout(self.conflicts_box)
-        # Who it is shared with: a card that opens (the owner adds people at its foot).
+        # Who it is shared with: its own header (the owner on a tab hanging from the top-left corner, the
+        # title, and for whoever manages it a field adding someone, Enter), then a badge a person, wrapping.
+        from subtitld.interface.left_panel_videoproperties import _FlowLayout
         self.members_card = _SectionCard()
-        self.members_title = self.members_card.title
-        self.members_box = QVBoxLayout()
-        self.members_box.setSpacing(6)
-        self.members_card.box.addLayout(self.members_box)
+        self.members_card.header.setVisible(False)
+        self.members_card.header.setChecked(True)          # always open
+        head = QWidget()
+        head.setObjectName('live_members_head')
+        head.setFixedHeight(26)
+        head_line = QHBoxLayout(head)
+        head_line.setContentsMargins(0, 0, 6, 0)
+        head_line.setSpacing(8)
+        self.owner_tab = QLabel()
+        self.owner_tab.setObjectName('live_owner_tab')
+        self.owner_tab.setFixedHeight(26)
+        head_line.addWidget(self.owner_tab, 0, Qt.AlignTop)
+        self.members_title = QLabel()
+        self.members_title.setObjectName('live_section_title')
+        head_line.addWidget(self.members_title)
         self.member_field = QLineEdit()
-        self.add_button = _button()
-        self.add_button.clicked.connect(self.add_member)
+        self.member_field.setObjectName('live_member_field')
+        self.member_field.setFixedHeight(20)
         self.member_field.returnPressed.connect(self.add_member)
-        self.add_row = _row(self.member_field, self.add_button, stretch=False)
-        self.members_card.box.addWidget(self.add_row)
+        head_line.addWidget(self.member_field, 1)
+        self.head_stretch = QWidget()                      # the field's room, for whoever cannot add people
+        self.head_stretch.setProperty('class', 'transparent_panel')
+        head_line.addWidget(self.head_stretch, 1)
+        self.members_card.layout().insertWidget(0, head)
+        self.add_button = _button()                        # (Enter in the field does it; kept for the tests)
+        self.add_button.clicked.connect(self.add_member)
+        self.add_button.setVisible(False)
+        badges = QWidget()
+        badges.setProperty('class', 'transparent_panel')
+        self.members_box = _FlowLayout(badges, spacing=4)
+        self.members_card.box.addWidget(badges)
         # (the live bar shows it, in a pop-up at its foot's left corner: LiveBar.show_people)
         # Media: the project's files, sent between collaborators (modules/collab_transfer.py): a card that
         # opens on whether this computer shares its own, then one line a file (its name, size and where it is).
@@ -466,19 +552,13 @@ class LiveCard(QWidget):
         manage = bool((project.get('permissions') or {}).get('can_manage'))
         _clear(self.members_box)
         if project:
-            owner = _text()
-            owner.setText(_('collab.owner').format(handle=(project.get('owner') or {}).get('handle', '')))
-            self.members_box.addWidget(owner)
+            owner = (project.get('owner') or {}).get('handle', '')
+            self.owner_tab.setText(f'@{owner}')
+            self.owner_tab.setToolTip(_('collab.owner').format(handle=owner))
             for member in project.get('members') or []:
-                label = _text()
-                label.setText(f"@{member['handle']}")
-                widgets = [label]
-                if manage:
-                    remove = _button()
-                    remove.setText(_('collab.remove'))
-                    remove.clicked.connect(lambda _c=False, handle=member['handle']: self.remove_member(handle))
-                    widgets.append(remove)
-                self.members_box.addWidget(_row(*widgets))
+                badge = _MemberBadge(member, manage)
+                badge.remove.clicked.connect(lambda _c=False, handle=member['handle']: self.remove_member(handle))
+                self.members_box.addWidget(badge)
         self.members_card.setVisible(bool(project))
         self.members_card.fit()
         subtitle = project.get('subtitle')
@@ -487,7 +567,8 @@ class LiveCard(QWidget):
             self.publishes_to.setText(_('collab.publishes_to').format(
                 title=html.escape(subtitle.get('title') or ''), version=subtitle.get('version') or 0))
         self.copy_link_button.setVisible(False)        # the live bar's link copies it
-        self.add_row.setVisible(manage)
+        self.member_field.setVisible(manage)
+        self.head_stretch.setVisible(not manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.stop_button.setVisible(False)             # the live bar's status line has it, on hover
         self._render_media()
@@ -797,11 +878,12 @@ class LiveCard(QWidget):
         self.share_button.setText(_('collab.share'))
         self.share_button.setToolTip(_('collab.share_tip'))
         self.projects_card.set_title(_('collab.shared_with_you'))
-        self.members_card.set_title(_('collab.members'))
+        self.members_title.setText(_('collab.members').upper())
         self.media_card.set_title(_('collab.media'))
         self.copy_link_button.setText(_('collab.copy_link'))
         self.copy_link_button.setToolTip(_('collab.copy_link_tip'))
-        self.member_field.setPlaceholderText(_('collab.member_placeholder'))
+        self.member_field.setPlaceholderText(_('collab.member_add_placeholder'))
+        self.member_field.setToolTip(_('collab.member_placeholder'))
         self.add_button.setText(_('collab.add'))
         self.sign_in_button.setText(_('collab.sign_in_again'))
         self.share_media.setText(_('collab.media_share'))
@@ -1337,9 +1419,6 @@ class LiveBar(QWidget):
         # who it is shared with: a panel opening above the foot's line, in the line's colour while open, like
         # the dubbing panel's range (scope_selector.ScopeFooter.as_corner_tab); the people icon opens it
         card = self.panel.live_card.members_card
-        card.sign.setVisible(False)                      # a title here, not a section to fold
-        card.header.setAttribute(Qt.WA_TransparentForMouseEvents)
-        card.header.setChecked(True)
         self.people_panel = QWidget(self)
         self.people_panel.setObjectName('live_people_panel')
         box = QVBoxLayout(self.people_panel)

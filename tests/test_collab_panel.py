@@ -199,7 +199,7 @@ check('shared: the members part, not the form', wait(lambda: not card.share_box.
 check('connected', card.status.text(), 'Connected. Changes reach everyone as you make them.')
 panel.live_bar.show_people()                            # who it is shared with: a pop-up at the live bar's foot
 app.processEvents()
-check('the owner manages it', (card.add_row.isVisible(), card.stop_button.text()), (True, 'Stop sharing'))
+check('the owner manages it', (card.member_field.isVisible(), card.stop_button.text()), (True, 'Stop sharing'))
 
 print('who is here')
 connection = collab_service.connection()
@@ -488,8 +488,9 @@ card.member_field.setText('@joao')
 card.add_button.click()
 check('added', wait(lambda: ('add', 'joao') in calls), True)
 check('listed', wait(lambda: '@joao' in [w.text() for w in panel.findChildren(QLabel)]), True)
-check('with a Remove button for the owner', wait(lambda: buttons('Remove')), True)
-buttons('Remove')[0].click()
+removes = lambda: [b for b in panel.findChildren(type(card.add_button)) if b.toolTip() == 'Remove' and b.parentWidget().isVisible()]
+check('with a Remove button for the owner', wait(removes), True)
+removes()[0].click()
 check('removing asks first', card.confirm.isVisible(), True)
 card.confirm_yes.click()
 check('removed', wait(lambda: ('remove', 'Dk3pQ9aZ2bT', 'joao') in calls), True)

@@ -4428,6 +4428,52 @@ QWidget#live_people_panel QPushButton#live_section_toggle {
     background: transparent;
 }
 
+/* Its header: the owner on a tab hanging from the top-left corner, the title, the field adding someone. */
+QLabel#live_owner_tab {
+    border-image: url(graphics:live_owner_tab.svg) 0 13 0 0 stretch stretch;
+    border-width: 0 13px 0 0;
+    padding: 0 6px 1px 10px;
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 600;
+    color: #e3edf5;
+}
+
+QLineEdit#live_member_field {
+    background: rgba(0, 0, 0, 0.22);
+    border: 0;
+    border-radius: 3px;
+    padding: 0 6px;
+    font-size: 11px;
+    color: #e3edf5;
+}
+
+/* A person it is shared with: their initial in a circle and their @handle. */
+QWidget#live_member_badge {
+    background: rgba(0, 0, 0, 0.22);
+    border-radius: 3px;
+}
+
+QLabel#live_member_handle {
+    font-size: 11px;
+    color: #c8d8e4;
+    background: transparent;
+}
+
+QPushButton#live_member_remove {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 0;
+    font-size: 13px;
+    color: #8aa0b2;
+}
+
+QPushButton#live_member_remove:hover {
+    background: rgba(0, 0, 0, 0.25);
+    color: #ff8f8f;
+}
+
 /* Who it is shared with: in the bar's bottom-left corner, square but for its top-right corner. */
 QPushButton#live_bar_people {
     border-radius: 0;

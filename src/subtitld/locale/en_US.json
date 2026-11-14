@@ -1148,6 +1148,7 @@
     "collab.members": "Shared with",
     "collab.owner": "Owner: @{handle}",
     "collab.member_placeholder": "@handle of a person or group",
+    "collab.member_add_placeholder": "Add @handle",
     "collab.add": "Add",
     "collab.remove": "Remove",
     "collab.remove_text": "Stop sharing this project with @{handle}? They are disconnected right away.",
