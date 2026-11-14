@@ -879,9 +879,9 @@ class _Ripple(QWidget):
         from PySide6.QtGui import QColor, QPainter, QPen
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        # it bursts out and slows as it reaches its size (ease-out); it stays solid for the first third, then
-        # fades faster and faster (a delayed ease-in), gone as it settles
-        grown = 1 - (1 - self._phase) ** 3
+        # it starts slowly and speeds up as it grows (ease-in); it stays solid for the first third, then fades
+        # faster and faster (a delayed ease-in), gone as it reaches its size
+        grown = self._phase ** 2
         fading = max(0.0, (self._phase - self.HOLD) / (1 - self.HOLD))
         colour = QColor(self.COLOUR)
         colour.setAlphaF(0.85 * (1 - fading ** 2))
