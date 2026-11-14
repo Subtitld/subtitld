@@ -1116,6 +1116,8 @@ class LiveBar(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._place_shadow()
+        if self.chat_holder.isVisible():                # back on the panel, the chat open: what came is read
+            collab_service.chat_mark_read()
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -1142,6 +1144,8 @@ class LiveBar(QWidget):
             if unread > self._unread_seen:
                 self._message_arrived()
             self._unread_seen = unread
+            if unread and self.chat_holder.isVisible():     # the chat is open in front of them
+                collab_service.chat_mark_read()         # read as it arrives: no count, no green
         if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice', 'conflicts', 'document'):
             self._redraw.start()
 
