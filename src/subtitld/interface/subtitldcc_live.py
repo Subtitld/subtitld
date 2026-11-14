@@ -837,19 +837,21 @@ class _Ripple(QWidget):
     window, the pointer goes through it; it goes away when done."""
     PULSES = 2
     DURATION = 700                                      # ms, a pulse
-    GROW = 24                                           # px the ring grows past the widget
+    GROW = 40                                           # px the ring grows past the icon
     WIDTH = 3.5                                         # the ring's thickness
     BLUR = 3                                            # px its edges soften
     COLOUR = '#8fe57f'
 
-    def __init__(self, target):
+    def __init__(self, target, centre=None, base=12):
+        """Around `target`'s icon: at `centre` (in the target, its middle by default), from a ring of `base`
+        px (about the icon's size)."""
         from PySide6.QtCore import QPoint, QVariantAnimation
         window = target.window()
         super().__init__(window)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._base = max(target.width(), target.height()) / 2
+        self._base = base
         size = int(2 * (self._base + self.GROW + self.WIDTH + self.BLUR * 2))
-        centre = target.mapTo(window, QPoint(target.width() // 2, target.height() // 2))
+        centre = target.mapTo(window, centre or QPoint(target.width() // 2, target.height() // 2))
         self.setGeometry(centre.x() - size // 2, centre.y() - size // 2, size, size)
         self._phase = 0.0
         from PySide6.QtWidgets import QGraphicsBlurEffect
@@ -880,7 +882,7 @@ class _Ripple(QWidget):
         colour.setAlphaF(0.85 * (1 - self._phase))
         painter.setPen(QPen(colour, self.WIDTH))
         painter.setBrush(Qt.NoBrush)
-        radius = self._base * 0.8 + (self.GROW + self._base * 0.2) * self._phase
+        radius = self._base + self.GROW * self._phase
         painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), radius, radius)
 
 
@@ -1141,6 +1143,15 @@ class LiveBar(QWidget):
         if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice', 'conflicts', 'document'):
             self._redraw.start()
 
+    def _chat_icon_centre(self):
+        """Where the chat tab draws its icon: icon and count centred between its 13px slanted ends."""
+        from PySide6.QtCore import QPoint
+        chat = self.chat
+        text = chat.text()
+        content = 16 + (4 + chat.fontMetrics().horizontalAdvance(text) if text else 0)
+        left = 13 + (chat.width() - 26 - content) / 2
+        return QPoint(int(left + 8), chat.height() // 2)
+
     def _message_arrived(self):
         """Someone wrote: a soft chime, and, unless the chat is in view, a ring around where it is: its tab in
         the bar, or, with another panel open, the subtitld.cc panel's button."""
@@ -1153,7 +1164,7 @@ class LiveBar(QWidget):
         self._chime.play()
         if self.panel.isVisible():
             if self.chat.isVisible() and not self.chat.isChecked():
-                _Ripple(self.chat)
+                _Ripple(self.chat, self._chat_icon_centre())
             return
         from subtitld.interface import left_panel
         button = next((b for b in self.window().findChildren(left_panel.navigation_button)
