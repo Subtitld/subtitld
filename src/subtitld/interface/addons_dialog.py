@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -513,6 +514,14 @@ class _ElidedLabel(QLabel):
         QLabel.setToolTip(self, self._own_tooltip or (self._full if shown != self._full else ''))
 
 
+def _licence_short(licence: str) -> str:
+    """A licence's name alone, for its tag: "Apache" for "Apache-2.0", "MIT"
+    for "MIT (wrapper) + MIT (python-audio-separator) + ...". The tag's
+    tooltip holds the whole of it."""
+    match = re.match(r'[A-Za-z]+', licence.strip())
+    return match.group(0) if match else licence
+
+
 class _AddonCard(QFrame):
     """One `_Row` as a card. It paints its own face: a band along the top,
     the task on a dark label hanging from the top-left corner (75° slant,
@@ -652,8 +661,8 @@ class _AddonCard(QFrame):
 
         # the tags go in the footer, at its left
         tags = QHBoxLayout()
-        tags.setContentsMargins(14, 0, 10, 0)
-        tags.setSpacing(6)
+        tags.setContentsMargins(0, 0, 10, 0)            # the first one meets the card's left edge
+        tags.setSpacing(3)
         verdict = _compute.assess(row.compute, row.accelerators, hardware)
         if verdict is not None:
             chip_text, chip_tooltip = _compute_texts(verdict, hardware)
@@ -668,7 +677,7 @@ class _AddonCard(QFrame):
             chip.setFixedHeight(22)
             tags.addWidget(chip)
         if row.license and row.license not in ('', '?', 'built-in'):
-            licence = _ElidedLabel(row.license)
+            licence = _ElidedLabel(_licence_short(row.license))
             licence.setProperty('class', 'addon_card_licence')
             licence.setToolTip(_('addons_dialog.details.license').format(license=row.license))
             licence.setAttribute(Qt.WA_StyledBackground)
@@ -694,6 +703,8 @@ class _AddonCard(QFrame):
         footer.layout().setContentsMargins(0, 0, 0, 0)
         footer.layout().setSpacing(0)
         has_tags = tags.count() > 0
+        if has_tags:
+            tags.itemAt(0).widget().setProperty('flush', True)   # square where it meets the edge
         tags.addStretch()
         footer.layout().addLayout(tags, 1)              # the tags give up width before the buttons do
         removable = row.is_installed and not row.is_builtin

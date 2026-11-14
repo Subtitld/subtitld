@@ -802,6 +802,14 @@ QLabel[class='addon_card_licence'] {
 }
 
 /* Help text under an add-on's settings (the config dialog and the inline settings). */
+/* The first tag meets the card's left edge: square on that side. */
+QLabel[class='addon_card_compute'][flush="true"],
+QLabel[class='addon_card_compute_warning'][flush="true"],
+QLabel[class='addon_card_licence'][flush="true"] {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
 QLabel[class='addon_card_meta'] {
     font-family: 'Montserrat';
     font-size: 10px;
