@@ -742,7 +742,7 @@ QFrame[class='addon_card'] {
 }
 
 QLabel[class='addon_card_task'] {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
     color: #e3edf5;
@@ -754,7 +754,7 @@ QLabel[class='addon_card_task_icon'] {
 }
 
 QLabel[class='addon_card_title'] {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     color: #f4f8fb;
     background: transparent;
@@ -762,7 +762,7 @@ QLabel[class='addon_card_title'] {
 
 QLabel[class='addon_card_aside'],
 QLabel[class='addon_card_version'] {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     color: #a9bfd0;
     background: transparent;
