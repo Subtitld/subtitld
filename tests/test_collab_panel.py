@@ -172,7 +172,8 @@ card = panel.live_card
 panel.refresh()
 
 def buttons(text):
-    return [b for b in card.findChildren(type(card.add_button)) if b.text() == text and b.isVisible()]
+    # the whole panel: who it is shared with opens in the live bar, the rest in the card
+    return [b for b in panel.findChildren(type(card.add_button)) if b.text() == text and b.isVisible()]
 
 
 print('signed in, not shared')
@@ -482,7 +483,7 @@ panel.live_bar.show_people()                            # in a pop-up at the liv
 card.member_field.setText('@joao')
 card.add_button.click()
 check('added', wait(lambda: ('add', 'joao') in calls), True)
-check('listed', wait(lambda: '@joao' in [w.text() for w in card.findChildren(QLabel)]), True)
+check('listed', wait(lambda: '@joao' in [w.text() for w in panel.findChildren(QLabel)]), True)
 check('with a Remove button for the owner', wait(lambda: buttons('Remove')), True)
 buttons('Remove')[0].click()
 check('removing asks first', card.confirm.isVisible(), True)

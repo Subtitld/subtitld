@@ -905,11 +905,13 @@ class LiveBar(QWidget):
         controls.setSpacing(2)
         # On the left, who is in it.
         self.faces = _Faces()
-        self.faces.on_click = self.show_people
+        self.faces.on_click = lambda: self.people.toggle()
         controls.addWidget(self.faces, 0, Qt.AlignVCenter)
         # no one in it: who it is shared with, from an icon
         self.people = self._icon('live_bar_people.svg')
-        self.people.clicked.connect(self.show_people)
+        self.people.setObjectName('live_bar_people')
+        self.people.setCheckable(True)
+        self.people.toggled.connect(self._open_people)
         controls.addWidget(self.people, 0, Qt.AlignVCenter)
         controls.addStretch()
         # On the right: hanging up (in the call), the chat, and the call's tab in the corner.
@@ -985,6 +987,9 @@ class LiveBar(QWidget):
         # the header's shade, under the strip Share live rises into (the cards' ground continues there)
         painter.fillRect(self.rect().adjusted(0, 0, 0, -(self.height() - self.RISE)), QColor(184, 206, 224, 15))
         painter.fillRect(self.rect().adjusted(0, self.RISE, 0, 0), AccountHeader.SHADE)
+        if self.people_panel.isVisible():
+            # open: the panel and the line under it in one lighter colour, as the dubbing range does
+            painter.fillRect(self.rect().adjusted(0, self.people_panel.y(), 0, 0), QColor('#2f404d'))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1080,6 +1085,7 @@ class LiveBar(QWidget):
         if not collab_state.shared():
             self.faces.set_people([])
             self.people.setVisible(False)
+            self.people.setChecked(False)
             return
         voice = collab_service.voice_state()
         if voice['on']:
@@ -1087,7 +1093,7 @@ class LiveBar(QWidget):
         else:
             people = [((handle or '?')[:1].upper(), False) for handle in self.panel.live_card._here()]
         self.faces.set_people(people)
-        self.people.setVisible(collab_state.shared() and not people)
+        self.people.setVisible(collab_state.shared() and (not people or self.people.isChecked()))
 
     # --- What it does ------------------------------------------------------------------------------------
 
@@ -1122,17 +1128,19 @@ class LiveBar(QWidget):
         dialog.content.layout().addWidget(card)
         dialog.setMinimumWidth(460)
         self._media_dialog = dialog
+        # who it is shared with: a panel opening above the foot's line, in the line's colour while open, like
+        # the dubbing panel's range (scope_selector.ScopeFooter.as_corner_tab); the people icon opens it
         card = self.panel.live_card.members_card
-        popup = QFrame(self.panel.live_card, Qt.Popup | Qt.FramelessWindowHint)
-        popup.setObjectName('live_people_popup')
-        popup.setAttribute(Qt.WA_StyledBackground, True)
-        box = QVBoxLayout(popup)
-        box.setContentsMargins(0, 0, 0, 0)
         card.sign.setVisible(False)                      # a title here, not a section to fold
         card.header.setAttribute(Qt.WA_TransparentForMouseEvents)
+        card.header.setChecked(True)
+        self.people_panel = QWidget(self)
+        self.people_panel.setObjectName('live_people_panel')
+        box = QVBoxLayout(self.people_panel)
+        box.setContentsMargins(0, 0, 0, 0)
         box.addWidget(card)
-        popup.setFixedWidth(300)
-        self._people_popup = popup
+        self.people_panel.setVisible(False)
+        self.layout().insertWidget(self.layout().indexOf(self.drawer) + 1, self.people_panel)
 
     def show_media(self):
         """The project's media (modules/collab_transfer.py), in a dialog: whether this computer shares its own,
@@ -1145,16 +1153,14 @@ class LiveBar(QWidget):
         self._media_dialog.raise_()
 
     def show_people(self):
-        """Who it is shared with (the owner adds and removes people), in a pop-up at the foot's left corner."""
-        from PySide6.QtCore import QPoint
-        card = self.panel.live_card.members_card
-        card.header.setChecked(True)
-        card.fit()
-        popup = self._people_popup
-        popup.adjustSize()
-        corner = self.mapToGlobal(QPoint(0, self.RISE))          # above the foot's left corner
-        popup.move(corner.x(), corner.y() - popup.sizeHint().height())
-        popup.show()
+        """Who it is shared with (the owner adds and removes people), opened above the foot's line."""
+        self.people.setChecked(True)
+
+    def _open_people(self, opened):
+        self.people_panel.setVisible(opened)
+        if opened:
+            self.panel.live_card.members_card.fit()
+        self.update()
 
     def _call_pressed(self):
         if collab_service.in_call():

@@ -4418,10 +4418,14 @@ QPushButton#live_bar_chat:checked {
     border-image: url(graphics:live_bar_chat_tab_on.svg) 0 9 0 13 stretch stretch;
 }
 
-/* Who it is shared with: a pop-up at the live bar's foot, left corner. */
-QFrame#live_people_popup {
-    background: #1f2a33;
-    border-radius: 4px;
+/* Who it is shared with: a panel above the live bar's line, the line's colour while open (LiveBar paints it). */
+QWidget#live_people_panel QWidget#live_section_card,
+QWidget#live_people_panel QPushButton#live_section_toggle {
+    background: transparent;
+}
+
+QPushButton#live_bar_people:checked {
+    background: rgba(0, 0, 0, 0.18);
 }
 
 /* Hang up, and stop sharing (or leave): red where they light. */
