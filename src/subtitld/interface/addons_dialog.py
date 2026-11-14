@@ -1669,9 +1669,13 @@ class AddonsPanel(QWidget):
         self._list_inner = QWidget()
         self._list_inner.setObjectName('addons_panel_scroll_inner')
         self._list_layout = QVBoxLayout(self._list_inner)
-        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        # the room under the last card scrolls with the list, so the list itself reaches the panel's foot
+        self._list_layout.setContentsMargins(0, 0, 0, 10)
         self._list_layout.setSpacing(8)
         self._list_layout.addStretch(1)  # pushes cards to the top
+        # while the scroll bar shows, a gap between it and the cards
+        self._scroll_area.verticalScrollBar().rangeChanged.connect(
+            lambda _low, high: self._list_layout.setContentsMargins(0, 0, 6 if high > 0 else 0, 10))
 
         self._scroll_area.setWidget(self._list_inner)
         self._list_stack.addWidget(self._scroll_area)  # page 0
@@ -1687,7 +1691,7 @@ class AddonsPanel(QWidget):
 
         list_area = QWidget()
         list_area.setLayout(QVBoxLayout())
-        list_area.layout().setContentsMargins(10, 10, 10, 10)
+        list_area.layout().setContentsMargins(10, 10, 10, 0)
         list_area.layout().addWidget(self._list_stack)
         self.layout().addWidget(list_area, 1)
 
