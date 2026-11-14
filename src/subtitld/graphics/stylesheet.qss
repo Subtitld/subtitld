@@ -4454,6 +4454,17 @@ QWidget#chat_bubble[mine="true"] {
     border-bottom-right-radius: 2px;
 }
 
+QPushButton#chat_bubble_button {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+}
+
+QPushButton#chat_bubble_button:hover {
+    background: rgba(255, 255, 255, 0.10);
+}
+
 QLabel#chat_bubble_text {
     background: transparent;
     font-size: 11px;

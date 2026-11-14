@@ -324,6 +324,9 @@ from subtitld.modules import collab_chat  # noqa: E402
 theirs = stamped(collab_chat.say('Is line 2 too fast?', cue_id=segments[1]['id'], at_ms=3500), 'joao', 1000)
 engine_says('chat', theirs)
 labels = lambda: [w.text() for w in chat.findChildren(QLabel)]  # noqa: E731
+# each message's bubble: its text, and the names of its buttons (Edit, Delete: its own, on hover)
+bubbles = lambda: [(' '.join(l.text() for l in w.findChildren(QLabel)), [x.accessibleName() for x in getattr(w, 'buttons', [])])  # noqa: E731
+                   for w in chat.findChildren(QWidget, 'chat_bubble') if not w.isHidden()]
 check('their message, pointing at the line and the moment',
       wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t in labels())), True)
 check('unread until read', collab_service.chat_unread() in (0, 1), True)
@@ -336,9 +339,9 @@ check('sent, pointing at the selected line', (sent[-1]['text'], sent[-1]['cue_id
 check('shown as sending until it comes back', wait(lambda: any('sending…' in t for t in labels())), True)
 engine_says('chat', stamped(sent[-1], 'ana', 2000))
 check('then sent, with Edit and Delete for my own',
-      wait(lambda: not any('sending…' in t for t in labels()) and any('Splitting it' in t and 'Edit' in t for t in labels())),
+      wait(lambda: not any('sending…' in t for t in labels()) and any('Splitting it' in t and 'Edit' in b for t, b in bubbles())),
       True)
-check('not theirs: no Edit there', any('Is line 2 too fast?' in t and 'Edit' in t for t in labels()), False)
+check('not theirs: no Edit there', any('Is line 2 too fast?' in t and 'Edit' in b for t, b in bubbles()), False)
 chat._link(f"edit:{sent[-1]['id']}")
 check('editing fills the field', (chat.field.text(), chat.send_button.text()), ('Splitting it', 'Save'))
 chat.field.setText('Splitting it in two')

@@ -77,6 +77,49 @@ class _InsetShadow(QWidget):
         painter.fillRect(self.rect(), shade)
 
 
+class _Bubble(QWidget):
+    """A chat message's bubble; its own buttons (Edit, Delete) flush in its bottom-right corner, shown while the
+    pointer is on it."""
+
+    def __init__(self):
+        super().__init__()
+        self.buttons = []
+
+    def add_button(self, icon, name, action):
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QIcon
+        from PySide6.QtWidgets import QPushButton
+        button = QPushButton(self)
+        button.setObjectName('chat_bubble_button')
+        button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+        button.setIconSize(QSize(12, 12))
+        button.setFixedSize(22, 20)
+        button.setToolTip(name)
+        button.setAccessibleName(name)
+        button.setCursor(Qt.PointingHandCursor)
+        button.clicked.connect(action)
+        button.setVisible(False)
+        self.buttons.append(button)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        x = self.width()
+        for button in reversed(self.buttons):
+            x -= button.width()
+            button.move(x, self.height() - button.height())
+            button.raise_()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        for button in self.buttons:
+            button.setVisible(True)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        for button in self.buttons:
+            button.setVisible(False)
+
+
 class ChatCard(QWidget):
     def __init__(self, panel):
         super().__init__()
@@ -319,17 +362,13 @@ class ChatCard(QWidget):
                            f'style="color:#9fc4e4;">{self._place(message)}</a>')
         if message.get('edited'):
             foot.append(_('collab.chat_edited'))
-        if mine and not message.get('pending') and not message.get('deleted'):
-            # Edit and Delete as small icons (their names in the images' alt text, for screen readers)
-            graphics = session.PATH_SUBTITLD_GRAPHICS
-            foot.append(f'<a href="edit:{message["id"]}"><img src="{graphics / "chat_edit.svg"}" width="12" height="12" '
-                        f'alt="{html.escape(_("collab.chat_edit"))}"></a>'
-                        f'&nbsp;&nbsp;<a href="delete:{message["id"]}"><img src="{graphics / "chat_delete.svg"}" '
-                        f'width="12" height="12" alt="{html.escape(_("collab.chat_delete"))}"></a>')
+        editable = mine and not message.get('pending') and not message.get('deleted')
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
         head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
-        meta = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
+        # its own: the foot's words on the left, Edit and Delete taking the bottom-right corner on hover
+        meta = (f'<div align="{"left" if editable else "right"}" style="font-size:9px; '
+                f'color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>')
         label = _text('chat_bubble_text')
         label.setTextFormat(Qt.RichText)
         label.setTextInteractionFlags(Qt.TextBrowserInteraction)
@@ -344,7 +383,10 @@ class ChatCard(QWidget):
         widest = max(140, int(self.scroll.viewport().width() * self.BUBBLE)) - 20
         label.setFixedWidth(min(int(document.idealWidth()) + 4, widest))
 
-        bubble = QWidget()
+        bubble = _Bubble()
+        if editable:
+            bubble.add_button('chat_edit.svg', _('collab.chat_edit'), lambda: self._link(f'edit:{message["id"]}'))
+            bubble.add_button('chat_delete.svg', _('collab.chat_delete'), lambda: self._link(f'delete:{message["id"]}'))
         bubble.setObjectName('chat_bubble')
         bubble.setProperty('mine', mine)
         bubble.setAttribute(Qt.WA_StyledBackground, True)
