@@ -27,6 +27,8 @@ class AccountHeader(QWidget):
         super().__init__()
         self.setObjectName('account_header')
         self.setMinimumHeight(54)                       # one height, connected or not
+        # as tall as it needs, never more: the panel's spare height is the cards'
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 0, 0, 0)
         layout.setSpacing(8)

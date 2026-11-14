@@ -689,6 +689,7 @@ class LiveBar(QWidget):
         super().__init__()
         self.panel = panel
         self.setObjectName('live_bar')
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)   # as tall as it needs
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(4)

@@ -263,7 +263,7 @@ class SubtitldccPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        outer.addWidget(scroll)
+        outer.addWidget(scroll, 1)                      # the spare height, not the header's or the footer's
         inner = QWidget()
         inner.setProperty('class', 'transparent_panel')
         self.cards = QVBoxLayout(inner)
