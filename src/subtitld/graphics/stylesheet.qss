@@ -4495,11 +4495,19 @@ QLineEdit#chat_field {
     background: transparent;
 }
 
+/* Cancel (while editing a message): a word on the bar, no ground; Save is the tab after it. */
 QPushButton#chat_cancel {
     min-height: 28px;
     max-height: 28px;
+    border: 0;
     border-radius: 0;
-    padding: 0 14px;
+    padding: 0 12px;
+    background: transparent;
+    color: #b8cee0;
+}
+
+QPushButton#chat_cancel:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 QPushButton#chat_send {
