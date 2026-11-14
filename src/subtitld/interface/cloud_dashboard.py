@@ -5,8 +5,8 @@ Embedded in the Global settings → "Subtitld Cloud" tab. Implements the
 
   * **not connected** — centered empty card with a cloud glyph, blurb,
     an API-key field + Connect button, and a "create account" link;
-  * **connected** — identity header (avatar, email, status, key/refresh
-    icon actions), a balance ring with Top-up / Open-portal buttons, and
+  * **connected** — the account header (interface/account_header.py:
+    email, key name, status, key/refresh icons on hover), a balance ring with Top-up / Open-portal buttons, and
     a recent-usage history table;
   * **low balance** — the connected card with the red status treatment.
 
@@ -30,10 +30,11 @@ from PySide6.QtCore import Qt, QSize, QThread, Signal, QRectF, QUrl, QTimer
 from PySide6.QtGui import QIcon, QPainter, QPen, QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QSizePolicy,
+    QScrollArea, QSizePolicy,
 )
 
 from subtitld.interface import utils
+from subtitld.interface.account_header import AccountHeader, HeaderShadow
 from subtitld.interface.translation import _
 from subtitld.modules import session
 
@@ -152,18 +153,6 @@ class _BalanceRing(QWidget):
 # ---------------------------------------------------------------------------
 # Small builders
 # ---------------------------------------------------------------------------
-def _icon_button(icon_file, tooltip):
-    btn = QPushButton()
-    btn.setObjectName('cloud_icon_button')
-    btn.setIcon(QIcon(_g(icon_file)))
-    btn.setIconSize(QSize(14, 14))
-    btn.setFixedSize(QSize(28, 28))
-    btn.setFlat(True)
-    btn.setCursor(Qt.PointingHandCursor)
-    btn.setToolTip(tooltip)
-    return btn
-
-
 def _mark_label(svg_file):
     lbl = QLabel()
     lbl.setPixmap(QIcon(_g(svg_file)).pixmap(QSize(14, 14)))
@@ -192,15 +181,36 @@ class CloudDashboardPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        # The header, always in view: who is connected and the cloud's mark; the cards scroll under it.
+        self._header = AccountHeader('cloud_glyph_icon.svg', 'Subtitld Cloud')
+        self._key_button = self._header.add_hover_button('cloud_key_icon.svg')
+        self._key_button.clicked.connect(self._change_api_key)
+        self._refresh_button = self._header.add_hover_button('cloud_refresh_icon.svg')
+        self._refresh_button.clicked.connect(self.refresh)
+        self._header.connect_button.clicked.connect(self._connect_from_header)
+        root.addWidget(self._header)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        root.addWidget(scroll, 1)
+        inner = QWidget()
+        inner.setProperty('class', 'transparent_panel')
+        scroll.setWidget(inner)
+        cards = QVBoxLayout(inner)
+        cards.setContentsMargins(10, 10, 10, 10)
+        cards.setSpacing(0)
+        self._header_shadow = HeaderShadow(self)
+
         self._connected_card = self._build_connected_card()
         self._empty_card = self._build_empty_card()
         self._loading_card = self._build_loading_card()
         self._error_card = self._build_error_card()
-        root.addWidget(self._connected_card)
-        root.addWidget(self._empty_card)
-        root.addWidget(self._loading_card)
-        root.addWidget(self._error_card)
-        root.addStretch()
+        cards.addWidget(self._connected_card)
+        cards.addWidget(self._empty_card)
+        cards.addWidget(self._loading_card)
+        cards.addWidget(self._error_card)
+        cards.addStretch()
 
         # Animated ellipsis on the loading message so it never reads as
         # frozen during a slow fetch.
@@ -220,6 +230,10 @@ class CloudDashboardPanel(QWidget):
         for card in (self._connected_card, self._empty_card,
                      self._loading_card, self._error_card):
             card.setVisible(card is widget)
+        if widget is not self._connected_card:
+            # loading: nothing to say yet; otherwise not connected
+            self._header.show_account(False, state='', can_connect=widget is self._empty_card)
+            self._header.set_warning(False)
         if widget is self._loading_card:
             self._loading_dots = 0
             self._tick_loading()
@@ -235,7 +249,12 @@ class CloudDashboardPanel(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._header_shadow.place_under(self._header)
         self.refresh()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._header_shadow.place_under(self._header)
 
     def _show_initial_state(self):
         from subtitld.modules.addons.builtin import subtitld_cloud_shared as cloud
@@ -324,61 +343,6 @@ class CloudDashboardPanel(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # --- Band 1: identity header ---
-        header = QWidget()
-        header.setObjectName('cloud_header_band')
-        h = QHBoxLayout(header)
-        h.setContentsMargins(16, 12, 12, 12)
-        h.setSpacing(11)
-
-        self._avatar = QLabel()
-        self._avatar.setObjectName('cloud_avatar')
-        self._avatar.setFixedSize(QSize(30, 30))
-        self._avatar.setAlignment(Qt.AlignCenter)
-        h.addWidget(self._avatar)
-
-        ident = QVBoxLayout()
-        ident.setContentsMargins(0, 0, 0, 0)
-        ident.setSpacing(3)
-
-        # Email + API-key-name badge on one row. The badge names which
-        # key is in use (from the account payload's ``key_name``); hidden
-        # when the cloud doesn't send one.
-        email_row = QHBoxLayout()
-        email_row.setContentsMargins(0, 0, 0, 0)
-        email_row.setSpacing(7)
-        self._email_label = QLabel()
-        self._email_label.setObjectName('cloud_email')
-        email_row.addWidget(self._email_label)
-        self._key_badge = QLabel()
-        self._key_badge.setObjectName('cloud_key_badge')
-        self._key_badge.setVisible(False)
-        email_row.addWidget(self._key_badge)
-        email_row.addStretch()
-        ident.addLayout(email_row)
-
-        status_row = QHBoxLayout()
-        status_row.setContentsMargins(0, 0, 0, 0)
-        status_row.setSpacing(6)
-        self._status_dot = QLabel()
-        self._status_dot.setObjectName('cloud_status_dot')
-        self._status_dot.setFixedSize(QSize(7, 7))
-        self._status_label = QLabel()
-        self._status_label.setObjectName('cloud_status_label')
-        status_row.addWidget(self._status_dot)
-        status_row.addWidget(self._status_label)
-        status_row.addStretch()
-        ident.addLayout(status_row)
-        h.addLayout(ident, 1)
-
-        self._key_button = _icon_button('cloud_key_icon.svg', _('cloud_dashboard.change_key'))
-        self._key_button.clicked.connect(self._change_api_key)
-        self._refresh_button = _icon_button('cloud_refresh_icon.svg', _('cloud_dashboard.refresh'))
-        self._refresh_button.clicked.connect(self.refresh)
-        h.addWidget(self._key_button)
-        h.addWidget(self._refresh_button)
-        outer.addWidget(header)
-
         # --- Band 2: balance ring + actions ---
         balance = QWidget()
         balance.setObjectName('cloud_balance_band')
@@ -434,26 +398,15 @@ class CloudDashboardPanel(QWidget):
         return card
 
     def _populate_connected(self, data):
+        # The header: the account's name (its email when it has none), under it the API key in use (e.g.
+        # "Laptop", "CI": the cloud sends it as ``key_name``, and may not), and the status, red when low.
         email = str(data.get('email') or '')
-        self._avatar.setText((email[:1] or '?').upper())
-        self._email_label.setText(email or '—')
-
-        # API-key-name badge — names which key is active (e.g. "Laptop",
-        # "CI"). Cloud sends it as ``key_name``; hide the badge if absent.
+        name = str(data.get('name') or '').strip()
         key_name = str(data.get('key_name') or '').strip()
-        self._key_badge.setText(key_name)
-        self._key_badge.setVisible(bool(key_name))
-
         low = self._is_low_balance(data)
-        self._status_dot.setProperty('state', 'low' if low else 'ok')
-        self._status_dot.style().unpolish(self._status_dot)
-        self._status_dot.style().polish(self._status_dot)
-        self._status_label.setText(
-            _('cloud_dashboard.status_low') if low else _('cloud_dashboard.status_connected')
-        )
-        self._status_label.setProperty('state', 'low' if low else 'ok')
-        self._status_label.style().unpolish(self._status_label)
-        self._status_label.style().polish(self._status_label)
+        self._header.show_account(True, name or email or '—', key_name if name or email else '',
+                                  _('cloud_dashboard.status_low') if low else _('cloud_dashboard.status_connected'))
+        self._header.set_warning(low)
 
         # Ring: value + unit + fill.
         balance = data.get('balance')
@@ -684,6 +637,13 @@ class CloudDashboardPanel(QWidget):
         c.addWidget(self._error_retry_button, 0, Qt.AlignHCenter)
         return card
 
+    def _connect_from_header(self):
+        """Connect needs an API key: with one in the field, connect with it; without, go to the field."""
+        if self._empty_key_input.text().strip():
+            self._connect_from_empty()
+        else:
+            self._empty_key_input.setFocus()
+
     def _connect_from_empty(self):
         from subtitld.modules.addons.builtin import subtitld_cloud_shared as cloud
         key = self._empty_key_input.text().strip()
@@ -723,7 +683,6 @@ class CloudDashboardPanel(QWidget):
 
     # ---- i18n ------------------------------------------------------------
     def retranslate(self):
-        self._status_label.setText(_('cloud_dashboard.status_connected'))
         self._topup_button.setText(_('cloud_dashboard.top_up'))
         self._portal_button.setText(_('cloud_dashboard.open_portal'))
         self._usage_title.setText(_('cloud_dashboard.recent_usage'))
@@ -734,6 +693,7 @@ class CloudDashboardPanel(QWidget):
         self._empty_body.setText(_('cloud_dashboard.connect_body'))
         self._empty_key_input.setPlaceholderText(_('cloud_dashboard.key_placeholder'))
         self._empty_connect_button.setText(_('cloud_dashboard.connect'))
+        self._header.connect_button.setText(_('cloud_dashboard.connect'))
         self._empty_signup_button.setText(_('cloud_dashboard.create_account'))
         self._loading_label.setText(_('cloud_dashboard.loading'))
         self._error_title.setText(_('cloud_dashboard.error_title'))

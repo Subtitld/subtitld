@@ -4243,9 +4243,9 @@ QLabel#autosave_empty_label {
    Subtitld Cloud dashboard above.
    ==================================================================== */
 
-/* The header (left_panel_subtitldcc.AccountHeader): who is connected, and subtitld.cc's mark on a slanted tab in
-   its top-right corner; it paints its own shade. */
-QLabel#subtitldcc_header_name {
+/* The account panels' header (interface/account_header.py; subtitld.cc, Subtitld Cloud): who is connected, and the
+   service's mark on a slanted tab in its top-right corner; it paints its own shade. */
+QLabel#account_header_name {
     font-family: 'Montserrat';
     font-size: 12px;
     font-weight: 700;
@@ -4253,14 +4253,14 @@ QLabel#subtitldcc_header_name {
     background: transparent;
 }
 
-QLabel#subtitldcc_header_handle {
+QLabel#account_header_handle {
     font-family: 'Montserrat';
     font-size: 10px;
     color: rgba(184, 206, 224, 0.75);
     background: transparent;
 }
 
-QLabel#subtitldcc_header_badge {
+QLabel#account_header_badge {
     font-family: 'Montserrat';
     font-size: 9px;
     font-weight: 600;
@@ -4271,18 +4271,23 @@ QLabel#subtitldcc_header_badge {
     padding: 2px 5px;
 }
 
-QLabel#subtitldcc_header_badge[connected="true"] {
+QLabel#account_header_badge[connected="true"] {
     color: #8fe57f;
     background: rgba(85, 212, 63, 0.14);
 }
 
-QWidget#subtitldcc_header_logo {
-    border-image: url(graphics:subtitldcc_logo_tab.svg) 0 0 0 14 stretch stretch;
+QLabel#account_header_badge[warning="true"] {
+    color: #e08a8a;
+    background: rgba(197, 82, 82, 0.16);
+}
+
+QWidget#account_header_logo {
+    border-image: url(graphics:account_header_tab.svg) 0 0 0 14 stretch stretch;
     border-width: 0 0 0 14px;
     background: transparent;
 }
 
-QLabel#subtitldcc_header_word {
+QLabel#account_header_word {
     font-family: 'Montserrat';
     font-size: 11px;
     font-weight: 700;
@@ -4290,14 +4295,34 @@ QLabel#subtitldcc_header_word {
     background: transparent;
 }
 
-QPushButton#subtitldcc_header_disconnect {
+/* Not connected: the header's one action, light like the main actions. */
+QPushButton#account_header_connect {
+    min-height: 22px;
+    max-height: 22px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 115);
+    border-radius: 3px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #c8dbe9, stop:1 #b8cee0);
+    color: #1e2b36;
+    font-family: 'Montserrat';
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+QPushButton#account_header_connect:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
+}
+
+QPushButton#account_header_button {
     background: transparent;
     border: 0;
     border-radius: 3px;
     padding: 0;
 }
 
-QPushButton#subtitldcc_header_disconnect:hover {
+QPushButton#account_header_button:hover {
     background: rgba(255, 255, 255, 20);
 }
 
