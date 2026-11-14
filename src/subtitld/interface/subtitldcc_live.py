@@ -1101,6 +1101,17 @@ class LiveBar(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._place_shadow()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._place_shadow()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._place_shadow()                            # no bar (no one signed in): no shadow over the cards
+
+    def _place_shadow(self):
         if getattr(self.panel, 'live_bar', None) is self and hasattr(self.panel, 'footer_shadow'):
             self.panel._place_shadows()                 # its shadow rises from wherever its top is now
 
