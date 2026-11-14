@@ -536,8 +536,8 @@ class _AddonCard(QFrame):
     configure_clicked = Signal(object)
 
     RADIUS = 4
-    BAND = 34                          # the band's height
-    LABEL = 37                         # the task label's: it hangs 3px below the band
+    BAND = 30                          # the band's height
+    LABEL = 33                         # the task label's: it hangs 3px below the band
     COLOURS = {                        # card, band
         'installed': ('#33475a', '#3f566a'),
         'available': ('#2c3d4b', '#36495a'),
@@ -1530,7 +1530,7 @@ class AddonsPanel(QWidget):
         self._filters_button = _LaidOutButton()
         self._filters_button.setObjectName('addons_filters_button')
         self._filters_button.setLayout(QHBoxLayout())
-        self._filters_button.layout().setContentsMargins(22, 0, 12, 1)     # the slant, and the contact line
+        self._filters_button.layout().setContentsMargins(21, 0, 12, 1)     # the slant, and the contact line
         self._filters_button.layout().setSpacing(6)
         filters_icon = QLabel()
         filters_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_filters.svg')).pixmap(14, 14))
@@ -1541,7 +1541,7 @@ class AddonsPanel(QWidget):
         for label in (filters_icon, self._filters_text, self._filters_count):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
             self._filters_button.layout().addWidget(label)
-        self._filters_button.setFixedHeight(38)
+        self._filters_button.setFixedHeight(34)
         self._filters_button.clicked.connect(self._open_filters)
         search_row.addWidget(self._filters_button)
         self._header.layout().addLayout(search_row)

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- The add-ons Filters button, hovered: hanging from the header's top-right corner, 3px taller than the search field
      like a card's task label against its band, its left edge a 75° slant with a 6px curve at the foot; under it
-     (seen left of the slant), the search field's sunken well (34px, the card's band), so the two meet seamlessly. -->
-<svg width="40" height="38" version="1.1" viewBox="0 0 40 38" xmlns="http://www.w3.org/2000/svg">
+     (seen left of the slant), the search field's sunken well (30px, the card's band), so the two meet seamlessly. -->
+<svg width="40" height="34" version="1.1" viewBox="0 0 40 34" xmlns="http://www.w3.org/2000/svg">
  <defs>
-  <linearGradient id="w" x1="0" x2="0" y1="0" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2b3a46"/></linearGradient>
-  <linearGradient id="g" x1="0" x2="0" y1="0" y2="37" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#566f82"/><stop offset="1" stop-color="#3e4f5e"/></linearGradient>
+  <linearGradient id="w" x1="0" x2="0" y1="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1d2830"/><stop offset="1" stop-color="#2b3a46"/></linearGradient>
+  <linearGradient id="g" x1="0" x2="0" y1="0" y2="33" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#566f82"/><stop offset="1" stop-color="#3e4f5e"/></linearGradient>
  </defs>
- <rect width="40" height="34" fill="url(#w)"/>
- <path d="M0 0L8.72 32.55Q9.91 37 14.52 37L40 37V0Z" transform="translate(0 1)" fill="#000" fill-opacity="0.45"/>
- <path d="M0 0L8.72 32.55Q9.91 37 14.52 37L40 37V0Z" fill="url(#g)"/>
+ <rect width="40" height="30" fill="url(#w)"/>
+ <path d="M0 0L7.65 28.55Q8.84 33 13.45 33L40 33V0Z" transform="translate(0 1)" fill="#000" fill-opacity="0.45"/>
+ <path d="M0 0L7.65 28.55Q8.84 33 13.45 33L40 33V0Z" fill="url(#g)"/>
 </svg>
