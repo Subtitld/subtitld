@@ -536,8 +536,8 @@ class _AddonCard(QFrame):
     configure_clicked = Signal(object)
 
     RADIUS = 4
-    BAND = 30                          # the band's height
-    LABEL = 33                         # the task label's: it hangs 3px below the band
+    BAND = 26                          # the band's height
+    LABEL = 29                         # the task label's: it hangs 3px below the band
     COLOURS = {                        # card, band
         'installed': ('#33475a', '#3f566a'),
         'available': ('#2c3d4b', '#36495a'),
@@ -578,7 +578,7 @@ class _AddonCard(QFrame):
         band = QWidget()
         band.setFixedHeight(self.BAND)
         band.setLayout(QHBoxLayout())
-        band.layout().setContentsMargins(12, 0, 12, 0)
+        band.layout().setContentsMargins(9, 0, 12, 0)
         band.layout().setSpacing(0)
         self._task_icon = QLabel()
         self._task_icon.setProperty('class', 'addon_card_task_icon')
@@ -594,7 +594,7 @@ class _AddonCard(QFrame):
         band.layout().addWidget(self._task_icon)
         band.layout().addSpacing(6)
         band.layout().addWidget(self._task_text)
-        band.layout().addSpacing(26)                    # the label's padding and its slant
+        band.layout().addSpacing(20)                    # the label's padding and its slant
 
         name = _addon_localized(row.addon_id, 'display_name', row.display_name)
         main, aside = name, ''
@@ -750,7 +750,7 @@ class _AddonCard(QFrame):
     def _label_path(self) -> QPainterPath:
         """The task label: from the card's left edge to a 75° slant, square at
         the top, a 6px curve at its foot."""
-        right = self._task_text.geometry().right() + 12 if self._task_text.text() else 0
+        right = self._task_text.geometry().right() + 8 if self._task_text.text() else 0
         if right <= 0:
             return QPainterPath()
         h = self.LABEL
