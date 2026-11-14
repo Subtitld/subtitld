@@ -782,6 +782,7 @@ class _Faces(QWidget):
     """Who is in the project: a small circle each, with an initial, overlapping; ringed green while speaking."""
     SIZE = 20
     STEP = 14
+    MARGIN = 8                                          # from the bar's left edge (the line has none)
 
     def __init__(self):
         super().__init__()
@@ -798,7 +799,8 @@ class _Faces(QWidget):
         people = people[:6]
         if people != self._people:
             self._people = people
-            self.setFixedWidth(self.SIZE + self.STEP * (len(people) - 1) if people else 0)
+            self.setFixedWidth(self.MARGIN + self.SIZE + self.STEP * (len(people) - 1) if people else 0)
+            self.setVisible(bool(people))               # nobody: no room taken (the people button is at the edge)
             self.update()
 
     def paintEvent(self, event):
@@ -811,7 +813,7 @@ class _Faces(QWidget):
         font.setWeight(QFont.Bold)
         painter.setFont(font)
         for index, (initial, speaking) in reversed(list(enumerate(self._people))):
-            rect = QRectF(index * self.STEP + 1, 1, self.SIZE - 2, self.SIZE - 2)
+            rect = QRectF(self.MARGIN + index * self.STEP + 1, 1, self.SIZE - 2, self.SIZE - 2)
             painter.setPen(QPen(QColor('#55d43f') if speaking else QColor('#1c252c'), 1.6))
             painter.setBrush(QColor('#4a6376'))
             painter.drawEllipse(rect)
@@ -914,7 +916,8 @@ class LiveBar(QWidget):
         self.people.setObjectName('live_bar_people')
         self.people.setCheckable(True)
         self.people.toggled.connect(self._open_people)
-        controls.addWidget(self.people, 0, Qt.AlignVCenter)
+        self.people.setFixedSize(30, 26)               # the shade's height, from the bar's left edge and foot
+        controls.addWidget(self.people, 0, Qt.AlignBottom)
         controls.addStretch()
         # On the right: hanging up (in the call), the chat, and the call's tab in the corner.
         self.hang_up = self._icon('live_bar_call_leave.svg')
@@ -1195,7 +1198,7 @@ class LiveBar(QWidget):
             self.controls.removeWidget(self.status_line)
             layout.insertWidget(0, self.status_line)
         self.status_line.show()
-        self.controls.setContentsMargins(0 if merged else 8, 0, 0, 0)
+        self.controls.setContentsMargins(0, 0, 0, 0)    # the people button meets the bar's left edge
         # one line: Share live rises into the strip above the shade; otherwise the status line starts under it
         layout.setContentsMargins(0, 0 if merged else self.RISE, 0, 0)
 

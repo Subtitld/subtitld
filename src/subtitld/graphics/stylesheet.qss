@@ -4424,6 +4424,12 @@ QWidget#live_people_panel QPushButton#live_section_toggle {
     background: transparent;
 }
 
+/* Who it is shared with: in the bar's bottom-left corner, square but for its top-right corner. */
+QPushButton#live_bar_people {
+    border-radius: 0;
+    border-top-right-radius: 3px;
+}
+
 QPushButton#live_bar_people:checked {
     background: rgba(0, 0, 0, 0.18);
 }
