@@ -163,6 +163,16 @@ class ChatCard(QWidget):
         self.messages_box.addStretch()
         self.scroll.setWidget(inner)
         self.scroll.installEventFilter(self)             # bubbles keep to a share of its width
+        # the messages fade out as they scroll up past its top edge: no seam there
+        from PySide6.QtGui import QBrush, QColor, QLinearGradient
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        fade = QLinearGradient(0, 0, 0, self.FADE)
+        fade.setColorAt(0, QColor(0, 0, 0, 0))
+        fade.setColorAt(1, QColor(0, 0, 0, 255))
+        mask = QGraphicsOpacityEffect(self.scroll)
+        mask.setOpacity(1.0)
+        mask.setOpacityMask(QBrush(fade))
+        self.scroll.setGraphicsEffect(mask)
         well.addWidget(self.scroll)
 
         self.field = _ChatField()
@@ -353,6 +363,7 @@ class ChatCard(QWidget):
             QTimer.singleShot(delay, lambda: bar.setValue(bar.maximum()))
 
     BUBBLE = 0.78                                       # at most this much of the chat's width
+    FADE = 28                                           # px over which the messages fade out at the top
 
     def _message(self, message, me, first=True):
         """A message as a chat app shows one: a bubble, its own on the right (lighter), the others' on the left
