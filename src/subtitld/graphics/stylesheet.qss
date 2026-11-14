@@ -4410,6 +4410,10 @@ QPushButton#live_bar_chat {
     font-weight: 700;
 }
 
+QPushButton#live_bar_chat[unread="true"] {
+    color: #8fe57f;
+}
+
 QPushButton#live_bar_chat:hover {
     border-image: url(graphics:live_bar_chat_tab_hover.svg) 0 13 0 13 stretch stretch;
 }

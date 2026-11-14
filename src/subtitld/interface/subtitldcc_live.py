@@ -837,7 +837,9 @@ class _Ripple(QWidget):
     window, the pointer goes through it; it goes away when done."""
     PULSES = 2
     DURATION = 700                                      # ms, a pulse
-    GROW = 14                                           # px the ring grows past the widget
+    GROW = 24                                           # px the ring grows past the widget
+    WIDTH = 3.5                                         # the ring's thickness
+    BLUR = 3                                            # px its edges soften
     COLOUR = '#8fe57f'
 
     def __init__(self, target):
@@ -846,10 +848,14 @@ class _Ripple(QWidget):
         super().__init__(window)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._base = max(target.width(), target.height()) / 2
-        size = int(2 * (self._base + self.GROW + 2))
+        size = int(2 * (self._base + self.GROW + self.WIDTH + self.BLUR * 2))
         centre = target.mapTo(window, QPoint(target.width() // 2, target.height() // 2))
         self.setGeometry(centre.x() - size // 2, centre.y() - size // 2, size, size)
         self._phase = 0.0
+        from PySide6.QtWidgets import QGraphicsBlurEffect
+        blur = QGraphicsBlurEffect(self)
+        blur.setBlurRadius(self.BLUR)
+        self.setGraphicsEffect(blur)                    # soft, not a hard line
         self._animation = QVariantAnimation(self)
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
@@ -872,7 +878,7 @@ class _Ripple(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         colour = QColor(self.COLOUR)
         colour.setAlphaF(0.85 * (1 - self._phase))
-        painter.setPen(QPen(colour, 2))
+        painter.setPen(QPen(colour, self.WIDTH))
         painter.setBrush(Qt.NoBrush)
         radius = self._base * 0.8 + (self.GROW + self._base * 0.2) * self._phase
         painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), radius, radius)
@@ -1221,6 +1227,13 @@ class LiveBar(QWidget):
             self.call.style().polish(self.call)
         unread = collab_service.chat_unread() if shared else 0
         self.chat.setText(str(unread) if unread else '')
+        if self.chat.property('unread') != bool(unread):  # something new: the icon and its count turn green
+            from PySide6.QtGui import QIcon
+            self.chat.setProperty('unread', bool(unread))
+            self.chat.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
+                                        ('live_bar_chat_new.svg' if unread else 'live_bar_chat.svg'))))
+            self.chat.style().unpolish(self.chat)
+            self.chat.style().polish(self.chat)
         self.chat.setFixedWidth(62 if unread else 50)
         self.chat_place.setFixedWidth(self.chat.width() - self.SLANT - self.controls.spacing())
         QTimer.singleShot(0, self._place_chat)
