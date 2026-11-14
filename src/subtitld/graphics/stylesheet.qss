@@ -743,7 +743,7 @@ QFrame[class='addon_card'] {
 
 QLabel[class='addon_card_task'] {
     font-size: 9px;
-    font-weight: 700;
+    font-weight: 400;
     text-transform: uppercase;
     color: #e3edf5;
     background: transparent;
@@ -779,7 +779,7 @@ QLabel[class='addon_card_summary'] {
 QLabel[class='addon_card_compute'],
 QLabel[class='addon_card_compute_warning'],
 QLabel[class='addon_card_licence'] {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     border: 0;
     border-radius: 3px;
