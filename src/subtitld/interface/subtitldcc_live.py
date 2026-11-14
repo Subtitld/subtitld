@@ -880,21 +880,21 @@ class LiveBar(QWidget):
         self.link.clicked.connect(lambda: self.panel.live_card.copy_link())
         status.addWidget(self.link)
         status.addStretch(1)
-        self.faces = _Faces()
-        status.addWidget(self.faces)
         layout.addWidget(self.status_line)
         layout.addWidget(self.drawer)
 
         self.controls = controls = QHBoxLayout()
         controls.setContentsMargins(8, 0, 0, 0)
         controls.setSpacing(2)
-        # In the call: hang up, on the left.
+        # On the left, who is in it.
+        self.faces = _Faces()
+        controls.addWidget(self.faces, 0, Qt.AlignVCenter)
+        controls.addStretch()
+        # On the right: hanging up (in the call), the chat, and the call's tab in the corner.
         self.hang_up = self._icon('live_bar_call_leave.svg')
         self.hang_up.setObjectName('live_bar_hang_up')
         self.hang_up.clicked.connect(lambda: collab_service.voice_leave())
         controls.addWidget(self.hang_up, 0, Qt.AlignVCenter)
-        controls.addStretch()
-        # On the right: the chat, the lock (talk without holding) and the call's tab in the corner.
         self.chat = self._icon('live_bar_chat.svg')
         self.chat.setObjectName('live_bar_chat')
         self.chat.clicked.connect(self.show_chat)
