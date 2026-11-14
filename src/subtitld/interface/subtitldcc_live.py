@@ -1456,7 +1456,8 @@ class LiveBar(QWidget):
         self._show_drawer()
         if opened:
             collab_service.chat_mark_read()
-            self.panel.chat_card.refresh()              # (and scrolled to its latest message)
+            self.panel.chat_card.refresh()
+            self.panel.chat_card._to_bottom()           # its latest message in view
             self.panel.chat_card.field.setFocus()
 
     def _show_in_drawer(self, widget):

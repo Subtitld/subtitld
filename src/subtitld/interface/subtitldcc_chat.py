@@ -134,6 +134,7 @@ class ChatCard(QWidget):
         layout.setSpacing(0)                            # the well, then the field right under it
         self._editing = None  # the ID of the message being edited
         self._shown_peers = None
+        self._shown_messages = None  # what the bubbles were last built from (refresh)
 
         # (no title nor note: the live bar's chat tab says what this is; kept for its unread count)
         self.title = _text('subtitldcc_card_title')
@@ -279,6 +280,7 @@ class ChatCard(QWidget):
         self.latch.setText(_('collab.voice_latch'))
         self.key_label.setText(_('collab.voice_key'))
         self.key_edit.setKeySequence(QKeySequence(ptt_key()))
+        self._shown_messages = None                     # built again, in the new language
         self.refresh()
 
     def _show_attach(self, on):
@@ -343,12 +345,19 @@ class ChatCard(QWidget):
 
         self._render_voice()
 
+        # Built again only when what they show changed: the rest of the news (a click on the timeline goes
+        # out as a change to the document) left the list empty for a moment, the scroll back at the top.
+        me = collab_service.chat_me()
+        shown = (repr(messages[-SHOWN:]), me, self.scroll.viewport().width())
+        if shown == self._shown_messages:
+            return
+        self._shown_messages = shown
+        self.scroll.setUpdatesEnabled(False)            # not seen until it is at the latest message again
         _clear(self.messages_box)
         if not messages:
             empty = _text('chat_empty')
             empty.setText(_('collab.chat_empty'))
             self.messages_box.addWidget(empty)
-        me = collab_service.chat_me()
         previous = None
         for message in messages[-SHOWN:]:
             author = (message.get('author') or {}).get('handle')
@@ -360,8 +369,12 @@ class ChatCard(QWidget):
     def _to_bottom(self):
         """The latest message in view, always: once the rows are laid out (their heights come a pass later)."""
         bar = self.scroll.verticalScrollBar()
-        for delay in (0, 60):
-            QTimer.singleShot(delay, lambda: bar.setValue(bar.maximum()))
+        QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+
+        def settled():
+            bar.setValue(bar.maximum())
+            self.scroll.setUpdatesEnabled(True)
+        QTimer.singleShot(60, settled)
 
     BUBBLE = 0.78                                       # at most this much of the chat's width
     FADE = 28                                           # px over which the messages fade out at the top
