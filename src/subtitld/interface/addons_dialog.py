@@ -1590,7 +1590,7 @@ class AddonsPanel(QWidget):
             self._header.tabs.append(segment)
             segment.toggled.connect(lambda _checked: self._header.update())
         self._state_pills[self._STATE_ALL].setChecked(True)
-        state_row.addWidget(self._state_strip)
+        state_row.addWidget(self._state_strip, 0, Qt.AlignBottom)
         state_row.addStretch()
 
         # In the header's bottom-right corner, as icons: install from a file, refresh the catalog.
@@ -1701,7 +1701,7 @@ class AddonsPanel(QWidget):
         button.setObjectName('addons_header_icon')
         button.setIcon(_graphic(icon))
         button.setIconSize(QSize(16, 16))
-        button.setFixedSize(30, 26)
+        button.setFixedSize(30, 23)                     # the tabs' height: the row ends where they do
         return button
 
     # -- Filter handlers ---------------------------------------------------
