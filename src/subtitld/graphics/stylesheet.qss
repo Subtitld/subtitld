@@ -4352,7 +4352,7 @@ QPushButton#live_bar_call {
 
 QPushButton#live_bar_call[call="call"],
 QPushButton#live_bar_call[call="talking"] {
-    padding: 0 0 0 22px;            /* the microphone right of the lock */
+    padding: 0 0 0 24px;            /* the microphone right of the lock */
 }
 
 QPushButton#live_bar_lock {

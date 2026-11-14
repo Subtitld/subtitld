@@ -921,7 +921,7 @@ class LiveBar(QWidget):
         self.lock.setCheckable(True)
         self.lock.setCursor(Qt.PointingHandCursor)
         self.lock.setIconSize(_QSize(12, 12))
-        self.lock.setGeometry(5, 6, 26, 20)
+        self.lock.setGeometry(1, 6, 30, 20)              # its slant on the tab's own (x = 1 at its foot, y 26)
         self.lock.toggled.connect(collab_service.voice_latch)
         self.share = QPushButton()
         self.share.setProperty('class', 'live_bar_tab')       # the dialogs' light slanted tab, in the corner
