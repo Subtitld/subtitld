@@ -832,6 +832,52 @@ class _LinkButton(QPushButton):
         self.setIcon(QIcon())
 
 
+class _Ripple(QWidget):
+    """A ring growing out of a widget and fading, twice: something new there (a chat message). Laid over the
+    window, the pointer goes through it; it goes away when done."""
+    PULSES = 2
+    DURATION = 700                                      # ms, a pulse
+    GROW = 14                                           # px the ring grows past the widget
+    COLOUR = '#8fe57f'
+
+    def __init__(self, target):
+        from PySide6.QtCore import QPoint, QVariantAnimation
+        window = target.window()
+        super().__init__(window)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._base = max(target.width(), target.height()) / 2
+        size = int(2 * (self._base + self.GROW + 2))
+        centre = target.mapTo(window, QPoint(target.width() // 2, target.height() // 2))
+        self.setGeometry(centre.x() - size // 2, centre.y() - size // 2, size, size)
+        self._phase = 0.0
+        self._animation = QVariantAnimation(self)
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(1.0)
+        self._animation.setDuration(self.DURATION)
+        self._animation.setLoopCount(self.PULSES)
+        self._animation.valueChanged.connect(self._step)
+        self._animation.finished.connect(self.deleteLater)
+        self.show()
+        self.raise_()
+        self._animation.start()
+
+    def _step(self, value):
+        self._phase = float(value)
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QColor, QPainter, QPen
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        colour = QColor(self.COLOUR)
+        colour.setAlphaF(0.85 * (1 - self._phase))
+        painter.setPen(QPen(colour, 2))
+        painter.setBrush(Qt.NoBrush)
+        radius = self._base * 0.8 + (self.GROW + self._base * 0.2) * self._phase
+        painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), radius, radius)
+
+
 class _Faces(QWidget):
     """Who is in the project: a small circle each, with an initial, overlapping; ringed green while speaking."""
     SIZE = 20
@@ -1038,6 +1084,8 @@ class LiveBar(QWidget):
         self._speaking = QTimer(self)                    # who is speaking, while in the call
         self._speaking.setInterval(250)
         self._speaking.timeout.connect(self._render_faces)
+        self._unread_seen = 0                           # unread messages already told about (_news)
+        self._chime = None
         collab_service.listeners.append(self._news)
         self.retranslate()
 
@@ -1068,8 +1116,33 @@ class LiveBar(QWidget):
         return button
 
     def _news(self, kind):
+        if kind == 'chat':
+            unread = collab_service.chat_unread()
+            if unread > self._unread_seen:
+                self._message_arrived()
+            self._unread_seen = unread
         if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice', 'conflicts', 'document'):
             self._redraw.start()
+
+    def _message_arrived(self):
+        """Someone wrote: a soft chime, and, unless the chat is in view, a ring around where it is: its tab in
+        the bar, or, with another panel open, the subtitld.cc panel's button."""
+        if self._chime is None:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtMultimedia import QSoundEffect
+            self._chime = QSoundEffect(self)
+            self._chime.setSource(QUrl.fromLocalFile(str(session.PATH_SUBTITLD_GRAPHICS / 'chat_message.wav')))
+            self._chime.setVolume(0.4)
+        self._chime.play()
+        if self.panel.isVisible():
+            if self.chat.isVisible() and not self.chat.isChecked():
+                _Ripple(self.chat)
+            return
+        from subtitld.interface import left_panel
+        button = next((b for b in self.window().findChildren(left_panel.navigation_button)
+                       if b.tab_name == 'subtitldcc' and b.isVisible()), None)
+        if button is not None:
+            _Ripple(button)
 
     # --- What it shows -----------------------------------------------------------------------------------
 
