@@ -4327,6 +4327,27 @@ QPushButton#account_header_button:hover {
 }
 
 /* Live co-editing's bar, the subtitld.cc panel's footer (subtitldcc_live.LiveBar): it paints its own shade. */
+/* Share live, in the bar's bottom-right corner: the light slanted tab, square where the panel is. */
+QPushButton[class='live_bar_tab'] {
+    border-image: url(graphics:live_bar_tab.svg) 5 5 5 13 stretch stretch;
+    border-width: 5px 5px 5px 13px;
+    border-radius: 0;
+    padding: 0 11px 0 6px;
+    background: transparent;
+    color: #1e2b36;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+/* The co-editing card in the bar's drawer: on the bar's own shade, no card around it. */
+QScrollArea#live_bar_drawer,
+QScrollArea#live_bar_drawer > QWidget > QWidget,
+QWidget#live_bar QWidget#subtitldcc_card {
+    background: transparent;
+    border-radius: 0;
+}
+
 QLabel#live_bar_dot {
     border-radius: 4px;
     background: #6d8599;
@@ -4377,6 +4398,10 @@ QPushButton[class='live_bar_icon']:hover {
 
 QPushButton[class='live_bar_icon']:checked {
     background: rgba(85, 212, 63, 0.18);
+}
+
+QPushButton#live_bar_toggle:checked {
+    background: rgba(255, 255, 255, 20);
 }
 
 QPushButton[class='live_bar_icon']:disabled {

@@ -272,8 +272,7 @@ class SubtitldccPanel(QWidget):
         scroll.setWidget(inner)
 
         self._build_account()
-        self.live_card = LiveCard(self)
-        self.cards.addWidget(self.live_card)
+        self.live_card = LiveCard(self)                 # in the live bar's drawer (LiveBar)
         self.chat_card = ChatCard(self)
         self.cards.addWidget(self.chat_card)
         self._build_origin()

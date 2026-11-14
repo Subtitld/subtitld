@@ -108,6 +108,7 @@ class LiveCard(QWidget):
         self._busy = False
         self._pending_confirm = None
         self._shown_here = None   # who was here when the card last showed it (presence alone changes nothing)
+        self._shown_conflicts = 0
 
         self.title = _text('subtitldcc_card_title')
         layout.addWidget(self.title)
@@ -324,6 +325,9 @@ class LiveCard(QWidget):
         others = sorted({f"@{(p.get('user') or {}).get('handle', '')}" for p in (engine.peers.values() if engine else [])})
         self.here.setText(_('collab.here').format(people=', '.join(others)) if others else _('collab.here_nobody'))
         found = collab_service.conflicts()
+        new, self._shown_conflicts = len(found) > self._shown_conflicts, len(found)
+        if new:
+            self.reveal(self.conflicts)                 # new ones need an answer
         self.conflicts.setVisible(bool(found))
         self.conflicts.setText(_('collab.conflicts').format(count=len(found)))
         _clear(self.conflicts_box)
@@ -514,6 +518,7 @@ class LiveCard(QWidget):
         here first, like opening one from the list."""
         if collab_state.shared() and collab_state.STATE.get('doc') == doc_id:
             self.panel.show_message(_('open_link.already_open'))
+            self.reveal(self.copy_link_button)          # its link, to pass on
             return
         if not service.is_connected():
             self._link = doc_id  # once connected (signed_in)
@@ -610,6 +615,14 @@ class LiveCard(QWidget):
         self.confirm_yes.style().polish(self.confirm_yes)
         self._pending_confirm = action
         self.confirm.show()
+        self.reveal(self.confirm)
+
+    def reveal(self, widget=None):
+        """The card lives in the live bar's drawer (LiveBar): opened, and scrolled to `widget`, when it has
+        something to ask or show."""
+        bar = getattr(self.panel, 'live_bar', None)
+        if bar is not None:
+            bar._show_in_drawer(widget or self)
 
     def _confirmed(self):
         self.confirm.hide()
@@ -685,14 +698,30 @@ class LiveBar(QWidget):
     corner) and the projects shared with you. Hidden while no one is signed in to subtitld.cc. The cards keep
     the details (who it is shared with, the media, the chat itself); the bar's questions are asked there."""
 
+    DRAWER_HEIGHT = 360                                 # at most: past it, the drawer scrolls
+
     def __init__(self, panel):
         super().__init__()
         self.panel = panel
         self.setObjectName('live_bar')
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)   # as tall as it needs
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+
+        # The drawer: the live co-editing card (sharing, who it is shared with, the media), opened from the
+        # bar's toggle, above the bar's lines.
+        from PySide6.QtWidgets import QScrollArea
+        self.drawer = QScrollArea()
+        self.drawer.setObjectName('live_bar_drawer')
+        self.drawer.setWidgetResizable(True)
+        self.drawer.setFrameShape(QScrollArea.NoFrame)
+        self.drawer.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.drawer.setMaximumHeight(self.DRAWER_HEIGHT)
+        self.drawer.setWidget(panel.live_card)
+        self.drawer.setVisible(False)
+        layout.addWidget(self.drawer)
+        layout.addSpacing(4)
 
         status = QHBoxLayout()
         status.setContentsMargins(12, 0, 10, 0)
@@ -723,9 +752,11 @@ class LiveBar(QWidget):
         self.chat = self._icon('live_bar_chat.svg')
         self.chat.setObjectName('live_bar_chat')
         self.chat.clicked.connect(self.show_chat)
-        self.list = self._icon('live_bar_list.svg')
-        self.list.clicked.connect(self.show_projects)
-        for button in (self.mic, self.call, self.chat, self.list):
+        self.toggle = self._icon('live_bar_open.svg')
+        self.toggle.setObjectName('live_bar_toggle')
+        self.toggle.setCheckable(True)
+        self.toggle.toggled.connect(self.open_drawer)
+        for button in (self.toggle, self.mic, self.call, self.chat):
             controls.addWidget(button, 0, Qt.AlignVCenter)
         controls.addStretch()
         self.leave = self._icon('live_bar_leave.svg')
@@ -733,7 +764,7 @@ class LiveBar(QWidget):
         controls.addWidget(self.leave, 0, Qt.AlignVCenter)
         controls.addSpacing(6)
         self.share = QPushButton()
-        self.share.setProperty('class', 'addon_card_tab')     # the dialogs' light slanted tab, in the corner
+        self.share.setProperty('class', 'live_bar_tab')       # the dialogs' light slanted tab, in the corner
         self.share.setFixedHeight(30)
         self.share.setCursor(Qt.PointingHandCursor)
         self.share.clicked.connect(self.start_sharing)
@@ -753,6 +784,11 @@ class LiveBar(QWidget):
     def paintEvent(self, event):
         from PySide6.QtGui import QColor, QPainter
         QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 38))     # the header's shade
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if getattr(self.panel, 'live_bar', None) is self and hasattr(self.panel, 'footer_shadow'):
+            self.panel._place_shadows()                 # its shadow rises from wherever its top is now
 
     def _icon(self, icon):
         from PySide6.QtCore import QSize
@@ -801,7 +837,6 @@ class LiveBar(QWidget):
         available = collab_service.voice_available()
         for button in (self.mic, self.call, self.chat, self.leave):
             button.setVisible(shared)
-        self.list.setVisible(not shared)
         self.share.setVisible(not shared)
         self.mic.setEnabled(on)
         self.mic.blockSignals(True)
@@ -844,9 +879,16 @@ class LiveBar(QWidget):
         self._show(self.panel.chat_card)
         self.panel.chat_card.field.setFocus()
 
-    def show_projects(self):
-        self.panel.live_card.load_projects()
-        self._show(self.panel.live_card)
+    def open_drawer(self, opened):
+        from PySide6.QtGui import QIcon
+        self.drawer.setVisible(opened)
+        self.toggle.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_close.svg' if opened else 'live_bar_open.svg'))))
+        if opened:
+            self.panel.live_card.refresh()
+
+    def _show_in_drawer(self, widget):
+        self.toggle.setChecked(True)
+        self.drawer.ensureWidgetVisible(widget)
 
     def start_sharing(self):
         """Share it under the title the card holds (the project's own, unless changed there)."""
@@ -854,15 +896,15 @@ class LiveBar(QWidget):
         card.refresh()
         if card.title_field.text().strip():
             card.share()
-        self._show(card)
+        self._show_in_drawer(card)
 
     def ask_leave(self):
         self.panel.live_card.ask_stop()
-        self._show(self.panel.live_card.confirm)
+        self._show_in_drawer(self.panel.live_card.confirm)
 
     def retranslate(self):
         self.mic.setToolTip(_('collab.voice_latch'))
         self.chat.setToolTip(_('collab.chat_title'))
-        self.list.setToolTip(_('collab.shared_with_you'))
+        self.toggle.setToolTip(_('collab.title'))
         self.share.setText(_('collab.share'))
         self.refresh()

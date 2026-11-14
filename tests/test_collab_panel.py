@@ -176,6 +176,9 @@ def buttons(text):
 
 
 print('signed in, not shared')
+check('the card waits in the live bar\'s drawer', card.isVisible(), False)
+host.subtitldcc_panel.live_bar.toggle.click()
+app.processEvents()
 check('the card shows', card.isVisible(), True)
 check('the share form, named after the video', (card.share_box.isVisible(), card.title_field.text()), (True, 'Sintel.2010'))
 check('yourself or a group you publish as', [card.owner_field.itemText(i) for i in range(card.owner_field.count())],
