@@ -195,7 +195,8 @@ class CloudDashboardPanel(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         root.addWidget(scroll, 1)
         inner = QWidget()
-        inner.setProperty('class', 'transparent_panel')
+        inner.setObjectName('account_cards')           # a lighter ground under the header
+        inner.setAttribute(Qt.WA_StyledBackground, True)
         scroll.setWidget(inner)
         cards = QVBoxLayout(inner)
         cards.setContentsMargins(10, 10, 10, 10)

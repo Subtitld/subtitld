@@ -19,7 +19,7 @@ def _label(object_name):
 
 
 class AccountHeader(QWidget):
-    SHADE = QColor(0, 0, 0, 38)
+    SHADE = QColor(0, 0, 0, 70)                        # well apart from the lighter cards' area (account_cards)
 
     def __init__(self, mark, word):
         """`mark`: the service's mark (a file in graphics); `word`: its name

@@ -4245,6 +4245,11 @@ QLabel#autosave_empty_label {
 
 /* The account panels' header (interface/account_header.py; subtitld.cc, Subtitld Cloud): who is connected, and the
    service's mark on a slanted tab in its top-right corner; it paints its own shade. */
+/* The cards' ground under the header (and over the subtitld.cc panel's footer): lighter than both. */
+QWidget#account_cards {
+    background: rgba(184, 206, 224, 0.06);
+}
+
 QLabel#account_header_name {
     font-family: 'Montserrat';
     font-size: 12px;

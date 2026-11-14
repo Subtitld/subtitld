@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from subtitld.interface.account_header import AccountHeader
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
 from subtitld.modules import subtitldcc_service as service
@@ -784,7 +785,7 @@ class LiveBar(QWidget):
 
     def paintEvent(self, event):
         from PySide6.QtGui import QColor, QPainter
-        QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 38))     # the header's shade
+        QPainter(self).fillRect(self.rect(), AccountHeader.SHADE)     # the header's shade
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
