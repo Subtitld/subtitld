@@ -173,9 +173,9 @@ check('offered, with the text options', ('PGS' in SUBTITLE_FORMATS, 'PGS' in exp
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('PGS')
 panel._refresh_options()
-check('the text options, no picture size to choose, what the pictures will be said',
-      (panel.text_options.isHidden(), panel.vobsub_options.isHidden(), panel.check_label.isHidden(),
-       '1920x1080' in panel.check_label.text()), (False, True, False, True))
+check('the text options, no picture size to choose, no note: the preview shows the pictures',
+      (panel.text_options.isHidden(), panel.vobsub_options.isHidden(), panel.check_label.isHidden()),
+      (False, True, True))
 check('exported by its .sup, not a project format',
       (session.LIST_OF_PICTURE_SUBTITLE_EXTENSIONS['PGS']['extensions'], 'PGS' in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS),
       (['sup'], False))

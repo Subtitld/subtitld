@@ -1,5 +1,6 @@
 """CSV export: Audition's marker list (its layout, times, bytes), through
-file_io, and the Documents tab's CSV type.
+file_io, as an export from before the Documents tab had contents wrote it
+and as the tab chooses it now.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -60,18 +61,17 @@ check('UTF-8 with a byte order mark, Windows line ends, as Audition writes',
       (written[:3], written.count(b'\r\n'), written.count(b'\n')), (b'\xef\xbb\xbf', 4, 4))
 check('the same as written', written.decode('utf-8-sig'), csv_export.write(segments))
 
+session.FORMAT['options'] = {'document': {'content': 'markers'}}
+file_io.save_file(str(folder / 'chosen.csv'), 'CSV')
+check('chosen on the Documents tab', (folder / 'chosen.csv').read_bytes(), written)
+
 print('the dialog')
 from subtitld.interface.export_dialog import _DocumentsPanel
 panel = _DocumentsPanel()
-check('TXT: no CSV type, the note', (panel.csv_type_combo.isHidden(), panel.note.isHidden(), 'options' in panel.get_config()),
-      (True, False, False))
-panel.format_combo.setCurrentText('CSV')
-combo = panel.csv_type_combo.combobox
-check('CSV: its types, Audition markers', (panel.csv_type_combo.isHidden(), panel.note.isHidden(),
-                                           [combo.itemText(i) for i in range(combo.count())]),
-      (False, True, ['Audition markers']))
-check('the config', panel.get_config(),
-      {'category': 'documents', 'format': 'CSV', 'options': {'csv_type': 'audition_markers'}})
+panel.choose('CSV', 'markers')
+check('CSV: Audition markers, nothing else to choose',
+      (panel.get_config()['options']['document']['content'], panel.times_combo.isHidden(), panel.title_check.isHidden()),
+      ('markers', True, True))
 check('the file picker knows CSV', session.LIST_OF_SUPPORTED_EXPORT_EXTENSIONS['CSV']['extensions'], ['csv'])
 
 print()

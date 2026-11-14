@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QPixmap
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
@@ -25,7 +25,7 @@ from subtitld.modules import bdn
 from subtitld.modules import cavena890
 from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
-from subtitld.modules import csv_export
+from subtitld.modules import documents
 from subtitld.modules import cue_ids
 from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
@@ -45,6 +45,7 @@ from subtitld.modules import microdvd
 from subtitld.modules import pac
 from subtitld.modules import pgs
 from subtitld.modules import plaintext
+from subtitld.modules import project_export
 from subtitld.modules import sami
 from subtitld.modules import sbv
 from subtitld.modules import scc
@@ -1567,177 +1568,6 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
     return session.SUBTITLE['segments'], subtitle_format
 
 
-def export_file(filename=False, export_format='TXT', options=False):
-    """Function to export file. A filepath and a subtitle dict is given."""
-    if session.SUBTITLE['segments'] and filename:
-        if export_format in ['.txt']:
-            final_txt = ''
-            for sub in session.SUBTITLE['segments']:
-                final_txt += sub[2].replace('\n', ' ') + ' '
-            if options:
-                if options.get('new_line', False):
-                    final_txt = final_txt.replace('. ', '.\n')
-                    final_txt = final_txt.replace('! ', '!\n')
-                    final_txt = final_txt.replace('? ', '?\n')
-            with open(filename, mode='w', encoding='utf-8') as txt_file:
-                txt_file.write(final_txt)
-        elif export_format in ['.kdenlive']:
-            final_xml = '''<?xml version='1.0' encoding='utf-8'?><mlt LC_NUMERIC="C" producer="main_bin" version="6.26.1" root="/home/jonata"><profile frame_rate_num="25" sample_aspect_num="1" display_aspect_den="9" colorspace="709" progressive="1" description="HD 1080p 25 fps" display_aspect_num="16" frame_rate_den="1" width="1920" height="1080" sample_aspect_den="1"/>'''
-
-            i = 0
-            for sub in session.SUBTITLE['segments']:
-                final_xml += '''<producer id="producer{i}" in="{zerotime}" out="{out}">
-                                <property name="length">{length}</property>
-                                <property name="eof">pause</property>
-                                <property name="resource"/>
-                                <property name="progressive">1</property>
-                                <property name="aspect_ratio">1</property>
-                                <property name="seekable">1</property>
-                                <property name="mlt_service">kdenlivetitle</property>
-                                <property name="kdenlive:duration">125</property>
-                                <property name="kdenlive:clipname">{clipname}</property>
-                                <property name="xmldata">&lt;kdenlivetitle duration="125" LC_NUMERIC="C" width="1920" height="1080" out="124"> &lt;item type="QGraphicsTextItem" z-index="0"> &lt;position x="784" y="910"> &lt;transform>1,0,0,0,1,0,0,0,1&lt;/transform> &lt;/position>
-                                &lt;content shadow="0;#64000000;3;3;3" font-underline="0" box-height="62" font-outline-color="0,0,0,255" font="Ubuntu" letter-spacing="0" font-pixel-size="54" font-italic="0" typewriter="0;2;1;0;0" alignment="1" font-weight="50" font-outline="0"
-                                box-width="351.719" font-color="255,255,255,255">{content}&lt;/content> &lt;/item> &lt;startviewport rect="0,0,1920,1080"/> &lt;endviewport rect="0,0,1920,1080"/> &lt;background color="0,0,0,0"/> &lt;/kdenlivetitle>
-                                </property>
-                                <property name="kdenlive:folderid">-1</property>
-                                <property name="kdenlive:id">{id}</property>
-                                <property name="force_reload">0</property>
-                                <property name="meta.media.width">1920</property>
-                                <property name="meta.media.height">1080</property>
-                            </producer>'''.format(i=i, id=i + 2, length=int(sub[1] * 25), clipname='Subtitle {i}'.format(i=i), content=sub[2], zerotime=str(timecode.Timecode('1000', start_seconds=0.001, fractional=True)), out=str(timecode.Timecode('1000', start_seconds=sub[1], fractional=True)))
-                i += 1
-
-            final_xml += '''<playlist id="main_bin">
-                            <property name="kdenlive:docproperties.activeTrack">2</property>
-                            <property name="kdenlive:docproperties.audioChannels">2</property>
-                            <property name="kdenlive:docproperties.audioTarget">-1</property>
-                            <property name="kdenlive:docproperties.disablepreview">0</property>
-                            <property name="kdenlive:docproperties.documentid">1621801540856</property>
-                            <property name="kdenlive:docproperties.enableTimelineZone">0</property>
-                            <property name="kdenlive:docproperties.enableexternalproxy">0</property>
-                            <property name="kdenlive:docproperties.enableproxy">0</property>
-                            <property name="kdenlive:docproperties.externalproxyparams">../Sub;;S03.MP4;../Clip;;.MXF</property>
-                            <property name="kdenlive:docproperties.generateimageproxy">0</property>
-                            <property name="kdenlive:docproperties.generateproxy">0</property>
-                            <property name="kdenlive:docproperties.groups">[ ]
-                            </property>
-                            <property name="kdenlive:docproperties.kdenliveversion">21.04.0</property>
-                            <property name="kdenlive:docproperties.position">372</property>
-                            <property name="kdenlive:docproperties.previewextension"/>
-                            <property name="kdenlive:docproperties.previewparameters"/>
-                            <property name="kdenlive:docproperties.profile">atsc_1080p_25</property>
-                            <property name="kdenlive:docproperties.proxyextension"/>
-                            <property name="kdenlive:docproperties.proxyimageminsize">2000</property>
-                            <property name="kdenlive:docproperties.proxyimagesize">800</property>
-                            <property name="kdenlive:docproperties.proxyminsize">1000</property>
-                            <property name="kdenlive:docproperties.proxyparams"/>
-                            <property name="kdenlive:docproperties.scrollPos">0</property>
-                            <property name="kdenlive:docproperties.seekOffset">30000</property>
-                            <property name="kdenlive:docproperties.version">1</property>
-                            <property name="kdenlive:docproperties.verticalzoom">1</property>
-                            <property name="kdenlive:docproperties.videoTarget">-1</property>
-                            <property name="kdenlive:docproperties.zonein">0</property>
-                            <property name="kdenlive:docproperties.zoneout">75</property>
-                            <property name="kdenlive:docproperties.zoom">8</property>
-                            <property name="kdenlive:expandedFolders"/>
-                            <property name="kdenlive:documentnotes"/>
-                            <property name="xml_retain">1</property>\n'''
-
-            i = 0
-            for sub in session.SUBTITLE['segments']:
-                final_xml += '''<entry producer="producer{i}" in="{zerotime}" out="{out}"/>\n'''.format(i=i, zerotime=str(timecode.Timecode('1000', start_seconds=0.001, fractional=True)), out=str(timecode.Timecode('1000', start_seconds=sub[1], fractional=True)))
-                i += 1
-
-            final_xml += '''</playlist>
-                            <producer id="black_track" in="00:00:00.000" out="00:20:12.120">
-                                <property name="length">2147483647</property>
-                                <property name="eof">continue</property>
-                                <property name="resource">black</property>
-                                <property name="aspect_ratio">1</property>
-                                <property name="mlt_service">color</property>
-                                <property name="mlt_image_format">rgb24a</property>
-                                <property name="set.test_audio">0</property>
-                            </producer>
-                            <playlist id="playlist0">
-                                <property name="kdenlive:audio_track">1</property>
-                            </playlist>
-                            <playlist id="playlist1"/>
-                            <tractor id="tractor0" in="00:00:00.000">
-                                <property name="kdenlive:audio_track">1</property>
-                                <property name="kdenlive:trackheight">69</property>
-                                <property name="kdenlive:timeline_active">1</property>
-                                <property name="kdenlive:collapsed">0</property>
-                                <property name="kdenlive:thumbs_format"/>
-                                <property name="kdenlive:audio_rec"/>
-                                <track hide="video" producer="playlist0"/>
-                                <track hide="video" producer="playlist1"/>
-                            </tractor>
-                            <playlist id="playlist2">
-                                <property name="kdenlive:audio_track">1</property>
-                            </playlist>
-                            <playlist id="playlist3"/>
-                            <tractor id="tractor1" in="00:00:00.000">
-                                <property name="kdenlive:audio_track">1</property>
-                                <property name="kdenlive:trackheight">69</property>
-                                <property name="kdenlive:timeline_active">1</property>
-                                <property name="kdenlive:collapsed">0</property>
-                                <property name="kdenlive:thumbs_format"/>
-                                <property name="kdenlive:audio_rec"/>
-                                <track hide="video" producer="playlist2"/>
-                                <track hide="video" producer="playlist3"/>
-                            </tractor>
-                            <playlist id="playlist4"/>
-                            <playlist id="playlist5"/>
-                            <tractor id="tractor2" in="00:00:00.000" out="00:00:12.080">
-                                <property name="kdenlive:trackheight">69</property>
-                                <property name="kdenlive:timeline_active">1</property>
-                                <property name="kdenlive:collapsed">0</property>
-                                <property name="kdenlive:thumbs_format"/>
-                                <property name="kdenlive:audio_rec"/>
-                                <track hide="audio" producer="playlist4"/>
-                                <track producer="playlist5"/>
-                            </tractor>
-                            <playlist id="playlist6">'''
-            i = 0
-            last_intime = 0
-            for sub in session.SUBTITLE['segments']:
-                last_intime = sub['start'] - last_intime
-                if last_intime:
-                    final_xml += '''
-                                    <blank length="{intime}"/>'''.format(intime=str(timecode.Timecode('1000', start_seconds=last_intime, fractional=True)))
-                final_xml += '''
-                                <entry producer="producer{i}" in="{zerotime}" out="{out}">
-                                    <property name="kdenlive:id">{id}</property>
-                                </entry>'''.format(i=i, id=i + 2, zerotime=str(timecode.Timecode('1000', start_seconds=0.001, fractional=True)), out=str(timecode.Timecode('1000', start_seconds=sub[1], fractional=True)))
-                last_intime = sub['end']
-                i += 1
-
-            final_xml += '''
-                            </playlist>
-                            <playlist id="playlist7"/>
-                            <tractor id="tractor3" in="00:00:00.000">
-                                <property name="kdenlive:trackheight">69</property>
-                                <property name="kdenlive:timeline_active">1</property>
-                                <property name="kdenlive:collapsed">0</property>
-                                <property name="kdenlive:thumbs_format"/>
-                                <property name="kdenlive:audio_rec"/>
-                                <track hide="audio" producer="playlist6"/>
-                                <track producer="playlist7"/>
-                            </tractor>
-                            <tractor id="tractor4" global_feed="1" in="00:00:00.000" out="00:20:12.120">
-                                <track producer="black_track"/>
-                                <track producer="tractor0"/>
-                                <track producer="tractor1"/>
-                                <track producer="tractor2"/>
-                                <track producer="tractor3"/>
-                            </tractor>
-                            </mlt>'''
-
-            with open(filename, mode='w', encoding='utf-8') as txt_file:
-                txt_file.write(final_xml)
-
-
 def _ensure_dub_files_present(segments, existing_usfx_path):
     """Re-materialise any dub files referenced by `segments` whose
     absolute paths don't currently exist on disk, by copying their
@@ -2106,13 +1936,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                                               stem=f'{stem}_')
             for picture in pictures:
                 picture['href'] = os.path.basename(picture['path'])
-            bdn.save(final_file, pictures, size,
-                     fps=options.get('bdn_fps') if options.get('bdn_fps') in bdn.RATES
-                     else bdn.rate_for(VIDEO.get('framerate')),
-                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
-                     else language,
-                     title=(SUBTITLE.get('metadata') or {}).get('title')
-                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+            bdn.save(final_file, pictures, size, **bdn_options(options, language, final_file, SUBTITLE, VIDEO))
 
         elif subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
             # A cinema's subtitles as pictures: each drawn as the preview
@@ -2275,11 +2099,22 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                                        language=SUBTITLE.get('language'))
             open(final_file, mode='w', encoding='utf-8').write(text)
 
-        elif subtitle_format == 'CSV':
-            # A table of the times, of the type the Documents tab chose
-            # (modules.csv_export: Audition's markers).
-            csv_export.save(final_file, SUBTITLE['segments'],
-                            options.get('csv_type') if options.get('csv_type') in csv_export.TYPES else csv_export.AUDITION_MARKERS)
+        elif subtitle_format in project_export.FORMATS:
+            # A project of another program, the subtitles and their dub on
+            # its timeline (modules.project_export).
+            project_export.save(final_file, subtitle_format, SUBTITLE, VIDEO, options.get('project'),
+                                names={key: _(f'export_dialog.project_track_{key}')
+                                       for key in ('video', 'audio', 'background', 'subtitles')})
+
+        elif subtitle_format in documents.FORMATS:
+            # A document to read, of what the Documents tab chose to hold
+            # (modules.documents); an export from before it, Audition's
+            # markers.
+            chosen = dict(options.get('document') or {})
+            content = chosen.pop('content', None) or (documents.MARKERS if options.get('csv_type') else None)
+            documents.save(final_file, subtitle_format, content, SUBTITLE['segments'], chosen,
+                           fps=VIDEO.get('framerate'), title=documents.title_for(SUBTITLE, VIDEO, final_file),
+                           columns={key: _(f'export_dialog.document_column_{key}') for key in documents.COLUMNS})
 
         elif subtitle_format in ['USF']:
             options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
@@ -2652,6 +2487,22 @@ def _thumbnail_png():
 _save_in_progress = False
 
 
+def _detached(value):
+    """A deep copy of `value` that a save thread may read while the main
+    thread edits the original. Pictures (a speaker's QImage) cannot be
+    deep-copied, which made every snapshot fail; Qt's own copy of one is
+    shared until either side writes to it, so it is taken instead."""
+    if isinstance(value, dict):
+        return {key: _detached(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_detached(item) for item in value]
+    if isinstance(value, QImage):
+        return QImage(value)
+    if isinstance(value, QPixmap):
+        return QPixmap(value)
+    return copy.deepcopy(value)
+
+
 def _snapshot_for_save():
     """Main thread only. Deep-copy the mutable session collections so
     the save thread sees a stable view regardless of user edits during
@@ -2661,10 +2512,10 @@ def _snapshot_for_save():
         return {
             'THUMBNAIL': _thumbnail_png(),
             'COLLAB': collab_state.export(),
-            'SUBTITLE': copy.deepcopy(session.SUBTITLE),
-            'SPEAKERS': copy.deepcopy(session.SPEAKERS),
-            'VIDEO': copy.deepcopy(session.VIDEO),
-            'FORMAT': copy.deepcopy(session.FORMAT) if isinstance(session.FORMAT, dict) else session.FORMAT,
+            'SUBTITLE': _detached(session.SUBTITLE),
+            'SPEAKERS': _detached(session.SPEAKERS),
+            'VIDEO': _detached(session.VIDEO),
+            'FORMAT': _detached(session.FORMAT) if isinstance(session.FORMAT, dict) else session.FORMAT,
         }
     except Exception:
         return None
@@ -2744,6 +2595,38 @@ def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=N
     _save_in_progress = True
     thread.start()
     return thread
+
+
+def bdn_options(options, language, final_file, subtitle=None, video=None):
+    """What bdn.write takes besides the pictures, for an export to
+    `final_file` with `options`: the rate, the language and the title."""
+    subtitle = session.SUBTITLE if subtitle is None else subtitle
+    video = session.VIDEO if video is None else video
+    return {'fps': options.get('bdn_fps') if options.get('bdn_fps') in bdn.RATES else bdn.rate_for(video.get('framerate')),
+            'language': options.get('language') if options.get('text') == 'translation' and options.get('language')
+            else language,
+            'title': (subtitle.get('metadata') or {}).get('title')
+            or os.path.splitext(os.path.basename(video.get('filepath') or final_file))[0]}
+
+
+def picture_frame(subtitle_format, options=None, video=None):
+    """The frame (width, height) an export in `subtitle_format` with
+    `options` draws its subtitles on as pictures, as save_file sizes it; None
+    for an export that writes no pictures. `video`: session.VIDEO's kind."""
+    options = options or {}
+    video = session.VIDEO if video is None else video
+    width, height = int(video.get('width') or 0), int(video.get('height') or 0)
+    if subtitle_format in ('DFXP', 'TTML') and options.get('profile') in ttml.IMAGE_PROFILES:
+        return width or 1920, height or 1080
+    if subtitle_format == 'PGS':
+        return width or 1920, height or 1080
+    if subtitle_format == 'VOBSUB':
+        return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
+    if subtitle_format == 'BDN':
+        return width or bdn.DEFAULT_SIZE[0], height or bdn.DEFAULT_SIZE[1]
+    if subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
+        return width or 1920, height or 1080
+    return None
 
 
 class PreviewBinary(Exception):

@@ -220,7 +220,7 @@ panel._refresh_options()
 check("the picture size, the video's first", (panel.vobsub_options.isHidden(), panel.text_options.isHidden(),
                                               panel.get_config()['options'].get('vobsub_size'),
                                               panel.vobsub_size_combo.combobox.count()), (False, False, 'video', 3))
-check('what the pictures will be said', (panel.check_label.isHidden(), 'DVD' in panel.check_label.text()), (False, True))
+check('no note: the preview shows the pictures', panel.check_label.isHidden(), True)
 panel.vobsub_size_combo.combobox.setCurrentIndex(panel.vobsub_size_combo.combobox.findData('ntsc'))
 panel.get_config()
 session.VIDEO = {}

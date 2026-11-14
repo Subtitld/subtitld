@@ -47,8 +47,8 @@ check('DID 43h, SDID 02h, the data count its words', (packet[0], packet[1], pack
       (0x43, 0x02, len(words), 9 + 45 * len(fields) + 4))
 check('identifier 51h 15h, a length from the identifier to the checksum, format code 02h (WST subtitles)',
       (words[:2], words[2], words[3]), (b'\x51\x15', len(words), 0x02))
-check('a descriptor for each packet (field 1, the line), the others 0',
-      list(words[4:9]), [0xE7, 0xE8] + [0] * 3)
+check('a descriptor for each packet (field 1, the line), the others 0: header, row, time filling header',
+      list(words[4:9]), [0xE7, 0xE8, 0xE9] + [0] * 2)
 check('each packet: run-in 55h 55h, framing code 27h, then its address in Hamming 8/4',
       (words[9:12], tt.ham84(words[12]) & 7, words[9 + 45:12 + 45]), (b'\x55\x55\x27', 0, b'\x55\x55\x27'))
 check('the footer: 74h and the sequence counter, most significant first', words[-4:-1], b'\x74\x12\x34')
@@ -67,8 +67,8 @@ print('a page over the frames')
 tracks = [{'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Line one\nLine two'},
                         {'start': 2.0, 'end': 3.0, 'text': 'Straight after'}], 'language': 'en'}]
 frames = tt.op47_frames(tracks, 25)
-check('erased at 0, then each transmission from its frame, five packets a frame',
-      sorted((frame, len(found)) for frame, found in frames.items()), [(0, 1), (25, 3), (50, 2), (75, 1)])
+check('erased at 0, then each transmission from its frame, ended by a time filling header',
+      sorted((frame, len(found)) for frame, found in frames.items()), [(0, 2), (25, 4), (50, 3), (75, 2)])
 check('read back from the frames', [(s['start'], s['end'], s['text']) for s in tt.op47_decode(
     sorted(frames.items()), 25)[0]], [(1.0, 2.0, 'Line one\nLine two'), (2.0, 3.0, 'Straight after')])
 crowded = tt.op47_frames([{'segments': [{'start': 1.0, 'end': 2.0, 'text': 'A\nB\nC\nD\nE\nF\nG\nH'}]}], 25)
@@ -159,8 +159,7 @@ from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
 check('QuickTime: no teletext to choose', (panel.captions_teletext.isHidden(), panel.get_config()['captions']['teletext']),
       (True, False))
-panel.captions_format_combo.combobox.setCurrentIndex(1)
-panel._refresh_captions()
+panel.choose('MXF')
 panel.captions_teletext.setChecked(True)
 check('MXF: teletext beside the captions, asked for', (panel.captions_teletext.isHidden(),
                                                        panel.get_config()['captions']['teletext']), (False, True))

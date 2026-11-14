@@ -1256,10 +1256,10 @@ def page_fields(text, page=DEFAULT_PAGE, language='', designation=None):
     header, an X/28/0 that designates its character sets (but for the
     Latin ones of western Europe, which need none), its X/26 for the
     characters the G0 set lacks, and the rows, double height and centred
-    on the bottom rows, or the top ones for a subtitle placed there. The
-    sets are `designation` (group, C12-C14 value), else those
-    `designation_for` the language and the text gives. `text` '' is a
-    transmission that erases."""
+    on the bottom rows, or the top ones for a subtitle placed there, then a
+    time filling header that ends the page. The sets are `designation`
+    (group, C12-C14 value), else those `designation_for` the language and
+    the text gives. `text` '' is a transmission that erases."""
     magazine, number = page_parts(page)
     group, option = designation or designation_for(language, [text])
     encode, supplementary, plain, subset = _encoders(group, option)
@@ -1268,8 +1268,14 @@ def page_fields(text, page=DEFAULT_PAGE, language='', designation=None):
         fields.append(_x28(magazine, group, option))
     lead, rest = markup.split_lead(text or '')
     lines = [line for line in rest.split('\n') if markup.plain(line).strip()][:11]
+    # A page is complete when the magazine's next header comes (ETS 300
+    # 706, 7.1.2): a decoder that waits for it, as libzvbi does (FFmpeg,
+    # VLC), would otherwise show each subtitle only when the next
+    # transmission, the one that erases it, arrives. Page FF fills time
+    # and is no page at all.
+    end = _header(magazine, 0xFF, 0, option)
     if not lines:
-        return fields
+        return fields + [end]
     keypad = markup.alignment(lead)
     first_row = 2 if keypad in (7, 8, 9) else 23 - 2 * len(lines)
     if keypad in (4, 5, 6):
@@ -1300,7 +1306,7 @@ def page_fields(text, page=DEFAULT_PAGE, language='', designation=None):
             body = bytes([ham84_encode(start // 13)]) + b''.join(
                 ham2418_encode(address | (mode << 6) | (value << 11)) for address, mode, value in chunk)
             fields.append(_field(magazine, 26, body))
-    return fields + rows
+    return fields + rows + [end]
 
 
 def _pes(fields, pts):

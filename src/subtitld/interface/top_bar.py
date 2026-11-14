@@ -484,6 +484,10 @@ def toppanel_export_button_clicked(self):
         info = session.LIST_OF_SUPPORTED_EXPORT_EXTENSIONS[fmt]
         extensions = info['extensions']
         description = info['description']
+    elif category == 'project' and fmt in session.LIST_OF_SUPPORTED_PROJECT_EXTENSIONS:
+        info = session.LIST_OF_SUPPORTED_PROJECT_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
 
     if not extensions:
         return
@@ -587,7 +591,7 @@ def toppanel_export_button_clicked(self):
 
     if category == 'subtitles' and 'options' in config:
         session.FORMAT['options'] = config['options']
-    elif category == 'documents' and 'options' in config:
+    elif category in ('documents', 'project') and 'options' in config:
         # Added to what the subtitles were opened with (a frame rate...).
         session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **config['options'])
 

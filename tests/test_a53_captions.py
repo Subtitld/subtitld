@@ -162,17 +162,19 @@ print('the dialog')
 session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 30000 / 1001, 'duration': 10.0, 'filepath': 'video.mp4'}
 from subtitld.interface.export_dialog import _VideoPanel
-from subtitld.interface.translation import _
 panel = _VideoPanel()
-combo = panel.captions_format_combo.combobox
-check('offered beside QuickTime and MXF', [combo.itemData(index) for index in range(combo.count())],
-      ['MOV', 'MXF', 'MP4 A53', 'TS A53'])
-combo.setCurrentIndex(2)
-panel._refresh_captions()
+combo = panel.format_combo.combobox
+check('the formats alone, no groups', [combo.itemData(index) for index in range(combo.count())],
+      ['MP4', 'MOV', 'MKV', 'MXF', 'TS', 'WEBM'])
+ways = panel.way_combo.combobox
+panel.choose('MP4')
+check('MP4: in its frames, as a track, or burned in', [ways.itemData(index) for index in range(ways.count())],
+      ['cc', 'track', 'burn'])
+ways.setCurrentIndex(ways.findData('cc'))
+panel._refresh_way()
 config = panel.get_config()
-check('the picture copied: no codec, no teletext, a note of its own',
-      (config['format'], panel.captions_codec_combo.isHidden(), panel.captions_teletext.isHidden(),
-       panel.captions_note.text() == _('export_dialog.video_captions_note_a53')), ('MP4 A53', True, True, True))
+check('the picture copied: no codec, no teletext',
+      (config['format'], panel.captions_codec_combo.isHidden(), panel.captions_teletext.isHidden()), ('MP4 A53', True, True))
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

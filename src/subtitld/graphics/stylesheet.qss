@@ -2852,7 +2852,7 @@ QMenu#subtitle_formatting_menu::separator {
 #dialog_frame {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                 stop:0 #1e2833,
-                                stop:1 #f23a4d5d);
+                                stop:1 #3a4d5d);
     border: 1px solid #1a232b;
     border-radius: 4px;
 }
