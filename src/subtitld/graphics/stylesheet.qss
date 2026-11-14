@@ -4436,7 +4436,9 @@ QPushButton#live_bar_people:checked {
 
 /* The chat's well: sunken, rounded; its field and Send along its foot, edge to edge (subtitldcc_chat). */
 QWidget#chat_well {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #05080a, stop:1 #0c1115);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #05080a, stop:1 #0c1115);
+    background-image: url(graphics:chat_wallpaper.svg);   /* tiled, barely there, like a messaging app's */
+    background-repeat: repeat-xy;
     border-radius: 0;               /* edge to edge in the live bar's drawer */
 }
 
