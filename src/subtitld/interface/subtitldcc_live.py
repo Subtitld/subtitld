@@ -332,8 +332,7 @@ class LiveCard(QWidget):
         self.here = _text()                             # who is here: the live bar's faces say it
         self.here.setVisible(False)
         shared.addWidget(self.here)
-        self.publishes_to = _text()
-        shared.addWidget(self.publishes_to)
+        self.publishes_note = ''                         # where it publishes (the live bar's link says it)
         # Its page on subtitld.cc, where collaborators open it in Subtitld (subtitldcc_open.py).
         # (the live bar's link copies it; this button stays for a link to the project already open)
         self.copy_link_button = _button()
@@ -578,11 +577,11 @@ class LiveCard(QWidget):
                 self.members_box.addWidget(badge)
         self.members_card.setVisible(bool(project))
         self.members_card.fit()
+        # where it publishes: said by the live bar's link (its tooltip), not in the drawer, which opens only on
+        # what needs an answer
         subtitle = project.get('subtitle')
-        self.publishes_to.setVisible(bool(subtitle))
-        if subtitle:
-            self.publishes_to.setText(_('collab.publishes_to').format(
-                title=html.escape(subtitle.get('title') or ''), version=subtitle.get('version') or 0))
+        self.publishes_note = _('collab.publishes_to').format(
+            title=subtitle.get('title') or '', version=subtitle.get('version') or 0) if subtitle else ''
         self.copy_link_button.setVisible(False)        # the live bar's link copies it
         self.member_field.setVisible(manage)
         self._show_add()
@@ -884,7 +883,7 @@ class LiveCard(QWidget):
         problem, conflicts, where it publishes, a question): the rest is in the live bar."""
         if not collab_state.shared():
             return True
-        return any(not w.isHidden() for w in (self.status, self.publishes_to, self.conflicts, self.sign_in_button,
+        return any(not w.isHidden() for w in (self.status, self.conflicts, self.sign_in_button,
                                               self.copy_link_button, self.stop_button, self.confirm))
 
     def reveal(self, widget=None):
@@ -1348,7 +1347,8 @@ class LiveBar(QWidget):
         self.state.setText(text)
         url = ((self.panel.live_card._project or {}).get('url') or '') if shared else ''
         self.link.setText(url.split('://', 1)[-1])
-        self.link.setToolTip(_('collab.copy_link'))
+        note = self.panel.live_card.publishes_note if shared else ''
+        self.link.setToolTip(_('collab.copy_link') + (f'\n\n{note}' if note else ''))
         self.link.setVisible(bool(url))
 
         voice = collab_service.voice_state()
