@@ -1738,9 +1738,9 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
 
 /* 09b8cee0; */
 
+/* No border lines: the panels' headers and footers reach the edges (a border would sit 1px in from them). */
 #left_panel_stackedwidgets {
-    border-left: 1px solid #0affffff;
-    border-right: 1px solid #05ffffff;
+    border: 0;
     background-color: #40304251;
 }
 

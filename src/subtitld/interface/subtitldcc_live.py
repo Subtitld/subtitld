@@ -93,6 +93,21 @@ def default_title():
     return ''
 
 
+def _shared_ago(stamp):
+    """How long ago subtitld.cc says a project was shared (its `created_at`, ISO 8601), in words; '' unknown."""
+    if not stamp:
+        return ''
+    from datetime import datetime
+    from subtitld.interface import utils
+    try:
+        when = datetime.fromisoformat(str(stamp).replace('Z', '+00:00'))
+    except ValueError:
+        return ''
+    if when.tzinfo is not None:
+        when = when.astimezone().replace(tzinfo=None)   # friendly_time counts from the local, naive now
+    return utils.friendly_time(when)
+
+
 class _HoverRow(QWidget):
     """A line of a list: its text across the line, and its button at the end, shown while the pointer is on
     the line (its room kept, so the text does not move)."""
@@ -625,7 +640,9 @@ class LiveCard(QWidget):
             self.projects_box.addWidget(empty)
         for project in self._projects:
             label = _text()
-            label.setText(f"<b>{html.escape(project['title'])}</b><br>@{html.escape((project.get('owner') or {}).get('handle', ''))}")
+            owner = html.escape((project.get('owner') or {}).get('handle', ''))
+            age = _shared_ago(project.get('created_at'))
+            label.setText(f"<b>{html.escape(project['title'])}</b><br>@{owner}" + (f" · {html.escape(age)}" if age else ''))
             open_button = _button()
             open_button.setText(_('collab.open'))
             open_button.clicked.connect(lambda _c=False, p=project: self.ask_join(p))
