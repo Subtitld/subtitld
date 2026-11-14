@@ -355,27 +355,33 @@ class LiveCard(QWidget):
         head.setFixedHeight(28)                         # the strip is 26 (the QSS): the owner's tab hangs 2 below
         head_line = QHBoxLayout(head)
         head_line.setContentsMargins(0, 0, 0, 0)        # the tab and the field reach its edges
-        head_line.setSpacing(8)
+        head_line.setSpacing(0)
         self.owner_tab = QLabel()
         self.owner_tab.setObjectName('live_owner_tab')
         self.owner_tab.setFixedHeight(28)
         head_line.addWidget(self.owner_tab, 0, Qt.AlignTop)
+        head_line.addSpacing(8)
         self.members_title = QLabel()
         self.members_title.setObjectName('live_section_title')
         self.members_title.setFixedHeight(26)
         head_line.addWidget(self.members_title, 0, Qt.AlignTop)
+        head_line.addSpacing(8)
         self.member_field = QLineEdit()
         self.member_field.setObjectName('live_member_field')
         self.member_field.setFixedHeight(26)
         self.member_field.returnPressed.connect(self.add_member)
         head_line.addWidget(self.member_field, 1, Qt.AlignTop)
+        # Add: once something is typed, a light slanted tab at the field's end, like the chat's Send
+        self.add_button = _button(primary=True)
+        self.add_button.setObjectName('live_member_add')
+        self.add_button.clicked.connect(self.add_member)
+        self.add_button.setVisible(False)
+        head_line.addWidget(self.add_button, 0, Qt.AlignTop)
+        self.member_field.textChanged.connect(self._show_add)
         self.head_stretch = QWidget()                      # the field's room, for whoever cannot add people
         self.head_stretch.setProperty('class', 'transparent_panel')
         head_line.addWidget(self.head_stretch, 1)
         self.members_card.layout().insertWidget(0, head)
-        self.add_button = _button()                        # (Enter in the field does it; kept for the tests)
-        self.add_button.clicked.connect(self.add_member)
-        self.add_button.setVisible(False)
         badges = QWidget()
         badges.setProperty('class', 'transparent_panel')
         self.members_box = _FlowLayout(badges, spacing=4)
@@ -577,6 +583,7 @@ class LiveCard(QWidget):
                 title=html.escape(subtitle.get('title') or ''), version=subtitle.get('version') or 0))
         self.copy_link_button.setVisible(False)        # the live bar's link copies it
         self.member_field.setVisible(manage)
+        self._show_add()
         self.head_stretch.setVisible(not manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.stop_button.setVisible(False)             # the live bar's status line has it, on hover
@@ -795,6 +802,9 @@ class LiveCard(QWidget):
                 self.panel.show_message(_('collab.published_with').format(people=', '.join(others)))
 
         collab_service.report_published(share_id, version, reported, self._call_failed)
+
+    def _show_add(self):
+        self.add_button.setVisible(not self.member_field.isHidden() and bool(self.member_field.text().strip()))
 
     def add_member(self):
         handle = self.member_field.text().strip()

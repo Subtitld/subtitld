@@ -4602,6 +4602,26 @@ QPushButton#chat_send:pressed {
     border-image: url(graphics:chat_send_tab_pressed.svg) 0 0 0 13 stretch stretch;
 }
 
+/* Add someone (the "Shared with" header): Send's tab, at the header's height. */
+QPushButton#live_member_add {
+    min-height: 26px;
+    max-height: 26px;
+    border-image: url(graphics:chat_send_tab.svg) 0 0 0 13 stretch stretch;
+    border-width: 0 0 0 13px;
+    border-radius: 0;
+    padding: 0 12px 0 2px;
+    background: transparent;
+    color: #1e2b36;
+}
+
+QPushButton#live_member_add:hover {
+    border-image: url(graphics:chat_send_tab_hover.svg) 0 0 0 13 stretch stretch;
+}
+
+QPushButton#live_member_add:pressed {
+    border-image: url(graphics:chat_send_tab_pressed.svg) 0 0 0 13 stretch stretch;
+}
+
 /* Stop sharing (or leave): a word at the status line's end, red, lit on hover. */
 QPushButton#live_bar_leave {
     background: transparent;
