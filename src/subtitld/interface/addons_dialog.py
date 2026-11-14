@@ -650,7 +650,9 @@ class _AddonCard(QFrame):
             summary.setProperty('class', 'addon_card_summary')
             body.layout().addWidget(summary)
 
+        # the tags go in the footer, at its left
         tags = QHBoxLayout()
+        tags.setContentsMargins(14, 0, 10, 0)
         tags.setSpacing(6)
         verdict = _compute.assess(row.compute, row.accelerators, hardware)
         if verdict is not None:
@@ -672,8 +674,6 @@ class _AddonCard(QFrame):
             licence.setAttribute(Qt.WA_StyledBackground)
             licence.setFixedHeight(22)
             tags.addWidget(licence)
-        tags.addStretch()
-        body.layout().addLayout(tags)
 
         # Only the card whose row is the current install target shows a
         # bar; the panel pushes its percentage through `set_progress`.
@@ -693,11 +693,13 @@ class _AddonCard(QFrame):
         footer.setLayout(QHBoxLayout())
         footer.layout().setContentsMargins(0, 0, 0, 0)
         footer.layout().setSpacing(0)
+        has_tags = tags.count() > 0
+        tags.addStretch()
+        footer.layout().addLayout(tags, 1)              # the tags give up width before the buttons do
         removable = row.is_installed and not row.is_builtin
         if removable:
             footer.layout().addWidget(self._icon_button(
                 'addon_card_remove.svg', _('addons_dialog.actions.remove'), self.remove_clicked))
-        footer.layout().addStretch()
         if row.is_installed and row.has_update and not row.is_builtin:
             update = self._icon_button('addon_card_update.svg',
                                        f"{_('addons_dialog.actions.update')} ({row.latest_version})",
@@ -723,7 +725,7 @@ class _AddonCard(QFrame):
             tab.setProperty('class', 'addon_card_tab')
             tab.setFixedHeight(30)
             footer.layout().addWidget(tab)
-        footer.setVisible(footer.layout().count() > 1)
+        footer.setVisible(has_tags or footer.layout().count() > 1)
         outer.addWidget(footer)
 
     def hasHeightForWidth(self) -> bool:
