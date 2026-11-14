@@ -4438,8 +4438,8 @@ QPushButton#live_bar_people:checked {
 QPushButton#live_bar_leave {
     background: transparent;
     border: 0;
-    border-radius: 3px;
-    padding: 0 8px;
+    border-radius: 0;               /* it fills the line's right end */
+    padding: 0 10px;
     font-family: 'Montserrat';
     font-size: 9px;
     font-weight: 700;

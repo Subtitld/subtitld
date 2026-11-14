@@ -909,7 +909,7 @@ class LiveBar(QWidget):
         self.status_line = QWidget()
         self.status_line.setFixedHeight(26)             # the shade's height
         status = QHBoxLayout(self.status_line)
-        status.setContentsMargins(0, 0, 10, 0)
+        status.setContentsMargins(0, 0, 0, 0)
         status.setSpacing(6)
         self.toggle = self._icon('live_bar_menu.svg')
         self.toggle.setObjectName('live_bar_toggle')
@@ -933,7 +933,7 @@ class LiveBar(QWidget):
         self.leave = QPushButton()
         self.leave.setObjectName('live_bar_leave')
         self.leave.setCursor(Qt.PointingHandCursor)
-        self.leave.setFixedHeight(22)
+        self.leave.setFixedHeight(26)                   # the line's full height, to its right edge
         self.leave.clicked.connect(lambda: self.panel.live_card.ask_stop())
         self.leave.setVisible(False)
         status.addWidget(self.leave, 0, Qt.AlignVCenter)
@@ -1097,7 +1097,7 @@ class LiveBar(QWidget):
         # shared with nothing in the card to say: no toggle (it would open on nothing)
         has = self.panel.live_card.has_content()
         self.toggle.setVisible(has)
-        self.status_line.layout().setContentsMargins(0 if has else 12, 0, 10, 0)
+        self.status_line.layout().setContentsMargins(0 if has else 12, 0, 0, 0)   # Stop sharing meets the right edge
         if not has and self.toggle.isChecked():
             self.toggle.setChecked(False)
         self._arrange(shared)
