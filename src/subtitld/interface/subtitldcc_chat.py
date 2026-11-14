@@ -211,6 +211,7 @@ class ChatCard(QWidget):
         self.keep.setGraphicsEffect(QGraphicsOpacityEffect(self.keep))
         self.keep.graphicsEffect().setOpacity(.5)        # half there until the pointer is on it
         self.keep.installEventFilter(self)
+        self.keep.setVisible(False)                     # shown while the pointer is on the chat (eventFilter)
         self._show_keep(False)
 
         # Voice: push-to-talk. The live bar's call tab joins, talks and locks (subtitldcc_live.LiveBar); these
@@ -283,6 +284,8 @@ class ChatCard(QWidget):
         if watched is getattr(self, 'scroll', None) and event.type() == QEvent.Resize \
                 and event.size().width() != event.oldSize().width():
             self._redraw.start()                        # the bubbles measured again for the new width
+        if watched is getattr(self, 'well', None) and event.type() in (QEvent.Enter, QEvent.Leave):
+            self.keep.setVisible(event.type() == QEvent.Enter)
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
             self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
             self._well_shadow.raise_()
