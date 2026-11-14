@@ -837,7 +837,7 @@ class _Ripple(QWidget):
     window, the pointer goes through it; it goes away when done."""
     PULSES = 2
     DURATION = 700                                      # ms, a pulse
-    GROW = 40                                           # px the ring grows past the icon
+    GROW = 60                                           # px the ring grows past the icon
     WIDTH = 3.5                                         # the ring's thickness
     BLUR = 3                                            # px its edges soften
     COLOUR = '#8fe57f'
