@@ -674,15 +674,13 @@ class _AddonCard(QFrame):
                 else 'addon_card_compute',
             )
             chip.setAttribute(Qt.WA_StyledBackground)
-            chip.setFixedHeight(22)
-            tags.addWidget(chip)
+            tags.addWidget(chip, 0, Qt.AlignVCenter)     # as tall as its text and padding
         if row.license and row.license not in ('', '?', 'built-in'):
             licence = _ElidedLabel(_licence_short(row.license))
             licence.setProperty('class', 'addon_card_licence')
             licence.setToolTip(_('addons_dialog.details.license').format(license=row.license))
             licence.setAttribute(Qt.WA_StyledBackground)
-            licence.setFixedHeight(22)
-            tags.addWidget(licence)
+            tags.addWidget(licence, 0, Qt.AlignVCenter)
 
         # Only the card whose row is the current install target shows a
         # bar; the panel pushes its percentage through `set_progress`.
