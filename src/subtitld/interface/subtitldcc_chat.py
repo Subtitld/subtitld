@@ -320,8 +320,12 @@ class ChatCard(QWidget):
         if message.get('edited'):
             foot.append(_('collab.chat_edited'))
         if mine and not message.get('pending') and not message.get('deleted'):
-            foot.append(f'<a href="edit:{message["id"]}" style="color:#9fc4e4;">{_("collab.chat_edit")}</a>')
-            foot.append(f'<a href="delete:{message["id"]}" style="color:#9fc4e4;">{_("collab.chat_delete")}</a>')
+            # Edit and Delete as small icons (their names in the images' alt text, for screen readers)
+            graphics = session.PATH_SUBTITLD_GRAPHICS
+            foot.append(f'<a href="edit:{message["id"]}"><img src="{graphics / "chat_edit.svg"}" width="12" height="12" '
+                        f'alt="{html.escape(_("collab.chat_edit"))}"></a>'
+                        f'&nbsp;&nbsp;<a href="delete:{message["id"]}"><img src="{graphics / "chat_delete.svg"}" '
+                        f'width="12" height="12" alt="{html.escape(_("collab.chat_delete"))}"></a>')
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
         head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
