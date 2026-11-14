@@ -101,7 +101,7 @@ check('failed note', preview.toPlainText(), _('export_dialog.preview_failed'))
 
 print('audio shows its dashboard')
 dialog._select_category(1, 'audio')
-check('audio: the cards, not the well', (dialog.preview_panel.dashboard.isVisible(), preview.isVisible()), (True, False))
+check('audio: the cards, not the well', (dialog.preview_panel.dashboard.isHidden(), preview.isHidden()), (False, True))
 dialog._select_category(0, 'subtitles')
 check('back to subtitles: the file', preview.toPlainText().startswith('WEBVTT'), True)
 
