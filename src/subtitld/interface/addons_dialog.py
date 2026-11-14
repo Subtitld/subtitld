@@ -605,7 +605,7 @@ class _AddonCard(QFrame):
         band.layout().addWidget(self._task_icon)
         band.layout().addSpacing(6)
         band.layout().addWidget(self._task_text)
-        band.layout().addSpacing(20)                    # the label's padding and its slant
+        band.layout().addSpacing(24)                    # the label's padding and its slant
 
         name = _addon_localized(row.addon_id, 'display_name', row.display_name)
         main, aside = name, ''
@@ -782,7 +782,7 @@ class _AddonCard(QFrame):
     def _label_path(self) -> QPainterPath:
         """The task label: from the card's left edge to a 75° slant, square at
         the top, a 6px curve at its foot."""
-        right = self._task_text.geometry().right() + 8 if self._task_text.text() else 0
+        right = self._task_text.geometry().right() + 12 if self._task_text.text() else 0
         if right <= 0:
             return QPainterPath()
         h = self.LABEL
