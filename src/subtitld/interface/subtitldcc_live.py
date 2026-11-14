@@ -1177,7 +1177,16 @@ class LiveBar(QWidget):
         button = next((b for b in self.window().findChildren(left_panel.navigation_button)
                        if b.tab_name == 'subtitldcc' and b.isVisible()), None)
         if button is not None:
-            _Ripple(button)
+            _Ripple(button, self._icon_centre(button))
+
+    @staticmethod
+    def _icon_centre(button):
+        """The middle of where `button` draws its icon: its contents once its style's borders and padding are
+        off (a sidebar button has a 10px bar down its left)."""
+        from PySide6.QtWidgets import QStyle, QStyleOptionButton
+        option = QStyleOptionButton()
+        button.initStyleOption(option)
+        return button.style().subElementRect(QStyle.SE_PushButtonContents, option, button).center()
 
     # --- What it shows -----------------------------------------------------------------------------------
 
