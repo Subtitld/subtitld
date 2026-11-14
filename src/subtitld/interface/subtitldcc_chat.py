@@ -141,8 +141,13 @@ class ChatCard(QWidget):
         self._well_shadow = _InsetShadow(self.well)
         self.well.installEventFilter(self)
         layout.addWidget(self.well)
-        self.attach = QCheckBox()
-        layout.addWidget(self.attach)
+        # Pointing the message at the selected subtitle and the playhead: a checkable icon inside the field.
+        from PySide6.QtGui import QAction
+        self.attach = QAction(self)
+        self.attach.setCheckable(True)
+        self.attach.toggled.connect(self._show_attach)
+        self.field.addAction(self.attach, QLineEdit.TrailingPosition)
+        self._show_attach(False)
         # Keeping the chat in the project file: an icon in the well's top-right corner (placed in eventFilter).
         from PySide6.QtCore import QSize
         self.keep = QPushButton(self.well)
@@ -153,6 +158,10 @@ class ChatCard(QWidget):
         self.keep.setFixedSize(26, 24)
         self.keep.toggled.connect(collab_service.set_chat_saved)
         self.keep.toggled.connect(self._show_keep)
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        self.keep.setGraphicsEffect(QGraphicsOpacityEffect(self.keep))
+        self.keep.graphicsEffect().setOpacity(.5)        # half there until the pointer is on it
+        self.keep.installEventFilter(self)
         self._show_keep(False)
 
         # Voice: push-to-talk. The live bar's call tab joins, talks and locks (subtitldcc_live.LiveBar); these
@@ -199,7 +208,7 @@ class ChatCard(QWidget):
         self.field.setPlaceholderText(_('collab.chat_placeholder'))
         self.cancel_button.setText(_('collab.chat_cancel'))
         self.attach.setText(_('collab.chat_attach'))
-        self.attach.setToolTip(_('collab.chat_attach_tip'))
+        self.attach.setToolTip(f"{_('collab.chat_attach')}\n{_('collab.chat_attach_tip')}")
         self.keep.setToolTip(f"{_('collab.chat_keep')}\n{_('collab.chat_keep_tip')}")
         self.keep.setAccessibleName(_('collab.chat_keep'))
         self.voice_title.setText(_('collab.voice_title'))
@@ -210,11 +219,17 @@ class ChatCard(QWidget):
         self.key_edit.setKeySequence(QKeySequence(ptt_key()))
         self.refresh()
 
+    def _show_attach(self, on):
+        from PySide6.QtGui import QIcon
+        self.attach.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_point_on.svg' if on else 'chat_point.svg'))))
+
     def _show_keep(self, kept):
         from PySide6.QtGui import QIcon
         self.keep.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_keep_on.svg' if kept else 'chat_keep.svg'))))
 
     def eventFilter(self, watched, event):
+        if watched is getattr(self, 'keep', None) and event.type() in (QEvent.Enter, QEvent.Leave):
+            self.keep.graphicsEffect().setOpacity(1.0 if event.type() == QEvent.Enter else .5)
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
             self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
             self._well_shadow.raise_()
