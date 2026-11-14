@@ -88,6 +88,9 @@ class _ChatField(QLineEdit):
         return super().event(event)
 
 
+BUTTONS = 34                                            # a bubble's Edit and Delete, less its own right padding
+
+
 class _Bubble(QWidget):
     """A chat message's bubble; its own buttons (Edit, Delete) flush in its bottom-right corner, shown while the
     pointer is on it."""
@@ -95,6 +98,7 @@ class _Bubble(QWidget):
     def __init__(self):
         super().__init__()
         self.buttons = []
+        self.foot = None                                 # the line of its time: moves left of the buttons
 
     def add_button(self, icon, name, action):
         from PySide6.QtCore import QSize
@@ -125,11 +129,15 @@ class _Bubble(QWidget):
         super().enterEvent(event)
         for button in self.buttons:
             button.setVisible(True)
+        if self.buttons and self.foot is not None:
+            self.foot.setContentsMargins(0, 0, BUTTONS, 0)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         for button in self.buttons:
             button.setVisible(False)
+        if self.foot is not None:
+            self.foot.setContentsMargins(0, 0, 0, 0)
 
 
 class ChatCard(QWidget):
@@ -345,8 +353,6 @@ class ChatCard(QWidget):
 
         self._render_voice()
 
-        bar = self.scroll.verticalScrollBar()
-        at_end = bar.value() >= bar.maximum() - 4
         _clear(self.messages_box)
         if not messages:
             empty = _text()
@@ -359,8 +365,13 @@ class ChatCard(QWidget):
             self.messages_box.addWidget(self._message(message, me, first=author != previous))
             previous = author
         self.messages_box.addStretch()
-        if at_end:
-            QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+        self._to_bottom()
+
+    def _to_bottom(self):
+        """The latest message in view, always: once the rows are laid out (their heights come a pass later)."""
+        bar = self.scroll.verticalScrollBar()
+        for delay in (0, 60):
+            QTimer.singleShot(delay, lambda: bar.setValue(bar.maximum()))
 
     BUBBLE = 0.78                                       # at most this much of the chat's width
 
@@ -381,21 +392,31 @@ class ChatCard(QWidget):
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
         head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
-        # the foot's words on the right (its own's Edit and Delete take that corner while hovered)
-        meta = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
+        # the foot's words on the right, in a line of their own: its own's Edit and Delete take that corner
+        # while hovered, and the words then move to their left (_Bubble)
+        meta_html = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
         label = _text('chat_bubble_text')
-        label.setTextFormat(Qt.RichText)
-        label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        label.setText(head + f'<div>{body}</div>' + meta)
-        label.linkActivated.connect(self._link)
-        # as wide as its words, up to BUBBLE of the chat: measured, so the bubble is as tall as they need
+        meta = _text('chat_bubble_text')
+        for text_label, text in ((label, head + f'<div>{body}</div>'), (meta, meta_html)):
+            text_label.setTextFormat(Qt.RichText)
+            text_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            text_label.setText(text)
+            text_label.linkActivated.connect(self._link)
+        meta.setWordWrap(False)
+        # as wide as its words (or its foot, with room for the buttons), up to BUBBLE of the chat: measured, so
+        # the bubble is as tall as they need
         from PySide6.QtGui import QTextDocument
-        label.ensurePolished()
-        document = QTextDocument()
-        document.setDefaultFont(label.font())
-        document.setHtml(label.text())
+        widths = []
+        for text_label, extra in ((label, 0), (meta, BUTTONS if editable else 0)):
+            text_label.ensurePolished()
+            document = QTextDocument()
+            document.setDefaultFont(text_label.font())
+            document.setHtml(text_label.text())
+            widths.append(int(document.idealWidth()) + 4 + extra)
         widest = max(140, int(self.scroll.viewport().width() * self.BUBBLE)) - 20
-        label.setFixedWidth(min(int(document.idealWidth()) + 4, widest))
+        width = min(max(widths), widest)
+        label.setFixedWidth(width)
+        meta.setFixedWidth(width)
 
         bubble = _Bubble()
         if editable:
@@ -404,9 +425,12 @@ class ChatCard(QWidget):
         bubble.setObjectName('chat_bubble')
         bubble.setProperty('mine', mine)
         bubble.setAttribute(Qt.WA_StyledBackground, True)
+        bubble.foot = meta
         inside = QVBoxLayout(bubble)
         inside.setContentsMargins(10, 6, 10, 5)
+        inside.setSpacing(0)
         inside.addWidget(label)
+        inside.addWidget(meta)
         row = QWidget()
         row.setProperty('class', 'transparent_panel')
         line = QHBoxLayout(row)

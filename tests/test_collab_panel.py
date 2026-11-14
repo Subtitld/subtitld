@@ -328,7 +328,7 @@ labels = lambda: [w.text() for w in chat.findChildren(QLabel)]  # noqa: E731
 bubbles = lambda: [(' '.join(l.text() for l in w.findChildren(QLabel)), [x.accessibleName() for x in getattr(w, 'buttons', [])])  # noqa: E731
                    for w in chat.findChildren(QWidget, 'chat_bubble') if not w.isHidden()]
 check('their message, pointing at the line and the moment',
-      wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t in labels())), True)
+      wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t, _b in bubbles())), True)
 check('unread until read', collab_service.chat_unread() in (0, 1), True)
 session.SUBTITLE['selected'] = segments[0]
 chat.attach.setChecked(True)
@@ -349,7 +349,7 @@ chat.send()
 edit = [c[1] for c in calls if c[0] == 'chat'][-1]
 check('an edit, of that message', (edit['action'], edit['reply_to'], edit['text']), ('edit', sent[-1]['id'], 'Splitting it in two'))
 engine_says('chat', stamped(edit, 'ana', 3000))
-check('shown edited', wait(lambda: any('Splitting it in two' in t and 'edited' in t for t in labels())), True)
+check('shown edited', wait(lambda: any('Splitting it in two' in t and 'edited' in t for t, _b in bubbles())), True)
 forged = stamped(collab_chat.edit(theirs['id'], 'joao never said this'), 'ana', 4000)
 engine_says('chat', forged)
 check("someone else's message can't be edited", any('joao never said this' in t for t in labels()), False)
