@@ -59,24 +59,6 @@ def _timecode(milliseconds):
     return f'{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
 
 
-class _InsetShadow(QWidget):
-    """The shadow inside a well's top edge, over what it holds (the pointer goes through)."""
-    HEIGHT = 8
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-
-    def paintEvent(self, event):
-        from PySide6.QtGui import QColor, QLinearGradient, QPainter
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        shade = QLinearGradient(0, 0, 0, self.height())
-        shade.setColorAt(0, QColor(0, 0, 0, 140))
-        shade.setColorAt(1, QColor(0, 0, 0, 0))
-        painter.fillRect(self.rect(), shade)
-
-
 class _ChatField(QLineEdit):
     """The message field: Enter sends (returnPressed), before the editor's own Enter shortcut (add a subtitle)
     can take it."""
@@ -161,8 +143,8 @@ class ChatCard(QWidget):
         self.note.setVisible(False)
         layout.addWidget(self.note)
 
-        # The messages in a sunken well (a shadow inside its top edge); under it, on the bar's ground, edge to
-        # edge, the field and Send.
+        # The messages in a well (clear at the top, darkening to its foot); under it, on the bar's ground, edge
+        # to edge, the field and Send.
         self.well = QWidget()
         self.well.setObjectName('chat_well')
         self.well.setAttribute(Qt.WA_StyledBackground, True)
@@ -199,7 +181,6 @@ class ChatCard(QWidget):
         foot.addWidget(self.field, 1)
         foot.addWidget(self.cancel_button)
         foot.addWidget(self.send_button)
-        self._well_shadow = _InsetShadow(self.well)
         self.well.installEventFilter(self)
         layout.addWidget(self.well)
         layout.addLayout(foot)                          # under the well, on the bar's own ground
@@ -307,8 +288,6 @@ class ChatCard(QWidget):
         if watched is getattr(self, 'well', None) and event.type() in (QEvent.Enter, QEvent.Leave):
             self.keep.setVisible(event.type() == QEvent.Enter)
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
-            self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
-            self._well_shadow.raise_()
             self.keep.move(self.well.width() - self.keep.width(), 0)   # in the well's top-right corner
             self.keep.raise_()
         return super().eventFilter(watched, event)
