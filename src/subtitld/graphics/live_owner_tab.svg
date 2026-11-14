@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The owner's tab in the "Shared with" panel (subtitldcc_live.LiveCard): hanging from the panel's top-left
-     corner, its right edge a 75° slant with a 6px curve at the foot, raised, on its contact line. Right slice 13
-     holds the slant. -->
+<!-- The owner's tab in the "Shared with" panel's header (subtitldcc_live.LiveCard): hanging from its top-left
+     corner, flat, its right edge a 75° slant with a 6px curve at the foot. Right slice 13 holds the slant. -->
 <svg width="40" height="26" version="1.1" viewBox="0 0 40 26" xmlns="http://www.w3.org/2000/svg">
- <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="25" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4a6376"/><stop offset="1" stop-color="#324350"/></linearGradient></defs>
- <path d="M40 0L34.49 20.55Q33.3 25 28.7 25L0 25V0Z" transform="translate(0 1)" fill="#000" fill-opacity="0.45"/>
- <path d="M40 0L34.49 20.55Q33.3 25 28.7 25L0 25V0Z" fill="url(#g)"/>
+ <path d="M40 0L34.22 21.55Q33.03 26 28.43 26L0 26V0Z" fill="#4a6376"/>
 </svg>

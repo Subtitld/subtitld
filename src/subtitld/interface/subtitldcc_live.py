@@ -11,7 +11,7 @@ Questions are asked in place; calls to subtitld.cc run in the background (module
 import html
 import os
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
@@ -138,8 +138,8 @@ class _HoverRow(QWidget):
 
 
 class _MemberBadge(QWidget):
-    """Someone it is shared with: their initial in a circle and their @handle; for whoever manages it, a ×
-    removing them, shown while the pointer is on the badge (its room kept)."""
+    """Someone it is shared with: their initial in a circle and their @handle, as wide as that. For whoever
+    manages it, the circle turns into a × removing them while the pointer is on the badge."""
     AVATAR = 18
 
     def __init__(self, member, manage):
@@ -148,28 +148,26 @@ class _MemberBadge(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setToolTip(member.get('name') or '')
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(3, 3, 3 if manage else 8, 3)
+        layout.setContentsMargins(3, 3, 8, 3)
         layout.setSpacing(5)
-        avatar = QLabel()
-        avatar.setFixedSize(self.AVATAR, self.AVATAR)
-        avatar.setPixmap(self._avatar((member.get('name') or member['handle'])[:1].upper()))
-        layout.addWidget(avatar)
-        handle = QLabel(f"@{member['handle']}")
-        handle.setObjectName('live_member_handle')
-        layout.addWidget(handle)
-        self.remove = QPushButton('×')
+        corner = QWidget()                              # the circle, or in its place the ×
+        corner.setProperty('class', 'transparent_panel')
+        corner.setFixedSize(self.AVATAR, self.AVATAR)
+        self.avatar = QLabel(corner)
+        self.avatar.setFixedSize(self.AVATAR, self.AVATAR)
+        self.avatar.setPixmap(self._avatar((member.get('name') or member['handle'])[:1].upper()))
+        self.remove = QPushButton('×', corner)
         self.remove.setObjectName('live_member_remove')
-        self.remove.setFixedSize(18, 18)
+        self.remove.setFixedSize(self.AVATAR, self.AVATAR)
         self.remove.setCursor(Qt.PointingHandCursor)
         self.remove.setToolTip(_('collab.remove'))
         self.remove.setAccessibleName(_('collab.remove'))
-        policy = self.remove.sizePolicy()
-        policy.setRetainSizeWhenHidden(True)
-        self.remove.setSizePolicy(policy)
         self.remove.setVisible(False)
+        layout.addWidget(corner)
+        handle = QLabel(f"@{member['handle']}")
+        handle.setObjectName('live_member_handle')
+        layout.addWidget(handle)
         self._manage = manage
-        if manage:
-            layout.addWidget(self.remove)
 
     def _avatar(self, initial):
         from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
@@ -194,10 +192,12 @@ class _MemberBadge(QWidget):
     def enterEvent(self, event):
         super().enterEvent(event)
         self.remove.setVisible(self._manage)
+        self.avatar.setVisible(not self._manage)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.remove.setVisible(False)
+        self.avatar.setVisible(True)
 
 
 class _SectionCard(QWidget):
@@ -245,7 +245,13 @@ class _SectionCard(QWidget):
         self.body.setWidget(inner)
         self.body.setVisible(False)
         layout.addWidget(self.body)
+        self.body.viewport().installEventFilter(self)   # a new width: rows that wrap (badges) measured again
         self.on_open = None                              # called with True when it opens
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Resize and event.size().width() != event.oldSize().width():
+            self.fit()
+        return super().eventFilter(watched, event)
 
     def set_title(self, text):
         self.title.setText(text.upper())
@@ -345,9 +351,10 @@ class LiveCard(QWidget):
         self.members_card.header.setChecked(True)          # always open
         head = QWidget()
         head.setObjectName('live_members_head')
+        head.setAttribute(Qt.WA_StyledBackground, True)
         head.setFixedHeight(26)
         head_line = QHBoxLayout(head)
-        head_line.setContentsMargins(0, 0, 6, 0)
+        head_line.setContentsMargins(0, 0, 0, 0)        # the tab and the field reach its edges
         head_line.setSpacing(8)
         self.owner_tab = QLabel()
         self.owner_tab.setObjectName('live_owner_tab')
@@ -358,7 +365,7 @@ class LiveCard(QWidget):
         head_line.addWidget(self.members_title)
         self.member_field = QLineEdit()
         self.member_field.setObjectName('live_member_field')
-        self.member_field.setFixedHeight(20)
+        self.member_field.setFixedHeight(26)
         self.member_field.returnPressed.connect(self.add_member)
         head_line.addWidget(self.member_field, 1)
         self.head_stretch = QWidget()                      # the field's room, for whoever cannot add people
@@ -372,6 +379,7 @@ class LiveCard(QWidget):
         badges.setProperty('class', 'transparent_panel')
         self.members_box = _FlowLayout(badges, spacing=4)
         self.members_card.box.addWidget(badges)
+        self.members_card.box.setContentsMargins(6, 6, 6, 6)
         # (the live bar shows it, in a pop-up at its foot's left corner: LiveBar.show_people)
         # Media: the project's files, sent between collaborators (modules/collab_transfer.py): a card that
         # opens on whether this computer shares its own, then one line a file (its name, size and where it is).

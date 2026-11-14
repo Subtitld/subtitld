@@ -4428,11 +4428,16 @@ QWidget#live_people_panel QPushButton#live_section_toggle {
     background: transparent;
 }
 
-/* Its header: the owner on a tab hanging from the top-left corner, the title, the field adding someone. */
+/* Its header, a shade darker: the owner on a tab hanging from the top-left corner, the title, the field
+   adding someone, edge to edge. */
+QWidget#live_members_head {
+    background: rgba(0, 0, 0, 0.22);
+}
+
 QLabel#live_owner_tab {
     border-image: url(graphics:live_owner_tab.svg) 0 13 0 0 stretch stretch;
     border-width: 0 13px 0 0;
-    padding: 0 6px 1px 10px;
+    padding: 0 6px 0 10px;
     font-family: 'Montserrat';
     font-size: 11px;
     font-weight: 600;
@@ -4442,7 +4447,7 @@ QLabel#live_owner_tab {
 QLineEdit#live_member_field {
     background: rgba(0, 0, 0, 0.22);
     border: 0;
-    border-radius: 3px;
+    border-radius: 0;
     padding: 0 6px;
     font-size: 11px;
     color: #e3edf5;
@@ -4460,18 +4465,18 @@ QLabel#live_member_handle {
     background: transparent;
 }
 
+/* In the circle's place, while the pointer is on the badge. */
 QPushButton#live_member_remove {
-    background: transparent;
+    background: #4a6376;
     border: 0;
-    border-radius: 3px;
-    padding: 0;
+    border-radius: 9px;
+    padding: 0 0 1px 0;
     font-size: 13px;
-    color: #8aa0b2;
+    color: #e3edf5;
 }
 
 QPushButton#live_member_remove:hover {
-    background: rgba(0, 0, 0, 0.25);
-    color: #ff8f8f;
+    background: #b5454b;
 }
 
 /* Who it is shared with: in the bar's bottom-left corner, square but for its top-right corner. */
