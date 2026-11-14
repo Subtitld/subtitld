@@ -1556,7 +1556,8 @@ class AddonsPanel(QWidget):
         self._search = QLineEdit()
         self._search.setObjectName('addons_search')
         self._search.setClearButtonEnabled(True)
-        self._search.addAction(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')), QLineEdit.LeadingPosition)
+        self._search_icon = self._search.addAction(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')),
+                                                   QLineEdit.LeadingPosition)
         self._search.textChanged.connect(self._on_search_changed)
         search_row.addWidget(self._search, 1, Qt.AlignTop)
 
@@ -1634,8 +1635,8 @@ class AddonsPanel(QWidget):
         state_row.addWidget(self.install_from_file_button)
         state_row.addWidget(self.refresh_button)
 
-        # --- The chosen filters, each a tag that clears it: inside the search field, after its icon; the
-        # field's text starts after them (_place_tags)
+        # --- The chosen filters, each a tag that clears it: inside the search field, at its left; the
+        # field's icon and text start after them (_place_tags)
         self._tags_row = QWidget(self._search)
         tags_row = QHBoxLayout(self._tags_row)
         tags_row.setContentsMargins(0, 0, 0, 0)
@@ -1643,6 +1644,13 @@ class AddonsPanel(QWidget):
         self._tags = QHBoxLayout()
         self._tags.setSpacing(4)
         tags_row.addLayout(self._tags)
+        # with tags in the field, its magnifier comes after them (the field's own icon stays at its edge)
+        tags_row.addSpacing(4)
+        icon = QLabel()
+        icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')).pixmap(16, 16))
+        icon.setStyleSheet('background: transparent;')
+        icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        tags_row.addWidget(icon)
         # What this computer has: not shown on the panel, but the Hardware field's tooltip
         self._hardware_info = QLabel('')
         self._hardware_info.setVisible(False)
@@ -2002,20 +2010,23 @@ class AddonsPanel(QWidget):
             tag.show()                                  # now, so the row's size counts it
         self._place_tags()
 
-    TAGS_LEFT = 30                                      # where the search field's text starts, after its icon
+    TAGS_LEFT = 4                                       # from the search field's left edge
 
     def _place_tags(self):
-        """The chosen filters' tags sit in the search field, after its icon,
-        and its text starts after them."""
+        """The chosen filters' tags sit at the search field's left, the
+        magnifier after them, and the field's text after that."""
         if not self._tags_row.isVisibleTo(self._search):
+            if self._search_icon not in self._search.actions():
+                self._search.addAction(self._search_icon, QLineEdit.LeadingPosition)
             self._search.setTextMargins(0, 0, 0, 0)
             return
+        self._search.removeAction(self._search_icon)
         self._tags_row.adjustSize()
         size = self._tags_row.sizeHint()
         self._tags_row.resize(size)
         self._tags_row.move(self.TAGS_LEFT, (self._search.height() - size.height()) // 2)
         self._tags_row.raise_()
-        self._search.setTextMargins(size.width() + 6, 0, 0, 0)
+        self._search.setTextMargins(self.TAGS_LEFT + size.width() + 2, 0, 0, 0)
 
     def _empty_state_text(self) -> str:
         """Pick the right placeholder copy. Loading state takes priority,
