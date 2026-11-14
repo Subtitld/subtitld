@@ -821,7 +821,7 @@ QLabel[class='addon_card_meta'] {
 QPushButton[class='addon_card_icon'] {
     background: transparent;
     border: 0;
-    border-radius: 0;
+    border-radius: 3px;
     padding: 0;
 }
 

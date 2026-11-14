@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QPoint, QPointF, QRectF, QSize, QSizeF
-from PySide6.QtGui import QIcon, QColor, QPainter, QPainterPath, QLinearGradient
+from PySide6.QtGui import QIcon, QColor, QCursor, QPainter, QPainterPath, QLinearGradient
 from PySide6.QtWidgets import (
     QAbstractButton,
     QButtonGroup,
@@ -706,18 +706,24 @@ class _AddonCard(QFrame):
         tags.addStretch()
         footer.layout().addLayout(tags, 1)              # the tags give up width before the buttons do
         removable = row.is_installed and not row.is_builtin
+        # the trash and the folder show only while the pointer is over the card
+        self._hover_buttons = []
         if removable:
-            footer.layout().addWidget(self._icon_button(
-                'addon_card_remove.svg', _('addons_dialog.actions.remove'), self.remove_clicked))
+            trash = self._icon_button('addon_card_remove.svg', _('addons_dialog.actions.remove'), self.remove_clicked)
+            self._hover_buttons.append(trash)
+            footer.layout().addWidget(trash, 0, Qt.AlignVCenter)
         if row.is_installed and row.has_update and not row.is_builtin:
             update = self._icon_button('addon_card_update.svg',
                                        f"{_('addons_dialog.actions.update')} ({row.latest_version})",
                                        self.update_clicked)
             update.setEnabled(not any_install_in_progress)
-            footer.layout().addWidget(update)
+            footer.layout().addWidget(update, 0, Qt.AlignVCenter)
         if removable:
-            footer.layout().addWidget(self._icon_button(
-                'addon_card_folder.svg', _('addons_dialog.actions.reveal'), self.reveal_clicked))
+            folder = self._icon_button('addon_card_folder.svg', _('addons_dialog.actions.reveal'), self.reveal_clicked)
+            self._hover_buttons.append(folder)
+            footer.layout().addWidget(folder, 0, Qt.AlignVCenter)
+        for button in self._hover_buttons:
+            button.setVisible(False)
         tab = None
         if not row.is_installed and row.is_available and not row.is_builtin:
             tab = QPushButton(_('addons_dialog.actions.install'))
@@ -754,11 +760,24 @@ class _AddonCard(QFrame):
         button.setProperty('class', 'addon_card_icon')
         button.setIcon(_graphic(icon))
         button.setIconSize(QSize(16, 16))
-        button.setFixedSize(28, 30)
+        button.setFixedSize(26, 26)                     # a control's height, its 3px corners showing on hover
         button.setToolTip(text)
         button.setAccessibleName(text)
         button.clicked.connect(lambda: signal.emit(self.row))
         return button
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        for button in self._hover_buttons:
+            button.setVisible(True)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        # a press can leave the pointer on a child (a menu, a tooltip): hide only once it is off the card
+        if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            return
+        for button in self._hover_buttons:
+            button.setVisible(False)
 
     def _label_path(self) -> QPainterPath:
         """The task label: from the card's left edge to a 75° slant, square at
