@@ -3076,6 +3076,42 @@ QMenu#subtitle_formatting_menu::separator {
     color: #c8dbe9;
 }
 
+/* An audio export's dashboard: cards in the well's own faded tone. */
+#export_dialog_card {
+    background: rgba(0, 0, 0, 45);
+    border-radius: 3px;
+}
+
+#export_dialog_card_label {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: rgba(184, 206, 224, 110);
+}
+
+#export_dialog_card_value {
+    font-size: 12px;
+    color: #c8dbe9;
+}
+
+#export_dialog_card_big {
+    font-size: 20px;
+    font-weight: 600;
+    color: #e9eef2;
+}
+
+#export_dialog_card_list {
+    font-family: monospace;
+    font-size: 10px;
+    color: #c8dbe9;
+}
+
+#export_dialog_problems {
+    font-size: 11px;
+    color: #e9b44c;
+    padding: 2px 2px;
+}
+
 #export_dialog_pages QLabel {
     color: #b8cee0;
 }

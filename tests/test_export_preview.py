@@ -99,9 +99,9 @@ dialog.refresh_preview()
 file_io.save_file = real
 check('failed note', preview.toPlainText(), _('export_dialog.preview_failed'))
 
-print('the other categories show nothing')
+print('audio shows its dashboard')
 dialog._select_category(1, 'audio')
-check('audio: empty', preview.toPlainText(), '')
+check('audio: the cards, not the well', (dialog.preview_panel.dashboard.isHidden(), preview.isHidden()), (False, True))
 dialog._select_category(0, 'subtitles')
 check('back to subtitles: the file', preview.toPlainText().startswith('WEBVTT'), True)
 

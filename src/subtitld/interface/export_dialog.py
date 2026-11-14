@@ -17,6 +17,7 @@ from PySide6.QtGui import QTextCharFormat, QPixmap, QPainter, QPainterPath, QCol
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.modules import audio_report
 from subtitld.modules import bdn
 from subtitld.modules import burned_video
 from subtitld.modules import csv_export
@@ -702,6 +703,8 @@ def _select(labeled_combo, data):
 
 
 class _AudioPanel(QWidget):
+    changed = Signal()                                         # a choice the export is made with
+
     def __init__(self, parent=None, has_background=False, has_vocals=False, formats=None):
         super().__init__(parent)
         self._has_background = has_background
@@ -750,6 +753,9 @@ class _AudioPanel(QWidget):
         for btn in (self.mode_mixdown, self.mode_stems, self.mode_clips,
                     self.mode_background_only, self.mode_vocals_only):
             btn.toggled.connect(self._refresh_checkbox_state)
+            btn.toggled.connect(self.changed)
+        self.format_combo.combobox.currentIndexChanged.connect(self.changed)
+        self.include_background_checkbox.toggled.connect(self.changed)
 
         # A shared project's dub clips still on their way from collaborators (modules/collab_service.py).
         from subtitld.modules import collab_service
@@ -765,6 +771,11 @@ class _AudioPanel(QWidget):
     def _refresh_checkbox_state(self):
         is_passthrough = self.mode_background_only.isChecked() or self.mode_vocals_only.isChecked()
         self.include_background_checkbox.setDisabled(is_passthrough or not self._has_background)
+
+    def export_choices(self):
+        """(format, mode, whether the background is mixed in), as chosen."""
+        config = self.get_config()
+        return config['format'], config['audio_config']['mode'], config['audio_config']['include_background']
 
     def get_config(self):
         mode = 'mixdown'
@@ -1365,6 +1376,193 @@ class _VideoPanel(QWidget):
         }
 
 
+def _duration_text(seconds):
+    """`seconds` as "M:SS", or "H:MM:SS" from an hour on."""
+    total = int(round(max(0.0, float(seconds))))
+    hours, rest = divmod(total, 3600)
+    return f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}'
+
+
+def _size_text(size):
+    """`size` bytes as "≈ 54 MB", in the unit that reads best."""
+    for unit, scale in (('GB', 1e9), ('MB', 1e6), ('kB', 1e3)):
+        if size >= scale:
+            value = size / scale
+            return f'≈ {value:.1f} {unit}' if value < 10 else f'≈ {value:.0f} {unit}'
+    return f'{int(size)} B'
+
+
+class _LoudnessScale(QWidget):
+    """The loudness programs aim at, marked on a short scale, and where the
+    export's falls among them."""
+
+    LOW, HIGH = -36.0, -6.0                                    # the scale's ends, in LUFS
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.value = None
+        self.setFixedHeight(34)
+
+    def set_value(self, value):
+        self.value = value
+        self.update()
+
+    def _x(self, lufs):
+        span = self.width() - 12
+        return 6 + span * (min(self.HIGH, max(self.LOW, lufs)) - self.LOW) / (self.HIGH - self.LOW)
+
+    def paintEvent(self, _event):
+        from subtitld.modules import audio_report
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        line = QColor(184, 206, 224, 70)
+        painter.fillRect(QRectF(6, 15, self.width() - 12, 2), line)
+        font = painter.font()
+        font.setPixelSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        for number, (key, lufs) in enumerate(audio_report.TARGETS):
+            x = self._x(lufs)
+            painter.fillRect(QRectF(x - 0.5, 11, 1, 10), QColor(184, 206, 224, 140))
+            painter.setPen(QColor(184, 206, 224, 120))
+            # the labels alternate above and under the line, as ATSC and EBU sit 1 LU apart
+            top = 0 if number % 2 == 0 else 23
+            text = _(f'export_dialog.audio_target_{key}')
+            width = painter.fontMetrics().horizontalAdvance(text)
+            left = min(max(0, x - width / 2), self.width() - width)
+            painter.drawText(QRectF(left, top, width, 10), Qt.AlignCenter, text)
+        if self.value is not None:
+            x = self._x(self.value)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor('#e9eef2'))
+            painter.drawEllipse(QRectF(x - 4, 12, 8, 8))
+        painter.end()
+
+
+class _AudioDashboard(QWidget):
+    """An audio export's facts, its loudness and its problems, in cards."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(6)
+
+        row = QWidget()
+        row.setLayout(QHBoxLayout())
+        row.layout().setContentsMargins(0, 0, 0, 0)
+        row.layout().setSpacing(6)
+        self.length = self._card('audio_length', row.layout())
+        self.size = self._card('audio_size', row.layout())
+        self.layout().addWidget(row)
+        self.format = self._card('audio_format', self.layout())
+
+        loudness = self._frame(self.layout())
+        loudness.layout().addWidget(self._label('audio_loudness'))
+        self.loudness = QLabel()
+        self.loudness.setObjectName('export_dialog_card_big')
+        loudness.layout().addWidget(self.loudness)
+        self.scale = _LoudnessScale()
+        loudness.layout().addWidget(self.scale)
+        under = QWidget()
+        under.setLayout(QHBoxLayout())
+        under.layout().setContentsMargins(0, 0, 0, 0)
+        self.peak = QLabel()
+        self.peak.setObjectName('export_dialog_card_value')
+        self.range = QLabel()
+        self.range.setObjectName('export_dialog_card_value')
+        under.layout().addWidget(self.peak)
+        under.layout().addStretch()
+        under.layout().addWidget(self.range)
+        loudness.layout().addWidget(under)
+
+        self.files_card = self._frame(self.layout())
+        self.files_title = self._label('audio_files')
+        self.files_card.layout().addWidget(self.files_title)
+        self.files = QLabel()
+        self.files.setObjectName('export_dialog_card_list')
+        self.files.setWordWrap(True)
+        self.files_card.layout().addWidget(self.files)
+
+        self.problems = QLabel()
+        self.problems.setObjectName('export_dialog_problems')
+        self.problems.setWordWrap(True)
+        self.layout().addWidget(self.problems)
+        self.layout().addStretch()
+
+    @staticmethod
+    def _frame(layout):
+        frame = QWidget()
+        frame.setObjectName('export_dialog_card')
+        frame.setAttribute(Qt.WA_StyledBackground)
+        frame.setLayout(QVBoxLayout())
+        frame.layout().setContentsMargins(8, 6, 8, 7)
+        frame.layout().setSpacing(2)
+        layout.addWidget(frame)
+        return frame
+
+    @staticmethod
+    def _label(key):
+        label = QLabel(_(f'export_dialog.{key}'))
+        label.setObjectName('export_dialog_card_label')
+        return label
+
+    def _card(self, key, layout):
+        frame = self._frame(layout)
+        frame.layout().addWidget(self._label(key))
+        value = QLabel()
+        value.setObjectName('export_dialog_card_value')
+        frame.layout().addWidget(value)
+        return value
+
+    # The most file names listed; the rest counted.
+    LISTED = 6
+
+    def show_report(self, facts, problems, loudness):
+        """Fill the cards: `facts` and `problems` (audio_report's), and
+        `loudness`, its measure, or 'measuring', or None when there is none."""
+        from subtitld.modules import audio_report
+        self.length.setText(_duration_text(facts['length']))
+        self.size.setText(_size_text(facts['size']))
+        channels = _('export_dialog.audio_stereo') if facts['channels'] == 2 else str(facts['channels'])
+        self.format.setText(f"{facts['format']} · {facts['rate'] / 1000:g} kHz · {channels}")
+        files = facts['files']
+        self.files_card.setVisible(len(files) > 1)
+        self.files_title.setText(f"{_('export_dialog.audio_files')} · {len(files)}")
+        shown = files[:self.LISTED]
+        more = len(files) - len(shown)
+        self.files.setText('\n'.join(shown) + ('\n' + _('export_dialog.audio_more').format(count=more)
+                                               if more else ''))
+        lines = []
+        if loudness == 'measuring':
+            self.loudness.setText(_('export_dialog.audio_measuring'))
+            self.scale.set_value(None)
+            self.peak.setText('')
+            self.range.setText('')
+        elif loudness and loudness.get('integrated') is not None:
+            self.loudness.setText(f"{loudness['integrated']:.1f} LUFS")
+            self.scale.set_value(loudness['integrated'])
+            peak = loudness.get('peak')
+            self.peak.setText(f"{_('export_dialog.audio_true_peak')} {peak:.1f} dBTP".replace('-0.0', '0.0')
+                              if peak is not None else '')
+            spread = loudness.get('range')
+            self.range.setText(f"{_('export_dialog.audio_range')} {spread:.1f} LU" if spread is not None else '')
+            if peak is not None and peak > audio_report.PEAK_LIMIT:
+                lines.append(_('export_dialog.audio_problem_clipping').format(limit=f'{audio_report.PEAK_LIMIT:g}'))
+        else:
+            self.loudness.setText('—')
+            self.scale.set_value(None)
+            self.peak.setText('')
+            self.range.setText('')
+        if problems.get('no_speech'):
+            lines.append(_('export_dialog.audio_problem_no_speech').format(count=problems['no_speech'],
+                                                                           total=problems['subtitles']))
+        if problems.get('files_gone'):
+            lines.append(_('export_dialog.audio_problem_files_gone').format(count=problems['files_gone']))
+        self.problems.setText('\n'.join(f'⚠ {line}' for line in lines))
+        self.problems.setVisible(bool(lines))
+
+
 class _PreviewPanel(QWidget):
     """The export's preview, beside every page: the start of the file as it
     will be written, or a faded note where there is no text to show. For
@@ -1398,6 +1596,10 @@ class _PreviewPanel(QWidget):
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
         file_page.layout().addWidget(self.file, 1)
+        # an audio export's facts, loudness and problems, in cards
+        self.dashboard = _AudioDashboard()
+        self.dashboard.setVisible(False)
+        file_page.layout().addWidget(self.dashboard, 1)
         file_page.layout().addStretch()                        # where the well was, under a picture
         self.layout().addWidget(file_page, 0, 0)
 
@@ -1409,6 +1611,7 @@ class _PreviewPanel(QWidget):
         self.layout().addWidget(shadow, 0, 0)
 
     def show_text(self, text):
+        self.dashboard.setVisible(False)
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
@@ -1416,6 +1619,7 @@ class _PreviewPanel(QWidget):
 
     def show_note(self, note):
         """`note` in the well, faded: no file to show."""
+        self.dashboard.setVisible(False)
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
@@ -1431,10 +1635,19 @@ class _PreviewPanel(QWidget):
         self.file.textCursor().insertText(note, faded)
 
     def show_nothing(self):
+        self.dashboard.setVisible(False)
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
         self.file.clear()
+
+    def show_audio(self, facts, problems, loudness):
+        """An audio export's dashboard in place of the well."""
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(False)
+        self.dashboard.setVisible(True)
+        self.dashboard.show_report(facts, problems, loudness)
 
     RADIUS = 3                                                 # the well's corners
 
@@ -1443,6 +1656,7 @@ class _PreviewPanel(QWidget):
         (width, height) pixels, scaled to the panel's width; under it, the
         picture itself; and under that, in the well, `text`: the file the
         pictures go with, when there is one."""
+        self.dashboard.setVisible(False)
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * frame[1] / frame[0]))
@@ -1470,6 +1684,7 @@ class _PreviewPanel(QWidget):
     def show_still(self, image):
         """`image`, a frame of the video as the export writes it, scaled to
         the panel's width; its clear parts, if it has them, checkered."""
+        self.dashboard.setVisible(False)
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * image.height() / max(1, image.width())))
@@ -1519,8 +1734,14 @@ class ExportDialog(utils.SimpleDialog):
 
     CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents', 'project']
 
-    def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None):
+    def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None,
+                 audio_engine=None):
         super().__init__(parent, _('export_dialog.title'))
+        # The player's audio engine, which renders the mix an audio export
+        # writes: its loudness is measured from it.
+        self._audio_engine = audio_engine
+        self._loudness = {}                                    # measured, by the choices it was measured for
+        self._measuring = None
         self.setMinimumSize(900, 420)
         self.make_resizable()
 
@@ -1599,6 +1820,7 @@ class ExportDialog(utils.SimpleDialog):
         self.video_panel.changed.connect(self._preview_timer.start)
         self.documents_panel.changed.connect(self._preview_timer.start)
         self.project_panel.changed.connect(self._preview_timer.start)
+        self.audio_panel.changed.connect(self._preview_timer.start)
         # A video export's still: a few seconds written in the background, one at a time.
         self._still = None                                     # the request being drawn: (number, path)
         self._still_count = 0
@@ -1753,6 +1975,9 @@ class ExportDialog(utils.SimpleDialog):
         if self._current_category() == 'video' and session.SUBTITLE.get('segments'):
             self._preview_still()
             return
+        if self._current_category() == 'audio':
+            self._preview_audio()
+            return
         if self._current_category() == 'project':
             self._preview_project()
             return
@@ -1780,6 +2005,54 @@ class ExportDialog(utils.SimpleDialog):
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
         self.preview_panel.show_text(text)
+
+    def _audio_key(self, mode, include_background):
+        """What the loudness of an audio export depends on: the choices, and
+        each speech that plays and where."""
+        playing = []
+        for segment in session.SUBTITLE.get('segments') or []:
+            dub = audio_report._playing(segment.get('dubbing'))
+            if dub:
+                playing.append((float(dub.get('start', 0.0)), str(dub.get('path')), repr(dub.get('segments'))))
+        # The stems and the clips are measured played together, as the mixdown
+        # is; the clips never carry the background.
+        if mode in ('stems', 'clips'):
+            mode, include_background = 'mixdown', include_background and mode == 'stems'
+        return mode, bool(include_background), tuple(playing)
+
+    def _preview_audio(self):
+        """An audio export's dashboard: its facts and problems at once, its
+        loudness once measured in the background."""
+        from subtitld.modules import bounce
+        fmt, mode, include_background = self.audio_panel.export_choices()
+        segments = session.SUBTITLE.get('segments') or []
+        base = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
+                                                 or 'subtitle'))[0]
+        engine = self._audio_engine
+        facts = audio_report.facts(mode, fmt, include_background, segments, session.VIDEO,
+                                   background=bounce._background_audio_path(), vocals=bounce._vocals_audio_path(),
+                                   stem=base)
+        if engine is not None:
+            facts['rate'] = int(engine.samplerate)
+        problems = audio_report.problems(mode, segments)
+        key = self._audio_key(mode, include_background)
+        loudness = self._loudness.get(key)
+        if key not in self._loudness:
+            loudness = None
+            can_render = engine is not None or mode in ('background_only', 'vocals_only')
+            if can_render:
+                loudness = 'measuring'
+                if self._measuring is None:
+                    self._measuring = key
+                    audio_report.measure_async(key[0], key[1], engine,
+                                               lambda result, key=key: self._measured(key, result))
+        self.preview_panel.show_audio(facts, problems, loudness)
+
+    def _measured(self, key, result):
+        self._measuring = None
+        self._loudness[key] = result
+        if self._current_category() == 'audio':
+            self.refresh_preview()
 
     def _preview_project(self):
         """What the project's timeline holds: its tracks, each with how many

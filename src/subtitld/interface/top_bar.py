@@ -453,7 +453,8 @@ def toppanel_export_button_clicked(self):
     dialog = ExportDialog(parent=self,
                           has_background=has_background,
                           has_vocals=has_vocals,
-                          initial_category=initial_category)
+                          initial_category=initial_category,
+                          audio_engine=getattr(self.preview_panel_player, '_audio_device', None))
     config = dialog.exec_and_get_values()
     if not config:
         return
