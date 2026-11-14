@@ -537,7 +537,7 @@ class _AddonCard(QFrame):
 
     RADIUS = 4
     BAND = 26                          # the band's height
-    LABEL = 29                         # the task label's: it hangs 3px below the band
+    LABEL = 23                         # the task label's: it stops 3px short of the band's foot
     COLOURS = {                        # card, band
         'installed': ('#33475a', '#3f566a'),
         'available': ('#2c3d4b', '#36495a'),
@@ -591,6 +591,8 @@ class _AddonCard(QFrame):
             self._task_text.setText(_(key))
         elif row.tasks:
             self._task_text.setText(_humanize_task(row.tasks[0]))
+        for piece in (self._task_icon, self._task_text):
+            piece.setContentsMargins(0, 0, 0, self.BAND - self.LABEL)    # centred on the label, not the band
         band.layout().addWidget(self._task_icon)
         band.layout().addSpacing(6)
         band.layout().addWidget(self._task_text)
