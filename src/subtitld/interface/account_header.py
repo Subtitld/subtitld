@@ -26,13 +26,13 @@ class AccountHeader(QWidget):
         beside the mark, on the tab."""
         super().__init__()
         self.setObjectName('account_header')
-        self.setMinimumHeight(62)                       # one height, connected or not
+        self.setMinimumHeight(54)                       # one height, connected or not
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 0, 0, 0)
         layout.setSpacing(8)
 
         who = QVBoxLayout()
-        who.setContentsMargins(0, 12, 0, 12)
+        who.setContentsMargins(0, 6, 0, 6)
         who.setSpacing(4)
         who.addStretch()                                # centred, with or without a name
         self.name = _label('account_header_name')
@@ -94,7 +94,7 @@ class AccountHeader(QWidget):
         button.setObjectName('account_header_button')
         button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
         button.setIconSize(QSize(16, 16))
-        button.setFixedSize(26, 26)
+        button.setFixedSize(26, 22)
         button.setCursor(Qt.PointingHandCursor)
         button.setVisible(False)
         self._buttons.addWidget(button)
