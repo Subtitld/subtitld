@@ -706,11 +706,11 @@ class LiveBar(QWidget):
         self.setObjectName('live_bar')
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)   # as tall as it needs
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(4)
 
         # The drawer: the live co-editing card (sharing, who it is shared with, the media), opened from the
-        # bar's toggle, above the bar's lines.
+        # toggle at the status line's end, under that line (which stays on top).
         from PySide6.QtWidgets import QScrollArea
         self.drawer = QScrollArea()
         self.drawer.setObjectName('live_bar_drawer')
@@ -720,11 +720,10 @@ class LiveBar(QWidget):
         self.drawer.setMaximumHeight(self.DRAWER_HEIGHT)
         self.drawer.setWidget(panel.live_card)
         self.drawer.setVisible(False)
-        layout.addWidget(self.drawer)
-        layout.addSpacing(4)
+        panel.live_card.title.setVisible(False)         # the bar says what it is
 
         status = QHBoxLayout()
-        status.setContentsMargins(12, 0, 10, 0)
+        status.setContentsMargins(12, 0, 6, 0)
         status.setSpacing(6)
         self.dot = QLabel()
         self.dot.setObjectName('live_bar_dot')
@@ -739,7 +738,13 @@ class LiveBar(QWidget):
         status.addWidget(self.project, 1)
         self.faces = _Faces()
         status.addWidget(self.faces)
+        self.toggle = self._icon('live_bar_menu.svg')
+        self.toggle.setObjectName('live_bar_toggle')
+        self.toggle.setCheckable(True)
+        self.toggle.toggled.connect(self.open_drawer)
+        status.addWidget(self.toggle, 0, Qt.AlignVCenter)
         layout.addLayout(status)
+        layout.addWidget(self.drawer)
 
         controls = QHBoxLayout()
         controls.setContentsMargins(8, 0, 0, 0)
@@ -752,11 +757,7 @@ class LiveBar(QWidget):
         self.chat = self._icon('live_bar_chat.svg')
         self.chat.setObjectName('live_bar_chat')
         self.chat.clicked.connect(self.show_chat)
-        self.toggle = self._icon('live_bar_open.svg')
-        self.toggle.setObjectName('live_bar_toggle')
-        self.toggle.setCheckable(True)
-        self.toggle.toggled.connect(self.open_drawer)
-        for button in (self.toggle, self.mic, self.call, self.chat):
+        for button in (self.mic, self.call, self.chat):
             controls.addWidget(button, 0, Qt.AlignVCenter)
         controls.addStretch()
         self.leave = self._icon('live_bar_leave.svg')
@@ -880,9 +881,7 @@ class LiveBar(QWidget):
         self.panel.chat_card.field.setFocus()
 
     def open_drawer(self, opened):
-        from PySide6.QtGui import QIcon
         self.drawer.setVisible(opened)
-        self.toggle.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_close.svg' if opened else 'live_bar_open.svg'))))
         if opened:
             self.panel.live_card.refresh()
 
