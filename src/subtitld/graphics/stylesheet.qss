@@ -4441,10 +4441,13 @@ QWidget#chat_well {
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);   /* lit where it meets the panel: set in */
 }
 
+/* In the well's top-right corner: round only at its bottom-left (its top-right follows the well's own 4px). */
 QPushButton#chat_keep {
     background: transparent;
     border: 0;
-    border-radius: 3px;
+    border-radius: 0;
+    border-bottom-left-radius: 3px;
+    border-top-right-radius: 4px;
     padding: 0;
 }
 

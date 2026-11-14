@@ -162,7 +162,7 @@ class ChatCard(QWidget):
         self.keep.setCheckable(True)
         self.keep.setCursor(Qt.PointingHandCursor)
         self.keep.setIconSize(QSize(14, 14))
-        self.keep.setFixedSize(26, 24)
+        self.keep.setFixedSize(30, 26)
         self.keep.toggled.connect(collab_service.set_chat_saved)
         self.keep.toggled.connect(self._show_keep)
         from PySide6.QtWidgets import QGraphicsOpacityEffect
@@ -241,7 +241,7 @@ class ChatCard(QWidget):
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
             self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
             self._well_shadow.raise_()
-            self.keep.move(self.well.width() - self.keep.width() - 4, 4)
+            self.keep.move(self.well.width() - self.keep.width(), 0)   # in the well's top-right corner
             self.keep.raise_()
         return super().eventFilter(watched, event)
 
