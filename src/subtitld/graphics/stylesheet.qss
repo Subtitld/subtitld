@@ -4379,6 +4379,27 @@ QPushButton#live_bar_call[call="talking"] {
     border-image: url(graphics:live_bar_tab_talking.svg) 5 5 5 13 stretch stretch;
 }
 
+/* The chat: the call tab's slanted shape, bare until hovered or checked (then its blue, very faint). */
+QPushButton#live_bar_chat {
+    border-image: none;
+    border-width: 0 9px 0 13px;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    color: #e3edf5;
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+}
+
+QPushButton#live_bar_chat:hover {
+    border-image: url(graphics:live_bar_chat_tab_hover.svg) 0 9 0 13 stretch stretch;
+}
+
+QPushButton#live_bar_chat:checked {
+    border-image: url(graphics:live_bar_chat_tab_on.svg) 0 9 0 13 stretch stretch;
+}
+
 /* Hang up: red where it lights. */
 QPushButton#live_bar_hang_up:hover {
     background: rgba(197, 82, 82, 0.22);

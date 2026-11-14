@@ -848,8 +848,12 @@ class LiveBar(QWidget):
         content = QVBoxLayout(self.drawer_content)
         content.setContentsMargins(0, 0, 0, 0)
         content.setSpacing(0)
-        content.addWidget(panel.live_card)
-        content.addWidget(panel.chat_card)
+        # each in a holder the bar shows or hides (the cards show or hide themselves by their own state):
+        # the live card with the toggle, the chat with the chat tab
+        self.live_holder = self._holder(panel.live_card)
+        self.chat_holder = self._holder(panel.chat_card)
+        content.addWidget(self.live_holder)
+        content.addWidget(self.chat_holder)
         self.drawer.setWidget(self.drawer_content)
         self.drawer.setVisible(False)
         self.drawer_content.installEventFilter(self)    # its content changes: the drawer follows (_fit_drawer)
@@ -895,11 +899,19 @@ class LiveBar(QWidget):
         self.hang_up.setObjectName('live_bar_hang_up')
         self.hang_up.clicked.connect(lambda: collab_service.voice_leave())
         controls.addWidget(self.hang_up, 0, Qt.AlignVCenter)
-        self.chat = self._icon('live_bar_chat.svg')
+        # The chat: a slanted tab like the call's, bare until checked (then the call tab's blue, very faint);
+        # checked, the chat shows in the drawer.
+        from PySide6.QtCore import QSize as _QSize
+        from PySide6.QtGui import QIcon as _QIcon
+        self.chat = QPushButton()
         self.chat.setObjectName('live_bar_chat')
-        self.chat.clicked.connect(self.show_chat)
-        controls.addWidget(self.chat, 0, Qt.AlignVCenter)
-        controls.addSpacing(4)
+        self.chat.setCheckable(True)
+        self.chat.setCursor(Qt.PointingHandCursor)
+        self.chat.setIcon(_QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'live_bar_chat.svg')))
+        self.chat.setIconSize(_QSize(16, 16))
+        self.chat.setFixedHeight(30)
+        self.chat.toggled.connect(self.open_chat)
+        controls.addWidget(self.chat, 0, Qt.AlignBottom)
         # The call's tab: out of the call, it joins it (light, like Share live); in it, green, it is the
         # microphone: held, talking (push to talk), unless the lock keeps it on the air.
         self.call = QPushButton()
@@ -1006,6 +1018,8 @@ class LiveBar(QWidget):
         self.lock.setVisible(shared and on)
         self.share.setVisible(not shared)
         self._arrange(shared)
+        if self.drawer.isVisible() != (self.toggle.isChecked() or (self.chat.isChecked() and shared)):
+            self._show_drawer()
         self.lock.blockSignals(True)
         self.lock.setChecked(on and voice['latched'])
         self.lock.blockSignals(False)
@@ -1022,7 +1036,7 @@ class LiveBar(QWidget):
             self.call.style().polish(self.call)
         unread = collab_service.chat_unread() if shared else 0
         self.chat.setText(str(unread) if unread else '')
-        self.chat.setFixedWidth(42 if unread else 30)
+        self.chat.setFixedWidth(54 if unread else 44)
         if on and not self._speaking.isActive():
             self._speaking.start()
         elif not on:
@@ -1057,7 +1071,8 @@ class LiveBar(QWidget):
             self.panel.chat_card.toggle_call()
 
     def show_chat(self):
-        self._show_in_drawer(self.panel.chat_card.field)
+        self.chat.setChecked(True)
+        self.drawer.ensureWidgetVisible(self.panel.chat_card.field)
         self.panel.chat_card.field.setFocus()
 
     def _arrange(self, shared):
@@ -1094,17 +1109,44 @@ class LiveBar(QWidget):
         if self.drawer.height() != height or self.drawer.minimumHeight() != height:
             self.drawer.setFixedHeight(height)
 
+    @staticmethod
+    def _holder(card):
+        holder = QWidget()
+        holder.setProperty('class', 'transparent_panel')
+        box = QVBoxLayout(holder)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(card)
+        holder.setVisible(False)
+        return holder
+
+    def _show_drawer(self):
+        """The drawer shows what its two switches ask for: the co-editing card (the toggle), the chat (the
+        chat tab); hidden when neither."""
+        live, chat = self.toggle.isChecked(), self.chat.isChecked() and self.chat.isVisible()
+        self.live_holder.setVisible(live)
+        self.chat_holder.setVisible(chat)
+        self.drawer.setVisible(live or chat)
+        if live or chat:
+            QTimer.singleShot(0, self._fit_drawer)
+
     def open_drawer(self, opened):
         from PySide6.QtGui import QIcon
-        self.drawer.setVisible(opened)
         self.toggle.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_menu_open.svg' if opened else 'live_bar_menu.svg'))))
+        self._show_drawer()
         self._arrange(collab_state.shared())
         if opened:
             self.panel.live_card.refresh()
-            QTimer.singleShot(0, self._fit_drawer)
+
+    def open_chat(self, opened):
+        self._show_drawer()
+        if opened:
+            collab_service.chat_mark_read()
+            self.panel.chat_card.refresh()
+            self.panel.chat_card.field.setFocus()
 
     def _show_in_drawer(self, widget):
-        self.toggle.setChecked(True)
+        in_chat = self.panel.chat_card.isAncestorOf(widget) or widget is self.panel.chat_card
+        (self.chat if in_chat else self.toggle).setChecked(True)
         self.drawer.ensureWidgetVisible(widget)
 
     def start_sharing(self):

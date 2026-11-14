@@ -406,6 +406,7 @@ else:
     call.heard.clear()
     chat._voice_tick()
     check('then back up', host.preview_panel_player._audio_device.duck, 1.0)
+    host.subtitldcc_panel.live_bar.chat.setChecked(True)   # the chat shows in the live bar's drawer
     for i in range(7):
         connection.engine.peers[f'q{i}'] = {'user': {'handle': f'u{i}'}, 'state': {'voice': True}}
     engine_says('peers')
