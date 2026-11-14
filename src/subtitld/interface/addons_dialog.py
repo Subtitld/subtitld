@@ -1634,20 +1634,19 @@ class AddonsPanel(QWidget):
         state_row.addWidget(self.install_from_file_button)
         state_row.addWidget(self.refresh_button)
 
-        # --- The chosen filters, each a tag that clears it
-        self._tags_row = QWidget()
+        # --- The chosen filters, each a tag that clears it: inside the search field, after its icon; the
+        # field's text starts after them (_place_tags)
+        self._tags_row = QWidget(self._search)
         tags_row = QHBoxLayout(self._tags_row)
-        tags_row.setContentsMargins(10, 0, 10, 0)
-        tags_row.setSpacing(6)
+        tags_row.setContentsMargins(0, 0, 0, 0)
+        tags_row.setSpacing(4)
         self._tags = QHBoxLayout()
-        self._tags.setSpacing(6)
+        self._tags.setSpacing(4)
         tags_row.addLayout(self._tags)
-        tags_row.addStretch()
         # What this computer has: not shown on the panel, but the Hardware field's tooltip
         self._hardware_info = QLabel('')
         self._hardware_info.setVisible(False)
         self._tags_row.setVisible(False)                # shown while a filter is chosen
-        self._header.layout().addWidget(self._tags_row)
         self._header.layout().addWidget(self._state_row)
 
         # --- Scrollable card list + empty-state placeholder --------------
@@ -2000,6 +1999,23 @@ class AddonsPanel(QWidget):
             tag.setToolTip(_('addons_dialog.filter.clear'))
             tag.clicked.connect(clear)
             self._tags.addWidget(tag)
+            tag.show()                                  # now, so the row's size counts it
+        self._place_tags()
+
+    TAGS_LEFT = 30                                      # where the search field's text starts, after its icon
+
+    def _place_tags(self):
+        """The chosen filters' tags sit in the search field, after its icon,
+        and its text starts after them."""
+        if not self._tags_row.isVisibleTo(self._search):
+            self._search.setTextMargins(0, 0, 0, 0)
+            return
+        self._tags_row.adjustSize()
+        size = self._tags_row.sizeHint()
+        self._tags_row.resize(size)
+        self._tags_row.move(self.TAGS_LEFT, (self._search.height() - size.height()) // 2)
+        self._tags_row.raise_()
+        self._search.setTextMargins(size.width() + 6, 0, 0, 0)
 
     def _empty_state_text(self) -> str:
         """Pick the right placeholder copy. Loading state takes priority,
