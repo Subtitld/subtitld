@@ -841,6 +841,7 @@ class _Faces(QWidget):
         super().__init__()
         self._people = []                               # [(initial, speaking)]
         self.on_click = None
+        self.setVisible(False)                          # nobody yet: it takes no room until someone is there
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(self.SIZE)
 
