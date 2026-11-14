@@ -371,13 +371,15 @@ class LiveCard(QWidget):
         self.member_field.setFixedHeight(26)
         self.member_field.returnPressed.connect(self.add_member)
         head_line.addWidget(self.member_field, 1, Qt.AlignTop)
-        # Add: once something is typed, a light slanted tab at the field's end, like the chat's Send
-        self.add_button = _button(primary=True)
+        # Add: once something is typed, a small button inside the field, at its right end (_place_add)
+        self.add_button = QPushButton(self.member_field)
         self.add_button.setObjectName('live_member_add')
+        self.add_button.setCursor(Qt.PointingHandCursor)
+        self.add_button.setFixedHeight(20)
         self.add_button.clicked.connect(self.add_member)
         self.add_button.setVisible(False)
-        head_line.addWidget(self.add_button, 0, Qt.AlignTop)
         self.member_field.textChanged.connect(self._show_add)
+        self.member_field.installEventFilter(self)
         self.head_stretch = QWidget()                      # the field's room, for whoever cannot add people
         self.head_stretch.setProperty('class', 'transparent_panel')
         head_line.addWidget(self.head_stretch, 1)
@@ -804,7 +806,21 @@ class LiveCard(QWidget):
         collab_service.report_published(share_id, version, reported, self._call_failed)
 
     def _show_add(self):
-        self.add_button.setVisible(not self.member_field.isHidden() and bool(self.member_field.text().strip()))
+        shown = not self.member_field.isHidden() and bool(self.member_field.text().strip())
+        self.add_button.setVisible(shown)
+        self._place_add()
+
+    def _place_add(self):
+        field, button = self.member_field, self.add_button
+        button.adjustSize()
+        button.move(field.width() - button.width() - 3, (field.height() - button.height()) // 2)
+        # the text stops short of it
+        field.setTextMargins(0, 0, button.width() + 3 if button.isVisibleTo(field) else 0, 0)
+
+    def eventFilter(self, watched, event):
+        if watched is self.member_field and event.type() == QEvent.Resize:
+            self._place_add()
+        return super().eventFilter(watched, event)
 
     def add_member(self):
         handle = self.member_field.text().strip()
@@ -903,7 +919,7 @@ class LiveCard(QWidget):
         self.copy_link_button.setToolTip(_('collab.copy_link_tip'))
         self.member_field.setPlaceholderText(_('collab.member_add_placeholder'))
         self.member_field.setToolTip(_('collab.member_placeholder'))
-        self.add_button.setText(_('collab.add'))
+        self.add_button.setText(_('collab.add').upper())
         self.sign_in_button.setText(_('collab.sign_in_again'))
         self.share_media.setText(_('collab.media_share'))
         self.share_media.setToolTip(_('collab.media_share_tip'))
