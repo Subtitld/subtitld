@@ -353,8 +353,9 @@ live_card._project = PROJECT
 live_card.refresh(load=False)
 subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/project/{DOC}')
 check('already open', host.subtitldcc_panel.message.text(), 'This project is already open.')
-check('copy its link', shown(live_card.copy_link_button), 'Copy link')
-live_card.copy_link_button.click()
+bar = host.subtitldcc_panel.live_bar
+check('its link, in the live bar', shown(bar.link), f'subtitld.cc/projects/{DOC}')
+bar.link.click()
 check('the page\'s address', QApplication.clipboard().text(), f'https://subtitld.cc/projects/{DOC}')
 
 print('with a project open, a link to another one')

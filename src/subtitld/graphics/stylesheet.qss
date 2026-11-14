@@ -4353,6 +4353,28 @@ QWidget#live_bar QWidget#subtitldcc_card {
     border-radius: 0;
 }
 
+QLabel#live_media_line {
+    font-size: 10px;
+}
+
+/* The project's link in the live bar's status line: copied when clicked (its icon shows on hover). */
+QPushButton#live_bar_link {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: 'Montserrat';
+    font-size: 10px;
+    color: rgba(184, 206, 224, 0.75);
+    text-align: left;
+    text-transform: none;
+}
+
+QPushButton#live_bar_link:hover {
+    background: rgba(255, 255, 255, 20);
+    color: #e3edf5;
+}
+
 QLabel#live_bar_dot {
     border-radius: 4px;
     background: #6d8599;
@@ -4379,13 +4401,6 @@ QLabel#live_bar_state {
     background: transparent;
 }
 
-QLabel#live_bar_project {
-    font-family: 'Montserrat';
-    font-size: 10px;
-    color: rgba(184, 206, 224, 0.75);
-    background: transparent;
-}
-
 QPushButton[class='live_bar_icon'] {
     background: transparent;
     border: 0;
@@ -4405,18 +4420,19 @@ QPushButton[class='live_bar_icon']:checked {
     background: rgba(85, 212, 63, 0.18);
 }
 
-/* The projects shared with you, in the drawer: a card whose header opens its list. */
-QWidget#live_projects_card {
+/* The live bar's drawer cards (subtitldcc_live._SectionCard: projects shared with you, shared with, media): a
+   header that opens a list. */
+QWidget#live_section_card {
     background: #1f2a33;
     border-radius: 4px;
 }
 
-QScrollArea#live_projects_list,
-QScrollArea#live_projects_list > QWidget > QWidget {
+QScrollArea#live_section_list,
+QScrollArea#live_section_list > QWidget > QWidget {
     background: transparent;
 }
 
-QPushButton#live_projects_toggle {
+QPushButton#live_section_toggle {
     background: rgba(0, 0, 0, 0.22);
     border: 0;
     border-radius: 0;
@@ -4425,16 +4441,16 @@ QPushButton#live_projects_toggle {
     padding: 0;
 }
 
-QPushButton#live_projects_toggle:!checked {
+QPushButton#live_section_toggle:!checked {
     border-bottom-left-radius: 4px;
     border-bottom-right-radius: 4px;
 }
 
-QPushButton#live_projects_toggle:hover {
+QPushButton#live_section_toggle:hover {
     background: rgba(0, 0, 0, 0.32);
 }
 
-QLabel#live_projects_title {
+QLabel#live_section_title {
     font-family: 'Montserrat';
     font-size: 9px;
     font-weight: 700;

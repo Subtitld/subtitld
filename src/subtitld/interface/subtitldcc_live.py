@@ -93,9 +93,76 @@ def default_title():
     return ''
 
 
-class LiveCard(QWidget):
-    PROJECTS_HEIGHT = 180                               # the projects shared with you, before their list scrolls
+class _SectionCard(QWidget):
+    """A card in the live bar's drawer: a header (its title, + or −) that opens a list under it, as tall as
+    the list up to HEIGHT, then scrolling. `box` is the list's layout; `opened` says it opened or closed."""
+    HEIGHT = 180
 
+    def __init__(self):
+        from PySide6.QtCore import Signal
+        super().__init__()
+        self.setObjectName('live_section_card')
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.header = QPushButton()
+        self.header.setObjectName('live_section_toggle')
+        self.header.setCheckable(True)
+        self.header.setCursor(Qt.PointingHandCursor)
+        self.header.setFixedHeight(26)
+        header = QHBoxLayout(self.header)
+        header.setContentsMargins(10, 0, 10, 0)
+        self.title = QLabel()
+        self.title.setObjectName('live_section_title')
+        self.sign = QLabel('+')
+        self.sign.setObjectName('live_section_title')
+        for label in (self.title, self.sign):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        header.addWidget(self.title)
+        header.addStretch()
+        header.addWidget(self.sign)
+        self.header.toggled.connect(self._toggled)
+        layout.addWidget(self.header)
+        from PySide6.QtWidgets import QScrollArea
+        self.body = QScrollArea()
+        self.body.setObjectName('live_section_list')
+        self.body.setWidgetResizable(True)
+        self.body.setFrameShape(QScrollArea.NoFrame)
+        self.body.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        inner = QWidget()
+        inner.setProperty('class', 'transparent_panel')
+        self.box = QVBoxLayout(inner)
+        self.box.setContentsMargins(10, 8, 10, 10)
+        self.box.setSpacing(6)
+        self.body.setWidget(inner)
+        self.body.setVisible(False)
+        layout.addWidget(self.body)
+        self.on_open = None                              # called with True when it opens
+
+    def set_title(self, text):
+        self.title.setText(text.upper())
+
+    def _toggled(self, opened):
+        self.sign.setText('−' if opened else '+')
+        self.body.setVisible(opened)
+        if opened:
+            if self.on_open is not None:
+                self.on_open()
+            self.fit()
+
+    def fit(self):
+        """The list as tall as its rows, up to HEIGHT."""
+        QTimer.singleShot(0, self._fit)
+
+    def _fit(self):
+        content = self.body.widget()
+        width = self.body.viewport().width()
+        need = content.heightForWidth(width) if content.hasHeightForWidth() else content.sizeHint().height()
+        self.body.setFixedHeight(min(max(need, 0), self.HEIGHT))
+
+
+class LiveCard(QWidget):
     def __init__(self, panel):
         super().__init__()
         self.panel = panel
@@ -134,49 +201,12 @@ class LiveCard(QWidget):
         # The live bar's Share live shares it, under the project's own title: no form of its own here.
         self.title_field.setVisible(False)
         self.share_button.setVisible(False)
-        # The projects shared with you: a section that opens (and loads them again) when clicked.
-        self.list_button = QPushButton()
-        self.list_button.setObjectName('live_projects_toggle')
-        self.list_button.setCheckable(True)
-        self.list_button.setCursor(Qt.PointingHandCursor)
-        toggle = QHBoxLayout(self.list_button)
-        toggle.setContentsMargins(10, 0, 10, 0)
-        self.list_title = QLabel()
-        self.list_title.setObjectName('live_projects_title')
-        self.list_sign = QLabel('+')
-        self.list_sign.setObjectName('live_projects_title')
-        for label in (self.list_title, self.list_sign):
-            label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        toggle.addWidget(self.list_title)
-        toggle.addStretch()
-        toggle.addWidget(self.list_sign)
-        self.list_button.setFixedHeight(26)
-        self.list_button.toggled.connect(self._open_projects)
-        # a card of its own, apart from the bar's shade: the header, and the list under it once opened
-        self.projects_card = QWidget()
-        self.projects_card.setObjectName('live_projects_card')
-        self.projects_card.setAttribute(Qt.WA_StyledBackground, True)
-        projects_card = QVBoxLayout(self.projects_card)
-        projects_card.setContentsMargins(0, 0, 0, 0)
-        projects_card.setSpacing(0)
-        projects_card.addWidget(self.list_button)
-        # the list scrolls past PROJECTS_HEIGHT
-        from PySide6.QtWidgets import QScrollArea
-        self.projects_panel = QScrollArea()
-        self.projects_panel.setObjectName('live_projects_list')
-        self.projects_panel.setWidgetResizable(True)
-        self.projects_panel.setFrameShape(QScrollArea.NoFrame)
-        self.projects_panel.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.projects_panel.setMaximumHeight(self.PROJECTS_HEIGHT)
-        projects_list = QWidget()
-        projects_list.setProperty('class', 'transparent_panel')
-        self.projects_box = QVBoxLayout(projects_list)
-        self.projects_box.setContentsMargins(10, 8, 10, 10)
-        self.projects_box.setSpacing(6)
-        self.projects_box.addStretch()
-        self.projects_panel.setWidget(projects_list)
-        self.projects_panel.setVisible(False)
-        projects_card.addWidget(self.projects_panel)
+        # The projects shared with you: a card whose header opens (and loads them again) the list.
+        self.projects_card = _SectionCard()
+        self.list_button = self.projects_card.header
+        self.projects_card.on_open = self.load_projects
+        self.projects_box = self.projects_card.box
+        self.projects_panel = self.projects_card.body
         share.addWidget(self.projects_card)
         layout.addWidget(self.share_box)
 
@@ -186,11 +216,13 @@ class LiveCard(QWidget):
         shared = QVBoxLayout(self.shared_box)
         shared.setContentsMargins(0, 0, 0, 0)
         shared.setSpacing(6)
-        self.here = _text()
+        self.here = _text()                             # who is here: the live bar's faces say it
+        self.here.setVisible(False)
         shared.addWidget(self.here)
         self.publishes_to = _text()
         shared.addWidget(self.publishes_to)
         # Its page on subtitld.cc, where collaborators open it in Subtitld (subtitldcc_open.py).
+        # (the live bar's link copies it; this button stays for a link to the project already open)
         self.copy_link_button = _button()
         self.copy_link_button.clicked.connect(self.copy_link)
         shared.addWidget(_row(self.copy_link_button))
@@ -198,28 +230,34 @@ class LiveCard(QWidget):
         shared.addWidget(self.conflicts)
         self.conflicts_box = QVBoxLayout()
         shared.addLayout(self.conflicts_box)
-        self.members_title = _text('subtitldcc_kicker')
-        shared.addWidget(self.members_title)
+        # Who it is shared with: a card that opens (the owner adds people at its foot).
+        self.members_card = _SectionCard()
+        self.members_title = self.members_card.title
         self.members_box = QVBoxLayout()
-        shared.addLayout(self.members_box)
+        self.members_box.setSpacing(6)
+        self.members_card.box.addLayout(self.members_box)
         self.member_field = QLineEdit()
         self.add_button = _button()
         self.add_button.clicked.connect(self.add_member)
         self.member_field.returnPressed.connect(self.add_member)
         self.add_row = _row(self.member_field, self.add_button, stretch=False)
-        shared.addWidget(self.add_row)
-        # Media: the project's files, sent between collaborators (modules/collab_transfer.py).
-        self.media_title = _text('subtitldcc_kicker')
-        shared.addWidget(self.media_title)
+        self.members_card.box.addWidget(self.add_row)
+        shared.addWidget(self.members_card)
+        # Media: the project's files, sent between collaborators (modules/collab_transfer.py): a card that
+        # opens on whether this computer shares its own, then one line a file (its name, size and where it is).
+        self.media_card = _SectionCard()
+        self.media_title = self.media_card.title
         self.share_media = QCheckBox()
         self.share_media.toggled.connect(collab_service.set_sharing_media)
-        shared.addWidget(self.share_media)
+        self.media_card.box.addWidget(self.share_media)
         self.media_note = _text()
-        shared.addWidget(self.media_note)
+        self.media_card.box.addWidget(self.media_note)
         self.media_box = QVBoxLayout()
-        shared.addLayout(self.media_box)
+        self.media_box.setSpacing(2)
+        self.media_card.box.addLayout(self.media_box)
         self.dubs = _text()
-        shared.addWidget(self.dubs)
+        self.media_card.box.addWidget(self.dubs)
+        shared.addWidget(self.media_card)
         self.sign_in_button = _button(primary=True)
         self.sign_in_button.clicked.connect(self.sign_in_again)
         self.stop_button = _button(danger=True)
@@ -354,6 +392,8 @@ class LiveCard(QWidget):
         state = collab_service.state()
         waiting = len(collab_state.STATE.get('pending') or [])
         failure = collab_service.failure()
+        # all well (live, nothing waiting): the live bar's dot says it; the card says only what is not
+        self.status.setVisible(not (failure != 'missing_scope' and state == 'live' and not waiting))
         if failure == 'missing_scope':
             self.status.setText(_('collab.sign_in_again_text'))
         elif state == 'live':
@@ -395,16 +435,17 @@ class LiveCard(QWidget):
                     remove.clicked.connect(lambda _c=False, handle=member['handle']: self.remove_member(handle))
                     widgets.append(remove)
                 self.members_box.addWidget(_row(*widgets))
-        self.members_title.setVisible(bool(project))
+        self.members_card.setVisible(bool(project))
+        self.members_card.fit()
         subtitle = project.get('subtitle')
         self.publishes_to.setVisible(bool(subtitle))
         if subtitle:
             self.publishes_to.setText(_('collab.publishes_to').format(
                 title=html.escape(subtitle.get('title') or ''), version=subtitle.get('version') or 0))
-        self.copy_link_button.setVisible(bool(project.get('url')))
+        self.copy_link_button.setVisible(False)        # the live bar's link copies it
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
-        self.stop_button.setVisible(bool(project))
+        self.stop_button.setVisible(False)             # the live bar's leave button stops or leaves
         self._render_media()
 
     # --- Media -------------------------------------------------------------------------------------------
@@ -418,13 +459,19 @@ class LiveCard(QWidget):
         self.share_media.setEnabled(available)
         self.media_note.setVisible(not available)
         self.media_note.setText(_('collab.media_no_links'))
-        self.media_title.setVisible(bool(rows) or available)
+        self.media_card.setVisible(bool(rows) or available)
         _clear(self.media_box)
         matches = collab_service.video_matches_project()
         current = (session.VIDEO or {}).get('filepath')
         for row in rows:
-            label = _text()
-            label.setText(f"{html.escape(row['name'])} · {_size(row['size'])} · {self._media_state(row)}")
+            # one line a file: its name, its size, and where it is (the path here, or its state)
+            label = _text('live_media_line')
+            label.setWordWrap(False)
+            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            where = row['path'] if row['state'] == 'here' and row.get('path') else self._media_state(row)
+            line = f"{row['name']} · {_size(row['size'])} · {where}"
+            label.setText(html.escape(line))
+            label.setToolTip(line)
             widgets = [label]
             if row['state'] == 'available' and available:
                 get = _button()
@@ -445,12 +492,21 @@ class LiveCard(QWidget):
                 use.setText(_('collab.media_use_video'))
                 use.clicked.connect(lambda _c=False, path=row['path']: use_video(self.panel.window_, path))
                 widgets.append(use)
-            self.media_box.addWidget(_row(*widgets))
+            line_row = QWidget()
+            line_row.setProperty('class', 'transparent_panel')
+            line_layout = QHBoxLayout(line_row)
+            line_layout.setContentsMargins(0, 0, 0, 0)
+            line_layout.setSpacing(6)
+            line_layout.addWidget(widgets[0], 1)          # the line takes the room the button leaves
+            for button in widgets[1:]:
+                line_layout.addWidget(button)
+            self.media_box.addWidget(line_row)
         dubs = collab_service.dubs_status()
         self.dubs.setVisible(bool(dubs['missing']))
         if dubs['missing']:
             key = 'collab.dubs_coming' if dubs['coming'] else 'collab.dubs_waiting'
             self.dubs.setText(_(key).format(count=dubs['missing']))
+        self.media_card.fit()
 
     def _media_state(self, row):
         state = row['state']
@@ -527,12 +583,6 @@ class LiveCard(QWidget):
         self.panel.show_message(_('collab.shared_now'))
         self.refresh(load=False)
 
-    def _open_projects(self, opened):
-        self.list_sign.setText('−' if opened else '+')
-        self.projects_panel.setVisible(opened)
-        if opened:
-            self.load_projects()
-
     def load_projects(self):
         self.list_button.setEnabled(False)
         collab_service.projects(self._projects_loaded, self._call_failed)
@@ -552,16 +602,8 @@ class LiveCard(QWidget):
             open_button.setText(_('collab.open'))
             open_button.clicked.connect(lambda _c=False, p=project: self.ask_join(p))
             self.projects_box.addWidget(_row(label, open_button))
-        self.projects_box.addStretch()
-        QTimer.singleShot(0, self._fit_projects)
+        self.projects_card.fit()
         self.refresh(load=False)
-
-    def _fit_projects(self):
-        """The list as tall as its projects, up to PROJECTS_HEIGHT (then it scrolls)."""
-        content = self.projects_panel.widget()
-        width = self.projects_panel.viewport().width()
-        need = content.heightForWidth(width) if content.hasHeightForWidth() else content.sizeHint().height()
-        self.projects_panel.setFixedHeight(min(max(need, 0), self.PROJECTS_HEIGHT))
 
     def ask_join(self, project):
         key = 'collab.join_unsaved' if session.UNSAVED else 'collab.join_text'
@@ -576,8 +618,7 @@ class LiveCard(QWidget):
         """A subtitld:// link to shared project `doc_id`, followed with a project open in the editor: asked
         here first, like opening one from the list."""
         if collab_state.shared() and collab_state.STATE.get('doc') == doc_id:
-            self.panel.show_message(_('open_link.already_open'))
-            self.reveal(self.copy_link_button)          # its link, to pass on
+            self.panel.show_message(_('open_link.already_open'))   # its link is in the live bar, to copy
             return
         if not service.is_connected():
             self._link = doc_id  # once connected (signed_in)
@@ -701,18 +742,40 @@ class LiveCard(QWidget):
         self.title_field.setPlaceholderText(_('collab.title_placeholder'))
         self.share_button.setText(_('collab.share'))
         self.share_button.setToolTip(_('collab.share_tip'))
-        self.list_title.setText(_('collab.shared_with_you').upper())
+        self.projects_card.set_title(_('collab.shared_with_you'))
+        self.members_card.set_title(_('collab.members'))
+        self.media_card.set_title(_('collab.media'))
         self.copy_link_button.setText(_('collab.copy_link'))
         self.copy_link_button.setToolTip(_('collab.copy_link_tip'))
-        self.members_title.setText(_('collab.members'))
         self.member_field.setPlaceholderText(_('collab.member_placeholder'))
         self.add_button.setText(_('collab.add'))
         self.sign_in_button.setText(_('collab.sign_in_again'))
-        self.media_title.setText(_('collab.media'))
         self.share_media.setText(_('collab.media_share'))
         self.share_media.setToolTip(_('collab.media_share_tip'))
         self.confirm_no.setText(_('subtitldcc.cancel'))
         self.refresh(load=False)
+
+
+class _LinkButton(QPushButton):
+    """The project's link, quietly, in the live bar's status line; hovered, a copy icon says a click copies it."""
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('live_bar_link')
+        self.setCursor(Qt.PointingHandCursor)
+        self.setLayoutDirection(Qt.RightToLeft)          # the icon after the link
+        from PySide6.QtCore import QSize
+        self.setIconSize(QSize(12, 12))
+
+    def enterEvent(self, event):
+        from PySide6.QtGui import QIcon
+        super().enterEvent(event)
+        self.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'live_bar_copy.svg')))
+
+    def leaveEvent(self, event):
+        from PySide6.QtGui import QIcon
+        super().leaveEvent(event)
+        self.setIcon(QIcon())
 
 
 class _Faces(QWidget):
@@ -779,9 +842,17 @@ class LiveBar(QWidget):
         self.drawer.setFrameShape(QScrollArea.NoFrame)
         self.drawer.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.drawer.setMaximumHeight(self.DRAWER_HEIGHT)
-        self.drawer.setWidget(panel.live_card)
+        # the live card, and the chat under it
+        self.drawer_content = QWidget()
+        self.drawer_content.setProperty('class', 'transparent_panel')
+        content = QVBoxLayout(self.drawer_content)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        content.addWidget(panel.live_card)
+        content.addWidget(panel.chat_card)
+        self.drawer.setWidget(self.drawer_content)
         self.drawer.setVisible(False)
-        panel.live_card.installEventFilter(self)        # its content changes: the drawer follows (_fit_drawer)
+        self.drawer_content.installEventFilter(self)    # its content changes: the drawer follows (_fit_drawer)
         panel.live_card.title.setVisible(False)         # the bar says what it is
 
         # The status line: the drawer's toggle, whether it is shared and connected, the project, who is in it.
@@ -804,10 +875,11 @@ class LiveBar(QWidget):
         self.state = _text('live_bar_state')
         self.state.setWordWrap(False)
         status.addWidget(self.state)
-        self.project = _text('live_bar_project')
-        self.project.setWordWrap(False)
-        self.project.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        status.addWidget(self.project, 1)
+        # shared: its link, copied when clicked
+        self.link = _LinkButton()
+        self.link.clicked.connect(lambda: self.panel.live_card.copy_link())
+        status.addWidget(self.link)
+        status.addStretch(1)
         self.faces = _Faces()
         status.addWidget(self.faces)
         layout.addWidget(self.status_line)
@@ -900,8 +972,10 @@ class LiveBar(QWidget):
         self.dot.style().unpolish(self.dot)
         self.dot.style().polish(self.dot)
         self.state.setText(text)
-        title = ((self.panel.live_card._project or {}).get('title') or '') if shared else ''
-        self.project.setText(f'· {title}' if title else '')
+        url = ((self.panel.live_card._project or {}).get('url') or '') if shared else ''
+        self.link.setText(url.split('://', 1)[-1])
+        self.link.setToolTip(_('collab.copy_link'))
+        self.link.setVisible(bool(url))
 
         voice = collab_service.voice_state()
         on = voice['on']
@@ -944,11 +1018,8 @@ class LiveBar(QWidget):
 
     # --- What it does ------------------------------------------------------------------------------------
 
-    def _show(self, widget):
-        self.panel.scroll.ensureWidgetVisible(widget)
-
     def show_chat(self):
-        self._show(self.panel.chat_card)
+        self._show_in_drawer(self.panel.chat_card.field)
         self.panel.chat_card.field.setFocus()
 
     def _arrange(self, shared):
@@ -969,7 +1040,7 @@ class LiveBar(QWidget):
 
     def eventFilter(self, watched, event):
         from PySide6.QtCore import QEvent
-        if watched is self.panel.live_card and event.type() in (QEvent.LayoutRequest, QEvent.Resize):
+        if watched is self.drawer_content and event.type() in (QEvent.LayoutRequest, QEvent.Resize):
             QTimer.singleShot(0, self._fit_drawer)
         return super().eventFilter(watched, event)
 
@@ -978,7 +1049,7 @@ class LiveBar(QWidget):
         give up the room."""
         if not self.drawer.isVisible():
             return
-        card = self.panel.live_card
+        card = self.drawer_content
         width = self.drawer.viewport().width()
         need = card.heightForWidth(width) if card.hasHeightForWidth() else card.sizeHint().height()
         height = min(max(need, 0), self.DRAWER_HEIGHT)

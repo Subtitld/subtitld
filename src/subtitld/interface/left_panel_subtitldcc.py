@@ -274,8 +274,7 @@ class SubtitldccPanel(QWidget):
 
         self._build_account()
         self.live_card = LiveCard(self)                 # in the live bar's drawer (LiveBar)
-        self.chat_card = ChatCard(self)
-        self.cards.addWidget(self.chat_card)
+        self.chat_card = ChatCard(self)                 # in the live bar's drawer too, under the live card
         self._build_origin()
         self._build_video()
         self._build_search()
