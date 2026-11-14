@@ -840,6 +840,7 @@ class _Ripple(QWidget):
     GROW = 60                                           # px the ring grows past the icon
     WIDTH = 3.5                                         # the ring's thickness
     BLUR = 3                                            # px its edges soften
+    HOLD = 0.3                                          # of a pulse, before it starts to fade
     COLOUR = '#8fe57f'
 
     def __init__(self, target, centre=None, base=12):
@@ -878,11 +879,15 @@ class _Ripple(QWidget):
         from PySide6.QtGui import QColor, QPainter, QPen
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        # it bursts out and slows as it reaches its size (ease-out); it stays solid for the first third, then
+        # fades faster and faster (a delayed ease-in), gone as it settles
+        grown = 1 - (1 - self._phase) ** 3
+        fading = max(0.0, (self._phase - self.HOLD) / (1 - self.HOLD))
         colour = QColor(self.COLOUR)
-        colour.setAlphaF(0.85 * (1 - self._phase))
+        colour.setAlphaF(0.85 * (1 - fading ** 2))
         painter.setPen(QPen(colour, self.WIDTH))
         painter.setBrush(Qt.NoBrush)
-        radius = self._base + self.GROW * self._phase
+        radius = self._base + self.GROW * grown
         painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), radius, radius)
 
 
@@ -1162,6 +1167,11 @@ class LiveBar(QWidget):
             self._chime.setSource(QUrl.fromLocalFile(str(session.PATH_SUBTITLD_GRAPHICS / 'chat_message.wav')))
             self._chime.setVolume(0.4)
         self._chime.play()
+        # the bar first takes in the new count (the chat tab widens, so it moves), then the ring finds its icon
+        self.refresh()
+        QTimer.singleShot(60, self._ring)
+
+    def _ring(self):
         if self.panel.isVisible():
             if self.chat.isVisible() and not self.chat.isChecked():
                 _Ripple(self.chat, self._chat_icon_centre())
