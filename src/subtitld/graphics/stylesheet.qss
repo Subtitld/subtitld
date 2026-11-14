@@ -4602,13 +4602,13 @@ QPushButton#chat_send:pressed {
     border-image: url(graphics:chat_send_tab_pressed.svg) 0 0 0 13 stretch stretch;
 }
 
-/* Add someone: a small light button inside the "Shared with" field, at its right end. */
+/* Add someone: a light button inside the "Shared with" field, filling its right end. */
 QPushButton#live_member_add {
-    min-height: 20px;
-    max-height: 20px;
+    min-height: 26px;
+    max-height: 26px;
     border: 0;
-    border-radius: 3px;
-    padding: 0 8px;
+    border-radius: 0;
+    padding: 0 10px;
     background: #c9d8e3;
     color: #1e2b36;
     font-family: 'Montserrat';

@@ -371,11 +371,11 @@ class LiveCard(QWidget):
         self.member_field.setFixedHeight(26)
         self.member_field.returnPressed.connect(self.add_member)
         head_line.addWidget(self.member_field, 1, Qt.AlignTop)
-        # Add: once something is typed, a small button inside the field, at its right end (_place_add)
+        # Add: once something is typed, a button inside the field filling its right end (_place_add)
         self.add_button = QPushButton(self.member_field)
         self.add_button.setObjectName('live_member_add')
         self.add_button.setCursor(Qt.PointingHandCursor)
-        self.add_button.setFixedHeight(20)
+        self.add_button.setFixedHeight(26)
         self.add_button.clicked.connect(self.add_member)
         self.add_button.setVisible(False)
         self.member_field.textChanged.connect(self._show_add)
@@ -813,9 +813,9 @@ class LiveCard(QWidget):
     def _place_add(self):
         field, button = self.member_field, self.add_button
         button.adjustSize()
-        button.move(field.width() - button.width() - 3, (field.height() - button.height()) // 2)
+        button.move(field.width() - button.width(), 0)  # flush with its top, right and bottom
         # the text stops short of it
-        field.setTextMargins(0, 0, button.width() + 3 if button.isVisibleTo(field) else 0, 0)
+        field.setTextMargins(0, 0, button.width() if button.isVisibleTo(field) else 0, 0)
 
     def eventFilter(self, watched, event):
         if watched is self.member_field and event.type() == QEvent.Resize:
