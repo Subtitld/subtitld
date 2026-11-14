@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from subtitld.interface import left_panel
 from subtitld.interface.account_header import AccountHeader, HeaderShadow
 from subtitld.interface.subtitldcc_chat import ChatCard
-from subtitld.interface.subtitldcc_live import LiveCard
+from subtitld.interface.subtitldcc_live import LiveBar, LiveCard
 from subtitld.interface.subtitldcc_publish import PublishFlow
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
@@ -281,6 +281,9 @@ class SubtitldccPanel(QWidget):
         self._build_search()
         self._build_publish()
         self.cards.addStretch()
+        # Live co-editing's bar, always in view under the cards
+        self.live_bar = LiveBar(self)
+        outer.addWidget(self.live_bar)
 
         self.message = _label('subtitldcc_message')
         self.message.hide()
@@ -291,6 +294,7 @@ class SubtitldccPanel(QWidget):
         # asked under the header, at the top of the cards
         self.cards.insertWidget(2, self.disconnect_confirm)
         self.header_shadow = HeaderShadow(self)
+        self.footer_shadow = HeaderShadow(self, up=True)
         self._message_timer = QTimer(self)
         self._message_timer.setSingleShot(True)
         self._message_timer.timeout.connect(self.message.hide)
@@ -301,11 +305,16 @@ class SubtitldccPanel(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.header_shadow.place_under(self.header)
+        self._place_shadows()
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._place_shadows()
+
+    def _place_shadows(self):
         self.header_shadow.place_under(self.header)
+        self.footer_shadow.place_over(self.live_bar)
+        self.footer_shadow.setVisible(self.live_bar.isVisible())
 
     def _build_account(self):
         # Connecting (and waiting for it) happens in this card; once connected, the header says who it is
@@ -981,6 +990,7 @@ class SubtitldccPanel(QWidget):
         self._render_account(waiting=self._sign_in_call is not None)
         self.live_card.refresh(load=self.isVisible())
         self.chat_card.refresh()
+        self.live_bar.refresh()
         self._load_origin()
         self._render_video()
         self._render_publish()
@@ -1028,4 +1038,5 @@ class SubtitldccPanel(QWidget):
             confirm.retranslate()
         self.live_card.retranslate()
         self.chat_card.retranslate()
+        self.live_bar.retranslate()
         self.refresh()

@@ -641,3 +641,227 @@ class LiveCard(QWidget):
         self.share_media.setToolTip(_('collab.media_share_tip'))
         self.confirm_no.setText(_('subtitldcc.cancel'))
         self.refresh(load=False)
+
+
+class _Faces(QWidget):
+    """Who is in the project: a small circle each, with an initial, overlapping; ringed green while speaking."""
+    SIZE = 20
+    STEP = 14
+
+    def __init__(self):
+        super().__init__()
+        self._people = []                               # [(initial, speaking)]
+        self.setFixedHeight(self.SIZE)
+
+    def set_people(self, people):
+        people = people[:6]
+        if people != self._people:
+            self._people = people
+            self.setFixedWidth(self.SIZE + self.STEP * (len(people) - 1) if people else 0)
+            self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QColor, QFont, QPainter, QPen
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        font = QFont('Montserrat')
+        font.setPixelSize(9)
+        font.setWeight(QFont.Bold)
+        painter.setFont(font)
+        for index, (initial, speaking) in reversed(list(enumerate(self._people))):
+            rect = QRectF(index * self.STEP + 1, 1, self.SIZE - 2, self.SIZE - 2)
+            painter.setPen(QPen(QColor('#55d43f') if speaking else QColor('#1c252c'), 1.6))
+            painter.setBrush(QColor('#4a6376'))
+            painter.drawEllipse(rect)
+            painter.setPen(QColor('#e3edf5'))
+            painter.drawText(rect, Qt.AlignCenter, initial)
+
+
+class LiveBar(QWidget):
+    """The panel's footer for live co-editing, always in view under the cards, like a call's bar: whether
+    the open project is shared and connected, its title and who is in it; under that, the microphone, the
+    call, the chat (with what is unread) and leaving. Not shared, it offers to share it (the light tab in its
+    corner) and the projects shared with you. Hidden while no one is signed in to subtitld.cc. The cards keep
+    the details (who it is shared with, the media, the chat itself); the bar's questions are asked there."""
+
+    def __init__(self, panel):
+        super().__init__()
+        self.panel = panel
+        self.setObjectName('live_bar')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(4)
+
+        status = QHBoxLayout()
+        status.setContentsMargins(12, 0, 10, 0)
+        status.setSpacing(6)
+        self.dot = QLabel()
+        self.dot.setObjectName('live_bar_dot')
+        self.dot.setFixedSize(8, 8)
+        status.addWidget(self.dot)
+        self.state = _text('live_bar_state')
+        self.state.setWordWrap(False)
+        status.addWidget(self.state)
+        self.project = _text('live_bar_project')
+        self.project.setWordWrap(False)
+        self.project.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        status.addWidget(self.project, 1)
+        self.faces = _Faces()
+        status.addWidget(self.faces)
+        layout.addLayout(status)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(8, 0, 0, 0)
+        controls.setSpacing(2)
+        self.mic = self._icon('live_bar_mic.svg')
+        self.mic.setCheckable(True)
+        self.mic.toggled.connect(collab_service.voice_latch)
+        self.call = self._icon('live_bar_call.svg')
+        self.call.clicked.connect(lambda: self.panel.chat_card.toggle_call())
+        self.chat = self._icon('live_bar_chat.svg')
+        self.chat.setObjectName('live_bar_chat')
+        self.chat.clicked.connect(self.show_chat)
+        self.list = self._icon('live_bar_list.svg')
+        self.list.clicked.connect(self.show_projects)
+        for button in (self.mic, self.call, self.chat, self.list):
+            controls.addWidget(button, 0, Qt.AlignVCenter)
+        controls.addStretch()
+        self.leave = self._icon('live_bar_leave.svg')
+        self.leave.clicked.connect(self.ask_leave)
+        controls.addWidget(self.leave, 0, Qt.AlignVCenter)
+        controls.addSpacing(6)
+        self.share = QPushButton()
+        self.share.setProperty('class', 'addon_card_tab')     # the dialogs' light slanted tab, in the corner
+        self.share.setFixedHeight(30)
+        self.share.setCursor(Qt.PointingHandCursor)
+        self.share.clicked.connect(self.start_sharing)
+        controls.addWidget(self.share, 0, Qt.AlignBottom)
+        layout.addLayout(controls)
+
+        self._redraw = QTimer(self)
+        self._redraw.setSingleShot(True)
+        self._redraw.setInterval(100)
+        self._redraw.timeout.connect(self.refresh)
+        self._speaking = QTimer(self)                    # who is speaking, while in the call
+        self._speaking.setInterval(250)
+        self._speaking.timeout.connect(self._render_faces)
+        collab_service.listeners.append(self._news)
+        self.retranslate()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QColor, QPainter
+        QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 38))     # the header's shade
+
+    def _icon(self, icon):
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QIcon
+        button = QPushButton()
+        button.setProperty('class', 'live_bar_icon')
+        button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(30, 26)
+        button.setCursor(Qt.PointingHandCursor)
+        return button
+
+    def _news(self, kind):
+        if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice'):
+            self._redraw.start()
+
+    # --- What it shows -----------------------------------------------------------------------------------
+
+    def refresh(self):
+        from PySide6.QtGui import QIcon
+        connected = service.is_connected()
+        self.setVisible(connected)
+        if not connected:
+            return
+        shared = collab_state.shared()
+        state = collab_service.state()
+        if not shared:
+            kind, text = 'off', _('collab.bar_off')
+        elif collab_service.failure() == 'missing_scope':
+            kind, text = 'trouble', _('collab.bar_offline')
+        elif state == 'live':
+            kind, text = 'live', _('collab.bar_live')
+        elif state == 'joining':
+            kind, text = 'joining', _('collab.joining')
+        else:
+            kind, text = 'trouble', _('collab.bar_offline')
+        self.dot.setProperty('state', kind)
+        self.dot.style().unpolish(self.dot)
+        self.dot.style().polish(self.dot)
+        self.state.setText(text)
+        title = ((self.panel.live_card._project or {}).get('title') or '') if shared else ''
+        self.project.setText(f'· {title}' if title else '')
+
+        voice = collab_service.voice_state()
+        on = voice['on']
+        available = collab_service.voice_available()
+        for button in (self.mic, self.call, self.chat, self.leave):
+            button.setVisible(shared)
+        self.list.setVisible(not shared)
+        self.share.setVisible(not shared)
+        self.mic.setEnabled(on)
+        self.mic.blockSignals(True)
+        self.mic.setChecked(on and voice['latched'])
+        self.mic.blockSignals(False)
+        self.mic.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
+                                   ('live_bar_mic.svg' if on and voice['latched'] else 'live_bar_mic_off.svg'))))
+        self.call.setEnabled(available)
+        self.call.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
+                                    ('live_bar_call_leave.svg' if on else 'live_bar_call.svg'))))
+        self.call.setToolTip(_('collab.voice_leave') if on else _('collab.voice_join'))
+        unread = collab_service.chat_unread() if shared else 0
+        self.chat.setText(str(unread) if unread else '')
+        self.chat.setFixedWidth(42 if unread else 30)
+        manage = bool(((self.panel.live_card._project or {}).get('permissions') or {}).get('can_manage'))
+        self.leave.setToolTip(_('collab.stop_sharing') if manage else _('collab.leave'))
+        if on and not self._speaking.isActive():
+            self._speaking.start()
+        elif not on:
+            self._speaking.stop()
+        self._render_faces()
+
+    def _render_faces(self):
+        if not collab_state.shared():
+            self.faces.set_people([])
+            return
+        voice = collab_service.voice_state()
+        if voice['on']:
+            people = [((p['name'] or p['handle'] or '?')[:1].upper(), p['speaking']) for p in voice['people']]
+        else:
+            people = [((handle or '?')[:1].upper(), False) for handle in self.panel.live_card._here()]
+        self.faces.set_people(people)
+
+    # --- What it does ------------------------------------------------------------------------------------
+
+    def _show(self, widget):
+        self.panel.scroll.ensureWidgetVisible(widget)
+
+    def show_chat(self):
+        self._show(self.panel.chat_card)
+        self.panel.chat_card.field.setFocus()
+
+    def show_projects(self):
+        self.panel.live_card.load_projects()
+        self._show(self.panel.live_card)
+
+    def start_sharing(self):
+        """Share it under the title the card holds (the project's own, unless changed there)."""
+        card = self.panel.live_card
+        card.refresh()
+        if card.title_field.text().strip():
+            card.share()
+        self._show(card)
+
+    def ask_leave(self):
+        self.panel.live_card.ask_stop()
+        self._show(self.panel.live_card.confirm)
+
+    def retranslate(self):
+        self.mic.setToolTip(_('collab.voice_latch'))
+        self.chat.setToolTip(_('collab.chat_title'))
+        self.list.setToolTip(_('collab.shared_with_you'))
+        self.share.setText(_('collab.share'))
+        self.refresh()

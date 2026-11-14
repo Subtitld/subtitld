@@ -142,12 +142,13 @@ class AccountHeader(QWidget):
 
 class HeaderShadow(QWidget):
     """A soft shadow falling from the header over the cards scrolling under
-    it: a child of the panel, laid over the top of its scroll area (the
-    panel places it under the header in its resizeEvent)."""
+    it (or, `up`, rising from a footer over them): a child of the panel,
+    laid over its scroll area (the panel places it in its resizeEvent)."""
     HEIGHT = 10
 
-    def __init__(self, parent):
+    def __init__(self, parent, up=False):
         super().__init__(parent)
+        self.up = up
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setFixedHeight(self.HEIGHT)
 
@@ -155,8 +156,12 @@ class HeaderShadow(QWidget):
         self.setGeometry(0, header.geometry().bottom() + 1, self.parentWidget().width(), self.HEIGHT)
         self.raise_()
 
+    def place_over(self, footer):
+        self.setGeometry(0, footer.geometry().top() - self.HEIGHT, self.parentWidget().width(), self.HEIGHT)
+        self.raise_()
+
     def paintEvent(self, event):
-        shadow = QLinearGradient(0, 0, 0, self.height())
+        shadow = QLinearGradient(0, self.height(), 0, 0) if self.up else QLinearGradient(0, 0, 0, self.height())
         shadow.setColorAt(0, QColor(0, 0, 0, 70))
         shadow.setColorAt(1, QColor(0, 0, 0, 0))
         QPainter(self).fillRect(self.rect(), shadow)
