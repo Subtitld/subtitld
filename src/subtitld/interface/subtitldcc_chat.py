@@ -148,6 +148,13 @@ class ChatCard(QWidget):
         self.attach.toggled.connect(self._show_attach)
         self.field.addAction(self.attach, QLineEdit.TrailingPosition)
         self._show_attach(False)
+        # half there until the pointer is on it, like the save icon (the field draws it as a tool button)
+        from PySide6.QtWidgets import QGraphicsOpacityEffect, QToolButton
+        self.attach_button = next((b for b in self.field.findChildren(QToolButton) if b.defaultAction() is self.attach), None)
+        if self.attach_button is not None:
+            self.attach_button.setGraphicsEffect(QGraphicsOpacityEffect(self.attach_button))
+            self.attach_button.graphicsEffect().setOpacity(.5)
+            self.attach_button.installEventFilter(self)
         # Keeping the chat in the project file: an icon in the well's top-right corner (placed in eventFilter).
         from PySide6.QtCore import QSize
         self.keep = QPushButton(self.well)
@@ -228,8 +235,9 @@ class ChatCard(QWidget):
         self.keep.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_keep_on.svg' if kept else 'chat_keep.svg'))))
 
     def eventFilter(self, watched, event):
-        if watched is getattr(self, 'keep', None) and event.type() in (QEvent.Enter, QEvent.Leave):
-            self.keep.graphicsEffect().setOpacity(1.0 if event.type() == QEvent.Enter else .5)
+        if watched in (getattr(self, 'keep', None), getattr(self, 'attach_button', None)) \
+                and event.type() in (QEvent.Enter, QEvent.Leave):
+            watched.graphicsEffect().setOpacity(1.0 if event.type() == QEvent.Enter else .5)
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
             self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
             self._well_shadow.raise_()
