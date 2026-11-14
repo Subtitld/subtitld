@@ -315,6 +315,7 @@ class SubtitldccPanel(QWidget):
         self.header_shadow.place_under(self.header)
         self.footer_shadow.place_over(self.live_bar)
         self.footer_shadow.setVisible(self.live_bar.isVisible())
+        self.live_bar.raise_()                          # Share live rises over the shadow, not under it
 
     def _build_account(self):
         # Connecting (and waiting for it) happens in this card; once connected, the header says who it is
