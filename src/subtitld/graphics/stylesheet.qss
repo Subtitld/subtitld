@@ -4440,7 +4440,27 @@ QWidget#chat_well {
     border-radius: 0;               /* edge to edge in the live bar's drawer */
 }
 
-/* In the well's top-right corner: round only at its bottom-left (its top-right follows the well's own 4px). */
+/* The chat's messages as bubbles: the others' on the left, its own on the right, lighter; the corner toward
+   the side it comes from is the sharp one. */
+QWidget#chat_bubble {
+    background: #1d2730;
+    border-radius: 8px;
+    border-bottom-left-radius: 2px;
+}
+
+QWidget#chat_bubble[mine="true"] {
+    background: #2f4352;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 2px;
+}
+
+QLabel#chat_bubble_text {
+    background: transparent;
+    font-size: 11px;
+    color: #e3edf5;
+}
+
+/* In the well's top-right corner: round only at its bottom-left. */
 QPushButton#chat_keep {
     background: transparent;
     border: 0;

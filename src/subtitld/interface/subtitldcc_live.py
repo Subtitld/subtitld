@@ -57,6 +57,7 @@ def _clear(layout):
     while layout.count():
         item = layout.takeAt(0)
         if item.widget() is not None:
+            item.widget().hide()                        # gone now, not when the deletion comes round
             item.widget().deleteLater()
 
 

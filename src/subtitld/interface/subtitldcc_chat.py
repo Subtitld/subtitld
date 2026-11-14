@@ -114,9 +114,10 @@ class ChatCard(QWidget):
         inner.setProperty('class', 'transparent_panel')
         self.messages_box = QVBoxLayout(inner)
         self.messages_box.setContentsMargins(10, 10, 10, 10)
-        self.messages_box.setSpacing(6)
+        self.messages_box.setSpacing(3)
         self.messages_box.addStretch()
         self.scroll.setWidget(inner)
+        self.scroll.installEventFilter(self)             # bubbles keep to a share of its width
         well.addWidget(self.scroll)
 
         self.field = QLineEdit()
@@ -236,6 +237,9 @@ class ChatCard(QWidget):
         if watched in (getattr(self, 'keep', None), getattr(self, 'attach_button', None)) \
                 and event.type() in (QEvent.Enter, QEvent.Leave):
             watched.graphicsEffect().setOpacity(1.0 if event.type() == QEvent.Enter else .5)
+        if watched is getattr(self, 'scroll', None) and event.type() == QEvent.Resize \
+                and event.size().width() != event.oldSize().width():
+            self._redraw.start()                        # the bubbles measured again for the new width
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
             self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
             self._well_shadow.raise_()
@@ -291,33 +295,69 @@ class ChatCard(QWidget):
             empty.setText(_('collab.chat_empty'))
             self.messages_box.addWidget(empty)
         me = collab_service.chat_me()
+        previous = None
         for message in messages[-SHOWN:]:
-            self.messages_box.addWidget(self._message(message, me))
+            author = (message.get('author') or {}).get('handle')
+            self.messages_box.addWidget(self._message(message, me, first=author != previous))
+            previous = author
         self.messages_box.addStretch()
         if at_end:
             QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
 
-    def _message(self, message, me):
+    BUBBLE = 0.78                                       # at most this much of the chat's width
+
+    def _message(self, message, me, first=True):
+        """A message as a chat app shows one: a bubble, its own on the right (lighter), the others' on the left
+        with their name on top (the first of a run); at its foot, small, the time, the place it points at, and
+        for its own, Edit and Delete."""
         author = message.get('author') or {}
         name = author.get('name') or author.get('handle') or me
-        mine = message.get('pending') or author.get('handle') == me
-        head = [f'<b>{html.escape(name)}</b>']
-        head.append(_('collab.chat_sending') if message.get('pending') else _clock(message['at']))
+        mine = bool(message.get('pending') or author.get('handle') == me)
+        foot = [_('collab.chat_sending') if message.get('pending') else _clock(message['at'])]
         if message.get('cue_id') or message.get('at_ms') is not None:
-            head.append(f'<a href="go:{message.get("cue_id") or ""}:{message.get("at_ms") or ""}">{self._place(message)}</a>')
+            foot.insert(0, f'<a href="go:{message.get("cue_id") or ""}:{message.get("at_ms") or ""}" '
+                           f'style="color:#9fc4e4;">{self._place(message)}</a>')
         if message.get('edited'):
-            head.append(_('collab.chat_edited'))
+            foot.append(_('collab.chat_edited'))
         if mine and not message.get('pending') and not message.get('deleted'):
-            head.append(f'<a href="edit:{message["id"]}">{_("collab.chat_edit")}</a>')
-            head.append(f'<a href="delete:{message["id"]}">{_("collab.chat_delete")}</a>')
+            foot.append(f'<a href="edit:{message["id"]}" style="color:#9fc4e4;">{_("collab.chat_edit")}</a>')
+            foot.append(f'<a href="delete:{message["id"]}" style="color:#9fc4e4;">{_("collab.chat_delete")}</a>')
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
-        label = _text()
+        head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
+        meta = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
+        label = _text('chat_bubble_text')
         label.setTextFormat(Qt.RichText)
         label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        label.setText(' · '.join(head) + '<br>' + body)
+        label.setText(head + f'<div>{body}</div>' + meta)
         label.linkActivated.connect(self._link)
-        return label
+        # as wide as its words, up to BUBBLE of the chat: measured, so the bubble is as tall as they need
+        from PySide6.QtGui import QTextDocument
+        label.ensurePolished()
+        document = QTextDocument()
+        document.setDefaultFont(label.font())
+        document.setHtml(label.text())
+        widest = max(140, int(self.scroll.viewport().width() * self.BUBBLE)) - 20
+        label.setFixedWidth(min(int(document.idealWidth()) + 4, widest))
+
+        bubble = QWidget()
+        bubble.setObjectName('chat_bubble')
+        bubble.setProperty('mine', mine)
+        bubble.setAttribute(Qt.WA_StyledBackground, True)
+        inside = QVBoxLayout(bubble)
+        inside.setContentsMargins(10, 6, 10, 5)
+        inside.addWidget(label)
+        row = QWidget()
+        row.setProperty('class', 'transparent_panel')
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0 if not first else 4, 0, 0)
+        line.setSpacing(0)
+        if mine:
+            line.addStretch(1)
+        line.addWidget(bubble)
+        if not mine:
+            line.addStretch(1)
+        return row
 
     def _place(self, message):
         """'Line 12 · 00:01:23' for a message pointing at a subtitle and the playhead."""
