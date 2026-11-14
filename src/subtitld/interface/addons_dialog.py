@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, QPoint, QPointF, QRectF, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QPoint, QPointF, QRectF, QSize, QSizeF
 from PySide6.QtGui import QIcon, QColor, QPainter, QPainterPath, QLinearGradient
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -1354,8 +1354,8 @@ class _StateSegment(_LaidOutButton):
         super().__init__(parent)
         self.setCheckable(True)
         self.setLayout(QHBoxLayout())
-        self.layout().setContentsMargins(11, 0, 11, 0)
-        self.layout().setSpacing(5)
+        self.layout().setContentsMargins(8, 0, 8, 0)
+        self.layout().setSpacing(4)
         self.name = QLabel()
         self.name.setObjectName('addons_state_name')
         self.count = QLabel()
@@ -1364,7 +1364,7 @@ class _StateSegment(_LaidOutButton):
             label.setAttribute(Qt.WA_TransparentForMouseEvents)
             label.setGraphicsEffect(QGraphicsOpacityEffect(label))
             self.layout().addWidget(label)
-        self.setFixedHeight(27)
+        self.setFixedHeight(23)
         self.toggled.connect(lambda _checked: self._fade())
         self._fade()
 
@@ -1380,6 +1380,50 @@ class _StateSegment(_LaidOutButton):
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self._fade()
+
+
+class _AddonsHeader(QWidget):
+    """The panel's header: a shade darker than whatever the panel stands
+    on, and a faint shadow rising from its foot through the tabs' row,
+    both painted around the chosen tab, which so shows the panel's own
+    background and opens into the list below, whatever that background
+    is."""
+    SHADE = QColor(0, 0, 0, 38)
+    SHADOW = QColor(0, 0, 0, 34)
+    RADIUS = 3
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.tabs = []
+        self.tabs_row = None
+
+    def _hole(self):
+        tab = next((t for t in self.tabs if t.isChecked() and t.isVisible()), None)
+        path = QPainterPath()
+        if tab is None:
+            return path
+        rect = QRectF(tab.mapTo(self, QPoint(0, 0)), QSizeF(tab.size()))
+        path.addRoundedRect(rect, self.RADIUS, self.RADIUS)
+        foot = QPainterPath()
+        foot.addRect(rect.adjusted(0, self.RADIUS, 0, 0))
+        return path.united(foot)                        # rounded on top only
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        # everything but the chosen tab: the tab's outline inside the header's, filled odd-even
+        around = QPainterPath()
+        around.setFillRule(Qt.OddEvenFill)
+        around.addRect(QRectF(self.rect()))
+        around.addPath(self._hole())
+        painter.setClipPath(around)
+        painter.fillRect(self.rect(), self.SHADE)
+        if self.tabs_row is not None and self.tabs_row.isVisible():
+            row = QRectF(self.tabs_row.geometry())
+            shadow = QLinearGradient(0, row.center().y(), 0, row.bottom() + 1)
+            shadow.setColorAt(0, QColor(0, 0, 0, 0))
+            shadow.setColorAt(1, self.SHADOW)
+            painter.fillRect(row, shadow)
 
 
 class _FadedIconButton(QPushButton):
@@ -1460,9 +1504,8 @@ class AddonsPanel(QWidget):
         # The header: the search, the filters and the state strip, edge to edge and always in view above the list.
         # The search and the Filters tab run along its top edge, the state tabs stand on its bottom one, the chosen
         # filters' tags between them.
-        self._header = QWidget()
+        self._header = _AddonsHeader()
         self._header.setObjectName('addons_header')
-        self._header.setAttribute(Qt.WA_StyledBackground)
         self._header.setLayout(QVBoxLayout())
         self._header.layout().setContentsMargins(0, 0, 0, 0)
         self._header.layout().setSpacing(8)
@@ -1525,7 +1568,7 @@ class AddonsPanel(QWidget):
         # On a faint shadow rising from the header's bottom edge to the row's middle; the chosen tab stands over it.
         self._state_row = QWidget()
         self._state_row.setObjectName('addons_state_row')
-        self._state_row.setAttribute(Qt.WA_StyledBackground)
+        self._header.tabs_row = self._state_row
         state_row = QHBoxLayout(self._state_row)
         state_row.setContentsMargins(10, 0, 10, 0)
         state_row.setSpacing(0)
@@ -1544,6 +1587,8 @@ class AddonsPanel(QWidget):
             self._state_group.addButton(segment)
             self._state_strip.layout().addWidget(segment)
             self._state_pills[value] = segment
+            self._header.tabs.append(segment)
+            segment.toggled.connect(lambda _checked: self._header.update())
         self._state_pills[self._STATE_ALL].setChecked(True)
         state_row.addWidget(self._state_strip)
         state_row.addStretch()

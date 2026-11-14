@@ -658,17 +658,14 @@ QLabel#addons_filters_count {
     padding: 0;
 }
 
+/* The chosen tab is bare too: the header paints its shade and the row's shadow around it (_AddonsHeader), so it
+   shows the panel's own background and opens into the list. */
 #addons_state_strip _StateSegment:checked {
-    background: #2b3a47;
-}
-
-/* The tabs' row: a very faint shadow from the header's bottom edge up to the row's middle. */
-QWidget#addons_state_row {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 transparent, stop:0.5 transparent, stop:1 rgba(0, 0, 0, 34));
+    background: transparent;
 }
 
 QLabel#addons_state_name {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
     color: #e1ebf2;
@@ -676,7 +673,7 @@ QLabel#addons_state_name {
 }
 
 QLabel#addons_state_count {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 600;
     color: rgba(184, 206, 224, 150);
     background: transparent;
@@ -702,7 +699,7 @@ QPushButton#addons_filter_tag:hover {
 
 /* The header the filters sit in: edge to edge, a shade darker than the panel. */
 QWidget#addons_header {
-    background: rgba(0, 0, 0, 38);
+    background: transparent;          /* _AddonsHeader paints its shade, around the chosen tab */
     border: 0;
 }
 
