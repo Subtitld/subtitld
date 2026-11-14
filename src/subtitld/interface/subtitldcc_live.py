@@ -93,6 +93,34 @@ def default_title():
     return ''
 
 
+class _HoverRow(QWidget):
+    """A line of a list: its text across the line, and its button at the end, shown while the pointer is on
+    the line (its room kept, so the text does not move)."""
+
+    def __init__(self, label, button):
+        super().__init__()
+        self.setProperty('class', 'transparent_panel')
+        self.setAttribute(Qt.WA_Hover)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(label, 1)
+        layout.addWidget(button, 0, Qt.AlignVCenter)
+        policy = button.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        button.setSizePolicy(policy)
+        button.setVisible(False)
+        self.button = button
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.button.setVisible(True)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.button.setVisible(False)
+
+
 class _SectionCard(QWidget):
     """A card in the live bar's drawer: a header (its title, + or −) that opens a list under it, as tall as
     the list up to HEIGHT, then scrolling. `box` is the list's layout; `opened` says it opened or closed."""
@@ -601,7 +629,7 @@ class LiveCard(QWidget):
             open_button = _button()
             open_button.setText(_('collab.open'))
             open_button.clicked.connect(lambda _c=False, p=project: self.ask_join(p))
-            self.projects_box.addWidget(_row(label, open_button))
+            self.projects_box.addWidget(_HoverRow(label, open_button))
         self.projects_card.fit()
         self.refresh(load=False)
 

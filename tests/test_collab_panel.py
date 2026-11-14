@@ -501,8 +501,10 @@ check('the share form again', wait(lambda: card.share_box.isVisible()), True)
 
 print('opening a project shared with you')
 card.list_button.click()
-check('listed', wait(lambda: buttons('Open')), True)
-buttons('Open')[0].click()
+# each project's Open shows while the pointer is on its line
+opens = lambda: [b for b in panel.findChildren(type(card.add_button)) if b.text() == 'Open' and b.parentWidget().isVisible()]
+check('listed', wait(opens), True)
+opens()[0].click()
 check('asks first: it replaces the subtitles', card.confirm.isVisible(), True)
 card.confirm_yes.click()
 check('joined: shared, empty until the server sends it, not a file yet',
