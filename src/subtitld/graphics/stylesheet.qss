@@ -4347,7 +4347,28 @@ QPushButton[class='live_bar_tab'] {
 
 /* The call's tab: light like Share live out of the call; green in it, lighter while talking. */
 QPushButton#live_bar_call {
-    padding: 0 4px 0 0;
+    padding: 0 0 0 0;
+}
+
+QPushButton#live_bar_call[call="call"],
+QPushButton#live_bar_call[call="talking"] {
+    padding: 0 0 0 22px;            /* the microphone right of the lock */
+}
+
+QPushButton#live_bar_lock {
+    border-image: url(graphics:live_bar_lock_badge.svg) 0 4 0 7 stretch stretch;
+    border-width: 0 4px 0 7px;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+}
+
+QPushButton#live_bar_lock:hover {
+    border-image: url(graphics:live_bar_lock_badge_hover.svg) 0 4 0 7 stretch stretch;
+}
+
+QPushButton#live_bar_lock:checked {
+    border-image: url(graphics:live_bar_lock_badge_on.svg) 0 4 0 7 stretch stretch;
 }
 
 QPushButton#live_bar_call[call="call"] {

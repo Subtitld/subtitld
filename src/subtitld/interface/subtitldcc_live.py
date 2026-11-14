@@ -899,17 +899,13 @@ class LiveBar(QWidget):
         self.chat.setObjectName('live_bar_chat')
         self.chat.clicked.connect(self.show_chat)
         controls.addWidget(self.chat, 0, Qt.AlignVCenter)
-        self.lock = self._icon('live_bar_lock.svg')
-        self.lock.setCheckable(True)
-        self.lock.toggled.connect(collab_service.voice_latch)
-        controls.addWidget(self.lock, 0, Qt.AlignVCenter)
         controls.addSpacing(4)
         # The call's tab: out of the call, it joins it (light, like Share live); in it, green, it is the
         # microphone: held, talking (push to talk), unless the lock keeps it on the air.
         self.call = QPushButton()
         self.call.setProperty('class', 'live_bar_tab')
         self.call.setObjectName('live_bar_call')
-        self.call.setFixedSize(46, 30)
+        self.call.setFixedSize(62, 30)
         self.call.setCursor(Qt.PointingHandCursor)
         from PySide6.QtCore import QSize
         self.call.setIconSize(QSize(16, 16))
@@ -917,6 +913,16 @@ class LiveBar(QWidget):
         self.call.released.connect(self._call_released)
         self.call.clicked.connect(self._call_clicked)
         controls.addWidget(self.call, 0, Qt.AlignBottom)
+        # In the call, the lock sits inside the tab at its left, an inner badge along the slant (like the
+        # title bar's quick export inside its tab): on, it keeps the microphone on the air without holding.
+        from PySide6.QtCore import QSize as _QSize
+        self.lock = QPushButton(self.call)
+        self.lock.setObjectName('live_bar_lock')
+        self.lock.setCheckable(True)
+        self.lock.setCursor(Qt.PointingHandCursor)
+        self.lock.setIconSize(_QSize(12, 12))
+        self.lock.setGeometry(5, 6, 26, 20)
+        self.lock.toggled.connect(collab_service.voice_latch)
         self.share = QPushButton()
         self.share.setProperty('class', 'live_bar_tab')       # the dialogs' light slanted tab, in the corner
         self.share.setFixedHeight(30)
@@ -1006,6 +1012,7 @@ class LiveBar(QWidget):
         self.lock.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
                                     ('live_bar_lock_on.svg' if on and voice['latched'] else 'live_bar_lock.svg'))))
         self.call.setEnabled(available)
+        self.call.setFixedWidth(62 if on else 46)        # in the call it holds the lock too
         self.call.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_talk.svg' if on else 'live_bar_join.svg'))))
         self.call.setToolTip(_('collab.voice_talk') if on else _('collab.voice_join'))
         state = 'off' if not on else ('talking' if voice['talking'] or voice['latched'] else 'call')
