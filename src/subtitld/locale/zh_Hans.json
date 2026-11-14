@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "取消",
     "subtitldcc.continue": "继续",
     "subtitldcc.disconnect": "断开连接",
+    "subtitldcc.state_connected": "已连接",
+    "subtitldcc.state_offline": "未连接",
     "subtitldcc.disconnect_text": "Subtitld 将不再以你的身份在这台电脑上发布和评分。查找公开字幕仍然可用。",
     "subtitldcc.connect_why": "连接后可以发布自己的字幕、给别人的字幕评分，并查看分享给你的字幕。查找公开字幕不需要连接。",
     "subtitldcc.browser_wait": "请在浏览器中完成连接…",

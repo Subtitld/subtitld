@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Abbrechen",
     "subtitldcc.continue": "Weiter",
     "subtitldcc.disconnect": "Trennen",
+    "subtitldcc.state_connected": "Verbunden",
+    "subtitldcc.state_offline": "Nicht verbunden",
     "subtitldcc.disconnect_text": "Subtitld veröffentlicht und bewertet auf diesem Computer nicht mehr in Ihrem Namen. Das Finden öffentlicher Untertitel funktioniert weiter.",
     "subtitldcc.connect_why": "Verbinden Sie sich, um Ihre Untertitel zu veröffentlichen, andere zu bewerten und die mit Ihnen geteilten zu sehen. Öffentliche Untertitel finden Sie auch ohne Verbindung.",
     "subtitldcc.browser_wait": "Schließen Sie das Verbinden in Ihrem Browser ab…",

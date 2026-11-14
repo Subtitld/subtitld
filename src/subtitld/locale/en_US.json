@@ -989,6 +989,8 @@
     "subtitldcc.cancel": "Cancel",
     "subtitldcc.continue": "Continue",
     "subtitldcc.disconnect": "Disconnect",
+    "subtitldcc.state_connected": "Connected",
+    "subtitldcc.state_offline": "Not connected",
     "subtitldcc.disconnect_text": "Subtitld will stop publishing and rating as you on this computer. Finding public subtitles keeps working.",
     "subtitldcc.connect_why": "Connect to publish your subtitles, rate others and see the ones shared with you. Finding public subtitles works without it.",
     "subtitldcc.browser_wait": "Finish connecting in your browser…",

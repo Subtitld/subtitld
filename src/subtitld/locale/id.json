@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Batal",
     "subtitldcc.continue": "Lanjutkan",
     "subtitldcc.disconnect": "Putuskan",
+    "subtitldcc.state_connected": "Terhubung",
+    "subtitldcc.state_offline": "Tidak terhubung",
     "subtitldcc.disconnect_text": "Subtitld akan berhenti menerbitkan dan menilai sebagai Anda di komputer ini. Mencari subtitle publik tetap berfungsi.",
     "subtitldcc.connect_why": "Hubungkan untuk menerbitkan subtitle Anda, menilai milik orang lain, dan melihat yang dibagikan kepada Anda. Mencari subtitle publik tetap bisa tanpa itu.",
     "subtitldcc.browser_wait": "Selesaikan penghubungan di peramban Anda…",

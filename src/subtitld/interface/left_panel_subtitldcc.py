@@ -15,8 +15,8 @@ Nothing here is a dialog: questions are asked in place and every call runs in th
 (modules/subtitldcc_service.py), so Subtitld stays usable while subtitld.cc works.
 """
 
-from PySide6.QtCore import Qt, QUrl, QTimer, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import Qt, QSize, QUrl, QTimer, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QLinearGradient, QPainter
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
     QWidget,
@@ -227,6 +227,117 @@ class ResultRow(QWidget):
 # --- The panel -------------------------------------------------------------------------------------------
 
 
+class AccountHeader(QWidget):
+    """The panel's header, always in view above the cards, edge to edge: who
+    is connected (their name, their @handle and a badge saying so) and, in
+    its top-right corner, subtitld.cc's mark on a slanted tab with the
+    disconnect icon under it, shown while the pointer is over the header."""
+    disconnect_clicked = Signal()
+    SHADE = QColor(0, 0, 0, 38)
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('subtitldcc_header')
+        self.setMinimumHeight(62)                       # one height, connected or not
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 0, 0, 0)
+        layout.setSpacing(8)
+
+        who = QVBoxLayout()
+        who.setContentsMargins(0, 12, 0, 12)
+        who.setSpacing(4)
+        who.addStretch()                                # centred, with or without a name
+        self.name = _label('subtitldcc_header_name', wrap=False)
+        who.addWidget(self.name)
+        line = QHBoxLayout()
+        line.setSpacing(6)
+        self.handle = _label('subtitldcc_header_handle', wrap=False)
+        line.addWidget(self.handle)
+        self.badge = _label('subtitldcc_header_badge', wrap=False)
+        line.addWidget(self.badge)
+        line.addStretch()
+        for piece in (self.handle, self.badge):
+            piece.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        who.addLayout(line)
+        who.addStretch()
+        layout.addLayout(who, 1)
+
+        corner = QVBoxLayout()
+        corner.setContentsMargins(0, 0, 0, 0)
+        corner.setSpacing(0)
+        self.logo = QWidget()
+        self.logo.setObjectName('subtitldcc_header_logo')
+        self.logo.setAttribute(Qt.WA_StyledBackground, True)
+        self.logo.setFixedHeight(31)                    # the tab and its contact line
+        logo = QHBoxLayout(self.logo)
+        logo.setContentsMargins(18, 0, 12, 1)           # the slant; the contact line
+        logo.setSpacing(6)
+        mark = QLabel()
+        mark.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'subtitldcc_mark.svg')).pixmap(16, 16))
+        mark.setStyleSheet('background: transparent;')
+        logo.addWidget(mark)
+        word = QLabel('subtitld.cc')
+        word.setObjectName('subtitldcc_header_word')
+        logo.addWidget(word)
+        corner.addWidget(self.logo)
+        corner.addStretch()
+        self.disconnect = QPushButton()
+        self.disconnect.setObjectName('subtitldcc_header_disconnect')
+        self.disconnect.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'subtitldcc_disconnect.svg')))
+        self.disconnect.setIconSize(QSize(16, 16))
+        self.disconnect.setFixedSize(26, 26)
+        self.disconnect.setCursor(Qt.PointingHandCursor)
+        self.disconnect.clicked.connect(self.disconnect_clicked)
+        self.disconnect.setVisible(False)
+        under = QHBoxLayout()
+        under.setContentsMargins(0, 0, 6, 0)
+        under.addStretch()
+        under.addWidget(self.disconnect)
+        corner.addLayout(under)
+        corner.addSpacing(5)
+        layout.addLayout(corner)
+        self.connected = False
+
+    def show_account(self, connected, name='', handle=''):
+        self.connected = connected
+        self.name.setText(name or (f'@{handle}' if handle else ''))
+        self.name.setVisible(connected)
+        self.handle.setText(f'@{handle}' if handle and name else '')
+        self.handle.setVisible(bool(self.handle.text()))
+        self.badge.setText(_('subtitldcc.state_connected') if connected else _('subtitldcc.state_offline'))
+        self.badge.setProperty('connected', connected)
+        self.badge.style().unpolish(self.badge)
+        self.badge.style().polish(self.badge)
+        self.disconnect.setVisible(connected and self.underMouse())
+
+    def paintEvent(self, event):
+        QPainter(self).fillRect(self.rect(), self.SHADE)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.disconnect.setVisible(self.connected)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.disconnect.setVisible(False)
+
+
+class _HeaderShadow(QWidget):
+    """A soft shadow falling from the header over the cards scrolling under it."""
+    HEIGHT = 10
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setFixedHeight(self.HEIGHT)
+
+    def paintEvent(self, event):
+        shadow = QLinearGradient(0, 0, 0, self.height())
+        shadow.setColorAt(0, QColor(0, 0, 0, 70))
+        shadow.setColorAt(1, QColor(0, 0, 0, 0))
+        QPainter(self).fillRect(self.rect(), shadow)
+
+
 class SubtitldccPanel(QWidget):
     # The device code arrives on the sign-in thread; this carries it to the UI thread.
     device_code = Signal(str, str, str)
@@ -251,6 +362,10 @@ class SubtitldccPanel(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.header = AccountHeader()
+        self.header.disconnect_clicked.connect(self.sign_out)
+        outer.addWidget(self.header)
         scroll = QScrollArea()
         self.scroll = scroll
         scroll.setWidgetResizable(True)
@@ -281,6 +396,9 @@ class SubtitldccPanel(QWidget):
         # A subtitld:// link to a subtitle, followed with subtitles in the editor: asked here first.
         self.link_confirm = Confirm()
         self.cards.insertWidget(1, self.link_confirm)
+        # asked under the header, at the top of the cards
+        self.cards.insertWidget(2, self.disconnect_confirm)
+        self.header_shadow = _HeaderShadow(self)
         self._message_timer = QTimer(self)
         self._message_timer.setSingleShot(True)
         self._message_timer.timeout.connect(self.message.hide)
@@ -289,8 +407,20 @@ class SubtitldccPanel(QWidget):
 
     # --- Account -----------------------------------------------------------------------------------------
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.header_shadow.setGeometry(0, self.header.geometry().bottom() + 1, self.width(), _HeaderShadow.HEIGHT)
+        self.header_shadow.raise_()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.header_shadow.setGeometry(0, self.header.geometry().bottom() + 1, self.width(), _HeaderShadow.HEIGHT)
+        self.header_shadow.raise_()
+
     def _build_account(self):
+        # Connecting (and waiting for it) happens in this card; once connected, the header says who it is
         card, layout = _card()
+        self.account_card = card
         self.account_title = _label('subtitldcc_card_title')
         layout.addWidget(self.account_title)
         self.account_text = _label('subtitldcc_text')
@@ -312,7 +442,6 @@ class SubtitldccPanel(QWidget):
         layout.addWidget(_row(self.connect_button, self.code_button, self.device_page_button,
                               self.cancel_button, self.disconnect_button))
         self.disconnect_confirm = Confirm()
-        layout.addWidget(self.disconnect_confirm)
         self.cards.addWidget(card)
         self._device_uri = ''
 
@@ -324,7 +453,9 @@ class SubtitldccPanel(QWidget):
         self.cancel_button.setVisible(bool(waiting))
         self.connect_button.setVisible(not connected and not waiting)
         self.code_button.setVisible(not connected and not waiting)
-        self.disconnect_button.setVisible(connected and not waiting)
+        self.disconnect_button.setVisible(False)       # the header's icon disconnects
+        self.account_card.setVisible(not connected or bool(waiting))
+        self.header.show_account(connected and not waiting, account.get('name') or '', account.get('handle') or '')
         if code:
             self.account_code.setText(code)
             self.account_text.setText(_('subtitldcc.device_wait').format(uri=self._device_uri))
@@ -384,10 +515,10 @@ class SubtitldccPanel(QWidget):
         self.disconnect_confirm.ask(_('subtitldcc.disconnect_text'), _('subtitldcc.disconnect'), self._sign_out)
 
     def _sign_out(self):
-        self.disconnect_button.setEnabled(False)
+        self.header.disconnect.setEnabled(False)
 
         def done(_result=None):
-            self.disconnect_button.setEnabled(True)
+            self.header.disconnect.setEnabled(True)
             self._origin_info = None
             collab_service.connect()  # no one signed in: a shared project disconnects
             self.refresh()
@@ -978,6 +1109,8 @@ class SubtitldccPanel(QWidget):
         self.device_page_button.setText(_('subtitldcc.open_device_page'))
         self.cancel_button.setText(_('subtitldcc.cancel'))
         self.disconnect_button.setText(_('subtitldcc.disconnect'))
+        self.header.disconnect.setToolTip(_('subtitldcc.disconnect'))
+        self.header.disconnect.setAccessibleName(_('subtitldcc.disconnect'))
         self.origin_kicker.setText(_('subtitldcc.in_editor'))
         self.rate_label.setText(_('subtitldcc.your_rating'))
         self.works_button.setText(_('subtitldcc.works'))

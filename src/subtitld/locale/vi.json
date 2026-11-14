@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Hủy",
     "subtitldcc.continue": "Tiếp tục",
     "subtitldcc.disconnect": "Ngắt kết nối",
+    "subtitldcc.state_connected": "Đã kết nối",
+    "subtitldcc.state_offline": "Chưa kết nối",
     "subtitldcc.disconnect_text": "Subtitld sẽ ngừng đăng và đánh giá với danh nghĩa của bạn trên máy tính này. Việc tìm phụ đề công khai vẫn hoạt động.",
     "subtitldcc.connect_why": "Kết nối để đăng phụ đề của bạn, đánh giá phụ đề của người khác và xem những phụ đề được chia sẻ với bạn. Việc tìm phụ đề công khai vẫn chạy mà không cần kết nối.",
     "subtitldcc.browser_wait": "Hãy hoàn tất việc kết nối trong trình duyệt…",

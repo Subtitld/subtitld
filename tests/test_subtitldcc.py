@@ -253,14 +253,14 @@ check('waiting while the browser is open', (panel.cancel_button.isVisibleTo(host
                                              panel.connect_button.isVisibleTo(host)), (True, False))
 check('done', wait(lambda: panel._sign_in_call is None), True)
 app.processEvents()
-check('connected, not waiting any more', (panel.disconnect_button.isVisibleTo(host),
-                                          panel.cancel_button.isVisibleTo(host)), (True, False))
-check('says who', '@marina' in panel.account_text.text(), True)
+check('connected, not waiting any more', (panel.header.connected, panel.account_card.isVisibleTo(host),
+                                          panel.cancel_button.isVisibleTo(host)), (True, False, False))
+check('says who', '@marina' in (panel.header.name.text() + panel.header.handle.text()), True)
 service.sign_in = real_sign_in
 
 print('connected and allowed to edit: publish the next version')
 panel.refresh()
-check('connected', panel.disconnect_button.isVisibleTo(host), True)
+check('connected', panel.header.connected, True)
 check('version offered', (panel.publish_version_button.isVisibleTo(host), panel.publish_version_button.isEnabled()),
       (True, True))
 check('text says which version', 'version 3 of “Sintel (2010)”' in panel.publish_text.text(), True)

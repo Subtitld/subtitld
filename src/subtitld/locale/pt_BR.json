@@ -988,6 +988,8 @@
     "subtitldcc.cancel": "Cancelar",
     "subtitldcc.continue": "Continuar",
     "subtitldcc.disconnect": "Desconectar",
+    "subtitldcc.state_connected": "Conectado",
+    "subtitldcc.state_offline": "Não conectado",
     "subtitldcc.disconnect_text": "O Subtitld deixará de publicar e avaliar em seu nome neste computador. Encontrar legendas públicas continua funcionando.",
     "subtitldcc.connect_why": "Conecte para publicar suas legendas, avaliar as de outras pessoas e ver as compartilhadas com você. Encontrar legendas públicas funciona sem isso.",
     "subtitldcc.browser_wait": "Termine de conectar no navegador…",

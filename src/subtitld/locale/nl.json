@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Annuleren",
     "subtitldcc.continue": "Doorgaan",
     "subtitldcc.disconnect": "Verbinding verbreken",
+    "subtitldcc.state_connected": "Verbonden",
+    "subtitldcc.state_offline": "Niet verbonden",
     "subtitldcc.disconnect_text": "Subtitld publiceert en beoordeelt niet meer namens u op deze computer. Openbare ondertitels opzoeken blijft werken.",
     "subtitldcc.connect_why": "Verbind om uw ondertitels te publiceren, die van anderen te beoordelen en de ondertitels te zien die met u zijn gedeeld. Openbare ondertitels opzoeken werkt ook zonder verbinding.",
     "subtitldcc.browser_wait": "Maak het verbinden in uw browser af…",

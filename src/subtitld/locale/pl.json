@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Anuluj",
     "subtitldcc.continue": "Kontynuuj",
     "subtitldcc.disconnect": "Rozłącz",
+    "subtitldcc.state_connected": "Połączono",
+    "subtitldcc.state_offline": "Nie połączono",
     "subtitldcc.disconnect_text": "Subtitld przestanie publikować i oceniać w Twoim imieniu na tym komputerze. Wyszukiwanie publicznych napisów będzie działać dalej.",
     "subtitldcc.connect_why": "Połącz, aby publikować swoje napisy, oceniać cudze i widzieć te udostępnione Tobie. Wyszukiwanie publicznych napisów działa bez tego.",
     "subtitldcc.browser_wait": "Zakończ łączenie w przeglądarce…",

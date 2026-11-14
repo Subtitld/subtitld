@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "취소",
     "subtitldcc.continue": "계속",
     "subtitldcc.disconnect": "연결 해제",
+    "subtitldcc.state_connected": "연결됨",
+    "subtitldcc.state_offline": "연결 안 됨",
     "subtitldcc.disconnect_text": "이 컴퓨터에서는 Subtitld가 사용자 이름으로 게시하거나 평가하지 않습니다. 공개 자막 찾기는 계속 쓸 수 있습니다.",
     "subtitldcc.connect_why": "자막을 게시하고 다른 사람의 자막을 평가하고 나와 공유된 자막을 보려면 연결하세요. 공개 자막 찾기는 연결하지 않아도 됩니다.",
     "subtitldcc.browser_wait": "브라우저에서 연결을 마치세요…",

@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "キャンセル",
     "subtitldcc.continue": "続ける",
     "subtitldcc.disconnect": "接続を解除",
+    "subtitldcc.state_connected": "接続済み",
+    "subtitldcc.state_offline": "未接続",
     "subtitldcc.disconnect_text": "Subtitld はこのパソコンで、あなたとしての公開と評価を停止します。公開字幕の検索は引き続き使えます。",
     "subtitldcc.connect_why": "接続すると、自分の字幕を公開したり、他の人の字幕を評価したり、共有された字幕を見たりできます。公開字幕の検索は接続しなくても使えます。",
     "subtitldcc.browser_wait": "ブラウザーで接続を完了してください…",

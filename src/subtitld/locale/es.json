@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Cancelar",
     "subtitldcc.continue": "Continuar",
     "subtitldcc.disconnect": "Desconectar",
+    "subtitldcc.state_connected": "Conectado",
+    "subtitldcc.state_offline": "No conectado",
     "subtitldcc.disconnect_text": "Subtitld dejará de publicar y de valorar en tu nombre en este equipo. Buscar subtítulos públicos seguirá funcionando.",
     "subtitldcc.connect_why": "Conéctate para publicar tus subtítulos, valorar los de otras personas y ver los que se han compartido contigo. Buscar subtítulos públicos funciona sin conectarse.",
     "subtitldcc.browser_wait": "Termina de conectar en tu navegador…",

@@ -4243,6 +4243,64 @@ QLabel#autosave_empty_label {
    Subtitld Cloud dashboard above.
    ==================================================================== */
 
+/* The header (left_panel_subtitldcc.AccountHeader): who is connected, and subtitld.cc's mark on a slanted tab in
+   its top-right corner; it paints its own shade. */
+QLabel#subtitldcc_header_name {
+    font-family: 'Montserrat';
+    font-size: 12px;
+    font-weight: 700;
+    color: #e3edf5;
+    background: transparent;
+}
+
+QLabel#subtitldcc_header_handle {
+    font-family: 'Montserrat';
+    font-size: 10px;
+    color: rgba(184, 206, 224, 0.75);
+    background: transparent;
+}
+
+QLabel#subtitldcc_header_badge {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(184, 206, 224, 0.75);
+    background: rgba(184, 206, 224, 0.1);
+    border: 0;
+    border-radius: 3px;
+    padding: 2px 5px;
+}
+
+QLabel#subtitldcc_header_badge[connected="true"] {
+    color: #8fe57f;
+    background: rgba(85, 212, 63, 0.14);
+}
+
+QWidget#subtitldcc_header_logo {
+    border-image: url(graphics:subtitldcc_logo_tab.svg) 0 0 0 14 stretch stretch;
+    border-width: 0 0 0 14px;
+    background: transparent;
+}
+
+QLabel#subtitldcc_header_word {
+    font-family: 'Montserrat';
+    font-size: 11px;
+    font-weight: 700;
+    color: #e1ebf2;
+    background: transparent;
+}
+
+QPushButton#subtitldcc_header_disconnect {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 0;
+}
+
+QPushButton#subtitldcc_header_disconnect:hover {
+    background: rgba(255, 255, 255, 20);
+}
+
 QWidget#subtitldcc_card {
     background: rgba(62, 83, 99, 0.9);
     border-radius: 4px;

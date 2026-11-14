@@ -737,6 +737,8 @@
     "subtitldcc.cancel": "Скасувати",
     "subtitldcc.continue": "Продовжити",
     "subtitldcc.disconnect": "Відключити",
+    "subtitldcc.state_connected": "Підключено",
+    "subtitldcc.state_offline": "Не підключено",
     "subtitldcc.disconnect_text": "Subtitld більше не публікуватиме й не оцінюватиме від вашого імені на цьому комп’ютері. Пошук публічних субтитрів працюватиме й далі.",
     "subtitldcc.connect_why": "Підключіться, щоб публікувати свої субтитри, оцінювати чужі та бачити ті, якими поділилися з вами. Пошук публічних субтитрів працює й без цього.",
     "subtitldcc.browser_wait": "Завершіть підключення у браузері…",
