@@ -1145,6 +1145,17 @@ class LiveBar(QWidget):
         if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice', 'conflicts', 'document'):
             self._redraw.start()
 
+    def _mark_navigation(self, live):
+        """Live: the subtitld.cc panel's button in the sidebar takes the green bar it shows when subtitles were
+        found for the video (left_panel_subtitldcc._mark_navigation), seen from any panel."""
+        from subtitld.interface import left_panel
+        window = self.window()
+        for button in (window.findChildren(left_panel.navigation_button) if window is not None else []):
+            if button.tab_name == 'subtitldcc' and button.property('live') != live:
+                button.setProperty('live', live)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
     def _chat_icon_centre(self):
         """Where the chat tab draws its icon: icon and count centred between its 13px slanted ends."""
         from PySide6.QtCore import QPoint
@@ -1195,6 +1206,7 @@ class LiveBar(QWidget):
         connected = service.is_connected()
         self.setVisible(connected)
         if not connected:
+            self._mark_navigation(False)
             return
         shared = collab_state.shared()
         state = collab_service.state()
@@ -1208,6 +1220,7 @@ class LiveBar(QWidget):
             kind, text = 'joining', _('collab.joining')
         else:
             kind, text = 'trouble', _('collab.bar_offline')
+        self._mark_navigation(kind == 'live')
         self.dot.setProperty('state', kind)
         self.dot.style().unpolish(self.dot)
         self.dot.style().polish(self.dot)

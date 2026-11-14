@@ -4815,7 +4815,9 @@ QWidget#subtitldcc_problem[severity="info"] {
     border-left-color: #5ba3d9;
 }
 
-/* Subtitles were found for the open video (left_panel_subtitldcc._mark_navigation). */
+/* Subtitles were found for the open video (left_panel_subtitldcc._mark_navigation), or the project is shared
+   and live (subtitldcc_live.LiveBar._mark_navigation). */
+#left_panel_navigation QPushButton[class=navigation_button][live="true"]:!checked,
 #left_panel_navigation QPushButton[class=navigation_button][has_matches="true"]:!checked {
     border-left: 10px solid #55d43f;
 }
