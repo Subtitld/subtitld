@@ -4407,12 +4407,17 @@ QPushButton[class='live_bar_icon']:checked {
 
 /* The projects shared with you, in the drawer: a card whose header opens its list. */
 QWidget#live_projects_card {
-    background: rgba(62, 83, 99, 0.9);
+    background: #1f2a33;
     border-radius: 4px;
 }
 
+QScrollArea#live_projects_list,
+QScrollArea#live_projects_list > QWidget > QWidget {
+    background: transparent;
+}
+
 QPushButton#live_projects_toggle {
-    background: rgba(0, 0, 0, 0.16);
+    background: rgba(0, 0, 0, 0.22);
     border: 0;
     border-radius: 0;
     border-top-left-radius: 4px;
@@ -4426,7 +4431,7 @@ QPushButton#live_projects_toggle:!checked {
 }
 
 QPushButton#live_projects_toggle:hover {
-    background: rgba(0, 0, 0, 0.26);
+    background: rgba(0, 0, 0, 0.32);
 }
 
 QLabel#live_projects_title {

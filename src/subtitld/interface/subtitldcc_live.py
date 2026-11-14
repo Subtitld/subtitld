@@ -94,6 +94,8 @@ def default_title():
 
 
 class LiveCard(QWidget):
+    PROJECTS_HEIGHT = 180                               # the projects shared with you, before their list scrolls
+
     def __init__(self, panel):
         super().__init__()
         self.panel = panel
@@ -158,11 +160,21 @@ class LiveCard(QWidget):
         projects_card.setContentsMargins(0, 0, 0, 0)
         projects_card.setSpacing(0)
         projects_card.addWidget(self.list_button)
-        self.projects_panel = QWidget()
-        self.projects_panel.setProperty('class', 'transparent_panel')
-        self.projects_box = QVBoxLayout(self.projects_panel)
+        # the list scrolls past PROJECTS_HEIGHT
+        from PySide6.QtWidgets import QScrollArea
+        self.projects_panel = QScrollArea()
+        self.projects_panel.setObjectName('live_projects_list')
+        self.projects_panel.setWidgetResizable(True)
+        self.projects_panel.setFrameShape(QScrollArea.NoFrame)
+        self.projects_panel.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.projects_panel.setMaximumHeight(self.PROJECTS_HEIGHT)
+        projects_list = QWidget()
+        projects_list.setProperty('class', 'transparent_panel')
+        self.projects_box = QVBoxLayout(projects_list)
         self.projects_box.setContentsMargins(10, 8, 10, 10)
         self.projects_box.setSpacing(6)
+        self.projects_box.addStretch()
+        self.projects_panel.setWidget(projects_list)
         self.projects_panel.setVisible(False)
         projects_card.addWidget(self.projects_panel)
         share.addWidget(self.projects_card)
@@ -540,7 +552,16 @@ class LiveCard(QWidget):
             open_button.setText(_('collab.open'))
             open_button.clicked.connect(lambda _c=False, p=project: self.ask_join(p))
             self.projects_box.addWidget(_row(label, open_button))
+        self.projects_box.addStretch()
+        QTimer.singleShot(0, self._fit_projects)
         self.refresh(load=False)
+
+    def _fit_projects(self):
+        """The list as tall as its projects, up to PROJECTS_HEIGHT (then it scrolls)."""
+        content = self.projects_panel.widget()
+        width = self.projects_panel.viewport().width()
+        need = content.heightForWidth(width) if content.hasHeightForWidth() else content.sizeHint().height()
+        self.projects_panel.setFixedHeight(min(max(need, 0), self.PROJECTS_HEIGHT))
 
     def ask_join(self, project):
         key = 'collab.join_unsaved' if session.UNSAVED else 'collab.join_text'
