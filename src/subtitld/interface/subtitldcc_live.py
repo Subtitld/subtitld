@@ -840,7 +840,6 @@ class _Ripple(QWidget):
     GROW = 60                                           # px the ring grows past the icon
     WIDTH = 3.5                                         # the ring's thickness
     BLUR = 3                                            # px its edges soften
-    HOLD = 0.3                                          # of a pulse, before it starts to fade
     COLOUR = '#8fe57f'
 
     def __init__(self, target, centre=None, base=12):
@@ -879,12 +878,11 @@ class _Ripple(QWidget):
         from PySide6.QtGui import QColor, QPainter, QPen
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        # it starts slowly and speeds up as it grows (ease-in); it stays solid for the first third, then fades
-        # faster and faster (a delayed ease-in), gone as it reaches its size
-        grown = self._phase ** 2
-        fading = max(0.0, (self._phase - self.HOLD) / (1 - self.HOLD))
+        # it bursts out and slows as it reaches its size (ease-out); it fades slowly at first, then faster
+        # (ease-in), gone as it settles
+        grown = 1 - (1 - self._phase) ** 3
         colour = QColor(self.COLOUR)
-        colour.setAlphaF(0.85 * (1 - fading ** 2))
+        colour.setAlphaF(0.85 * (1 - self._phase ** 2))
         painter.setPen(QPen(colour, self.WIDTH))
         painter.setBrush(Qt.NoBrush)
         radius = self._base + self.GROW * grown
