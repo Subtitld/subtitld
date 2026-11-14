@@ -696,7 +696,8 @@ class LiveBar(QWidget):
     """The panel's footer for live co-editing, always in view under the cards, like a call's bar: whether
     the open project is shared and connected, its title and who is in it; under that, the microphone, the
     call, the chat (with what is unread) and leaving. Not shared, it offers to share it (the light tab in its
-    corner) and the projects shared with you. Hidden while no one is signed in to subtitld.cc. The cards keep
+    corner). The toggle at the status line's start opens a drawer under that line with the co-editing card
+    (sharing, the projects shared with you, members, media). Hidden while no one is signed in to subtitld.cc. The cards keep
     the details (who it is shared with, the media, the chat itself); the bar's questions are asked there."""
 
     DRAWER_HEIGHT = 360                                 # at most: past it, the drawer scrolls
@@ -723,9 +724,17 @@ class LiveBar(QWidget):
         self.drawer.setVisible(False)
         panel.live_card.title.setVisible(False)         # the bar says what it is
 
-        status = QHBoxLayout()
-        status.setContentsMargins(12, 0, 6, 0)
+        # The status line: the drawer's toggle, whether it is shared and connected, the project, who is in it.
+        # Not shared and closed, it shares the bottom line with Share live (_arrange).
+        self.status_line = QWidget()
+        status = QHBoxLayout(self.status_line)
+        status.setContentsMargins(6, 0, 10, 0)
         status.setSpacing(6)
+        self.toggle = self._icon('live_bar_menu.svg')
+        self.toggle.setObjectName('live_bar_toggle')
+        self.toggle.setCheckable(True)
+        self.toggle.toggled.connect(self.open_drawer)
+        status.addWidget(self.toggle, 0, Qt.AlignVCenter)
         self.dot = QLabel()
         self.dot.setObjectName('live_bar_dot')
         self.dot.setFixedSize(8, 8)
@@ -739,15 +748,10 @@ class LiveBar(QWidget):
         status.addWidget(self.project, 1)
         self.faces = _Faces()
         status.addWidget(self.faces)
-        self.toggle = self._icon('live_bar_menu.svg')
-        self.toggle.setObjectName('live_bar_toggle')
-        self.toggle.setCheckable(True)
-        self.toggle.toggled.connect(self.open_drawer)
-        status.addWidget(self.toggle, 0, Qt.AlignVCenter)
-        layout.addLayout(status)
+        layout.addWidget(self.status_line)
         layout.addWidget(self.drawer)
 
-        controls = QHBoxLayout()
+        self.controls = controls = QHBoxLayout()
         controls.setContentsMargins(8, 0, 0, 0)
         controls.setSpacing(2)
         self.mic = self._icon('live_bar_mic.svg')
@@ -840,6 +844,7 @@ class LiveBar(QWidget):
         for button in (self.mic, self.call, self.chat, self.leave):
             button.setVisible(shared)
         self.share.setVisible(not shared)
+        self._arrange(shared)
         self.mic.setEnabled(on)
         self.mic.blockSignals(True)
         self.mic.setChecked(on and voice['latched'])
@@ -881,8 +886,23 @@ class LiveBar(QWidget):
         self._show(self.panel.chat_card)
         self.panel.chat_card.field.setFocus()
 
+    def _arrange(self, shared):
+        """Not shared and closed: one line, the status at the left of Share live. Otherwise the status line
+        on top (over the open drawer), the buttons at the foot."""
+        merged = not shared and not self.toggle.isChecked()
+        layout = self.layout()
+        if merged and self.controls.indexOf(self.status_line) < 0:
+            layout.removeWidget(self.status_line)
+            self.controls.insertWidget(0, self.status_line, 1)
+        elif not merged and layout.indexOf(self.status_line) < 0:
+            self.controls.removeWidget(self.status_line)
+            layout.insertWidget(0, self.status_line)
+        self.status_line.show()
+        self.controls.setContentsMargins(0 if merged else 8, 0, 0, 0)
+
     def open_drawer(self, opened):
         self.drawer.setVisible(opened)
+        self._arrange(collab_state.shared())
         if opened:
             self.panel.live_card.refresh()
 
