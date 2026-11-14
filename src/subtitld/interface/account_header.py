@@ -88,15 +88,18 @@ class AccountHeader(QWidget):
         self.connected = False
         self.hover_buttons = []
 
-    def add_hover_button(self, icon):
-        """An icon button under the tab, shown while the pointer is over the
-        header and the account is connected. The caller connects it and sets
-        its tooltip."""
-        button = QPushButton()
-        button.setObjectName('account_header_button')
-        button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
-        button.setIconSize(QSize(16, 16))
-        button.setFixedSize(26, 22)
+    def add_hover_button(self, icon=None, text=None):
+        """A button under the tab, an icon (or, `text`, a word), shown while
+        the pointer is over the header and the account is connected. The
+        caller connects it and sets its tooltip (or text, on retranslate)."""
+        button = QPushButton(text or '')
+        button.setObjectName('account_header_text_button' if text is not None else 'account_header_button')
+        if icon:
+            button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+            button.setIconSize(QSize(16, 16))
+            button.setFixedSize(26, 22)
+        else:
+            button.setFixedHeight(22)
         button.setCursor(Qt.PointingHandCursor)
         button.setVisible(False)
         self._buttons.addWidget(button)

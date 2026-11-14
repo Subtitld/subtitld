@@ -194,10 +194,9 @@ check('as the group, with the subtitles', calls[0], ('share', 'Sintel', 'subbers
 check('and the subtitle they came from, for the project to publish to', SHARED_FROM, ['Sb7kQ2xZ9aT'])
 session.SUBTITLE.pop('origin')
 check('it connects', calls[1][0], 'connect')
-check('shared: the members part, not the form', wait(lambda: card.members_title.isVisible()), True)
+check('shared: the members part, not the form', wait(lambda: not card.share_box.isVisible() and card._project is not None), True)
 check('connected', card.status.text(), 'Connected. Changes reach everyone as you make them.')
-card.members_card.header.click()
-card.media_card.header.click()
+panel.live_bar.show_people()                            # who it is shared with: a pop-up at the live bar's foot
 app.processEvents()
 check('the owner manages it', (card.add_row.isVisible(), card.stop_button.text()), (True, 'Stop sharing'))
 
@@ -287,6 +286,7 @@ PROJECT.pop('subtitle')
 card._project = None
 
 print('media')
+panel.live_bar.show_media()                             # in its dialog, from the live bar
 connection.engine.media['c' * 64] = {'hash': 'c' * 64, 'kind': 'video', 'name': 'Sintel.2010.mkv', 'size': 3 * 1024 ** 3}
 HELD.add('c' * 64)
 connection.changed.emit('media')
@@ -478,6 +478,7 @@ connection.failed.emit('missing_scope')
 check('asks to sign in again', (card.sign_in_button.isVisible(), card.status.text().startswith('Your subtitld.cc sign-in')), (True, True))
 
 print('who it is shared with')
+panel.live_bar.show_people()                            # in a pop-up at the live bar's foot
 card.member_field.setText('@joao')
 card.add_button.click()
 check('added', wait(lambda: ('add', 'joao') in calls), True)

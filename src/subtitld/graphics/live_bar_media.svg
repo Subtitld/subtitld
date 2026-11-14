@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Disconnect from subtitld.cc: an arrow leaving a door. -->
+<!-- The live bar (subtitldcc_live.LiveBar): the project's media (a film strip). -->
 <svg width="16" height="16" version="1.1" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
  <g fill="none" stroke="#b8cee0" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9.5 3.2V2.6c0-.6-.5-1.1-1.1-1.1H3.1c-.6 0-1.1.5-1.1 1.1v10.8c0 .6.5 1.1 1.1 1.1h5.3c.6 0 1.1-.5 1.1-1.1v-.6"/>
-  <path d="M6 8h8.2M11.6 5.3 14.3 8l-2.7 2.7"/>
+  <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+  <path d="M5 3v10M11 3v10M2 6.3h3M2 9.7h3M11 6.3h3M11 9.7h3"/>
  </g>
 </svg>

@@ -242,7 +242,7 @@ class LiveCard(QWidget):
         self.member_field.returnPressed.connect(self.add_member)
         self.add_row = _row(self.member_field, self.add_button, stretch=False)
         self.members_card.box.addWidget(self.add_row)
-        shared.addWidget(self.members_card)
+        # (the live bar shows it, in a pop-up at its foot's left corner: LiveBar.show_people)
         # Media: the project's files, sent between collaborators (modules/collab_transfer.py): a card that
         # opens on whether this computer shares its own, then one line a file (its name, size and where it is).
         self.media_card = _SectionCard()
@@ -257,7 +257,7 @@ class LiveCard(QWidget):
         self.media_card.box.addLayout(self.media_box)
         self.dubs = _text()
         self.media_card.box.addWidget(self.dubs)
-        shared.addWidget(self.media_card)
+        # (the live bar shows it, in a dialog: LiveBar.show_media)
         self.sign_in_button = _button(primary=True)
         self.sign_in_button.clicked.connect(self.sign_in_again)
         self.stop_button = _button(danger=True)
@@ -445,7 +445,7 @@ class LiveCard(QWidget):
         self.copy_link_button.setVisible(False)        # the live bar's link copies it
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
-        self.stop_button.setVisible(bool(project))      # leaving (or stopping) is here, in the drawer
+        self.stop_button.setVisible(False)             # the live bar's status line has it, on hover
         self._render_media()
 
     # --- Media -------------------------------------------------------------------------------------------
@@ -786,7 +786,13 @@ class _Faces(QWidget):
     def __init__(self):
         super().__init__()
         self._people = []                               # [(initial, speaking)]
+        self.on_click = None
+        self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(self.SIZE)
+
+    def mousePressEvent(self, event):
+        if self.on_click is not None:
+            self.on_click()
 
     def set_people(self, people):
         people = people[:6]
@@ -823,6 +829,7 @@ class LiveBar(QWidget):
 
     DRAWER_HEIGHT = 480                                 # at most: past it, the drawer scrolls
     RISE = 4                                            # Share live stands this much above the bar's shade
+    SLANT = 8                                           # a 30px tab's 75° slant: the chat tab's right side lies on the call tab's
 
     def __init__(self, panel):
         super().__init__()
@@ -884,6 +891,12 @@ class LiveBar(QWidget):
         self.link.clicked.connect(lambda: self.panel.live_card.copy_link())
         status.addWidget(self.link)
         status.addStretch(1)
+        # stopping sharing it (or leaving it): at the line's end, an icon, only while the pointer is on the bar
+        self.leave = self._icon('live_bar_leave.svg')
+        self.leave.setObjectName('live_bar_leave')
+        self.leave.clicked.connect(lambda: self.panel.live_card.ask_stop())
+        self.leave.setVisible(False)
+        status.addWidget(self.leave, 0, Qt.AlignVCenter)
         layout.addWidget(self.status_line)
         layout.addWidget(self.drawer)
 
@@ -892,18 +905,28 @@ class LiveBar(QWidget):
         controls.setSpacing(2)
         # On the left, who is in it.
         self.faces = _Faces()
+        self.faces.on_click = self.show_people
         controls.addWidget(self.faces, 0, Qt.AlignVCenter)
+        # no one in it: who it is shared with, from an icon
+        self.people = self._icon('live_bar_people.svg')
+        self.people.clicked.connect(self.show_people)
+        controls.addWidget(self.people, 0, Qt.AlignVCenter)
         controls.addStretch()
         # On the right: hanging up (in the call), the chat, and the call's tab in the corner.
         self.hang_up = self._icon('live_bar_call_leave.svg')
         self.hang_up.setObjectName('live_bar_hang_up')
         self.hang_up.clicked.connect(lambda: collab_service.voice_leave())
         controls.addWidget(self.hang_up, 0, Qt.AlignVCenter)
+        # the project's media, in a dialog
+        self.media = self._icon('live_bar_media.svg')
+        self.media.clicked.connect(self.show_media)
+        controls.addWidget(self.media, 0, Qt.AlignVCenter)
+        self._build_windows()
         # The chat: a slanted tab like the call's, bare until checked (then the call tab's blue, very faint);
         # checked, the chat shows in the drawer.
         from PySide6.QtCore import QSize as _QSize
         from PySide6.QtGui import QIcon as _QIcon
-        self.chat = QPushButton()
+        self.chat = QPushButton(self)                   # placed by hand (_place_chat), its slant on the call tab's
         self.chat.setObjectName('live_bar_chat')
         self.chat.setCheckable(True)
         self.chat.setCursor(Qt.PointingHandCursor)
@@ -911,7 +934,10 @@ class LiveBar(QWidget):
         self.chat.setIconSize(_QSize(16, 16))
         self.chat.setFixedHeight(30)
         self.chat.toggled.connect(self.open_chat)
-        controls.addWidget(self.chat, 0, Qt.AlignBottom)
+        self.chat_place = QWidget()                     # the room it takes in the line, less the shared slant
+        self.chat_place.setFixedHeight(30)
+        self.chat_place.installEventFilter(self)
+        controls.addWidget(self.chat_place, 0, Qt.AlignBottom)
         # The call's tab: out of the call, it joins it (light, like Share live); in it, green, it is the
         # microphone: held, talking (push to talk), unless the lock keeps it on the air.
         self.call = QPushButton()
@@ -1013,6 +1039,11 @@ class LiveBar(QWidget):
         on = voice['on']
         available = collab_service.voice_available()
         self.chat.setVisible(shared)
+        self.chat_place.setVisible(shared)
+        self.media.setVisible(shared)
+        self.leave.setVisible(shared and self.underMouse())
+        manage = bool(((self.panel.live_card._project or {}).get('permissions') or {}).get('can_manage'))
+        self.leave.setToolTip(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.call.setVisible(shared)
         self.hang_up.setVisible(shared and on)
         self.lock.setVisible(shared and on)
@@ -1037,6 +1068,8 @@ class LiveBar(QWidget):
         unread = collab_service.chat_unread() if shared else 0
         self.chat.setText(str(unread) if unread else '')
         self.chat.setFixedWidth(54 if unread else 44)
+        self.chat_place.setFixedWidth(self.chat.width() - self.SLANT - self.controls.spacing())
+        QTimer.singleShot(0, self._place_chat)
         if on and not self._speaking.isActive():
             self._speaking.start()
         elif not on:
@@ -1046,6 +1079,7 @@ class LiveBar(QWidget):
     def _render_faces(self):
         if not collab_state.shared():
             self.faces.set_people([])
+            self.people.setVisible(False)
             return
         voice = collab_service.voice_state()
         if voice['on']:
@@ -1053,8 +1087,74 @@ class LiveBar(QWidget):
         else:
             people = [((handle or '?')[:1].upper(), False) for handle in self.panel.live_card._here()]
         self.faces.set_people(people)
+        self.people.setVisible(collab_state.shared() and not people)
 
     # --- What it does ------------------------------------------------------------------------------------
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.leave.setVisible(collab_state.shared())
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.leave.setVisible(False)
+
+    def _place_chat(self):
+        """The chat tab over its place, reaching SLANT px under the call tab's slant, so their slants meet."""
+        place = self.chat_place
+        if not place.isVisible():
+            return
+        self.chat.setGeometry(place.x(), place.y(), self.chat.width(), 30)
+        self.chat.raise_()
+        self.call.raise_()
+
+    def _build_windows(self):
+        """The media's dialog and the pop-up of who it is shared with, holding their cards from the start: both
+        windows of the live card's, so the cards stay among its widgets."""
+        from PySide6.QtWidgets import QFrame
+        from subtitld.interface import utils
+        card = self.panel.live_card.media_card
+        dialog = utils.SimpleDialog(self.panel.live_card, _('collab.media'))
+        dialog.reject_button.setVisible(False)
+        dialog.accept_button.clicked.connect(dialog.accept)
+        card.header.setVisible(False)
+        card.HEIGHT = 360
+        dialog.content.layout().addWidget(card)
+        dialog.setMinimumWidth(460)
+        self._media_dialog = dialog
+        card = self.panel.live_card.members_card
+        popup = QFrame(self.panel.live_card, Qt.Popup | Qt.FramelessWindowHint)
+        popup.setObjectName('live_people_popup')
+        popup.setAttribute(Qt.WA_StyledBackground, True)
+        box = QVBoxLayout(popup)
+        box.setContentsMargins(0, 0, 0, 0)
+        card.sign.setVisible(False)                      # a title here, not a section to fold
+        card.header.setAttribute(Qt.WA_TransparentForMouseEvents)
+        box.addWidget(card)
+        popup.setFixedWidth(300)
+        self._people_popup = popup
+
+    def show_media(self):
+        """The project's media (modules/collab_transfer.py), in a dialog: whether this computer shares its own,
+        and one line a file."""
+        card = self.panel.live_card.media_card
+        card.header.setChecked(True)
+        self.panel.live_card._render_media()
+        card.fit()
+        self._media_dialog.show()
+        self._media_dialog.raise_()
+
+    def show_people(self):
+        """Who it is shared with (the owner adds and removes people), in a pop-up at the foot's left corner."""
+        from PySide6.QtCore import QPoint
+        card = self.panel.live_card.members_card
+        card.header.setChecked(True)
+        card.fit()
+        popup = self._people_popup
+        popup.adjustSize()
+        corner = self.mapToGlobal(QPoint(0, self.RISE))          # above the foot's left corner
+        popup.move(corner.x(), corner.y() - popup.sizeHint().height())
+        popup.show()
 
     def _call_pressed(self):
         if collab_service.in_call():
@@ -1093,7 +1193,9 @@ class LiveBar(QWidget):
 
     def eventFilter(self, watched, event):
         from PySide6.QtCore import QEvent
-        if watched is self.drawer_content and event.type() in (QEvent.LayoutRequest, QEvent.Resize):
+        if watched is getattr(self, 'chat_place', None) and event.type() in (QEvent.Move, QEvent.Resize, QEvent.Show):
+            QTimer.singleShot(0, self._place_chat)
+        if watched is getattr(self, 'drawer_content', None) and event.type() in (QEvent.LayoutRequest, QEvent.Resize):
             QTimer.singleShot(0, self._fit_drawer)
         return super().eventFilter(watched, event)
 
