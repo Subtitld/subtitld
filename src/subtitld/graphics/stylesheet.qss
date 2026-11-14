@@ -4405,6 +4405,26 @@ QPushButton[class='live_bar_icon']:checked {
     background: rgba(85, 212, 63, 0.18);
 }
 
+/* The projects shared with you, in the drawer: a section header that opens its list. */
+QPushButton#live_projects_toggle {
+    background: rgba(0, 0, 0, 0.18);
+    border: 0;
+    border-radius: 3px;
+    padding: 0;
+}
+
+QPushButton#live_projects_toggle:hover {
+    background: rgba(0, 0, 0, 0.28);
+}
+
+QLabel#live_projects_title {
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    color: #b8cee0;
+    background: transparent;
+}
+
 /* The drawer's toggle fills its corner of the line: square. */
 QPushButton#live_bar_toggle {
     border-radius: 0;

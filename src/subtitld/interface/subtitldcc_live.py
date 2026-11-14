@@ -129,11 +129,35 @@ class LiveCard(QWidget):
         self.share_button.clicked.connect(self.share)
         share.addWidget(self.title_field)
         share.addWidget(_row(self.owner_field, self.share_button))
-        self.list_button = _button()
-        self.list_button.clicked.connect(self.load_projects)
-        share.addWidget(_row(self.list_button))
-        self.projects_box = QVBoxLayout()
-        share.addLayout(self.projects_box)
+        # The live bar's Share live shares it, under the project's own title: no form of its own here.
+        self.title_field.setVisible(False)
+        self.share_button.setVisible(False)
+        # The projects shared with you: a section that opens (and loads them again) when clicked.
+        self.list_button = QPushButton()
+        self.list_button.setObjectName('live_projects_toggle')
+        self.list_button.setCheckable(True)
+        self.list_button.setCursor(Qt.PointingHandCursor)
+        toggle = QHBoxLayout(self.list_button)
+        toggle.setContentsMargins(10, 0, 10, 0)
+        self.list_title = QLabel()
+        self.list_title.setObjectName('live_projects_title')
+        self.list_sign = QLabel('+')
+        self.list_sign.setObjectName('live_projects_title')
+        for label in (self.list_title, self.list_sign):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        toggle.addWidget(self.list_title)
+        toggle.addStretch()
+        toggle.addWidget(self.list_sign)
+        self.list_button.setFixedHeight(26)
+        self.list_button.toggled.connect(self._open_projects)
+        share.addWidget(self.list_button)
+        self.projects_panel = QWidget()
+        self.projects_panel.setProperty('class', 'transparent_panel')
+        self.projects_box = QVBoxLayout(self.projects_panel)
+        self.projects_box.setContentsMargins(0, 0, 0, 0)
+        self.projects_box.setSpacing(6)
+        self.projects_panel.setVisible(False)
+        share.addWidget(self.projects_panel)
         layout.addWidget(self.share_box)
 
         # Shared: who is here, who it's shared with.
@@ -305,7 +329,6 @@ class LiveCard(QWidget):
                 self.owner_field.addItem(f'@{handle}', handle)
         self.owner_field.setVisible(len(owners) > 1)
         self.share_button.setEnabled(not self._busy and bool(self.title_field.text().strip()))
-        self.list_button.setVisible(self._projects is None)
 
     def _render_shared(self):
         state = collab_service.state()
@@ -484,6 +507,12 @@ class LiveCard(QWidget):
         self.panel.show_message(_('collab.shared_now'))
         self.refresh(load=False)
 
+    def _open_projects(self, opened):
+        self.list_sign.setText('−' if opened else '+')
+        self.projects_panel.setVisible(opened)
+        if opened:
+            self.load_projects()
+
     def load_projects(self):
         self.list_button.setEnabled(False)
         collab_service.projects(self._projects_loaded, self._call_failed)
@@ -643,7 +672,7 @@ class LiveCard(QWidget):
         self.title_field.setPlaceholderText(_('collab.title_placeholder'))
         self.share_button.setText(_('collab.share'))
         self.share_button.setToolTip(_('collab.share_tip'))
-        self.list_button.setText(_('collab.shared_with_you'))
+        self.list_title.setText(_('collab.shared_with_you').upper())
         self.copy_link_button.setText(_('collab.copy_link'))
         self.copy_link_button.setToolTip(_('collab.copy_link_tip'))
         self.members_title.setText(_('collab.members'))
@@ -700,7 +729,7 @@ class LiveBar(QWidget):
     (sharing, the projects shared with you, members, media). Hidden while no one is signed in to subtitld.cc. The cards keep
     the details (who it is shared with, the media, the chat itself); the bar's questions are asked there."""
 
-    DRAWER_HEIGHT = 360                                 # at most: past it, the drawer scrolls
+    DRAWER_HEIGHT = 480                                 # at most: past it, the drawer scrolls
     RISE = 4                                            # Share live stands this much above the bar's shade
 
     def __init__(self, panel):
@@ -723,6 +752,7 @@ class LiveBar(QWidget):
         self.drawer.setMaximumHeight(self.DRAWER_HEIGHT)
         self.drawer.setWidget(panel.live_card)
         self.drawer.setVisible(False)
+        panel.live_card.installEventFilter(self)        # its content changes: the drawer follows (_fit_drawer)
         panel.live_card.title.setVisible(False)         # the bar says what it is
 
         # The status line: the drawer's toggle, whether it is shared and connected, the project, who is in it.
@@ -908,11 +938,32 @@ class LiveBar(QWidget):
         # one line: Share live rises into the strip above the shade; otherwise the status line starts under it
         layout.setContentsMargins(0, 0 if merged else self.RISE, 0, 0)
 
+    def eventFilter(self, watched, event):
+        from PySide6.QtCore import QEvent
+        if watched is self.panel.live_card and event.type() in (QEvent.LayoutRequest, QEvent.Resize):
+            QTimer.singleShot(0, self._fit_drawer)
+        return super().eventFilter(watched, event)
+
+    def _fit_drawer(self):
+        """As tall as the card's content at its width, up to DRAWER_HEIGHT (then it scrolls); the cards above
+        give up the room."""
+        if not self.drawer.isVisible():
+            return
+        card = self.panel.live_card
+        width = self.drawer.viewport().width()
+        need = card.heightForWidth(width) if card.hasHeightForWidth() else card.sizeHint().height()
+        height = min(max(need, 0), self.DRAWER_HEIGHT)
+        if self.drawer.height() != height or self.drawer.minimumHeight() != height:
+            self.drawer.setFixedHeight(height)
+
     def open_drawer(self, opened):
+        from PySide6.QtGui import QIcon
         self.drawer.setVisible(opened)
+        self.toggle.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_menu_open.svg' if opened else 'live_bar_menu.svg'))))
         self._arrange(collab_state.shared())
         if opened:
             self.panel.live_card.refresh()
+            QTimer.singleShot(0, self._fit_drawer)
 
     def _show_in_drawer(self, widget):
         self.toggle.setChecked(True)
