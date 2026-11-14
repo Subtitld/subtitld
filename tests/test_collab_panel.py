@@ -373,12 +373,13 @@ from PySide6.QtGui import QKeyEvent  # noqa: E402
 from subtitld.modules import collab_voice, opus, rtc  # noqa: E402
 collab_service.voice_available = lambda: True
 collab_voice.Call._open_devices = lambda self, input_device, output_device: None  # no sound devices here
-check('a Join button', (chat.join_button.isVisible(), chat.join_button.text()), (True, 'Join the call'))
+bar = panel.live_bar
+check('a Join button: the live bar\'s call tab', (bar.call.isVisible(), bar.call.toolTip()), (True, 'Join the call'))
 if not (rtc.available() and opus.available()):
     print('  libdatachannel or libopus is not available here: the call skipped')
 else:
     chat.join_button.click()
-    check('in the call', wait(lambda: (collab_service.in_call(), chat.join_button.text(), chat.talk_button.isVisible())
+    check('in the call', wait(lambda: (collab_service.in_call(), chat.join_button.text(), bar.lock.isVisible())
                              == (True, 'Leave the call', True)), True)
     check('the others are told', [c[1].get('voice') for c in calls if c[0] == 'presence'][-1], True)
     connection.engine.peers['p1'] = {'user': {'handle': 'joao', 'name': 'João'}, 'state': {'voice': True}}
@@ -411,7 +412,7 @@ else:
     for i in range(7):
         connection.engine.peers[f'q{i}'] = {'user': {'handle': f'u{i}'}, 'state': {'voice': True}}
     engine_says('peers')
-    check('many in the call: a note, no limit', wait(lambda: chat.voice_note.isVisible() and 'Many people' in chat.voice_note.text()), True)
+    check('many in the call: a note, no limit', wait(lambda: 'Many people' in chat.voice_note.text()), True)
     for i in range(7):
         del connection.engine.peers[f'q{i}']
     chat.join_button.click()

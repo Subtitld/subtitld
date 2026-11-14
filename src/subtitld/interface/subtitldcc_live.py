@@ -410,10 +410,10 @@ class LiveCard(QWidget):
         self.here.setText(_('collab.here').format(people=', '.join(others)) if others else _('collab.here_nobody'))
         found = collab_service.conflicts()
         new, self._shown_conflicts = len(found) > self._shown_conflicts, len(found)
-        if new:
-            self.reveal(self.conflicts)                 # new ones need an answer
         self.conflicts.setVisible(bool(found))
         self.conflicts.setText(_('collab.conflicts').format(count=len(found)))
+        if new:
+            self.reveal(self.conflicts)                 # new ones need an answer (shown first, so the drawer has it)
         _clear(self.conflicts_box)
         for conflict in found[:10]:
             self.conflicts_box.addWidget(self._conflict_row(conflict))
@@ -717,6 +717,14 @@ class LiveCard(QWidget):
         self.confirm.show()
         self.reveal(self.confirm)
 
+    def has_content(self):
+        """Whether the card has anything to show: not shared, its sharing; shared, only what needs saying (a
+        problem, conflicts, where it publishes, a question): the rest is in the live bar."""
+        if not collab_state.shared():
+            return True
+        return any(not w.isHidden() for w in (self.status, self.publishes_to, self.conflicts, self.sign_in_button,
+                                              self.copy_link_button, self.stop_button, self.confirm))
+
     def reveal(self, widget=None):
         """The card lives in the live bar's drawer (LiveBar): opened, and scrolled to `widget`, when it has
         something to ask or show."""
@@ -1013,7 +1021,7 @@ class LiveBar(QWidget):
         return button
 
     def _news(self, kind):
-        if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice'):
+        if kind in ('chat', 'state', 'peers', 'shared', 'stopped', 'voice', 'conflicts', 'document'):
             self._redraw.start()
 
     # --- What it shows -----------------------------------------------------------------------------------
@@ -1058,9 +1066,14 @@ class LiveBar(QWidget):
         self.hang_up.setVisible(shared and on)
         self.lock.setVisible(shared and on)
         self.share.setVisible(not shared)
+        # shared with nothing in the card to say: no toggle (it would open on nothing)
+        has = self.panel.live_card.has_content()
+        self.toggle.setVisible(has)
+        self.status_line.layout().setContentsMargins(0 if has else 12, 0, 10, 0)
+        if not has and self.toggle.isChecked():
+            self.toggle.setChecked(False)
         self._arrange(shared)
-        if self.drawer.isVisible() != (self.toggle.isChecked() or (self.chat.isChecked() and shared)):
-            self._show_drawer()
+        self._show_drawer()
         self.lock.blockSignals(True)
         self.lock.setChecked(on and voice['latched'])
         self.lock.blockSignals(False)
@@ -1235,7 +1248,8 @@ class LiveBar(QWidget):
     def _show_drawer(self):
         """The drawer shows what its two switches ask for: the co-editing card (the toggle), the chat (the
         chat tab); hidden when neither."""
-        live, chat = self.toggle.isChecked(), self.chat.isChecked() and self.chat.isVisible()
+        live = self.toggle.isChecked() and self.panel.live_card.has_content()
+        chat = self.chat.isChecked() and self.chat.isVisible()
         self.live_holder.setVisible(live)
         self.chat_holder.setVisible(chat)
         self.drawer.setVisible(live or chat)
@@ -1259,7 +1273,10 @@ class LiveBar(QWidget):
 
     def _show_in_drawer(self, widget):
         in_chat = self.panel.chat_card.isAncestorOf(widget) or widget is self.panel.chat_card
+        if not in_chat:
+            self.toggle.setVisible(True)                # the card has something to show now
         (self.chat if in_chat else self.toggle).setChecked(True)
+        self._show_drawer()
         self.drawer.ensureWidgetVisible(widget)
 
     def start_sharing(self):
