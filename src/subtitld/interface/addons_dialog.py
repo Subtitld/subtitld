@@ -569,8 +569,9 @@ class _AddonCard(QFrame):
         super().__init__(parent)
         self.row = row
         self.setProperty('class', 'addon_card')
-        # as tall as its words need at the width it is given: no less, no more
-        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # as tall as its words need at the width it is given (height for width). Not Fixed: that pins the
+        # height to the size hint of the width it had before, so a resize cut the text or left a gap
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
         self._kind = 'installed' if row.is_installed else 'available'
