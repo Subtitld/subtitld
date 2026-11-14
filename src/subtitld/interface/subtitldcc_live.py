@@ -829,7 +829,7 @@ class LiveBar(QWidget):
 
     DRAWER_HEIGHT = 480                                 # at most: past it, the drawer scrolls
     RISE = 4                                            # Share live stands this much above the bar's shade
-    SLANT = 8                                           # a 30px tab's 75° slant: the chat tab's right side lies on the call tab's
+    SLANT = 13                                          # the call tab's left slice (slant and top curve): the chat tab reaches under it
 
     def __init__(self, panel):
         super().__init__()
@@ -1072,7 +1072,7 @@ class LiveBar(QWidget):
             self.call.style().polish(self.call)
         unread = collab_service.chat_unread() if shared else 0
         self.chat.setText(str(unread) if unread else '')
-        self.chat.setFixedWidth(54 if unread else 44)
+        self.chat.setFixedWidth(62 if unread else 50)
         self.chat_place.setFixedWidth(self.chat.width() - self.SLANT - self.controls.spacing())
         QTimer.singleShot(0, self._place_chat)
         if on and not self._speaking.isActive():

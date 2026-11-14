@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The live bar's chat tab, checked (subtitldcc_live.LiveBar): the call tab's shape, slanted on both sides
-     (its right side parallel to the call tab's left), in its light blue, very faint. Slices: left 13, right 9. -->
+<!-- The live bar's chat tab, checked: the call tab's light blue, very faint. Slanted on both sides: its right side is the call tab's left side (its
+     slant and the 6px curve at its top) moved to lie under it, so the two meet with no gap. Slices: 13, 13. -->
 <svg width="40" height="31" version="1.1" viewBox="0 0 40 31" xmlns="http://www.w3.org/2000/svg">
- <path d="M0 31L6.85 5.45C7.55 2.82 9.93 1 12.64 1H40L31.96 31Z" fill="#c8dbe9" fill-opacity="0.12"/>
+ <path d="M0 31L6.85 5.45C7.55 2.82 9.93 1 12.64 1H39.64C36.93 1 34.55 2.82 33.85 5.45L27 31Z" fill="#c8dbe9" fill-opacity="0.12"/>
 </svg>

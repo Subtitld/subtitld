@@ -4399,8 +4399,8 @@ QPushButton#live_bar_call[call="talking"] {
 
 /* The chat: the call tab's slanted shape, bare until hovered or checked (then its blue, very faint). */
 QPushButton#live_bar_chat {
-    border-image: url(graphics:live_bar_chat_tab_off.svg) 0 9 0 13 stretch stretch;
-    border-width: 0 9px 0 13px;
+    border-image: url(graphics:live_bar_chat_tab_off.svg) 0 13 0 13 stretch stretch;
+    border-width: 0 13px 0 13px;
     border-radius: 0;
     background: transparent;
     padding: 0;
@@ -4411,11 +4411,11 @@ QPushButton#live_bar_chat {
 }
 
 QPushButton#live_bar_chat:hover {
-    border-image: url(graphics:live_bar_chat_tab_hover.svg) 0 9 0 13 stretch stretch;
+    border-image: url(graphics:live_bar_chat_tab_hover.svg) 0 13 0 13 stretch stretch;
 }
 
 QPushButton#live_bar_chat:checked {
-    border-image: url(graphics:live_bar_chat_tab_on.svg) 0 9 0 13 stretch stretch;
+    border-image: url(graphics:live_bar_chat_tab_on.svg) 0 13 0 13 stretch stretch;
 }
 
 /* Who it is shared with: a panel above the live bar's line, the line's colour while open (LiveBar paints it). */
