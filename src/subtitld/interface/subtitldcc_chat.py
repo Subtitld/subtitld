@@ -86,7 +86,7 @@ class ChatCard(QWidget):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)           # in the live bar's drawer, edge to edge
-        layout.setSpacing(8)
+        layout.setSpacing(0)                            # the well, then the field right under it
         self._editing = None  # the ID of the message being edited
         self._shown_peers = None
 
@@ -98,8 +98,8 @@ class ChatCard(QWidget):
         self.note.setVisible(False)
         layout.addWidget(self.note)
 
-        # The messages in a sunken well with rounded corners (a shadow inside its top edge), and at its foot,
-        # edge to edge, the field and Send.
+        # The messages in a sunken well (a shadow inside its top edge); under it, on the bar's ground, edge to
+        # edge, the field and Send.
         self.well = QWidget()
         self.well.setObjectName('chat_well')
         self.well.setAttribute(Qt.WA_StyledBackground, True)
@@ -135,10 +135,10 @@ class ChatCard(QWidget):
         foot.addWidget(self.field, 1)
         foot.addWidget(self.cancel_button)
         foot.addWidget(self.send_button)
-        well.addLayout(foot)
         self._well_shadow = _InsetShadow(self.well)
         self.well.installEventFilter(self)
         layout.addWidget(self.well)
+        layout.addLayout(foot)                          # under the well, on the bar's own ground
         # Pointing the message at the selected subtitle and the playhead: a checkable icon inside the field.
         from PySide6.QtGui import QAction
         self.attach = QAction(self)
