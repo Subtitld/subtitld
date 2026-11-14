@@ -4428,6 +4428,19 @@ QPushButton#live_bar_people:checked {
     background: rgba(0, 0, 0, 0.18);
 }
 
+/* Stop sharing (or leave): a word at the status line's end, red, lit on hover. */
+QPushButton#live_bar_leave {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 0 8px;
+    font-family: 'Montserrat';
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #e08a8a;
+}
+
 /* Hang up, and stop sharing (or leave): red where they light. */
 QPushButton#live_bar_leave:hover,
 QPushButton#live_bar_hang_up:hover {

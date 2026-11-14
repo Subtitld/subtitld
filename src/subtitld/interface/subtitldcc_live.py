@@ -891,9 +891,11 @@ class LiveBar(QWidget):
         self.link.clicked.connect(lambda: self.panel.live_card.copy_link())
         status.addWidget(self.link)
         status.addStretch(1)
-        # stopping sharing it (or leaving it): at the line's end, an icon, only while the pointer is on the bar
-        self.leave = self._icon('live_bar_leave.svg')
+        # stopping sharing it (or leaving it): at the line's end, a word, only while the pointer is on the bar
+        self.leave = QPushButton()
         self.leave.setObjectName('live_bar_leave')
+        self.leave.setCursor(Qt.PointingHandCursor)
+        self.leave.setFixedHeight(22)
         self.leave.clicked.connect(lambda: self.panel.live_card.ask_stop())
         self.leave.setVisible(False)
         status.addWidget(self.leave, 0, Qt.AlignVCenter)
@@ -1048,7 +1050,7 @@ class LiveBar(QWidget):
         self.media.setVisible(shared)
         self.leave.setVisible(shared and self.underMouse())
         manage = bool(((self.panel.live_card._project or {}).get('permissions') or {}).get('can_manage'))
-        self.leave.setToolTip(_('collab.stop_sharing') if manage else _('collab.leave'))
+        self.leave.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
         self.call.setVisible(shared)
         self.hang_up.setVisible(shared and on)
         self.lock.setVisible(shared and on)
