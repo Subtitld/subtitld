@@ -4469,6 +4469,12 @@ QPushButton#chat_bubble_button:hover {
     background: rgba(255, 255, 255, 0.10);
 }
 
+/* The chat's scroll bar: room around it, off the messages and the edge. */
+QScrollArea#chat_scroll QScrollBar:vertical {
+    width: 16px;
+    margin: 6px 4px 6px 4px;        /* the handle's room inside the bar */
+}
+
 QLabel#chat_empty {
     background: transparent;
     font-size: 10px;

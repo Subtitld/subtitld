@@ -154,6 +154,7 @@ class ChatCard(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setMinimumHeight(180)
+        self.scroll.setObjectName('chat_scroll')
         self.scroll.setProperty('class', 'transparent_panel')
         inner = QWidget()
         inner.setProperty('class', 'transparent_panel')
