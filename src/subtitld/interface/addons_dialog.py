@@ -536,8 +536,8 @@ class _AddonCard(QFrame):
     configure_clicked = Signal(object)
 
     RADIUS = 4
-    BAND = 26                          # the band's height
-    LABEL = 23                         # the task label's: it stops 3px short of the band's foot
+    BAND = 30                          # the band's height, the footer tab's
+    LABEL = 27                         # the task label's: it stops 3px short of the band's foot
     COLOURS = {                        # card, band
         'installed': ('#33475a', '#3f566a'),
         'available': ('#2c3d4b', '#36495a'),
