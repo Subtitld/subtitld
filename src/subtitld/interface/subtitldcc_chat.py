@@ -77,6 +77,17 @@ class _InsetShadow(QWidget):
         painter.fillRect(self.rect(), shade)
 
 
+class _ChatField(QLineEdit):
+    """The message field: Enter sends (returnPressed), before the editor's own Enter shortcut (add a subtitle)
+    can take it."""
+
+    def event(self, event):
+        if event.type() == QEvent.ShortcutOverride and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            event.accept()
+            return True
+        return super().event(event)
+
+
 class _Bubble(QWidget):
     """A chat message's bubble; its own buttons (Edit, Delete) flush in its bottom-right corner, shown while the
     pointer is on it."""
@@ -91,6 +102,7 @@ class _Bubble(QWidget):
         from PySide6.QtWidgets import QPushButton
         button = QPushButton(self)
         button.setObjectName('chat_bubble_button')
+        button.setProperty('first', not self.buttons)    # the first one rounds its top-left corner
         button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
         button.setIconSize(QSize(12, 12))
         button.setFixedSize(22, 20)
@@ -163,7 +175,7 @@ class ChatCard(QWidget):
         self.scroll.installEventFilter(self)             # bubbles keep to a share of its width
         well.addWidget(self.scroll)
 
-        self.field = QLineEdit()
+        self.field = _ChatField()
         self.field.setObjectName('chat_field')
         self.field.setMaxLength(2000)
         self.field.returnPressed.connect(self.send)
@@ -369,9 +381,8 @@ class ChatCard(QWidget):
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
         head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
-        # its own: the foot's words on the left, Edit and Delete taking the bottom-right corner on hover
-        meta = (f'<div align="{"left" if editable else "right"}" style="font-size:9px; '
-                f'color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>')
+        # the foot's words on the right (its own's Edit and Delete take that corner while hovered)
+        meta = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
         label = _text('chat_bubble_text')
         label.setTextFormat(Qt.RichText)
         label.setTextInteractionFlags(Qt.TextBrowserInteraction)

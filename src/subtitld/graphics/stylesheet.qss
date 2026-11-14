@@ -4461,6 +4461,10 @@ QPushButton#chat_bubble_button {
     padding: 0;
 }
 
+QPushButton#chat_bubble_button[first="true"] {
+    border-top-left-radius: 3px;
+}
+
 QPushButton#chat_bubble_button:hover {
     background: rgba(255, 255, 255, 0.10);
 }
