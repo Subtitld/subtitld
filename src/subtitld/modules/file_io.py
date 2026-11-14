@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QPixmap
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
@@ -2487,6 +2487,22 @@ def _thumbnail_png():
 _save_in_progress = False
 
 
+def _detached(value):
+    """A deep copy of `value` that a save thread may read while the main
+    thread edits the original. Pictures (a speaker's QImage) cannot be
+    deep-copied, which made every snapshot fail; Qt's own copy of one is
+    shared until either side writes to it, so it is taken instead."""
+    if isinstance(value, dict):
+        return {key: _detached(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_detached(item) for item in value]
+    if isinstance(value, QImage):
+        return QImage(value)
+    if isinstance(value, QPixmap):
+        return QPixmap(value)
+    return copy.deepcopy(value)
+
+
 def _snapshot_for_save():
     """Main thread only. Deep-copy the mutable session collections so
     the save thread sees a stable view regardless of user edits during
@@ -2496,10 +2512,10 @@ def _snapshot_for_save():
         return {
             'THUMBNAIL': _thumbnail_png(),
             'COLLAB': collab_state.export(),
-            'SUBTITLE': copy.deepcopy(session.SUBTITLE),
-            'SPEAKERS': copy.deepcopy(session.SPEAKERS),
-            'VIDEO': copy.deepcopy(session.VIDEO),
-            'FORMAT': copy.deepcopy(session.FORMAT) if isinstance(session.FORMAT, dict) else session.FORMAT,
+            'SUBTITLE': _detached(session.SUBTITLE),
+            'SPEAKERS': _detached(session.SPEAKERS),
+            'VIDEO': _detached(session.VIDEO),
+            'FORMAT': _detached(session.FORMAT) if isinstance(session.FORMAT, dict) else session.FORMAT,
         }
     except Exception:
         return None

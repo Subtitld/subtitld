@@ -105,6 +105,20 @@ check('audio: empty', preview.toPlainText(), '')
 dialog._select_category(0, 'subtitles')
 check('back to subtitles: the file', preview.toPlainText().startswith('WEBVTT'), True)
 
+print('a speaker with a picture')
+from PySide6.QtGui import QImage
+saved_speakers = session.SPEAKERS
+session.SPEAKERS = {'A': {'image': QImage(8, 8, QImage.Format_ARGB32)}}
+snapshot = file_io._snapshot_for_save()
+check('the snapshot is taken, the picture copied, not the same object',
+      (snapshot is not None, isinstance(snapshot and snapshot['SPEAKERS']['A']['image'], QImage),
+       snapshot and snapshot['SPEAKERS']['A']['image'] is session.SPEAKERS['A']['image']), (True, True, False))
+dialog._select_category(0, 'subtitles')
+dialog.refresh_preview()
+check('the preview shows the file, not an endless wait', (preview.toPlainText().startswith('WEBVTT'),
+                                                        dialog._preview_timer.isActive()), (True, False))
+session.SPEAKERS = saved_speakers
+
 print('pictures: the frame the export draws on')
 session.VIDEO = {}
 check('PGS, no video', file_io.picture_frame('PGS', {}), (1920, 1080))
