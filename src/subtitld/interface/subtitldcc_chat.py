@@ -15,7 +15,8 @@ import html
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import (QApplication, QCheckBox, QKeySequenceEdit, QLineEdit, QScrollArea, QSizePolicy,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QKeySequenceEdit, QLineEdit, QScrollArea,
+                               QSizePolicy,
                                QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitldcc_live import _button, _clear, _row, _text
@@ -59,6 +60,26 @@ def _timecode(milliseconds):
     return f'{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
 
 
+class _InsetShadow(QWidget):
+    """The shadow inside a well's top edge, over what it holds (the pointer goes through)."""
+    HEIGHT = 8
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        shade = QLinearGradient(0, 0, 0, self.height())
+        shade.setColorAt(0, QColor(0, 0, 0, 140))
+        shade.setColorAt(1, QColor(0, 0, 0, 0))
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, self.width(), self.height() + 4, 4, 4)   # the well's rounded top corners
+        painter.fillPath(path, shade)
+
+
 class ChatCard(QWidget):
     def __init__(self, panel):
         super().__init__()
@@ -77,6 +98,14 @@ class ChatCard(QWidget):
         self.note = _text()
         layout.addWidget(self.note)
 
+        # The messages in a sunken well with rounded corners (a shadow inside its top edge), and at its foot,
+        # edge to edge, the field and Send.
+        self.well = QWidget()
+        self.well.setObjectName('chat_well')
+        self.well.setAttribute(Qt.WA_StyledBackground, True)
+        well = QVBoxLayout(self.well)
+        well.setContentsMargins(0, 0, 0, 0)
+        well.setSpacing(0)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setMinimumHeight(180)
@@ -84,20 +113,32 @@ class ChatCard(QWidget):
         inner = QWidget()
         inner.setProperty('class', 'transparent_panel')
         self.messages_box = QVBoxLayout(inner)
-        self.messages_box.setContentsMargins(0, 0, 0, 0)
+        self.messages_box.setContentsMargins(10, 10, 10, 10)
         self.messages_box.setSpacing(6)
         self.messages_box.addStretch()
         self.scroll.setWidget(inner)
-        layout.addWidget(self.scroll)
+        well.addWidget(self.scroll)
 
         self.field = QLineEdit()
+        self.field.setObjectName('chat_field')
         self.field.setMaxLength(2000)
         self.field.returnPressed.connect(self.send)
         self.send_button = _button(primary=True)
+        self.send_button.setObjectName('chat_send')
         self.send_button.clicked.connect(self.send)
         self.cancel_button = _button()
+        self.cancel_button.setObjectName('chat_cancel')
         self.cancel_button.clicked.connect(self.cancel_edit)
-        layout.addWidget(_row(self.field, self.send_button, self.cancel_button, stretch=False))
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+        foot.setSpacing(0)
+        foot.addWidget(self.field, 1)
+        foot.addWidget(self.cancel_button)
+        foot.addWidget(self.send_button)
+        well.addLayout(foot)
+        self._well_shadow = _InsetShadow(self.well)
+        self.well.installEventFilter(self)
+        layout.addWidget(self.well)
         self.attach = QCheckBox()
         layout.addWidget(self.attach)
         self.keep = QCheckBox()
@@ -158,6 +199,12 @@ class ChatCard(QWidget):
         self.key_label.setText(_('collab.voice_key'))
         self.key_edit.setKeySequence(QKeySequence(ptt_key()))
         self.refresh()
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
+            self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
+            self._well_shadow.raise_()
+        return super().eventFilter(watched, event)
 
     def _news(self, kind):
         if kind == 'peers':
