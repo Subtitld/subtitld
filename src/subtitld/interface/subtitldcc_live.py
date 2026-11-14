@@ -352,13 +352,13 @@ class LiveCard(QWidget):
         head = QWidget()
         head.setObjectName('live_members_head')
         head.setAttribute(Qt.WA_StyledBackground, True)
-        head.setFixedHeight(30)                         # the strip is 26 (the QSS): the owner's tab hangs 4 below
+        head.setFixedHeight(28)                         # the strip is 26 (the QSS): the owner's tab hangs 2 below
         head_line = QHBoxLayout(head)
         head_line.setContentsMargins(0, 0, 0, 0)        # the tab and the field reach its edges
         head_line.setSpacing(8)
         self.owner_tab = QLabel()
         self.owner_tab.setObjectName('live_owner_tab')
-        self.owner_tab.setFixedHeight(30)
+        self.owner_tab.setFixedHeight(28)
         head_line.addWidget(self.owner_tab, 0, Qt.AlignTop)
         self.members_title = QLabel()
         self.members_title.setObjectName('live_section_title')
@@ -380,7 +380,7 @@ class LiveCard(QWidget):
         badges.setProperty('class', 'transparent_panel')
         self.members_box = _FlowLayout(badges, spacing=4)
         self.members_card.box.addWidget(badges)
-        self.members_card.box.setContentsMargins(6, 2, 6, 6)    # (6 under the strip: its tab hangs into it)
+        self.members_card.box.setContentsMargins(6, 4, 6, 6)    # (6 under the strip: its tab hangs into it)
         # (the live bar shows it, in a pop-up at its foot's left corner: LiveBar.show_people)
         # Media: the project's files, sent between collaborators (modules/collab_transfer.py): a card that
         # opens on whether this computer shares its own, then one line a file (its name, size and where it is).
