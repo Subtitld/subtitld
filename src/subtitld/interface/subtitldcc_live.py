@@ -352,22 +352,23 @@ class LiveCard(QWidget):
         head = QWidget()
         head.setObjectName('live_members_head')
         head.setAttribute(Qt.WA_StyledBackground, True)
-        head.setFixedHeight(26)
+        head.setFixedHeight(30)                         # the strip is 26 (the QSS): the owner's tab hangs 4 below
         head_line = QHBoxLayout(head)
         head_line.setContentsMargins(0, 0, 0, 0)        # the tab and the field reach its edges
         head_line.setSpacing(8)
         self.owner_tab = QLabel()
         self.owner_tab.setObjectName('live_owner_tab')
-        self.owner_tab.setFixedHeight(26)
+        self.owner_tab.setFixedHeight(30)
         head_line.addWidget(self.owner_tab, 0, Qt.AlignTop)
         self.members_title = QLabel()
         self.members_title.setObjectName('live_section_title')
-        head_line.addWidget(self.members_title)
+        self.members_title.setFixedHeight(26)
+        head_line.addWidget(self.members_title, 0, Qt.AlignTop)
         self.member_field = QLineEdit()
         self.member_field.setObjectName('live_member_field')
         self.member_field.setFixedHeight(26)
         self.member_field.returnPressed.connect(self.add_member)
-        head_line.addWidget(self.member_field, 1)
+        head_line.addWidget(self.member_field, 1, Qt.AlignTop)
         self.head_stretch = QWidget()                      # the field's room, for whoever cannot add people
         self.head_stretch.setProperty('class', 'transparent_panel')
         head_line.addWidget(self.head_stretch, 1)
@@ -379,7 +380,7 @@ class LiveCard(QWidget):
         badges.setProperty('class', 'transparent_panel')
         self.members_box = _FlowLayout(badges, spacing=4)
         self.members_card.box.addWidget(badges)
-        self.members_card.box.setContentsMargins(6, 6, 6, 6)
+        self.members_card.box.setContentsMargins(6, 2, 6, 6)    # (6 under the strip: its tab hangs into it)
         # (the live bar shows it, in a pop-up at its foot's left corner: LiveBar.show_people)
         # Media: the project's files, sent between collaborators (modules/collab_transfer.py): a card that
         # opens on whether this computer shares its own, then one line a file (its name, size and where it is).
