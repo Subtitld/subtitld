@@ -1,3 +1,4 @@
+import logging
 import pathlib
 import os
 import datetime
@@ -15,6 +16,8 @@ from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
+
+log = logging.getLogger(__name__)
 
 
 class _SaveWaveOverlay(QWidget):
@@ -528,11 +531,10 @@ def toppanel_export_button_clicked(self):
                 session.notify_save_success  # smoke probe; reuse infra
             except Exception:
                 pass
-            # No dedicated export-error channel yet; log to stderr so
-            # devs can see what blew up. (A toast/banner would be
-            # nicer; punted to a follow-up.)
-            import sys as _sys
-            print(f'[export] FAILED: {error}', file=_sys.stderr)
+            # No dedicated export-error channel yet; logged so devs can
+            # see what blew up. (A toast/banner would be nicer; punted to
+            # a follow-up.)
+            log.error('export failed: %s', error)
             return
 
     if category == 'video' and fmt in session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS:

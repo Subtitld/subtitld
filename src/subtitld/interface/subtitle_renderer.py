@@ -30,6 +30,7 @@ The helper starts a second after Subtitld does (warm_up), or with the first
 subtitle asked for if that is sooner, and again if it stops (a few times).
 """
 
+import logging
 import hashlib
 import importlib.util
 import json
@@ -43,6 +44,8 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTime
 from PySide6.QtGui import QImage
 
 from subtitld.modules import look as subtitld_look, markup, position, session, subtitle_styles
+
+log = logging.getLogger(__name__)
 
 HOST_SCRIPT = session.PATH_SUBTITLD / 'subtitle_styles' / 'host.js'
 DISK_CACHE = session.PATH_SUBTITLD_USER_CACHE / 'subtitle_layers.sqlite'
@@ -97,7 +100,7 @@ class SubtitleRenderer(QObject):
                 self.disk = SubtitleDiskCache(disk_cache, DISK_LIMIT_MB)
                 self.disk.loaded.connect(self._loaded)
             except Exception as error:      # no disk cache is slower, not broken
-                print(f'[subtitles] no layers on disk: {error}', flush=True)
+                log.warning('no subtitle layers on disk: %s', error)
                 self.disk = None
         self.loading = set()            # keys being read from disk
         self.disk_timer = QTimer(self)
@@ -172,12 +175,12 @@ class SubtitleRenderer(QObject):
             # The sandbox could not start (the helper said so, or it never
             # got as far as a page): once more, without it.
             # Its pages still reach nothing but local files (subtitle_render_worker).
-            print('[subtitles] Chromium\'s sandbox cannot start here: rendering without it', flush=True)
+            log.info("Chromium's sandbox cannot start here: rendering subtitles without it")
             self.no_sandbox = True
             self._start_and_schedule()
             return
         self.stats['restarts'] += 1
-        print(f'[subtitles] the subtitle renderer stopped (exit {code})', flush=True)
+        log.warning('the subtitle renderer stopped (exit %s)', code)
         if self.queue:
             QTimer.singleShot(500, self._start_and_schedule)
 
@@ -254,7 +257,7 @@ class SubtitleRenderer(QObject):
         if asked is not None:
             self.gaps.append((time.perf_counter() - asked) * 1000)
             if os.environ.get('SUBTITLD_DEBUG_RENDER'):
-                print(f'[subtitles] waited {self.gaps[-1]:.0f} ms for a layer', flush=True)
+                log.debug('waited %.0f ms for a subtitle layer', self.gaps[-1])
         while self.bytes > RAM_LIMIT and len(self.cache) > 1:
             _key, (_rect, old) = self.cache.popitem(last=False)
             if old is not None:
@@ -269,7 +272,7 @@ class SubtitleRenderer(QObject):
 
     def close(self):
         if os.environ.get('SUBTITLD_DEBUG_RENDER'):
-            print(f'[subtitles] {self.stats}', flush=True)
+            log.debug('subtitle renderer: %s', self.stats)
         self.disk_timer.stop()
         if self.disk is not None:
             self.disk.close()

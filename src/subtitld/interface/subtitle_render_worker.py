@@ -40,9 +40,12 @@ of premultiplied ARGB32, w × h, rows w × 4 bytes long):
 """
 
 import json
+import logging
 import os
 import sys
 import threading
+
+log = logging.getLogger(__name__)
 
 STRIP = 12                    # host.js: the strip under the stage with the job's number
 VIEWS = 3
@@ -109,6 +112,10 @@ def _read_stamp(image, height):
 
 
 def main():
+    # Quiet unless Subtitld was started with --debug (modules/console): the
+    # flag comes in the environment. Before Qt and Chromium load.
+    from subtitld.modules import console
+    console.configure()
     os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     # No display at all: Qt's offscreen platform still reaches for GLX when
     # there is an X display, and aborts where it has none (Xvfb, some VMs).
@@ -164,7 +171,7 @@ def main():
                 path = os.path.realpath(url.toLocalFile())
                 if any(path == root or path.startswith(root + os.sep) for root in self.roots):
                     return
-            print(f'[subtitles] a style asked for {url.toDisplayString()[:200]}: refused', file=sys.stderr, flush=True)
+            log.info('a style asked for %s: refused', url.toDisplayString()[:200])
             info.block(True)
 
     class Page(QWebEnginePage):
@@ -224,7 +231,7 @@ def main():
         def on_terminated(self, status, code):
             # Chromium's renderer went away: load again, a few times.
             self.crashes += 1
-            print(f'[subtitles] a renderer stopped ({status}, {code})', file=sys.stderr, flush=True)
+            log.warning('a subtitle renderer stopped (%s, %s)', status, code)
             if not self.worker.ever_ready and not os.environ.get('QTWEBENGINE_DISABLE_SANDBOX'):
                 # Before any page was ready: the sandbox cannot start here.
                 QApplication.exit(NO_SANDBOX_EXIT)
@@ -318,6 +325,8 @@ def main():
                 else:
                     view.start(self.pending.pop(0))
 
+    from PySide6.QtCore import qInstallMessageHandler
+    qInstallMessageHandler(console.qt_message)
     app = QApplication([sys.argv[0]])
     app.setQuitOnLastWindowClosed(False)
     interceptor = Interceptor()

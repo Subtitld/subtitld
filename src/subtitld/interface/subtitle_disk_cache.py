@@ -21,6 +21,7 @@ a cache: a file it cannot read, or one from an older layout, is started
 over.
 """
 
+import logging
 import hashlib
 import os
 import sqlite3
@@ -32,6 +33,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, QRectF, Signal
 from PySide6.QtGui import QImage
+
+log = logging.getLogger(__name__)
 
 try:
     from compression import zstd as _zstd
@@ -148,7 +151,7 @@ class SubtitleDiskCache(QObject):
             self.stats['writes'] += 1
         except sqlite3.Error as error:
             self.index.discard(key)
-            print(f'[subtitles] could not keep a layer on disk: {error}', flush=True)
+            log.warning('could not keep a subtitle layer on disk: %s', error)
 
     # --- read --------------------------------------------------------------
     def get(self, key):
@@ -192,7 +195,7 @@ class SubtitleDiskCache(QObject):
             self.loaded.emit(key, (QRectF(x, y, w, h), image))
         except (sqlite3.Error, zlib.error, ValueError) as error:
             self.index.discard(key)
-            print(f'[subtitles] could not read a layer from disk: {error}', flush=True)
+            log.warning('could not read a subtitle layer from disk: %s', error)
             self.loaded.emit(key, None)
 
     # --- housekeeping ------------------------------------------------------
@@ -231,7 +234,7 @@ class SubtitleDiskCache(QObject):
                 self.stats['trimmed'] += len(gone)
             db.commit()
         except sqlite3.Error as error:
-            print(f'[subtitles] could not trim the layers on disk: {error}', flush=True)
+            log.warning('could not trim the subtitle layers on disk: %s', error)
 
     def size(self):
         """Bytes of images, images and layers kept."""

@@ -13,23 +13,8 @@ app startup. No speech-to-text engine is built in. External add-ons —
 including Vosk and whisper.cpp, which used to be built-ins — are discovered from `session.PATH_SUBTITLD_ADDONS/<id>/manifest.json`.
 """
 
-import logging as _logging
-import sys as _sys
-
-# Make the addons subsystem visible by default. Subtitld doesn't call
-# `logging.basicConfig`, so without this every `log.info(...)` in
-# process.py / manager.py / installer.py vanishes into the root logger's
-# WARNING-level filter — exactly the wrong default for "addon X did not
-# work, what happened?" debugging. We attach our own StreamHandler so the
-# config doesn't depend on whatever (if anything) the host eventually sets
-# on the root logger.
-_addons_logger = _logging.getLogger('subtitld.modules.addons')
-if not _addons_logger.handlers:
-    _h = _logging.StreamHandler(_sys.stderr)
-    _h.setFormatter(_logging.Formatter('[subtitld.addons] %(levelname)s %(message)s'))
-    _addons_logger.addHandler(_h)
-    _addons_logger.setLevel(_logging.INFO)
-    # Don't double-print if someone later configures the root logger.
-    _addons_logger.propagate = False
+# The add-ons' log lines (process.py, manager.py, installer.py) go where
+# the rest of Subtitld's do: warnings by default, everything with --debug
+# (modules/console).
 
 from subtitld.modules.addons.manager import AddonManager, get_manager  # noqa: F401

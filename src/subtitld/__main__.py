@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import inspect
+import logging
 
 # The preview's subtitle renderer runs as this same program in a process of
 # its own (interface.subtitle_renderer): nothing else of Subtitld is loaded.
@@ -44,7 +45,17 @@ parser.add_argument('file', type=_file_or_link, nargs='*', default=False,
                     help='The path for video or subtitle file, or a subtitld:// link from subtitld.cc')
 parser.add_argument('--version', action='version', version=f'Subtitld {__version__}',
                     help='Prints the version of Subtitld and exits.')
+parser.add_argument('--debug', action='store_true',
+                    help="Shows diagnostic messages in the terminal: Subtitld's, Qt's, the add-ons' and "
+                         "the subtitle renderer's. Without it, only warnings and errors.")
 args = parser.parse_args()
+
+# Quiet unless --debug, and the terminal left as it was found (modules/console).
+# Before Qt and Chromium load: they read their settings from the environment once.
+from subtitld.modules import console
+console.configure(args.debug)
+console.detach_from_terminal()
+log = logging.getLogger('subtitld.main')
 LINKS = [value for value in args.file or [] if subtitldcc_links.is_link(value)]
 FILES = [value for value in args.file or [] if not subtitldcc_links.is_link(value)]
 
@@ -418,6 +429,10 @@ class confirm_exit_dialog(utils.SimpleDialog):
 
 
 def main():
+    # Qt's messages follow --debug from the start, its own start-up included
+    # (the handler below takes over once the window exists).
+    from PySide6.QtCore import qInstallMessageHandler
+    qInstallMessageHandler(console.qt_message)
     app = QApplication(sys.argv)
 
     # Started for a subtitld.cc link while Subtitld runs: the running one
@@ -456,17 +471,12 @@ def main():
                                 culprits.append(' < '.join(_chain))
                         except Exception:
                             pass
-                    sys.stderr.write(
-                        '[subtitld] paint-conflict suppressed. Widget holding a '
-                        'stuck painter: {}\n'.format(culprits or ['<none found>']))
-                    sys.stderr.flush()
+                    log.debug('paint-conflict suppressed. Widget holding a stuck painter: %s',
+                              culprits or ['<none found>'])
                 except Exception:
                     pass
             return  # swallow the repeated flood
-        try:
-            sys.stderr.write(message + '\n')
-        except Exception:
-            pass
+        console.qt_message(mode, context, message)
 
     _install_msg_handler(_subtitld_message_handler)
 
@@ -497,9 +507,9 @@ def main():
     try:
         discovered = addon_manager.discover()
         if discovered:
-            print(f'Loaded add-ons: {", ".join(discovered)}')
+            log.info('loaded add-ons: %s', ', '.join(discovered))
     except Exception as exc:
-        print(f'Add-on discovery failed: {exc}')
+        log.warning('add-on discovery failed: %s', exc)
     app.aboutToQuit.connect(addon_manager.shutdown_all)
     # The loaders a project open starts (USFX assets, speaker thumbnails)
     # would still be running if Subtitld closed right after the open.
@@ -519,6 +529,9 @@ def main():
 
     main_window = Window()
     main_window.show()
+    # Ctrl+C in the terminal closes the window, as its close button does
+    # (asking about unsaved changes first).
+    interrupt = console.on_interrupt(main_window.close)  # noqa: F841 (kept alive)
     app.installEventFilter(FileOpenFilter(main_window))
     links_listener = link_handover.Listener(main_window)
     links_listener.received.connect(lambda link: subtitldcc_open.open_link(main_window, link))
@@ -533,6 +546,7 @@ def main():
     if _threads_still_running():
         sys.stdout.flush()
         sys.stderr.flush()
+        console.restore_terminal()      # os._exit skips atexit
         os._exit(code)
     sys.exit(code)
 
