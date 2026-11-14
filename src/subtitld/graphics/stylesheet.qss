@@ -4345,6 +4345,24 @@ QPushButton[class='live_bar_tab'] {
     text-transform: uppercase;
 }
 
+/* The call's tab: light like Share live out of the call; green in it, lighter while talking. */
+QPushButton#live_bar_call {
+    padding: 0 4px 0 0;
+}
+
+QPushButton#live_bar_call[call="call"] {
+    border-image: url(graphics:live_bar_tab_call.svg) 5 5 5 13 stretch stretch;
+}
+
+QPushButton#live_bar_call[call="talking"] {
+    border-image: url(graphics:live_bar_tab_talking.svg) 5 5 5 13 stretch stretch;
+}
+
+/* Hang up: red where it lights. */
+QPushButton#live_bar_hang_up:hover {
+    background: rgba(197, 82, 82, 0.22);
+}
+
 /* The co-editing card in the bar's drawer: on the bar's own shade, no card around it. */
 QScrollArea#live_bar_drawer,
 QScrollArea#live_bar_drawer > QWidget > QWidget,

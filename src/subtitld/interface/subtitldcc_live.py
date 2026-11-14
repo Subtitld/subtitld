@@ -445,7 +445,7 @@ class LiveCard(QWidget):
         self.copy_link_button.setVisible(False)        # the live bar's link copies it
         self.add_row.setVisible(manage)
         self.stop_button.setText(_('collab.stop_sharing') if manage else _('collab.leave'))
-        self.stop_button.setVisible(False)             # the live bar's leave button stops or leaves
+        self.stop_button.setVisible(bool(project))      # leaving (or stopping) is here, in the drawer
         self._render_media()
 
     # --- Media -------------------------------------------------------------------------------------------
@@ -888,21 +888,35 @@ class LiveBar(QWidget):
         self.controls = controls = QHBoxLayout()
         controls.setContentsMargins(8, 0, 0, 0)
         controls.setSpacing(2)
-        self.mic = self._icon('live_bar_mic.svg')
-        self.mic.setCheckable(True)
-        self.mic.toggled.connect(collab_service.voice_latch)
-        self.call = self._icon('live_bar_call.svg')
-        self.call.clicked.connect(lambda: self.panel.chat_card.toggle_call())
+        # In the call: hang up, on the left.
+        self.hang_up = self._icon('live_bar_call_leave.svg')
+        self.hang_up.setObjectName('live_bar_hang_up')
+        self.hang_up.clicked.connect(lambda: collab_service.voice_leave())
+        controls.addWidget(self.hang_up, 0, Qt.AlignVCenter)
+        controls.addStretch()
+        # On the right: the chat, the lock (talk without holding) and the call's tab in the corner.
         self.chat = self._icon('live_bar_chat.svg')
         self.chat.setObjectName('live_bar_chat')
         self.chat.clicked.connect(self.show_chat)
-        for button in (self.mic, self.call, self.chat):
-            controls.addWidget(button, 0, Qt.AlignVCenter)
-        controls.addStretch()
-        self.leave = self._icon('live_bar_leave.svg')
-        self.leave.clicked.connect(self.ask_leave)
-        controls.addWidget(self.leave, 0, Qt.AlignVCenter)
-        controls.addSpacing(6)
+        controls.addWidget(self.chat, 0, Qt.AlignVCenter)
+        self.lock = self._icon('live_bar_lock.svg')
+        self.lock.setCheckable(True)
+        self.lock.toggled.connect(collab_service.voice_latch)
+        controls.addWidget(self.lock, 0, Qt.AlignVCenter)
+        controls.addSpacing(4)
+        # The call's tab: out of the call, it joins it (light, like Share live); in it, green, it is the
+        # microphone: held, talking (push to talk), unless the lock keeps it on the air.
+        self.call = QPushButton()
+        self.call.setProperty('class', 'live_bar_tab')
+        self.call.setObjectName('live_bar_call')
+        self.call.setFixedSize(46, 30)
+        self.call.setCursor(Qt.PointingHandCursor)
+        from PySide6.QtCore import QSize
+        self.call.setIconSize(QSize(16, 16))
+        self.call.pressed.connect(self._call_pressed)
+        self.call.released.connect(self._call_released)
+        self.call.clicked.connect(self._call_clicked)
+        controls.addWidget(self.call, 0, Qt.AlignBottom)
         self.share = QPushButton()
         self.share.setProperty('class', 'live_bar_tab')       # the dialogs' light slanted tab, in the corner
         self.share.setFixedHeight(30)
@@ -980,25 +994,28 @@ class LiveBar(QWidget):
         voice = collab_service.voice_state()
         on = voice['on']
         available = collab_service.voice_available()
-        for button in (self.mic, self.call, self.chat, self.leave):
-            button.setVisible(shared)
+        self.chat.setVisible(shared)
+        self.call.setVisible(shared)
+        self.hang_up.setVisible(shared and on)
+        self.lock.setVisible(shared and on)
         self.share.setVisible(not shared)
         self._arrange(shared)
-        self.mic.setEnabled(on)
-        self.mic.blockSignals(True)
-        self.mic.setChecked(on and voice['latched'])
-        self.mic.blockSignals(False)
-        self.mic.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
-                                   ('live_bar_mic.svg' if on and voice['latched'] else 'live_bar_mic_off.svg'))))
+        self.lock.blockSignals(True)
+        self.lock.setChecked(on and voice['latched'])
+        self.lock.blockSignals(False)
+        self.lock.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
+                                    ('live_bar_lock_on.svg' if on and voice['latched'] else 'live_bar_lock.svg'))))
         self.call.setEnabled(available)
-        self.call.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
-                                    ('live_bar_call_leave.svg' if on else 'live_bar_call.svg'))))
-        self.call.setToolTip(_('collab.voice_leave') if on else _('collab.voice_join'))
+        self.call.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_talk.svg' if on else 'live_bar_join.svg'))))
+        self.call.setToolTip(_('collab.voice_talk') if on else _('collab.voice_join'))
+        state = 'off' if not on else ('talking' if voice['talking'] or voice['latched'] else 'call')
+        if self.call.property('call') != state:
+            self.call.setProperty('call', state)
+            self.call.style().unpolish(self.call)
+            self.call.style().polish(self.call)
         unread = collab_service.chat_unread() if shared else 0
         self.chat.setText(str(unread) if unread else '')
         self.chat.setFixedWidth(42 if unread else 30)
-        manage = bool(((self.panel.live_card._project or {}).get('permissions') or {}).get('can_manage'))
-        self.leave.setToolTip(_('collab.stop_sharing') if manage else _('collab.leave'))
         if on and not self._speaking.isActive():
             self._speaking.start()
         elif not on:
@@ -1017,6 +1034,20 @@ class LiveBar(QWidget):
         self.faces.set_people(people)
 
     # --- What it does ------------------------------------------------------------------------------------
+
+    def _call_pressed(self):
+        if collab_service.in_call():
+            collab_service.voice_talk(True)            # held: on the air
+            self._redraw.start()
+
+    def _call_released(self):
+        if collab_service.in_call():
+            collab_service.voice_talk(False)
+            self._redraw.start()
+
+    def _call_clicked(self):
+        if not collab_service.in_call():               # out of the call, a click joins it
+            self.panel.chat_card.toggle_call()
 
     def show_chat(self):
         self._show_in_drawer(self.panel.chat_card.field)
@@ -1077,12 +1108,9 @@ class LiveBar(QWidget):
             card.share()
         self._show_in_drawer(card)
 
-    def ask_leave(self):
-        self.panel.live_card.ask_stop()
-        self._show_in_drawer(self.panel.live_card.confirm)
-
     def retranslate(self):
-        self.mic.setToolTip(_('collab.voice_latch'))
+        self.lock.setToolTip(_('collab.voice_latch'))
+        self.hang_up.setToolTip(_('collab.voice_leave'))
         self.chat.setToolTip(_('collab.chat_title'))
         self.toggle.setToolTip(_('collab.title'))
         self.share.setText(_('collab.share'))

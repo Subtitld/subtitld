@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The live bar's call tab (subtitldcc_live.LiveBar): staying on the air (a padlock, closed). -->
+<svg width="16" height="16" version="1.1" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+ <g fill="none" stroke="#8fe57f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3" y="7.2" width="10" height="7" rx="1.5"/>
+  <path d="M5.5 7.2V5a2.5 2.5 0 0 1 5 0v2.2"/>
+ </g>
+</svg>
