@@ -4436,7 +4436,7 @@ QPushButton#live_bar_people:checked {
 
 /* The chat's well: sunken, rounded; its field and Send along its foot, edge to edge (subtitldcc_chat). */
 QWidget#chat_well {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #05080a, stop:1 #0c1115);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(5, 8, 10, 0), stop:1 #05080a);   /* clear at the top */
     border-radius: 0;               /* edge to edge in the live bar's drawer */
 }
 
@@ -4467,6 +4467,12 @@ QPushButton#chat_bubble_button[first="true"] {
 
 QPushButton#chat_bubble_button:hover {
     background: rgba(255, 255, 255, 0.10);
+}
+
+QLabel#chat_empty {
+    background: transparent;
+    font-size: 10px;
+    color: rgba(184, 206, 224, 0.28);   /* "No messages yet", barely there */
 }
 
 QLabel#chat_bubble_text {

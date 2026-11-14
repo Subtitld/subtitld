@@ -355,7 +355,7 @@ class ChatCard(QWidget):
 
         _clear(self.messages_box)
         if not messages:
-            empty = _text()
+            empty = _text('chat_empty')
             empty.setText(_('collab.chat_empty'))
             self.messages_box.addWidget(empty)
         me = collab_service.chat_me()
