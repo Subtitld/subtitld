@@ -708,7 +708,7 @@ class LiveBar(QWidget):
         self.setObjectName('live_bar')
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)   # as tall as it needs
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 3, 0, 0)
+        layout.setContentsMargins(0, 4, 0, 0)
         layout.setSpacing(2)
 
         # The drawer: the live co-editing card (sharing, who it is shared with, the media), opened from the
@@ -728,10 +728,11 @@ class LiveBar(QWidget):
         # Not shared and closed, it shares the bottom line with Share live (_arrange).
         self.status_line = QWidget()
         status = QHBoxLayout(self.status_line)
-        status.setContentsMargins(6, 0, 10, 0)
+        status.setContentsMargins(0, 0, 10, 0)
         status.setSpacing(6)
         self.toggle = self._icon('live_bar_menu.svg')
         self.toggle.setObjectName('live_bar_toggle')
+        self.toggle.setFixedSize(30, 30)                # the line's full height, from its left edge
         self.toggle.setCheckable(True)
         self.toggle.toggled.connect(self.open_drawer)
         status.addWidget(self.toggle, 0, Qt.AlignVCenter)

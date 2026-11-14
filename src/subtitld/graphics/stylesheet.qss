@@ -4405,6 +4405,11 @@ QPushButton[class='live_bar_icon']:checked {
     background: rgba(85, 212, 63, 0.18);
 }
 
+/* The drawer's toggle fills its corner of the line: square. */
+QPushButton#live_bar_toggle {
+    border-radius: 0;
+}
+
 QPushButton#live_bar_toggle:checked {
     background: rgba(255, 255, 255, 20);
 }
