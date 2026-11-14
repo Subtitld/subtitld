@@ -30,6 +30,7 @@ from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import markup
 from subtitld.modules import json_dialects
+from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import project_export
@@ -322,6 +323,18 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.cavena_options)
 
+        # LRC: its moments in hundredths, thousandths, or with no ending ones.
+        self.lrc_options = QWidget()
+        row = QHBoxLayout(self.lrc_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.lrc_times_combo = utils.LabeledComboBox()
+        self.lrc_times_combo.setLabel(_('export_dialog.lrc_times'))
+        for dialect in lrc.DIALECTS:
+            self.lrc_times_combo.combobox.addItem(_(f'export_dialog.lrc_times_{dialect}'), dialect)
+        row.addWidget(self.lrc_times_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.lrc_options)
+
         # HLS, CMAF and DASH: how long each segment is; HLS's timestamp its
         # cue times map to; what a CMAF track carries, WebVTT or TTML.
         self.stream_options = QWidget()
@@ -471,6 +484,10 @@ class _SubtitlesPanel(QWidget):
         _select(self.bdn_rate_combo, bdn.rate_for(video_fps) if video_fps
                 else remembered.get('bdn_fps', bdn.DEFAULT_RATE))
         _select(self.cavena_start_combo, remembered.get('cavena_start', '00:00:00:00'))
+        # The way the LRC opened writes its moments; else the last used.
+        opened_options = session.FORMAT.get('options') if isinstance(session.FORMAT, dict) else None
+        if not _select(self.lrc_times_combo, (opened_options or {}).get('lrc_times')):
+            _select(self.lrc_times_combo, remembered.get('lrc_times', 'hundredths'))
         _select(self.segment_combo, remembered.get('segment_duration', hls.SEGMENT_DURATION))
         _select(self.mpegts_combo, remembered.get('mpegts', hls.MPEGTS))
         _select(self.carriage_combo, remembered.get('mp4_text', 'wvtt'))
@@ -521,6 +538,8 @@ class _SubtitlesPanel(QWidget):
             combo.addItem(_('export_dialog.speaker_names_tiers'), 'voice')
         elif fmt in ('TRS', 'CHAT'):
             combo.addItem(_('export_dialog.speaker_names_participants'), 'voice')
+        elif fmt == 'LRC':
+            combo.addItem(_('export_dialog.speaker_names_walaoke'), 'voice')
         if not _select(self.speakers_combo, self._speakers_wanted):
             _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
         combo.blockSignals(False)
@@ -546,6 +565,7 @@ class _SubtitlesPanel(QWidget):
         self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP') + DVD_DROP_FRAME and _has_drop_frame(rate)))
         self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
         self.cavena_options.setVisible(fmt == 'CAVENA890')
+        self.lrc_options.setVisible(fmt == 'LRC')
         self.vobsub_options.setVisible(fmt == 'VOBSUB')
         self.pac_options.setVisible(fmt == 'PAC')
         self.stl_options.setVisible(fmt == 'STL')
@@ -682,6 +702,7 @@ class _SubtitlesPanel(QWidget):
             'dcp_content': self.dcp_content_combo.combobox.currentData(),
             'bdn_fps': self.bdn_rate_combo.combobox.currentData(),
             'cavena_start': self.cavena_start_combo.combobox.currentData(),
+            'lrc_times': self.lrc_times_combo.combobox.currentData(),
             'segment_duration': self.segment_combo.combobox.currentData(),
             'mpegts': self.mpegts_combo.combobox.currentData(),
             'mp4_text': self.carriage_combo.combobox.currentData(),
@@ -711,6 +732,8 @@ class _SubtitlesPanel(QWidget):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])
         if fmt == 'CAVENA890':
             options['start'] = choices['cavena_start']
+        if fmt == 'LRC':
+            options['lrc_times'] = choices['lrc_times']
         if fmt == 'VOBSUB':
             options['vobsub_size'] = choices['vobsub_size']
         if fmt == 'PAC':

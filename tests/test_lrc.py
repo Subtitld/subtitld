@@ -214,6 +214,70 @@ try:
 except file_io.CorruptedProjectFileError as error:
     check('a .lrc that is not LRC says so', str(error).startswith('Not an LRC file'), True)
 
+print('Walaoke and the three ways of writing moments')
+# Wikipedia's example of the Walaoke extension, as it gives it.
+WALAOKE = ('[00:12.00]Line 1 lyrics\n[00:17.20]F: Line 2 lyrics\n[00:21.10]M: Line 3 lyrics\n'
+           '[00:24.00]Line 4 lyrics\n[00:28.25]D: Line 5 lyrics\n[00:29.02]Line 6 lyrics\n')
+check('parts as speakers, each lasting until another; the first line has none',
+      [(s['text'], s.get('speaker')) for s in lrc.parse(WALAOKE)[0]],
+      [('Line 1 lyrics', None), ('Line 2 lyrics', 'Female'), ('Line 3 lyrics', 'Male'), ('Line 4 lyrics', 'Male'),
+       ('Line 5 lyrics', 'Duet'), ('Line 6 lyrics', 'Duet')])
+check('a part before word stamps',
+      lrc.parse('[00:01.00]F: <00:01.00>La <00:01.50>la<00:02.00>\n')[0][0],
+      {'start': 1.0, 'end': 2.0, 'text': '{\\k50}La {\\k50}la', 'speaker': 'Female'})
+check('only M, F and D followed by a colon are parts', [s['text'] for s in lrc.parse('[00:01.00]X: no\n[00:02.00]Mr: no\n')[0]],
+      ['X: no', 'Mr: no'])
+written = lrc.write(lrc.parse(WALAOKE)[0], walaoke=True)
+check('written back with a part where it changes, as the example has them',
+      written.split('\n')[:6], WALAOKE.split('\n')[:6])
+check('and read back the same', [(s['start'], s['text'], s.get('speaker')) for s in lrc.parse(written)[0]],
+      [(s['start'], s['text'], s.get('speaker')) for s in lrc.parse(WALAOKE)[0]])
+check('other names take M, F, then D in the order they speak; no part asked, none written',
+      (lrc.write([{'start': 1, 'end': 2, 'text': 'A', 'speaker': 'Ana'}, {'start': 2, 'end': 3, 'text': 'B', 'speaker': 'Bob'},
+                  {'start': 3, 'end': 4, 'text': 'C', 'speaker': 'Cy'}, {'start': 4, 'end': 5, 'text': 'D', 'speaker': 'Ana'}],
+                 walaoke=True),
+       lrc.write([{'start': 1, 'end': 2, 'text': 'A', 'speaker': 'Female'}])),
+      ('[00:01.00]M: A\n[00:02.00]F: B\n[00:03.00]D: C\n[00:04.00]M: D\n[00:05.00]\n', '[00:01.00]A\n[00:02.00]\n'))
+check('a woman named so is F even when she speaks first',
+      lrc.write([{'start': 1, 'end': 2, 'text': 'A', 'speaker': 'woman'}, {'start': 2, 'end': 3, 'text': 'B', 'speaker': 'Joe'}],
+                walaoke=True), '[00:01.00]F: A\n[00:02.00]M: B\n[00:03.00]\n')
+# Subtitle Edit's Lrc3DigitsMs and LrcNoEndTime, as their writers lay them out.
+MS = '[re: Subtitle Edit]\n[00:01.250]One\n[00:02.500]\n[00:03.005]Two\n[00:04.999]\n'
+NO_END = '[re: Subtitle Edit - LRC No End Time]\n[00:01.25]One\n[00:03.00]Two\n[00:05.50]Three\n'
+check('thousandths read', cues(MS), [(1.25, 2.5, 'One'), (3.005, 4.999, 'Two')])
+check('no ending moments: each line until the next, the last TAIL', cues(NO_END),
+      [(1.25, 3.0, 'One'), (3.0, 5.5, 'Two'), (5.5, 8.5, 'Three')])
+check('which dialect a file is in', (lrc.dialect(SONG), lrc.dialect(MS), lrc.dialect(NO_END), lrc.dialect('[00:01.00]A\n')),
+      ('hundredths', 'milliseconds', 'no_end', 'hundredths'))
+some = [{'start': 1.2345, 'end': 2.0, 'text': 'A'}, {'start': 3.0, 'end': 4.9996, 'text': '{\\k50}B{\\k50}c'}]
+check('written in thousandths, word stamps too', lrc.write(some, dialect='milliseconds'),
+      '[00:01.234]A\n[00:02.000]\n[00:03.000]<00:03.000>B<00:03.500>c<00:04.000>\n[00:05.000]\n')
+check('written with no ending moments', lrc.write(some, dialect='no_end'),
+      '[00:01.23]A\n[00:03.00]<00:03.00>B<00:03.50>c<00:04.00>\n')
+(folder / 'duet.lrc').write_text(MS.replace('One', 'F: One'), encoding='utf-8')
+session.FORMAT = {}
+opened, _found = file_io.process_subtitles_file(str(folder / 'duet.lrc'))
+check('a file opened keeps its dialect and its parts to be saved again',
+      (session.FORMAT['options'].get('lrc_times'), session.FORMAT['options'].get('speakers'), opened[0].get('speaker')),
+      ('milliseconds', 'voice', 'Female'))
+session.SUBTITLE['segments'] = opened
+file_io.save_file(str(folder / 'duet again.lrc'), 'LRC')
+check('and is', (folder / 'duet again.lrc').read_text(encoding='utf-8'),
+      '[00:01.250]F: One\n[00:02.500]\n[00:03.005]Two\n[00:04.999]\n')
+session.FORMAT = {}
+dialog = export_dialog.ExportDialog()
+panel = dialog.findChild(export_dialog._SubtitlesPanel)
+panel.format_combo.setCurrentText('LRC')
+panel._refresh_options()
+choices = [panel.speakers_combo.combobox.itemData(index) for index in range(panel.speakers_combo.combobox.count())]
+_select = export_dialog._select
+_select(panel.speakers_combo, 'voice')
+_select(panel.lrc_times_combo, 'no_end')
+config = panel.get_config()
+check('the dialog offers Walaoke\'s parts and the three ways',
+      (choices, panel.lrc_options.isHidden(), config['options']['speakers'], config['options']['lrc_times']),
+      (['none', 'prefix', 'voice'], False, 'voice', 'no_end'))
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

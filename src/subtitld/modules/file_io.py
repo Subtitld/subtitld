@@ -934,6 +934,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             if lrc_metadata:
                 session.SUBTITLE['metadata'] = lrc_metadata
+            # Thousandths, or no ending moments, and Walaoke's parts: saved
+            # again the same way.
+            with open(subtitle_file, 'rb') as lrc_file:
+                lrc_options = {'lrc_times': lrc.dialect(srt.decode(lrc_file.read()))}
+            if any(segment.get('speaker') for segment in segments_list):
+                lrc_options['speakers'] = 'voice'
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **lrc_options)
 
         elif subtitle_file.lower().endswith(('.kar', '.mid', '.midi')):
             # Karaoke MIDI: a line a subtitle, its syllables as karaoke codes,
@@ -2384,10 +2391,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
 
         elif subtitle_format == 'LRC':
             # Lyrics, with the ID tags the file opened had, in the export's
-            # encoding and line ends.
+            # encoding and line ends, its moments as it had them; the
+            # speakers as Walaoke's parts when the export asks for their way.
             lrc.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
                      encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
-                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'),
+                     walaoke=options.get('speakers') == 'voice',
+                     dialect=options.get('lrc_times') if options.get('lrc_times') in lrc.DIALECTS else 'hundredths')
 
         elif subtitle_format == 'ULTRASTAR':
             # A song: the headers it was opened with (its BPM and GAP, so no

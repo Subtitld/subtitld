@@ -19,17 +19,35 @@ inside the line: "[01:12.40]<01:12.40>Hel<01:12.90>lo <01:13.20>world
 <01:13.80>". A word lasts until the next stamp; a stamp with nothing after
 it ends the last word.
 
+Walaoke (Walasoft's player) marks who sings a duet: "M:", "F:" or "D:"
+after a line's moment, for a man, a woman or both, in a colour of each;
+a line without one is sung by whoever sang the line before (Wikipedia's
+"LRC (file format)" is the only description there is of it).
+
+Players and editors write the moments three ways, and Subtitle Edit has a
+reader for each (Lrc, Lrc3DigitsMs, LrcNoEndTime): hundredths, with a
+moment alone where a line ends before the next begins; thousandths
+("[01:12.400]"); and no ending moments at all, each line shown until the
+next. Reading takes any of them, and `dialect` says which a file is in.
+
 Reading gives a subtitle a line and moment, the offset applied, the text
 as written; word stamps become karaoke codes (modules.karaoke), each word
 as long as its stamps say. The ID tags are the subtitles' metadata
 ('title', 'artist', 'album', 'songwriter', 'author', 'length'); [re:],
-[ve:] and comments are not kept.
+[ve:] and comments are not kept. A Walaoke part is the subtitle's
+speaker, 'Male', 'Female' or 'Duet' (`PARTS`), from its line on.
 
 Writing gives the metadata's tags, then a line a subtitle at its start,
-in hundredths, with no offset; a subtitle's lines joined by a space, as
-LRC has no line breaks and no formatting; word stamps where its text has
-karaoke codes, the last stamp its last word's end. Where a subtitle ends
-before the next begins, or is the last, a stamp with no words says so.
+in hundredths (or thousandths), with no offset; a subtitle's lines joined
+by a space, as LRC has no line breaks and no formatting; word stamps where
+its text has karaoke codes, the last stamp its last word's end. Where a
+subtitle ends before the next begins, or is the last, a stamp with no
+words says so, unless the dialect has no ending moments. Asked for
+Walaoke's parts, a line whose speaker is not the line before's starts
+with the part: 'Male', 'Female' and 'Duet' (or M, F, D, man, woman, both)
+are theirs, and other names take M, F, then D in the order they first
+speak. Walaoke cannot go back to no part: a subtitle without a speaker
+after one with keeps the part before.
 """
 
 import re
@@ -45,6 +63,14 @@ _WORD = re.compile(r'<\s*(\d+)\s*:\s*(\d{1,2})(?:\s*[.:]\s*(\d{1,3}))?\s*>')
 _TAG = re.compile(r'^\s*\[\s*([A-Za-z#]+)\s*:(.*)\]\s*$')
 _OFFSET = re.compile(r'^\s*([+-]?\d+)')
 
+# Walaoke's parts, as the speakers they are read as.
+PARTS = {'M': 'Male', 'F': 'Female', 'D': 'Duet'}
+_PART = re.compile(r'^([MFD]):\s?')
+_PART_NAMES = {'m': 'M', 'male': 'M', 'man': 'M', 'f': 'F', 'female': 'F', 'woman': 'F', 'd': 'D', 'duet': 'D',
+               'both': 'D'}
+# How the moments are written: Subtitle Edit's three LRC formats.
+DIALECTS = ('hundredths', 'milliseconds', 'no_end')
+
 # ID tags as the metadata's keys, and back, in the order they are written.
 TAGS = {'ti': 'title', 'ar': 'artist', 'al': 'album', 'au': 'songwriter', 'by': 'author', 'length': 'length'}
 
@@ -56,16 +82,46 @@ def _seconds(minutes, seconds, fraction):
     return value
 
 
-def _stamp(seconds, brackets='[]'):
-    """"[mm:ss.xx]", or "<mm:ss.xx>" for a word."""
-    hundredths = max(0, round(float(seconds) * 100))
-    minutes, hundredths = divmod(hundredths, 6000)
-    return f'{brackets[0]}{minutes:02d}:{hundredths // 100:02d}.{hundredths % 100:02d}{brackets[1]}'
+def _stamp(seconds, brackets='[]', milliseconds=False):
+    """"[mm:ss.xx]", or "<mm:ss.xx>" for a word; "[mm:ss.xxx]" in
+    thousandths."""
+    scale = 1000 if milliseconds else 100
+    units = max(0, round(float(seconds) * scale))
+    minutes, units = divmod(units, 60 * scale)
+    fraction = f'{units % scale:03d}' if milliseconds else f'{units % scale:02d}'
+    return f'{brackets[0]}{minutes:02d}:{units // scale:02d}.{fraction}{brackets[1]}'
 
 
 def is_lrc(text):
     """Whether `text` has a line that starts with an LRC moment."""
     return any(_STAMP.match(line.strip()) for line in str(text or '').split('\n'))
+
+
+def dialect(text):
+    """Which of `DIALECTS` the LRC `text` writes its moments in:
+    'milliseconds' when they have three digits, 'no_end' when no moment
+    stands alone to end a line (and there are two lines or more), else
+    'hundredths'."""
+    alone, lines = 0, 0
+    thousandths = False
+    for line in str(text or '').split('\n'):
+        rest = line.strip()
+        found = False
+        while True:
+            stamp = _STAMP.match(rest)
+            if not stamp:
+                break
+            found = True
+            thousandths = thousandths or len(stamp.group(3) or '') == 3
+            rest = rest[stamp.end():]
+        if found:
+            lines += 1
+            alone += not rest.strip()
+    if thousandths:
+        return 'milliseconds'
+    if lines >= 2 and not alone:
+        return 'no_end'
+    return 'hundredths'
 
 
 def _words(body, shift):
@@ -118,6 +174,7 @@ def parse(text):
             metadata[TAGS[name]] = value
 
     entries = []
+    part = ''
     for order, line in enumerate(lines):
         rest = line.strip()
         moments = []
@@ -127,15 +184,20 @@ def parse(text):
                 break
             moments.append(_seconds(*stamp.groups()))
             rest = rest[stamp.end():]
+        # Walaoke's part, which lasts until another is given.
+        named = _PART.match(rest.lstrip())
+        if moments and named:
+            part = PARTS[named.group(1)]
+            rest = rest.lstrip()[named.end():]
         for moment in moments:
             # A line sung again moves its word stamps with it.
             shift = moments[0] - moment + offset
             body, words = _words(rest, shift)
-            entries.append((round(max(0.0, moment - offset), 3), order, body, words))
+            entries.append((round(max(0.0, moment - offset), 3), order, body, words, part))
     entries.sort(key=lambda entry: (entry[0], entry[1]))
 
     segments = []
-    for index, (start, _order, body, words) in enumerate(entries):
+    for index, (start, _order, body, words, part) in enumerate(entries):
         if not body.strip():
             continue
         if index + 1 < len(entries):
@@ -150,7 +212,10 @@ def parse(text):
             pieces = [(max(word_start, start), max(word_end if word_end is not None else end, word_start), word)
                       for word_start, word_end, word in words]
             body = karaoke.text_from(start, pieces)
-        segments.append({'start': start, 'end': round(end, 3), 'text': body})
+        segment = {'start': start, 'end': round(end, 3), 'text': body}
+        if part:
+            segment['speaker'] = part
+        segments.append(segment)
     return segments, metadata
 
 
@@ -168,14 +233,31 @@ def _line_text(text):
     return ' '.join(line.strip() for line in markup.plain(text).split('\n') if line.strip())
 
 
-def write(segments, metadata=None):
-    """`segments` as LRC text, with the ID tags `metadata` has."""
+def _parts(segments):
+    """{speaker: Walaoke part} for the speakers of `segments`."""
+    parts, others = {}, iter('MFD')
+    for segment in segments:
+        name = str(segment.get('speaker') or '').strip()
+        if not name or name in parts:
+            continue
+        parts[name] = _PART_NAMES.get(name.lower()) or next(others, 'D')
+    return parts
+
+
+def write(segments, metadata=None, walaoke=False, dialect='hundredths'):
+    """`segments` as LRC text, with the ID tags `metadata` has; the
+    speakers as Walaoke's parts when `walaoke`; the moments as `dialect`
+    (one of `DIALECTS`) has them."""
+    milliseconds = dialect == 'milliseconds'
+    scale = 1000 if milliseconds else 100
     out = []
     for tag, key in TAGS.items():
         value = ' '.join(str((metadata or {}).get(key) or '').split())
         if value:
             out.append(f'[{tag}:{value}]')
     ordered = sorted(segments, key=lambda segment: (float(segment.get('start', 0)), float(segment.get('end', 0))))
+    parts = _parts(ordered) if walaoke else {}
+    part = ''
     for index, segment in enumerate(ordered):
         start, end = float(segment.get('start', 0)), float(segment.get('end', 0))
         text = str(segment.get('text') or '')
@@ -183,20 +265,25 @@ def write(segments, metadata=None):
         if words:
             spoken = [(word_start, word_end, ' '.join(word.split('\n'))) for word_start, word_end, word in words
                       if word.strip()]
-            body = ''.join(_stamp(word_start, '<>') + word for word_start, _end, word in spoken)
-            body = (body + _stamp(spoken[-1][1], '<>')) if spoken else ''
+            body = ''.join(_stamp(word_start, '<>', milliseconds) + word for word_start, _end, word in spoken)
+            body = (body + _stamp(spoken[-1][1], '<>', milliseconds)) if spoken else ''
         else:
             body = _line_text(text)
         if not body:
             continue
-        out.append(_stamp(start) + body)
+        speaker = parts.get(str(segment.get('speaker') or '').strip(), '')
+        if speaker and speaker != part:
+            body = f'{speaker}: {body}'
+            part = speaker
+        out.append(_stamp(start, '[]', milliseconds) + body)
         following = float(ordered[index + 1].get('start', 0)) if index + 1 < len(ordered) else None
-        if following is None or round(end * 100) < round(following * 100):
-            out.append(_stamp(end))
+        if dialect != 'no_end' and (following is None or round(end * scale) < round(following * scale)):
+            out.append(_stamp(end, '[]', milliseconds))
     return '\n'.join(out) + '\n'
 
 
-def save(path, segments, metadata=None, encoding='utf-8', line_end='\n'):
-    """Write `segments` to `path` as LRC."""
+def save(path, segments, metadata=None, encoding='utf-8', line_end='\n', walaoke=False, dialect='hundredths'):
+    """Write `segments` to `path` as LRC; `walaoke` and `dialect` as
+    write() takes them."""
     with open(path, 'w', encoding=encoding, newline=line_end) as lrc_file:
-        lrc_file.write(write(segments, metadata))
+        lrc_file.write(write(segments, metadata, walaoke=walaoke, dialect=dialect))

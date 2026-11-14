@@ -24,7 +24,8 @@ and CTM's words share out their subtitle's time instead.
                  (<v Name>), TTML's agents, SAMI's Source line, SCC's
                  and MCC's ">>" at each change of speaker, SBV's ">> NAME: ",
                  a tier a speaker in TextGrid, EAF and EXB, the speakers
-                 (participants) of TRS and CHAT
+                 (participants) of TRS and CHAT,
+                 LRC's Walaoke parts ("M:", "F:", "D:")
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
                  them (SBV has none to keep)
     offset       seconds to shift every subtitle by; one that ends up
@@ -60,6 +61,10 @@ And for a format of its own:
     timeline_start
                  AVID and FCPXML: the timecode the editor's timeline starts at,
                  '00:00:00:00' or '01:00:00:00'
+    lrc_times    LRC: 'hundredths', 'milliseconds' (three digits) or
+                 'no_end' (hundredths, no moment where a line ends; each
+                 line until the next), modules.lrc.DIALECTS; a file opened
+                 keeps its own
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
     mcc_captions MCC: 'both' (CEA-608 and CEA-708), '608' (CEA-608 alone) or
                  'op47' (both, and the subtitles as OP-47 teletext beside
