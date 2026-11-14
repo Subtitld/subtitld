@@ -80,7 +80,7 @@ class AccountHeader(QWidget):
         self._buttons.setSpacing(2)
         self._buttons.addStretch()
         corner.addLayout(self._buttons)
-        corner.addSpacing(5)
+        corner.addStretch()                             # centred between the tab's foot and the header's
         layout.addLayout(corner)
 
         self.connected = False
