@@ -4494,7 +4494,8 @@ QPushButton#chat_send:pressed {
 QPushButton#live_bar_leave {
     background: transparent;
     border: 0;
-    border-radius: 0;               /* it fills the line's right end */
+    border-radius: 0;               /* it fills the line's right end: round only where it faces the bar */
+    border-bottom-left-radius: 3px;
     padding: 0 10px;
     font-family: 'Montserrat';
     font-size: 9px;
