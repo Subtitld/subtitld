@@ -68,15 +68,13 @@ class _InsetShadow(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath
+        from PySide6.QtGui import QColor, QLinearGradient, QPainter
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         shade = QLinearGradient(0, 0, 0, self.height())
         shade.setColorAt(0, QColor(0, 0, 0, 140))
         shade.setColorAt(1, QColor(0, 0, 0, 0))
-        path = QPainterPath()
-        path.addRoundedRect(0, 0, self.width(), self.height() + 4, 4, 4)   # the well's rounded top corners
-        painter.fillPath(path, shade)
+        painter.fillRect(self.rect(), shade)
 
 
 class ChatCard(QWidget):
@@ -87,7 +85,7 @@ class ChatCard(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setContentsMargins(0, 0, 0, 0)           # in the live bar's drawer, edge to edge
         layout.setSpacing(8)
         self._editing = None  # the ID of the message being edited
         self._shown_peers = None

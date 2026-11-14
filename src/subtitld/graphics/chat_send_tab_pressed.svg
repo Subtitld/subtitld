@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The chat's Send, pressed (subtitldcc_chat.ChatCard): live_bar_tab.svg (Share live) upside down, hanging from the
+     field's line: its left side a 75° slant that leans the other way, the 6px curve at its foot. Left slice 13. -->
+<svg width="20" height="31" version="1.1" viewBox="25 0 20 31" xmlns="http://www.w3.org/2000/svg">
+ <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8cee0"/><stop offset="1" stop-color="#a9c1d4"/></linearGradient></defs>
+ <path d="M24.962 31L31.808 5.447C32.511 2.824 34.888 1.000 37.604 1.000L45 1V31Z" transform="translate(0 31) scale(1 -1)" fill="url(#g)"/>
+</svg>
