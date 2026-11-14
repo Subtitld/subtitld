@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.interface import utils
+from subtitld.modules import clone_ref
 from subtitld.modules import closed_captions
 from subtitld.modules import session
 from subtitld.modules import file_io
@@ -932,7 +933,10 @@ def update(self):
     # frozen — translation/invert flips `language` but never touches
     # `source_language`. clone_ref uses it to pull the audio-matching
     # transcript as `voice_ref_text`. See clone_ref._resolve_source_language.
-    if not session.SUBTITLE.get('source_language'):
+    # Not in a project whose subtitles carry translations: inverted before
+    # `source_language` was kept, they are the translation, not what is
+    # spoken, and clone voices would get a transcript in the wrong language.
+    if not session.SUBTITLE.get('source_language') and not clone_ref.has_translations():
         session.SUBTITLE['source_language'] = session.SUBTITLE['language']
     _show_language(self)
 

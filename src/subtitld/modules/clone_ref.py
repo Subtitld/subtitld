@@ -85,11 +85,19 @@ def _resolve_source_language() -> str | None:
     explicit = (session.SUBTITLE.get('source_language') or '').strip()
     if explicit:
         return explicit
-    if any(isinstance(seg, dict) and seg.get('translations')
-           for seg in session.SUBTITLE.get('segments') or []):
+    if has_translations():
         return None
     current = (session.SUBTITLE.get('language') or '').strip()
     return current or None
+
+
+def has_translations() -> bool:
+    """Whether the project's subtitles carry translations. Then the language
+    they are in may not be the one spoken (a translation inverted shows the
+    translation), and only an explicit `source_language` says which is: it
+    must not be taken from `SUBTITLE['language']`."""
+    return any(isinstance(seg, dict) and seg.get('translations')
+               for seg in session.SUBTITLE.get('segments') or [])
 
 
 def _segment_text_for_source_language(seg: dict, source_lang: str | None) -> str:

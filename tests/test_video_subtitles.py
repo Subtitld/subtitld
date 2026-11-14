@@ -449,6 +449,27 @@ check('a track that names no language: the project keeps its own', read_track(4,
 session.VIDEO = mkv
 panel.update_callback()
 
+print('what is spoken, as the panel fills it in when nothing says')
+
+
+window.transcription_scope.refresh = lambda: None
+window.transcription_scope.is_ready = lambda: True
+
+
+def panel_update(language, segments):
+    session.SUBTITLE = {'segments': segments, 'language': language}
+    lpi.update(window)
+    return session.SUBTITLE.get('source_language')
+
+
+check('a project never translated: its language', panel_update('en-us', [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]),
+      'en-us')
+check('one whose subtitles carry translations: left unknown (an inverted one shows the translation)',
+      panel_update('pt-br', [{'start': 1.0, 'end': 2.0, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]), None)
+session.SUBTITLE['source_language'] = 'en-us'
+lpi.update(window)
+check('and what was declared is kept', session.SUBTITLE.get('source_language'), 'en-us')
+
 check('an engine that brings subtitles in, never the default transcription engine',
       ('subtitles' in SOURCE_ENGINES, manager.default_for_task(TASK_ASR_TRANSCRIBE)), (True, None))
 check('nor does a run leave files behind', leftovers(session.PATH_TEMP), [])
