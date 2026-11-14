@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The chat's keep button (subtitldcc_chat.ChatCard): the chat is not kept in the project file (a bookmark, empty). -->
+<svg width="16" height="16" version="1.1" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+ <path d="M4 2.5h8v11l-4-3-4 3z" fill="none" stroke="#b8cee0" stroke-width="1.4" stroke-linejoin="round"/>
+</svg>

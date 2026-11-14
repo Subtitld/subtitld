@@ -15,9 +15,8 @@ import html
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QKeySequenceEdit, QLineEdit, QScrollArea,
-                               QSizePolicy,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QKeySequenceEdit, QLineEdit, QPushButton,
+                               QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitldcc_live import _button, _clear, _row, _text
 from subtitld.interface.translation import _
@@ -93,9 +92,12 @@ class ChatCard(QWidget):
         self._editing = None  # the ID of the message being edited
         self._shown_peers = None
 
+        # (no title nor note: the live bar's chat tab says what this is; kept for its unread count)
         self.title = _text('subtitldcc_card_title')
+        self.title.setVisible(False)
         layout.addWidget(self.title)
         self.note = _text()
+        self.note.setVisible(False)
         layout.addWidget(self.note)
 
         # The messages in a sunken well with rounded corners (a shadow inside its top edge), and at its foot,
@@ -141,9 +143,17 @@ class ChatCard(QWidget):
         layout.addWidget(self.well)
         self.attach = QCheckBox()
         layout.addWidget(self.attach)
-        self.keep = QCheckBox()
+        # Keeping the chat in the project file: an icon in the well's top-right corner (placed in eventFilter).
+        from PySide6.QtCore import QSize
+        self.keep = QPushButton(self.well)
+        self.keep.setObjectName('chat_keep')
+        self.keep.setCheckable(True)
+        self.keep.setCursor(Qt.PointingHandCursor)
+        self.keep.setIconSize(QSize(14, 14))
+        self.keep.setFixedSize(26, 24)
         self.keep.toggled.connect(collab_service.set_chat_saved)
-        layout.addWidget(self.keep)
+        self.keep.toggled.connect(self._show_keep)
+        self._show_keep(False)
 
         # Voice: push-to-talk. The live bar's call tab joins, talks and locks (subtitldcc_live.LiveBar); these
         # stay as the call's state, out of sight.
@@ -190,8 +200,8 @@ class ChatCard(QWidget):
         self.cancel_button.setText(_('collab.chat_cancel'))
         self.attach.setText(_('collab.chat_attach'))
         self.attach.setToolTip(_('collab.chat_attach_tip'))
-        self.keep.setText(_('collab.chat_keep'))
-        self.keep.setToolTip(_('collab.chat_keep_tip'))
+        self.keep.setToolTip(f"{_('collab.chat_keep')}\n{_('collab.chat_keep_tip')}")
+        self.keep.setAccessibleName(_('collab.chat_keep'))
         self.voice_title.setText(_('collab.voice_title'))
         self.talk_button.setText(_('collab.voice_talk'))
         self.talk_button.setToolTip(_('collab.voice_talk_tip'))
@@ -200,10 +210,16 @@ class ChatCard(QWidget):
         self.key_edit.setKeySequence(QKeySequence(ptt_key()))
         self.refresh()
 
+    def _show_keep(self, kept):
+        from PySide6.QtGui import QIcon
+        self.keep.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_keep_on.svg' if kept else 'chat_keep.svg'))))
+
     def eventFilter(self, watched, event):
         if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
             self._well_shadow.setGeometry(0, 0, self.well.width(), _InsetShadow.HEIGHT)
             self._well_shadow.raise_()
+            self.keep.move(self.well.width() - self.keep.width() - 4, 4)
+            self.keep.raise_()
         return super().eventFilter(watched, event)
 
     def _news(self, kind):
@@ -236,11 +252,11 @@ class ChatCard(QWidget):
             unread = 0
         self.title.setText(_('collab.chat_title') + (f" · {_('collab.chat_unread').format(count=unread)}" if unread else ''))
         messages = collab_service.chat_messages()
-        self.note.setVisible(collab_service.chat_alone())
         self.note.setText(_('collab.chat_alone'))
         self.keep.blockSignals(True)
         self.keep.setChecked(collab_service.chat_saved())
         self.keep.blockSignals(False)
+        self._show_keep(self.keep.isChecked())
         self.send_button.setText(_('collab.chat_save') if self._editing else _('collab.chat_send'))
         self.cancel_button.setVisible(bool(self._editing))
 
