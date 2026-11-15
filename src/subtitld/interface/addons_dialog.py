@@ -693,6 +693,7 @@ class _AddonCard(QFrame):
         self.progress_bar.setFixedHeight(1)
         self.progress_bar.setVisible(is_install_target)
         body.layout().addWidget(self.progress_bar)
+        body.setVisible(bool(summary_text) or is_install_target)   # no description: the band alone
         outer.addWidget(body)
 
         # --- The footer: the dialogs' bar ---------------------------------
@@ -745,14 +746,15 @@ class _AddonCard(QFrame):
         outer.addWidget(footer)
 
     def hasHeightForWidth(self) -> bool:
-        return True
+        # not without wrapping words (a built-in without a summary): the list would give it no height, only its spacing
+        return self.layout().hasHeightForWidth()
 
     def heightForWidth(self, width: int) -> int:
         return self.layout().totalHeightForWidth(width)
 
     def sizeHint(self):
         hint = super().sizeHint()
-        if self.width() > 0:
+        if self.width() > 0 and self.hasHeightForWidth():
             hint.setHeight(self.heightForWidth(self.width()))
         return hint
 
