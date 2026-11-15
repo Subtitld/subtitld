@@ -83,6 +83,7 @@ class AccountHeader(QWidget):
         self._buttons.addStretch()
         corner.addLayout(self._buttons)
         corner.addStretch()                             # centred between the tab's foot and the header's
+        self._corner = corner
         layout.addLayout(corner)
 
         self.connected = False
@@ -100,6 +101,11 @@ class AccountHeader(QWidget):
             button.setFixedSize(26, 22)
         else:
             button.setFixedHeight(22)
+            # a word sits in the header's bottom-right corner, flush with its edges
+            self._buttons.setContentsMargins(0, 0, 0, 0)
+            last = self._corner.itemAt(self._corner.count() - 1)
+            if last.spacerItem():
+                self._corner.removeItem(last)
         button.setCursor(Qt.PointingHandCursor)
         button.setVisible(False)
         self._buttons.addWidget(button)
