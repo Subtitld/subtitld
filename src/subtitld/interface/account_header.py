@@ -64,9 +64,9 @@ class AccountHeader(QWidget):
         self.logo = QWidget()
         self.logo.setObjectName('account_header_logo')
         self.logo.setAttribute(Qt.WA_StyledBackground, True)
-        self.logo.setFixedHeight(31)                    # the tab and its contact line
+        self.logo.setFixedHeight(31)
         logo = QHBoxLayout(self.logo)
-        logo.setContentsMargins(18, 0, 12, 1)           # the slant; the contact line
+        logo.setContentsMargins(18, 0, 12, 0)           # the slant
         logo.setSpacing(6)
         icon = QLabel()
         icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / mark)).pixmap(16, 16))
