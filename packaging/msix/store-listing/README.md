@@ -17,13 +17,17 @@ The 2:3 poster art and 1:1 box art are for games, and are left out.
 - `tile-icon.png` and `hero.png`: `python packaging/branding/render-icons.py`,
   with the rest of the icons. The hero has no text and no screenshot of the
   app, and nothing in its bottom third, as the Store asks.
-- The screenshots: `store.py` in the showcase's capture harness, in English:
+- The screenshots: `store.py` in the showcase's capture harness, in English,
+  with the app on the desktop's Xwayland (`CAPTURE=x11`), not off-screen:
 
   ```
-  OUT=dir LANG=en_US.UTF-8 LANGUAGE=en python harness.py store.py "project/Tears of Steel.usfx"
+  OUT=dir CAPTURE=x11 LANG=en_US.UTF-8 LANGUAGE=en python harness.py store.py "project/Tears of Steel.usfx"
   ```
 
-  Run it with another `LANG` for a listing in another language.
+  The window is 4K, larger than the screen, so it is grabbed in tiles and
+  covers the screen while it runs. Run it with another `LANG` for a listing
+  in another language. The Flathub screenshots (`flatpak/screenshots`) come
+  from `flathub.py` the same way, at `QT_SCALE_FACTOR=1`.
 
 ## Captions
 
