@@ -2781,8 +2781,10 @@ QMenu#subtitle_formatting_menu::separator {
     background-color: #1a304251;
 }
 
+/* Icon buttons on the card's colour strip: flat, no contact line under them. */
 #left_panel_speakers_panel_content_item QPushButton {
     background-color: transparent;
+    border: 0;
 }
 
 #left_panel_speakers_panel_content_item QPushButton::hover {
