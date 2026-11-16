@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Сітка за кадрами",
     "playercontrols.grid_seconds": "Сітка за секундами",
     "playercontrols.grid_scenes": "Сітка за сценами",
+    "playercontrols.grid_scenes_finding": "Пошук сцен у відео… {percent}%",
     "playercontrols.zoom_in": "Збільшити",
     "playercontrols.zoom_out": "Зменшити",
     "qualitycontrol.title": "Контроль якості",

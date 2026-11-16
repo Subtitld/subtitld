@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Grille en images",
     "playercontrols.grid_seconds": "Grille en secondes",
     "playercontrols.grid_scenes": "Grille sur les scènes",
+    "playercontrols.grid_scenes_finding": "Recherche des scènes de la vidéo… {percent} %",
     "playercontrols.zoom_in": "Zoom avant",
     "playercontrols.zoom_out": "Zoom arrière",
     "qualitycontrol.title": "Contrôle qualité",

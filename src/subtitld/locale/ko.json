@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "프레임 격자",
     "playercontrols.grid_seconds": "초 격자",
     "playercontrols.grid_scenes": "장면 격자",
+    "playercontrols.grid_scenes_finding": "동영상의 장면을 찾는 중… {percent}%",
     "playercontrols.zoom_in": "확대",
     "playercontrols.zoom_out": "축소",
     "qualitycontrol.title": "품질 관리",

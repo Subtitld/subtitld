@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Raster: Bilder",
     "playercontrols.grid_seconds": "Raster: Sekunden",
     "playercontrols.grid_scenes": "Raster: Szenen",
+    "playercontrols.grid_scenes_finding": "Szenen des Videos werden gesucht … {percent} %",
     "playercontrols.zoom_in": "Vergrößern",
     "playercontrols.zoom_out": "Verkleinern",
     "qualitycontrol.title": "Qualitätskontrolle",

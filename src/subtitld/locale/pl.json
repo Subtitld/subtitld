@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Siatka klatek",
     "playercontrols.grid_seconds": "Siatka sekund",
     "playercontrols.grid_scenes": "Siatka scen",
+    "playercontrols.grid_scenes_finding": "Wyszukiwanie scen w filmie… {percent}%",
     "playercontrols.zoom_in": "Powiększ",
     "playercontrols.zoom_out": "Pomniejsz",
     "qualitycontrol.title": "Kontrola jakości",

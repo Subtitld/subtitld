@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Raster op frames",
     "playercontrols.grid_seconds": "Raster op seconden",
     "playercontrols.grid_scenes": "Raster op scènes",
+    "playercontrols.grid_scenes_finding": "Scènes van de video zoeken… {percent}%",
     "playercontrols.zoom_in": "Inzoomen",
     "playercontrols.zoom_out": "Uitzoomen",
     "qualitycontrol.title": "Kwaliteitscontrole",

@@ -3006,9 +3006,12 @@ class Timeline(QWidget):
         if scenes is not None:
             session.VIDEO['scenes'] = scenes
             return
-        thread = scene_detection.SceneDetectionThread(filepath, parent=widget)
+        thread = scene_detection.SceneDetectionThread(filepath, session.VIDEO.get('duration', 0.0), parent=widget)
         thread.response.connect(widget._on_scenes_ready)
+        thread.progress.connect(widget._show_scenes_progress)
+        thread.finished.connect(lambda: widget._show_scenes_progress(None) if widget.scene_thread is thread else None)
         widget.scene_thread = thread
+        widget._show_scenes_progress(0.0)
         thread.start()
 
     def stop_scene_detection(widget):
@@ -3017,6 +3020,12 @@ class Timeline(QWidget):
         if thread is not None and thread.isRunning():
             thread.stop()
             thread.wait()
+        widget._show_scenes_progress(None)
+
+    def _show_scenes_progress(widget, progress):
+        """On the grid's scenes button, in the player controls."""
+        if hasattr(widget.window(), 'grid_scenes_button'):
+            playercontrols.scenes_progress(widget.window(), progress)
 
     def _on_scenes_ready(widget, response):
         filepath, scenes = response

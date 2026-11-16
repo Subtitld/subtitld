@@ -7,7 +7,7 @@ import subprocess
 from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QPainter, QColor
 
 # Follow-mode scrolls repaint the viewport, so ignore drift smaller than this
 # rather than scrolling on every tick.
@@ -67,6 +67,38 @@ def _set_collapsed(button, collapsed, animate=True):
     for child in children:
         child.setVisible(not collapsed)
     button.adjustSize()
+
+
+class _ScenesGridButton(QPushButton):
+    """The grid's scenes button, which also shows how far the search for the
+    video's cuts has got (`modules.scene_detection`): a bar along its
+    bottom edge, and the percentage in its tooltip. The cuts take a while on
+    a long video, and until then the scenes grid has nothing to draw."""
+
+    # The icon's own colour.
+    BAR_COLOR = QColor('#b8cee0')
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.progress = None    # 0-1 while the cuts are being found
+
+    def set_progress(self, progress):
+        self.progress = progress
+        if progress is None:
+            self.setToolTip(_('playercontrols.grid_scenes'))
+        else:
+            self.setToolTip(_('playercontrols.grid_scenes_finding').format(percent=int(progress * 100)))
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.progress is None:
+            return
+        painter = QPainter(self)
+        track = QColor(self.BAR_COLOR)
+        track.setAlpha(60)
+        painter.fillRect(0, self.height() - 2, self.width(), 2, track)
+        painter.fillRect(0, self.height() - 2, round(self.width() * self.progress), 2, self.BAR_COLOR)
 
 
 class _SplitterHandleButton(QPushButton):
@@ -1357,7 +1389,7 @@ def load(self):
     self.grid_seconds_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_seconds_button)
 
-    self.grid_scenes_button = QPushButton()
+    self.grid_scenes_button = _ScenesGridButton()
     self.grid_scenes_button.setObjectName('grid_scenes_button')
     self.grid_scenes_button.setCheckable(True)
     self.grid_scenes_button.setIconSize(QSize(16, 16))
@@ -2012,6 +2044,12 @@ def grid_type_changed(self, gridtype):
     session.CONFIG['timeline']['grid_type'] = gridtype
     update_grid_buttons(self)
     _repaint_grids(self)
+
+
+def scenes_progress(self, progress):
+    """How far the search for the video's cuts has got, 0-1, shown on
+    the grid's scenes button; None when none is running."""
+    self.grid_scenes_button.set_progress(progress)
 
 
 def _repaint_grids(self):
@@ -2860,7 +2898,7 @@ def translate(self):
     self.onset_button.setToolTip(_('playercontrols.onset_tooltip'))
     self.grid_frames_button.setToolTip(_('playercontrols.grid_frames'))
     self.grid_seconds_button.setToolTip(_('playercontrols.grid_seconds'))
-    self.grid_scenes_button.setToolTip(_('playercontrols.grid_scenes'))
+    self.grid_scenes_button.set_progress(self.grid_scenes_button.progress)   # its tooltip, with the progress if any
     self.step_button.setToolTip(_('playercontrols.step'))
     for unit, label in (('Frames', _('units.frames')), ('Seconds', _('units.seconds'))):
         self.step_unit.setItemText(self.step_unit.findData(unit), label)
