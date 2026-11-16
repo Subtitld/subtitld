@@ -131,6 +131,7 @@ class SubtitleRenderer(QObject):
         self.sent = {}                  # job id -> job, with the helper
         self.next_id = 1
         self.size = None                # (width, height) in device pixels layers are rendered at
+        self.style_id = None            # the style drawn with: the current one when None (an export may ask another)
         self.pending_size = None
         self.size_timer = QTimer(self)
         self.size_timer.setSingleShot(True)
@@ -298,7 +299,7 @@ class SubtitleRenderer(QObject):
     def _style(self):
         """The current style and the part of every key it gives; the helper
         is told when the template is another."""
-        style = subtitle_styles.get()
+        style = subtitle_styles.get(self.style_id)
         template = style.path / style.template
         settings = subtitle_styles.values(style.id)
         variables = subtitle_styles.css_variables(style.id, settings)

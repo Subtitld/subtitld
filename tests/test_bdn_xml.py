@@ -246,9 +246,9 @@ session.VIDEO = {'framerate': 29.97}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('BDN')
 panel._refresh_options()
-check('BDN: its rate, the video\'s (29.97), and where the pictures go', (
+check('BDN: its rate, the video\'s (29.97), and no note: the preview shows the pictures', (
     panel.bdn_options.isHidden(), panel.text_options.isHidden(), panel.get_config()['options'].get('bdn_fps'),
-    panel.check_label.isHidden(), 'PNG' in panel.check_label.text()), (False, False, 29.97, False, True))
+    panel.check_label.isHidden()), (False, False, 29.97, True))
 session.VIDEO = {}
 panel.bdn_rate_combo.combobox.setCurrentIndex(bdn.RATES.index(50.0))
 panel.get_config()

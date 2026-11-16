@@ -4,9 +4,10 @@ import time
 from bisect import bisect
 import subprocess
 
-from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QDial, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
+from PySide6.QtGui import QIcon
 
 # Follow-mode scrolls repaint the viewport, so ignore drift smaller than this
 # rather than scrolling on every tick.
@@ -31,7 +32,7 @@ class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
         super().keyPressEvent(ev)
 
 import subtitld.modules.timecode as timecode
-from subtitld.interface import timeline, left_panel, subtitle_text_editor
+from subtitld.interface import timeline, left_panel, player_widgets, subtitle_text_editor
 from subtitld.interface.translation import _
 
 from subtitld.modules import subtitles
@@ -367,7 +368,8 @@ def load(self):
     self.playercontrols_widget.setLayout(QVBoxLayout())
     self.playercontrols_widget.layout().setContentsMargins(0, 0, 0, 0)
     self.playercontrols_widget.layout().setSpacing(0)
-    self.playercontrols_widget.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
+    # Preferred across: narrower than its rows' preferred width, they crop (player_widgets.CroppedRow).
+    self.playercontrols_widget.setSizePolicy(QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum))
     self.playercontrols_widget_animation = QPropertyAnimation(self.playercontrols_widget, b'minimumHeight')
     self.playercontrols_widget_animation.setEasingCurve(QEasingCurve.OutQuint)
 
@@ -453,171 +455,80 @@ def load(self):
     # self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_left_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_left_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_left_top_line.layout().setContentsMargins(0, 2, 0, 0)
+    self.playercontrols_widget_left_top_line.layout().setContentsMargins(0, 2, 0, 0)     # under the transport's 2px tabs
     self.playercontrols_widget_left_top_line.layout().setSpacing(8)
     self.playercontrols_widget_left_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
     self.playercontrols_widget_left_top_line.layout().addStretch()
 
-    self.send_text_buttons_container = QWidget()
-    self.send_text_buttons_container.setLayout(QHBoxLayout())
-    self.send_text_buttons_container.setObjectName('send_text_buttons_container')
-    self.send_text_buttons_container.setFixedHeight(42)
-    self.send_text_buttons_container.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.send_text_buttons_container.layout().setContentsMargins(0, 0, 0, 0)
-    self.send_text_buttons_container.layout().setSpacing(0)
-
-    self.send_text_to_last_subtitle_button = QPushButton()
-    self.send_text_to_last_subtitle_button.setObjectName('send_text_to_last_subtitle_button')
-    self.send_text_to_last_subtitle_button.setLayout(QHBoxLayout())
-    self.send_text_to_last_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.send_text_to_last_subtitle_button.layout().setContentsMargins(8, 0, 24, 3)
-    self.send_text_to_last_subtitle_button.setIconSize(QSize(24, 20))
-    self.send_text_to_last_subtitle_button.setFixedWidth(56)
+    # The three groups of editing actions are painted strips (player_widgets.ActionStrip): one raised piece each,
+    # whose keys are buttons. Send text draws its four icons as one timeline.
+    self.send_text_buttons_container = player_widgets.ActionStrip('send_text_buttons_container', [
+        ('send_text_to_last_subtitle_button', None, None),
+        ('send_text_to_last_subtitle_and_slice_button', None, None),
+        ('send_text_to_next_subtitle_and_slice_button', None, None),
+        ('send_text_to_next_subtitle_button', None, None),
+    ], picture=player_widgets.send_text_picture, nested=True)
+    self.send_text_to_last_subtitle_button = self.send_text_buttons_container.key('send_text_to_last_subtitle_button')
     self.send_text_to_last_subtitle_button.clicked.connect(lambda: send_text_to_last_subtitle_button_clicked(self))
-    self.send_text_buttons_container.layout().addWidget(self.send_text_to_last_subtitle_button)
-
-    self.send_text_to_last_subtitle_and_slice_button = QPushButton()
-    self.send_text_to_last_subtitle_and_slice_button.setObjectName('send_text_to_last_subtitle_and_slice_button')
-    self.send_text_to_last_subtitle_and_slice_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.send_text_to_last_subtitle_and_slice_button.setIconSize(QSize(24, 20))
-    self.send_text_to_last_subtitle_and_slice_button.setFixedWidth(24)
+    self.send_text_to_last_subtitle_and_slice_button = self.send_text_buttons_container.key('send_text_to_last_subtitle_and_slice_button')
     self.send_text_to_last_subtitle_and_slice_button.clicked.connect(lambda: send_text_to_last_subtitle_and_slice_button_clicked(self))
-    self.send_text_to_last_subtitle_button.layout().addWidget(self.send_text_to_last_subtitle_and_slice_button, 0, Qt.AlignLeft)
-
-    self.send_text_to_next_subtitle_button = QPushButton()
-    self.send_text_to_next_subtitle_button.setObjectName('send_text_to_next_subtitle_button')
-    self.send_text_to_next_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.send_text_to_next_subtitle_button.setLayout(QHBoxLayout())
-    self.send_text_to_next_subtitle_button.setIconSize(QSize(24, 20))
-    self.send_text_to_next_subtitle_button.setFixedWidth(56)
-    self.send_text_to_next_subtitle_button.layout().setContentsMargins(24, 0, 8, 3)
-    self.send_text_to_next_subtitle_button.clicked.connect(lambda: send_text_to_next_subtitle_button_clicked(self))
-    self.send_text_buttons_container.layout().addWidget(self.send_text_to_next_subtitle_button)
-
-    self.send_text_to_next_subtitle_and_slice_button = QPushButton()
-    self.send_text_to_next_subtitle_and_slice_button.setObjectName('send_text_to_next_subtitle_and_slice_button')
-    self.send_text_to_next_subtitle_and_slice_button.setIconSize(QSize(24, 20))
-    self.send_text_to_next_subtitle_and_slice_button.setFixedWidth(24)
-    self.send_text_to_next_subtitle_and_slice_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.send_text_to_next_subtitle_and_slice_button = self.send_text_buttons_container.key('send_text_to_next_subtitle_and_slice_button')
     self.send_text_to_next_subtitle_and_slice_button.clicked.connect(lambda: send_text_to_next_subtitle_and_slice_button_clicked(self))
-    self.send_text_to_next_subtitle_button.layout().addWidget(self.send_text_to_next_subtitle_and_slice_button, 0, Qt.AlignRight)
+    self.send_text_to_next_subtitle_button = self.send_text_buttons_container.key('send_text_to_next_subtitle_button')
+    self.send_text_to_next_subtitle_button.clicked.connect(lambda: send_text_to_next_subtitle_button_clicked(self))
+    self.playercontrols_widget_left_top_line.layout().addWidget(self.send_text_buttons_container, 0, Qt.AlignTop)
 
-    self.playercontrols_widget_left_top_line.layout().addWidget(self.send_text_buttons_container, 1, Qt.AlignTop)
-
-    self.merge_slice_frame = QWidget()
-    self.merge_slice_frame.setObjectName('merge_slice_frame')
-    self.merge_slice_frame.setLayout(QHBoxLayout())
-    self.merge_slice_frame.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.merge_slice_frame.setFixedHeight(42)
-    # self.merge_slice_frame.layout().setSizeConstraint(QLayout.SetMinimumSize)
-    self.merge_slice_frame.layout().setContentsMargins(0, 0, 0, 0)
-    self.merge_slice_frame.layout().setSpacing(0)
-
-    self.merge_back_selected_subtitle_button = QPushButton()
-    self.merge_back_selected_subtitle_button.setObjectName('merge_back_selected_subtitle_button')
-    self.merge_back_selected_subtitle_button.setIconSize(QSize(20, 20))
-    self.merge_back_selected_subtitle_button.setFixedWidth(28)
-    self.merge_back_selected_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.merge_slice_frame = player_widgets.ActionStrip('merge_slice_frame', [
+        ('merge_back_selected_subtitle_button', 'merge_back_selected_subtitle_icon.svg', 'left'),
+        ('slice_selected_subtitle_button', 'slice_selected_subtitle_icon.svg', None),
+        ('merge_next_selected_subtitle_button', 'merge_next_selected_subtitle_icon.svg', 'right'),
+    ])
+    self.merge_back_selected_subtitle_button = self.merge_slice_frame.key('merge_back_selected_subtitle_button')
     self.merge_back_selected_subtitle_button.clicked.connect(lambda: merge_back_selected_subtitle_button_clicked(self))
-    self.merge_slice_frame.layout().addWidget(self.merge_back_selected_subtitle_button)
-
-    self.merge_slice_frame.layout().addSpacing(-1)
-
-    self.slice_selected_subtitle_button = QPushButton()
-    self.slice_selected_subtitle_button.setObjectName('slice_selected_subtitle_button')
-    self.slice_selected_subtitle_button.setIconSize(QSize(32, 20))
-    self.slice_selected_subtitle_button.setFixedWidth(30)
+    self.slice_selected_subtitle_button = self.merge_slice_frame.key('slice_selected_subtitle_button')
     self.slice_selected_subtitle_button.setCheckable(True)
-    self.slice_selected_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.slice_selected_subtitle_button.clicked.connect(lambda: slice_selected_subtitle_button_clicked(self))
-    self.merge_slice_frame.layout().addWidget(self.slice_selected_subtitle_button)
-
-    self.merge_slice_frame.layout().addSpacing(-1)
-
-    self.merge_next_selected_subtitle_button = QPushButton()
-    self.merge_next_selected_subtitle_button.setObjectName('merge_next_selected_subtitle_button')
-    self.merge_next_selected_subtitle_button.setIconSize(QSize(20, 20))
-    self.merge_next_selected_subtitle_button.setFixedWidth(28)
-    self.merge_next_selected_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.merge_next_selected_subtitle_button = self.merge_slice_frame.key('merge_next_selected_subtitle_button')
     self.merge_next_selected_subtitle_button.clicked.connect(lambda: merge_next_selected_subtitle_button_clicked(self))
-    self.merge_slice_frame.layout().addWidget(self.merge_next_selected_subtitle_button)
+    self.playercontrols_widget_left_top_line.layout().addWidget(self.merge_slice_frame, 0, Qt.AlignTop)
 
-    self.playercontrols_widget_left_top_line.layout().addWidget(self.merge_slice_frame, 1, Qt.AlignTop)
-    
-    self.start_end_moving_frame = QWidget()
-    self.start_end_moving_frame.setObjectName('start_end_moving_frame')
-    self.start_end_moving_frame.setLayout(QHBoxLayout())
-    self.start_end_moving_frame.setFixedHeight(42)
-    self.start_end_moving_frame.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
-    self.start_end_moving_frame.layout().setContentsMargins(0, 0, 0, 0)
-    self.start_end_moving_frame.layout().setSpacing(0)
+    # Icons that meet a neighbour's subtitle block are stretched on that side so the blocks run on; the two that
+    # meet at a playhead line keep the gap.
+    self.start_end_moving_frame = player_widgets.ActionStrip('start_end_moving_frame', [
+        ('last_end_to_current_position_button', 'last_end_to_current_position_icon.svg', 'left'),
+        ('last_start_to_current_position_button', 'last_start_to_current_position_icon.svg', 'right'),
+        ('last_start_last_end_to_current_position_button', 'last_start_last_end_to_current_position_button.svg', 'right'),
+        ('next_start_next_end_to_current_position_button', 'next_start_next_end_to_current_position_button.svg', 'left'),
+        ('next_end_to_current_position_button', 'next_end_to_current_position_icon.svg', 'left'),
+        ('next_start_to_current_position_button', 'next_start_to_current_position_icon.svg', 'right'),
+    ])
+    for name, handler in (('last_end_to_current_position_button', last_end_to_current_position_button_clicked),
+                          ('last_start_to_current_position_button', last_start_to_current_position_button_clicked),
+                          ('last_start_last_end_to_current_position_button', last_start_last_end_to_current_position_button_clicked),
+                          ('next_start_next_end_to_current_position_button', next_start_next_end_to_current_position_button_clicked),
+                          ('next_end_to_current_position_button', next_end_to_current_position_button_clicked),
+                          ('next_start_to_current_position_button', next_start_to_current_position_button_clicked)):
+        key = self.start_end_moving_frame.key(name)
+        key.clicked.connect(lambda _checked=False, handler=handler: handler(self))
+        setattr(self, name, key)
+    self.playercontrols_widget_left_top_line.layout().addWidget(self.start_end_moving_frame, 0, Qt.AlignTop)
 
-    self.last_end_to_current_position_button = QPushButton()
-    self.last_end_to_current_position_button.setObjectName('last_end_to_current_position_button')
-    self.last_end_to_current_position_button.setIconSize(QSize(20, 20))
-    self.last_end_to_current_position_button.setFixedWidth(32)
-    self.last_end_to_current_position_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.last_end_to_current_position_button.clicked.connect(lambda: last_end_to_current_position_button_clicked(self))
-    self.start_end_moving_frame.layout().addWidget(self.last_end_to_current_position_button, 1)
-
-    self.last_start_to_current_position_button = QPushButton()
-    self.last_start_to_current_position_button.setObjectName('last_start_to_current_position_button')
-    self.last_start_to_current_position_button.setIconSize(QSize(28, 20))
-    self.last_start_to_current_position_button.setFixedWidth(28)
-    self.last_start_to_current_position_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.last_start_to_current_position_button.clicked.connect(lambda: last_start_to_current_position_button_clicked(self))
-    self.start_end_moving_frame.layout().addWidget(self.last_start_to_current_position_button, 1)
-
-    self.last_start_last_end_to_current_position_button = QPushButton()
-    self.last_start_last_end_to_current_position_button.setObjectName('last_start_last_end_to_current_position_button')
-    self.last_start_last_end_to_current_position_button.setIconSize(QSize(28, 20))
-    self.last_start_last_end_to_current_position_button.setFixedWidth(28)
-    self.last_start_last_end_to_current_position_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.last_start_last_end_to_current_position_button.clicked.connect(lambda: last_start_last_end_to_current_position_button_clicked(self))
-    self.start_end_moving_frame.layout().addWidget(self.last_start_last_end_to_current_position_button, 1)
-
-    self.next_start_next_end_to_current_position_button = QPushButton()
-    self.next_start_next_end_to_current_position_button.setObjectName('next_start_next_end_to_current_position_button')
-    self.next_start_next_end_to_current_position_button.setIconSize(QSize(28, 20))
-    self.next_start_next_end_to_current_position_button.setFixedWidth(28)
-    self.next_start_next_end_to_current_position_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.next_start_next_end_to_current_position_button.clicked.connect(lambda: next_start_next_end_to_current_position_button_clicked(self))
-    self.start_end_moving_frame.layout().addWidget(self.next_start_next_end_to_current_position_button, 1)
-    
-    self.next_end_to_current_position_button = QPushButton()
-    self.next_end_to_current_position_button.setObjectName('next_end_to_current_position_button')
-    self.next_end_to_current_position_button.setIconSize(QSize(28, 20))
-    self.next_end_to_current_position_button.setFixedWidth(28)
-    self.next_end_to_current_position_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.next_end_to_current_position_button.clicked.connect(lambda: next_end_to_current_position_button_clicked(self))
-    self.start_end_moving_frame.layout().addWidget(self.next_end_to_current_position_button, 1)
-
-    self.next_start_to_current_position_button = QPushButton()
-    self.next_start_to_current_position_button.setObjectName('next_start_to_current_position_button')
-    self.next_start_to_current_position_button.setIconSize(QSize(20, 20))
-    self.next_start_to_current_position_button.setFixedWidth(32)
-    self.next_start_to_current_position_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.next_start_to_current_position_button.clicked.connect(lambda: next_start_to_current_position_button_clicked(self))
-    self.start_end_moving_frame.layout().addWidget(self.next_start_to_current_position_button, 1)
-
-    self.playercontrols_widget_left_top_line.layout().addWidget(self.start_end_moving_frame, 1, Qt.AlignTop)
-
-    self.change_playback_speed = QPushButton()
+    self.change_playback_speed = player_widgets.SlantFrameButton('right', 'playback_speed.svg')
     self.change_playback_speed.setObjectName('change_playback_speed')
     self.change_playback_speed.setCheckable(True)
     self.change_playback_speed.setLayout(QHBoxLayout())
     self.change_playback_speed.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.change_playback_speed.setFixedHeight(48) 
     self.change_playback_speed.setIconSize(QSize(22, 22))
-    self.change_playback_speed.layout().setContentsMargins(16, 15, 30, 16)
+    self.change_playback_speed.layout().setContentsMargins(16, 8, 30, 8)      # the joined strip: 26px, centred in the 42px frame
     self.change_playback_speed.layout().setSpacing(0)
     self.change_playback_speed.clicked.connect(lambda: change_playback_speed_clicked(self))
 
-    self.change_playback_speed_decrease = QPushButton('-')
+    self.change_playback_speed_decrease = QPushButton()
     self.change_playback_speed_decrease.setObjectName('change_playback_speed_decrease')
-    self.change_playback_speed_decrease.setFixedWidth(20)
-    self.change_playback_speed_decrease.setStyleSheet('QPushButton {padding:0;}')
+    self.change_playback_speed_decrease.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playback_speed_decrease.svg')))
+    self.change_playback_speed_decrease.setIconSize(QSize(10, 10))
+    self.change_playback_speed_decrease.setFixedSize(24, 26)
     self.change_playback_speed_decrease.clicked.connect(lambda: change_playback_speed_decrease_clicked(self))
     self.change_playback_speed_decrease.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_decrease)
@@ -626,16 +537,17 @@ def load(self):
     self.change_playback_speed_slider.setMinimum(5)
     self.change_playback_speed_slider.setMaximum(300)
     self.change_playback_speed_slider.setPageStep(10)
-    # self.change_playback_speed_slider.setFixedWidth(60)
+    self.change_playback_speed_slider.setFixedSize(72, 26)
     self.change_playback_speed_slider.setValue(int(session.CONFIG.get('playback_speed', 1) * 100))
     self.change_playback_speed_slider.sliderReleased.connect(lambda: change_playback_speed_slider(self))
     self.change_playback_speed_slider.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_slider)
 
-    self.change_playback_speed_increase = QPushButton('+')
+    self.change_playback_speed_increase = QPushButton()
     self.change_playback_speed_increase.setObjectName('change_playback_speed_increase')
-    self.change_playback_speed_increase.setFixedWidth(20)
-    self.change_playback_speed_increase.setStyleSheet('QPushButton {padding:0;}')
+    self.change_playback_speed_increase.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playback_speed_increase.svg')))
+    self.change_playback_speed_increase.setIconSize(QSize(10, 10))
+    self.change_playback_speed_increase.setFixedSize(24, 26)
     self.change_playback_speed_increase.clicked.connect(lambda: change_playback_speed_increase_clicked(self))
     self.change_playback_speed_increase.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_increase)
@@ -644,8 +556,9 @@ def load(self):
     self.change_playback_speed_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.change_playback_speed_label.setObjectName('change_playback_speed_label')
     self.change_playback_speed_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-    self.change_playback_speed_label.setFixedWidth(50)
+    self.change_playback_speed_label.setFixedWidth(46)       # fits the widest value, '0.05×'
     self.change_playback_speed.layout().addWidget(self.change_playback_speed_label)
+    self.change_playback_speed.layout().addStretch()         # the frame's spare width goes after the value, not between the keys
 
     _attach_collapsible(self.change_playback_speed,
                         self.change_playback_speed_decrease,
@@ -657,92 +570,24 @@ def load(self):
 
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_left_top_line, 1)
 
-    self.playercontrols_widget_center_top_line = QWidget()
-    self.playercontrols_widget_center_top_line.setObjectName('playercontrols_widget_center_top_line')
-    self.playercontrols_widget_center_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.playercontrols_widget_center_top_line.setFixedHeight(51)
-    self.playercontrols_widget_center_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_center_top_line.layout().setContentsMargins(16, 6, 16, 1)
-    self.playercontrols_widget_center_top_line.layout().setSpacing(0)
-    self.playercontrols_widget_center_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
-
-    self.playercontrols_stop_button = QPushButton()
-    self.playercontrols_stop_button.setObjectName('playercontrols_stop_button')
-    self.playercontrols_stop_button.setProperty('position', 'first')
-    self.playercontrols_stop_button.setIconSize(QSize(20, 20))
-    self.playercontrols_stop_button.clicked.connect(lambda: playercontrols_stop_button_clicked(self))
-    self.playercontrols_stop_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_stop_button)
-
-    self.playercontrols_playpause_button = QPushButton()
-    self.playercontrols_playpause_button.setObjectName('playercontrols_playpause_button')
-    self.playercontrols_playpause_button.setCheckable(True)
-    self.playercontrols_playpause_button.setIconSize(QSize(22, 24))
-    self.playercontrols_playpause_button.setLayout(QHBoxLayout())
-    self.playercontrols_playpause_button.layout().setContentsMargins(40, 0, 0, 5)
-    self.playercontrols_playpause_button.layout().setSpacing(0)
-    self.playercontrols_playpause_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    # The transport is one painted piece (player_widgets.Transport): play from the beginning, play/pause with the
+    # ▶|▶ group, and record with its mode key. Its parts are buttons, so the handlers below are unchanged.
+    self.playercontrols_widget_center_top_line = player_widgets.Transport('playercontrols_widget_center_top_line')
+    transport = self.playercontrols_widget_center_top_line
+    self.playercontrols_play_from_beginning_button = transport.begin_key
+    self.playercontrols_play_from_beginning_button.clicked.connect(lambda: playercontrols_play_from_beginning_button_clicked(self))
+    self.playercontrols_playpause_button = transport.play_key
     self.playercontrols_playpause_button.clicked.connect(lambda: playercontrols_playpause_button_clicked(self))
-
-    self.playercontrols_play_from_last_start_button = QPushButton()
-    self.playercontrols_play_from_last_start_button.setIconSize(QSize(24, 24))
-    self.playercontrols_play_from_last_start_button.setObjectName('playercontrols_play_from_last_start_button')
-    self.playercontrols_play_from_last_start_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_play_from_last_start_button.setFixedWidth(36)
+    self.playercontrols_play_from_last_start_button = transport.last_key
     self.playercontrols_play_from_last_start_button.clicked.connect(lambda: playercontrols_play_from_last_start_button_clicked(self))
-    self.playercontrols_playpause_button.layout().addWidget(self.playercontrols_play_from_last_start_button, 0, Qt.AlignRight)
-
-    self.playercontrols_playpause_button.layout().addSpacing(-1)
-
-    self.playercontrols_play_from_next_start_button = QPushButton()
-    self.playercontrols_play_from_next_start_button.setIconSize(QSize(24, 24))
-    self.playercontrols_play_from_next_start_button.setObjectName('playercontrols_play_from_next_start_button')
-    self.playercontrols_play_from_next_start_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_play_from_next_start_button.setFixedWidth(36)
+    self.playercontrols_play_from_next_start_button = transport.next_key
     self.playercontrols_play_from_next_start_button.clicked.connect(lambda: playercontrols_play_from_next_start_button_clicked(self))
-    self.playercontrols_playpause_button.layout().addWidget(self.playercontrols_play_from_next_start_button, 0, Qt.AlignLeft)
-
-    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_playpause_button)
-
-    self.playercontrols_record_button = QPushButton()
-    self.playercontrols_record_button.setObjectName('playercontrols_record_button')
-    self.playercontrols_record_button.setIconSize(QSize(24, 24))
-    self.playercontrols_record_button.setCheckable(True)
-    self.playercontrols_record_button.setProperty('position', 'last')
-    self.playercontrols_record_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.playercontrols_record_button = transport.record_key
     self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
     self.playercontrols_record_button.clicked.connect(lambda: playercontrols_record_button_clicked(self))
-    # Keep clicks on a disabled mode switch from falling through and arming
-    # the recorder — see _DisabledChildClickGuard.
-    self._record_child_click_guard = _DisabledChildClickGuard(self.playercontrols_record_button)
-    self.playercontrols_record_button.installEventFilter(self._record_child_click_guard)
-    self.playercontrols_record_button.setLayout(QHBoxLayout())
-    self.playercontrols_record_button.layout().setContentsMargins(40, 0, 0, 5)
-    self.playercontrols_record_button.layout().setSpacing(0)
-
-    self.playercontrols_record_transcript_button = QPushButton()
-    self.playercontrols_record_transcript_button.setIconSize(QSize(24, 24))
-    self.playercontrols_record_transcript_button.setObjectName('playercontrols_record_transcript_button')
-    self.playercontrols_record_transcript_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_record_transcript_button.setFixedWidth(36)
-    self.playercontrols_record_transcript_button.setCheckable(True)
-    self.playercontrols_record_transcript_button.setToolTip(_('record_button.transcript_tooltip'))
-    self.playercontrols_record_transcript_button.clicked.connect(lambda: playercontrols_record_transcript_button_clicked(self))
-    self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_transcript_button, 0, Qt.AlignRight)
-
-    self.playercontrols_record_button.layout().addSpacing(-1)
-
-    self.playercontrols_record_audio_button = QPushButton()
-    self.playercontrols_record_audio_button.setIconSize(QSize(24, 24))
-    self.playercontrols_record_audio_button.setObjectName('playercontrols_record_audio_button')
-    self.playercontrols_record_audio_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_record_audio_button.setFixedWidth(36)
-    self.playercontrols_record_audio_button.setCheckable(True)
-    self.playercontrols_record_audio_button.setToolTip(_('record_button.wave_tooltip'))
-    self.playercontrols_record_audio_button.clicked.connect(lambda: playercontrols_record_audio_button_clicked(self))
-    self.playercontrols_record_button.layout().addWidget(self.playercontrols_record_audio_button, 0, Qt.AlignLeft)
-
-    self.playercontrols_widget_center_top_line.layout().addWidget(self.playercontrols_record_button)
+    # Transcript or audio: one key that switches between the two.
+    self.playercontrols_record_mode_button = transport.mode_key
+    self.playercontrols_record_mode_button.clicked.connect(lambda: playercontrols_record_mode_button_clicked(self))
 
     # Record-mode controller (recording is tied to playback; see
     # record_controls.RecordController). Reflect persisted arm/mode state.
@@ -777,29 +622,31 @@ def load(self):
     except Exception:
         log.exception('could not watch add-on changes for the record button')
     
-    self.playercontrols_widget_top_line.layout().addSpacing(-30)
+    # the side lines run under the transport's margins to its slants' feet, so the playback speed and repeat frames
+    # at their ends meet the slants
+    overlap = -(transport.MARGIN + round(transport.run))
+    self.playercontrols_widget_top_line.layout().addSpacing(overlap)
 
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_center_top_line, 0)
 
-    self.playercontrols_widget_top_line.layout().addSpacing(-30)
+    self.playercontrols_widget_top_line.layout().addSpacing(overlap)
 
     self.playercontrols_widget_right_top_line = QWidget()
     self.playercontrols_widget_right_top_line.setObjectName('playercontrols_widget_right_top_line')
     # self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_right_top_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_right_top_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_right_top_line.layout().setContentsMargins(0, 2, 0, 0)
+    self.playercontrols_widget_right_top_line.layout().setContentsMargins(0, 2, 0, 0)     # under the transport's 2px tabs
     self.playercontrols_widget_right_top_line.layout().setSpacing(8)
     self.playercontrols_widget_right_top_line.setAttribute(Qt.WA_LayoutOnEntireRect)
 
-    self.repeat_playback = QPushButton()
+    self.repeat_playback = player_widgets.SlantFrameButton('left', 'playback_repeat.svg')
     self.repeat_playback.setObjectName('repeat_playback')
     self.repeat_playback.setCheckable(True)
     self.repeat_playback.setLayout(QHBoxLayout())
     self.repeat_playback.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
-    self.repeat_playback.setFixedHeight(48)
     self.repeat_playback.setIconSize(QSize(22, 22))
-    self.repeat_playback.layout().setContentsMargins(50, 12, 16, 18)
+    self.repeat_playback.layout().setContentsMargins(50, 9, 16, 9)
     self.repeat_playback.layout().setSpacing(0)
     self.repeat_playback.clicked.connect(lambda: repeat_playback_clicked(self))
 
@@ -833,60 +680,16 @@ def load(self):
                         self.repeat_playback_x_label,
                         self.repeat_playback_times)
 
-    self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback)
+    self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback, 0, Qt.AlignTop)
 
-    self.music_voice_separation_box = QWidget()
-    self.music_voice_separation_box.setObjectName('music_voice_separation_box')
-    self.music_voice_separation_box.setFixedHeight(42)
-    self.music_voice_separation_box.setLayout(QHBoxLayout())
-    self.music_voice_separation_box.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.music_voice_separation_box.layout().setContentsMargins(0, 0, 0, 0)
-    self.music_voice_separation_box.layout().setSpacing(0)
-
-    self.music_voice_separation_music_icon = QPushButton()
-    self.music_voice_separation_music_icon.setObjectName('music_voice_separation_music_icon')
-    self.music_voice_separation_music_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.music_voice_separation_music_icon.setIconSize(QSize(24, 24))
-    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
-    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_music_icon)
-
-    self.music_voice_separation_box.layout().addSpacing(-21)
-
-    class CenterSnapDial(QDial):
-        def __init__(self, center=None, threshold=3, parent=None):
-            super().__init__(parent)
-            self._center = center
-            self._threshold = threshold
-            self._middle_value = 50
-
-            self.valueChanged.connect(self.handle_value_change)
-    
-        def handle_value_change(self, value):
-            # Check if value is close to middle
-            if abs(value - self._middle_value) <= self._threshold:
-                # Snap to middle
-                self.blockSignals(True)  # Prevent recursive signal
-                self.setValue(self._middle_value)
-                self.blockSignals(False)
-
-    self.music_voice_separation_slider = CenterSnapDial(center=50, threshold=3)
-    self.music_voice_separation_slider.setObjectName('music_voice_separation_slider')
-    self.music_voice_separation_slider.setFixedSize(QSize(42, 42))
-    self.music_voice_separation_slider.setRange(0,  100)
-    self.music_voice_separation_slider.setValue(50)
+    # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
+    self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
+    self.music_voice_separation_slider = self.music_voice_separation_box
     self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
-    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_slider, 1)
-
-    self.music_voice_separation_box.layout().addSpacing(-21)
-
-    self.music_voice_separation_voice_icon = QPushButton()
-    self.music_voice_separation_voice_icon.setObjectName('music_voice_separation_voice_icon')
-    self.music_voice_separation_voice_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.music_voice_separation_voice_icon.setIconSize(QSize(24, 24))
+    self.music_voice_separation_music_icon = self.music_voice_separation_box.music_key
+    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
+    self.music_voice_separation_voice_icon = self.music_voice_separation_box.voice_key
     self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
-    self.music_voice_separation_box.layout().addWidget(self.music_voice_separation_voice_icon)
-
-    self.music_voice_separation_slider.raise_()
 
     def music_voice_separation_thread_finished(response):
         pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
@@ -943,40 +746,16 @@ def load(self):
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
 
-    self.gap_hbox = QWidget()
-    self.gap_hbox.setObjectName('gap_hbox')
-    self.gap_hbox.setFixedHeight(42)
-    self.gap_hbox.setLayout(QHBoxLayout())
-    self.gap_hbox.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.gap_hbox.layout().setContentsMargins(0, 0, 0, 0)
-    self.gap_hbox.layout().setSpacing(0)
-
-    self.gap_add_subtitle_button = QPushButton()
-    self.gap_add_subtitle_button.setObjectName('gap_add_subtitle_button')
-    self.gap_add_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.gap_add_subtitle_button.setIconSize(QSize(24, 24))
-    self.gap_add_subtitle_button.clicked.connect(lambda: gap_add_subtitle_button_clicked(self))
-    self.gap_hbox.layout().addWidget(self.gap_add_subtitle_button)
-
-    self.gap_hbox.layout().addSpacing(-23)
-
+    # Add gap · duration · remove gap: one painted piece, the duration field hanging in it as a notch.
     self.gap_subtitle_duration = QDoubleSpinBox()
     self.gap_subtitle_duration.setObjectName('gap_subtitle_duration')
     self.gap_subtitle_duration.setMinimum(.1)
     self.gap_subtitle_duration.setMaximum(60.)
-    self.gap_subtitle_duration.setFixedSize(QSize(46, 26))
-    self.gap_hbox.layout().addWidget(self.gap_subtitle_duration)
-
-    self.gap_hbox.layout().addSpacing(-23)
-
-    self.gap_remove_subtitle_button = QPushButton()
-    self.gap_remove_subtitle_button.setObjectName('gap_remove_subtitle_button')
-    self.gap_remove_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.gap_remove_subtitle_button.setIconSize(QSize(24, 24))
+    self.gap_hbox = player_widgets.GapControl('gap_hbox', self.gap_subtitle_duration)
+    self.gap_add_subtitle_button = self.gap_hbox.add_key
+    self.gap_add_subtitle_button.clicked.connect(lambda: gap_add_subtitle_button_clicked(self))
+    self.gap_remove_subtitle_button = self.gap_hbox.remove_key
     self.gap_remove_subtitle_button.clicked.connect(lambda: gap_remove_subtitle_button_clicked(self))
-    self.gap_hbox.layout().addWidget(self.gap_remove_subtitle_button)
-
-    self.gap_subtitle_duration.raise_()
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.gap_hbox, 0, Qt.AlignTop)
 
@@ -987,61 +766,25 @@ def load(self):
     self.add_remove_subtitle_frame.layout().setContentsMargins(0, 0, 0, 0)
     self.add_remove_subtitle_frame.layout().setSpacing(0)
 
-    self.add_subtitle_button = QPushButton()
-    self.add_subtitle_button.setObjectName('add_subtitle_button')
-    self.add_subtitle_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_button.setIconSize(QSize(20, 20))
-    self.add_subtitle_button.setFixedHeight(42)
-    self.add_subtitle_button.setLayout(QHBoxLayout())
-    self.add_subtitle_button.layout().setSizeConstraint(QLayout.SetMinimumSize)
-    self.add_subtitle_button.layout().setContentsMargins(0, 0, 5, 5)
-    self.add_subtitle_button.layout().setSpacing(0)
-    self.add_subtitle_button.clicked.connect(lambda: add_subtitle_button_clicked(self))
-
-    self.add_subtitle_button.layout().addStretch()
-
-    self.add_subtitle_starting_from_last = QPushButton()
-    self.add_subtitle_starting_from_last.setObjectName('add_subtitle_starting_from_last')
-    self.add_subtitle_starting_from_last.setCheckable(True)
-    self.add_subtitle_starting_from_last.setIconSize(QSize(20, 20))
-    self.add_subtitle_starting_from_last.setFixedWidth(28)
-    self.add_subtitle_starting_from_last.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_starting_from_last.clicked.connect(lambda: add_subtitle_starting_from_last_clicked(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_starting_from_last, 1)
-
-    self.add_subtitle_button.layout().addSpacing(-1)
-
-    self.add_subtitle_and_play = QPushButton()
-    self.add_subtitle_and_play.setObjectName('add_subtitle_and_play')
-    self.add_subtitle_and_play.setCheckable(True)
-    self.add_subtitle_and_play.setIconSize(QSize(20, 20))
-    self.add_subtitle_and_play.setFixedWidth(20)
-    self.add_subtitle_and_play.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_and_play.clicked.connect(lambda: add_subtitle_and_play_clicked(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_and_play, 1)
-
-    self.add_subtitle_button.layout().addSpacing(-1)
-
-    self.add_subtitle_to_next_start = QPushButton()
-    self.add_subtitle_to_next_start.setObjectName('add_subtitle_to_next_start')
-    self.add_subtitle_to_next_start.setCheckable(True)
-    self.add_subtitle_to_next_start.setIconSize(QSize(20, 20))
-    self.add_subtitle_to_next_start.setFixedWidth(28)
-    self.add_subtitle_to_next_start.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.add_subtitle_to_next_start.clicked.connect(lambda: add_subtitle_to_next_start_clicked(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_to_next_start, 1)
-
-    self.add_subtitle_button.layout().addSpacing(6)
-
+    # ADD is one painted button: its three switches hang from its top edge as one notch, then the duration field.
     self.add_subtitle_duration = QDoubleSpinBox()
     self.add_subtitle_duration.setObjectName('add_subtitle_duration')
     self.add_subtitle_duration.setMinimum(.1)
     self.add_subtitle_duration.setMaximum(60.)
     self.add_subtitle_duration.setValue(10.0)
-    self.add_subtitle_duration.setFixedWidth(46)
-    self.add_subtitle_duration.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.add_subtitle_duration.valueChanged.connect(lambda: add_subtitle_duration_changed(self))
-    self.add_subtitle_button.layout().addWidget(self.add_subtitle_duration, 1)
+    self.add_subtitle_button = player_widgets.AddSubtitleButton('add_subtitle_button', [
+        ('add_subtitle_starting_from_last', 'add_from_last.svg', 'add_from_last_checked.svg'),
+        ('add_subtitle_and_play', 'add_and_play.svg', None),
+        ('add_subtitle_to_next_start', 'add_subtitle_to_next_start.svg', 'add_subtitle_to_next_start_checked.svg'),
+    ], self.add_subtitle_duration)
+    self.add_subtitle_button.clicked.connect(lambda: add_subtitle_button_clicked(self))
+    for name, handler in (('add_subtitle_starting_from_last', add_subtitle_starting_from_last_clicked),
+                          ('add_subtitle_and_play', add_subtitle_and_play_clicked),
+                          ('add_subtitle_to_next_start', add_subtitle_to_next_start_clicked)):
+        key = next(k for k in self.add_subtitle_button.switches if k.objectName() == name)
+        key.clicked.connect(lambda _checked=False, handler=handler: handler(self))
+        setattr(self, name, key)
 
     self.add_remove_subtitle_frame.layout().addWidget(self.add_subtitle_button)
 
@@ -1058,11 +801,10 @@ def load(self):
     self.playercontrols_widget_right_top_line.layout().addStretch()
 
     self.playercontrols_widget_top_line.layout().addWidget(self.playercontrols_widget_right_top_line, 1)
+    self.playercontrols_widget_center_top_line.raise_()     # over the side lines, which run under its margins
 
-    self.playercontrols_widget_left_top_line.raise_()
-    self.playercontrols_widget_right_top_line.raise_()
-
-    self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_top_line, 0)
+    # Both rows crop rather than keep the window from being made narrower than they need.
+    self.playercontrols_widget.layout().addWidget(player_widgets.CroppedRow(self.playercontrols_widget_top_line), 0)
     
     self.playercontrols_widget_bottom_line = QWidget()
     self.playercontrols_widget_bottom_line.setObjectName('playercontrols_widget_bottom_line')
@@ -1079,7 +821,7 @@ def load(self):
     # self.playercontrols_widget_left_bottom_line.setAttribute(Qt.WA_LayoutOnEntireRect)
     self.playercontrols_widget_left_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_left_bottom_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_left_bottom_line.layout().setContentsMargins(0, 2, 0, 1)#0, 3, 0, 1)
+    self.playercontrols_widget_left_bottom_line.layout().setContentsMargins(0, 1, 0, 2)     # clear of the 1px edge under them
     self.playercontrols_widget_left_bottom_line.layout().setSpacing(6)
 
     self.playercontrols_widget_left_bottom_line.layout().addStretch()
@@ -1094,7 +836,7 @@ def load(self):
     self.timeline_show_speaker_color_button.setObjectName('timeline_show_speaker_color_button')
     self.timeline_show_speaker_color_button.setCheckable(True)
     self.timeline_show_speaker_color_button.setIconSize(QSize(16, 16))
-    self.timeline_show_speaker_color_button.setFixedWidth(24)
+    self.timeline_show_speaker_color_button.setFixedWidth(28)
     self.timeline_show_speaker_color_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timeline_show_speaker_color_button.clicked.connect(lambda: timeline_show_speaker_color_button_clicked(self))
     self.timeline_speaker_container.layout().addWidget(self.timeline_show_speaker_color_button)
@@ -1103,7 +845,7 @@ def load(self):
     self.timeline_show_speaker_tracks_button.setObjectName('timeline_show_speaker_tracks_button')
     self.timeline_show_speaker_tracks_button.setCheckable(True)
     self.timeline_show_speaker_tracks_button.setIconSize(QSize(16, 16))
-    self.timeline_show_speaker_tracks_button.setFixedWidth(24)
+    self.timeline_show_speaker_tracks_button.setFixedWidth(28)
     self.timeline_show_speaker_tracks_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timeline_show_speaker_tracks_button.clicked.connect(lambda: timeline_show_speaker_tracks_button_clicked(self))
     self.timeline_speaker_container.layout().addWidget(self.timeline_show_speaker_tracks_button)
@@ -1120,7 +862,7 @@ def load(self):
     self.timelinescrolling_none_button.setObjectName('timelinescrolling_none_button')
     self.timelinescrolling_none_button.setCheckable(True)
     self.timelinescrolling_none_button.setIconSize(QSize(16, 16))
-    self.timelinescrolling_none_button.setFixedWidth(24)
+    self.timelinescrolling_none_button.setFixedWidth(28)
     self.timelinescrolling_none_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timelinescrolling_none_button.clicked.connect(lambda: timelinescrolling_type_changed(self, 'none'))
     self.timelinescrolling_container.layout().addWidget(self.timelinescrolling_none_button)
@@ -1129,7 +871,7 @@ def load(self):
     self.timelinescrolling_page_button.setObjectName('timelinescrolling_page_button')
     self.timelinescrolling_page_button.setCheckable(True)
     self.timelinescrolling_page_button.setIconSize(QSize(16, 16))
-    self.timelinescrolling_page_button.setFixedWidth(24)
+    self.timelinescrolling_page_button.setFixedWidth(28)
     self.timelinescrolling_page_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timelinescrolling_page_button.clicked.connect(lambda: timelinescrolling_type_changed(self, 'page'))
     self.timelinescrolling_container.layout().addWidget(self.timelinescrolling_page_button)
@@ -1138,7 +880,7 @@ def load(self):
     self.timelinescrolling_follow_button.setObjectName('timelinescrolling_follow_button')
     self.timelinescrolling_follow_button.setCheckable(True)
     self.timelinescrolling_follow_button.setIconSize(QSize(16, 16))
-    self.timelinescrolling_follow_button.setFixedWidth(24)
+    self.timelinescrolling_follow_button.setFixedWidth(28)
     self.timelinescrolling_follow_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.timelinescrolling_follow_button.clicked.connect(lambda: timelinescrolling_type_changed(self, 'follow'))
     self.timelinescrolling_container.layout().addWidget(self.timelinescrolling_follow_button)
@@ -1178,7 +920,7 @@ def load(self):
     self.snap_grid_button.setObjectName('snap_grid_button')
     self.snap_grid_button.setCheckable(True)
     self.snap_grid_button.setIconSize(QSize(24, 16))
-    self.snap_grid_button.setFixedWidth(28)
+    self.snap_grid_button.setFixedWidth(32)
     self.snap_grid_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_grid_button.clicked.connect(lambda: snap_grid_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_grid_button)
@@ -1187,7 +929,7 @@ def load(self):
     self.snap_move_button.setObjectName('snap_move_button')
     self.snap_move_button.setCheckable(True)
     self.snap_move_button.setIconSize(QSize(24, 16))
-    self.snap_move_button.setFixedWidth(24)
+    self.snap_move_button.setFixedWidth(28)
     self.snap_move_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_move_button.clicked.connect(lambda: snap_move_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_move_button)
@@ -1196,7 +938,7 @@ def load(self):
     self.snap_limits_button.setObjectName('snap_limits_button')
     self.snap_limits_button.setCheckable(True)
     self.snap_limits_button.setIconSize(QSize(24, 16))
-    self.snap_limits_button.setFixedWidth(24)
+    self.snap_limits_button.setFixedWidth(28)
     self.snap_limits_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_limits_button.clicked.connect(lambda: snap_limits_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_limits_button)
@@ -1205,7 +947,7 @@ def load(self):
     self.snap_move_nereast_button.setObjectName('snap_move_nereast_button')
     self.snap_move_nereast_button.setCheckable(True)
     self.snap_move_nereast_button.setIconSize(QSize(24, 16))
-    self.snap_move_nereast_button.setFixedWidth(28)
+    self.snap_move_nereast_button.setFixedWidth(32)
     self.snap_move_nereast_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.snap_move_nereast_button.clicked.connect(lambda: snap_move_nereast_button_clicked(self))
     self.snap_controls_container.layout().addWidget(self.snap_move_nereast_button)
@@ -1221,14 +963,14 @@ def load(self):
     self.move_start_back_subtitle = QPushButton()
     self.move_start_back_subtitle.setObjectName('move_start_back_subtitle')
     self.move_start_back_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.move_start_back_subtitle.setFixedWidth(24)
+    self.move_start_back_subtitle.setFixedWidth(28)
     self.move_start_back_subtitle.clicked.connect(lambda: move_start_back_subtitle_clicked(self))
     self.move_start_container.layout().addWidget(self.move_start_back_subtitle)
 
     self.move_start_forward_subtitle = QPushButton()
     self.move_start_forward_subtitle.setObjectName('move_start_forward_subtitle')
     self.move_start_forward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.move_start_forward_subtitle.setFixedWidth(24)
+    self.move_start_forward_subtitle.setFixedWidth(28)
     self.move_start_forward_subtitle.clicked.connect(lambda: move_start_forward_subtitle_clicked(self))
     self.move_start_container.layout().addWidget(self.move_start_forward_subtitle)
 
@@ -1237,14 +979,14 @@ def load(self):
     self.move_backward_subtitle = QPushButton()
     self.move_backward_subtitle.setObjectName('move_backward_subtitle')
     self.move_backward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.move_backward_subtitle.setFixedWidth(24)
+    self.move_backward_subtitle.setFixedWidth(28)
     self.move_backward_subtitle.clicked.connect(lambda: move_backward_subtitle_clicked(self))
     self.playercontrols_widget_left_bottom_line.layout().addWidget(self.move_backward_subtitle)
 
     self.timeline_cursor_back_frame = QPushButton()
     self.timeline_cursor_back_frame.setObjectName('timeline_cursor_back_frame')
     self.timeline_cursor_back_frame.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.timeline_cursor_back_frame.setFixedWidth(24)
+    self.timeline_cursor_back_frame.setFixedWidth(28)
     self.timeline_cursor_back_frame.clicked.connect(lambda: timeline_cursor_back_frame_clicked(self))
     self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_cursor_back_frame)
 
@@ -1266,7 +1008,7 @@ def load(self):
         def __init__(widget, *args):
             super(playercontrols_timecode_label, widget).__init__(*args)
             widget.setAlignment(Qt.AlignCenter)
-            widget.setFixedWidth(120)
+            widget.setFixedWidth(136)        # room either side of the time within the tab
             widget.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
             widget.setObjectName('playercontrols_timecode_label')
         
@@ -1545,20 +1287,20 @@ def load(self):
     # self.playercontrols_widget_right_bottom_line.setAttribute(Qt.WA_TranslucentBackground)
     self.playercontrols_widget_right_bottom_line.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
     self.playercontrols_widget_right_bottom_line.setLayout(QHBoxLayout())
-    self.playercontrols_widget_right_bottom_line.layout().setContentsMargins(0, 2, 0, 1)
+    self.playercontrols_widget_right_bottom_line.layout().setContentsMargins(0, 1, 0, 2)    # clear of the 1px edge under them
     self.playercontrols_widget_right_bottom_line.layout().setSpacing(6)
     
     self.timeline_cursor_next_frame = QPushButton()
     self.timeline_cursor_next_frame.setObjectName('timeline_cursor_next_frame')
     self.timeline_cursor_next_frame.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.timeline_cursor_next_frame.setFixedWidth(24)
+    self.timeline_cursor_next_frame.setFixedWidth(28)
     self.timeline_cursor_next_frame.clicked.connect(lambda: timeline_cursor_next_frame_clicked(self))
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.timeline_cursor_next_frame)
 
     self.move_forward_subtitle = QPushButton()
     self.move_forward_subtitle.setObjectName('move_forward_subtitle')
     self.move_forward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.move_forward_subtitle.setFixedWidth(24)
+    self.move_forward_subtitle.setFixedWidth(28)
     self.move_forward_subtitle.clicked.connect(lambda: move_forward_subtitle_clicked(self))
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.move_forward_subtitle)
 
@@ -1571,14 +1313,14 @@ def load(self):
     self.move_end_back_subtitle = QPushButton()
     self.move_end_back_subtitle.setObjectName('move_end_back_subtitle')
     self.move_end_back_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.move_end_back_subtitle.setFixedWidth(24)
+    self.move_end_back_subtitle.setFixedWidth(28)
     self.move_end_back_subtitle.clicked.connect(lambda: move_end_back_subtitle_clicked(self))
     self.move_end_container.layout().addWidget(self.move_end_back_subtitle)
 
     self.move_end_forward_subtitle = QPushButton()
     self.move_end_forward_subtitle.setObjectName('move_end_forward_subtitle')
     self.move_end_forward_subtitle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.move_end_forward_subtitle.setFixedWidth(24)
+    self.move_end_forward_subtitle.setFixedWidth(28)
     self.move_end_forward_subtitle.clicked.connect(lambda: move_end_forward_subtitle_clicked(self))
     self.move_end_container.layout().addWidget(self.move_end_forward_subtitle)
 
@@ -1602,7 +1344,7 @@ def load(self):
     self.grid_frames_button.setCheckable(True)
     self.grid_frames_button.clicked.connect(lambda: grid_type_changed(self, 'frames'))
     self.grid_frames_button.setIconSize(QSize(16, 16))
-    self.grid_frames_button.setFixedWidth(24)
+    self.grid_frames_button.setFixedWidth(28)
     self.grid_frames_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_frames_button)
 
@@ -1611,7 +1353,7 @@ def load(self):
     self.grid_seconds_button.setCheckable(True)
     self.grid_seconds_button.clicked.connect(lambda: grid_type_changed(self, 'seconds'))
     self.grid_seconds_button.setIconSize(QSize(16, 16))
-    self.grid_seconds_button.setFixedWidth(24)
+    self.grid_seconds_button.setFixedWidth(28)
     self.grid_seconds_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_seconds_button)
 
@@ -1619,7 +1361,7 @@ def load(self):
     self.grid_scenes_button.setObjectName('grid_scenes_button')
     self.grid_scenes_button.setCheckable(True)
     self.grid_scenes_button.setIconSize(QSize(16, 16))
-    self.grid_scenes_button.setFixedWidth(24)
+    self.grid_scenes_button.setFixedWidth(28)
     self.grid_scenes_button.clicked.connect(lambda: grid_type_changed(self, 'scenes'))
     self.grid_scenes_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_scenes_button)
@@ -1639,6 +1381,8 @@ def load(self):
     self.onset_button = QPushButton()
     self.onset_button.setObjectName('onset_button')
     self.onset_button.setCheckable(True)
+    self.onset_button.setIconSize(QSize(16, 16))
+    self.onset_button.setFixedWidth(28)
     self.onset_button.clicked.connect(lambda: onset_button_clicked(self))
     self.onset_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.onset_controls_container.layout().addWidget(self.onset_button)
@@ -1715,7 +1459,8 @@ def load(self):
 
     self.playercontrols_widget_bottom_line.layout().addWidget(self.playercontrols_widget_right_bottom_line)
 
-    self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_bottom_line, 0)
+    self.playercontrols_widget_bottom_line_holder = player_widgets.CroppedRow(self.playercontrols_widget_bottom_line)
+    self.playercontrols_widget.layout().addWidget(self.playercontrols_widget_bottom_line_holder, 0)
 
     self.playercontrols_widget.layout().addSpacing(-25)
 
@@ -1723,272 +1468,18 @@ def load(self):
     
     self.playercontrols_widget.layout().addWidget(self.timeline_scroll, 1)
 
-    self.playercontrols_widget_bottom_line.raise_()
-
-    '''
-    self.playercontrols_properties_panel_placeholder = QWidget(parent=self.playercontrols_widget)
-
-    self.playercontrols_properties_panel = QLabel(parent=self.playercontrols_properties_panel_placeholder)
-    self.playercontrols_properties_panel.setObjectName('player_controls_sub_panel')
-    self.playercontrols_properties_panel.setStyleSheet('QLabel {border-top:0; border-right:0;}')
-    # self.playercontrols_properties_panel_animation = QPropertyAnimation(self.playercontrols_properties_panel, b'geometry')
-    # self.playercontrols_properties_panel_animation.setEasingCurve(QEasingCurve.OutCirc)
-
-    self.playercontrols_properties_panel_tabwidget = QTabWidget(parent=self.playercontrols_properties_panel)
-    self.playercontrols_properties_panel_tabwidget.setObjectName('playercontrols_properties_panel_tabwidget')
-    self.playercontrols_properties_panel_tabwidget.setTabBar(QLeftTabBar(self.playercontrols_properties_panel_tabwidget))
-    self.playercontrols_properties_panel_tabwidget.setTabPosition(QTabWidget.West)
-    self.playercontrols_properties_panel_tabwidget.setStyleSheet(
-                            #QTabBar:tab                                    { background: rgba(184,206,224,150); color: rgba(46,62,76,150); border: 1px solid rgba(106, 116, 131, 100); padding: 10px; border-top-left-radius: 2px; border-top-right-radius: 0; border-bottom-left-radius: 2px; border-left:0; padding-top: -16px; padding-left: 4px; padding-bottom:6px; padding-right:2px; }
-                            #QTabBar:tab:selected                           { background: rgb(184,206,224); color: rgb(46,62,76); border: 1px solid rgb(106, 116, 131); border-right:0; }
-                            #QTabWidget:pane                                { background: rgb(184,206,224); border: 1px solid rgb(106, 116, 131); border-bottom-right-radius: 2px;  border-top-left-radius: 0; border-top-right-radius: 2px; border-left: 0;}
-                            )
-
-    self.playercontrols_properties_panel_tabwidget_subtitles = QWidget()
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_normal = QLabel('Normal subtitle colors'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_normal.setObjectName('small_label')
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_normal.setStyleSheet(' QLabel {font-weight:bold;} ')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_title_normal = QLabel('Border'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_title_normal = QLabel('Fill'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_title_normal = QLabel('Text'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_selected = QLabel('Selected subtitle colors'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_selected.setObjectName('small_label')
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_selected.setStyleSheet(' QLabel {font-weight:bold;} ')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_title_selected = QLabel('Border'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_border_color_title_selected.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_border_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_border_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_border_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_title_selected = QLabel('Fill'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_fill_color_title_selected.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_fill_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_fill_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_fill_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_title_selected = QLabel('Text'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_text_color_title_selected.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_text_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_text_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_text_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_arrows = QLabel('Arrows colors'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_arrows.setObjectName('small_label')
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_arrows.setStyleSheet(' QLabel {font-weight:bold;} ')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_normal_arrows = QLabel('Normal'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_title_normal_arrows.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_arrow_normal_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_subtitle_arrow_normal_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_subtitle_arrow_normal_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_title_normal_arrows = QLabel('Selected'.upper(), parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_title_normal_arrows.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_arrow_normal_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_subtitles)
-    self.playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_arrow_normal_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_subtitles_selected_subtitle_arrow_normal_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget.addTab(self.playercontrols_properties_panel_tabwidget_subtitles, '')
-    self.playercontrols_properties_panel_tabwidget.setTabIcon(0, QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playercontrols_properties_panel_subtitle_icon.svg')))
-
-    self.playercontrols_properties_panel_tabwidget_waveform = QWidget()
-
-    self.playercontrols_properties_panel_tabwidget_waveform_title_normal = QLabel('Waveform colors'.upper(), parent=self.playercontrols_properties_panel_tabwidget_waveform)
-    self.playercontrols_properties_panel_tabwidget_waveform_title_normal.setObjectName('small_label')
-    self.playercontrols_properties_panel_tabwidget_waveform_title_normal.setStyleSheet(' QLabel {font-weight:bold;} ')
-
-    self.playercontrols_properties_panel_tabwidget_waveform_border_color_title_normal = QLabel('Border'.upper(), parent=self.playercontrols_properties_panel_tabwidget_waveform)
-    self.playercontrols_properties_panel_tabwidget_waveform_border_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_waveform_border_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_waveform)
-    self.playercontrols_properties_panel_tabwidget_waveform_border_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_waveform_border_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_waveform_fill_color_title_normal = QLabel('Fill'.upper(), parent=self.playercontrols_properties_panel_tabwidget_waveform)
-    self.playercontrols_properties_panel_tabwidget_waveform_fill_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_waveform_fill_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_waveform)
-    self.playercontrols_properties_panel_tabwidget_waveform_fill_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_waveform_fill_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget.addTab(self.playercontrols_properties_panel_tabwidget_waveform, '')
-    self.playercontrols_properties_panel_tabwidget.setTabIcon(1, QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playercontrols_properties_panel_waveform_icon.svg')))
-
-    self.playercontrols_properties_panel_tabwidget_background = QWidget()
-    self.playercontrols_properties_panel_tabwidget_background.setObjectName('playercontrols_properties_panel_tabwidget_background')
-
-    self.playercontrols_properties_panel_tabwidget_background_title_normal = QLabel('Background colors'.upper(), parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_title_normal.setObjectName('small_label')
-    self.playercontrols_properties_panel_tabwidget_background_title_normal.setStyleSheet(' QLabel {font-weight:bold;} ')
-
-    self.playercontrols_properties_panel_tabwidget_background_time_text_color_title_normal = QLabel('Time'.upper(), parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_time_text_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_background_time_text_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_time_text_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_background_time_text_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_background_cursor_color_title_normal = QLabel('Cursor'.upper(), parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_cursor_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_background_cursor_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_cursor_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_background_cursor_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget_background_grid_color_title_normal = QLabel('Grid'.upper(), parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_grid_color_title_normal.setObjectName('small_label')
-
-    self.playercontrols_properties_panel_tabwidget_background_grid_color_button = QPushButton(parent=self.playercontrols_properties_panel_tabwidget_background)
-    self.playercontrols_properties_panel_tabwidget_background_grid_color_button.clicked.connect(lambda: playercontrols_properties_panel_tabwidget_background_grid_color_button_clicked(self))
-
-    self.playercontrols_properties_panel_tabwidget.addTab(self.playercontrols_properties_panel_tabwidget_background, '')
-    self.playercontrols_properties_panel_tabwidget.setTabIcon(2, QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playercontrols_properties_panel_background_icon.svg')))
-
-    self.playercontrols_widget_frame = QFrame(parent=self.playercontrols_widget)
-    self.playercontrols_widget_frame.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame.layout().setContentsMargins(0, 0, 0, 0)
-
-    self.playercontrols_widget_frame_top_hbox = QHBoxLayout()
-    self.playercontrols_widget_frame_top_hbox.setSpacing(0)
-
-    self.playercontrols_widget_frame_top_left = QFrame()
-    self.playercontrols_widget_frame_top_left.setAttribute(Qt.WA_LayoutOnEntireRect)
-    self.playercontrols_widget_frame_top_left.setObjectName('playercontrols_widget_frame_top_left')
-    self.playercontrols_widget_frame_top_left.setFixedHeight(60)
-    self.playercontrols_widget_frame_top_left.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_top_left.layout().setContentsMargins(0, 7, 7, 13)
-    self.playercontrols_widget_frame_top_left.layout().setSpacing(6)
-    self.playercontrols_widget_frame_top_left.layout().addStretch()
-
-    self.playercontrols_widget_frame_top_left.layout().addWidget(self.gap_hbox, 0)
-
-    self.playercontrols_widget_frame_top_hbox.layout().addWidget(self.playercontrols_widget_frame_top_left, 1)
-
-    self.playercontrols_widget_frame_top_middle = QFrame()
-    self.playercontrols_widget_frame_top_middle.setFixedHeight(60)
-    self.playercontrols_widget_frame_top_middle.setObjectName('playercontrols_widget_frame_top_middle')
-    self.playercontrols_widget_frame_top_middle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_widget_frame_top_middle.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_top_middle.layout().setContentsMargins(0, 10, 0, 6)
-    self.playercontrols_widget_frame_top_middle.layout().setSpacing(0)
-
-    self.playercontrols_widget_frame_top_hbox.layout().addWidget(self.playercontrols_widget_frame_top_middle)
-
-    self.playercontrols_widget_frame_top_right = QFrame()
-    self.playercontrols_widget_frame_top_right.setAttribute(Qt.WA_LayoutOnEntireRect)
-    self.playercontrols_widget_frame_top_right.setObjectName('playercontrols_widget_frame_top_right')
-    self.playercontrols_widget_frame_top_right.setFixedHeight(60)
-    self.playercontrols_widget_frame_top_right.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_top_right.layout().setContentsMargins(7, 7, 0, 13)
-    self.playercontrols_widget_frame_top_right.layout().setSpacing(6)
-
-    self.playercontrols_widget_frame_top_right.layout().addStretch()
-
-    self.playercontrols_widget_frame_top_hbox.layout().addWidget(self.playercontrols_widget_frame_top_right, 1)
-
-    self.playercontrols_widget_frame.layout().addLayout(self.playercontrols_widget_frame_top_hbox)
-
-    self.playercontrols_widget_frame_bottom_hbox = QHBoxLayout()
-    self.playercontrols_widget_frame_bottom_hbox.setSpacing(0)
-
-    self.playercontrols_widget_frame_bottom_left = QFrame()
-    self.playercontrols_widget_frame_bottom_left.setAttribute(Qt.WA_LayoutOnEntireRect)
-    self.playercontrols_widget_frame_bottom_left.setObjectName('playercontrols_widget_frame_bottom_left')
-    self.playercontrols_widget_frame_bottom_left.setFixedHeight(26)
-    self.playercontrols_widget_frame_bottom_left.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_bottom_left.layout().setContentsMargins(0, 0, 4, 2)
-    self.playercontrols_widget_frame_bottom_left.layout().setSpacing(0)
-    self.playercontrols_widget_frame_bottom_left.layout().addStretch()
-
-
-
-
-
-
-
-    self.playercontrols_widget_frame_bottom_left.layout().addSpacing(4)
-
-    self.playercontrols_widget_frame_bottom_left.layout().addSpacing(4)
-
-    self.playercontrols_widget_frame_bottom_left.layout().addSpacing(2)
-
-
-    self.playercontrols_widget_frame_bottom_hbox.layout().addWidget(self.playercontrols_widget_frame_bottom_left, 1)
-
-    self.playercontrols_widget_frame_bottom_middle = QFrame()
-    self.playercontrols_widget_frame_bottom_middle.setFixedHeight(26)
-    self.playercontrols_widget_frame_bottom_middle.setObjectName('playercontrols_widget_frame_bottom_middle')
-    self.playercontrols_widget_frame_bottom_middle.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_widget_frame_bottom_middle.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_bottom_middle.layout().setContentsMargins(0, 0, 0, 0)
-    self.playercontrols_widget_frame_bottom_middle.layout().setSpacing(0)
-
-    self.playercontrols_widget_frame_bottom_hbox.layout().addWidget(self.playercontrols_widget_frame_bottom_middle, 0)
-
-    self.playercontrols_widget_frame_bottom_right_absolute = QFrame()
-    self.playercontrols_widget_frame_bottom_right_absolute.setAttribute(Qt.WA_LayoutOnEntireRect)
-    # self.playercontrols_widget_frame_bottom_right_absolute.setObjectName('playercontrols_widget_frame_bottom_right')
-    self.playercontrols_widget_frame_bottom_right_absolute.setFixedHeight(26)
-    self.playercontrols_widget_frame_bottom_right_absolute.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_bottom_right_absolute.layout().setContentsMargins(0, 0, 0, 0)
-    self.playercontrols_widget_frame_bottom_right_absolute.layout().setSpacing(0)
-
-    self.playercontrols_widget_frame_bottom_right = QFrame()
-    # self.playercontrols_widget_frame_bottom_right.setAttribute(Qt.WA_LayoutOnEntireRect)
-    self.playercontrols_widget_frame_bottom_right.setObjectName('playercontrols_widget_frame_bottom_right')
-    # self.playercontrols_widget_frame_bottom_right.setFixedHeight(26)
-    self.playercontrols_widget_frame_bottom_right.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_bottom_right.layout().setContentsMargins(0, 0, 0, 2)
-    self.playercontrols_widget_frame_bottom_right.layout().setSpacing(0)
-
-    self.playercontrols_widget_frame_bottom_right.layout().addSpacing(-8)
-
-    self.playercontrols_widget_frame_bottom_right.layout().addStretch()
-
-    self.playercontrols_widget_frame_bottom_right_absolute.layout().addWidget(self.playercontrols_widget_frame_bottom_right)
-
-    self.playercontrols_widget_frame_bottom_right_corner = QFrame()
-    self.playercontrols_widget_frame_bottom_right_corner.setObjectName('playercontrols_widget_frame_bottom_right_corner')
-    self.playercontrols_widget_frame_bottom_right_corner.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.playercontrols_widget_frame_bottom_right_corner.setFixedWidth(35)
-    self.playercontrols_widget_frame_bottom_right_corner.setLayout(QHBoxLayout())
-    self.playercontrols_widget_frame_bottom_right_corner.layout().setContentsMargins(0, 0, 0, 0)
-    self.playercontrols_widget_frame_bottom_right_corner.layout().setSpacing(0)
-
-    self.playercontrols_properties_panel_toggle = QPushButton()
-    self.playercontrols_properties_panel_toggle.setObjectName('playercontrols_properties_panel_toggle')
-    self.playercontrols_properties_panel_toggle.setCheckable(True)
-    self.playercontrols_widget_frame_bottom_right_corner.layout().addWidget(self.playercontrols_properties_panel_toggle)
-    self.playercontrols_properties_panel_toggle.clicked.connect(lambda: playercontrols_properties_panel_toggle_pressed(self))
-    self.playercontrols_properties_panel_toggle_animation = QPropertyAnimation(self.playercontrols_properties_panel_toggle, b'geometry')
-    self.playercontrols_properties_panel_toggle_animation.setEasingCurve(QEasingCurve.OutCirc)
-
-    self.playercontrols_widget_frame_bottom_right_absolute.layout().addWidget(self.playercontrols_widget_frame_bottom_right_corner, 0)
-
-    self.playercontrols_widget_frame_bottom_hbox.layout().addWidget(self.playercontrols_widget_frame_bottom_right_absolute, 1)
-
-    self.playercontrols_widget_frame.layout().addLayout(self.playercontrols_widget_frame_bottom_hbox)
-    '''
-
-def playercontrols_stop_button_clicked(self):
-    playercontrols_playpause_button_clicked(self)
-    self.preview_panel_player.stop()
+    self.playercontrols_widget_bottom_line_holder.raise_()
+
+
+def playercontrols_play_from_beginning_button_clicked(self):
+    """Back to the start of the timeline, and play (recording too, if armed)."""
+    self.preview_panel_player.seek(0)
+    if self.preview_panel_player.is_paused():
+        playercontrols_playpause_button_clicked(self)
+    self.timeline_widget.setFocus(Qt.TabFocusReason)
     update_playercontrols_playpause_button(self)
     timeline.update(self)
+
 
 @shortcut('playpause', 'shortcuts.playpause', ['Space'])
 def playercontrols_playpause_button_pressed(self):
@@ -2053,34 +1544,17 @@ def playercontrols_record_audio_button_clicked(self):
     _update_record_mode_buttons(self)
 
 
-class _DisabledChildClickGuard(QObject):
-    """Swallow mouse clicks that land on a DISABLED child of the record button.
-
-    The record button is itself a checkable QPushButton with the two mode
-    switches as laid-out children. Disabling a child does not stop a click in
-    its rect from reaching the parent — verified: with the transcript switch
-    disabled, a click over it toggles the parent and ARMS recording. So the
-    disabled option would become an arm/disarm button, which is worse than
-    leaving it enabled.
-
-    Filtering on the parent is the narrow fix: only presses whose position
-    lands on a disabled child are consumed, so clicking the parent's own body
-    still arms as usual.
-    """
-
-    _MOUSE = (QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
-              QEvent.MouseButtonDblClick)
-
-    def eventFilter(self, obj, event):
-        if event.type() in self._MOUSE:
-            try:
-                pos = event.position().toPoint()
-            except AttributeError:      # Qt5-style events
-                pos = event.pos()
-            child = obj.childAt(pos)
-            if child is not None and not child.isEnabled():
-                return True
-        return False
+def playercontrols_record_mode_button_clicked(self):
+    """The mode key switches between transcript and audio. Transcript needs an
+    engine: without one the key stays on audio (its tooltip says why)."""
+    from subtitld.interface.record_controls import MODE_TRANSCRIPT
+    controller = getattr(self, 'record_controller', None)
+    if controller is None:
+        return
+    if controller.mode == MODE_TRANSCRIPT:
+        playercontrols_record_audio_button_clicked(self)
+    else:
+        playercontrols_record_transcript_button_clicked(self)
 
 
 def _update_record_mode_buttons(self):
@@ -2095,20 +1569,19 @@ def _update_record_mode_buttons(self):
     if controller is None:
         return
     from subtitld.interface.record_controls import (
-        MODE_TRANSCRIPT, MODE_WAVE, any_asr_provider)
+        MODE_TRANSCRIPT, any_asr_provider)
 
     has_engine = any_asr_provider()
-    transcript = self.playercontrols_record_transcript_button
-    transcript.setEnabled(has_engine)
-    transcript.setToolTip(
-        _('record_button.transcript_tooltip') if has_engine
-        else _('record_button.transcript_unavailable_tooltip'))
-
-    # `controller.mode` already reports audio when no engine is installed, so
-    # the two checks stay mutually exclusive without special-casing here.
+    # `controller.mode` already reports audio when no engine is installed.
     mode = controller.mode
-    transcript.setChecked(has_engine and mode == MODE_TRANSCRIPT)
-    self.playercontrols_record_audio_button.setChecked(mode == MODE_WAVE)
+    key = self.playercontrols_record_mode_button
+    if mode == MODE_TRANSCRIPT:
+        key.setToolTip(_('record_button.transcript_tooltip'))
+    elif has_engine:
+        key.setToolTip(_('record_button.wave_tooltip'))
+    else:
+        key.setToolTip(_('record_button.wave_tooltip') + '\n' + _('record_button.transcript_unavailable_tooltip'))
+    self.playercontrols_widget_center_top_line.set_mode('transcript' if mode == MODE_TRANSCRIPT else 'audio')
     _update_record_pulse(self)
 
 
@@ -2116,8 +1589,7 @@ def _toggle_record_pulse(self):
     """Flip the `pulse` property so the QSS alternates the record glyph."""
     button = self.playercontrols_record_button
     button.setProperty('pulse', not bool(button.property('pulse')))
-    button.style().unpolish(button)
-    button.style().polish(button)
+    self.playercontrols_widget_center_top_line.set_pulse(bool(button.property('pulse')))
 
 
 def _update_record_pulse(self):
@@ -2144,8 +1616,7 @@ def _update_record_pulse(self):
             self._record_pulse_running = False
         if button.property('pulse'):
             button.setProperty('pulse', False)
-            button.style().unpolish(button)
-            button.style().polish(button)
+            self.playercontrols_widget_center_top_line.set_pulse(False)
 
 
 
@@ -2508,7 +1979,8 @@ def update_snap_buttons(self):
 def update_playback_speed_buttons(self, animate=False):
     if not session.CONFIG['playback_speed'] == 1.0 and not self.change_playback_speed.isChecked():
         self.change_playback_speed.setChecked(True)
-    self.change_playback_speed_label.setText('x' + str(session.CONFIG['playback_speed']))
+    speed = f"{session.CONFIG['playback_speed']:.2f}".rstrip('0')
+    self.change_playback_speed_label.setText((speed + '0' if speed.endswith('.') else speed) + '×')
     self.change_playback_speed_slider.setValue(int(session.CONFIG['playback_speed'] * 100))
     _set_collapsed(self.change_playback_speed,
                    not self.change_playback_speed.isChecked(),
@@ -3324,12 +2796,9 @@ def escape_actions(self):
 
 
 def translate(self):
-    self.add_subtitle_button.setText(' ' + _('playercontrols.add'))
     self.snap_button_label.setText(_('playercontrols.snap'))
     self.step_button.setText(_('playercontrols.step'))
-    self.remove_selected_subtitle_button.setText(' ' + _('playercontrols.remove'))
     self.grid_button.setText(_('playercontrols.grid'))
-    self.onset_button.setText(_('playercontrols.onset'))
 
     self.send_text_to_last_subtitle_button.setToolTip(_('playercontrols.send_text_to_last_subtitle'))
     self.send_text_to_last_subtitle_and_slice_button.setToolTip(_('playercontrols.send_text_to_last_subtitle_and_slice'))
@@ -3348,7 +2817,7 @@ def translate(self):
     self.change_playback_speed.setToolTip(_('playercontrols.change_playback_speed'))
     self.change_playback_speed_decrease.setToolTip(_('playercontrols.change_playback_speed_decrease'))
     self.change_playback_speed_increase.setToolTip(_('playercontrols.change_playback_speed_increase'))
-    self.playercontrols_stop_button.setToolTip(_('playercontrols.stop'))
+    self.playercontrols_play_from_beginning_button.setToolTip(_('playercontrols.play_from_beginning'))
     self.playercontrols_playpause_button.setToolTip(_('playercontrols.playpause'))
     self.playercontrols_play_from_last_start_button.setToolTip(_('playercontrols.play_from_last_start'))
     self.playercontrols_play_from_next_start_button.setToolTip(_('playercontrols.play_from_next_start'))
@@ -3389,7 +2858,6 @@ def translate(self):
     self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))
     self.timeline_show_speaker_tracks_button.setToolTip(_('playercontrols.timeline_show_speaker_tracks'))
     self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
-    self.playercontrols_record_audio_button.setToolTip(_('record_button.wave_tooltip'))
     # The transcript switch's tooltip depends on whether an engine is installed.
     _update_record_mode_buttons(self)
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The owner's tab in the "Shared with" panel's header (subtitldcc_live.LiveCard): hanging from its top-left
+     corner a little below the header, flat, its right edge a 75° slant with a 6px curve at the foot. Right
+     slice 14 holds the slant. -->
+<svg width="40" height="28" version="1.1" viewBox="0 0 40 28" xmlns="http://www.w3.org/2000/svg">
+ <path d="M40 0L33.69 23.55Q32.5 28 27.9 28L0 28V0Z" fill="#4a6376"/>
+</svg>

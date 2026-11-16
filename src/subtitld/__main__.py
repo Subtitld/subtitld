@@ -78,9 +78,9 @@ try:
 except Exception:
     pass
 
-from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog
+from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog, QMenu, QAbstractItemView
 from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence, QIcon
-from PySide6.QtCore import QDir, QEvent, QObject, QTimer
+from PySide6.QtCore import QDir, QEvent, QObject, QTimer, Qt
 # Haiku draws every window with its own native decorator (the yellow tab),
 # which already provides minimise/zoom/close. Using the frameless window
 # there would either hide that decorator or duplicate its buttons, so fall
@@ -178,6 +178,31 @@ class FileOpenFilter(QObject):
         else:
             window.raise_()
             window.activateWindow()
+
+
+class RoundedPopups(QObject):
+    """Menus and combo box lists are windows of their own: on a transparent
+    window the stylesheet's 3px corners show, instead of square ones behind
+    them."""
+
+    def eventFilter(self, watched, event):
+        kind = event.type()
+        if kind not in (QEvent.Polish, QEvent.Show) or not isinstance(watched, QWidget) or not watched.isWindow():
+            return False
+        is_list = watched.inherits('QComboBoxPrivateContainer')
+        if kind == QEvent.Polish and (is_list or isinstance(watched, QMenu)):
+            watched.setAttribute(Qt.WA_TranslucentBackground)
+        elif kind == QEvent.Show and is_list:
+            # a list dropping below its box is as wide as the box: widen it to its longest item, as a list
+            # opening over the box was
+            view = watched.findChild(QAbstractItemView)
+            if view is not None:
+                scrollbar = view.verticalScrollBar()
+                need = view.sizeHintForColumn(0) + 2 * view.frameWidth() + 8 \
+                    + (scrollbar.sizeHint().width() if scrollbar.isVisible() else 0)
+                if watched.width() < need:
+                    watched.resize(need, watched.height())
+        return False
 
 
 class Window(_MainWindowBase):
@@ -410,6 +435,8 @@ class Window(_MainWindowBase):
             self.record_controller.shutdown()
 
         session.persist_current_playback_position()
+        from subtitld.interface import recent_cards
+        recent_cards.remember(self, look_ahead=True)
         session.CONFIG.save()
 
         event.accept()
@@ -528,6 +555,7 @@ def main():
     # name it in their desktop entry; run from source, this is the only one.
     app.setWindowIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld.png')))
 
+    app.installEventFilter(RoundedPopups(app))
     main_window = Window()
     main_window.show()
     # Ctrl+C in the terminal closes the window, as its close button does

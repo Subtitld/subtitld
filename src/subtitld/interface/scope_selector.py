@@ -16,12 +16,13 @@ State persists per host under ``session.CONFIG[<section>]`` (``scope``,
 its own scope independently.
 """
 
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
                                QSizePolicy, QStackedWidget, QStyle, QStyleOption,
                                QVBoxLayout, QWidget)
-from PySide6.QtCore import Qt, QEasingCurve, QPropertyAnimation, QSize, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import Qt, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Signal
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPolygonF
 
+from subtitld.interface import shapes
 from subtitld.interface.translation import _
 from subtitld.modules import session
 
@@ -130,6 +131,8 @@ class ScopeSelector(QWidget):
     """
 
     changed = Signal()
+    # The bar opened (True) or closed (False), for a host that dresses itself to match.
+    expanded_changed = Signal(bool)
 
     def __init__(self, config_section, parent=None):
         super().__init__(parent)
@@ -301,6 +304,8 @@ class ScopeSelector(QWidget):
 
         prev = self._expanded_state
         self._expanded_state = expanded
+        if prev != expanded:
+            self.expanded_changed.emit(expanded)
 
         anim = self._bar_anim
         anim.stop()
@@ -503,9 +508,11 @@ class ScopeSelector(QWidget):
             self.combobox.setCurrentIndex(SCOPE_IDS.index(scope))
             self.combobox.blockSignals(False)
 
-            # Chip: "<SCOPE>  <icon>" — ≡ (expand) when collapsed, − (collapse) when open.
-            scope_name = self.combobox.currentText() or scope.upper()
-            self.chip.setText(f'{scope_name.upper()}   {"−" if expanded else "≡"}')
+            # Chip: "<SCOPE>  <icon>" — ≡ (expand) when collapsed, − (collapse) when open. Docked at a row's
+            # left (ScopeFooter.as_corner_tab), the icon leads.
+            scope_name = (self.combobox.currentText() or scope.upper()).upper()
+            icon = '−' if expanded else '≡'
+            self.chip.setText(f'{icon}   {scope_name}' if self.chip.property('docked') else f'{scope_name}   {icon}')
 
             self._set_expanded(expanded)
 
@@ -593,6 +600,48 @@ class ScopeSelector(QWidget):
         self.combobox.setMinimumContentsLength(max(len(text) for text in labels))
         self.combobox.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.refresh()
+
+
+class SlantProgressBar(QProgressBar):
+    """The footer's progress bar: square and flush in its row, a sunken track
+    whose fill ends in a 75° edge. The fill is the primary button's gradient
+    turned upside down, at half strength, under a 1px shadow along the top —
+    the bar reads as sunk into the row. The fill's edge is placed at
+    mid-height and runs from half a slant before the start to half a slant
+    past the end, so 0% is exactly empty and 100% exactly full."""
+
+    TRACK = '#2e3e4c'
+    FILL = '#566f84'
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect())
+        height = rect.height()
+        painter.fillRect(rect, shapes.gradient(0, height, self.TRACK, 'sunken'))
+
+        span = self.maximum() - self.minimum()
+        fraction = (self.value() - self.minimum()) / span if span > 0 else 0
+        run = height * shapes.RUN15
+        edge = -run / 2 + (rect.width() + run) * max(0.0, min(1.0, fraction))
+        fill = QPainterPath()
+        fill.addPolygon(QPolygonF([QPointF(-run, 0), QPointF(edge + run / 2, 0),
+                                   QPointF(edge - run / 2, height), QPointF(-run, height)]))
+        painter.setOpacity(0.5)
+        flipped = QLinearGradient(0, 0, 0, height)
+        flipped.setColorAt(0, shapes.shade(self.FILL, -shapes.DEPTH))
+        flipped.setColorAt(1, shapes.shade(self.FILL, shapes.DEPTH))
+        painter.fillPath(fill.intersected(shapes.rect_path(rect)), flipped)
+        painter.setOpacity(1.0)
+        painter.fillRect(QRectF(0, 0, rect.width(), 1), shapes.CONTACT)
+
+        if self.isTextVisible() and self.text():
+            font = QFont(self.font())
+            font.setPixelSize(10)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor('#e1ebf2'))
+            painter.drawText(rect, Qt.AlignCenter, self.text())
 
 
 class ScopeFooter(QWidget):
@@ -686,6 +735,40 @@ class ScopeFooter(QWidget):
         else:
             self.actions_page.layout().addWidget(widget, stretch, alignment)
         return widget
+
+    def as_corner_tab(self):
+        """The ending a speaker card's dubbing section wears: the scope chip
+        moves to the action row's left, the row loses its band and the
+        hairline above it, and the main action becomes the dialogs' light
+        slanted tab in the row's bottom-right corner, flush with the edges."""
+        self.setProperty('corner_tab', True)
+        self.divider.setVisible(False)
+        actions = self.actions_page.layout()
+        actions.setContentsMargins(_SIDE_PADDING, 0, 0, 0)
+        if self.selector is not None:
+            chip = self.selector.chip
+            chip.setProperty('docked', True)
+            self.selector.layout().setContentsMargins(0, 0, 0, 0)
+            actions.insertWidget(0, chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
+            actions.insertStretch(1, 1)
+            self.selector.expanded_changed.connect(self._dress_open)
+            # The selector's pieces were polished before this footer was named a corner tab.
+            for styled in self.selector.findChildren(QWidget):
+                styled.style().unpolish(styled)
+                styled.style().polish(styled)
+            self.selector.refresh()
+        primary = getattr(self, '_primary', None)
+        if primary is not None:
+            primary.setProperty('class', 'scope_action_tab')
+            actions.setAlignment(primary, Qt.AlignRight | Qt.AlignBottom)
+
+    def _dress_open(self, expanded):
+        """A corner-tab footer takes the open bar's colour, so the two read
+        as one panel."""
+        self.row.setProperty('scope_open', bool(expanded))
+        self.row.style().unpolish(self.row)
+        self.row.style().polish(self.row)
+        self.row.update()
 
     def add_stretch(self):
         """Push the actions added after this to the row's far end."""

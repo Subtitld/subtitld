@@ -200,10 +200,11 @@ def load(self):
     self.titleBar_left_save_button.setProperty('class', 'saved')
     self.titleBar_left_save_button.setIconSize(QSize(16, 16))
     self.titleBar_left_save_button.setFixedWidth(50)
+    self.titleBar_left_save_button.setFixedHeight(36)     # the bar's full height, over its bottom line, as the export tab
     self.titleBar_left_save_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
     self.titleBar_left_save_button.clicked.connect(lambda: toppanel_save_button_clicked(self))
     session._unsaved_change_callbacks.append(self.titleBar_left_save_button.update_state)
-    self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+    self.titleBar_left_container.layout().addWidget(self.titleBar_left_save_button, alignment=Qt.AlignLeft | Qt.AlignTop)
 
     # Save is gated on the USFX background extractor: if the user hits
     # Save while dubs/FLAC/waveform are still inside the original zip,
@@ -240,7 +241,7 @@ def load(self):
             widget.setAutoFillBackground(True)
             widget.layout().setContentsMargins(0, 0, 0, 0)
             widget.layout().setSpacing(0)
-            widget.setMinimumWidth(64)
+            widget.setMinimumWidth(48)        # the icon and the slant; quick export, when shown, widens it
             widget.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
             widget_icon = QLabel()
             widget_icon.setObjectName('titleBar_left_export_button_icon')
@@ -324,7 +325,7 @@ def load(self):
     mark = os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld_mark.png')
     self.tilteBar_subtitld_label.setText(
         f'<img src="{mark}" width="13" height="11" style="vertical-align: middle">'
-        f'&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
+        f'&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
 
 
 def update(self):
@@ -411,6 +412,8 @@ def toppanel_save_button_clicked(self):
         if success:
             session.add_to_recent_files(session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath', ''))
             session.persist_current_playback_position()
+            from subtitld.interface import recent_cards
+            recent_cards.remember(self)
             session.notify_save_success()
             # Re-render the title bar so the path/filename labels pick
             # up `session.SUBTITLE['filepath']` (just set by the
@@ -448,7 +451,8 @@ def toppanel_export_button_clicked(self):
     dialog = ExportDialog(parent=self,
                           has_background=has_background,
                           has_vocals=has_vocals,
-                          initial_category=initial_category)
+                          initial_category=initial_category,
+                          audio_engine=getattr(self.preview_panel_player, '_audio_device', None))
     config = dialog.exec_and_get_values()
     if not config:
         return
@@ -477,6 +481,10 @@ def toppanel_export_button_clicked(self):
         description = info['description']
     elif category == 'documents' and fmt in session.LIST_OF_SUPPORTED_EXPORT_EXTENSIONS:
         info = session.LIST_OF_SUPPORTED_EXPORT_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
+    elif category == 'project' and fmt in session.LIST_OF_SUPPORTED_PROJECT_EXTENSIONS:
+        info = session.LIST_OF_SUPPORTED_PROJECT_EXTENSIONS[fmt]
         extensions = info['extensions']
         description = info['description']
 
@@ -581,7 +589,7 @@ def toppanel_export_button_clicked(self):
 
     if category == 'subtitles' and 'options' in config:
         session.FORMAT['options'] = config['options']
-    elif category == 'documents' and 'options' in config:
+    elif category in ('documents', 'project') and 'options' in config:
         # Added to what the subtitles were opened with (a frame rate...).
         session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **config['options'])
 

@@ -2,10 +2,11 @@ import html
 import re
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
-from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QPoint, QSize, QObject, QEvent, QPropertyAnimation
+from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor, QFont
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent, QPropertyAnimation, QTimer
 
 
+from subtitld.interface import shapes
 from subtitld.interface.translation import _
 
 
@@ -209,6 +210,66 @@ class _HoverMirror(QObject):
         return False
 
 
+class _ResizeEdge(QWidget):
+    """A thin strip along one edge (or a square at one corner) of a frameless
+    window, over its contents: dragging it resizes the window, through the
+    window system where it can (Wayland), by hand otherwise."""
+    THICKNESS = 4
+    CORNER = 10
+    CURSORS = {
+        Qt.LeftEdge: Qt.SizeHorCursor, Qt.RightEdge: Qt.SizeHorCursor,
+        Qt.TopEdge: Qt.SizeVerCursor, Qt.BottomEdge: Qt.SizeVerCursor,
+        Qt.LeftEdge | Qt.TopEdge: Qt.SizeFDiagCursor, Qt.RightEdge | Qt.BottomEdge: Qt.SizeFDiagCursor,
+        Qt.RightEdge | Qt.TopEdge: Qt.SizeBDiagCursor, Qt.LeftEdge | Qt.BottomEdge: Qt.SizeBDiagCursor,
+    }
+
+    def __init__(self, window, edges):
+        super().__init__(window)
+        self.edges = edges
+        self.setCursor(self.CURSORS[edges])
+        self._start = None
+
+    def place(self):
+        w, h = self.parentWidget().width(), self.parentWidget().height()
+        t, c = self.THICKNESS, self.CORNER
+        left, right = bool(self.edges & Qt.LeftEdge), bool(self.edges & Qt.RightEdge)
+        top, bottom = bool(self.edges & Qt.TopEdge), bool(self.edges & Qt.BottomEdge)
+        if (left or right) and (top or bottom):
+            self.setGeometry(0 if left else w - c, 0 if top else h - c, c, c)
+        elif left or right:
+            self.setGeometry(0 if left else w - t, c, t, h - 2 * c)
+        else:
+            self.setGeometry(c, 0 if top else h - t, w - 2 * c, t)
+        self.raise_()
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return
+        handle = self.window().windowHandle()
+        if handle is not None and handle.startSystemResize(self.edges):
+            return
+        self._start = (event.globalPosition().toPoint(), self.window().geometry())
+
+    def mouseMoveEvent(self, event):
+        if self._start is None:
+            return
+        origin, geometry = self._start
+        delta = event.globalPosition().toPoint() - origin
+        rect = QRect(geometry)
+        if self.edges & Qt.LeftEdge:
+            rect.setLeft(min(rect.left() + delta.x(), rect.right() - self.window().minimumWidth()))
+        if self.edges & Qt.RightEdge:
+            rect.setRight(rect.right() + delta.x())
+        if self.edges & Qt.TopEdge:
+            rect.setTop(min(rect.top() + delta.y(), rect.bottom() - self.window().minimumHeight()))
+        if self.edges & Qt.BottomEdge:
+            rect.setBottom(rect.bottom() + delta.y())
+        self.window().setGeometry(rect)
+
+    def mouseReleaseEvent(self, event):
+        self._start = None
+
+
 class SimpleDialog(QDialog):
     def __init__(self, parent=None, title='', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -277,24 +338,24 @@ class SimpleDialog(QDialog):
         # The notch. Its artwork is sliced 0/1/1/36: the left 36px carry the
         # slanted edge at 1:1 and the rest stretches. QSS border widths do not
         # inset a plain widget's contents, so the layout margins place the
-        # close button explicitly. It starts 24px in, inside the slant slice:
+        # close button explicitly. It starts 17px in, inside the slant slice:
         # the slant runs down-right, and at the icon's height the notch body
         # already begins left of it, so the icon stays clear of the edge
-        # while the notch stays narrow (24 + 34 + 1 = 59px). Only the icon is
+        # while the notch stays narrow (17 + 30 + 1 = 48px). Only the icon is
         # drawn; the hover fill is the notch's own artwork, not the button.
         self.title_line.notch = QWidget()
         self.title_line.notch.setObjectName('dialog_title_notch')
         self.title_line.notch.setAttribute(Qt.WA_StyledBackground, True)
         self.title_line.notch.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         self.title_line.notch.setLayout(QHBoxLayout())
-        self.title_line.notch.layout().setContentsMargins(24, 0, 1, 1)
+        self.title_line.notch.layout().setContentsMargins(17, 0, 1, 1)
         self.title_line.notch.layout().setSpacing(0)
         self.title_line.layout().addWidget(self.title_line.notch, 0)
 
         close_button = QPushButton()
         # 31 tall, not 32: the notch's bottom hairline takes the last row, and
         # a 32px button would paint over it on hover.
-        close_button.setFixedSize(QSize(34, 31))
+        close_button.setFixedSize(QSize(30, 31))
         close_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         close_button.setObjectName('dialog_close_button')
         close_button.clicked.connect(lambda: self.reject())
@@ -457,8 +518,31 @@ class SimpleDialog(QDialog):
 
     def title_mouse_press_event(self, event):
         if event.button() == Qt.LeftButton:
+            # the window system moves the window (Wayland lets no window place itself); moved by hand otherwise
+            handle = self.windowHandle()
+            if handle is not None and handle.startSystemMove():
+                event.accept()
+                return
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
+
+    def make_resizable(self):
+        """Let the dialog be resized from its edges and corners: it has no
+        window frame, so thin strips along them hand the resize to the
+        window system."""
+        self._resize_edges = [_ResizeEdge(self, edges) for edges in (
+            Qt.LeftEdge, Qt.RightEdge, Qt.TopEdge, Qt.BottomEdge,
+            Qt.LeftEdge | Qt.TopEdge, Qt.RightEdge | Qt.TopEdge,
+            Qt.LeftEdge | Qt.BottomEdge, Qt.RightEdge | Qt.BottomEdge)]
+        self._place_resize_edges()
+
+    def _place_resize_edges(self):
+        for edge in getattr(self, '_resize_edges', []):
+            edge.place()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_resize_edges()
 
     def title_mouse_move_event(self, event):
         if event.buttons() == Qt.LeftButton:
@@ -486,30 +570,110 @@ class SimpleDialog(QDialog):
         super().accept()
 
     
-class LabeledComboBox(QWidget):
-    activated = Signal()
+class SlantLabeledField(QWidget):
+    """A value with its label in front of it, in one 26px field: the label
+    sits in a darker segment cut off by a 75° slant, as wide as its own text.
+    The value widget (and anything added to bottom_line after it) is drawn on
+    the field's own background. A choice (combo box) is raised like a button;
+    a value typed in (spin box, line edit) is sunken like any field. Both
+    have the 1px contact line along the bottom."""
+    HEIGHT = 26
+    LABEL_LEFT = 6                    # before the label's text (the stylesheet's padding-left on the label)
+    LABEL_PADDING = 9                 # after it, measured at mid-height
+    RAISED = True
+    ROUNDED = True
+
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
-        widget.setObjectName('labeled_combobox')
-        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.setAttribute(Qt.WA_StyledBackground)
+        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        widget.setFixedHeight(widget.HEIGHT)
+        widget.setAttribute(Qt.WA_Hover)
 
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
+        widget.setLayout(QHBoxLayout())
+        widget.layout().setContentsMargins(0, 0, 0, 1)       # the contact line's row
         widget.layout().setSpacing(0)
 
         widget.label = QLabel()
-        widget.layout().addWidget(widget.label, 1)
+        widget.layout().addWidget(widget.label)
 
         widget.bottom_line = QHBoxLayout()
         widget.bottom_line.setContentsMargins(0, 0, 0, 0)
         widget.bottom_line.setSpacing(0)
-        widget.layout().addLayout(widget.bottom_line)
+        widget.layout().addLayout(widget.bottom_line, 1)
+        widget._fit_label()
 
+    def _run(widget):
+        return widget.HEIGHT * shapes.RUN15
+
+    def _fit_label(widget):
+        """The label segment fits its own text: a little padding, the text, more padding, then the slant."""
+        text = widget.label.text().upper()
+        width = widget.label.fontMetrics().horizontalAdvance(text) if text else 0
+        widget._label_width = width + widget.LABEL_LEFT + widget.LABEL_PADDING if text else 0
+        widget.label.setVisible(bool(text))
+        widget.label.setFixedWidth(int(widget._label_width + widget._run() / 2) if text else 0)
+
+    def setLabel(widget, label):
+        widget.label.setText(label)
+        widget._fit_label()
+        widget.update()
+
+    def changeEvent(widget, event):
+        if event.type() in (QEvent.StyleChange, QEvent.FontChange):
+            widget._fit_label()
+        super().changeEvent(event)
+
+    def _active(widget):
+        return widget.underMouse()
+
+    def _field(widget, rect):
+        return shapes.rounded_path(rect) if widget.ROUNDED else shapes.rect_path(rect)
+
+    def paintEvent(widget, event):
+        painter = QPainter(widget)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(widget.rect())
+        field = widget._field(rect)
+        if not widget.isEnabled():
+            painter.fillPath(field, QColor('#25323d'))
+            return
+        active = widget._active()
+        if widget.RAISED:
+            shapes.fill_raised(painter, field, rect, shapes.RAISED if active else '#3e5363', contact=False)
+        else:
+            painter.fillPath(field, shapes.gradient(rect.top(), rect.bottom(), '#46596a' if active else '#3e5363', 'sunken'))
+        if widget._label_width:
+            run = widget._run()
+            segment = QPainterPath(QPointF(0, 0))
+            segment.lineTo(widget._label_width + run / 2, 0)
+            segment.lineTo(widget._label_width - run / 2, rect.height())
+            segment.lineTo(0, rect.height())
+            segment.closeSubpath()
+            shapes.fill_raised(painter, segment.intersected(field), rect, shapes.NEST, contact=False)
+        painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
+
+
+class LabeledComboBox(SlantLabeledField):
+    """A combo box with its label in front of it (see SlantLabeledField)."""
+    activated = Signal()
+
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.setObjectName('labeled_combobox')
         widget.combobox = QComboBox()
         widget.bottom_line.addWidget(widget.combobox, 1)
-
         widget.combobox.activated.connect(widget.activated)
+        # the field is lit while the list is open: repaint all of it when the list opens or closes, or the part
+        # under the combo box alone keeps the other state
+        widget.combobox.view().window().installEventFilter(widget)
+
+    def _active(widget):
+        return widget.underMouse() or widget.combobox.view().isVisible()
+
+    def eventFilter(widget, watched, event):
+        if event.type() in (QEvent.Show, QEvent.Hide):
+            QTimer.singleShot(0, widget.update)
+        return False
 
     def clear(widget):
         widget.combobox.clear()
@@ -520,9 +684,6 @@ class LabeledComboBox(QWidget):
     def addItem(widget, item):
         widget.combobox.addItem(item)
 
-    def setLabel(widget, label):
-        widget.label.setText(label)
-
     def setCurrentText(widget, text):
         widget.combobox.setCurrentText(text)
     
@@ -530,25 +691,52 @@ class LabeledComboBox(QWidget):
         return widget.combobox.currentText()
     
 
-class LabeledDoubleSpinBox(QWidget):
-    """A number with its label above it, in the labelled combo boxes' look."""
-    valueChanged = Signal(float)
+class HeaderComboBox(LabeledComboBox):
+    """The choice a page is about (an export page's format), as the page's
+    header: 34px tall, edge to edge, flush with the page's top; its corners
+    are square but the top two, 6px curves. The label is larger and the chosen option bold (the
+    stylesheet's HeaderComboBox rules). Subclass it for headers of other pages."""
+    HEIGHT = 34                       # as tall as the export dialog's categories
+    LABEL_LEFT = 12
+    LABEL_PADDING = 12
+    ROUNDED = False
 
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
-        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.setAttribute(Qt.WA_StyledBackground)
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
-        widget.layout().setSpacing(0)
-        widget.label = QLabel()
-        widget.layout().addWidget(widget.label, 1)
-        widget.spinbox = QDoubleSpinBox()
-        widget.layout().addWidget(widget.spinbox)
-        widget.spinbox.valueChanged.connect(widget.valueChanged)
+        widget.setObjectName('header_combobox')
+        # the list draws its items in the box's font unless they carry their own: give them the usual one
+        widget.combobox.model().rowsInserted.connect(widget._plain_items)
 
-    def setLabel(widget, label):
-        widget.label.setText(label)
+    def _plain_items(widget, _parent=None, first=0, last=-1):
+        font = QFont(widget.font())
+        font.setPixelSize(11)
+        font.setWeight(QFont.Normal)
+        for row in range(first, last + 1):
+            widget.combobox.setItemData(row, font, Qt.FontRole)
+
+    def _field(widget, rect):
+        # square, but for 6px curves at the top corners, where the header meets the columns on either side
+        r = 6
+        path = QPainterPath(QPointF(rect.left(), rect.top() + r))
+        path.quadTo(rect.left(), rect.top(), rect.left() + r, rect.top())
+        path.lineTo(rect.right() - r, rect.top())
+        path.quadTo(rect.right(), rect.top(), rect.right(), rect.top() + r)
+        path.lineTo(rect.right(), rect.bottom())
+        path.lineTo(rect.left(), rect.bottom())
+        path.closeSubpath()
+        return path
+
+
+class LabeledDoubleSpinBox(SlantLabeledField):
+    """A number with its label in front of it (see SlantLabeledField)."""
+    valueChanged = Signal(float)
+    RAISED = False
+
+    def __init__(widget, parent=None):
+        super().__init__(parent=parent)
+        widget.spinbox = QDoubleSpinBox()
+        widget.bottom_line.addWidget(widget.spinbox, 1)
+        widget.spinbox.valueChanged.connect(widget.valueChanged)
 
     def setRange(widget, minimum, maximum):
         widget.spinbox.setRange(minimum, maximum)
@@ -600,33 +788,17 @@ class LabeledLabel(QWidget):
         widget.top_label.setText(text)
     
 
-class LabeledLineEdit(QWidget):
+class LabeledLineEdit(SlantLabeledField):
+    """A text with its label in front of it (see SlantLabeledField)."""
     editingFinished = Signal(str)
+    RAISED = False
+
     def __init__(widget, parent=None):
         super().__init__(parent=parent)
         widget.setObjectName('labeled_lineedit')
-        widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
-        widget.setAttribute(Qt.WA_StyledBackground)
-
-        widget.setLayout(QVBoxLayout())
-        widget.layout().setContentsMargins(0, 0, 0, 0)
-        widget.layout().setSpacing(0)
-
-        widget.label = QLabel()
-        widget.label.setObjectName('top_label')
-        widget.layout().addWidget(widget.label, 1)
-
-        widget.bottom_line = QHBoxLayout()
-        widget.bottom_line.setContentsMargins(0, 0, 0, 0)
-        widget.bottom_line.setSpacing(0)
-        widget.layout().addLayout(widget.bottom_line)
-
         widget.lineedit = QLineEdit()
         widget.lineedit.editingFinished.connect(lambda: widget.editing_finished())
         widget.bottom_line.addWidget(widget.lineedit, 1)
-
-    def setLabel(widget, label):
-        widget.label.setText(label)
 
     def setText(widget, text):
         widget.lineedit.setText(text)

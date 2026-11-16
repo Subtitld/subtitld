@@ -14,17 +14,21 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QEvent, QThread, Signal, QPoint, QPointF, QRectF, QSize, QSizeF
+from PySide6.QtGui import QIcon, QColor, QCursor, QPainter, QPainterPath, QLinearGradient
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QGraphicsOpacityEffect,
     QLabel,
     QLineEdit,
     QProgressBar,
@@ -38,6 +42,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from subtitld.interface import shapes
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import addons, hardware as _hardware, session
@@ -438,32 +443,98 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
 
 
 # ---------------------------------------------------------------------------
-# Filter pill — checkable QPushButton with the QSS `filter_pill` class
-# ---------------------------------------------------------------------------
-def _make_pill(text: str) -> QPushButton:
-    btn = QPushButton(text)
-    btn.setProperty('class', 'filter_pill')
-    btn.setCheckable(True)
-    btn.setCursor(Qt.PointingHandCursor)
-    btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-    btn.setFixedHeight(24)
-    return btn
-
-
-# ---------------------------------------------------------------------------
 # Card widget — one rendered row, with its own action buttons inline
 # ---------------------------------------------------------------------------
+# What each task is called on a card's label, and its icon there.
+_TASK_LABELS: dict[str, tuple[str, str]] = {
+    'tts.synthesize': ('addons_dialog.filter.task.tts', 'addon_task_tts.svg'),
+    'asr.transcribe': ('addons_dialog.filter.task.asr', 'addon_task_asr.svg'),
+    'translate.text': ('addons_dialog.filter.task.translate', 'addon_task_translate.svg'),
+    'audio.separate': ('addons_dialog.filter.task.separation', 'addon_task_separation.svg'),
+    'ocr.recognize': ('addons_dialog.filter.task.ocr', 'addon_task_ocr.svg'),
+}
+
+
+def _graphic(name: str) -> QIcon:
+    return QIcon(str(session.PATH_SUBTITLD_GRAPHICS / name))
+
+
+class _Switch(QAbstractButton):
+    """On and off, as a small painted switch."""
+    ON = QColor('#5f9e6e')
+    OFF = QColor('#4a5d6c')
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(32, 18)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.ON if self.isChecked() else self.OFF)
+        painter.drawRoundedRect(QRectF(0, 0, 32, 18), 9, 9)
+        painter.setBrush(QColor('#f0f6fa') if self.isEnabled() else QColor('#9aabb8'))
+        painter.drawEllipse(QRectF(16 if self.isChecked() else 2, 2, 14, 14))
+
+
+class _ElidedLabel(QLabel):
+    """A one-line label that gives up width before the panel does: short
+    of room, its text ends in "…" and the whole of it is the tooltip. A
+    plain label is never narrower than its text, so a long name or licence
+    kept a card, and the list, wider than the panel."""
+
+    def __init__(self, text='', least=24, parent=None):
+        super().__init__(text, parent)
+        self._full = text
+        self._least = least                     # it gives up width down to this (or its whole text, if shorter)
+        self._own_tooltip = ''
+
+    def setToolTip(self, text):
+        self._own_tooltip = text
+        super().setToolTip(text)
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        metrics = self.fontMetrics()
+        hint.setWidth(hint.width() + metrics.horizontalAdvance(self._full) - metrics.horizontalAdvance(self.text()))
+        return hint
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        return QSize(min(hint.width(), self._least), hint.height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        shown = self.fontMetrics().elidedText(self._full, Qt.ElideRight, self.contentsRect().width())
+        if shown != self.text():
+            QLabel.setText(self, shown)
+        QLabel.setToolTip(self, self._own_tooltip or (self._full if shown != self._full else ''))
+
+
+def _licence_short(licence: str) -> str:
+    """A licence's name alone, for its tag: "Apache" for "Apache-2.0", "MIT"
+    for "MIT (wrapper) + MIT (python-audio-separator) + ...". The tag's
+    tooltip holds the whole of it."""
+    match = re.match(r'[A-Za-z]+', licence.strip())
+    return match.group(0) if match else licence
+
+
 class _AddonCard(QFrame):
-    """Renders one `_Row` as a self-contained card.
+    """One `_Row` as a card. It paints its own face: a band along the top,
+    the task on a dark label hanging from the top-left corner (75° slant,
+    6px curve at its foot), and the buttons' 1px contact line under it all.
+    On the band: the name, the version (and the one an update brings) and,
+    once installed, the switch. Under it the summary and a tag each for what
+    it runs on here and its licence. The footer is the dialogs' bar: remove
+    on the left, as an icon; update and open folder as icons on the right,
+    then the main action on a light slanted tab in the corner (Configure, or
+    Install for one not installed).
 
-    Buttons emit signals carrying the `_Row` so the parent panel doesn't
-    need to maintain a separate "currently-selected" reference. Buttons that
-    don't apply to the row's state aren't created at all — keeps the
-    layout tight on simple "available" rows.
-
-    The card is rebuilt from scratch on every state change (install,
-    enable/disable, etc.) instead of trying to mutate sub-widgets in
-    place. Cards are cheap; rebuild keeps the state machine here trivial.
+    Buttons emit signals carrying the `_Row`. The card is rebuilt from
+    scratch on every state change (install, enable/disable, etc.).
     """
 
     install_clicked = Signal(object)  # _Row
@@ -473,6 +544,15 @@ class _AddonCard(QFrame):
     remove_clicked = Signal(object)
     configure_clicked = Signal(object)
 
+    RADIUS = 4
+    BAND = 30                          # the band's height, the footer tab's
+    LABEL = 27                         # the task label's: it stops 3px short of the band's foot
+    COLOURS = {                        # card, band
+        'installed': ('#33475a', '#3f566a'),
+        'available': ('#2c3d4b', '#36495a'),
+    }
+    LABEL_TOP, LABEL_BOTTOM = QColor('#25343f'), QColor('#1c2831')
+
     def __init__(
         self,
         row: _Row,
@@ -481,83 +561,113 @@ class _AddonCard(QFrame):
         parent=None,
     ):
         """`install_target_id` is whichever add-on the panel is currently
-        installing (or `None` when nothing is in flight). The card uses it
-        for two things:
-          - if it's non-None, our own Install/Update button gets disabled
-            (only one install at a time);
-          - if it equals our row's id, we surface our inline `progress_bar`
-            so the user sees download progress directly on the card they
-            clicked rather than a faraway bar at the bottom of the panel.
-        `hardware` is what this computer was found to have (None until
-        checked), for the chip on what the add-on runs on here.
-        """
+        installing (or `None` when nothing is in flight): its install and
+        update buttons are disabled meanwhile, and the card being installed
+        shows its inline `progress_bar`. `hardware` is what this computer was
+        found to have (None until checked), for the tag on what the add-on
+        runs on here."""
         super().__init__(parent)
         self.row = row
         self.setProperty('class', 'addon_card')
-        self.setAttribute(Qt.WA_StyledBackground)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        # as tall as its words need at the width it is given (height for width). Not Fixed: that pins the
+        # height to the size hint of the width it had before, so a resize cut the text or left a gap
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self._kind = 'installed' if row.is_installed else 'available'
 
         any_install_in_progress = install_target_id is not None
         is_install_target = install_target_id == row.addon_id
 
         outer = QVBoxLayout()
-        outer.setContentsMargins(12, 10, 12, 10)
-        outer.setSpacing(6)
+        outer.setContentsMargins(0, 0, 0, 1)            # the contact line's row
+        outer.setSpacing(0)
         self.setLayout(outer)
 
-        # --- Top row: title (flex) + version + badge --------------------
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        # --- The band: the task label, the name, the version, the switch ---
+        band = QWidget()
+        band.setFixedHeight(self.BAND)
+        band.setLayout(QHBoxLayout())
+        band.layout().setContentsMargins(9, 0, 12, 0)
+        band.layout().setSpacing(0)
+        self._task_icon = QLabel()
+        self._task_icon.setProperty('class', 'addon_card_task_icon')
+        self._task_text = QLabel()
+        self._task_text.setProperty('class', 'addon_card_task')
+        task = next((t for t in row.tasks if t in _TASK_LABELS), None)
+        if task is not None:
+            key, icon = _TASK_LABELS[task]
+            self._task_icon.setPixmap(_graphic(icon).pixmap(14, 14))
+            self._task_text.setText(_(key))
+        elif row.tasks:
+            self._task_text.setText(_humanize_task(row.tasks[0]))
+        for piece in (self._task_icon, self._task_text):
+            piece.setContentsMargins(0, 0, 0, self.BAND - self.LABEL)    # centred on the label, not the band
+        band.layout().addWidget(self._task_icon)
+        band.layout().addSpacing(6)
+        band.layout().addWidget(self._task_text)
+        band.layout().addSpacing(24)                    # the label's padding and its slant
 
-        title = QLabel(_addon_localized(row.addon_id, 'display_name', row.display_name))
+        name = _addon_localized(row.addon_id, 'display_name', row.display_name)
+        main, aside = name, ''
+        if name.endswith(')') and ' (' in name:
+            main, aside = name[:-1].split(' (', 1)
+        title = _ElidedLabel(main, least=60)           # the aside gives way first
         title.setProperty('class', 'addon_card_title')
-        title.setWordWrap(True)
-        title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        top_row.addWidget(title, 1)
-
-        # Built-ins don't carry a meaningful version — they ship as part of
-        # the Subtitld binary, so showing "v1.0" or whatever the provider
-        # happens to expose just adds noise next to the "built-in" badge.
-        # Suppress the version chip entirely for them.
-        if row.is_builtin:
-            version_str = ''
+        band.layout().addWidget(title)
+        if aside:
+            note = _ElidedLabel(aside)
+            note.setProperty('class', 'addon_card_aside')
+            # it takes the room left after the name, so it gives way first
+            note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            band.layout().addSpacing(6)
+            band.layout().addWidget(note, 1)
         else:
-            version_str = (
-                f'v{row.installed_version}' if row.is_installed
-                else (f'v{row.latest_version}' if row.latest_version else '')
-            )
-        if version_str:
-            version_label = QLabel(version_str)
-            version_label.setProperty('class', 'addon_card_version')
-            top_row.addWidget(version_label, 0, Qt.AlignTop)
+            band.layout().addStretch()
 
-        badge_text = self._badge_text(row)
-        if badge_text:
-            badge = QLabel(badge_text)
-            # Updated entries get a different colored badge so users can
-            # spot them in a glance even with the "All" filter active.
-            badge.setProperty(
-                'class',
-                'addon_card_badge_update' if row.has_update else 'addon_card_badge',
-            )
-            badge.setAttribute(Qt.WA_StyledBackground)
-            top_row.addWidget(badge, 0, Qt.AlignTop)
+        if not row.is_builtin:
+            version_text = ''
+            if row.is_installed and row.installed_version:
+                version_text = f'v{row.installed_version}'
+                if row.has_update:
+                    version_text += f' <span style="color:#9fd3ac">→ {row.latest_version}</span>'
+            elif row.latest_version:
+                version_text = f'v{row.latest_version}'
+            if version_text:
+                version = QLabel(version_text)
+                version.setProperty('class', 'addon_card_version')
+                band.layout().addWidget(version)
+        if row.is_installed:
+            switch = _Switch()
+            switch.setChecked(registry.is_enabled(row.addon_id))
+            switch.setToolTip(_('addons_dialog.actions.disable') if switch.isChecked()
+                              else _('addons_dialog.actions.enable'))
+            switch.setAccessibleName(switch.toolTip())
+            switch.clicked.connect(lambda: self.toggle_clicked.emit(row))
+            band.layout().addSpacing(10)
+            band.layout().addWidget(switch)
+        outer.addWidget(band)
 
-        outer.addLayout(top_row)
-
-        # --- Summary -----------------------------------------------------
+        # --- The summary and the tags ------------------------------------
+        body = QWidget()
+        body.setLayout(QVBoxLayout())
+        body.layout().setContentsMargins(14, 13, 14, 10)
+        body.layout().setSpacing(11)
         summary_text = _addon_localized(row.addon_id, 'summary', row.summary)
         if summary_text:
             summary = QLabel(summary_text)
             summary.setWordWrap(True)
             summary.setProperty('class', 'addon_card_summary')
-            outer.addWidget(summary)
+            body.layout().addWidget(summary)
 
-        # --- What it runs on, here ---------------------------------------
+        # the tags go in the footer, at its left
+        tags = QHBoxLayout()
+        tags.setContentsMargins(0, 0, 10, 0)            # the first one meets the card's left edge
+        tags.setSpacing(3)
         verdict = _compute.assess(row.compute, row.accelerators, hardware)
         if verdict is not None:
             chip_text, chip_tooltip = _compute_texts(verdict, hardware)
-            chip = QLabel(chip_text)
+            chip = _ElidedLabel(chip_text, least=10_000)   # whole: the licence gives way
             chip.setToolTip(chip_tooltip)
             chip.setProperty(
                 'class',
@@ -565,102 +675,16 @@ class _AddonCard(QFrame):
                 else 'addon_card_compute',
             )
             chip.setAttribute(Qt.WA_StyledBackground)
-            chip_row = QHBoxLayout()
-            chip_row.addWidget(chip)
-            chip_row.addStretch()
-            outer.addLayout(chip_row)
+            tags.addWidget(chip, 0, Qt.AlignVCenter)     # as tall as its text and padding
+        if row.license and row.license not in ('', '?', 'built-in'):
+            licence = _ElidedLabel(_licence_short(row.license))
+            licence.setProperty('class', 'addon_card_licence')
+            licence.setToolTip(_('addons_dialog.details.license').format(license=row.license))
+            licence.setAttribute(Qt.WA_StyledBackground)
+            tags.addWidget(licence, 0, Qt.AlignVCenter)
 
-        # --- Meta line: license + tasks ---------------------------------
-        meta_parts: list[str] = []
-        if row.license and row.license not in ('', '?'):
-            meta_parts.append(_('addons_dialog.details.license').format(license=row.license))
-        if row.tasks:
-            meta_parts.append(_('addons_dialog.details.tasks').format(
-                tasks=_humanize_tasks(row.tasks)
-            ))
-        if meta_parts:
-            meta = QLabel(' | '.join(meta_parts))
-            meta.setWordWrap(True)
-            meta.setProperty('class', 'addon_card_meta')
-            outer.addWidget(meta)
-
-        # --- Enabled/disabled state hint --------------------------------
-        if row.is_installed:
-            enabled = registry.is_enabled(row.addon_id)
-            state_text = (
-                _('addons_dialog.details.enabled') if enabled
-                else _('addons_dialog.details.disabled')
-            )
-            state_label = QLabel(state_text)
-            state_label.setProperty('class', 'addon_card_state')
-            outer.addWidget(state_label)
-
-        # --- Action button row ------------------------------------------
-        actions = QHBoxLayout()
-        actions.setSpacing(6)
-        actions.addStretch()
-
-        # Available-only: just Install. Skipped for built-ins, which never
-        # have a `catalog_entry` anyway but the explicit guard keeps the
-        # intent obvious.
-        if not row.is_installed and row.is_available and not row.is_builtin:
-            install = QPushButton(_('addons_dialog.actions.install'))
-            install.setEnabled(not any_install_in_progress)
-            install.clicked.connect(lambda: self.install_clicked.emit(row))
-            actions.addWidget(install)
-
-        # Installed-with-update: Update + the standard installed actions
-        if row.is_installed and row.has_update and not row.is_builtin:
-            update = QPushButton(_('addons_dialog.actions.update'))
-            update.setEnabled(not any_install_in_progress)
-            update.clicked.connect(lambda: self.update_clicked.emit(row))
-            actions.addWidget(update)
-
-        if row.is_installed:
-            enabled = registry.is_enabled(row.addon_id)
-            toggle = QPushButton(
-                _('addons_dialog.actions.disable') if enabled
-                else _('addons_dialog.actions.enable')
-            )
-            toggle.clicked.connect(lambda: self.toggle_clicked.emit(row))
-            actions.addWidget(toggle)
-
-            # Configure button: only meaningful when the manifest declares
-            # at least one `config_schema.fields` entry the user can set.
-            # Built-ins don't carry manifests so they currently get no
-            # Configure button — by convention they expose their settings
-            # via the legacy left-panel UIs (Edge TTS rate, etc.). If we
-            # later port built-in providers to also use
-            # `config_schema`, the `getattr` fallback below will pick them
-            # up without any further wiring.
-            schema_source: dict | None = (
-                row.installed_manifest if not row.is_builtin else None
-            )
-            schema = (schema_source or {}).get('config_schema') or {}
-            if _user_settable_fields(schema.get('fields')):
-                configure = QPushButton(_('addons_dialog.actions.configure'))
-                configure.clicked.connect(lambda: self.configure_clicked.emit(row))
-                actions.addWidget(configure)
-
-            # Reveal-in-folder only makes sense for filesystem-installed
-            # add-ons. Built-ins live inside the binary — nothing to open.
-            if not row.is_builtin:
-                reveal = QPushButton(_('addons_dialog.actions.reveal'))
-                reveal.clicked.connect(lambda: self.reveal_clicked.emit(row))
-                actions.addWidget(reveal)
-
-                remove = QPushButton(_('addons_dialog.actions.remove'))
-                remove.setProperty('class', 'danger')
-                remove.clicked.connect(lambda: self.remove_clicked.emit(row))
-                actions.addWidget(remove)
-
-        outer.addLayout(actions)
-
-        # --- Inline progress bar ----------------------------------------
         # Only the card whose row is the current install target shows a
-        # bar. The panel pushes percentage updates via `set_progress`;
-        # `_render_list` rebuilds the cards on completion so the bar
-        # disappears naturally rather than needing a "hide" call.
+        # bar; the panel pushes its percentage through `set_progress`.
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName('addon_card_progress_bar')
         self.progress_bar.setRange(0, 100)
@@ -668,7 +692,130 @@ class _AddonCard(QFrame):
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setFixedHeight(1)
         self.progress_bar.setVisible(is_install_target)
-        outer.addWidget(self.progress_bar)
+        body.layout().addWidget(self.progress_bar)
+        outer.addWidget(body)
+
+        # --- The footer: the dialogs' bar ---------------------------------
+        footer = QWidget()
+        footer.setFixedHeight(30)
+        footer.setLayout(QHBoxLayout())
+        footer.layout().setContentsMargins(0, 0, 0, 0)
+        footer.layout().setSpacing(0)
+        has_tags = tags.count() > 0
+        if has_tags:
+            tags.itemAt(0).widget().setProperty('flush', True)   # square where it meets the edge
+        tags.addStretch()
+        footer.layout().addLayout(tags, 1)              # the tags give up width before the buttons do
+        removable = row.is_installed and not row.is_builtin
+        # the trash and the folder show only while the pointer is over the card
+        self._hover_buttons = []
+        if removable:
+            trash = self._icon_button('addon_card_remove.svg', _('addons_dialog.actions.remove'), self.remove_clicked)
+            self._hover_buttons.append(trash)
+            footer.layout().addWidget(trash, 0, Qt.AlignVCenter)
+        if row.is_installed and row.has_update and not row.is_builtin:
+            update = self._icon_button('addon_card_update.svg',
+                                       f"{_('addons_dialog.actions.update')} ({row.latest_version})",
+                                       self.update_clicked)
+            update.setEnabled(not any_install_in_progress)
+            footer.layout().addWidget(update, 0, Qt.AlignVCenter)
+        if removable:
+            folder = self._icon_button('addon_card_folder.svg', _('addons_dialog.actions.reveal'), self.reveal_clicked)
+            self._hover_buttons.append(folder)
+            footer.layout().addWidget(folder, 0, Qt.AlignVCenter)
+        for button in self._hover_buttons:
+            button.setVisible(False)
+        tab = None
+        if not row.is_installed and row.is_available and not row.is_builtin:
+            tab = QPushButton(_('addons_dialog.actions.install'))
+            tab.setIcon(_graphic('addon_card_install.svg'))
+            tab.setEnabled(not any_install_in_progress)
+            tab.clicked.connect(lambda: self.install_clicked.emit(row))
+        elif row.is_installed:
+            # Configure: only when the manifest declares a field the user can set.
+            schema = ((row.installed_manifest if not row.is_builtin else None) or {}).get('config_schema') or {}
+            if _user_settable_fields(schema.get('fields')):
+                tab = QPushButton(_('addons_dialog.actions.configure'))
+                tab.clicked.connect(lambda: self.configure_clicked.emit(row))
+        if tab is not None:
+            tab.setProperty('class', 'addon_card_tab')
+            tab.setFixedHeight(30)
+            footer.layout().addWidget(tab)
+        footer.setVisible(has_tags or footer.layout().count() > 1)
+        outer.addWidget(footer)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self.layout().totalHeightForWidth(width)
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        if self.width() > 0:
+            hint.setHeight(self.heightForWidth(self.width()))
+        return hint
+
+    def _icon_button(self, icon: str, text: str, signal) -> QPushButton:
+        button = QPushButton()
+        button.setProperty('class', 'addon_card_icon')
+        button.setIcon(_graphic(icon))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(26, 26)                     # a control's height, its 3px corners showing on hover
+        button.setToolTip(text)
+        button.setAccessibleName(text)
+        button.clicked.connect(lambda: signal.emit(self.row))
+        return button
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        for button in self._hover_buttons:
+            button.setVisible(True)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        # a press can leave the pointer on a child (a menu, a tooltip): hide only once it is off the card
+        if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            return
+        for button in self._hover_buttons:
+            button.setVisible(False)
+
+    def _label_path(self) -> QPainterPath:
+        """The task label: from the card's left edge to a 75° slant, square at
+        the top, a 6px curve at its foot."""
+        right = self._task_text.geometry().right() + 12 if self._task_text.text() else 0
+        if right <= 0:
+            return QPainterPath()
+        h = self.LABEL
+        run = h * shapes.RUN15
+        top_x = right + run / 2
+        foot_x = right - run / 2
+        lean = 6 * shapes.RUN15
+        path = QPainterPath(QPointF(0, 0))
+        path.lineTo(top_x, 0)
+        path.lineTo(foot_x + lean, h - 6)
+        path.quadTo(foot_x, h, foot_x - 6, h)
+        path.lineTo(0, h)
+        path.closeSubpath()
+        return path
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        card_colour, band_colour = self.COLOURS[self._kind]
+        face = QRectF(0, 0, self.width(), self.height() - 1)
+        shape = QPainterPath()
+        shape.addRoundedRect(face, self.RADIUS, self.RADIUS)
+        # the contact line, under the card
+        painter.fillPath(shape.translated(0, 1).subtracted(shape), shapes.CONTACT)
+        painter.fillPath(shape, QColor(card_colour))
+        painter.fillPath(shape.intersected(shapes.rect_path(QRectF(0, 0, self.width(), self.BAND))), QColor(band_colour))
+        label = self._label_path().intersected(shape)
+        if not label.isEmpty():
+            gradient = QLinearGradient(0, 0, 0, self.LABEL)
+            gradient.setColorAt(0, self.LABEL_TOP)
+            gradient.setColorAt(1, self.LABEL_BOTTOM)
+            painter.fillPath(label, gradient)
 
     def set_progress(self, percent: int) -> None:
         """Called by the panel during the active install. Idempotent —
@@ -676,16 +823,6 @@ class _AddonCard(QFrame):
         flag) still surfaces the bar if its install starts after creation."""
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(max(0, min(100, percent)))
-
-    @staticmethod
-    def _badge_text(row: _Row) -> str:
-        if row.is_builtin:
-            return _('addons_dialog.badge.builtin')
-        if row.has_update:
-            return _('addons_dialog.badge.update')
-        if row.is_installed:
-            return _('addons_dialog.badge.installed')
-        return _('addons_dialog.badge.available')
 
 
 # ---------------------------------------------------------------------------
@@ -1231,8 +1368,145 @@ class AddonConfigInlineWidget(QWidget):
 # ---------------------------------------------------------------------------
 # Embeddable panel
 # ---------------------------------------------------------------------------
+class _LaidOutButton(QPushButton):
+    """A button whose face is the labels in its layout: as wide as they are."""
+
+    def sizeHint(self):
+        return self.layout().sizeHint() if self.layout() is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+
+class _StateSegment(_LaidOutButton):
+    """One tab of the state strip: its name and, quieter, how many
+    add-ons it holds under the other filters. Unless chosen, its words
+    are half faded (more opaque under the pointer)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setLayout(QHBoxLayout())
+        self.layout().setContentsMargins(8, 0, 8, 0)
+        self.layout().setSpacing(4)
+        self.name = QLabel()
+        self.name.setObjectName('addons_state_name')
+        self.count = QLabel()
+        self.count.setObjectName('addons_state_count')
+        for label in (self.name, self.count):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            label.setGraphicsEffect(QGraphicsOpacityEffect(label))
+            self.layout().addWidget(label)
+        self.setFixedHeight(23)
+        self.toggled.connect(lambda _checked: self._fade())
+        self._fade()
+
+    def _fade(self):
+        opacity = 1.0 if self.isChecked() else (.75 if self.underMouse() else .5)
+        for label in (self.name, self.count):
+            label.graphicsEffect().setOpacity(opacity)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._fade()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self._fade()
+
+
+class _AddonsHeader(QWidget):
+    """The panel's header: a shade darker than whatever the panel stands
+    on, and a faint shadow rising from its foot through the tabs' row,
+    both painted around the chosen tab, which so shows the panel's own
+    background and opens into the list below, whatever that background
+    is."""
+    SHADE = QColor(0, 0, 0, 38)
+    SHADOW = QColor(0, 0, 0, 34)
+    RADIUS = 3
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.tabs = []
+        self.tabs_row = None
+
+    def _hole(self):
+        tab = next((t for t in self.tabs if t.isChecked() and t.isVisible()), None)
+        path = QPainterPath()
+        if tab is None:
+            return path
+        rect = QRectF(tab.mapTo(self, QPoint(0, 0)), QSizeF(tab.size()))
+        path.addRoundedRect(rect, self.RADIUS, self.RADIUS)
+        foot = QPainterPath()
+        foot.addRect(rect.adjusted(0, self.RADIUS, 0, 0))
+        return path.united(foot)                        # rounded on top only
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        # everything but the chosen tab: the tab's outline inside the header's, filled odd-even
+        around = QPainterPath()
+        around.setFillRule(Qt.OddEvenFill)
+        around.addRect(QRectF(self.rect()))
+        around.addPath(self._hole())
+        painter.setClipPath(around)
+        painter.fillRect(self.rect(), self.SHADE)
+        if self.tabs_row is not None and self.tabs_row.isVisible():
+            row = QRectF(self.tabs_row.geometry())
+            shadow = QLinearGradient(0, row.center().y(), 0, row.bottom() + 1)
+            shadow.setColorAt(0, QColor(0, 0, 0, 0))
+            shadow.setColorAt(1, self.SHADOW)
+            painter.fillRect(row, shadow)
+
+
+class _FadedIconButton(QPushButton):
+    """An icon in the header's corner: half faded, like the tabs beside it
+    that are not chosen (more opaque under the pointer)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setGraphicsEffect(QGraphicsOpacityEffect(self))
+        self._fade()
+
+    def _fade(self):
+        self.graphicsEffect().setOpacity(.75 if self.underMouse() else .5)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._fade()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self._fade()
+
+
+class _FiltersPopover(QFrame):
+    """What the Filters button opens: the task, the language and the
+    hardware, as labelled fields."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setObjectName('addons_filters_popover')
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        frame = QFrame()
+        frame.setObjectName('addons_filters_popover_frame')
+        frame.setAttribute(Qt.WA_StyledBackground)
+        frame.setLayout(QVBoxLayout())
+        frame.layout().setContentsMargins(10, 10, 10, 10)
+        frame.layout().setSpacing(8)
+        self.layout().addWidget(frame)
+        self.task = utils.LabeledComboBox()
+        self.language = utils.LabeledComboBox()
+        self.hardware = utils.LabeledComboBox()
+        for field_widget in (self.task, self.language, self.hardware):
+            frame.layout().addWidget(field_widget)
+        self.setFixedWidth(320)
+
+
 class AddonsPanel(QWidget):
-    """Single-list add-ons manager. Filter pills (install state + task type)
+    """Single-list add-ons manager. Search, a Filters popover (task, language, hardware) and the state strip
     on top, scrollable list of cards in the middle, install-from-file +
     refresh + progress at the bottom."""
 
@@ -1257,95 +1531,124 @@ class AddonsPanel(QWidget):
         super().__init__(parent)
         self.setProperty('class', 'transparent_panel')
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(10, 10, 10, 10)
-        self.layout().setSpacing(8)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
 
-        # --- State pills row (mutually exclusive) -------------------------
+        # The header: the search, the filters and the state strip, edge to edge and always in view above the list.
+        # The search and the Filters tab run along its top edge, the state tabs stand on its bottom one, the chosen
+        # filters' tags between them.
+        self._header = _AddonsHeader()
+        self._header.setObjectName('addons_header')
+        self._header.setLayout(QVBoxLayout())
+        self._header.layout().setContentsMargins(0, 0, 0, 0)
+        self._header.layout().setSpacing(8)
+        self.layout().addWidget(self._header)
+
         self._state_filter = self._STATE_ALL
         self._task_filter = self._TASK_ANY
         self._language_filter = self._LANG_ANY
         self._hardware_filter = self._HARDWARE_ANY
+        self._search_text = ''
 
-        # The initial setChecked() below fires `toggled`, which triggers
-        # _render_list() — but the inner scroll layout doesn't exist yet at
-        # that point. Block signals while seeding the default state, then
-        # connect the handlers afterwards.
-        state_row = QHBoxLayout()
-        state_row.setSpacing(4)
-        self._state_group = QButtonGroup(self)
-        self._state_group.setExclusive(True)
-        self._state_pills: dict[str, QPushButton] = {}
-        for value in (self._STATE_ALL, self._STATE_INSTALLED, self._STATE_AVAILABLE, self._STATE_UPDATES):
-            pill = _make_pill('')  # text set in retranslate()
-            pill.blockSignals(True)
-            self._state_group.addButton(pill)
-            state_row.addWidget(pill)
-            self._state_pills[value] = pill
-        self._state_pills[self._STATE_ALL].setChecked(True)
-        state_row.addStretch()
-        self.layout().addLayout(state_row)
+        # --- Search, and the Filters button that opens the rest ---------
+        search_row = QHBoxLayout()
+        search_row.setSpacing(0)                        # one group: the field and the button meet
+        self._search = QLineEdit()
+        self._search.setObjectName('addons_search')
+        self._search.setClearButtonEnabled(True)
+        self._search.addAction(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')), QLineEdit.LeadingPosition)
+        self._search.textChanged.connect(self._on_search_changed)
+        search_row.addWidget(self._search, 1, Qt.AlignTop)
 
-        # --- Task pills row (mutually exclusive) --------------------------
-        task_row = QHBoxLayout()
-        task_row.setSpacing(4)
-        self._task_group = QButtonGroup(self)
-        self._task_group.setExclusive(True)
-        self._task_pills: dict[object, QPushButton] = {}  # value -> pill, key None for "any"
+        self._filters_button = _LaidOutButton()
+        self._filters_button.setObjectName('addons_filters_button')
+        self._filters_button.setLayout(QHBoxLayout())
+        self._filters_button.layout().setContentsMargins(21, 0, 12, 1)     # the slant, and the contact line
+        self._filters_button.layout().setSpacing(6)
+        filters_icon = QLabel()
+        filters_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_filters.svg')).pixmap(14, 14))
+        self._filters_text = QLabel()
+        self._filters_text.setObjectName('addons_filters_text')
+        self._filters_count = QLabel()
+        self._filters_count.setObjectName('addons_filters_count')
+        for label in (filters_icon, self._filters_text, self._filters_count):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self._filters_button.layout().addWidget(label)
+        self._filters_button.setFixedHeight(34)
+        self._filters_button.clicked.connect(self._open_filters)
+        search_row.addWidget(self._filters_button)
+        self._header.layout().addLayout(search_row)
+
+        # The task, the language and the hardware live in the popover. The
+        # fields' combo boxes keep the names the rest of the panel uses.
+        self._filters_popover = _FiltersPopover(self)
+        self._task_combo = self._filters_popover.task.combobox
         for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_AUDIO_SEPARATE, TASK_TRANSLATE,
                       TASK_OCR_RECOGNIZE):
-            pill = _make_pill('')
-            pill.blockSignals(True)
-            self._task_group.addButton(pill)
-            task_row.addWidget(pill)
-            self._task_pills[value] = pill
-        self._task_pills[self._TASK_ANY].setChecked(True)
-        task_row.addStretch()
-        self.layout().addLayout(task_row)
-
-        # --- Language filter combobox ------------------------------------
-        # Populated from the union of all rows' declared languages, so the
-        # dropdown only shows tags the user can actually filter by. The
-        # default "Any language" entry uses an empty string as data so the
-        # filter logic can early-out cheaply.
-        lang_row = QHBoxLayout()
-        lang_row.setSpacing(4)
-        self._language_label = QLabel('')  # text set in retranslate()
-        self._language_combo = QComboBox()
-        # Match the surrounding state/task pills so the filter row reads as
-        # one visual cluster. The QSS rule for QComboBox[class='filter_pill']
-        # mirrors the QPushButton pill (rounded, same colors), with extra
-        # right padding to leave room for the dropdown arrow.
-        self._language_combo.setProperty('class', 'filter_pill')
-        self._language_combo.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            self._task_combo.addItem('', value)
+        self._task_combo.currentIndexChanged.connect(self._on_task_changed)
         # `userData` is the canonical lowercased tag we match against.
-        # Wired up below after we have a stable initial state.
+        self._language_combo = self._filters_popover.language.combobox
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
-        lang_row.addWidget(self._language_label)
-        lang_row.addWidget(self._language_combo, 1)
-        lang_row.addStretch()
-        self.layout().addLayout(lang_row)
-
-        # --- Hardware filter combobox + what this computer has -----------
         # "Runs on this computer" hides only the add-ons that need a
         # graphics card this computer was found not to have.
-        hardware_row = QHBoxLayout()
-        hardware_row.setSpacing(4)
-        self._hardware_label = QLabel('')  # text set in retranslate()
-        self._hardware_combo = QComboBox()
-        self._hardware_combo.setProperty('class', 'filter_pill')
-        self._hardware_combo.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self._hardware_combo = self._filters_popover.hardware.combobox
         self._hardware_combo.addItem('', self._HARDWARE_ANY)
         self._hardware_combo.addItem('', self._HARDWARE_HERE)
         self._hardware_combo.currentIndexChanged.connect(self._on_hardware_changed)
-        hardware_row.addWidget(self._hardware_label)
-        hardware_row.addWidget(self._hardware_combo, 1)
-        hardware_row.addStretch()
-        self.layout().addLayout(hardware_row)
 
+        # --- The state strip: one exclusive row, the chosen one sunk ----
+        # On a faint shadow rising from the header's bottom edge to the row's middle; the chosen tab stands over it.
+        self._state_row = QWidget()
+        self._state_row.setObjectName('addons_state_row')
+        self._header.tabs_row = self._state_row
+        state_row = QHBoxLayout(self._state_row)
+        state_row.setContentsMargins(10, 0, 10, 0)
+        state_row.setSpacing(0)
+        self._state_strip = QWidget()
+        self._state_strip.setObjectName('addons_state_strip')
+        self._state_strip.setLayout(QHBoxLayout())
+        self._state_strip.layout().setContentsMargins(0, 0, 0, 0)
+        self._state_strip.layout().setSpacing(0)
+        self._state_group = QButtonGroup(self)
+        self._state_group.setExclusive(True)
+        self._state_pills: dict[str, _StateSegment] = {}
+        states = (self._STATE_ALL, self._STATE_INSTALLED, self._STATE_AVAILABLE, self._STATE_UPDATES)
+        for index, value in enumerate(states):
+            segment = _StateSegment()
+            segment.setProperty('segment', 'first' if index == 0 else ('last' if index == len(states) - 1 else 'middle'))
+            self._state_group.addButton(segment)
+            self._state_strip.layout().addWidget(segment)
+            self._state_pills[value] = segment
+            self._header.tabs.append(segment)
+            segment.toggled.connect(lambda _checked: self._header.update())
+        self._state_pills[self._STATE_ALL].setChecked(True)
+        state_row.addWidget(self._state_strip, 0, Qt.AlignBottom)
+        state_row.addStretch()
+
+        # In the header's bottom-right corner, as icons: install from a file, refresh the catalog.
+        self.install_from_file_button = self._header_icon('addons_from_file.svg')
+        self.install_from_file_button.clicked.connect(self._install_from_file)
+        self.refresh_button = self._header_icon('addons_refresh.svg')
+        self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
+        state_row.addWidget(self.install_from_file_button)
+        state_row.addWidget(self.refresh_button)
+
+        # --- The chosen filters, each a tag that clears it: inside the search field, at its right end; the
+        # field's text stops before them (_place_tags)
+        self._tags_row = QWidget(self._search)
+        tags_row = QHBoxLayout(self._tags_row)
+        tags_row.setContentsMargins(0, 0, 0, 0)
+        tags_row.setSpacing(4)
+        self._tags = QHBoxLayout()
+        self._tags.setSpacing(4)
+        tags_row.addLayout(self._tags)
+        # What this computer has: not shown on the panel, but the Hardware field's tooltip
         self._hardware_info = QLabel('')
-        self._hardware_info.setWordWrap(True)
-        self._hardware_info.setProperty('class', 'addon_card_meta')
-        self.layout().addWidget(self._hardware_info)
+        self._hardware_info.setVisible(False)
+        self._tags_row.setVisible(False)                # shown while a filter is chosen
+        self._search.installEventFilter(self)           # at the field's right end through a resize
+        self._header.layout().addWidget(self._state_row)
 
         # --- Scrollable card list + empty-state placeholder --------------
         # The list and the placeholder share the same slot in the layout
@@ -1366,9 +1669,13 @@ class AddonsPanel(QWidget):
         self._list_inner = QWidget()
         self._list_inner.setObjectName('addons_panel_scroll_inner')
         self._list_layout = QVBoxLayout(self._list_inner)
-        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        # the room under the last card scrolls with the list, so the list itself reaches the panel's foot
+        self._list_layout.setContentsMargins(0, 0, 0, 10)
         self._list_layout.setSpacing(8)
         self._list_layout.addStretch(1)  # pushes cards to the top
+        # while the scroll bar shows, a gap between it and the cards
+        self._scroll_area.verticalScrollBar().rangeChanged.connect(
+            lambda _low, high: self._list_layout.setContentsMargins(0, 0, 6 if high > 0 else 0, 10))
 
         self._scroll_area.setWidget(self._list_inner)
         self._list_stack.addWidget(self._scroll_area)  # page 0
@@ -1382,7 +1689,11 @@ class AddonsPanel(QWidget):
         self._empty_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._list_stack.addWidget(self._empty_label)  # page 1
 
-        self.layout().addWidget(self._list_stack, 1)
+        list_area = QWidget()
+        list_area.setLayout(QVBoxLayout())
+        list_area.layout().setContentsMargins(10, 10, 10, 0)
+        list_area.layout().addWidget(self._list_stack)
+        self.layout().addWidget(list_area, 1)
 
         # Overall fetch state, drives placeholder copy when the list is
         # empty: 'loading' (initial), 'ok' (catalog loaded), 'error' (last
@@ -1390,31 +1701,9 @@ class AddonsPanel(QWidget):
         self._fetch_state = 'loading'
         self._fetch_error_msg = ''
 
-        # Now that the inner layout exists, hook up the pill `toggled`
-        # handlers and re-enable signal delivery.
-        for value, pill in self._state_pills.items():
-            pill.toggled.connect(lambda checked, v=value: self._on_state_toggled(v, checked))
-            pill.blockSignals(False)
-        for value, pill in self._task_pills.items():
-            pill.toggled.connect(lambda checked, v=value: self._on_task_toggled(v, checked))
-            pill.blockSignals(False)
-
-        # --- Bottom utility row -----------------------------------------
-        # Per-row actions live inside the cards now; this row only carries
-        # the panel-wide actions (Install from file…, Refresh).
-        actions_row = QHBoxLayout()
-        actions_row.setSpacing(6)
-        actions_row.addStretch()
-
-        self.install_from_file_button = QPushButton(_('addons_dialog.actions.from_file'))
-        self.install_from_file_button.clicked.connect(self._install_from_file)
-
-        self.refresh_button = QPushButton(_('addons_dialog.actions.refresh'))
-        self.refresh_button.clicked.connect(lambda: self._refresh_catalog(force=True))
-
-        actions_row.addWidget(self.install_from_file_button)
-        actions_row.addWidget(self.refresh_button)
-        self.layout().addLayout(actions_row)
+        # Now that the inner layout exists, hook up the strip's handlers.
+        for value, segment in self._state_pills.items():
+            segment.toggled.connect(lambda checked, v=value: self._on_state_toggled(v, checked))
 
         # --- Internal state ------------------------------------------
         # Progress feedback now lives inside the active card — see
@@ -1443,6 +1732,15 @@ class AddonsPanel(QWidget):
             self._hardware_thread = thread
             thread.start()
 
+    @staticmethod
+    def _header_icon(icon: str) -> QPushButton:
+        button = _FadedIconButton()
+        button.setObjectName('addons_header_icon')
+        button.setIcon(_graphic(icon))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(30, 23)                     # the tabs' height: the row ends where they do
+        return button
+
     # -- Filter handlers ---------------------------------------------------
     def _on_state_toggled(self, value: str, checked: bool):
         if not checked:
@@ -1450,11 +1748,22 @@ class AddonsPanel(QWidget):
         self._state_filter = value
         self._render_list()
 
-    def _on_task_toggled(self, value, checked: bool):
-        if not checked:
-            return
-        self._task_filter = value
+    def _on_task_changed(self, _index: int):
+        self._task_filter = self._task_combo.currentData()
         self._render_list()
+
+    def _on_search_changed(self, text: str):
+        self._place_tags()                              # the clear button comes and goes with the text
+        self._search_text = text.strip().lower()
+        self._render_list()
+
+    def _open_filters(self):
+        popover = self._filters_popover
+        popover.adjustSize()
+        below = self._filters_button.mapToGlobal(QPoint(self._filters_button.width() - popover.width(),
+                                                        self._filters_button.height() + 4))
+        popover.move(below)
+        popover.show()
 
     def _on_language_changed(self, _index: int):
         # Combobox stores normalized BCP-47 tags as userData; '' means "any".
@@ -1470,6 +1779,7 @@ class AddonsPanel(QWidget):
     def _on_hardware(self, hardware):
         self._hardware = hardware
         self._hardware_info.setText(_hardware_text(hardware))
+        self._filters_popover.hardware.setToolTip(self._hardware_info.text())
         self._render_list()
 
     def _repopulate_language_combo(self):
@@ -1571,14 +1881,26 @@ class AddonsPanel(QWidget):
         self._render_list()
 
     # -- Render ------------------------------------------------------------
+    def _state_pass(self, row: _Row, state: str) -> bool:
+        if state == self._STATE_INSTALLED and not row.is_installed:
+            return False
+        if state == self._STATE_AVAILABLE and row.is_installed:
+            return False
+        if state == self._STATE_UPDATES and not row.has_update:
+            return False
+        return True
+
     def _filter_pass(self, row: _Row) -> bool:
-        # State filter
-        if self._state_filter == self._STATE_INSTALLED and not row.is_installed:
-            return False
-        if self._state_filter == self._STATE_AVAILABLE and row.is_installed:
-            return False
-        if self._state_filter == self._STATE_UPDATES and not row.has_update:
-            return False
+        return self._state_pass(row, self._state_filter) and self._other_filters_pass(row)
+
+    def _other_filters_pass(self, row: _Row) -> bool:
+        """Everything but the state: what the strip's counts are taken under."""
+        if self._search_text:
+            haystack = ' '.join((row.addon_id, row.display_name, row.summary,
+                                 _addon_localized(row.addon_id, 'display_name', row.display_name),
+                                 _addon_localized(row.addon_id, 'summary', row.summary))).lower()
+            if self._search_text not in haystack:
+                return False
         # Task filter
         if self._task_filter is not None and self._task_filter not in row.tasks:
             return False
@@ -1639,6 +1961,8 @@ class AddonsPanel(QWidget):
             self._cards_by_id[row.addon_id] = card
             rendered += 1
 
+        self._update_filter_chrome()
+
         # Page 0 = list, Page 1 = empty-state placeholder. Pick the
         # message based on what's actually going on (loading / fetch
         # error / filtered-out / fully empty).
@@ -1647,6 +1971,61 @@ class AddonsPanel(QWidget):
         else:
             self._empty_label.setText(self._empty_state_text())
             self._list_stack.setCurrentIndex(1)
+
+    def _update_filter_chrome(self):
+        """The strip's counts, the Filters button's count and the tags of the
+        filters chosen in it."""
+        others = [row for row in self._rows if self._other_filters_pass(row)]
+        for value, segment in self._state_pills.items():
+            segment.count.setText(str(sum(1 for row in others if self._state_pass(row, value))))
+        chosen = []
+        if self._task_filter is not None:
+            chosen.append((self._task_combo.currentText(), lambda: self._task_combo.setCurrentIndex(0)))
+        if self._language_filter:
+            chosen.append((self._language_combo.currentText(), lambda: self._language_combo.setCurrentIndex(0)))
+        if self._hardware_filter != self._HARDWARE_ANY:
+            chosen.append((self._hardware_combo.currentText(), lambda: self._hardware_combo.setCurrentIndex(0)))
+        self._filters_count.setText(str(len(chosen)))
+        self._tags_row.setVisible(bool(chosen))
+        self._filters_count.setVisible(bool(chosen))
+        while self._tags.count():
+            item = self._tags.takeAt(0)
+            if item.widget() is not None:
+                item.widget().hide()                       # gone now, not when the deletion comes round
+                item.widget().deleteLater()
+        for text, clear in chosen:
+            tag = QPushButton(text)
+            tag.setObjectName('addons_filter_tag')
+            tag.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_tag_clear.svg')))
+            tag.setLayoutDirection(Qt.RightToLeft)          # the ✕ after the text
+            tag.setToolTip(_('addons_dialog.filter.clear'))
+            tag.clicked.connect(clear)
+            self._tags.addWidget(tag)
+            tag.show()                                  # now, so the row's size counts it
+        self._place_tags()
+
+    def eventFilter(self, watched, event):
+        if watched is self._search and event.type() == QEvent.Resize:
+            self._place_tags()
+        return super().eventFilter(watched, event)
+
+    TAGS_RIGHT = 6                                      # from the search field's right end
+    CLEAR_BUTTON = 22                                   # the field's clear button, while it has text
+
+    def _place_tags(self):
+        """The chosen filters' tags sit at the search field's right end (left
+        of its clear button while there is text), and its text stops before
+        them."""
+        if not self._tags_row.isVisibleTo(self._search):
+            self._search.setTextMargins(0, 0, 0, 0)
+            return
+        self._tags_row.adjustSize()
+        size = self._tags_row.sizeHint()
+        self._tags_row.resize(size)
+        right = self.TAGS_RIGHT + (self.CLEAR_BUTTON if self._search.text() else 0)
+        self._tags_row.move(self._search.width() - right - size.width(), (self._search.height() - size.height()) // 2)
+        self._tags_row.raise_()
+        self._search.setTextMargins(0, 0, size.width() + self.TAGS_RIGHT + 4, 0)
 
     def _empty_state_text(self) -> str:
         """Pick the right placeholder copy. Loading state takes priority,
@@ -1809,31 +2188,30 @@ class AddonsPanel(QWidget):
 
     # -- Translate ---------------------------------------------------------
     def retranslate(self):
-        self._state_pills[self._STATE_ALL].setText(_('addons_dialog.filter.state.all'))
-        self._state_pills[self._STATE_INSTALLED].setText(_('addons_dialog.filter.state.installed'))
-        self._state_pills[self._STATE_AVAILABLE].setText(_('addons_dialog.filter.state.available'))
-        self._state_pills[self._STATE_UPDATES].setText(_('addons_dialog.filter.state.updates'))
+        for value, key in ((self._STATE_ALL, 'all'), (self._STATE_INSTALLED, 'installed'),
+                           (self._STATE_AVAILABLE, 'available'), (self._STATE_UPDATES, 'updates')):
+            self._state_pills[value].name.setText(_(f'addons_dialog.filter.state.{key}'))
+        self._search.setPlaceholderText(_('addons_dialog.filter.search'))
+        self._filters_text.setText(_('addons_dialog.filter.button'))
 
-        self._task_pills[self._TASK_ANY].setText(_('addons_dialog.filter.task.any'))
-        self._task_pills[TASK_TTS_SYNTHESIZE].setText(_('addons_dialog.filter.task.tts'))
-        self._task_pills[TASK_ASR_TRANSCRIBE].setText(_('addons_dialog.filter.task.asr'))
-        self._task_pills[TASK_AUDIO_SEPARATE].setText(_('addons_dialog.filter.task.separation'))
-        self._task_pills[TASK_TRANSLATE].setText(_('addons_dialog.filter.task.translate'))
-        self._task_pills[TASK_OCR_RECOGNIZE].setText(_('addons_dialog.filter.task.ocr'))
-
+        popover = self._filters_popover
+        popover.task.setLabel(_('addons_dialog.filter.task.label'))
+        for index, key in enumerate(('any', 'tts', 'asr', 'separation', 'translate', 'ocr')):
+            self._task_combo.setItemText(index, _(f'addons_dialog.filter.task.{key}'))
         # Language filter — only the "Any" entry needs translation; the rest
         # of the rows are raw BCP-47 tags. We rebuild the combobox so the
         # entry text picks up the current locale.
-        self._language_label.setText(_('addons_dialog.filter.lang.label'))
+        popover.language.setLabel(_('addons_dialog.filter.lang.label').rstrip(':： '))
         self._repopulate_language_combo()
-
-        self._hardware_label.setText(_('addons_dialog.filter.hardware.label'))
+        popover.hardware.setLabel(_('addons_dialog.filter.hardware.label').rstrip(':： '))
         for index, key in enumerate(('any', 'this_computer')):
             self._hardware_combo.setItemText(index, _(f'addons_dialog.filter.hardware.{key}'))
         self._hardware_info.setText(_hardware_text(self._hardware))
+        self._filters_popover.hardware.setToolTip(self._hardware_info.text())
 
-        self.install_from_file_button.setText(_('addons_dialog.actions.from_file'))
-        self.refresh_button.setText(_('addons_dialog.actions.refresh'))
+        for button, key in ((self.install_from_file_button, 'from_file'), (self.refresh_button, 'refresh')):
+            button.setToolTip(_(f'addons_dialog.actions.{key}'))
+            button.setAccessibleName(button.toolTip())
 
         # Card buttons re-translate themselves on the next render.
         self._render_list()

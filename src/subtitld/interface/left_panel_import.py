@@ -1,7 +1,7 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QProgressBar, QFileDialog
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QFileDialog
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from subtitld.interface import left_panel
@@ -16,7 +16,7 @@ from subtitld.modules import addons
 from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
-from subtitld.interface.scope_selector import ScopeFooter
+from subtitld.interface.scope_selector import ScopeFooter, SlantProgressBar
 
 
 # Inset of the per-engine options panel (engine name + inline config fields)
@@ -901,7 +901,7 @@ def load(self):
     self.global_panel_import_start_transcription_button.clicked.connect(lambda: global_panel_import_start_transcription_button_clicked(self))
     self.transcription_footer.add_action(self.global_panel_import_start_transcription_button, primary=True)
 
-    self.global_panel_import_start_transcription_progress = QProgressBar()
+    self.global_panel_import_start_transcription_progress = SlantProgressBar()
     self.global_panel_import_start_transcription_progress.setObjectName('transcription_progress_bar')
     self.global_panel_import_start_transcription_progress.setProperty('class', 'secondary')
     self.global_panel_import_start_transcription_progress.setMaximum(100)

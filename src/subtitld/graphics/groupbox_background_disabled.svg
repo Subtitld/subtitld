@@ -1,4 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <svg width="24" height="24" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
- <path d="m21 24c1.662 0 3-1.338 3-3v-18c0-1.662-1.338-3-3-3h-18c-1.662 0-3 1.338-3 3v18c0 1.662 1.338 3 3 3z" fill="#616d78" fill-opacity=".07" stroke-linecap="square" stroke-width="2" style="paint-order:fill markers stroke"/>
+ <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-opacity="0.12"/><stop offset="1" stop-opacity="0.07"/></linearGradient></defs>
+ <path d="M4 0h16a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4h-16a4 4 0 0 1-4-4v-16a4 4 0 0 1 4-4z" fill="url(#g)"/>
+ <path d="M4 0h16a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4h-16a4 4 0 0 1-4-4v-16a4 4 0 0 1 4-4z M4 1h16a4 4 0 0 1 4 4v15a4 4 0 0 1-4 4h-16a4 4 0 0 1-4-4v-15a4 4 0 0 1 4-4z" fill-rule="evenodd" fill-opacity="0.2"/>
+ <path d="M4 0h16a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4h-16a4 4 0 0 1-4-4v-16a4 4 0 0 1 4-4z M4 0h16a4 4 0 0 1 4 4v15a4 4 0 0 1-4 4h-16a4 4 0 0 1-4-4v-15a4 4 0 0 1 4-4z" fill-rule="evenodd" fill="#fff" fill-opacity="0.03"/>
 </svg>

@@ -161,12 +161,12 @@ panel._refresh_options()
 check('text by default, and nothing said', (panel.get_config()['options'].get('dcp_content'), panel.check_label.isHidden()),
       ('text', True))
 panel.dcp_content_combo.combobox.setCurrentIndex(1)
-check('pictures: chosen, and SMPTE\'s MXF said', (panel.get_config()['options'].get('dcp_content'),
-                                                 panel.check_label.isHidden(), 'MXF' in panel.check_label.text()),
-      ('pictures', False, True))
+check('pictures: chosen, and no note: the preview shows them', (panel.get_config()['options'].get('dcp_content'),
+                                                                 panel.check_label.isHidden()),
+      ('pictures', True))
 panel.dcp_standard_combo.combobox.setCurrentIndex(1)
-check('Interop: no MXF to say', (panel.get_config()['options']['dcp_standard'], 'MXF' in panel.check_label.text()),
-      ('interop', False))
+check('Interop: no note either', (panel.get_config()['options']['dcp_standard'], panel.check_label.isHidden()),
+      ('interop', True))
 again = _SubtitlesPanel()
 check('remembered', again.dcp_content_combo.combobox.currentData(), 'pictures')
 panel.format_combo.setCurrentText('SRT')

@@ -75,19 +75,25 @@ def text_of(widget):
 
 def background(image, widget, window):
     """The most common colour in the part of the widget that shows (not
-    scrolled away or covered by its parents' edges) in the drawn window."""
+    scrolled away or covered by its parents' edges) in the drawn window.
+    Buttons and fields are gradients, which spread their pixels over many
+    neighbouring shades: shades are grouped in steps of 16 per channel first,
+    and the background is the average of the most common group."""
     visible = widget.visibleRegion().boundingRect()
     if visible.width() < 4 or visible.height() < 4:
         return None
     top_left = widget.mapTo(window, visible.topLeft())
-    counts = collections.Counter()
+    groups = collections.defaultdict(list)
     w, h = visible.width(), visible.height()
     for y in range(top_left.y(), top_left.y() + h, 2):
         for x in range(top_left.x(), top_left.x() + w, 2):
             if 0 <= x < image.width() and 0 <= y < image.height():
                 c = image.pixelColor(x, y)
-                counts[(c.red(), c.green(), c.blue())] += 1
-    return counts.most_common(1)[0][0] if counts else None
+                groups[(c.red() // 16, c.green() // 16, c.blue() // 16)].append((c.red(), c.green(), c.blue()))
+    if not groups:
+        return None
+    pixels = max(groups.values(), key=len)
+    return tuple(round(sum(p[i] for p in pixels) / len(pixels)) for i in range(3))
 
 
 def check_texts(where, root, window, failures):

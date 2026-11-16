@@ -24,8 +24,9 @@ BATCH = 8                    # subtitles sent to the helper at once
 WAIT = 60.0                  # seconds one batch may take before it is given up on
 
 
-def draw(segments, size, folder, stem='', wait=WAIT):
-    """Draw `segments` on a picture `size` (width, height) pixels and write
+def draw(segments, size, folder, stem='', wait=WAIT, style_id=None):
+    """Draw `segments` on a picture `size` (width, height) pixels, in the
+    style `style_id` (the current one when None), and write
     each as a PNG in `folder`: [{'start', 'end', 'path', 'x', 'y', 'width',
     'height', 'alt'[, 'forced']}], in the order of the subtitles, leaving
     out those with nothing to draw. `stem` begins each file's name; the
@@ -43,6 +44,7 @@ def draw(segments, size, folder, stem='', wait=WAIT):
             os.remove(os.path.join(folder, name))
     renderer = subtitle_renderer.SubtitleRenderer(disk_cache=None)
     renderer.size = (int(size[0]), int(size[1]))
+    renderer.style_id = style_id
     pictures = []
     try:
         style = renderer._style()
@@ -59,10 +61,10 @@ def draw(segments, size, folder, stem='', wait=WAIT):
                 loop = QEventLoop()
                 QTimer.singleShot(20, loop.quit)
                 loop.exec()
+            # Two subtitles that show the same text the same way share a
+            # key, and a layer: taken out of the cache once both are written.
             for number, (segment, key) in enumerate(zip(batch, keys), start=first + 1):
-                rect, image = renderer.cache.pop(key)
-                if image is not None:
-                    renderer.bytes -= image.sizeInBytes()
+                rect, image = renderer.cache[key]
                 if rect is None or image is None:
                     continue
                 path = os.path.join(folder, f'{stem}{number:05d}.png')
@@ -77,6 +79,10 @@ def draw(segments, size, folder, stem='', wait=WAIT):
                 if segment.get('forced'):
                     picture['forced'] = True
                 pictures.append(picture)
+            for key in set(keys):
+                image = renderer.cache.pop(key)[1]
+                if image is not None:
+                    renderer.bytes -= image.sizeInBytes()
     finally:
         renderer.close()
     return pictures

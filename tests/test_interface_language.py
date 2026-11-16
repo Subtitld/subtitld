@@ -120,7 +120,7 @@ window = subtitld_main.Window()
 check('built in the system language', translation.get_language(), 'pt_BR')
 check('tabs', [window.left_panel_global_tabs.tabText(i) for i in range(2)],
       [PT['global_panel.tab_subtitles'], PT['global_panel.tab_general']])
-check('a tooltip', window.playercontrols_stop_button.toolTip(), PT['playercontrols.stop'])
+check('a tooltip', window.playercontrols_play_from_beginning_button.toolTip(), PT['playercontrols.play_from_beginning'])
 check('the exit dialog', window.confirm_exit_dialog.accept_button.text(), PT['confirm_exit_dialog.save_button'])
 check('and not English', window.left_panel_global_tabs.tabText(1) != EN['global_panel.tab_general'], True)
 

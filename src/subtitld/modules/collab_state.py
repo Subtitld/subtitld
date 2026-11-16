@@ -39,10 +39,11 @@ CHAT_MEMBER = 'chat.json'
 # Names the batches made in this run of the app: with a counter, unique.
 _RUN = secrets.token_hex(6)
 
-# share_media: the person lets collaborators get this project's media from this computer (off by default).
+# share_media: the person lets collaborators get this project's media from this computer (on by default;
+# they can turn it off).
 # chat: the editors' chat as this app has it (modules.collab_chat), chat_outbox: messages not sent yet,
 # chat_read: when this person last read it (ms), save_chat: keep the chat in the project file (off by default).
-STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False,
+STATE = {'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': True,
          'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False}
 _counter = 0
 _muted = 0
@@ -60,12 +61,12 @@ def start(doc, server, seq=0, base=None):
     server's change `seq`, when its document was `base` (a docops document;
     None until the server sends it)."""
     STATE.update({'doc': doc, 'server': server, 'seq': int(seq), 'base': copy.deepcopy(base), 'pending': [],
-                  'share_media': False, 'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False})
+                  'share_media': True, 'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False})
 
 
 def clear():
     """The open project is not shared (any more)."""
-    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': False,
+    STATE.update({'doc': None, 'server': None, 'seq': 0, 'base': None, 'pending': [], 'share_media': True,
                   'chat': [], 'chat_outbox': [], 'chat_read': 0, 'save_chat': False})
 
 
@@ -159,7 +160,7 @@ def read(state_bytes, pending_bytes=b'', base_bytes=None, chat_bytes=None):
             base = None
     save_chat = bool(head.get('save_chat'))
     return {'doc': head['doc'], 'server': head.get('server'), 'seq': int(head.get('seq') or 0) if base else 0,
-            'base': base, 'pending': pending, 'share_media': bool(head.get('share_media')),
+            'base': base, 'pending': pending, 'share_media': bool(head.get('share_media', True)),
             'chat': collab_chat.read(chat_bytes) if save_chat and chat_bytes else [], 'chat_outbox': [],
             'chat_read': int(head.get('chat_read') or 0) if save_chat else 0, 'save_chat': save_chat}
 

@@ -172,10 +172,14 @@ card = panel.live_card
 panel.refresh()
 
 def buttons(text):
-    return [b for b in card.findChildren(type(card.add_button)) if b.text() == text and b.isVisible()]
+    # the whole panel: who it is shared with opens in the live bar, the rest in the card
+    return [b for b in panel.findChildren(type(card.add_button)) if b.text() == text and b.isVisible()]
 
 
 print('signed in, not shared')
+check('the card waits in the live bar\'s drawer', card.isVisible(), False)
+host.subtitldcc_panel.live_bar.toggle.click()
+app.processEvents()
 check('the card shows', card.isVisible(), True)
 check('the share form, named after the video', (card.share_box.isVisible(), card.title_field.text()), (True, 'Sintel.2010'))
 check('yourself or a group you publish as', [card.owner_field.itemText(i) for i in range(card.owner_field.count())],
@@ -191,9 +195,11 @@ check('as the group, with the subtitles', calls[0], ('share', 'Sintel', 'subbers
 check('and the subtitle they came from, for the project to publish to', SHARED_FROM, ['Sb7kQ2xZ9aT'])
 session.SUBTITLE.pop('origin')
 check('it connects', calls[1][0], 'connect')
-check('shared: the members part, not the form', wait(lambda: card.members_title.isVisible()), True)
+check('shared: the members part, not the form', wait(lambda: not card.share_box.isVisible() and card._project is not None), True)
 check('connected', card.status.text(), 'Connected. Changes reach everyone as you make them.')
-check('the owner manages it', (card.add_row.isVisible(), card.stop_button.text()), (True, 'Stop sharing'))
+panel.live_bar.show_people()                            # who it is shared with: a pop-up at the live bar's foot
+app.processEvents()
+check('the owner manages it', (card.member_field.isVisible(), card.stop_button.text()), (True, 'Stop sharing'))
 
 print('who is here')
 connection = collab_service.connection()
@@ -271,8 +277,7 @@ card.published('Xk3pQ9aZ2bT', 2)
 check('subtitld.cc hears of it', wait(lambda: ('published', 'Dk3pQ9aZ2bT', 'Xk3pQ9aZ2bT', 2) in calls), True)
 check('and the others are credited', wait(lambda: panel.message.text() == 'Published, crediting @joao.'), True)
 check('the editor holds that subtitle now', service.origin(), {'share_id': 'Xk3pQ9aZ2bT', 'version': 2})
-check('the card says where it publishes, the title as text', wait(lambda: card.publishes_to.isVisible()
-                                                                and '“Sintel &lt;2010&gt;”' in card.publishes_to.text()), True)
+check('the live bar\'s link says where it publishes', wait(lambda: '“Sintel <2010>”' in panel.live_bar.link.toolTip()), True)
 PROJECT['subtitle'] = dict(PROJECT['subtitle'], version=3)
 card._project = None
 card.refresh()
@@ -281,14 +286,16 @@ PROJECT.pop('subtitle')
 card._project = None
 
 print('media')
+panel.live_bar.show_media()                             # in its dialog, from the live bar
 connection.engine.media['c' * 64] = {'hash': 'c' * 64, 'kind': 'video', 'name': 'Sintel.2010.mkv', 'size': 3 * 1024 ** 3}
 HELD.add('c' * 64)
 connection.changed.emit('media')
 check('the project\'s video, from whoever has it', wait(lambda: any('Sintel.2010.mkv · 3.0 GB · from 1 online' in w.text()
                                                                  for w in card.findChildren(QLabel))), True)
-check('sharing mine is off until I say so', (card.share_media.isChecked(), collab_service.sharing_media()), (False, False))
+check('sharing mine is on unless I say otherwise', (card.share_media.isChecked(), collab_service.sharing_media()), (True, True))
+card.share_media.setChecked(False)
+check('then off, and saved with the project', (collab_service.sharing_media(), collab_state.STATE['share_media']), (False, False))
 card.share_media.setChecked(True)
-check('then on, and saved with the project', (collab_service.sharing_media(), collab_state.STATE['share_media']), (True, True))
 if collab_service.transfers_available():
     check('a Get button', wait(lambda: buttons('Get')), True)
 else:
@@ -297,6 +304,7 @@ card.share_media.setChecked(False)
 
 print('the editors\' chat')
 chat = panel.chat_card
+panel.live_bar.chat.setChecked(True)                    # the chat shows in the live bar's drawer
 check('shown while shared', chat.isVisible(), True)
 segments = session.SUBTITLE['segments']
 
@@ -315,8 +323,11 @@ from subtitld.modules import collab_chat  # noqa: E402
 theirs = stamped(collab_chat.say('Is line 2 too fast?', cue_id=segments[1]['id'], at_ms=3500), 'joao', 1000)
 engine_says('chat', theirs)
 labels = lambda: [w.text() for w in chat.findChildren(QLabel)]  # noqa: E731
+# each message's bubble: its text, and the names of its buttons (Edit, Delete: its own, on hover)
+bubbles = lambda: [(' '.join(l.text() for l in w.findChildren(QLabel)), [x.accessibleName() for x in getattr(w, 'buttons', [])])  # noqa: E731
+                   for w in chat.findChildren(QWidget, 'chat_bubble') if not w.isHidden()]
 check('their message, pointing at the line and the moment',
-      wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t in labels())), True)
+      wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t, _b in bubbles())), True)
 check('unread until read', collab_service.chat_unread() in (0, 1), True)
 session.SUBTITLE['selected'] = segments[0]
 chat.attach.setChecked(True)
@@ -327,9 +338,9 @@ check('sent, pointing at the selected line', (sent[-1]['text'], sent[-1]['cue_id
 check('shown as sending until it comes back', wait(lambda: any('sending…' in t for t in labels())), True)
 engine_says('chat', stamped(sent[-1], 'ana', 2000))
 check('then sent, with Edit and Delete for my own',
-      wait(lambda: not any('sending…' in t for t in labels()) and any('Splitting it' in t and 'Edit' in t for t in labels())),
+      wait(lambda: not any('sending…' in t for t in labels()) and any('Splitting it' in t and 'Edit' in b for t, b in bubbles())),
       True)
-check('not theirs: no Edit there', any('Is line 2 too fast?' in t and 'Edit' in t for t in labels()), False)
+check('not theirs: no Edit there', any('Is line 2 too fast?' in t and 'Edit' in b for t, b in bubbles()), False)
 chat._link(f"edit:{sent[-1]['id']}")
 check('editing fills the field', (chat.field.text(), chat.send_button.text()), ('Splitting it', 'Save'))
 chat.field.setText('Splitting it in two')
@@ -337,7 +348,7 @@ chat.send()
 edit = [c[1] for c in calls if c[0] == 'chat'][-1]
 check('an edit, of that message', (edit['action'], edit['reply_to'], edit['text']), ('edit', sent[-1]['id'], 'Splitting it in two'))
 engine_says('chat', stamped(edit, 'ana', 3000))
-check('shown edited', wait(lambda: any('Splitting it in two' in t and 'edited' in t for t in labels())), True)
+check('shown edited', wait(lambda: any('Splitting it in two' in t and 'edited' in t for t, _b in bubbles())), True)
 forged = stamped(collab_chat.edit(theirs['id'], 'joao never said this'), 'ana', 4000)
 engine_says('chat', forged)
 check("someone else's message can't be edited", any('joao never said this' in t for t in labels()), False)
@@ -364,12 +375,13 @@ from PySide6.QtGui import QKeyEvent  # noqa: E402
 from subtitld.modules import collab_voice, opus, rtc  # noqa: E402
 collab_service.voice_available = lambda: True
 collab_voice.Call._open_devices = lambda self, input_device, output_device: None  # no sound devices here
-check('a Join button', (chat.join_button.isVisible(), chat.join_button.text()), (True, 'Join the call'))
+bar = panel.live_bar
+check('a Join button: the live bar\'s call tab', (bar.call.isVisible(), bar.call.toolTip()), (True, 'Join the call'))
 if not (rtc.available() and opus.available()):
     print('  libdatachannel or libopus is not available here: the call skipped')
 else:
     chat.join_button.click()
-    check('in the call', wait(lambda: (collab_service.in_call(), chat.join_button.text(), chat.talk_button.isVisible())
+    check('in the call', wait(lambda: (collab_service.in_call(), chat.join_button.text(), bar.lock.isVisible())
                              == (True, 'Leave the call', True)), True)
     check('the others are told', [c[1].get('voice') for c in calls if c[0] == 'presence'][-1], True)
     connection.engine.peers['p1'] = {'user': {'handle': 'joao', 'name': 'João'}, 'state': {'voice': True}}
@@ -402,7 +414,7 @@ else:
     for i in range(7):
         connection.engine.peers[f'q{i}'] = {'user': {'handle': f'u{i}'}, 'state': {'voice': True}}
     engine_says('peers')
-    check('many in the call: a note, no limit', wait(lambda: chat.voice_note.isVisible() and 'Many people' in chat.voice_note.text()), True)
+    check('many in the call: a note, no limit', wait(lambda: 'Many people' in chat.voice_note.text()), True)
     for i in range(7):
         del connection.engine.peers[f'q{i}']
     chat.join_button.click()
@@ -470,12 +482,14 @@ connection.failed.emit('missing_scope')
 check('asks to sign in again', (card.sign_in_button.isVisible(), card.status.text().startswith('Your subtitld.cc sign-in')), (True, True))
 
 print('who it is shared with')
+panel.live_bar.show_people()                            # in a pop-up at the live bar's foot
 card.member_field.setText('@joao')
 card.add_button.click()
 check('added', wait(lambda: ('add', 'joao') in calls), True)
-check('listed', wait(lambda: '@joao' in [w.text() for w in card.findChildren(QLabel)]), True)
-check('with a Remove button for the owner', wait(lambda: buttons('Remove')), True)
-buttons('Remove')[0].click()
+check('listed', wait(lambda: '@joao' in [w.text() for w in panel.findChildren(QLabel)]), True)
+removes = lambda: [b for b in panel.findChildren(type(card.add_button)) if b.toolTip() == 'Remove' and b.parentWidget().isVisible()]
+check('with a Remove button for the owner', wait(removes), True)
+removes()[0].click()
 check('removing asks first', card.confirm.isVisible(), True)
 card.confirm_yes.click()
 check('removed', wait(lambda: ('remove', 'Dk3pQ9aZ2bT', 'joao') in calls), True)
@@ -490,8 +504,10 @@ check('the share form again', wait(lambda: card.share_box.isVisible()), True)
 
 print('opening a project shared with you')
 card.list_button.click()
-check('listed', wait(lambda: buttons('Open')), True)
-buttons('Open')[0].click()
+# each project's Open shows while the pointer is on its line
+opens = lambda: [b for b in panel.findChildren(type(card.add_button)) if b.text() == 'Open' and b.parentWidget().isVisible()]
+check('listed', wait(opens), True)
+opens()[0].click()
 check('asks first: it replaces the subtitles', card.confirm.isVisible(), True)
 card.confirm_yes.click()
 check('joined: shared, empty until the server sends it, not a file yet',

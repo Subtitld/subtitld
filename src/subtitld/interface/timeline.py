@@ -70,6 +70,7 @@ class TimelineScroll(QScrollArea):
     
     def resizeEvent(widget, event):
         widget.window().timeline_widget.update_size()
+        super().resizeEvent(event)      # the scroll bars' range, and the timeline's place, for the new width
         event.accept()
 
 
@@ -2962,7 +2963,8 @@ class Timeline(QWidget):
         event.accept()
 
     def update_size(widget):
-        widget.setGeometry(0, 0, int(session.VIDEO.get('duration', 0.01) * session.CONFIG.get('timeline_zoom', 1)), widget.parent().parent().height())
+        # A resize, not a move to 0: the scroll area places the timeline where its scroll bar is.
+        widget.resize(int(session.VIDEO.get('duration', 0.01) * session.CONFIG.get('timeline_zoom', 1)), widget.parent().parent().height())
 
     def load_waveform(widget):
         filepath = session.VIDEO.get("filepath")

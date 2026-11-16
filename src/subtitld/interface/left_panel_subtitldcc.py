@@ -23,8 +23,9 @@ from PySide6.QtWidgets import (
 )
 
 from subtitld.interface import left_panel
+from subtitld.interface.account_header import AccountHeader, HeaderShadow
 from subtitld.interface.subtitldcc_chat import ChatCard
-from subtitld.interface.subtitldcc_live import LiveCard
+from subtitld.interface.subtitldcc_live import LiveBar, LiveCard
 from subtitld.interface.subtitldcc_publish import PublishFlow
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
@@ -251,29 +252,37 @@ class SubtitldccPanel(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.header = AccountHeader('subtitldcc_mark.svg', 'subtitld.cc')
+        self.header.disconnect = self.header.add_hover_button(text='')
+        self.header.disconnect.clicked.connect(self.sign_out)
+        self.header.connect_button.clicked.connect(lambda: self.sign_in(device=False))
+        outer.addWidget(self.header)
         scroll = QScrollArea()
         self.scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        outer.addWidget(scroll)
+        outer.addWidget(scroll, 1)                      # the spare height, not the header's or the footer's
         inner = QWidget()
-        inner.setProperty('class', 'transparent_panel')
+        inner.setObjectName('account_cards')           # a lighter ground between the header and the footer
+        inner.setAttribute(Qt.WA_StyledBackground, True)
         self.cards = QVBoxLayout(inner)
         self.cards.setContentsMargins(10, 10, 10, 10)
         self.cards.setSpacing(10)
         scroll.setWidget(inner)
 
         self._build_account()
-        self.live_card = LiveCard(self)
-        self.cards.addWidget(self.live_card)
-        self.chat_card = ChatCard(self)
-        self.cards.addWidget(self.chat_card)
+        self.live_card = LiveCard(self)                 # in the live bar's drawer (LiveBar)
+        self.chat_card = ChatCard(self)                 # in the live bar's drawer too, under the live card
         self._build_origin()
         self._build_video()
         self._build_search()
         self._build_publish()
         self.cards.addStretch()
+        # Live co-editing's bar, always in view under the cards
+        self.live_bar = LiveBar(self)
+        outer.addWidget(self.live_bar)
 
         self.message = _label('subtitldcc_message')
         self.message.hide()
@@ -281,6 +290,10 @@ class SubtitldccPanel(QWidget):
         # A subtitld:// link to a subtitle, followed with subtitles in the editor: asked here first.
         self.link_confirm = Confirm()
         self.cards.insertWidget(1, self.link_confirm)
+        # asked under the header, at the top of the cards
+        self.cards.insertWidget(2, self.disconnect_confirm)
+        self.header_shadow = HeaderShadow(self)
+        self.footer_shadow = HeaderShadow(self, up=True)
         self._message_timer = QTimer(self)
         self._message_timer.setSingleShot(True)
         self._message_timer.timeout.connect(self.message.hide)
@@ -289,8 +302,24 @@ class SubtitldccPanel(QWidget):
 
     # --- Account -----------------------------------------------------------------------------------------
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_shadows()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._place_shadows()
+
+    def _place_shadows(self):
+        self.header_shadow.place_under(self.header)
+        self.footer_shadow.place_over(self.live_bar)
+        self.footer_shadow.setVisible(self.live_bar.isVisible())
+        self.live_bar.raise_()                          # Share live rises over the shadow, not under it
+
     def _build_account(self):
+        # Connecting (and waiting for it) happens in this card; once connected, the header says who it is
         card, layout = _card()
+        self.account_card = card
         self.account_title = _label('subtitldcc_card_title')
         layout.addWidget(self.account_title)
         self.account_text = _label('subtitldcc_text')
@@ -312,7 +341,6 @@ class SubtitldccPanel(QWidget):
         layout.addWidget(_row(self.connect_button, self.code_button, self.device_page_button,
                               self.cancel_button, self.disconnect_button))
         self.disconnect_confirm = Confirm()
-        layout.addWidget(self.disconnect_confirm)
         self.cards.addWidget(card)
         self._device_uri = ''
 
@@ -322,9 +350,14 @@ class SubtitldccPanel(QWidget):
         self.account_code.setVisible(bool(code))
         self.device_page_button.setVisible(bool(code))
         self.cancel_button.setVisible(bool(waiting))
-        self.connect_button.setVisible(not connected and not waiting)
+        self.connect_button.setVisible(False)          # the header's Connect connects
         self.code_button.setVisible(not connected and not waiting)
-        self.disconnect_button.setVisible(connected and not waiting)
+        self.disconnect_button.setVisible(False)       # the header's icon disconnects
+        self.account_card.setVisible(not connected or bool(waiting))
+        handle = account.get('handle') or ''
+        self.header.show_account(connected and not waiting, account.get('name') or '', f'@{handle}' if handle else '',
+                                 _('subtitldcc.state_connected') if connected and not waiting
+                                 else _('subtitldcc.state_offline'), can_connect=not waiting)
         if code:
             self.account_code.setText(code)
             self.account_text.setText(_('subtitldcc.device_wait').format(uri=self._device_uri))
@@ -384,10 +417,10 @@ class SubtitldccPanel(QWidget):
         self.disconnect_confirm.ask(_('subtitldcc.disconnect_text'), _('subtitldcc.disconnect'), self._sign_out)
 
     def _sign_out(self):
-        self.disconnect_button.setEnabled(False)
+        self.header.disconnect.setEnabled(False)
 
         def done(_result=None):
-            self.disconnect_button.setEnabled(True)
+            self.header.disconnect.setEnabled(True)
             self._origin_info = None
             collab_service.connect()  # no one signed in: a shared project disconnects
             self.refresh()
@@ -957,6 +990,7 @@ class SubtitldccPanel(QWidget):
         self._render_account(waiting=self._sign_in_call is not None)
         self.live_card.refresh(load=self.isVisible())
         self.chat_card.refresh()
+        self.live_bar.refresh()
         self._load_origin()
         self._render_video()
         self._render_publish()
@@ -973,11 +1007,14 @@ class SubtitldccPanel(QWidget):
         self.account_title.setText('subtitld.cc')
         self.connect_button.setText(_('subtitldcc.connect'))
         self.connect_button.setToolTip(_('subtitldcc.connect_tip'))
+        self.header.connect_button.setText(_('subtitldcc.connect'))
+        self.header.connect_button.setToolTip(_('subtitldcc.connect_tip'))
         self.code_button.setText(_('subtitldcc.use_code'))
         self.code_button.setToolTip(_('subtitldcc.use_code_tip'))
         self.device_page_button.setText(_('subtitldcc.open_device_page'))
         self.cancel_button.setText(_('subtitldcc.cancel'))
         self.disconnect_button.setText(_('subtitldcc.disconnect'))
+        self.header.disconnect.setText(_('subtitldcc.disconnect'))
         self.origin_kicker.setText(_('subtitldcc.in_editor'))
         self.rate_label.setText(_('subtitldcc.your_rating'))
         self.works_button.setText(_('subtitldcc.works'))
@@ -1000,4 +1037,5 @@ class SubtitldccPanel(QWidget):
             confirm.retranslate()
         self.live_card.retranslate()
         self.chat_card.retranslate()
+        self.live_bar.retranslate()
         self.refresh()

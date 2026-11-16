@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The account panels' header logo tab (account_header.py): hanging from its top-right corner, its left edge
+     a 75° slant with a 6px curve at the foot, raised, on its contact line. Left slice 14 holds the slant. -->
+<svg width="40" height="31" version="1.1" viewBox="0 0 40 31" xmlns="http://www.w3.org/2000/svg">
+ <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4a6376"/><stop offset="1" stop-color="#324350"/></linearGradient></defs>
+ <path d="M0 0L6.85 25.55Q8.04 30 12.64 30L40 30V0Z" transform="translate(0 1)" fill="#000" fill-opacity="0.45"/>
+ <path d="M0 0L6.85 25.55Q8.04 30 12.64 30L40 30V0Z" fill="url(#g)"/>
+</svg>

@@ -345,13 +345,13 @@ def load(self):
     self.left_panel_global_tab_cloud = QWidget()
     self.left_panel_global_tab_cloud.setProperty('class', 'transparent_panel')
     self.left_panel_global_tab_cloud.setLayout(QVBoxLayout())
-    self.left_panel_global_tab_cloud.layout().setContentsMargins(10, 10, 10, 10)
-    self.left_panel_global_tab_cloud.layout().setSpacing(8)
+    # edge to edge: the dashboard's header meets the tab's edges, its cards keep their own padding
+    self.left_panel_global_tab_cloud.layout().setContentsMargins(0, 0, 0, 0)
+    self.left_panel_global_tab_cloud.layout().setSpacing(0)
     self.left_panel_global_tabs.addTab(self.left_panel_global_tab_cloud, '')
 
     self.global_panel_cloud_dashboard = CloudDashboardPanel()
     self.left_panel_global_tab_cloud.layout().addWidget(self.global_panel_cloud_dashboard)
-    self.left_panel_global_tab_cloud.layout().addStretch()
 
     # Export settings: icon-only button docked at the right end of the tab
     # bar via QTabWidget's corner-widget slot.

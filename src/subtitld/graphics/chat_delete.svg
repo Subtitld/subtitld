@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A chat message's Delete (a bin) (subtitldcc_chat.ChatCard, at its bubble's foot). -->
+<svg width="12" height="12" version="1.1" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+ <g fill="none" stroke="#9fc4e4" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.5">
+  <path d="M1.8 3h8.4M4.6 3V1.8h2.8V3M2.8 3l.6 7.2h5.2l.6-7.2"/>
+ </g>
+</svg>

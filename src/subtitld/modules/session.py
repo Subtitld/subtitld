@@ -241,12 +241,35 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'MKV': {'description': 'Matroska video with a subtitle track', 'extensions': ['mkv']},
     'TS': {'description': 'MPEG transport stream with teletext subtitles', 'extensions': ['ts']},
     'TS DVB': {'description': 'MPEG transport stream with DVB subtitles', 'extensions': ['ts']},
+    # The subtitles in the picture, drawn in a style (modules.burned_video).
+    'BURN MP4': {'description': 'MP4 video with the subtitles burned in', 'extensions': ['mp4']},
+    'BURN MOV': {'description': 'QuickTime video with the subtitles burned in', 'extensions': ['mov']},
+    'BURN MKV': {'description': 'Matroska video with the subtitles burned in', 'extensions': ['mkv']},
+    'BURN TS': {'description': 'MPEG transport stream with the subtitles burned in', 'extensions': ['ts']},
+    'BURN WEBM': {'description': 'WebM video with the subtitles burned in', 'extensions': ['webm']},
+    'ALPHA MOV': {'description': 'QuickTime video of the subtitles alone, transparent', 'extensions': ['mov']},
+    'ALPHA MKV': {'description': 'Matroska video of the subtitles alone, transparent', 'extensions': ['mkv']},
+    'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
 }
 
+# Documents to read (modules.documents).
 LIST_OF_SUPPORTED_EXPORT_EXTENSIONS = {
-    'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
-    'KDENLIVE': {'description': 'Kdenlive format', 'extensions': ['kdenlive']},
     'CSV': {'description': 'CSV table', 'extensions': ['csv']},
+    'TXT': {'description': 'Plain text', 'extensions': ['txt']},
+    'DOCX': {'description': 'Word document', 'extensions': ['docx']},
+    'ODT': {'description': 'OpenDocument text', 'extensions': ['odt']},
+    'PDF': {'description': 'PDF document', 'extensions': ['pdf']},
+}
+
+# Projects of video and audio editors (modules.project_export).
+LIST_OF_SUPPORTED_PROJECT_EXTENSIONS = {
+    'KDENLIVE': {'description': 'Kdenlive project', 'extensions': ['kdenlive']},
+    'SHOTCUT': {'description': 'Shotcut project', 'extensions': ['mlt']},
+    'RESOLVE': {'description': 'DaVinci Resolve timeline (FCPXML)', 'extensions': ['fcpxml']},
+    'FINALCUT': {'description': 'Final Cut Pro project (FCPXML)', 'extensions': ['fcpxml']},
+    'OPENSHOT': {'description': 'OpenShot project', 'extensions': ['osp']},
+    'ARDOUR': {'description': 'Ardour session', 'extensions': ['ardour']},
+    'AUDACITY': {'description': 'Audacity project', 'extensions': ['aup']},
 }
 
 LIST_OF_SUPPORTED_AUDIO_EXPORT_EXTENSIONS = {

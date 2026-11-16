@@ -15,8 +15,8 @@ import html
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import (QApplication, QCheckBox, QKeySequenceEdit, QLineEdit, QScrollArea, QSizePolicy,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QKeySequenceEdit, QLineEdit, QPushButton,
+                               QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitldcc_live import _button, _clear, _row, _text
 from subtitld.interface.translation import _
@@ -59,6 +59,69 @@ def _timecode(milliseconds):
     return f'{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
 
 
+class _ChatField(QLineEdit):
+    """The message field: Enter sends (returnPressed), before the editor's own Enter shortcut (add a subtitle)
+    can take it."""
+
+    def event(self, event):
+        if event.type() == QEvent.ShortcutOverride and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            event.accept()
+            return True
+        return super().event(event)
+
+
+BUTTONS = 34                                            # a bubble's Edit and Delete, less its own right padding
+
+
+class _Bubble(QWidget):
+    """A chat message's bubble; its own buttons (Edit, Delete) flush in its bottom-right corner, shown while the
+    pointer is on it."""
+
+    def __init__(self):
+        super().__init__()
+        self.buttons = []
+        self.foot = None                                 # the line of its time: moves left of the buttons
+
+    def add_button(self, icon, name, action):
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QIcon
+        from PySide6.QtWidgets import QPushButton
+        button = QPushButton(self)
+        button.setObjectName('chat_bubble_button')
+        button.setProperty('first', not self.buttons)    # the first one rounds its top-left corner
+        button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+        button.setIconSize(QSize(12, 12))
+        button.setFixedSize(22, 20)
+        button.setToolTip(name)
+        button.setAccessibleName(name)
+        button.setCursor(Qt.PointingHandCursor)
+        button.clicked.connect(action)
+        button.setVisible(False)
+        self.buttons.append(button)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        x = self.width()
+        for button in reversed(self.buttons):
+            x -= button.width()
+            button.move(x, self.height() - button.height())
+            button.raise_()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        for button in self.buttons:
+            button.setVisible(True)
+        if self.buttons and self.foot is not None:
+            self.foot.setContentsMargins(0, 0, BUTTONS, 0)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        for button in self.buttons:
+            button.setVisible(False)
+        if self.foot is not None:
+            self.foot.setContentsMargins(0, 0, 0, 0)
+
+
 class ChatCard(QWidget):
     def __init__(self, panel):
         super().__init__()
@@ -67,65 +130,131 @@ class ChatCard(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)           # in the live bar's drawer, edge to edge
+        layout.setSpacing(0)                            # the well, then the field right under it
         self._editing = None  # the ID of the message being edited
         self._shown_peers = None
+        self._shown_messages = None  # what the bubbles were last built from (refresh)
 
+        # (no title nor note: the live bar's chat tab says what this is; kept for its unread count)
         self.title = _text('subtitldcc_card_title')
+        self.title.setVisible(False)
         layout.addWidget(self.title)
         self.note = _text()
+        self.note.setVisible(False)
         layout.addWidget(self.note)
 
+        # The messages in a well (clear at the top, darkening to its foot); under it, on the bar's ground, edge
+        # to edge, the field and Send.
+        self.well = QWidget()
+        self.well.setObjectName('chat_well')
+        self.well.setAttribute(Qt.WA_StyledBackground, True)
+        well = QVBoxLayout(self.well)
+        well.setContentsMargins(0, 0, 0, 0)
+        well.setSpacing(0)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setMinimumHeight(180)
+        self.scroll.setObjectName('chat_scroll')
         self.scroll.setProperty('class', 'transparent_panel')
         inner = QWidget()
         inner.setProperty('class', 'transparent_panel')
         self.messages_box = QVBoxLayout(inner)
-        self.messages_box.setContentsMargins(0, 0, 0, 0)
-        self.messages_box.setSpacing(6)
+        self.messages_box.setContentsMargins(10, 10, 10, 10)
+        self.messages_box.setSpacing(3)
         self.messages_box.addStretch()
         self.scroll.setWidget(inner)
-        layout.addWidget(self.scroll)
+        self.scroll.installEventFilter(self)             # bubbles keep to a share of its width
+        # the messages fade out as they scroll up past its top edge: no seam there
+        from PySide6.QtGui import QBrush, QColor, QLinearGradient
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        fade = QLinearGradient(0, 0, 0, self.FADE)
+        fade.setColorAt(0, QColor(0, 0, 0, 0))
+        fade.setColorAt(1, QColor(0, 0, 0, 255))
+        mask = QGraphicsOpacityEffect(self.scroll)
+        mask.setOpacity(1.0)
+        mask.setOpacityMask(QBrush(fade))
+        self.scroll.setGraphicsEffect(mask)
+        well.addWidget(self.scroll)
 
-        self.field = QLineEdit()
+        self.field = _ChatField()
+        self.field.setObjectName('chat_field')
         self.field.setMaxLength(2000)
         self.field.returnPressed.connect(self.send)
         self.send_button = _button(primary=True)
+        self.send_button.setObjectName('chat_send')
         self.send_button.clicked.connect(self.send)
         self.cancel_button = _button()
+        self.cancel_button.setObjectName('chat_cancel')
         self.cancel_button.clicked.connect(self.cancel_edit)
-        layout.addWidget(_row(self.field, self.send_button, self.cancel_button, stretch=False))
-        self.attach = QCheckBox()
-        layout.addWidget(self.attach)
-        self.keep = QCheckBox()
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+        foot.setSpacing(0)
+        foot.addWidget(self.field, 1)
+        foot.addWidget(self.cancel_button)
+        foot.addWidget(self.send_button)
+        self.well.installEventFilter(self)
+        layout.addWidget(self.well)
+        layout.addLayout(foot)                          # under the well, on the bar's own ground
+        # Pointing the message at the selected subtitle and the playhead: a checkable icon inside the field.
+        from PySide6.QtGui import QAction
+        self.attach = QAction(self)
+        self.attach.setCheckable(True)
+        self.attach.toggled.connect(self._show_attach)
+        self.field.addAction(self.attach, QLineEdit.TrailingPosition)
+        self._show_attach(False)
+        # half there until the pointer is on it, like the save icon (the field draws it as a tool button)
+        from PySide6.QtWidgets import QGraphicsOpacityEffect, QToolButton
+        self.attach_button = next((b for b in self.field.findChildren(QToolButton) if b.defaultAction() is self.attach), None)
+        if self.attach_button is not None:
+            self.attach_button.setGraphicsEffect(QGraphicsOpacityEffect(self.attach_button))
+            self.attach_button.graphicsEffect().setOpacity(.5)
+            self.attach_button.installEventFilter(self)
+        # Keeping the chat in the project file: an icon in the well's top-right corner (placed in eventFilter).
+        from PySide6.QtCore import QSize
+        self.keep = QPushButton(self.well)
+        self.keep.setObjectName('chat_keep')
+        self.keep.setCheckable(True)
+        self.keep.setCursor(Qt.PointingHandCursor)
+        self.keep.setIconSize(QSize(14, 14))
+        self.keep.setFixedSize(30, 26)
         self.keep.toggled.connect(collab_service.set_chat_saved)
-        layout.addWidget(self.keep)
+        self.keep.toggled.connect(self._show_keep)
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        self.keep.setGraphicsEffect(QGraphicsOpacityEffect(self.keep))
+        self.keep.graphicsEffect().setOpacity(.5)        # half there until the pointer is on it
+        self.keep.installEventFilter(self)
+        self.keep.setVisible(False)                     # shown while the pointer is on the chat (eventFilter)
+        self._show_keep(False)
 
-        # Voice: push-to-talk.
+        # Voice: push-to-talk. The live bar's call tab joins, talks and locks (subtitldcc_live.LiveBar); these
+        # stay as the call's state, out of sight.
+        self.voice_box = QWidget()
+        voice = QVBoxLayout(self.voice_box)
+        voice.setContentsMargins(0, 0, 0, 0)
+        self.voice_box.setVisible(False)
+        layout.addWidget(self.voice_box)
         self.voice_title = _text('subtitldcc_kicker')
-        layout.addWidget(self.voice_title)
+        voice.addWidget(self.voice_title)
         self.voice_note = _text()
-        layout.addWidget(self.voice_note)
+        voice.addWidget(self.voice_note)
         self.voice_people = _text()
         self.voice_people.setTextFormat(Qt.RichText)
-        layout.addWidget(self.voice_people)
+        voice.addWidget(self.voice_people)
         self.join_button = _button(primary=True)
         self.join_button.clicked.connect(self.toggle_call)
         self.talk_button = _button()
         self.talk_button.pressed.connect(lambda: collab_service.voice_talk(True))
         self.talk_button.released.connect(lambda: collab_service.voice_talk(False))
-        layout.addWidget(_row(self.join_button, self.talk_button))
+        voice.addWidget(_row(self.join_button, self.talk_button))
         self.latch = QCheckBox()
         self.latch.toggled.connect(collab_service.voice_latch)
-        layout.addWidget(self.latch)
+        voice.addWidget(self.latch)
         self.key_label = _text()
         self.key_edit = QKeySequenceEdit()
         self.key_edit.setMaximumSequenceLength(1)
         self.key_edit.editingFinished.connect(self._key_chosen)
-        layout.addWidget(_row(self.key_label, self.key_edit, stretch=False))
+        voice.addWidget(_row(self.key_label, self.key_edit, stretch=False))
         self._ptt = _PushToTalk(self)
         self._voice_timer = QTimer(self)
         self._voice_timer.setInterval(150)
@@ -142,16 +271,39 @@ class ChatCard(QWidget):
         self.field.setPlaceholderText(_('collab.chat_placeholder'))
         self.cancel_button.setText(_('collab.chat_cancel'))
         self.attach.setText(_('collab.chat_attach'))
-        self.attach.setToolTip(_('collab.chat_attach_tip'))
-        self.keep.setText(_('collab.chat_keep'))
-        self.keep.setToolTip(_('collab.chat_keep_tip'))
+        self.attach.setToolTip(f"{_('collab.chat_attach')}\n{_('collab.chat_attach_tip')}")
+        self.keep.setToolTip(f"{_('collab.chat_keep')}\n{_('collab.chat_keep_tip')}")
+        self.keep.setAccessibleName(_('collab.chat_keep'))
         self.voice_title.setText(_('collab.voice_title'))
         self.talk_button.setText(_('collab.voice_talk'))
         self.talk_button.setToolTip(_('collab.voice_talk_tip'))
         self.latch.setText(_('collab.voice_latch'))
         self.key_label.setText(_('collab.voice_key'))
         self.key_edit.setKeySequence(QKeySequence(ptt_key()))
+        self._shown_messages = None                     # built again, in the new language
         self.refresh()
+
+    def _show_attach(self, on):
+        from PySide6.QtGui import QIcon
+        self.attach.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_point_on.svg' if on else 'chat_point.svg'))))
+
+    def _show_keep(self, kept):
+        from PySide6.QtGui import QIcon
+        self.keep.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_keep_on.svg' if kept else 'chat_keep.svg'))))
+
+    def eventFilter(self, watched, event):
+        if watched in (getattr(self, 'keep', None), getattr(self, 'attach_button', None)) \
+                and event.type() in (QEvent.Enter, QEvent.Leave):
+            watched.graphicsEffect().setOpacity(1.0 if event.type() == QEvent.Enter else .5)
+        if watched is getattr(self, 'scroll', None) and event.type() == QEvent.Resize \
+                and event.size().width() != event.oldSize().width():
+            self._redraw.start()                        # the bubbles measured again for the new width
+        if watched is getattr(self, 'well', None) and event.type() in (QEvent.Enter, QEvent.Leave):
+            self.keep.setVisible(event.type() == QEvent.Enter)
+        if watched is getattr(self, 'well', None) and event.type() == QEvent.Resize:
+            self.keep.move(self.well.width() - self.keep.width(), 0)   # in the well's top-right corner
+            self.keep.raise_()
+        return super().eventFilter(watched, event)
 
     def _news(self, kind):
         if kind == 'peers':
@@ -183,51 +335,117 @@ class ChatCard(QWidget):
             unread = 0
         self.title.setText(_('collab.chat_title') + (f" · {_('collab.chat_unread').format(count=unread)}" if unread else ''))
         messages = collab_service.chat_messages()
-        self.note.setVisible(collab_service.chat_alone())
         self.note.setText(_('collab.chat_alone'))
         self.keep.blockSignals(True)
         self.keep.setChecked(collab_service.chat_saved())
         self.keep.blockSignals(False)
+        self._show_keep(self.keep.isChecked())
         self.send_button.setText(_('collab.chat_save') if self._editing else _('collab.chat_send'))
         self.cancel_button.setVisible(bool(self._editing))
 
         self._render_voice()
 
-        bar = self.scroll.verticalScrollBar()
-        at_end = bar.value() >= bar.maximum() - 4
+        # Built again only when what they show changed: the rest of the news (a click on the timeline goes
+        # out as a change to the document) left the list empty for a moment, the scroll back at the top.
+        me = collab_service.chat_me()
+        shown = (repr(messages[-SHOWN:]), me, self.scroll.viewport().width())
+        if shown == self._shown_messages:
+            return
+        self._shown_messages = shown
+        self.scroll.setUpdatesEnabled(False)            # not seen until it is at the latest message again
         _clear(self.messages_box)
         if not messages:
-            empty = _text()
+            empty = _text('chat_empty')
             empty.setText(_('collab.chat_empty'))
             self.messages_box.addWidget(empty)
-        me = collab_service.chat_me()
+        previous = None
         for message in messages[-SHOWN:]:
-            self.messages_box.addWidget(self._message(message, me))
+            author = (message.get('author') or {}).get('handle')
+            self.messages_box.addWidget(self._message(message, me, first=author != previous))
+            previous = author
         self.messages_box.addStretch()
-        if at_end:
-            QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+        self._to_bottom()
 
-    def _message(self, message, me):
+    def _to_bottom(self):
+        """The latest message in view, always: once the rows are laid out (their heights come a pass later)."""
+        bar = self.scroll.verticalScrollBar()
+        QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+
+        def settled():
+            bar.setValue(bar.maximum())
+            self.scroll.setUpdatesEnabled(True)
+        QTimer.singleShot(60, settled)
+
+    BUBBLE = 0.78                                       # at most this much of the chat's width
+    FADE = 28                                           # px over which the messages fade out at the top
+
+    def _message(self, message, me, first=True):
+        """A message as a chat app shows one: a bubble, its own on the right (lighter), the others' on the left
+        with their name on top (the first of a run); at its foot, small, the time, the place it points at, and
+        for its own, Edit and Delete."""
         author = message.get('author') or {}
         name = author.get('name') or author.get('handle') or me
-        mine = message.get('pending') or author.get('handle') == me
-        head = [f'<b>{html.escape(name)}</b>']
-        head.append(_('collab.chat_sending') if message.get('pending') else _clock(message['at']))
+        mine = bool(message.get('pending') or author.get('handle') == me)
+        foot = [_('collab.chat_sending') if message.get('pending') else _clock(message['at'])]
         if message.get('cue_id') or message.get('at_ms') is not None:
-            head.append(f'<a href="go:{message.get("cue_id") or ""}:{message.get("at_ms") or ""}">{self._place(message)}</a>')
+            foot.insert(0, f'<a href="go:{message.get("cue_id") or ""}:{message.get("at_ms") or ""}" '
+                           f'style="color:#9fc4e4;">{self._place(message)}</a>')
         if message.get('edited'):
-            head.append(_('collab.chat_edited'))
-        if mine and not message.get('pending') and not message.get('deleted'):
-            head.append(f'<a href="edit:{message["id"]}">{_("collab.chat_edit")}</a>')
-            head.append(f'<a href="delete:{message["id"]}">{_("collab.chat_delete")}</a>')
+            foot.append(_('collab.chat_edited'))
+        editable = mine and not message.get('pending') and not message.get('deleted')
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
-        label = _text()
-        label.setTextFormat(Qt.RichText)
-        label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        label.setText(' · '.join(head) + '<br>' + body)
-        label.linkActivated.connect(self._link)
-        return label
+        head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
+        # the foot's words on the right, in a line of their own: its own's Edit and Delete take that corner
+        # while hovered, and the words then move to their left (_Bubble)
+        meta_html = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
+        label = _text('chat_bubble_text')
+        meta = _text('chat_bubble_text')
+        for text_label, text in ((label, head + f'<div>{body}</div>'), (meta, meta_html)):
+            text_label.setTextFormat(Qt.RichText)
+            text_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            text_label.setText(text)
+            text_label.linkActivated.connect(self._link)
+        meta.setWordWrap(False)
+        # as wide as its words (or its foot, with room for the buttons), up to BUBBLE of the chat: measured, so
+        # the bubble is as tall as they need
+        from PySide6.QtGui import QTextDocument
+        widths = []
+        for text_label, extra in ((label, 0), (meta, BUTTONS if editable else 0)):
+            text_label.ensurePolished()
+            document = QTextDocument()
+            document.setDefaultFont(text_label.font())
+            document.setHtml(text_label.text())
+            widths.append(int(document.idealWidth()) + 4 + extra)
+        widest = max(140, int(self.scroll.viewport().width() * self.BUBBLE)) - 20
+        width = min(max(widths), widest)
+        label.setFixedWidth(width)
+        meta.setFixedWidth(width)
+
+        bubble = _Bubble()
+        if editable:
+            bubble.add_button('chat_edit.svg', _('collab.chat_edit'), lambda: self._link(f'edit:{message["id"]}'))
+            bubble.add_button('chat_delete.svg', _('collab.chat_delete'), lambda: self._link(f'delete:{message["id"]}'))
+        bubble.setObjectName('chat_bubble')
+        bubble.setProperty('mine', mine)
+        bubble.setAttribute(Qt.WA_StyledBackground, True)
+        bubble.foot = meta
+        inside = QVBoxLayout(bubble)
+        inside.setContentsMargins(10, 6, 10, 5)
+        inside.setSpacing(0)
+        inside.addWidget(label)
+        inside.addWidget(meta)
+        row = QWidget()
+        row.setProperty('class', 'transparent_panel')
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0 if not first else 4, 0, 0)
+        line.setSpacing(0)
+        if mine:
+            line.addStretch(1)
+        line.addWidget(bubble)
+        if not mine:
+            line.addStretch(1)
+        return row
 
     def _place(self, message):
         """'Line 12 · 00:01:23' for a message pointing at a subtitle and the playhead."""

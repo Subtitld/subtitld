@@ -194,12 +194,12 @@ def _stacked_resize_to_current(stacked):
     the visible one contributes to the stack's sizeHint — Qt then collapses
     the empty rows that would otherwise be reserved for taller siblings.
 
-    The parent is signalled via updateGeometry() rather than adjustSize() —
-    adjustSize() snaps the parent's width down to its sizeHint, which then
-    shrinks any siblings (like the dubbing-engine combobox) whose policy
-    allows them to follow the parent's narrower width. updateGeometry()
-    invalidates the layout cache and lets Qt reflow vertically while
-    leaving the parent's horizontal extent alone."""
+    Nothing here calls adjustSize(): it snaps a widget's width down to its
+    sizeHint, and on the stack that left the engine panel narrower than the
+    section around it whenever an engine was picked again (the parent's own
+    size did not change, so its layout never set the stack's width back).
+    Invalidating the layouts lets Qt reflow vertically while every width
+    stays the layout's."""
     current = stacked.currentWidget()
     for i in range(stacked.count()):
         page = stacked.widget(i)
@@ -208,11 +208,11 @@ def _stacked_resize_to_current(stacked):
         policy = page.sizePolicy()
         policy.setVerticalPolicy(QSizePolicy.Preferred if page is current else QSizePolicy.Ignored)
         page.setSizePolicy(policy)
-    if current is not None:
-        current.adjustSize()
-    stacked.adjustSize()
+    stacked.updateGeometry()
     parent = stacked.parentWidget()
     if parent is not None:
+        if parent.layout() is not None:
+            parent.layout().invalidate()
         parent.updateGeometry()
 
 
@@ -237,6 +237,7 @@ class dubbing_container(QWidget):
         widget.layout().addLayout(header_line)
 
         widget.combobox = utils.LabeledComboBox()
+        widget.combobox.ROUNDED = False                 # edge to edge across the section, square
         widget.combobox.activated.connect(lambda: widget.combobox_changed())
         header_line.addWidget(widget.combobox, 1)
 
@@ -327,7 +328,7 @@ class dubbing_container(QWidget):
 # so anything that reached left of it would render on top of the avatar.
 _AVATAR_SIZE = 48
 _TIMELINE_HEIGHT = 6
-_CORNER_RADIUS = 4
+_CORNER_RADIUS = 6
 # The item's BODY (background, timeline strip, text, option rows) is inset
 # this far from the list's left edge, so a strip of list background shows
 # behind the avatar. The avatar itself is NOT inset — it sits flush against
@@ -454,6 +455,26 @@ class _BodyClippedPanel(QWidget):
             option = QStyleOption()
             option.initFrom(self)
             self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+        finally:
+            painter.end()
+
+
+class _SectionBody(_BodyClippedPanel):
+    """An open section's body: its background, and along its foot a soft
+    contact line (inside the card's outline, so it follows the rounded
+    corner)."""
+    CONTACT = QColor(0, 0, 0, 115)          # the buttons' contact line
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            body = self._card_body()
+            if body is not None:
+                offset = self.mapTo(body, QPoint(0, 0))
+                painter.setClipPath(_card_body_outline(body).translated(-offset.x(), -offset.y()))
+            painter.fillRect(QRectF(0, self.height() - 1, self.width(), 1), self.CONTACT)
         finally:
             painter.end()
 
@@ -855,10 +876,10 @@ class CollapsibleSection(QWidget):
 
         # Clipped for the same reason as the header: when expanded, this is
         # the row that sits in the card body's rounded bottom-left corner.
-        self.body = _BodyClippedPanel()
+        self.body = _SectionBody()
         self.body.setObjectName('speaker_option_section_body')
         self.body.setLayout(QVBoxLayout())
-        self.body.layout().setContentsMargins(10, 6, 10, 10)
+        self.body.layout().setContentsMargins(0, 0, 0, 1)    # its content runs edge to edge, over its contact line
         self.body.layout().setSpacing(6)
         self.body.setVisible(False)
         self.layout().addWidget(self.body)

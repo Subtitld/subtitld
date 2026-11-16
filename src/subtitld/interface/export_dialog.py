@@ -3,26 +3,38 @@ Video / Documents). Each tab exposes a format selector plus the
 options that apply to that format. The dialog returns a single config
 dict; the caller is responsible for the final file picker and dispatch."""
 
+import copy
+import os
+import shutil
+import tempfile
+
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
-                               QLabel, QSizePolicy, QDialog, QTabWidget, QGridLayout,
-                               QGroupBox, QSpinBox, QComboBox, QLineEdit, QProgressBar)
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontDatabase
+                               QLabel, QSizePolicy, QDialog, QGridLayout,
+                               QSpinBox, QDoubleSpinBox, QComboBox, QProgressBar, QPlainTextEdit)
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF
+from PySide6.QtGui import QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor, QImage
 
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.modules import audio_report
 from subtitld.modules import bdn
+from subtitld.modules import burned_video
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
+from subtitld.modules import documents
 from subtitld.modules import dvd_scripts
 from subtitld.modules import export_options
+from subtitld.modules import file_io
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
+from subtitld.modules import markup
 from subtitld.modules import mcc
 from subtitld.modules import pac
+from subtitld.modules import project_export
 from subtitld.modules import session
 from subtitld.modules import soft_subtitles
+from subtitld.modules import subtitle_styles
 from subtitld.modules import ttml
 from subtitld.modules import vobsub
 
@@ -36,7 +48,6 @@ DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
 DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
-DOCUMENT_FORMATS = ['TXT', 'KDENLIVE', 'CSV']
 
 
 class _SubtitlesPanel(QWidget):
@@ -45,6 +56,9 @@ class _SubtitlesPanel(QWidget):
     SUB and USF have options of their own. The choices are remembered
     (CONFIG['export_subtitles']), except the shift, which is for one export."""
 
+    # The format or one of its options changed: what the export writes did.
+    changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLayout(QVBoxLayout())
@@ -52,7 +66,7 @@ class _SubtitlesPanel(QWidget):
         self.layout().setSpacing(10)
         remembered = session.CONFIG.get('export_subtitles') or {}
 
-        self.format_combo = utils.LabeledComboBox()
+        self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         self.format_combo.addItems(SUBTITLE_FORMATS)
         self.format_combo.activated.connect(self._refresh_options)
@@ -445,6 +459,14 @@ class _SubtitlesPanel(QWidget):
         # Drop-frame or not is only a choice at the rates that have it.
         self.fps_combo.combobox.currentIndexChanged.connect(self._refresh_options)
         self._refresh_options()
+        # Any choice made changes the file: the combos (the format's among
+        # them), the shift, the boxes.
+        for combo in self.findChildren(QComboBox):
+            combo.currentIndexChanged.connect(self.changed)
+        for spin in self.findChildren(QSpinBox) + self.findChildren(QDoubleSpinBox):
+            spin.valueChanged.connect(self.changed)
+        for box in self.findChildren(QCheckBox):
+            box.toggled.connect(self.changed)
 
     def _speaker_choices(self, fmt):
         """The speaker choices for `fmt`: leave out, before the text and the
@@ -537,28 +559,12 @@ class _SubtitlesPanel(QWidget):
 
     def _run_check(self, *_args):
         """What the TTML this export writes would break in its profile:
-        the file written as it will be, then read back by ttml.check. For
-        VobSub and PGS, what their pictures will be."""
+        the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
-        if fmt == 'BDN':
-            # Drawn when the file is written: what is said is where they go.
-            self.check_label.setText(_('export_dialog.bdn_note'))
-            self.check_label.setVisible(True)
-            return
-        if fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures':
-            smpte = self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE
-            self.check_label.setText(_('export_dialog.dcp_pictures_note_smpte' if smpte
-                                       else 'export_dialog.dcp_pictures_note_interop'))
-            self.check_label.setVisible(True)
-            return
-        if fmt in ('VOBSUB', 'PGS'):
-            # A disc's pictures: what they will be, or that this build
-            # cannot draw them.
-            from subtitld.interface import subtitle_renderer
-            self.check_label.setText(_('export_dialog.picture_note_' + fmt.lower()) if subtitle_renderer.available()
-                                     else _('export_dialog.picture_no_renderer'))
-            self.check_label.setVisible(True)
+        if fmt in ('BDN', 'VOBSUB', 'PGS') or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
+            # Pictures: the preview shows one, nothing to say here.
+            self.check_label.setVisible(False)
             return
         if fmt not in ('DFXP', 'TTML') or not segments:
             self.check_label.setVisible(False)
@@ -566,9 +572,8 @@ class _SubtitlesPanel(QWidget):
         profile = self.profile_combo.combobox.currentData() or 'ttml1'
         if profile in ttml.IMAGE_PROFILES:
             # Pictures are drawn when the file is written, not to check it
-            # here: what is said instead is where they will go.
-            self.check_label.setText(_('export_dialog.ttml_image_note'))
-            self.check_label.setVisible(True)
+            # here; the preview shows one.
+            self.check_label.setVisible(False)
             return
         written = ttml.write(segments, session.SUBTITLE.get('language') or 'en', profile=profile,
                              metadata=session.SUBTITLE.get('metadata'))
@@ -582,6 +587,15 @@ class _SubtitlesPanel(QWidget):
         self.check_label.setVisible(True)
 
     def get_config(self):
+        fmt, choices, options = self.export_choices()
+        # The speaker choice as last made: voice tags stay wanted for WebVTT
+        # even when another format wrote names before the text.
+        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted)
+        return {'category': 'subtitles', 'format': fmt, 'options': options}
+
+    def export_choices(self):
+        """The format, every choice made and the options the export takes
+        of them, remembering nothing: the preview asks for them too."""
         fmt = self.format_combo.currentText()
         text, language = self.text_combo.combobox.currentData() or ('original', '')
         choices = {
@@ -618,9 +632,6 @@ class _SubtitlesPanel(QWidget):
             'embed_speaker_images': self.usf_embed_images.isChecked(),
             'embed_audio_clips': self.usf_embed_dubs.isChecked(),
         }
-        # The speaker choice as last made: voice tags stay wanted for WebVTT
-        # even when another format wrote names before the text.
-        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted)
 
         # Every export sets its options, so none is left over from the last.
         options = {}
@@ -672,7 +683,7 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
-        return {'category': 'subtitles', 'format': fmt, 'options': options}
+        return fmt, choices, options
 
 
 def _has_drop_frame(rate):
@@ -692,6 +703,8 @@ def _select(labeled_combo, data):
 
 
 class _AudioPanel(QWidget):
+    changed = Signal()                                         # a choice the export is made with
+
     def __init__(self, parent=None, has_background=False, has_vocals=False, formats=None):
         super().__init__(parent)
         self._has_background = has_background
@@ -702,7 +715,7 @@ class _AudioPanel(QWidget):
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
 
-        self.format_combo = utils.LabeledComboBox()
+        self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         self.format_combo.addItems(self._formats)
         self.layout().addWidget(self.format_combo)
@@ -740,6 +753,9 @@ class _AudioPanel(QWidget):
         for btn in (self.mode_mixdown, self.mode_stems, self.mode_clips,
                     self.mode_background_only, self.mode_vocals_only):
             btn.toggled.connect(self._refresh_checkbox_state)
+            btn.toggled.connect(self.changed)
+        self.format_combo.combobox.currentIndexChanged.connect(self.changed)
+        self.include_background_checkbox.toggled.connect(self.changed)
 
         # A shared project's dub clips still on their way from collaborators (modules/collab_service.py).
         from subtitld.modules import collab_service
@@ -755,6 +771,11 @@ class _AudioPanel(QWidget):
     def _refresh_checkbox_state(self):
         is_passthrough = self.mode_background_only.isChecked() or self.mode_vocals_only.isChecked()
         self.include_background_checkbox.setDisabled(is_passthrough or not self._has_background)
+
+    def export_choices(self):
+        """(format, mode, whether the background is mixed in), as chosen."""
+        config = self.get_config()
+        return config['format'], config['audio_config']['mode'], config['audio_config']['include_background']
 
     def get_config(self):
         mode = 'mixdown'
@@ -779,358 +800,291 @@ class _AudioPanel(QWidget):
 
 
 class _DocumentsPanel(QWidget):
-    """The documents tab: the format and, for CSV, which table to write
-    (modules.csv_export)."""
+    """The documents tab: the format, then what the document holds, of what
+    that format can (modules.documents), then the options that takes."""
+    changed = Signal()                                         # a choice the document is written with
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_documents') or {}
 
-        self.format_combo = utils.LabeledComboBox()
+        self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
-        self.format_combo.addItems(DOCUMENT_FORMATS)
-        self.format_combo.combobox.currentIndexChanged.connect(self._refresh_options)
+        for fmt in documents.FORMATS:
+            self.format_combo.combobox.addItem(_(f'export_dialog.document_{fmt.lower()}'), fmt)
+        self.format_combo.activated.connect(self._refresh_format)
         self.layout().addWidget(self.format_combo)
 
-        self.csv_type_combo = utils.LabeledComboBox()
-        self.csv_type_combo.setLabel(_('export_dialog.csv_type'))
-        for csv_type in csv_export.TYPES:
-            self.csv_type_combo.combobox.addItem(_(f'export_dialog.csv_{csv_type}'), csv_type)
-        self.layout().addWidget(self.csv_type_combo)
+        self.content_combo = utils.LabeledComboBox()
+        self.content_combo.setLabel(_('export_dialog.document_content'))
+        self.content_combo.activated.connect(self._refresh_content)
+        self.layout().addWidget(self.content_combo)
+        # What each format was last made to hold.
+        self._contents = dict(remembered.get('contents') or {})
 
-        self.note = QLabel(_('export_dialog.documents_placeholder'))
-        self.note.setWordWrap(True)
-        self.layout().addWidget(self.note)
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.times_combo = utils.LabeledComboBox()
+        self.times_combo.setLabel(_('export_dialog.document_times'))
+        for times in documents.TIMES:
+            self.times_combo.combobox.addItem(_(f'export_dialog.document_times_{times}'), times)
+        self.times_combo.activated.connect(self._refresh_content)
+        line.addWidget(self.times_combo, 1)
+        self.time_format_combo = utils.LabeledComboBox()
+        self.time_format_combo.setLabel(_('export_dialog.document_time_format'))
+        for time_format in documents.TIME_FORMATS:
+            self.time_format_combo.combobox.addItem(_(f'export_dialog.document_time_{time_format}'), time_format)
+        line.addWidget(self.time_format_combo, 1)
+        self.layout().addWidget(row)
+
+        # The translations a sheet has columns for: all, or one.
+        self.languages_combo = utils.LabeledComboBox()
+        self.languages_combo.setLabel(_('export_dialog.document_languages'))
+        self.languages_combo.combobox.addItem(_('export_dialog.document_languages_all'), '')
+        names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+        for language in documents.languages_of(session.SUBTITLE.get('segments')):
+            self.languages_combo.combobox.addItem(names.get(language, language), language)
+        self.layout().addWidget(self.languages_combo)
+
+        self.speakers_check = QCheckBox(_('export_dialog.document_speakers'))
+        self.layout().addWidget(self.speakers_check)
+        self.by_speaker_check = QCheckBox(_('export_dialog.document_by_speaker'))
+        self.layout().addWidget(self.by_speaker_check)
+        self.title_check = QCheckBox(_('export_dialog.document_title'))
+        self.layout().addWidget(self.title_check)
 
         self.layout().addStretch()
-        self._refresh_options()
 
-    def _refresh_options(self, *_args):
-        is_csv = self.format_combo.currentText() == 'CSV'
-        self.csv_type_combo.setVisible(is_csv)
-        self.note.setVisible(not is_csv)
+        _select(self.format_combo, remembered.get('format'))
+        _select(self.times_combo, remembered.get('times', documents.DEFAULTS['times']))
+        _select(self.time_format_combo, remembered.get('time_format', documents.DEFAULTS['time_format']))
+        _select(self.languages_combo, remembered.get('language', ''))
+        self.speakers_check.setChecked(bool(remembered.get('speakers', documents.DEFAULTS['speakers'])))
+        self.by_speaker_check.setChecked(bool(remembered.get('by_speaker', documents.DEFAULTS['by_speaker'])))
+        self.title_check.setChecked(bool(remembered.get('title', documents.DEFAULTS['title'])))
+        for combo in (self.format_combo, self.content_combo, self.times_combo, self.time_format_combo,
+                      self.languages_combo):
+            combo.combobox.currentIndexChanged.connect(self.changed)
+        for check in (self.speakers_check, self.by_speaker_check, self.title_check):
+            check.toggled.connect(self.changed)
+        self._refresh_format()
+
+    def choose(self, fmt, content=None):
+        """Select `fmt` and, if it can hold it, `content`."""
+        _select(self.format_combo, fmt)
+        if content:
+            self._contents[fmt] = content
+        self._refresh_format()
+
+    def _format(self):
+        return self.format_combo.combobox.currentData() or next(iter(documents.FORMATS))
+
+    def _content(self):
+        return documents.content_of(self._format(), self.content_combo.combobox.currentData())
+
+    def _refresh_format(self, *_args):
+        """The contents the format can hold, the one it held last chosen."""
+        fmt = self._format()
+        combo = self.content_combo.combobox
+        combo.blockSignals(True)
+        combo.clear()
+        for content in documents.contents_of(fmt):
+            combo.addItem(_(f'export_dialog.document_content_{content}'), content)
+        _select(self.content_combo, documents.content_of(fmt, self._contents.get(fmt)))
+        combo.blockSignals(False)
+        self._refresh_content()
+        self.changed.emit()
+
+    def _refresh_content(self, *_args):
+        """The options the chosen content takes in the chosen format."""
+        fmt, content = self._format(), self._content()
+        self._contents[fmt] = content
+        timed = content in (documents.TRANSCRIPT, documents.SCRIPT, documents.TRANSLATION)
+        self.times_combo.setVisible(timed)
+        self.time_format_combo.setVisible(content == documents.DUBBING or (
+            timed and self.times_combo.combobox.currentData() != 'none'))
+        self.languages_combo.setVisible(content == documents.TRANSLATION and self.languages_combo.combobox.count() > 2)
+        self.speakers_check.setVisible(content in (documents.TRANSCRIPT, documents.SCRIPT))
+        self.by_speaker_check.setVisible(content == documents.DUBBING)
+        self.title_check.setVisible(fmt != 'CSV' and content != documents.MARKERS)
+
+    def export_choices(self):
+        """(format, what the document holds and how), as chosen."""
+        language = self.languages_combo.combobox.currentData()
+        return self._format(), {
+            'content': self._content(),
+            'times': self.times_combo.combobox.currentData(),
+            'time_format': self.time_format_combo.combobox.currentData(),
+            'languages': [language] if language else None,
+            'speakers': self.speakers_check.isChecked(),
+            'by_speaker': self.by_speaker_check.isChecked(),
+            'title': self.title_check.isChecked(),
+        }
 
     def get_config(self):
-        fmt = self.format_combo.currentText()
-        config = {
-            'category': 'documents',
-            'format': fmt,
-        }
-        if fmt == 'CSV':
-            config['options'] = {'csv_type': self.csv_type_combo.combobox.currentData()}
-        return config
+        fmt, chosen = self.export_choices()
+        remembered = {key: value for key, value in chosen.items() if key not in ('content', 'languages')}
+        remembered['language'] = self.languages_combo.combobox.currentData() or ''
+        session.CONFIG['export_documents'] = dict(remembered, format=fmt, contents=dict(self._contents))
+        return {'category': 'documents', 'format': fmt, 'options': {'document': chosen}}
+
+
+class _ProjectPanel(QWidget):
+    """The project tab: the program, then what goes on its timeline
+    (modules.project_export): the video, its sound or the background
+    separated from the voices, the dubbed speeches, the subtitles and
+    their translations; each offered when there is one."""
+    changed = Signal()                                         # a choice the project is written with
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_project') or {}
+        segments = session.SUBTITLE.get('segments') or []
+        has_video = bool((session.VIDEO or {}).get('filepath'))
+
+        self.format_combo = utils.HeaderComboBox()
+        self.format_combo.setLabel(_('export_dialog.format'))
+        for fmt in project_export.FORMATS:
+            self.format_combo.combobox.addItem(project_logo(fmt), _(f'export_dialog.project_{fmt.lower()}'), fmt)
+        self.layout().addWidget(self.format_combo)
+
+        self.audio_combo = utils.LabeledComboBox()
+        self.audio_combo.setLabel(_('export_dialog.project_audio'))
+        self.audio_combo.combobox.addItem(_('export_dialog.project_audio_original'), 'original')
+        if project_export.background_path(session.VIDEO):
+            self.audio_combo.combobox.addItem(_('export_dialog.project_audio_background'), 'background')
+        self.audio_combo.combobox.addItem(_('export_dialog.project_audio_none'), 'none')
+        self.audio_combo.setVisible(has_video)
+        self.layout().addWidget(self.audio_combo)
+
+        self.video_check = QCheckBox(_('export_dialog.project_video'))
+        self.video_check.setVisible(has_video)
+        self.layout().addWidget(self.video_check)
+        self.speeches_check = QCheckBox(_('export_dialog.project_speeches'))
+        self.speeches_check.setVisible(any(s.get('dubbing') for s in segments))
+        self.layout().addWidget(self.speeches_check)
+        self.subtitles_check = QCheckBox(_('export_dialog.project_subtitles'))
+        self.layout().addWidget(self.subtitles_check)
+        self.translations_check = QCheckBox(_('export_dialog.project_translations'))
+        self._has_translations = bool(documents.languages_of(segments))
+        self.layout().addWidget(self.translations_check)
+        self.layout().addStretch()
+
+        _select(self.format_combo, remembered.get('format'))
+        _select(self.audio_combo, remembered.get('audio', project_export.DEFAULTS['audio']))
+        for key, check in (('video', self.video_check), ('speeches', self.speeches_check),
+                           ('subtitles', self.subtitles_check), ('translations', self.translations_check)):
+            check.setChecked(bool(remembered.get(key, project_export.DEFAULTS[key])))
+        self.subtitles_check.toggled.connect(self._refresh)
+        self.format_combo.combobox.currentIndexChanged.connect(self._refresh)
+        self._has_video = has_video
+        for combo in (self.format_combo, self.audio_combo):
+            combo.combobox.currentIndexChanged.connect(self.changed)
+        for check in (self.video_check, self.speeches_check, self.subtitles_check, self.translations_check):
+            check.toggled.connect(self.changed)
+        self._refresh()
+
+    def _refresh(self, *_args):
+        # An audio editor takes the sound alone; a program with room for one
+        # subtitle track, the subtitles without their translations.
+        fmt = self.format_combo.combobox.currentData()
+        self.translations_check.setVisible(self._has_translations and self.subtitles_check.isChecked() and
+                                           not project_export.FORMATS.get(fmt, {}).get('one_subtitle_track'))
+        self.video_check.setVisible(self._has_video and not project_export.FORMATS.get(fmt, {}).get('audio_only'))
+
+    def choose(self, fmt):
+        _select(self.format_combo, fmt)
+
+    def export_choices(self):
+        """(program, what goes in), as chosen; what is not offered left out."""
+        choices = {'audio': self.audio_combo.combobox.currentData() if not self.audio_combo.isHidden() else 'none',
+                   'video': self.video_check.isChecked() and not self.video_check.isHidden(),
+                   'speeches': self.speeches_check.isChecked() and not self.speeches_check.isHidden(),
+                   'subtitles': self.subtitles_check.isChecked(),
+                   'translations': self.translations_check.isChecked() and not self.translations_check.isHidden()}
+        return self.format_combo.combobox.currentData(), choices
+
+    def get_config(self):
+        fmt, choices = self.export_choices()
+        remembered = {'format': fmt, 'audio': self.audio_combo.combobox.currentData()}
+        for key, check in (('video', self.video_check), ('speeches', self.speeches_check),
+                           ('subtitles', self.subtitles_check), ('translations', self.translations_check)):
+            remembered[key] = check.isChecked()
+        session.CONFIG['export_project'] = remembered
+        return {'category': 'project', 'format': fmt, 'options': {'project': choices}}
+
+
+# The video page's formats, as its header lists them: the ways the subtitles
+# can go in each, and the export each way makes (a transport stream's track
+# is teletext, 'TS', or DVB subtitles, 'TS DVB', as its track format says).
+VIDEO_FILES = {
+    'MP4': {'label': 'video_mp4_track', 'ways': {'cc': 'MP4 A53', 'track': 'MP4', 'burn': 'BURN MP4'}},
+    'MOV': {'label': 'video_mov', 'ways': {'cc': 'MOV', 'track': 'MOV TEXT', 'burn': 'BURN MOV', 'alpha': 'ALPHA MOV'}},
+    'MKV': {'label': 'video_mkv_track', 'ways': {'track': 'MKV', 'burn': 'BURN MKV', 'alpha': 'ALPHA MKV'}},
+    'MXF': {'label': 'video_mxf', 'ways': {'cc': 'MXF'}},
+    'TS': {'label': 'video_ts_track', 'ways': {'cc': 'TS A53', 'track': 'TS', 'burn': 'BURN TS'}},
+    'WEBM': {'label': 'video_webm', 'ways': {'burn': 'BURN WEBM', 'alpha': 'ALPHA WEBM'}},
+}
+
+
+def _video_file_of(export):
+    """(format, way) of the video page that make `export`; None for none."""
+    export = 'TS' if export == 'TS DVB' else export
+    for video_file, spec in VIDEO_FILES.items():
+        for way, key in spec['ways'].items():
+            if key == export:
+                return video_file, way
+    return None
+
+
+def _codec_label(codec):
+    """A picture codec's name as the list shows it."""
+    names = {'h264': 'H.264', 'hevc': 'HEVC', 'vp9': 'VP9', 'prores': 'ProRes 422 HQ', 'prores4444': 'ProRes 4444',
+             'png': 'PNG', 'qtrle': 'QuickTime Animation'}
+    return names.get(codec) or _(f'export_dialog.video_codec_{codec}')
 
 
 class _VideoPanel(QWidget):
-    """Video export panel.
-
-    Lifted verbatim (in structure) from ``left_panel_export.load`` —
-    the FFmpeg sub-tab and the standalone "generate transparent video"
-    button. Signals are wired to local placeholder slots; the user will
-    re-implement actual behaviour later.
-    """
+    """The video tab: the kind of file, and the options it takes. The
+    subtitles go in as closed captions, as a track of their own, burned into
+    the picture, or drawn alone on a clear video."""
+    changed = Signal()                                         # a choice the export is made with
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(10, 10, 10, 10)
-        self.layout().setSpacing(20)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
+
+        # The file's format, the page's header; then how the subtitles go in
+        # it, of the ways that format has; then the options that way takes.
+        remembered = session.CONFIG.get('export_video') or {}
+        self.format_combo = utils.HeaderComboBox()
+        self.format_combo.setLabel(_('export_dialog.format'))
+        for key, spec in VIDEO_FILES.items():
+            self.format_combo.combobox.addItem(_(f'export_dialog.{spec["label"]}'), key)
+        self.format_combo.activated.connect(self._refresh_format)
+        self.layout().addWidget(self.format_combo)
+
+        self.way_combo = utils.LabeledComboBox()
+        self.way_combo.setLabel(_('export_dialog.video_subtitles'))
+        self.way_combo.activated.connect(self._refresh_way)
+        self.layout().addWidget(self.way_combo)
+        # The way chosen for each format, and the codec for each export, so
+        # going to another and back keeps them.
+        self._ways = dict(remembered.get('ways') or {})
+        self._codecs = dict(remembered.get('codecs') or {})
+
+        self.video_pages = QStackedWidget()
 
-        self.video_tabwidget = QTabWidget()
-
-        # FFmpeg sub-tab ---------------------------------------------------
-        self.ffmpeg_panel = QWidget()
-        self.ffmpeg_panel.setLayout(QGridLayout())
-        self.ffmpeg_panel.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_panel.layout().setSpacing(20)
-
-        self.ffmpeg_left_panel = QWidget()
-        self.ffmpeg_left_panel.setLayout(QVBoxLayout())
-        self.ffmpeg_left_panel.layout().setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_left_panel.layout().setSpacing(20)
-
-        # Font group ------------------------------------------------------
-        self.ffmpeg_font_group = QGroupBox(_('units.font'))
-        self.ffmpeg_font_group.setLayout(QHBoxLayout())
-        self.ffmpeg_font_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_font_group.layout().setSpacing(20)
-
-        self.ffmpeg_fontsize_line = QVBoxLayout()
-        self.ffmpeg_fontsize_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontsize_line.setSpacing(2)
-
-        self.ffmpeg_fontsize_label = QLabel()
-        self.ffmpeg_fontsize_label.setProperty('class', 'widget_label')
-        self.ffmpeg_fontsize_line.addWidget(self.ffmpeg_fontsize_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontsize_line_2 = QHBoxLayout()
-        self.ffmpeg_fontsize_line_2.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontsize_line_2.setSpacing(5)
-
-        self.ffmpeg_fontsize_spinbox = QSpinBox()
-        self.ffmpeg_fontsize_spinbox.setMinimum(1)
-        self.ffmpeg_fontsize_spinbox.setMaximum(999)
-        self.ffmpeg_fontsize_spinbox.valueChanged.connect(self._fontsize_changed)
-        self.ffmpeg_fontsize_line_2.addWidget(self.ffmpeg_fontsize_spinbox, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontsize_seconds_label = QLabel()
-        self.ffmpeg_fontsize_seconds_label.setProperty('class', 'units_label')
-        self.ffmpeg_fontsize_line_2.addWidget(self.ffmpeg_fontsize_seconds_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontsize_line.addLayout(self.ffmpeg_fontsize_line_2)
-        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_fontsize_line)
-
-        self.ffmpeg_fontfamily_line = QVBoxLayout()
-        self.ffmpeg_fontfamily_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontfamily_line.setSpacing(2)
-
-        self.ffmpeg_fontfamily_label = QLabel()
-        self.ffmpeg_fontfamily_label.setProperty('class', 'widget_label')
-        self.ffmpeg_fontfamily_line.addWidget(self.ffmpeg_fontfamily_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontfamily_line_2 = QHBoxLayout()
-        self.ffmpeg_fontfamily_line_2.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_fontfamily_line_2.setSpacing(5)
-
-        fonts = QFontDatabase().families()
-        self.ffmpeg_fontfamily_combobox = QComboBox()
-        self.ffmpeg_fontfamily_combobox.addItems(fonts)
-        self.ffmpeg_fontfamily_combobox.activated.connect(self._fontfamily_changed)
-        self.ffmpeg_fontfamily_line_2.addWidget(self.ffmpeg_fontfamily_combobox, 0, Qt.AlignLeft)
-
-        self.ffmpeg_fontfamily_line.addLayout(self.ffmpeg_fontfamily_line_2)
-        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_fontfamily_line)
-
-        self.ffmpeg_color_vbox = QVBoxLayout()
-        self.ffmpeg_color_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_color_vbox.setSpacing(2)
-
-        self.ffmpeg_color_label = QLabel()
-        self.ffmpeg_color_label.setProperty('class', 'widget_label')
-        self.ffmpeg_color_vbox.addWidget(self.ffmpeg_color_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_color_button = QPushButton()
-        self.ffmpeg_color_button.setProperty('class', 'color_pick_button')
-        self.ffmpeg_color_button.setFixedWidth(80)
-        self.ffmpeg_color_button.clicked.connect(self._color_button_clicked)
-        self.ffmpeg_color_vbox.addWidget(self.ffmpeg_color_button, 0, Qt.AlignLeft)
-
-        self.ffmpeg_font_group.layout().addLayout(self.ffmpeg_color_vbox)
-        self.ffmpeg_font_group.layout().addStretch()
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_font_group)
-
-        # Outline ---------------------------------------------------------
-        self.ffmpeg_outline_group = QGroupBox()
-        self.ffmpeg_outline_group.setCheckable(True)
-        self.ffmpeg_outline_group.setLayout(QHBoxLayout())
-        self.ffmpeg_outline_group.toggled.connect(self._outline_group_toggled)
-        self.ffmpeg_outline_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_outline_group.layout().setSpacing(20)
-
-        self.ffmpeg_outline_vbox = QVBoxLayout()
-        self.ffmpeg_outline_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_outline_vbox.setSpacing(2)
-
-        self.ffmpeg_outline_label = QLabel()
-        self.ffmpeg_outline_label.setProperty('class', 'widget_label')
-        self.ffmpeg_outline_vbox.addWidget(self.ffmpeg_outline_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_outline_line = QHBoxLayout()
-        self.ffmpeg_outline_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_outline_line.setSpacing(5)
-
-        self.ffmpeg_outline_value = QSpinBox()
-        self.ffmpeg_outline_value.setMinimum(0)
-        self.ffmpeg_outline_value.setMaximum(99999)
-        self.ffmpeg_outline_value.valueChanged.connect(self._outline_value_changed)
-        self.ffmpeg_outline_line.addWidget(self.ffmpeg_outline_value, 0, Qt.AlignLeft)
-
-        self.ffmpeg_outline_value_pixels_label = QLabel()
-        self.ffmpeg_outline_value_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_outline_line.addWidget(self.ffmpeg_outline_value_pixels_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_outline_vbox.addLayout(self.ffmpeg_outline_line)
-        self.ffmpeg_outline_group.layout().addLayout(self.ffmpeg_outline_vbox)
-        self.ffmpeg_outline_group.layout().addStretch()
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_outline_group)
-
-        # Shadow ----------------------------------------------------------
-        self.ffmpeg_shadow_group = QGroupBox()
-        self.ffmpeg_shadow_group.setCheckable(True)
-        self.ffmpeg_shadow_group.setLayout(QHBoxLayout())
-        self.ffmpeg_shadow_group.toggled.connect(self._shadow_group_toggled)
-        self.ffmpeg_shadow_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_shadow_group.layout().setSpacing(20)
-
-        self.ffmpeg_shadow_vbox = QVBoxLayout()
-        self.ffmpeg_shadow_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_shadow_vbox.setSpacing(2)
-
-        self.ffmpeg_shadow_label = QLabel()
-        self.ffmpeg_shadow_label.setProperty('class', 'widget_label')
-        self.ffmpeg_shadow_vbox.addWidget(self.ffmpeg_shadow_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_shadow_line = QHBoxLayout()
-        self.ffmpeg_shadow_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_shadow_line.setSpacing(5)
-
-        self.ffmpeg_shadow_distance = QSpinBox()
-        self.ffmpeg_shadow_distance.setMinimum(-99999)
-        self.ffmpeg_shadow_distance.setMaximum(99999)
-        self.ffmpeg_shadow_distance.valueChanged.connect(self._shadow_distance_changed)
-        self.ffmpeg_shadow_line.addWidget(self.ffmpeg_shadow_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_shadow_distance_pixels_label = QLabel()
-        self.ffmpeg_shadow_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_shadow_line.addWidget(self.ffmpeg_shadow_distance_pixels_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_shadow_vbox.addLayout(self.ffmpeg_shadow_line)
-        self.ffmpeg_shadow_group.layout().addLayout(self.ffmpeg_shadow_vbox)
-        self.ffmpeg_shadow_group.layout().addStretch()
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_shadow_group)
-
-        # Margins ---------------------------------------------------------
-        self.ffmpeg_margins_group = QGroupBox()
-        self.ffmpeg_margins_group.setLayout(QGridLayout())
-        self.ffmpeg_margins_group.layout().setContentsMargins(10, 10, 10, 10)
-        self.ffmpeg_margins_group.layout().setSpacing(20)
-
-        # Left
-        self.ffmpeg_margins_left_vbox = QVBoxLayout()
-        self.ffmpeg_margins_left_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_left_vbox.setSpacing(2)
-
-        self.ffmpeg_margins_left_label = QLabel()
-        self.ffmpeg_margins_left_label.setProperty('class', 'widget_label')
-        self.ffmpeg_margins_left_vbox.addWidget(self.ffmpeg_margins_left_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_left_line = QHBoxLayout()
-        self.ffmpeg_margins_left_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_left_line.setSpacing(5)
-
-        self.ffmpeg_margins_left_distance = QSpinBox()
-        self.ffmpeg_margins_left_distance.setMinimum(-99999)
-        self.ffmpeg_margins_left_distance.setMaximum(99999)
-        self.ffmpeg_margins_left_distance.valueChanged.connect(self._margins_left_changed)
-        self.ffmpeg_margins_left_line.addWidget(self.ffmpeg_margins_left_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_left_distance_pixels_label = QLabel()
-        self.ffmpeg_margins_left_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_margins_left_line.addWidget(self.ffmpeg_margins_left_distance_pixels_label, 0, Qt.AlignLeft)
-        self.ffmpeg_margins_left_line.addStretch()
-
-        self.ffmpeg_margins_left_vbox.addLayout(self.ffmpeg_margins_left_line)
-        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_left_vbox, 1, 1, 1, 1)
-
-        # Bottom
-        self.ffmpeg_margins_bottom_vbox = QVBoxLayout()
-        self.ffmpeg_margins_bottom_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_bottom_vbox.setSpacing(2)
-
-        self.ffmpeg_margins_bottom_label = QLabel()
-        self.ffmpeg_margins_bottom_label.setProperty('class', 'widget_label')
-        self.ffmpeg_margins_bottom_vbox.addWidget(self.ffmpeg_margins_bottom_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_bottom_line = QHBoxLayout()
-        self.ffmpeg_margins_bottom_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_bottom_line.setSpacing(5)
-
-        self.ffmpeg_margins_bottom_distance = QSpinBox()
-        self.ffmpeg_margins_bottom_distance.setMinimum(-99999)
-        self.ffmpeg_margins_bottom_distance.setMaximum(99999)
-        self.ffmpeg_margins_bottom_distance.valueChanged.connect(self._margins_bottom_changed)
-        self.ffmpeg_margins_bottom_line.addWidget(self.ffmpeg_margins_bottom_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_bottom_distance_pixels_label = QLabel()
-        self.ffmpeg_margins_bottom_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_margins_bottom_line.addWidget(self.ffmpeg_margins_bottom_distance_pixels_label, 0, Qt.AlignLeft)
-        self.ffmpeg_margins_bottom_line.addStretch()
-
-        self.ffmpeg_margins_bottom_vbox.addLayout(self.ffmpeg_margins_bottom_line)
-        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_bottom_vbox, 2, 2, 1, 1)
-
-        # Right
-        self.ffmpeg_margins_right_vbox = QVBoxLayout()
-        self.ffmpeg_margins_right_vbox.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_right_vbox.setSpacing(2)
-
-        self.ffmpeg_margins_right_label = QLabel()
-        self.ffmpeg_margins_right_label.setProperty('class', 'widget_label')
-        self.ffmpeg_margins_right_vbox.addWidget(self.ffmpeg_margins_right_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_right_line = QHBoxLayout()
-        self.ffmpeg_margins_right_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_margins_right_line.setSpacing(5)
-
-        self.ffmpeg_margins_right_distance = QSpinBox()
-        self.ffmpeg_margins_right_distance.setMinimum(-99999)
-        self.ffmpeg_margins_right_distance.setMaximum(99999)
-        self.ffmpeg_margins_right_distance.valueChanged.connect(self._margins_right_changed)
-        self.ffmpeg_margins_right_line.addWidget(self.ffmpeg_margins_right_distance, 0, Qt.AlignLeft)
-
-        self.ffmpeg_margins_right_distance_pixels_label = QLabel()
-        self.ffmpeg_margins_right_distance_pixels_label.setProperty('class', 'units_label')
-        self.ffmpeg_margins_right_line.addWidget(self.ffmpeg_margins_right_distance_pixels_label, 0, Qt.AlignLeft)
-        self.ffmpeg_margins_right_line.addStretch()
-
-        self.ffmpeg_margins_right_vbox.addLayout(self.ffmpeg_margins_right_line)
-        self.ffmpeg_margins_group.layout().addLayout(self.ffmpeg_margins_right_vbox, 1, 3, 1, 1)
-
-        self.ffmpeg_left_panel.layout().addWidget(self.ffmpeg_margins_group)
-
-        # Final command + export button ----------------------------------
-        self.ffmpeg_final_line = QHBoxLayout()
-        self.ffmpeg_final_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_final_line.setSpacing(20)
-
-        self.ffmpeg_command_line = QVBoxLayout()
-        self.ffmpeg_command_line.setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_command_line.setSpacing(5)
-
-        self.ffmpeg_command_label = QLabel()
-        self.ffmpeg_command_label.setProperty('class', 'widget_label')
-        self.ffmpeg_command_line.addWidget(self.ffmpeg_command_label, 0, Qt.AlignLeft)
-
-        self.ffmpeg_command_qlineedit = QLineEdit()
-        self.ffmpeg_command_qlineedit.textEdited.connect(self._command_text_edited)
-        self.ffmpeg_command_line.addWidget(self.ffmpeg_command_qlineedit)
-
-        self.ffmpeg_final_line.addLayout(self.ffmpeg_command_line)
-
-        self.ffmpeg_export_button = QPushButton()
-        self.ffmpeg_export_button.setProperty('class', 'button_dark')
-        self.ffmpeg_export_button.clicked.connect(self._export_button_clicked)
-        self.ffmpeg_export_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-        self.ffmpeg_final_line.addWidget(self.ffmpeg_export_button)
-
-        self.ffmpeg_left_panel.layout().addLayout(self.ffmpeg_final_line)
-        self.ffmpeg_left_panel.layout().addStretch()
-
-        self.ffmpeg_panel.layout().addWidget(self.ffmpeg_left_panel, 1, 1, 1, 2)
-
-        # Preview ---------------------------------------------------------
-        self.ffmpeg_preview_panel = QWidget()
-        self.ffmpeg_preview_panel.setLayout(QVBoxLayout())
-        self.ffmpeg_preview_panel.layout().setContentsMargins(0, 0, 0, 0)
-        self.ffmpeg_preview_panel.layout().setSpacing(20)
-
-        self.ffmpeg_preview_label = QLabel()
-        self.ffmpeg_preview_label.setProperty('class', 'widget_label')
-        self.ffmpeg_preview_panel.layout().addWidget(self.ffmpeg_preview_label, 0)
-
-        self.ffmpeg_preview_image = QLabel()
-        self.ffmpeg_preview_image.setProperty('class', 'widget_label')
-        self.ffmpeg_preview_image.setAlignment(Qt.AlignTop)
-        self.ffmpeg_preview_panel.layout().addWidget(self.ffmpeg_preview_image, 1)
-
-        self.ffmpeg_preview_panel.layout().addStretch()
-
-        self.ffmpeg_panel.layout().addWidget(self.ffmpeg_preview_panel, 1, 3, 1, 1)
-
-        self.video_tabwidget.addTab(self.ffmpeg_panel, 'FFMPEG')
 
         # Closed captions sub-tab ------------------------------------------
         # The captions go inside the file, as a broadcast master carries
@@ -1138,18 +1092,8 @@ class _VideoPanel(QWidget):
         # ancillary data of an MXF (embedded_captions).
         self.captions_panel = QWidget()
         self.captions_panel.setLayout(QVBoxLayout())
-        self.captions_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.captions_panel.layout().setContentsMargins(0, 0, 0, 0)
         self.captions_panel.layout().setSpacing(10)
-        remembered = session.CONFIG.get('export_video') or {}
-
-        self.captions_format_combo = utils.LabeledComboBox()
-        self.captions_format_combo.setLabel(_('export_dialog.format'))
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mov'), 'MOV')
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mxf'), 'MXF')
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_mp4_a53'), 'MP4 A53')
-        self.captions_format_combo.combobox.addItem(_('export_dialog.video_ts_a53'), 'TS A53')
-        self.captions_format_combo.activated.connect(self._refresh_captions)
-        self.captions_panel.layout().addWidget(self.captions_format_combo)
 
         row = QWidget()
         line = QHBoxLayout(row)
@@ -1165,7 +1109,7 @@ class _VideoPanel(QWidget):
             self.captions_channel_combo.combobox.addItem(f'CC{number}', number)
         line.addWidget(self.captions_channel_combo, 1)
         self.captions_codec_combo = utils.LabeledComboBox()
-        self.captions_codec_combo.setLabel(_('export_dialog.video_codec'))
+        self.captions_codec_combo.setLabel(_('export_dialog.codec'))
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_dnxhr'), 'dnxhr')
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_mpeg2'), 'mpeg2')
         self.captions_codec_combo.combobox.addItem(_('export_dialog.video_codec_prores'), 'prores')
@@ -1175,19 +1119,13 @@ class _VideoPanel(QWidget):
         self.captions_teletext = QCheckBox(_('export_dialog.video_captions_teletext'))
         self.captions_panel.layout().addWidget(self.captions_teletext)
 
-        self.captions_note = QLabel()
-        self.captions_note.setWordWrap(True)
-        self.captions_note.setProperty('class', 'widget_label')
-        self.captions_panel.layout().addWidget(self.captions_note)
         self.captions_panel.layout().addStretch()
 
-        _select(self.captions_format_combo, remembered.get('format', 'MOV'))
         _select(self.captions_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.captions_channel_combo, remembered.get('caption_channel', 1))
         _select(self.captions_codec_combo, remembered.get('codec', 'dnxhr'))
         self.captions_teletext.setChecked(bool(remembered.get('teletext')))
-        self._refresh_captions()
-        self.video_tabwidget.addTab(self.captions_panel, _('export_dialog.category_captions'))
+        self.video_pages.addWidget(self.captions_panel)
 
         # Subtitle track sub-tab -------------------------------------------
         # The subtitles as a track of their own, which a player lists and
@@ -1196,28 +1134,22 @@ class _VideoPanel(QWidget):
         # teletext, dvbsub).
         self.tracks_panel = QWidget()
         self.tracks_panel.setLayout(QVBoxLayout())
-        self.tracks_panel.layout().setContentsMargins(10, 10, 10, 10)
+        self.tracks_panel.layout().setContentsMargins(0, 0, 0, 0)
         self.tracks_panel.layout().setSpacing(10)
 
-        row = QWidget()
-        line = QHBoxLayout(row)
-        line.setContentsMargins(0, 0, 0, 0)
-        self.tracks_format_combo = utils.LabeledComboBox()
-        self.tracks_format_combo.setLabel(_('export_dialog.format'))
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mp4_track'), 'MP4')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mov_track'), 'MOV TEXT')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_mkv_track'), 'MKV')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_ts_teletext'), 'TS')
-        self.tracks_format_combo.combobox.addItem(_('export_dialog.video_ts_dvb'), 'TS DVB')
-        self.tracks_format_combo.activated.connect(self._refresh_tracks)
-        line.addWidget(self.tracks_format_combo, 2)
         self.tracks_codec_combo = utils.LabeledComboBox()
         self.tracks_codec_combo.setLabel(_('export_dialog.subtitle_codec'))
         self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_srt'), 'srt')
         self.tracks_codec_combo.combobox.addItem(_('export_dialog.subtitle_codec_ass'), 'ass')
         self.tracks_codec_combo.activated.connect(self._refresh_tracks)
-        line.addWidget(self.tracks_codec_combo, 1)
-        self.tracks_panel.layout().addWidget(row)
+        self.tracks_panel.layout().addWidget(self.tracks_codec_combo)
+        # A transport stream's subtitles: teletext pages, or DVB's pictures.
+        self.tracks_ts_combo = utils.LabeledComboBox()
+        self.tracks_ts_combo.setLabel(_('export_dialog.subtitle_codec'))
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_teletext'), 'TS')
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_dvb'), 'TS DVB')
+        self.tracks_ts_combo.activated.connect(self._refresh_tracks)
+        self.tracks_panel.layout().addWidget(self.tracks_ts_combo)
 
         self.tracks_translations = QCheckBox(_('export_dialog.subtitle_tracks_translations'))
         self._has_translations = bool(export_options.translation_languages(session.SUBTITLE.get('segments')))
@@ -1226,142 +1158,755 @@ class _VideoPanel(QWidget):
         self.tracks_forced = QCheckBox(_('export_dialog.subtitle_track_forced'))
         self.tracks_panel.layout().addWidget(self.tracks_forced)
 
-        self.tracks_note = QLabel()
-        self.tracks_note.setWordWrap(True)
-        self.tracks_note.setProperty('class', 'widget_label')
-        self.tracks_panel.layout().addWidget(self.tracks_note)
         self.tracks_panel.layout().addStretch()
 
-        soft = remembered.get('format') in soft_subtitles.CONTAINERS
-        _select(self.tracks_format_combo, remembered.get('format') if soft else 'MP4')
         _select(self.tracks_codec_combo, remembered.get('subtitle_codec', 'srt'))
         self.tracks_translations.setChecked(bool(remembered.get('translations')))
         self.tracks_forced.setChecked(bool(remembered.get('forced')))
-        self._refresh_tracks()
-        self.video_tabwidget.addTab(self.tracks_panel, _('export_dialog.category_subtitle_track'))
+        self.video_pages.addWidget(self.tracks_panel)
+
+        # Burned in, or alone on a clear video: drawn in a subtitle style, as
+        # the preview draws them (burned_video).
+        self.burn_panel = QWidget()
+        self.burn_panel.setLayout(QVBoxLayout())
+        self.burn_panel.layout().setContentsMargins(0, 0, 0, 0)
+        self.burn_panel.layout().setSpacing(10)
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.codec_combo = utils.LabeledComboBox()
+        self.codec_combo.setLabel(_('export_dialog.codec'))
+        self.codec_combo.activated.connect(self._codec_chosen)
+        line.addWidget(self.codec_combo, 1)
+        self.style_combo = utils.LabeledComboBox()
+        self.style_combo.setLabel(_('export_dialog.subtitle_style'))
+        for style in sorted(subtitle_styles.available().values(), key=lambda style: style.name):
+            self.style_combo.combobox.addItem(style.name, style.id)
+        line.addWidget(self.style_combo, 1)
+        self.burn_panel.layout().addWidget(row)
+        self.quality_row = QWidget()
+        line = QHBoxLayout(self.quality_row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.quality_combo = utils.LabeledComboBox()
+        self.quality_combo.setLabel(_('export_dialog.video_quality'))
+        for quality in burned_video.QUALITIES:
+            self.quality_combo.combobox.addItem(_(f'export_dialog.video_quality_{quality}'), quality)
+        line.addWidget(self.quality_combo, 1)
+        line.addStretch(1)
+        self.burn_panel.layout().addWidget(self.quality_row)
+        # Alone, the picture is the video's, or any other when there is none.
+        self.alpha_options = QWidget()
+        line = QHBoxLayout(self.alpha_options)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.alpha_size_combo = utils.LabeledComboBox()
+        self.alpha_size_combo.setLabel(_('export_dialog.picture_size'))
+        video_size = (int(session.VIDEO.get('width') or 0), int(session.VIDEO.get('height') or 0))
+        if all(video_size):
+            self.alpha_size_combo.combobox.addItem(
+                _('export_dialog.picture_size_video').format(size=f'{video_size[0]}x{video_size[1]}'),
+                f'{video_size[0]}x{video_size[1]}')
+        for size in ('3840x2160', '1920x1080', '1280x720', '1080x1920'):
+            if size != f'{video_size[0]}x{video_size[1]}':
+                self.alpha_size_combo.combobox.addItem(size, size)
+        line.addWidget(self.alpha_size_combo, 1)
+        self.alpha_fps_combo = utils.LabeledComboBox()
+        self.alpha_fps_combo.setLabel(_('export_dialog.frame_rate'))
+        video_fps = float(session.VIDEO.get('framerate') or 0)
+        rates = list(export_options.FRAME_RATES)
+        if video_fps and not any(abs(video_fps - rate) < 0.01 for rate in rates):
+            rates = sorted(rates + [round(video_fps, 3)])
+        for rate in rates:
+            label = f'{rate:g} fps'
+            if video_fps and abs(video_fps - rate) < 0.01:
+                label = _('export_dialog.frame_rate_video').format(fps=label)
+                rate = video_fps
+            self.alpha_fps_combo.combobox.addItem(label, rate)
+        line.addWidget(self.alpha_fps_combo, 1)
+        self.burn_panel.layout().addWidget(self.alpha_options)
+        self.burn_panel.layout().addStretch()
+        _select(self.style_combo, remembered.get('style') or subtitle_styles.get().id)
+        _select(self.quality_combo, remembered.get('quality', burned_video.DEFAULT_QUALITY))
+        if not all(video_size):
+            _select(self.alpha_size_combo, remembered.get('size') or '{}x{}'.format(*burned_video.DEFAULT_SIZE))
+        if not (video_fps and _select(self.alpha_fps_combo, video_fps)):
+            fps = remembered.get('fps') or burned_video.DEFAULT_FPS
+            if not _select(self.alpha_fps_combo, fps):
+                _select(self.alpha_fps_combo, burned_video.DEFAULT_FPS)
+        self.video_pages.addWidget(self.burn_panel)
+
+        self.choose(remembered.get('format') if _video_file_of(remembered.get('format')) else 'MOV')
+        for combo in (self.format_combo, self.way_combo, self.captions_mode_combo, self.captions_channel_combo,
+                      self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo, self.codec_combo,
+                      self.style_combo, self.quality_combo, self.alpha_size_combo, self.alpha_fps_combo):
+            combo.combobox.currentIndexChanged.connect(self.changed)
+        for check in (self.captions_teletext, self.tracks_translations, self.tracks_forced):
+            check.toggled.connect(self.changed)
+        self.layout().addWidget(self.video_pages, 0)
+
+
+    def choose(self, export):
+        """Show the choices that make `export` (a key of
+        session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS): its format, its
+        way, and a transport stream's kind of track."""
+        found = _video_file_of(export)
+        if found is None:
+            return False
+        video_file, way = found
+        if export in ('TS', 'TS DVB'):
+            _select(self.tracks_ts_combo, export)
+        _select(self.format_combo, video_file)
+        self._ways[video_file] = way
+        self._refresh_format()
+        return True
+
+    def _video_file(self):
+        return self.format_combo.combobox.currentData() or 'MOV'
+
+    def _container(self):
+        """The export the choices make."""
+        ways = VIDEO_FILES[self._video_file()]['ways']
+        export = ways.get(self.way_combo.combobox.currentData()) or next(iter(ways.values()))
+        if export == 'TS':
+            return self.tracks_ts_combo.combobox.currentData() or 'TS'
+        return export
+
+    def _refresh_format(self, *_args):
+        """The ways the chosen format has, the one last chosen with it
+        first; a choice of one is not asked."""
+        video_file = self._video_file()
+        ways = VIDEO_FILES[video_file]['ways']
+        combobox = self.way_combo.combobox
+        combobox.blockSignals(True)
+        combobox.clear()
+        for way in ways:
+            combobox.addItem(_(f'export_dialog.video_subtitles_{way}'), way)
+        _select(self.way_combo, self._ways.get(video_file))
+        combobox.blockSignals(False)
+        self.way_combo.setVisible(len(ways) > 1)
+        self._refresh_way()
+
+    def _refresh_way(self, *_args):
+        """The options of the way chosen: the captions', a subtitle track's,
+        or those of the subtitles drawn in the picture."""
+        self._ways[self._video_file()] = self.way_combo.combobox.currentData()
+        container = self._container()
+        if burned_video.is_burned(container):
+            self.video_pages.setCurrentWidget(self.burn_panel)
+            combobox = self.codec_combo.combobox
+            combobox.blockSignals(True)
+            combobox.clear()
+            for codec in burned_video.CONTAINERS[container]['codecs']:
+                combobox.addItem(_codec_label(codec), codec)
+            _select(self.codec_combo, self._codecs.get(container))
+            combobox.blockSignals(False)
+            self.codec_combo.setVisible(combobox.count() > 1)
+            self.alpha_options.setVisible(burned_video.is_alpha(container))
+            self._codec_chosen()
+            return
+        soft = container in soft_subtitles.CONTAINERS
+        self.video_pages.setCurrentWidget(self.tracks_panel if soft else self.captions_panel)
         if soft:
-            self.video_tabwidget.setCurrentWidget(self.tracks_panel)
+            self._refresh_tracks()
+        else:
+            self._refresh_captions()
 
-        self.layout().addWidget(self.video_tabwidget, 0)
+    def _codec_chosen(self, *_args):
+        """A quality for the codecs that take one; lossless and fixed-rate
+        ones do not."""
+        codec = self.codec_combo.combobox.currentData()
+        self._codecs[self._container()] = codec
+        self.quality_row.setVisible(burned_video.has_quality(codec))
 
-        # Standalone "generate transparent video" button -----------------
-        self.generate_transparent_video_button = QPushButton()
-        self.generate_transparent_video_button.setProperty('class', 'button_dark')
-        self.generate_transparent_video_button.clicked.connect(self._generate_transparent_video_clicked)
-        self.generate_transparent_video_button.setVisible(False)
-        self.layout().addWidget(self.generate_transparent_video_button)
-
-    # ------------------------------------------------------------------
-    # Placeholder slots — user will rewire actual behaviour later.
-    # ------------------------------------------------------------------
-    def _fontsize_changed(self):
-        pass
-
-    def _fontfamily_changed(self):
-        pass
-
-    def _color_button_clicked(self):
-        pass
-
-    def _outline_group_toggled(self):
-        pass
-
-    def _outline_value_changed(self):
-        pass
-
-    def _shadow_group_toggled(self):
-        pass
-
-    def _shadow_distance_changed(self):
-        pass
-
-    def _margins_left_changed(self):
-        pass
-
-    def _margins_bottom_changed(self):
-        pass
-
-    def _margins_right_changed(self):
-        pass
-
-    def _command_text_edited(self):
-        pass
-
-    def _export_button_clicked(self):
-        pass
-
-    def _generate_transparent_video_clicked(self):
-        pass
-
-    def _update_preview(self):
-        # Placeholder; user will reconnect to a worker thread later.
-        pass
-
-    def showEvent(self, event):
-        self._update_preview()
-        return super().showEvent(event)
-
-    def _refresh_captions(self):
+    def _refresh_captions(self, *_args):
         """What the chosen container can hold: a QuickTime caption track
         carries CEA-608 and keeps the picture as it is; an MXF's ancillary
         data carries CEA-708 beside it, but takes a picture of its own; the
         video's own frames carry both, the picture copied."""
-        container = self.captions_format_combo.combobox.currentData() or 'MOV'
+        container = self._container()
         self.captions_codec_combo.setVisible(container == 'MXF')
         self.captions_teletext.setVisible(container == 'MXF')
-        note = 'mxf' if container == 'MXF' else 'a53' if container.endswith('A53') else 'mov'
-        self.captions_note.setText(_(f'export_dialog.video_captions_note_{note}'))
 
-    def _refresh_tracks(self):
+    def _refresh_tracks(self, *_args):
         """What the chosen kind of file does with the subtitles: an MP4's
         timed text keeps a run's formatting alone; Matroska takes SRT,
         which every player reads, or ASS, which keeps the look; a transport
         stream, teletext pages or DVB subtitles, pictures."""
-        container = self.tracks_format_combo.combobox.currentData() or 'MP4'
+        container = self._container()
         self.tracks_codec_combo.setVisible(container == 'MKV')
+        self.tracks_ts_combo.setVisible(container in ('TS', 'TS DVB'))
         # Teletext and DVB subtitles have no forced pages: a viewer chooses
         # one or none.
         self.tracks_forced.setVisible(container not in soft_subtitles.UNFORCED)
-        if container == 'MKV':
-            key = 'export_dialog.subtitle_track_note_' + (self.tracks_codec_combo.combobox.currentData() or 'srt')
-        elif container == 'TS':
-            key = 'export_dialog.subtitle_track_note_teletext'
-        elif container == 'TS DVB':
-            key = 'export_dialog.subtitle_track_note_dvb'
-        else:
-            key = 'export_dialog.subtitle_track_note_mov_text'
-        self.tracks_note.setText(_(key))
 
     def get_config(self):
-        if self.video_tabwidget.currentWidget() is self.tracks_panel:
-            container = self.tracks_format_combo.combobox.currentData() or 'MP4'
-            tracks = {
+        container, captions = self.export_choices()
+        remembered = dict(captions)
+        if 'width' in remembered:
+            remembered['size'] = f"{remembered.pop('width')}x{remembered.pop('height')}"
+        remembered.pop('video_codec', None)
+        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **remembered, format=container,
+                                              ways=dict(self._ways), codecs=dict(self._codecs))
+        return {'category': 'video', 'format': container, 'captions': captions}
+
+    def export_choices(self):
+        """(format, the options it is written with), as chosen: nothing
+        remembered."""
+        container = self._container()
+        if burned_video.is_burned(container):
+            choices = {'video_codec': burned_video.codec_of(container, self.codec_combo.combobox.currentData()),
+                       'style': self.style_combo.combobox.currentData() or subtitle_styles.DEFAULT_STYLE,
+                       'quality': self.quality_combo.combobox.currentData() or burned_video.DEFAULT_QUALITY}
+            if burned_video.is_alpha(container):
+                size = str(self.alpha_size_combo.combobox.currentData() or '{}x{}'.format(*burned_video.DEFAULT_SIZE))
+                width, height = (int(value) for value in size.split('x'))
+                choices.update(width=width, height=height,
+                               fps=float(self.alpha_fps_combo.combobox.currentData() or burned_video.DEFAULT_FPS))
+            return container, choices
+        if container in soft_subtitles.CONTAINERS:
+            return container, {
                 'subtitle_codec': self.tracks_codec_combo.combobox.currentData() or 'srt',
                 'translations': self._has_translations and self.tracks_translations.isChecked(),
                 'forced': self.tracks_forced.isChecked(),
             }
-            session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **tracks, format=container)
-            return {'category': 'video', 'format': container, 'captions': tracks}
-        container = self.captions_format_combo.combobox.currentData() or 'MOV'
-        captions = {
+        return container, {
             'caption_mode': self.captions_mode_combo.combobox.currentData() or 'pop',
             'caption_channel': self.captions_channel_combo.combobox.currentData() or 1,
             'codec': self.captions_codec_combo.combobox.currentData() or 'dnxhr',
             'teletext': container == 'MXF' and self.captions_teletext.isChecked(),
         }
-        session.CONFIG['export_video'] = dict(session.CONFIG.get('export_video') or {}, **captions, format=container)
-        return {'category': 'video', 'format': container, 'captions': captions}
+
+
+def _duration_text(seconds):
+    """`seconds` as "M:SS", or "H:MM:SS" from an hour on."""
+    total = int(round(max(0.0, float(seconds))))
+    hours, rest = divmod(total, 3600)
+    return f'{hours}:{rest // 60:02d}:{rest % 60:02d}' if hours else f'{rest // 60}:{rest % 60:02d}'
+
+
+def _size_text(size):
+    """`size` bytes as "≈ 54 MB", in the unit that reads best."""
+    for unit, scale in (('GB', 1e9), ('MB', 1e6), ('kB', 1e3)):
+        if size >= scale:
+            value = size / scale
+            return f'≈ {value:.1f} {unit}' if value < 10 else f'≈ {value:.0f} {unit}'
+    return f'{int(size)} B'
+
+
+class _LoudnessScale(QWidget):
+    """The loudness programs aim at, marked on a short scale, and where the
+    export's falls among them."""
+
+    LOW, HIGH = -36.0, -6.0                                    # the scale's ends, in LUFS
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.value = None
+        self.setFixedHeight(34)
+
+    def set_value(self, value):
+        self.value = value
+        self.update()
+
+    def _x(self, lufs):
+        span = self.width() - 12
+        return 6 + span * (min(self.HIGH, max(self.LOW, lufs)) - self.LOW) / (self.HIGH - self.LOW)
+
+    def paintEvent(self, _event):
+        from subtitld.modules import audio_report
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        line = QColor(184, 206, 224, 70)
+        painter.fillRect(QRectF(6, 15, self.width() - 12, 2), line)
+        font = painter.font()
+        font.setPixelSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        for number, (key, lufs) in enumerate(audio_report.TARGETS):
+            x = self._x(lufs)
+            painter.fillRect(QRectF(x - 0.5, 11, 1, 10), QColor(184, 206, 224, 140))
+            painter.setPen(QColor(184, 206, 224, 120))
+            # the labels alternate above and under the line, as ATSC and EBU sit 1 LU apart
+            top = 0 if number % 2 == 0 else 23
+            text = _(f'export_dialog.audio_target_{key}')
+            width = painter.fontMetrics().horizontalAdvance(text)
+            left = min(max(0, x - width / 2), self.width() - width)
+            painter.drawText(QRectF(left, top, width, 10), Qt.AlignCenter, text)
+        if self.value is not None:
+            x = self._x(self.value)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor('#e9eef2'))
+            painter.drawEllipse(QRectF(x - 4, 12, 8, 8))
+        painter.end()
+
+
+class _AudioDashboard(QWidget):
+    """An audio export's facts, its loudness and its problems, in cards."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(6)
+
+        row = QWidget()
+        row.setLayout(QHBoxLayout())
+        row.layout().setContentsMargins(0, 0, 0, 0)
+        row.layout().setSpacing(6)
+        self.length = self._card('audio_length', row.layout())
+        self.size = self._card('audio_size', row.layout())
+        self.layout().addWidget(row)
+        self.format = self._card('audio_format', self.layout())
+
+        loudness = self._frame(self.layout())
+        loudness.layout().addWidget(self._label('audio_loudness'))
+        self.loudness = QLabel()
+        self.loudness.setObjectName('export_dialog_card_big')
+        loudness.layout().addWidget(self.loudness)
+        self.scale = _LoudnessScale()
+        loudness.layout().addWidget(self.scale)
+        under = QWidget()
+        under.setLayout(QHBoxLayout())
+        under.layout().setContentsMargins(0, 0, 0, 0)
+        self.peak = QLabel()
+        self.peak.setObjectName('export_dialog_card_value')
+        self.range = QLabel()
+        self.range.setObjectName('export_dialog_card_value')
+        under.layout().addWidget(self.peak)
+        under.layout().addStretch()
+        under.layout().addWidget(self.range)
+        loudness.layout().addWidget(under)
+
+        self.files_card = self._frame(self.layout())
+        self.files_title = self._label('audio_files')
+        self.files_card.layout().addWidget(self.files_title)
+        self.files = QLabel()
+        self.files.setObjectName('export_dialog_card_list')
+        self.files.setWordWrap(True)
+        self.files_card.layout().addWidget(self.files)
+
+        self.problems = QLabel()
+        self.problems.setObjectName('export_dialog_problems')
+        self.problems.setWordWrap(True)
+        self.layout().addWidget(self.problems)
+        self.layout().addStretch()
+
+    @staticmethod
+    def _frame(layout):
+        frame = QWidget()
+        frame.setObjectName('export_dialog_card')
+        frame.setAttribute(Qt.WA_StyledBackground)
+        frame.setLayout(QVBoxLayout())
+        frame.layout().setContentsMargins(8, 6, 8, 7)
+        frame.layout().setSpacing(2)
+        layout.addWidget(frame)
+        return frame
+
+    @staticmethod
+    def _label(key):
+        label = QLabel(_(f'export_dialog.{key}'))
+        label.setObjectName('export_dialog_card_label')
+        return label
+
+    def _card(self, key, layout):
+        frame = self._frame(layout)
+        frame.layout().addWidget(self._label(key))
+        value = QLabel()
+        value.setObjectName('export_dialog_card_value')
+        frame.layout().addWidget(value)
+        return value
+
+    # The most file names listed; the rest counted.
+    LISTED = 6
+
+    def show_report(self, facts, problems, loudness):
+        """Fill the cards: `facts` and `problems` (audio_report's), and
+        `loudness`, its measure, or 'measuring', or None when there is none."""
+        from subtitld.modules import audio_report
+        self.length.setText(_duration_text(facts['length']))
+        self.size.setText(_size_text(facts['size']))
+        channels = _('export_dialog.audio_stereo') if facts['channels'] == 2 else str(facts['channels'])
+        self.format.setText(f"{facts['format']} · {facts['rate'] / 1000:g} kHz · {channels}")
+        files = facts['files']
+        self.files_card.setVisible(len(files) > 1)
+        self.files_title.setText(f"{_('export_dialog.audio_files')} · {len(files)}")
+        shown = files[:self.LISTED]
+        more = len(files) - len(shown)
+        self.files.setText('\n'.join(shown) + ('\n' + _('export_dialog.audio_more').format(count=more)
+                                               if more else ''))
+        lines = []
+        if loudness == 'measuring':
+            self.loudness.setText(_('export_dialog.audio_measuring'))
+            self.scale.set_value(None)
+            self.peak.setText('')
+            self.range.setText('')
+        elif loudness and loudness.get('integrated') is not None:
+            self.loudness.setText(f"{loudness['integrated']:.1f} LUFS")
+            self.scale.set_value(loudness['integrated'])
+            peak = loudness.get('peak')
+            self.peak.setText(f"{_('export_dialog.audio_true_peak')} {peak:.1f} dBTP".replace('-0.0', '0.0')
+                              if peak is not None else '')
+            spread = loudness.get('range')
+            self.range.setText(f"{_('export_dialog.audio_range')} {spread:.1f} LU" if spread is not None else '')
+            if peak is not None and peak > audio_report.PEAK_LIMIT:
+                lines.append(_('export_dialog.audio_problem_clipping').format(limit=f'{audio_report.PEAK_LIMIT:g}'))
+        else:
+            self.loudness.setText('—')
+            self.scale.set_value(None)
+            self.peak.setText('')
+            self.range.setText('')
+        if problems.get('no_speech'):
+            lines.append(_('export_dialog.audio_problem_no_speech').format(count=problems['no_speech'],
+                                                                           total=problems['subtitles']))
+        if problems.get('files_gone'):
+            lines.append(_('export_dialog.audio_problem_files_gone').format(count=problems['files_gone']))
+        self.problems.setText('\n'.join(f'⚠ {line}' for line in lines))
+        self.problems.setVisible(bool(lines))
+
+
+def project_logo(fmt):
+    """The program's logo, one colour, for the Project tab: a QIcon."""
+    from PySide6.QtGui import QIcon
+    logo = project_export.FORMATS.get(fmt, {}).get('logo')
+    return QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, f'project_logo_{logo}')) if logo else QIcon()
+
+
+class _TimelineMiniature(QWidget):
+    """A project's timeline, small: a row a track, numbered as the editors
+    number them (V1, A1..., S1... for subtitles), its clips as blocks at
+    their times, in the speaker's colour on a speaker's track."""
+
+    ROW, GAP, LABEL = 8, 3, 74                                 # a row's height, between rows, the names' column
+    MOST = 14                                                  # rows drawn; the rest counted
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.rows = []                                         # (number, kind, [(start, end)], colour)
+        self.duration = 1.0
+        self.more = 0
+
+    def set_timeline(self, timeline):
+        rows, counts = [], {}
+        for track in timeline.tracks:
+            letter = 'V' if track.kind == 'video' else 'A'
+            counts[letter] = counts.get(letter, 0) + 1
+            colour = None
+            if track.speaker:
+                colour = (session.SPEAKERS.get(track.speaker) or {}).get('color')
+            rows.append((f'{letter}{counts[letter]}  {track.name}', track.kind, [(c.at, c.end) for c in track.clips],
+                         colour))
+        for number, (name, _language, cues) in enumerate(timeline.subtitles, start=1):
+            rows.append((f'S{number}  {name}', 'subtitles', [(float(c['start']), float(c['end'])) for c in cues],
+                         None))
+        self.duration = max(1.0, timeline.duration)
+        self.more = max(0, len(rows) - self.MOST)
+        self.rows = rows[:self.MOST]
+        self.setFixedHeight(len(self.rows) * (self.ROW + self.GAP) + (12 if self.more else 0) + 2)
+        self.update()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        font = painter.font()
+        font.setPixelSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        width = self.width() - self.LABEL - 2
+        colours = {'video': QColor('#7f9bb0'), 'audio': QColor('#5f7b90'), 'subtitles': QColor('#b8cee0')}
+        for index, (number, kind, spans, colour) in enumerate(self.rows):
+            y = index * (self.ROW + self.GAP)
+            painter.setPen(QColor(184, 206, 224, 120))
+            label = painter.fontMetrics().elidedText(number, Qt.ElideRight, self.LABEL - 6)
+            painter.drawText(QRectF(0, y - 2, self.LABEL, self.ROW + 4), Qt.AlignLeft | Qt.AlignVCenter, label)
+            painter.fillRect(QRectF(self.LABEL, y, width, self.ROW), QColor(0, 0, 0, 40))
+            fill = QColor(colour) if colour and QColor(colour).isValid() else colours[kind]
+            for start, end in spans:
+                left = self.LABEL + width * start / self.duration
+                size = max(1.0, width * (end - start) / self.duration)
+                if kind == 'subtitles':
+                    painter.fillRect(QRectF(left, y + 1, size, self.ROW - 2), fill)
+                else:
+                    painter.fillRect(QRectF(left, y, size, self.ROW), fill)
+        if self.more:
+            painter.setPen(QColor(184, 206, 224, 120))
+            y = len(self.rows) * (self.ROW + self.GAP)
+            painter.drawText(QRectF(self.LABEL, y, width, 10), Qt.AlignLeft | Qt.AlignVCenter,
+                             _('export_dialog.audio_more').format(count=self.more))
+        painter.end()
+
+
+class _ProjectDashboard(QWidget):
+    """A project export's timeline, small, the program it opens in, the
+    files it writes, and what will not carry over."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(6)
+        card = _AudioDashboard._frame(self.layout())
+        top = QWidget()
+        top.setLayout(QHBoxLayout())
+        top.layout().setContentsMargins(0, 0, 0, 0)
+        top.layout().setSpacing(8)
+        self.logo = QLabel()
+        self.logo.setFixedSize(28, 28)
+        top.layout().addWidget(self.logo)
+        names = QWidget()
+        names.setLayout(QVBoxLayout())
+        names.layout().setContentsMargins(0, 0, 0, 0)
+        names.layout().setSpacing(0)
+        names.layout().addWidget(_AudioDashboard._label('project_opens_in'))
+        self.opens = QLabel()
+        self.opens.setObjectName('export_dialog_card_value')
+        names.layout().addWidget(self.opens)
+        top.layout().addWidget(names, 1)
+        card.layout().addWidget(top)
+
+        timeline = _AudioDashboard._frame(self.layout())
+        timeline.layout().addWidget(_AudioDashboard._label('project_timeline'))
+        self.miniature = _TimelineMiniature()
+        timeline.layout().addWidget(self.miniature)
+        self.picture = QLabel()
+        self.picture.setObjectName('export_dialog_card_value')
+        timeline.layout().addWidget(self.picture)
+
+        files = _AudioDashboard._frame(self.layout())
+        files.layout().addWidget(_AudioDashboard._label('project_files'))
+        self.files = QLabel()
+        self.files.setObjectName('export_dialog_card_list')
+        self.files.setWordWrap(True)
+        files.layout().addWidget(self.files)
+
+        self.problems = QLabel()
+        self.problems.setObjectName('export_dialog_problems')
+        self.problems.setWordWrap(True)
+        self.layout().addWidget(self.problems)
+        self.losses = QLabel()
+        self.losses.setObjectName('export_dialog_losses')
+        self.losses.setWordWrap(True)
+        self.layout().addWidget(self.losses)
+        self.layout().addStretch()
+
+    def show_project(self, fmt, timeline, files, problems, losses):
+        """Fill the cards for the `fmt` export of `timeline`: `files`, the
+        lines of what it writes; `problems` and `losses`, lines of each."""
+        spec = project_export.FORMATS[fmt]
+        self.logo.setPixmap(project_logo(fmt).pixmap(28, 28))
+        program, since = spec['opens']
+        self.opens.setText(_('export_dialog.project_or_later').format(program=program, version=since))
+        self.miniature.set_timeline(timeline)
+        if spec.get('audio_only'):
+            self.picture.setText(f'{_duration_text(timeline.duration)} · 48 kHz')
+        else:
+            self.picture.setText(f'{_duration_text(timeline.duration)} · {timeline.width}×{timeline.height} · '
+                                 f'{timeline.fps:.3g} fps')
+        self.files.setText('\n'.join(files))
+        self.problems.setText('\n'.join(f'⚠ {line}' for line in problems))
+        self.problems.setVisible(bool(problems))
+        self.losses.setText('\n'.join(f'· {line}' for line in losses))
+        self.losses.setVisible(bool(losses))
+
+
+class _PreviewPanel(QWidget):
+    """The export's preview, beside every page: the start of the file as it
+    will be written, or a faded note where there is no text to show. For
+    an export of pictures, one of them on its frame, and as itself."""
+
+    WIDTH = 300
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('export_dialog_preview')
+        self.setAttribute(Qt.WA_StyledBackground)
+        self.setFixedWidth(self.WIDTH)
+        self.setLayout(QGridLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+
+        file_page = QWidget()
+        file_page.setLayout(QVBoxLayout())
+        file_page.layout().setContentsMargins(12, 8, 12, 12)
+        file_page.layout().setSpacing(4)
+        label = QLabel(_('export_dialog.preview'))
+        label.setObjectName('export_dialog_preview_label')
+        file_page.layout().addWidget(label)
+        self.picture = QLabel()
+        self.picture.setVisible(False)
+        file_page.layout().addWidget(self.picture)
+        # and the picture itself, as large as it is or as the panel allows, its clear parts checkered
+        self.crop = QLabel()
+        self.crop.setVisible(False)
+        file_page.layout().addWidget(self.crop)
+        self.file = QPlainTextEdit()
+        self.file.setObjectName('export_dialog_preview_file')
+        self.file.setReadOnly(True)
+        file_page.layout().addWidget(self.file, 1)
+        # an audio export's facts, loudness and problems, in cards
+        self.dashboard = _AudioDashboard()
+        self.dashboard.setVisible(False)
+        file_page.layout().addWidget(self.dashboard, 1)
+        # a project export's timeline, small, and its facts
+        self.project = _ProjectDashboard()
+        self.project.setVisible(False)
+        file_page.layout().addWidget(self.project, 1)
+        file_page.layout().addStretch()                        # where the well was, under a picture
+        self.layout().addWidget(file_page, 0, 0)
+
+        # over it, the sidebar's shadow mirrored: falling into the panel from its left edge
+        shadow = QWidget()
+        shadow.setObjectName('export_dialog_preview_shadow')
+        shadow.setAttribute(Qt.WA_StyledBackground)
+        shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.layout().addWidget(shadow, 0, 0)
+
+    def show_text(self, text):
+        self.dashboard.setVisible(False)
+        self.project.setVisible(False)
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(True)
+        self._plain(text)
+
+    def show_note(self, note):
+        """`note` in the well, faded: no file to show."""
+        self.dashboard.setVisible(False)
+        self.project.setVisible(False)
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(True)
+        self.file.clear()
+        self._faded(note)
+
+    def _faded(self, note):
+        faded = QTextCharFormat()
+        color = self.file.palette().text().color()
+        color.setAlpha(110)
+        faded.setForeground(color)
+        faded.setFontItalic(True)
+        self.file.textCursor().insertText(note, faded)
+
+    def show_nothing(self):
+        self.dashboard.setVisible(False)
+        self.project.setVisible(False)
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(True)
+        self.file.clear()
+
+    def show_project(self, *report):
+        """A project export's dashboard in place of the well (see
+        _ProjectDashboard.show_project)."""
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(False)
+        self.dashboard.setVisible(False)
+        self.project.setVisible(True)
+        self.project.show_project(*report)
+
+    def show_audio(self, facts, problems, loudness):
+        """An audio export's dashboard in place of the well."""
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(False)
+        self.project.setVisible(False)
+        self.dashboard.setVisible(True)
+        self.dashboard.show_report(facts, problems, loudness)
+
+    RADIUS = 3                                                 # the well's corners
+
+    def show_picture(self, rect, image, frame, text=None):
+        """`image`, drawn at `rect` (of the frame, 0..1) on a frame `frame`
+        (width, height) pixels, scaled to the panel's width; under it, the
+        picture itself; and under that, in the well, `text`: the file the
+        pictures go with, when there is one."""
+        self.dashboard.setVisible(False)
+        self.project.setVisible(False)
+        margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
+        width = self.WIDTH - margins.left() - margins.right()
+        height = max(1, round(width * frame[1] / frame[0]))
+        painter, pixmap = self._rounded(width, height)
+        painter.fillRect(QRectF(0, 0, width, height), QColor(0, 0, 0, 110))
+        if rect is not None and image is not None:
+            painter.drawImage(QRectF(rect.x() * width, rect.y() * height, rect.width() * width, rect.height() * height), image)
+        painter.end()
+        self.picture.setPixmap(pixmap)
+        self.picture.setFixedSize(width, height)
+        self.picture.setVisible(True)
+        self.crop.setVisible(image is not None)
+        if image is not None:
+            scale = min(1.0, width / image.width())
+            size = (max(1, round(image.width() * scale)), max(1, round(image.height() * scale)))
+            painter, pixmap = self._rounded(*size)
+            self._checkers(painter, *size)
+            painter.drawImage(QRectF(0, 0, *size), image)
+            painter.end()
+            self.crop.setPixmap(pixmap)
+            self.crop.setFixedSize(*size)
+        self._plain(text or '')
+        self.file.setVisible(text is not None)
+
+    def show_still(self, image):
+        """`image`, a frame of the video as the export writes it, scaled to
+        the panel's width; its clear parts, if it has them, checkered."""
+        self.dashboard.setVisible(False)
+        self.project.setVisible(False)
+        margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
+        width = self.WIDTH - margins.left() - margins.right()
+        height = max(1, round(width * image.height() / max(1, image.width())))
+        painter, pixmap = self._rounded(width, height)
+        if image.hasAlphaChannel():
+            self._checkers(painter, width, height)
+        painter.drawImage(QRectF(0, 0, width, height), image)
+        painter.end()
+        self.picture.setPixmap(pixmap)
+        self.picture.setFixedSize(width, height)
+        self.picture.setVisible(True)
+        self.crop.setVisible(False)
+        self.file.setVisible(False)
+
+    @staticmethod
+    def _checkers(painter, width, height, square=6):
+        """A checkerboard under a picture's clear parts."""
+        for row in range(0, height, square):
+            for column in range(0, width, square):
+                light = (row // square + column // square) % 2
+                painter.fillRect(column, row, square, square, QColor(90, 90, 90) if light else QColor(60, 60, 60))
+
+    def _plain(self, text):
+        """`text` in the well as it is: not in the faded look a note left."""
+        self.file.clear()
+        self.file.setCurrentCharFormat(QTextCharFormat())
+        self.file.setPlainText(text)
+
+    def _rounded(self, width, height):
+        """A clear pixmap `width` x `height` at the screen's density, and a
+        painter on it that paints only inside its rounded corners."""
+        ratio = self.devicePixelRatioF()
+        pixmap = QPixmap(round(width * ratio), round(height * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, width, height), self.RADIUS, self.RADIUS)
+        painter.setClipPath(path)
+        return painter, pixmap
 
 
 class ExportDialog(utils.SimpleDialog):
     """Universal export dialog. Returns a config dict via
     `exec_and_get_values()` or None when cancelled."""
 
-    CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents']
+    CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents', 'project']
 
-    def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None):
+    def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None,
+                 audio_engine=None):
         super().__init__(parent, _('export_dialog.title'))
-        self.setMinimumSize(640, 380)
+        # The player's audio engine, which renders the mix an audio export
+        # writes: its loudness is measured from it.
+        self._audio_engine = audio_engine
+        self._loudness = {}                                    # measured, by the choices it was measured for
+        self._measuring = None
+        self.setMinimumSize(900, 420)
+        self.make_resizable()
 
         self.content.layout().setContentsMargins(0, 0, 0, 0)
 
@@ -1371,17 +1916,24 @@ class ExportDialog(utils.SimpleDialog):
         body.layout().setSpacing(0)
         self.content.layout().addWidget(body)
 
+        # the categories, and over them the sidebar's shadow (the chosen one lies beneath it)
+        side = QWidget()
+        side.setLayout(QGridLayout())
+        side.layout().setContentsMargins(0, 0, 0, 0)
+        side.setFixedWidth(140)
+        body.layout().addWidget(side)
+
         sidebar = QWidget()
         sidebar.setObjectName('export_dialog_sidebar')
         sidebar.setLayout(QVBoxLayout())
-        sidebar.layout().setContentsMargins(0, 10, 0, 10)
+        sidebar.layout().setContentsMargins(0, 10, 1, 10)      # the chosen category stops short of the shadow's light line
         sidebar.layout().setSpacing(0)
-        sidebar.setFixedWidth(140)
-        body.layout().addWidget(sidebar)
+        side.layout().addWidget(sidebar, 0, 0)
 
         self._category_buttons = {}
         self._category_group = QButtonGroup(self)
         self._category_group.setExclusive(True)
+        sidebar.layout().addStretch()                          # the categories sit at the sidebar's middle
         for key in self.CATEGORY_KEYS:
             btn = QPushButton(_(f'export_dialog.category_{key}'))
             btn.setObjectName('export_dialog_category_button')
@@ -1391,30 +1943,62 @@ class ExportDialog(utils.SimpleDialog):
             self._category_group.addButton(btn)
             self._category_buttons[key] = btn
         sidebar.layout().addStretch()
+        shadow = QWidget()
+        shadow.setObjectName('export_dialog_sidebar_shadow')
+        shadow.setAttribute(Qt.WA_StyledBackground)
+        shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
+        side.layout().addWidget(shadow, 0, 0)
 
         right = QWidget()
         right.setObjectName('export_dialog_pages')
         right.setLayout(QVBoxLayout())
-        right.layout().setContentsMargins(20, 16, 20, 16)
+        right.layout().setContentsMargins(0, 0, 0, 0)          # each page's header runs edge to edge
         body.layout().addWidget(right, 1)
 
         self._pages = QStackedWidget()
         right.layout().addWidget(self._pages)
 
+        # the preview, one for every page
+        self.preview_panel = _PreviewPanel()
+        body.layout().addWidget(self.preview_panel)
+
         self.subtitles_panel = _SubtitlesPanel()
-        self._pages.addWidget(self.subtitles_panel)
-
         self.audio_panel = _AudioPanel(has_background=has_background, has_vocals=has_vocals)
-        self._pages.addWidget(self.audio_panel)
-
         self.video_panel = _VideoPanel()
-        self._pages.addWidget(self.video_panel)
-
         self.documents_panel = _DocumentsPanel()
-        self._pages.addWidget(self.documents_panel)
+        self.project_panel = _ProjectPanel()
+        for panel in (self.subtitles_panel, self.audio_panel, self.video_panel, self.documents_panel,
+                      self.project_panel):
+            self._pages.addWidget(self._page(panel))
 
         for index, key in enumerate(self.CATEGORY_KEYS):
             self._category_buttons[key].clicked.connect(lambda _checked=False, i=index, k=key: self._select_category(i, k))
+
+        # The preview follows the subtitles' choices a moment after the last.
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(200)
+        self._preview_timer.timeout.connect(self.refresh_preview)
+        self.subtitles_panel.changed.connect(self._preview_timer.start)
+        self.video_panel.changed.connect(self._preview_timer.start)
+        self.documents_panel.changed.connect(self._preview_timer.start)
+        self.project_panel.changed.connect(self._preview_timer.start)
+        self.audio_panel.changed.connect(self._preview_timer.start)
+        # A video export's still: a few seconds written in the background, one at a time.
+        self._still = None                                     # the request being drawn: (number, path)
+        self._still_count = 0
+        self._still_again = False                              # asked for while one was being drawn
+        self._still_folder = None
+        # An export of pictures shows one, drawn by a renderer of the dialog's
+        # own, started the first time one is asked for.
+        self._renderer = None
+        self._picture = None                                   # (key, frame) of the picture awaited
+        self._picture_timeout = QTimer(self)
+        self._picture_timeout.setSingleShot(True)
+        self._picture_timeout.setInterval(30_000)
+        self._picture_timeout.timeout.connect(self._picture_late)
+        self.finished.connect(self._close_renderer)
+        self.finished.connect(self._drop_stills)
 
         start = initial_category if initial_category in self.CATEGORY_KEYS else 'subtitles'
         self._select_category(self.CATEGORY_KEYS.index(start), start)
@@ -1431,6 +2015,24 @@ class ExportDialog(utils.SimpleDialog):
         self._form_buttons_parent = self.bottom_line
         self._processing_widget = None
         self._processing_label = None
+
+    @staticmethod
+    def _page(panel):
+        """A page: the panel's format as its header, flush with the top and edge to edge, then the rest of the
+        panel inside the page's margins."""
+        page = QWidget()
+        page.setLayout(QVBoxLayout())
+        page.layout().setContentsMargins(0, 0, 0, 0)
+        page.layout().setSpacing(0)
+        header = getattr(panel, 'format_combo', None)
+        if isinstance(header, utils.HeaderComboBox):
+            page.layout().addWidget(header)
+        form = QWidget()
+        form.setLayout(QVBoxLayout())
+        form.layout().setContentsMargins(20, 16, 20, 16)
+        form.layout().addWidget(panel)
+        page.layout().addWidget(form, 1)
+        return page
 
     # ------------------------------------------------------------------
     # Processing-state UI
@@ -1523,6 +2125,325 @@ class ExportDialog(utils.SimpleDialog):
         self._pages.setCurrentIndex(index)
         self._category_buttons[key].setChecked(True)
         self.title_line.label.setText(f'<b>{_("export_dialog.title").upper()}</b>  <span style="opacity:0.6">{_(f"export_dialog.category_{key}")}</span>')
+        self.refresh_preview()
+
+    def refresh_preview(self):
+        """The preview for the page shown: the start of the subtitles file
+        the choices write, or a frame of the video export; nothing yet for
+        audio and documents."""
+        self._preview_timer.stop()
+        self._picture = None
+        self._picture_timeout.stop()
+        self._still_again = False
+        if self._current_category() == 'video' and session.SUBTITLE.get('segments'):
+            self._preview_still()
+            return
+        if self._current_category() == 'audio':
+            self._preview_audio()
+            return
+        if self._current_category() == 'project':
+            self._preview_project()
+            return
+        if self._current_category() == 'documents' and session.SUBTITLE.get('segments'):
+            self._preview_document()
+            return
+        if self._current_category() != 'subtitles' or not session.SUBTITLE.get('segments'):
+            self.preview_panel.show_nothing()
+            return
+        try:
+            fmt, _choices, options = self.subtitles_panel.export_choices()
+            frame = file_io.picture_frame(fmt, options)
+            if frame is not None:
+                # Drawing every picture is for the export: the preview draws one.
+                self._preview_picture(fmt, options, frame)
+                return
+            text = file_io.preview_file(fmt, options, session.CONFIG.get('selected_language') or 'en')
+        except file_io.PreviewBusy:
+            self._preview_timer.start()                        # a save holds the files: again in a moment
+            return
+        except file_io.PreviewBinary:
+            self.preview_panel.show_note(_('export_dialog.preview_binary'))
+            return
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+            return
+        self.preview_panel.show_text(text)
+
+    def _audio_key(self, mode, include_background):
+        """What the loudness of an audio export depends on: the choices, and
+        each speech that plays and where."""
+        playing = []
+        for segment in session.SUBTITLE.get('segments') or []:
+            dub = audio_report._playing(segment.get('dubbing'))
+            if dub:
+                playing.append((float(dub.get('start', 0.0)), str(dub.get('path')), repr(dub.get('segments'))))
+        # The stems and the clips are measured played together, as the mixdown
+        # is; the clips never carry the background.
+        if mode in ('stems', 'clips'):
+            mode, include_background = 'mixdown', include_background and mode == 'stems'
+        return mode, bool(include_background), tuple(playing)
+
+    def _preview_audio(self):
+        """An audio export's dashboard: its facts and problems at once, its
+        loudness once measured in the background."""
+        from subtitld.modules import bounce
+        fmt, mode, include_background = self.audio_panel.export_choices()
+        segments = session.SUBTITLE.get('segments') or []
+        base = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
+                                                 or 'subtitle'))[0]
+        engine = self._audio_engine
+        facts = audio_report.facts(mode, fmt, include_background, segments, session.VIDEO,
+                                   background=bounce._background_audio_path(), vocals=bounce._vocals_audio_path(),
+                                   stem=base)
+        if engine is not None:
+            facts['rate'] = int(engine.samplerate)
+        problems = audio_report.problems(mode, segments)
+        key = self._audio_key(mode, include_background)
+        loudness = self._loudness.get(key)
+        if key not in self._loudness:
+            loudness = None
+            can_render = engine is not None or mode in ('background_only', 'vocals_only')
+            if can_render:
+                loudness = 'measuring'
+                if self._measuring is None:
+                    self._measuring = key
+                    audio_report.measure_async(key[0], key[1], engine,
+                                               lambda result, key=key: self._measured(key, result))
+        self.preview_panel.show_audio(facts, problems, loudness)
+
+    def _measured(self, key, result):
+        self._measuring = None
+        self._loudness[key] = result
+        if self._current_category() == 'audio':
+            self.refresh_preview()
+
+    def _preview_project(self):
+        """A project export's dashboard: its timeline, small, the program it
+        opens in, the files it writes, and what will not carry over."""
+        fmt, choices = self.project_panel.export_choices()
+        spec = project_export.FORMATS[fmt]
+        try:
+            timeline = project_export.collect(
+                session.SUBTITLE, session.VIDEO, choices, project_export.background_path(session.VIDEO),
+                names={key: _(f'export_dialog.project_track_{key}') for key in ('video', 'audio', 'background',
+                                                                                 'subtitles')})
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+            return
+        stem = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
+                                                 or 'subtitle'))[0]
+        video = session.VIDEO.get('filepath')
+        sounds = [path for path in timeline.media() if path != video]
+        size = sum(os.path.getsize(path) for path in sounds if os.path.isfile(path))
+        if spec.get('session_folder'):
+            files = [f'{stem}/', f'  {stem}.ardour']
+        else:
+            files = [f'{stem}.{spec["extension"]}']
+        if sounds:
+            files.append(_('export_dialog.project_sounds').format(count=len(sounds), size=_size_text(size)))
+        segments = session.SUBTITLE.get('segments') or []
+        problems = []
+        gone = audio_report.problems('mixdown', segments).get('files_gone') if choices.get('speeches') else 0
+        if gone:
+            problems.append(_('export_dialog.audio_problem_files_gone').format(count=gone))
+        losses = []
+        if spec.get('audio_only') and video:
+            losses.append(_('export_dialog.project_no_video'))
+        if spec.get('one_subtitle_track') and choices.get('subtitles') and documents.languages_of(segments):
+            losses.append(_('export_dialog.project_no_translations'))
+        if timeline.subtitles and not spec.get('styled_captions'):
+            losses.append(_('export_dialog.project_plain_subtitles'))
+        moved = sum(len(track.clips) for track in timeline.tracks if track.speaker and track.lane > 1)
+        if moved:
+            losses.append(_('export_dialog.project_moved').format(count=moved))
+        self.preview_panel.show_project(fmt, timeline, files, problems, losses)
+
+    def _preview_document(self):
+        """The document as chosen: the start of its text, or its first
+        page as the PDF prints it."""
+        fmt, chosen = self.documents_panel.export_choices()
+        chosen = dict(chosen)
+        content = chosen.pop('content')
+        segments = session.SUBTITLE.get('segments')
+        try:
+            if content == documents.MARKERS:
+                self.preview_panel.show_text(csv_export.write(segments))
+                return
+            document = documents.build(
+                content, segments, chosen, fps=(session.VIDEO or {}).get('framerate'),
+                title=documents.title_for(session.SUBTITLE, session.VIDEO),
+                columns=None if fmt == 'CSV' else {key: _(f'export_dialog.document_column_{key}')
+                                                   for key in documents.COLUMNS})
+            if fmt == 'TXT':
+                self.preview_panel.show_text(documents.txt(document))
+            elif fmt == 'CSV':
+                self.preview_panel.show_text(documents.csv_text(document))
+            else:
+                self.preview_panel.show_still(documents.page_image(document, 2 * _PreviewPanel.WIDTH))
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+
+    def _preview_still(self):
+        """The video export's frame at the subtitle under the cursor, else
+        the next: a few seconds of the video written as the export writes
+        it, in the background; one at a time, the last asked for drawn
+        next."""
+        from subtitld.modules import video_preview
+        container, captions = self.video_panel.export_choices()
+        if not (session.VIDEO or {}).get('filepath') and not burned_video.is_alpha(container):
+            self.preview_panel.show_nothing()
+            return
+        if self._still is not None:
+            self._still_again = True
+            return
+        cue = self._picture_cue('', {})
+        if cue is None:
+            self.preview_panel.show_nothing()
+            return
+        captions.setdefault('speakers', (session.CONFIG.get('export_subtitles') or {}).get('speakers'))
+        if self._still_folder is None:
+            self._still_folder = tempfile.mkdtemp(prefix='subtitld-stills-')
+        self._still_count += 1
+        path = os.path.join(self._still_folder, f'{self._still_count}.png')
+        self._still = (self._still_count, path)
+        self.preview_panel.show_note(_('export_dialog.preview_drawing'))
+        video_preview.still_async(container, captions, copy.deepcopy(session.SUBTITLE.get('segments')), cue,
+                                  float(session.SUBTITLE.get('position') or 0), path, self._still_done,
+                                  language=session.SUBTITLE.get('language') or '')
+
+    def _still_done(self, path, error):
+        if self._still is None or self._still[1] != path:
+            return                                             # the dialog closed, or let it go
+        self._still = None
+        if self._still_again:
+            self.refresh_preview()
+            return
+        if self._current_category() != 'video':
+            return
+        image = QImage(path) if not error else QImage()
+        if image.isNull():
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+        else:
+            self.preview_panel.show_still(image)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    def _drop_stills(self, *_args):
+        """A still still being drawn is let go; its folder goes once it is."""
+        self._still = None
+        if self._still_folder is not None:
+            shutil.rmtree(self._still_folder, ignore_errors=True)
+            self._still_folder = None
+
+    def _picture_cue(self, fmt, options):
+        """The subtitle under the timeline's cursor, else the next after it,
+        as the export writes it; None when there is none to draw."""
+        position = float(session.SUBTITLE.get('position') or 0)
+        segments = sorted(session.SUBTITLE.get('segments') or [], key=lambda segment: float(segment.get('start', 0)))
+        under = [segment for segment in segments if float(segment['start']) <= position < float(segment['end'])]
+        after = [segment for segment in segments if float(segment['start']) > position]
+        for segment in under + after:
+            prepared = (export_options.prepare([segment], options) if fmt in export_options.TEXT_FORMATS
+                        else [dict(segment)])
+            if prepared and markup.plain(str(prepared[0].get('text') or '')).strip():
+                return prepared[0]
+        return None
+
+    # The BDN preview's XML holds the pictures of its first events: so many are drawn for it.
+    BDN_EVENTS = 6
+
+    def _preview_picture(self, fmt, options, frame):
+        from subtitld.interface import subtitle_renderer
+        if not subtitle_renderer.available():
+            self.preview_panel.show_note(_('export_dialog.preview_pictures'))
+            return
+        cue = self._picture_cue(fmt, options)
+        if cue is None:
+            self.preview_panel.show_nothing()
+            return
+        if self._renderer is None:
+            self._renderer = subtitle_renderer.SubtitleRenderer(self, disk_cache=None)
+            self._renderer.layer_ready.connect(self._picture_ready)
+        # Drawn on the export's own frame, as the export draws it.
+        self._renderer.size = (int(frame[0]), int(frame[1]))
+        style = self._renderer._style()
+        wanted = [(self._renderer._job(cue, float(cue['start']), *style)[0], cue)]
+        drawable = None
+        if fmt == 'BDN':
+            # Its XML too, which says where each picture is and how large:
+            # the first ones drawn for it, numbered as the export numbers them.
+            drawable = [segment for segment in export_options.prepare(session.SUBTITLE.get('segments') or [], options)
+                        if markup.plain(str(segment.get('text') or '')).strip()]
+            wanted += [(self._renderer._job(segment, float(segment['start']), *style)[0], segment)
+                       for segment in drawable[:self.BDN_EVENTS]]
+        self._picture = {'keys': [key for key, _segment in wanted], 'frame': frame, 'fmt': fmt,
+                         'options': options, 'drawable': drawable}
+        if not self._picture_ready():
+            for key, segment in wanted:
+                if key not in self._renderer.cache:
+                    self._renderer.layers([segment], float(segment['start']))
+            self.preview_panel.show_note(_('export_dialog.preview_drawing'))
+            self._picture_timeout.start()
+
+    def _picture_ready(self):
+        """Shows the picture awaited once the renderer has all it waits
+        for; whether it had."""
+        if self._picture is None or self._renderer is None:
+            return False
+        layers = [self._renderer.cache.get(key) for key in self._picture['keys']]
+        if any(layer is None for layer in layers):
+            return False
+        picture, self._picture = self._picture, None
+        self._picture_timeout.stop()
+        text = None
+        if picture['fmt'] == 'BDN':
+            text = self._bdn_start(picture['drawable'], layers[1:], picture['frame'], picture['options'])
+        self.preview_panel.show_picture(layers[0][0], layers[0][1], picture['frame'], text)
+        return True
+
+    @staticmethod
+    def _bdn_start(drawable, layers, frame, options):
+        """The start of the BDN XML the export writes: its description, for
+        every subtitle, and the events of the first, whose `layers` are drawn."""
+        source = session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath') or ''
+        stem = os.path.splitext(os.path.basename(source))[0] or 'subtitle'
+        unknown = '\0'                                        # a picture not drawn: where the start stops
+        pictures = []
+        for number, segment in enumerate(drawable, start=1):
+            layer = layers[number - 1] if number <= len(layers) else None
+            if layer is not None and (layer[0] is None or layer[1] is None):
+                continue                                       # nothing drawn: the export leaves it out too
+            rect, image = layer if layer is not None else (None, None)
+            pictures.append({'start': float(segment['start']), 'end': float(segment['end']),
+                             'href': f'{stem}_{number:05d}.png' if image is not None else unknown,
+                             'x': round(rect.x() * frame[0]) if rect is not None else 0,
+                             'y': round(rect.y() * frame[1]) if rect is not None else 0,
+                             'width': image.width() if image is not None else 0,
+                             'height': image.height() if image is not None else 0,
+                             'forced': bool(segment.get('forced'))})
+        language = (session.SUBTITLE.get('language') or '').strip() or session.CONFIG.get('selected_language') or 'en'
+        lines = bdn.write(pictures, frame, **file_io.bdn_options(options, language, stem + '.xml')).split('\n')
+        cut = next((index for index, line in enumerate(lines) if unknown in line), None)
+        if cut is not None:
+            while cut > 0 and not lines[cut].lstrip().startswith('<Event '):
+                cut -= 1
+            lines = lines[:cut]
+        return '\n'.join(lines[:200])
+
+    def _picture_late(self):
+        if self._picture is not None:
+            self._picture = None
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+
+    def _close_renderer(self, *_args):
+        self._picture = None
+        self._picture_timeout.stop()
+        if self._renderer is not None:
+            renderer, self._renderer = self._renderer, None
+            renderer.close()
+            renderer.deleteLater()
 
     def _current_category(self):
         for index, key in enumerate(self.CATEGORY_KEYS):
@@ -1544,4 +2465,6 @@ class ExportDialog(utils.SimpleDialog):
             cfg = self.video_panel.get_config()
             cfg['category'] = 'video'
             return cfg
+        if category == 'project':
+            return self.project_panel.get_config()
         return self.documents_panel.get_config()

@@ -187,8 +187,7 @@ panel.refresh()
 check('fetched once open', wait(lambda: service.cached_meta() is not None), True)
 
 print('not connected: lookups still work, publishing waits for a connection')
-check('connect offered', (panel.connect_button.isVisibleTo(host), panel.disconnect_button.isVisibleTo(host)),
-      (True, False))
+check('connect offered', (panel.header.connect_button.isVisibleTo(host), panel.header.connected), (True, False))
 check('publish disabled', panel.publish_new_button.isEnabled(), False)
 
 print('a video opens: it is looked up by fingerprint')
@@ -248,19 +247,19 @@ def fake_sign_in(device_code_shown=None, cancelled=lambda: False):
 
 
 service.sign_in = fake_sign_in
-panel.connect_button.click()
+panel.header.connect_button.click()
 check('waiting while the browser is open', (panel.cancel_button.isVisibleTo(host),
-                                             panel.connect_button.isVisibleTo(host)), (True, False))
+                                             panel.header.connect_button.isVisibleTo(host)), (True, False))
 check('done', wait(lambda: panel._sign_in_call is None), True)
 app.processEvents()
-check('connected, not waiting any more', (panel.disconnect_button.isVisibleTo(host),
-                                          panel.cancel_button.isVisibleTo(host)), (True, False))
-check('says who', '@marina' in panel.account_text.text(), True)
+check('connected, not waiting any more', (panel.header.connected, panel.account_card.isVisibleTo(host),
+                                          panel.cancel_button.isVisibleTo(host)), (True, False, False))
+check('says who', '@marina' in (panel.header.name.text() + panel.header.handle.text()), True)
 service.sign_in = real_sign_in
 
 print('connected and allowed to edit: publish the next version')
 panel.refresh()
-check('connected', panel.disconnect_button.isVisibleTo(host), True)
+check('connected', panel.header.connected, True)
 check('version offered', (panel.publish_version_button.isVisibleTo(host), panel.publish_version_button.isEnabled()),
       (True, True))
 check('text says which version', 'version 3 of “Sintel (2010)”' in panel.publish_text.text(), True)
@@ -315,14 +314,14 @@ check('says so', 'deleted from subtitld.cc' in panel.message.text(), True)
 check('the card goes away', panel.origin_card.isVisibleTo(host), False)
 
 print('disconnecting asks in the card first')
-panel.disconnect_button.click()
+panel.header.disconnect.click()
 check('asks in place', panel.disconnect_confirm.isVisibleTo(host), True)
 panel.disconnect_confirm.no.click()
 check('still connected', service.is_connected(), True)
 
 print('the token stops working: back to Connect')
 panel._token_expired()
-check('disconnected', (service.is_connected(), panel.connect_button.isVisibleTo(host)), (False, True))
+check('disconnected', (service.is_connected(), panel.header.connect_button.isVisibleTo(host)), (False, True))
 
 print('subtitld.cc can ask for a newer Subtitld (development builds never count as old)')
 import subtitld.modules.subtitldcc_service as service_module
