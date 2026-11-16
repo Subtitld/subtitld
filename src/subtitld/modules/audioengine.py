@@ -7,6 +7,7 @@ try:
     _sounddevice_error = None
 except Exception as exc:
     sd, _sounddevice_error = None, exc
+import logging
 import soundfile as sf
 import numpy as np
 import gc
@@ -17,6 +18,8 @@ from threading import Thread, Lock
 from queue import Queue, Empty
 import threading
 import time
+
+log = logging.getLogger(__name__)
 
 
 FADE_FRAMES = 64
@@ -1211,8 +1214,7 @@ class SoundDeviceAudioEngine:
                 where = f"{sd.query_hostapis(info['hostapi'])['name']}, {info['name']}"
             except Exception:
                 where = 'default output'
-            sys.stderr.write(f'[audioengine] output: {where}, latency {self.output_latency * 1000:.0f} ms\n')
-            sys.stderr.flush()
+            log.info('audio output: %s, latency %.0f ms', where, self.output_latency * 1000)
             return True
         if not self._no_output_logged:
             self._no_output_logged = True

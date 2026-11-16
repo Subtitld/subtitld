@@ -2,6 +2,7 @@
 video out with its subtitles in it: as closed captions (embedded_captions)
 or as subtitle tracks of their own (soft_subtitles)."""
 
+import logging
 import os
 import shutil
 import subprocess
@@ -14,6 +15,8 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 from subtitld.modules import session
 from subtitld.modules import utils
+
+log = logging.getLogger(__name__)
 
 
 def _safe_piece(name):
@@ -181,11 +184,11 @@ def bounce(output_path, audio_format, mode, audio_engine=None,
             bg_path = _background_audio_path()
             if bg_path:
                 bg_buffer = _load_audio(bg_path, samplerate)
-                print(f'[bounce] background source: {bg_path} (frames={len(bg_buffer)}, peak={float(np.max(np.abs(bg_buffer))):.3f})')
+                log.info('bounce: background from %s (frames=%d, peak=%.3f)', bg_path, len(bg_buffer), float(np.max(np.abs(bg_buffer))))
             else:
-                print('[bounce] include_background requested but no _background.flac found in cache')
+                log.warning('bounce: the background was asked for, but none is in the cache')
         else:
-            print('[bounce] background NOT included (checkbox unchecked)')
+            log.info('bounce: no background (not asked for)')
 
         def _apply_background(buffer):
             if bg_buffer is None:

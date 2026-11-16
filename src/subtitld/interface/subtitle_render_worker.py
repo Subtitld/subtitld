@@ -40,13 +40,21 @@ of premultiplied ARGB32, w × h, rows w × 4 bytes long):
 """
 
 import json
+import logging
 import os
 import sys
 import threading
 
+log = logging.getLogger(__name__)
+
 STRIP = 12                    # host.js: the strip under the stage with the job's number
 VIEWS = 3
 NO_SANDBOX_EXIT = 75          # Chromium's sandbox cannot start here: start the helper without it
+# Qt's scaling, kept out of the helper: the sizes it gets are device pixels
+# already, and at another scale it grabs its view at that scale, the crop of
+# a cue misses it and the layer comes back empty.
+SCALING_VARIABLES = ('QT_SCALE_FACTOR', 'QT_SCREEN_SCALE_FACTORS', 'QT_AUTO_SCREEN_SCALE_FACTOR',
+                     'QT_ENABLE_HIGHDPI_SCALING', 'QT_SCALE_FACTOR_ROUNDING_POLICY', 'QT_FONT_DPI')
 
 # The fonts Subtitld comes with (graphics/), by file name: family, weight, italic.
 _WEIGHTS = {'Thin': 100, 'ExtraLight': 200, 'Light': 300, 'Regular': 400, 'Medium': 500, 'SemiBold': 600,
@@ -109,11 +117,18 @@ def _read_stamp(image, height):
 
 
 def main():
+    # Quiet unless Subtitld was started with --debug (modules/console): the
+    # flag comes in the environment. Before Qt and Chromium load.
+    from subtitld.modules import console
+    console.configure()
     os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     # No display at all: Qt's offscreen platform still reaches for GLX when
     # there is an X display, and aborts where it has none (Xvfb, some VMs).
     os.environ['QT_QPA_OFFSCREEN_NO_GLX'] = '1'
     for name in ('DISPLAY', 'WAYLAND_DISPLAY'):
+        os.environ.pop(name, None)
+    # At scale 1, whatever started it (SCALING_VARIABLES).
+    for name in SCALING_VARIABLES:
         os.environ.pop(name, None)
     if '--no-sandbox' in sys.argv[1:] or (hasattr(os, 'geteuid') and os.geteuid() == 0):
         os.environ['QTWEBENGINE_DISABLE_SANDBOX'] = '1'
@@ -164,7 +179,7 @@ def main():
                 path = os.path.realpath(url.toLocalFile())
                 if any(path == root or path.startswith(root + os.sep) for root in self.roots):
                     return
-            print(f'[subtitles] a style asked for {url.toDisplayString()[:200]}: refused', file=sys.stderr, flush=True)
+            log.info('a style asked for %s: refused', url.toDisplayString()[:200])
             info.block(True)
 
     class Page(QWebEnginePage):
@@ -224,7 +239,7 @@ def main():
         def on_terminated(self, status, code):
             # Chromium's renderer went away: load again, a few times.
             self.crashes += 1
-            print(f'[subtitles] a renderer stopped ({status}, {code})', file=sys.stderr, flush=True)
+            log.warning('a subtitle renderer stopped (%s, %s)', status, code)
             if not self.worker.ever_ready and not os.environ.get('QTWEBENGINE_DISABLE_SANDBOX'):
                 # Before any page was ready: the sandbox cannot start here.
                 QApplication.exit(NO_SANDBOX_EXIT)
@@ -318,6 +333,8 @@ def main():
                 else:
                     view.start(self.pending.pop(0))
 
+    from PySide6.QtCore import qInstallMessageHandler
+    qInstallMessageHandler(console.qt_message)
     app = QApplication([sys.argv[0]])
     app.setQuitOnLastWindowClosed(False)
     interceptor = Interceptor()

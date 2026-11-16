@@ -419,18 +419,21 @@ class AddonProcess(QObject):
     def _read_stderr(self) -> None:
         assert self._proc is not None and self._proc.stderr is not None
         stderr = self._proc.stderr
-        # We deliberately write to sys.stderr instead of going through
-        # `logging`. The host's root logger has no `basicConfig`, so its
-        # default level is WARNING and every `log.info` from the addon would
-        # be silently filtered out — exactly the opposite of what's useful
-        # for debugging an addon. Direct stderr writes also can't get
-        # buffered behind a queued log handler when the addon crashes.
+        # The add-on's own log, shown with --debug only (modules/console),
+        # written straight to stderr rather than through `logging`: direct
+        # writes can't get buffered behind a queued log handler when the
+        # addon crashes. Read either way, or the pipe fills and the add-on
+        # blocks on its next write.
         import sys as _sys
+        from subtitld.modules import console
+        shown = console.enabled()
         prefix = f'[addon:{self.addon_id}] '.encode('utf-8')
         try:
             for raw in iter(stderr.readline, b''):
                 if not raw:
                     break
+                if not shown:
+                    continue
                 # Pass through verbatim (already utf-8 from the addon).
                 # Strip a single trailing newline so our prefix lines up.
                 if raw.endswith(b'\n'):

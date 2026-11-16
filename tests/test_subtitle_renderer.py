@@ -310,5 +310,50 @@ process = renderer.process
 renderer.close()
 check('closed with Subtitld', process.state(), process.ProcessState.NotRunning)
 
+print('Qt\'s scaling set for Subtitld (HiDPI on X11)')
+for name in subtitle_render_worker.SCALING_VARIABLES:
+    os.environ[name] = '2'
+helper_environment = subtitle_renderer.worker_environment()
+check('kept out of the helper\'s environment',
+      [name for name in subtitle_render_worker.SCALING_VARIABLES if helper_environment.contains(name)], [])
+check('which still has the rest', helper_environment.value('XDG_CACHE_HOME'), os.environ['XDG_CACHE_HOME'])
+os.environ['QT_SCREEN_SCALE_FACTORS'] = '2;1'
+os.environ['QT_FONT_DPI'] = '192'
+scaled = subtitle_renderer.SubtitleRenderer(disk_cache=None)
+scaled.set_size(960, 540)
+scaled_layer = rendered(scaled, {'start': 0.0, 'end': 1.0, 'text': 'Scaled'})
+check('a subtitle still draws', bool(scaled_layer) and scaled_layer[0][1] is not None
+      and max(bytes(scaled_layer[0][1].constBits())) > 0, True)
+scaled.close()
+for name in subtitle_render_worker.SCALING_VARIABLES:
+    os.environ.pop(name, None)
+
+print('a blank layer on disk')
+blank_path = Path(tempfile.mkdtemp()) / 'blank.sqlite'
+blank_cache = SubtitleDiskCache(blank_path)
+blank_image = QImage(80, 20, QImage.Format_ARGB32_Premultiplied)
+blank_image.fill(0)
+blank_cache.put('blank', QRectF(0, 0, 0.1, 0.1), blank_image)
+blank_cache.put('nothing to draw', None, None)
+blank_cache.writer.submit(lambda: None).result()
+check('not kept', ('blank' in blank_cache.index, blank_cache.size()[1:]), (False, (0, 1)))
+check('a cue with nothing to draw still is', 'nothing to draw' in blank_cache.index, True)
+# One kept before blank images were refused (a helper at the wrong scale).
+import zlib as _zlib
+db = sqlite3.connect(str(blank_path))
+raw = bytes(80 * 20 * 4)
+db.execute('INSERT INTO images VALUES (?, ?, ?, ?, ?, ?)', ('stale', 'zlib', 80, 20, _zlib.compress(raw), 1))
+db.execute('INSERT INTO layers VALUES (?, ?, ?, ?, ?, ?, ?)', ('stale', 0, 0, 0.1, 0.1, 'stale', time.time()))
+db.commit(); db.close()
+blank_cache.index.add('stale')
+got = []
+blank_cache.loaded.connect(lambda key, layer: got.append((key, layer)))
+blank_cache.get('stale')
+wait_for(lambda: got)
+blank_cache.writer.submit(lambda: None).result()
+check('read back: not there, to render again', (got, 'stale' in blank_cache.index), ([('stale', None)], False))
+check('and gone from the file', blank_cache.size()[2], 1)
+blank_cache.close()
+
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

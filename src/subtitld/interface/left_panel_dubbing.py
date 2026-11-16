@@ -1,3 +1,4 @@
+import logging
 import hashlib
 import os
 import secrets
@@ -21,6 +22,8 @@ from subtitld.modules.addons.provider import TASK_TTS_SYNTHESIZE
 # UI panel classes below — which are still hosted on this engine via
 # `EdgeTTSEngine.dubbingPanel` / `.speaker_panel` — keep working unchanged.
 from subtitld.modules.addons.builtin.edge_tts_provider import EdgeTTSEngine
+
+log = logging.getLogger(__name__)
 
 
 def _engine_combobox_current_id(combobox) -> str:
@@ -406,7 +409,7 @@ class _EdgeTTSSpeakerPanel(QWidget):
             widget.voice_combobox.setCurrentText(current)
 
     def _on_speech_error(widget, uid, _subtitle, message):
-        print('edge-tts error:', uid, message)
+        log.warning('edge-tts: %s: %s', uid, message)
 
     def voice_combobox_changed(widget):
         value = widget.voice_combobox.currentText()

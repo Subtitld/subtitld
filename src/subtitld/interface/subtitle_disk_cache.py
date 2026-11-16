@@ -19,8 +19,15 @@ to the GUI thread by a queued signal. Past the size limit the layers used
 longest ago go, with the images nothing else points at, down to 90% of it. The cache is only
 a cache: a file it cannot read, or one from an older layout, is started
 over.
+
+An image with no pixel drawn at all is never kept, and one read back is
+taken as not there: a cue with text that came out blank was a bad render (a
+helper at the wrong scale crops beside the cue), and kept, it would stay
+blank for good. A style that really draws nothing is rendered again each
+time it is opened.
 """
 
+import logging
 import hashlib
 import os
 import sqlite3
@@ -32,6 +39,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, QRectF, Signal
 from PySide6.QtGui import QImage
+
+log = logging.getLogger(__name__)
 
 try:
     from compression import zstd as _zstd
@@ -136,6 +145,9 @@ class SubtitleDiskCache(QObject):
                 image = image.convertToFormat(QImage.Format_ARGB32_Premultiplied)
                 # 32-bit rows are always 4-byte aligned: no padding to strip.
                 raw = bytes(image.constBits())[:image.width() * image.height() * 4]
+                if not max(raw, default=0):
+                    self.index.discard(key)         # blank: not kept (see above)
+                    return
                 digest = hashlib.sha1(raw).hexdigest()
                 if db.execute('SELECT 1 FROM images WHERE hash = ?', (digest,)).fetchone() is None:
                     data = _CODECS[WRITE_CODEC][0](raw)
@@ -148,7 +160,15 @@ class SubtitleDiskCache(QObject):
             self.stats['writes'] += 1
         except sqlite3.Error as error:
             self.index.discard(key)
-            print(f'[subtitles] could not keep a layer on disk: {error}', flush=True)
+            log.warning('could not keep a subtitle layer on disk: %s', error)
+
+    def _forget(self, key):
+        try:
+            db = self.connection()
+            db.execute('DELETE FROM layers WHERE key = ?', (key,))
+            db.commit()
+        except sqlite3.Error as error:
+            print(f'[subtitles] could not drop a layer from disk: {error}', flush=True)
 
     # --- read --------------------------------------------------------------
     def get(self, key):
@@ -182,6 +202,12 @@ class SubtitleDiskCache(QObject):
                     return
                 codec, width, height, data = found
                 raw = _CODECS[codec][1](data)
+                if not max(raw, default=0):
+                    # Blank, from before blank images were refused: render it again.
+                    self.index.discard(key)
+                    self.writer.submit(self._forget, key)
+                    self.loaded.emit(key, None)
+                    return
                 # copy(): the image owns its pixels, not `raw`.
                 image = QImage(raw, width, height, width * 4, QImage.Format_ARGB32_Premultiplied).copy()
                 with self.decoded_lock:
@@ -192,7 +218,7 @@ class SubtitleDiskCache(QObject):
             self.loaded.emit(key, (QRectF(x, y, w, h), image))
         except (sqlite3.Error, zlib.error, ValueError) as error:
             self.index.discard(key)
-            print(f'[subtitles] could not read a layer from disk: {error}', flush=True)
+            log.warning('could not read a subtitle layer from disk: %s', error)
             self.loaded.emit(key, None)
 
     # --- housekeeping ------------------------------------------------------
@@ -231,7 +257,7 @@ class SubtitleDiskCache(QObject):
                 self.stats['trimmed'] += len(gone)
             db.commit()
         except sqlite3.Error as error:
-            print(f'[subtitles] could not trim the layers on disk: {error}', flush=True)
+            log.warning('could not trim the subtitle layers on disk: %s', error)
 
     def size(self):
         """Bytes of images, images and layers kept."""
