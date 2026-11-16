@@ -71,6 +71,8 @@ class Config(dict):
         self.setdefault('audio_effects', {})
         self.setdefault('video_manipulation', {})
         self.setdefault('subtitldcc', {})
+        # Run from an AppImage: whether it may add itself to the applications menu ('yes'/'no', unset until asked).
+        self.setdefault('appimage', {})
         # A locale file's name ('pt_BR'), or '' to follow the system's language.
         self.setdefault('interface_language', '')
 
@@ -102,6 +104,7 @@ class Config(dict):
             'audio_effects',
             'video_manipulation',
             'subtitldcc',
+            'appimage',
             'interface_language',
         }
 

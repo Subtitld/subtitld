@@ -94,6 +94,7 @@ else:
 from subtitld.interface import top_bar
 from subtitld.interface import startscreen
 from subtitld.interface import subtitldcc_open
+from subtitld.interface import appimage_prompt
 from subtitld.interface import productionscreen
 from subtitld.interface import actionmanager
 from subtitld.interface import utils
@@ -566,6 +567,8 @@ def main():
     links_listener.received.connect(lambda link: subtitldcc_open.open_link(main_window, link))
     links_listener.listen()
     app.aboutToQuit.connect(links_listener.close)
+    # Run from an AppImage: ask once to join the applications menu (and so open subtitld.cc's links).
+    QTimer.singleShot(1500, lambda: appimage_prompt.check(main_window))
 
     code = app.exec()
     # The waits on aboutToQuit are bounded, and a network read can't be

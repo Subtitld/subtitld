@@ -6,12 +6,14 @@ import os
 import json
 import copy
 
+from subtitld.interface import appimage_prompt
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.addons_dialog import AddonsPanel
 from subtitld.interface.cloud_dashboard import CloudDashboardPanel
 from subtitld.interface import translation
 from subtitld.interface.translation import _
+from subtitld.modules import appimage_integration
 from subtitld.modules import legacy
 from subtitld.modules import session
 from subtitld.modules.config import Config
@@ -225,6 +227,13 @@ def load(self):
     self.global_panel_language_combobox = utils.LabeledComboBox()
     self.global_panel_language_combobox.activated.connect(lambda: global_panel_language_combobox_activated(self))
     self.left_panel_global_tab_general.layout().addWidget(self.global_panel_language_combobox)
+
+    # Run from an AppImage: its entry in the applications menu, which also opens subtitld.cc's links
+    # (interface/appimage_prompt.py asks about it once).
+    self.global_panel_general_appimage_menu = QCheckBox()
+    self.global_panel_general_appimage_menu.setVisible(appimage_integration.running_appimage() is not None)
+    self.global_panel_general_appimage_menu.clicked.connect(lambda: global_panel_general_appimage_menu_clicked(self))
+    self.left_panel_global_tab_general.layout().addWidget(self.global_panel_general_appimage_menu, 0, Qt.AlignLeft)
 
     self.global_panel_general_save_as_line = QVBoxLayout()
     self.global_panel_general_save_as_line.setContentsMargins(0, 0, 0, 0)
@@ -484,6 +493,8 @@ def update(self):
             break
 
     self.global_panel_general_save_copy.setChecked(session.CONFIG['default_values'].get('save_automatic_copy', False))
+    appimage = appimage_integration.running_appimage()
+    self.global_panel_general_appimage_menu.setChecked(appimage is not None and appimage_integration.registered_path() == appimage)
 
     self.global_panel_general_minimum_duration_spinbox.setValue(session.CONFIG['default_values'].get('minimum_subtitle_width', 1.0))
 
@@ -513,6 +524,16 @@ def left_panel_global_subtitle_alignment_activated(self):
 
 def global_subtitlesvideo_save_as_combobox_activated(self):
     session.CONFIG['default_values']['subtitle_format'] = self.global_subtitlesvideo_save_as_combobox.currentText().split(' ', 1)[0]
+
+
+def global_panel_general_appimage_menu_clicked(self):
+    if self.global_panel_general_appimage_menu.isChecked():
+        appimage_prompt.set_choice('yes')
+        if not appimage_integration.register():
+            self.global_panel_general_appimage_menu.setChecked(False)
+    else:
+        appimage_prompt.set_choice('no')
+        appimage_integration.unregister()
 
 
 def global_panel_general_save_copy_changed(self):
@@ -553,6 +574,7 @@ def translate(self):
     self.usfx_include_original_video_checkbox.setText(_('global_panel.usfx_include_original_video'))
     self.global_subtitlesvideo_save_as_label.setText(_('global_panel.default_format_save'))
     self.global_panel_general_save_copy.setText(_('global_panel.save_copy'))
+    self.global_panel_general_appimage_menu.setText(_('appimage.menu_entry'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
     self.left_panel_global_panel_export_settings_button.setToolTip(_('global_panel.export_settings'))
