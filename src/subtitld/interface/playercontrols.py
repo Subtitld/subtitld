@@ -2004,12 +2004,23 @@ def grid_button_clicked(self):
     if not session.CONFIG['timeline'].get('grid_type', False):
         session.CONFIG['timeline']['grid_type'] = 'seconds'
     update_grid_buttons(self)
+    _repaint_grids(self)
 
 
 def grid_type_changed(self, gridtype):
     """Function to call when grid type button is clicked"""
     session.CONFIG['timeline']['grid_type'] = gridtype
     update_grid_buttons(self)
+    _repaint_grids(self)
+
+
+def _repaint_grids(self):
+    """Both timelines draw the grid: show the one just picked now, not at
+    their next repaint."""
+    self.timeline_widget.update()
+    vtimeline = getattr(self, 'vtimeline_panel', None)
+    if vtimeline is not None:
+        vtimeline.canvas.update()
 
 
 def update_grid_buttons(self):

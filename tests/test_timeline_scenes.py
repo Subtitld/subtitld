@@ -141,6 +141,17 @@ check('the start snaps to 0', timing(0), (0.0, 3.0))
 session.VIDEO['scenes'] = [5.5, 12.0]
 session.CONFIG['timeline'] = {'snap': False}
 
+print('telling cuts from motion')
+quiet = [(n / 10, 0.2) for n in range(100)]
+check('a lone spike in a still shot is a cut',
+      scene_detection.cuts(sorted(quiet[:50] + [(5.05, 3.0)] + quiet[50:])), [5.05])
+busy = [(n / 10, 2.0 + (n % 3)) for n in range(100)]
+check('the same spike among moving frames is not',
+      scene_detection.cuts(sorted(busy[:50] + [(5.05, 5.0)] + busy[50:])), [])
+check('a score of 10 is a cut whatever is around it',
+      scene_detection.cuts(sorted(busy[:50] + [(5.05, 10.0)] + busy[50:])), [5.05])
+check('nothing under the floor is', scene_detection.cuts([(0.0, 0.0), (1.0, 2.4), (2.0, 0.0)]), [])
+
 print('loading the scenes of a video')
 video = os.path.join(_xdg, 'video.mkv')
 open(video, 'wb').write(b'not really a video')
