@@ -13,6 +13,7 @@ from subtitld.modules import config
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import utils
+from subtitld.modules import waveform_cache
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
 
@@ -237,8 +238,11 @@ class WaveformManager:
             return False
 
         try:
-            data = np.load(cache_path, allow_pickle=True).item()
-            samples = data.get('samples')
+            # Not pickled: the file can come from a .usfx or a collaborator (modules/waveform_cache.py).
+            cached = waveform_cache.load_waveform(cache_path)
+            if cached is None:
+                return False
+            samples, levels = cached
             # Migrate legacy float32 caches to int16 on read so we don't
             # pay double the RAM forever just because the cache was
             # written before the dtype change. The worker tolerates both
@@ -252,8 +256,8 @@ class WaveformManager:
                 # let the next level_ready do it so we don't block
                 # project-open on disk I/O.
             self.samples = samples
-            self.levels = data.get('levels', {})
-            return self.samples is not None
+            self.levels = levels
+            return True
         except Exception:
             return False
 
@@ -263,11 +267,7 @@ class WaveformManager:
             os.makedirs(self.cache_dir, exist_ok=True)
             cache_path = self._cache_path()
             if cache_path and self.samples is not None:
-                data = {
-                    'samples': self.samples,
-                    'levels': self.levels
-                }
-                np.save(cache_path, data, allow_pickle=True)
+                waveform_cache.save_waveform(cache_path, self.samples, self.levels)
         except Exception:
             pass  # Silently fail if cache write fails
 
@@ -3688,13 +3688,10 @@ class Timeline(QWidget):
             return
         cache_file = widget._dub_cache_path(path)
         if cache_file and os.path.exists(cache_file):
-            try:
-                data = np.load(cache_file, allow_pickle=True).item()
-                if 'duration' in data:
-                    widget.dub_peaks[path] = (data['mins'], data['maxs'], float(data['duration']))
-                    return
-            except Exception:
-                pass
+            peaks = waveform_cache.load_peaks(cache_file)
+            if peaks is not None:
+                widget.dub_peaks[path] = peaks
+                return
         if not os.path.exists(path):
             return
         worker = DubPeaksWorker(path)
@@ -3708,7 +3705,7 @@ class Timeline(QWidget):
         cache_file = widget._dub_cache_path(path)
         if cache_file:
             try:
-                np.save(cache_file, {'mins': mins, 'maxs': maxs, 'duration': duration}, allow_pickle=True)
+                waveform_cache.save_peaks(cache_file, mins, maxs, duration)
             except Exception:
                 pass
         widget.update()
