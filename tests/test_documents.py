@@ -113,6 +113,18 @@ image = documents.page_image(documents.build('script', segments, title='Film'), 
 check('the first page, for the preview: A4 in shape, something on it', (image.width(), image.height(),
                                                                        image.pixelColor(10, 10).name()), (400, 566, '#ffffff'))
 
+print('in a dark theme')
+from PySide6.QtGui import QPalette, QColor
+palette = app.palette()
+saved_palette = QPalette(palette)
+palette.setColor(QPalette.Text, QColor('#e9eef2'))
+palette.setColor(QPalette.WindowText, QColor('#e9eef2'))
+app.setPalette(palette)
+page = documents.page_image(documents.build('translation', segments, title='Film'), 400)
+dark = sum(1 for y in range(0, page.height(), 2) for x in range(0, page.width(), 2) if page.pixelColor(x, y).lightness() < 100)
+check('the text dark on the white page, whatever the application\'s palette', dark > 50, True)
+app.setPalette(saved_palette)
+
 print('through file_io')
 session.SUBTITLE = {'segments': segments, 'language': 'en-us', 'metadata': {}}
 session.VIDEO = {'filepath': '/films/My film.mp4', 'framerate': 25.0}

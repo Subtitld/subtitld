@@ -282,6 +282,9 @@ def html(document, size=11):
     """`document` as HTML for Qt's text layout (QTextDocument), in a type
     `size` points tall."""
     parts = [f'<html><head><meta charset="utf-8"><style>'
+             # Its colour said: Qt lays out text in the application's palette,
+             # which a dark theme makes light, on a white page.
+             f'body, td, th, p, h1, h2 {{ color: #111111; }}'
              f'body {{ font-size: {size}pt; }} h1 {{ font-size: {size * 1.6:.0f}pt; font-weight: 600; }}'
              f'th {{ font-weight: 600; text-align: left; background: #e8e8e8; white-space: nowrap; }}'
              f'td, th {{ padding: 3px 6px; vertical-align: top; font-size: {size - 1}pt; }} p {{ margin-bottom: 8px; }}'
