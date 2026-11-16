@@ -50,6 +50,11 @@ log = logging.getLogger(__name__)
 STRIP = 12                    # host.js: the strip under the stage with the job's number
 VIEWS = 3
 NO_SANDBOX_EXIT = 75          # Chromium's sandbox cannot start here: start the helper without it
+# Qt's scaling, kept out of the helper: the sizes it gets are device pixels
+# already, and at another scale it grabs its view at that scale, the crop of
+# a cue misses it and the layer comes back empty.
+SCALING_VARIABLES = ('QT_SCALE_FACTOR', 'QT_SCREEN_SCALE_FACTORS', 'QT_AUTO_SCREEN_SCALE_FACTOR',
+                     'QT_ENABLE_HIGHDPI_SCALING', 'QT_SCALE_FACTOR_ROUNDING_POLICY', 'QT_FONT_DPI')
 
 # The fonts Subtitld comes with (graphics/), by file name: family, weight, italic.
 _WEIGHTS = {'Thin': 100, 'ExtraLight': 200, 'Light': 300, 'Regular': 400, 'Medium': 500, 'SemiBold': 600,
@@ -121,6 +126,9 @@ def main():
     # there is an X display, and aborts where it has none (Xvfb, some VMs).
     os.environ['QT_QPA_OFFSCREEN_NO_GLX'] = '1'
     for name in ('DISPLAY', 'WAYLAND_DISPLAY'):
+        os.environ.pop(name, None)
+    # At scale 1, whatever started it (SCALING_VARIABLES).
+    for name in SCALING_VARIABLES:
         os.environ.pop(name, None)
     if '--no-sandbox' in sys.argv[1:] or (hasattr(os, 'geteuid') and os.geteuid() == 0):
         os.environ['QTWEBENGINE_DISABLE_SANDBOX'] = '1'

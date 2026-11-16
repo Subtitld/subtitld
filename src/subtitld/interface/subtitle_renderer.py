@@ -43,6 +43,7 @@ from collections import OrderedDict
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTimer, Signal, qVersion
 from PySide6.QtGui import QImage
 
+from subtitld.interface.subtitle_render_worker import SCALING_VARIABLES
 from subtitld.modules import look as subtitld_look, markup, position, session, subtitle_styles
 
 log = logging.getLogger(__name__)
@@ -78,6 +79,20 @@ def worker_command():
     if getattr(sys, 'frozen', False):
         return sys.executable, [WORKER_FLAG]
     return sys.executable, ['-m', 'subtitld', WORKER_FLAG]
+
+
+def worker_environment():
+    """The helper's environment: Subtitld's, at scale 1, with this copy of
+    Subtitld on the path when it runs from source."""
+    environment = QProcessEnvironment.systemEnvironment()
+    for name in SCALING_VARIABLES:
+        environment.remove(name)
+    if not getattr(sys, 'frozen', False):
+        # The helper imports this very copy of Subtitld.
+        path = str(session.PATH_SUBTITLD.parent)
+        known = environment.value('PYTHONPATH')
+        environment.insert('PYTHONPATH', path + (os.pathsep + known if known else ''))
+    return environment
 
 
 class SubtitleRenderer(QObject):
@@ -139,15 +154,9 @@ class SubtitleRenderer(QObject):
             return
         self.process = QProcess(self)
         program, arguments = worker_command()
-        environment = QProcessEnvironment.systemEnvironment()
         if self.no_sandbox:
             arguments = [*arguments, '--no-sandbox']
-        if not getattr(sys, 'frozen', False):
-            # The helper imports this very copy of Subtitld.
-            path = str(session.PATH_SUBTITLD.parent)
-            known = environment.value('PYTHONPATH')
-            environment.insert('PYTHONPATH', path + (os.pathsep + known if known else ''))
-        self.process.setProcessEnvironment(environment)
+        self.process.setProcessEnvironment(worker_environment())
         self.process.setProcessChannelMode(QProcess.ForwardedErrorChannel)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._finished)
