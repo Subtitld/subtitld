@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Kisi bingkai",
     "playercontrols.grid_seconds": "Kisi detik",
     "playercontrols.grid_scenes": "Kisi adegan",
+    "playercontrols.grid_scenes_finding": "Mencari adegan video… {percent}%",
     "playercontrols.zoom_in": "Perbesar",
     "playercontrols.zoom_out": "Perkecil",
     "qualitycontrol.title": "Kontrol kualitas",

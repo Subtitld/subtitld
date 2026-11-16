@@ -97,10 +97,12 @@ class SceneDetectionThread(QThread):
     without scdet, older than 4.4, or a file it can't decode): the grid
     simply stays empty, as before."""
     response = Signal(list)
+    progress = Signal(float)    # 0-1, at each whole percent of `duration`
 
-    def __init__(self, filepath, parent=None):
+    def __init__(self, filepath, duration=0.0, parent=None):
         super().__init__(parent)
         self.filepath = filepath
+        self.duration = duration
         self._process = None
 
     def stop(self):
@@ -127,10 +129,14 @@ class SceneDetectionThread(QThread):
         # `lavfi.scd.score=S`.
         scores = []
         time = None
+        percent = 0
         for line in process.stdout:
             try:
                 if line.startswith('frame:'):
                     time = float(line.rsplit('pts_time:', 1)[1])
+                    if self.duration > 0 and int(100 * time / self.duration) > percent:
+                        percent = min(100, int(100 * time / self.duration))
+                        self.progress.emit(percent / 100)
                 elif line.startswith('lavfi.scd.score=') and time is not None:
                     scores.append((time, float(line.split('=', 1)[1])))
             except (IndexError, ValueError):

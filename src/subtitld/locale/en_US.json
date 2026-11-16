@@ -217,6 +217,7 @@
     "playercontrols.grid_frames": "Grid frames",
     "playercontrols.grid_seconds": "Grid seconds",
     "playercontrols.grid_scenes": "Grid scenes",
+    "playercontrols.grid_scenes_finding": "Finding the video's scenes… {percent}%",
     "playercontrols.zoom_in": "Zoom in",
     "playercontrols.zoom_out": "Zoom out",
     "qualitycontrol.title": "Quality control",

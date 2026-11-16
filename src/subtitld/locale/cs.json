@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Mřížka po snímcích",
     "playercontrols.grid_seconds": "Mřížka po sekundách",
     "playercontrols.grid_scenes": "Mřížka podle scén",
+    "playercontrols.grid_scenes_finding": "Hledání scén ve videu… {percent} %",
     "playercontrols.zoom_in": "Přiblížit",
     "playercontrols.zoom_out": "Oddálit",
     "qualitycontrol.title": "Kontrola kvality",

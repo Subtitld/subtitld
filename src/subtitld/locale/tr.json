@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Izgara kareleri",
     "playercontrols.grid_seconds": "Izgara saniyeleri",
     "playercontrols.grid_scenes": "Izgara sahneleri",
+    "playercontrols.grid_scenes_finding": "Videonun sahneleri bulunuyor… %{percent}",
     "playercontrols.zoom_in": "Yaklaştır",
     "playercontrols.zoom_out": "Uzaklaştır",
     "qualitycontrol.title": "Kalite kontrolü",

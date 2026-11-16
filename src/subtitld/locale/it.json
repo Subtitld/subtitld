@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Griglia a fotogrammi",
     "playercontrols.grid_seconds": "Griglia a secondi",
     "playercontrols.grid_scenes": "Griglia a scene",
+    "playercontrols.grid_scenes_finding": "Ricerca delle scene del video… {percent}%",
     "playercontrols.zoom_in": "Zoom avanti",
     "playercontrols.zoom_out": "Zoom indietro",
     "qualitycontrol.title": "Controllo qualità",

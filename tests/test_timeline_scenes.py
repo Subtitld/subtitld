@@ -166,6 +166,22 @@ session.VIDEO = {'duration': 60.0, 'scenes': [], 'filepath': video}
 widget.load_scenes()
 check('an audio-only file has none', (session.VIDEO['scenes'], widget.scene_thread), ([], None))
 
+print('a real video, read by FFmpeg')
+import subprocess
+clip = os.path.join(_xdg, 'cut.mp4')
+subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0x204060:s=320x180:r=25:d=2',
+                '-f', 'lavfi', '-i', 'testsrc=s=320x180:r=25:d=2', '-filter_complex', '[0][1]concat=n=2:v=1',
+                '-pix_fmt', 'yuv420p', clip], check=True)
+thread = scene_detection.SceneDetectionThread(clip, 4.0)
+progress, found = [], []
+thread.progress.connect(progress.append)
+thread.response.connect(found.append)
+thread.start()
+thread.wait(30000)
+QTest.qWait(50)
+check('finds the one cut', found and found[0][1], [2.0])
+check('reports its progress, rising', bool(progress) and progress == sorted(progress) and progress[-1] >= 0.95, True)
+
 print('a file FFmpeg cannot read')
 os.remove(scene_detection.cache_path(video))
 session.VIDEO = {'duration': 60.0, 'scenes': [], 'filepath': video, 'width': 640}

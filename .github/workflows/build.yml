@@ -296,6 +296,8 @@ jobs:
           python -c "from subtitld.modules import opus; import sys; print('libopus works:', opus.available()); sys.exit(0 if opus.available() else 1)"
           if ($LASTEXITCODE) { throw 'libopus does not work through ctypes on Windows' }
           & dist\Subtitld\ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          # The timeline's scenes grid reads cuts with this filter (modules/scene_detection.py).
+          if (-not (& dist\Subtitld\ffmpeg.exe -hide_banner -filters | Select-String -Quiet '\bscdet\b')) { throw 'the bundled ffmpeg has no scdet filter' }
       - name: Thumbnail provider (.usfx in Explorer)
         # Into the app's folder, so the portable build, the installer and the
         # MSIX package all carry it.
@@ -405,6 +407,8 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
           ff=$(find "$app" -name ffmpeg -type f -perm -u+x | head -1)
           "$ff" -hide_banner -version | head -1
+          # The timeline's scenes grid reads cuts with this filter (modules/scene_detection.py).
+          "$ff" -hide_banner -filters | grep -qw scdet || { echo "::error::the bundled ffmpeg has no scdet filter"; exit 1; }
           dc=$(find "$app" -name libdatachannel.dylib | head -1)
           [ -n "$dc" ] || { echo "::error::libdatachannel is not in the bundle"; exit 1; }
           op=$(find "$app" -name libopus.0.dylib | head -1)

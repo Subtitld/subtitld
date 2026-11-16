@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "网格按帧",
     "playercontrols.grid_seconds": "网格按秒",
     "playercontrols.grid_scenes": "网格按场景",
+    "playercontrols.grid_scenes_finding": "正在查找视频的场景… {percent}%",
     "playercontrols.zoom_in": "放大",
     "playercontrols.zoom_out": "缩小",
     "qualitycontrol.title": "质量控制",

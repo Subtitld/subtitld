@@ -217,6 +217,7 @@
     "playercontrols.grid_frames": "Quadros da grade",
     "playercontrols.grid_seconds": "Segundos da grade",
     "playercontrols.grid_scenes": "Cenas da grade",
+    "playercontrols.grid_scenes_finding": "Encontrando as cenas do vídeo… {percent}%",
     "playercontrols.zoom_in": "Aumentar zoom",
     "playercontrols.zoom_out": "Diminuir zoom",
     "qualitycontrol.title": "Controle de qualidade",

@@ -189,6 +189,7 @@
     "playercontrols.grid_frames": "Сетка по кадрам",
     "playercontrols.grid_seconds": "Сетка по секундам",
     "playercontrols.grid_scenes": "Сетка по сценам",
+    "playercontrols.grid_scenes_finding": "Поиск сцен в видео… {percent}%",
     "playercontrols.zoom_in": "Увеличить масштаб",
     "playercontrols.zoom_out": "Уменьшить масштаб",
     "qualitycontrol.title": "Контроль качества",
