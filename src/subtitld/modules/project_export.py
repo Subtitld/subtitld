@@ -25,15 +25,25 @@ from fractions import Fraction
 from subtitld.modules import session
 
 # The programs, by the key the export knows them by: the extension of
-# their project, and the module that writes it.
+# their project, the module that writes it, the program and its oldest
+# version that opens it, its logo in the dialog (graphics/project_logo_*),
+# and what it cannot take: the video ('audio_only'), more than one subtitle
+# track ('one_subtitle_track'); and whether captions keep their look
+# ('styled_captions') and the project is a folder ('session_folder').
 FORMATS = {
-    'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project'},
-    'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project'},
-    'RESOLVE': {'extension': 'fcpxml', 'writer': 'finalcut_project'},
-    'FINALCUT': {'extension': 'fcpxml', 'writer': 'finalcut_project'},
-    'OPENSHOT': {'extension': 'osp', 'writer': 'openshot_project', 'one_subtitle_track': True},
-    'ARDOUR': {'extension': 'ardour', 'writer': 'ardour_project', 'audio_only': True, 'one_subtitle_track': True},
-    'AUDACITY': {'extension': 'aup', 'writer': 'audacity_project', 'audio_only': True},
+    'KDENLIVE': {'extension': 'kdenlive', 'writer': 'kdenlive_project', 'opens': ('Kdenlive', '23.04'),
+                 'logo': 'kdenlive.svg'},
+    'SHOTCUT': {'extension': 'mlt', 'writer': 'shotcut_project', 'opens': ('Shotcut', '24.04'), 'logo': 'shotcut.svg'},
+    'RESOLVE': {'extension': 'fcpxml', 'writer': 'finalcut_project', 'opens': ('DaVinci Resolve', '17'),
+                'logo': 'resolve.svg', 'styled_captions': True},
+    'FINALCUT': {'extension': 'fcpxml', 'writer': 'finalcut_project', 'opens': ('Final Cut Pro', '10.6'),
+                 'logo': 'finalcut.svg', 'styled_captions': True},
+    'OPENSHOT': {'extension': 'osp', 'writer': 'openshot_project', 'one_subtitle_track': True,
+                 'opens': ('OpenShot', '3.0'), 'logo': 'openshot.png'},
+    'ARDOUR': {'extension': 'ardour', 'writer': 'ardour_project', 'audio_only': True, 'one_subtitle_track': True,
+               'opens': ('Ardour', '7'), 'logo': 'ardour.svg', 'session_folder': True},
+    'AUDACITY': {'extension': 'aup', 'writer': 'audacity_project', 'audio_only': True, 'opens': ('Audacity', '3.0'),
+                 'logo': 'audacity.svg'},
 }
 
 # What goes in, when nothing is chosen.
@@ -87,9 +97,13 @@ class Track:
     """A track of `kind` ('video' or 'audio'), named `name`, its clips in
     the order they start."""
 
-    def __init__(self, name, kind, clips=None):
+    def __init__(self, name, kind, clips=None, speaker=None, lane=1):
         self.name = name
         self.kind = kind
+        # Whose speeches the track holds, for a speaker's track, and which of
+        # their tracks it is (2 on, for speeches that overlap the first's).
+        self.speaker = speaker
+        self.lane = lane
         self.clips = sorted(clips or [], key=lambda clip: clip.at)
 
 
@@ -240,7 +254,8 @@ def collect(subtitle, video, options=None, background=None, names=None):
         for speaker, clips in speakers.items():
             lanes = _lanes(clips)
             for number, lane in enumerate(lanes, start=1):
-                tracks.append(Track(speaker if len(lanes) == 1 else f'{speaker} {number}', 'audio', lane))
+                tracks.append(Track(speaker if len(lanes) == 1 else f'{speaker} {number}', 'audio', lane,
+                                    speaker=speaker, lane=number))
     for track in tracks:
         for clip in track.clips:
             duration = max(duration, clip.end)

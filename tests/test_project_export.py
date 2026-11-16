@@ -313,10 +313,22 @@ session.CONFIG.pop('export_project', None)
 dialog = export_dialog.ExportDialog(initial_category='project')
 dialog.show()
 dialog.refresh_preview()
-check('its preview: the tracks, numbered as the editors number them',
-      dialog.preview_panel.file.toPlainText().splitlines(),
-      ['V1  Video  (1)', 'A1  Audio  (1)', 'A2  Ana 1  (3)', 'A3  Ana 2  (1)', 'A4  Bo  (1)', 'S1  Subtitles  (4)',
-       'S2  pt-br  (2)'])
+board = dialog.preview_panel.project
+miniature = board.miniature
+check('its preview: the timeline, small, its tracks named and numbered as the editors number them',
+      (board.isHidden(), dialog.preview_panel.file.isHidden(), [(row[0], len(row[2])) for row in miniature.rows]),
+      (False, True, [('V1  Video', 1), ('A1  Audio', 1), ('A2  Ana 1', 3), ('A3  Ana 2', 1), ('A4  Bo', 1),
+                     ('S1  Subtitles', 4), ('S2  pt-br', 2)]))
+check('the program it opens in, the files it writes', (board.opens.text(), board.files.text().splitlines()[0]),
+      ('Kdenlive 23.04 or later', 'film.kdenlive'))
+check('a speech on a second track counted', any('second track' in line for line in board.losses.text().splitlines()), True)
+combo = dialog.project_panel.format_combo.combobox
+check('every program with its logo', [combo.itemIcon(i).isNull() for i in range(combo.count())], [False] * combo.count())
+dialog.project_panel.choose('ARDOUR')
+dialog.refresh_preview()
+check('Ardour: a session folder, no video, no translations',
+      (board.files.text().splitlines()[0], len(board.losses.text().splitlines()) >= 3, board.opens.text()),
+      ('film/', True, 'Ardour 7 or later'))
 dialog.done(0)
 
 shutil.rmtree(folder, ignore_errors=True)

@@ -952,7 +952,7 @@ class _ProjectPanel(QWidget):
         self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
         for fmt in project_export.FORMATS:
-            self.format_combo.combobox.addItem(_(f'export_dialog.project_{fmt.lower()}'), fmt)
+            self.format_combo.combobox.addItem(project_logo(fmt), _(f'export_dialog.project_{fmt.lower()}'), fmt)
         self.layout().addWidget(self.format_combo)
 
         self.audio_combo = utils.LabeledComboBox()
@@ -1563,6 +1563,149 @@ class _AudioDashboard(QWidget):
         self.problems.setVisible(bool(lines))
 
 
+def project_logo(fmt):
+    """The program's logo, one colour, for the Project tab: a QIcon."""
+    from PySide6.QtGui import QIcon
+    logo = project_export.FORMATS.get(fmt, {}).get('logo')
+    return QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, f'project_logo_{logo}')) if logo else QIcon()
+
+
+class _TimelineMiniature(QWidget):
+    """A project's timeline, small: a row a track, numbered as the editors
+    number them (V1, A1..., S1... for subtitles), its clips as blocks at
+    their times, in the speaker's colour on a speaker's track."""
+
+    ROW, GAP, LABEL = 8, 3, 74                                 # a row's height, between rows, the names' column
+    MOST = 14                                                  # rows drawn; the rest counted
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.rows = []                                         # (number, kind, [(start, end)], colour)
+        self.duration = 1.0
+        self.more = 0
+
+    def set_timeline(self, timeline):
+        rows, counts = [], {}
+        for track in timeline.tracks:
+            letter = 'V' if track.kind == 'video' else 'A'
+            counts[letter] = counts.get(letter, 0) + 1
+            colour = None
+            if track.speaker:
+                colour = (session.SPEAKERS.get(track.speaker) or {}).get('color')
+            rows.append((f'{letter}{counts[letter]}  {track.name}', track.kind, [(c.at, c.end) for c in track.clips],
+                         colour))
+        for number, (name, _language, cues) in enumerate(timeline.subtitles, start=1):
+            rows.append((f'S{number}  {name}', 'subtitles', [(float(c['start']), float(c['end'])) for c in cues],
+                         None))
+        self.duration = max(1.0, timeline.duration)
+        self.more = max(0, len(rows) - self.MOST)
+        self.rows = rows[:self.MOST]
+        self.setFixedHeight(len(self.rows) * (self.ROW + self.GAP) + (12 if self.more else 0) + 2)
+        self.update()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        font = painter.font()
+        font.setPixelSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        width = self.width() - self.LABEL - 2
+        colours = {'video': QColor('#7f9bb0'), 'audio': QColor('#5f7b90'), 'subtitles': QColor('#b8cee0')}
+        for index, (number, kind, spans, colour) in enumerate(self.rows):
+            y = index * (self.ROW + self.GAP)
+            painter.setPen(QColor(184, 206, 224, 120))
+            label = painter.fontMetrics().elidedText(number, Qt.ElideRight, self.LABEL - 6)
+            painter.drawText(QRectF(0, y - 2, self.LABEL, self.ROW + 4), Qt.AlignLeft | Qt.AlignVCenter, label)
+            painter.fillRect(QRectF(self.LABEL, y, width, self.ROW), QColor(0, 0, 0, 40))
+            fill = QColor(colour) if colour and QColor(colour).isValid() else colours[kind]
+            for start, end in spans:
+                left = self.LABEL + width * start / self.duration
+                size = max(1.0, width * (end - start) / self.duration)
+                if kind == 'subtitles':
+                    painter.fillRect(QRectF(left, y + 1, size, self.ROW - 2), fill)
+                else:
+                    painter.fillRect(QRectF(left, y, size, self.ROW), fill)
+        if self.more:
+            painter.setPen(QColor(184, 206, 224, 120))
+            y = len(self.rows) * (self.ROW + self.GAP)
+            painter.drawText(QRectF(self.LABEL, y, width, 10), Qt.AlignLeft | Qt.AlignVCenter,
+                             _('export_dialog.audio_more').format(count=self.more))
+        painter.end()
+
+
+class _ProjectDashboard(QWidget):
+    """A project export's timeline, small, the program it opens in, the
+    files it writes, and what will not carry over."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(6)
+        card = _AudioDashboard._frame(self.layout())
+        top = QWidget()
+        top.setLayout(QHBoxLayout())
+        top.layout().setContentsMargins(0, 0, 0, 0)
+        top.layout().setSpacing(8)
+        self.logo = QLabel()
+        self.logo.setFixedSize(28, 28)
+        top.layout().addWidget(self.logo)
+        names = QWidget()
+        names.setLayout(QVBoxLayout())
+        names.layout().setContentsMargins(0, 0, 0, 0)
+        names.layout().setSpacing(0)
+        names.layout().addWidget(_AudioDashboard._label('project_opens_in'))
+        self.opens = QLabel()
+        self.opens.setObjectName('export_dialog_card_value')
+        names.layout().addWidget(self.opens)
+        top.layout().addWidget(names, 1)
+        card.layout().addWidget(top)
+
+        timeline = _AudioDashboard._frame(self.layout())
+        timeline.layout().addWidget(_AudioDashboard._label('project_timeline'))
+        self.miniature = _TimelineMiniature()
+        timeline.layout().addWidget(self.miniature)
+        self.picture = QLabel()
+        self.picture.setObjectName('export_dialog_card_value')
+        timeline.layout().addWidget(self.picture)
+
+        files = _AudioDashboard._frame(self.layout())
+        files.layout().addWidget(_AudioDashboard._label('project_files'))
+        self.files = QLabel()
+        self.files.setObjectName('export_dialog_card_list')
+        self.files.setWordWrap(True)
+        files.layout().addWidget(self.files)
+
+        self.problems = QLabel()
+        self.problems.setObjectName('export_dialog_problems')
+        self.problems.setWordWrap(True)
+        self.layout().addWidget(self.problems)
+        self.losses = QLabel()
+        self.losses.setObjectName('export_dialog_losses')
+        self.losses.setWordWrap(True)
+        self.layout().addWidget(self.losses)
+        self.layout().addStretch()
+
+    def show_project(self, fmt, timeline, files, problems, losses):
+        """Fill the cards for the `fmt` export of `timeline`: `files`, the
+        lines of what it writes; `problems` and `losses`, lines of each."""
+        spec = project_export.FORMATS[fmt]
+        self.logo.setPixmap(project_logo(fmt).pixmap(28, 28))
+        program, since = spec['opens']
+        self.opens.setText(_('export_dialog.project_or_later').format(program=program, version=since))
+        self.miniature.set_timeline(timeline)
+        if spec.get('audio_only'):
+            self.picture.setText(f'{_duration_text(timeline.duration)} · 48 kHz')
+        else:
+            self.picture.setText(f'{_duration_text(timeline.duration)} · {timeline.width}×{timeline.height} · '
+                                 f'{timeline.fps:.3g} fps')
+        self.files.setText('\n'.join(files))
+        self.problems.setText('\n'.join(f'⚠ {line}' for line in problems))
+        self.problems.setVisible(bool(problems))
+        self.losses.setText('\n'.join(f'· {line}' for line in losses))
+        self.losses.setVisible(bool(losses))
+
+
 class _PreviewPanel(QWidget):
     """The export's preview, beside every page: the start of the file as it
     will be written, or a faded note where there is no text to show. For
@@ -1600,6 +1743,10 @@ class _PreviewPanel(QWidget):
         self.dashboard = _AudioDashboard()
         self.dashboard.setVisible(False)
         file_page.layout().addWidget(self.dashboard, 1)
+        # a project export's timeline, small, and its facts
+        self.project = _ProjectDashboard()
+        self.project.setVisible(False)
+        file_page.layout().addWidget(self.project, 1)
         file_page.layout().addStretch()                        # where the well was, under a picture
         self.layout().addWidget(file_page, 0, 0)
 
@@ -1612,6 +1759,7 @@ class _PreviewPanel(QWidget):
 
     def show_text(self, text):
         self.dashboard.setVisible(False)
+        self.project.setVisible(False)
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
@@ -1620,6 +1768,7 @@ class _PreviewPanel(QWidget):
     def show_note(self, note):
         """`note` in the well, faded: no file to show."""
         self.dashboard.setVisible(False)
+        self.project.setVisible(False)
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
@@ -1636,16 +1785,28 @@ class _PreviewPanel(QWidget):
 
     def show_nothing(self):
         self.dashboard.setVisible(False)
+        self.project.setVisible(False)
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(True)
         self.file.clear()
+
+    def show_project(self, *report):
+        """A project export's dashboard in place of the well (see
+        _ProjectDashboard.show_project)."""
+        self.picture.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(False)
+        self.dashboard.setVisible(False)
+        self.project.setVisible(True)
+        self.project.show_project(*report)
 
     def show_audio(self, facts, problems, loudness):
         """An audio export's dashboard in place of the well."""
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(False)
+        self.project.setVisible(False)
         self.dashboard.setVisible(True)
         self.dashboard.show_report(facts, problems, loudness)
 
@@ -1657,6 +1818,7 @@ class _PreviewPanel(QWidget):
         picture itself; and under that, in the well, `text`: the file the
         pictures go with, when there is one."""
         self.dashboard.setVisible(False)
+        self.project.setVisible(False)
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * frame[1] / frame[0]))
@@ -1685,6 +1847,7 @@ class _PreviewPanel(QWidget):
         """`image`, a frame of the video as the export writes it, scaled to
         the panel's width; its clear parts, if it has them, checkered."""
         self.dashboard.setVisible(False)
+        self.project.setVisible(False)
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
         width = self.WIDTH - margins.left() - margins.right()
         height = max(1, round(width * image.height() / max(1, image.width())))
@@ -2055,9 +2218,10 @@ class ExportDialog(utils.SimpleDialog):
             self.refresh_preview()
 
     def _preview_project(self):
-        """What the project's timeline holds: its tracks, each with how many
-        clips, and its subtitle tracks, each with how many subtitles."""
-        _fmt, choices = self.project_panel.export_choices()
+        """A project export's dashboard: its timeline, small, the program it
+        opens in, the files it writes, and what will not carry over."""
+        fmt, choices = self.project_panel.export_choices()
+        spec = project_export.FORMATS[fmt]
         try:
             timeline = project_export.collect(
                 session.SUBTITLE, session.VIDEO, choices, project_export.background_path(session.VIDEO),
@@ -2066,17 +2230,33 @@ class ExportDialog(utils.SimpleDialog):
         except Exception:
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
-        # Numbered as the editors number them: V1, A1, A2...; S for subtitles.
-        lines, counts = [], {}
-        for letter, name, items in [('V' if track.kind == 'video' else 'A', track.name, track.clips)
-                                    for track in timeline.tracks] + [('S', name, cues)
-                                                                     for name, _lang, cues in timeline.subtitles]:
-            counts[letter] = counts.get(letter, 0) + 1
-            lines.append(f'{letter}{counts[letter]}  {name}  ({len(items)})')
-        if lines:
-            self.preview_panel.show_text('\n'.join(lines))
+        stem = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
+                                                 or 'subtitle'))[0]
+        video = session.VIDEO.get('filepath')
+        sounds = [path for path in timeline.media() if path != video]
+        size = sum(os.path.getsize(path) for path in sounds if os.path.isfile(path))
+        if spec.get('session_folder'):
+            files = [f'{stem}/', f'  {stem}.ardour']
         else:
-            self.preview_panel.show_nothing()
+            files = [f'{stem}.{spec["extension"]}']
+        if sounds:
+            files.append(_('export_dialog.project_sounds').format(count=len(sounds), size=_size_text(size)))
+        segments = session.SUBTITLE.get('segments') or []
+        problems = []
+        gone = audio_report.problems('mixdown', segments).get('files_gone') if choices.get('speeches') else 0
+        if gone:
+            problems.append(_('export_dialog.audio_problem_files_gone').format(count=gone))
+        losses = []
+        if spec.get('audio_only') and video:
+            losses.append(_('export_dialog.project_no_video'))
+        if spec.get('one_subtitle_track') and choices.get('subtitles') and documents.languages_of(segments):
+            losses.append(_('export_dialog.project_no_translations'))
+        if timeline.subtitles and not spec.get('styled_captions'):
+            losses.append(_('export_dialog.project_plain_subtitles'))
+        moved = sum(len(track.clips) for track in timeline.tracks if track.speaker and track.lane > 1)
+        if moved:
+            losses.append(_('export_dialog.project_moved').format(count=moved))
+        self.preview_panel.show_project(fmt, timeline, files, problems, losses)
 
     def _preview_document(self):
         """The document as chosen: the start of its text, or its first

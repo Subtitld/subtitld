@@ -3106,6 +3106,12 @@ QMenu#subtitle_formatting_menu::separator {
     color: #c8dbe9;
 }
 
+#export_dialog_losses {
+    font-size: 11px;
+    color: rgba(184, 206, 224, 150);
+    padding: 0 2px;
+}
+
 #export_dialog_problems {
     font-size: 11px;
     color: #e9b44c;
