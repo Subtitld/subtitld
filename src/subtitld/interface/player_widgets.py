@@ -886,7 +886,10 @@ class Transport(QWidget):
         # Above TAB only play and record show, as two tabs: the keys' slants carried up are their sides, and what
         # was the keys' curve into the top edge rounds the tabs' top corners.
         below = shapes.rect_path(QRectF(-100, self.TAB, self.width() + 200, self.H))
-        self.visible = below.united(tabs)
+        # The tabs reach 1px into what is below them: meeting it edge to edge, at a scale where TAB falls inside a
+        # device pixel (1.2x, 1.25x), the clip left that row half covered, a dark line across both tabs.
+        overlap = self.panel().intersected(shapes.rect_path(QRectF(0, 0, self.width(), self.TAB + 1))).subtracted(notches)
+        self.visible = below.united(overlap)
         for key, path in ((self.play_key, self.play_area.subtracted(self.begin_notch).subtracted(self.group_notch)),
                           (self.record_key, self.record_area.subtracted(self.mode_notch)),
                           (self.begin_key, self.begin_notch.intersected(below)), (self.last_key, self.last_zone.intersected(below)),
