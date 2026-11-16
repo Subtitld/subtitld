@@ -387,6 +387,7 @@ class Window(_MainWindowBase):
         if self.timeline_widget.audio_thread.isRunning():
             self.timeline_widget.audio_thread.cancel()
             self.timeline_widget.audio_thread.wait()
+        self.timeline_widget.stop_scene_detection()
 
         file_io.wait_for_save_threads()
 

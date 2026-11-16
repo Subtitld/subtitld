@@ -657,6 +657,9 @@ class Timeline(QWidget):
         # None / missing while their workers run — paint just skips.
         widget.background_onsets = None  # np.ndarray[float32] | None
         widget.background_onset_thread = None
+        # Fills `session.VIDEO['scenes']` for the scenes grid — see
+        # `subtitld.modules.scene_detection`.
+        widget.scene_thread = None
         widget.dub_onsets = {}    # path -> np.ndarray[float32]
         widget.dub_onset_workers = {}  # path -> DubOnsetsWorker
         # A single selected dub-clip onset mark (plosive). Clicking a mark
@@ -2817,11 +2820,18 @@ class Timeline(QWidget):
             i = session.SUBTITLE['segments'].index(session.SUBTITLE['selected'])
             last = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) - 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) > 0 else {'start': 0, 'end': 0, 'text': ''}
             nextsub = session.SUBTITLE['segments'][session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) + 1] if session.SUBTITLE['segments'].index(session.SUBTITLE['selected']) < len(session.SUBTITLE['segments']) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
-            scenes_list = session.VIDEO['scenes'] if len(session.VIDEO['scenes']) > 1 else [0.0]
-            scenes_list.append(session.VIDEO.get('duration', 60))
+            # The video's start and end are edges to snap to as well. A
+            # copy: appending to the session's own list grew it on every
+            # mouse move.
+            scenes_list = [0.0] + list(session.VIDEO.get('scenes') or []) + [session.VIDEO.get('duration', 60)]
             start_position = (event.pos().x() - widget.offset) / widget.width_proportion
-            last_scene = scenes_list[bisect(scenes_list, start_position) - 1]
-            next_scene = scenes_list[bisect(scenes_list, start_position)]
+
+            def scenes_around(position):
+                """The cuts either side of `position`, held to the video."""
+                index = min(max(bisect(scenes_list, position), 1), len(scenes_list) - 1)
+                return scenes_list[index - 1], scenes_list[index]
+
+            last_scene, next_scene = scenes_around(start_position)
 
             # One undo step per drag: only the first move that actually
             # changes the subtitle records one.
@@ -2856,6 +2866,7 @@ class Timeline(QWidget):
                     widget.show_tug_of_war = session.SUBTITLE['selected']['start']
             elif widget.subtitle_end_is_clicked:
                 end_position = (event.pos().x() + widget.offset) / widget.width_proportion
+                last_scene, next_scene = scenes_around(end_position)
                 if not end_position < (session.SUBTITLE['selected']['start'] + session.CONFIG.get('default_values', {}).get('minimum_subtitle_width', 1)):
                     if not (bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(end_position, 3) >= round(nextsub['start'] - 0.001, 3)) and session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_limits', True) and (nextsub['start'] - session.CONFIG.get('timeline', {}).get('snap_value', .1)) < end_position:
                         subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=(nextsub['start'] - 0.001), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
@@ -2958,6 +2969,10 @@ class Timeline(QWidget):
         if not filepath:
             return
 
+        # Every video open comes through here, so the scene cuts are
+        # started here too.
+        widget.load_scenes()
+
         # Update waveform manager filepath for cache key
         widget.waveform_manager.filepath = filepath
 
@@ -2975,6 +2990,41 @@ class Timeline(QWidget):
         # Cache miss - load audio from file
         widget.audio_thread.filepath = filepath
         widget.audio_thread.start()
+
+    def load_scenes(widget):
+        """Fill `session.VIDEO['scenes']` with the video's cuts, from the
+        cache or from a background pass. Audio-only files (no 'width' from
+        the probe) have none."""
+        from subtitld.modules import scene_detection
+        widget.stop_scene_detection()
+        filepath = session.VIDEO.get('filepath')
+        if not filepath or not session.VIDEO.get('width'):
+            return
+        scenes = scene_detection.cached_scenes(filepath)
+        if scenes is not None:
+            session.VIDEO['scenes'] = scenes
+            return
+        thread = scene_detection.SceneDetectionThread(filepath, parent=widget)
+        thread.response.connect(widget._on_scenes_ready)
+        widget.scene_thread = thread
+        thread.start()
+
+    def stop_scene_detection(widget):
+        thread = widget.scene_thread
+        widget.scene_thread = None
+        if thread is not None and thread.isRunning():
+            thread.stop()
+            thread.wait()
+
+    def _on_scenes_ready(widget, response):
+        filepath, scenes = response
+        if session.VIDEO.get('filepath') != filepath:  # another video was opened meanwhile
+            return
+        session.VIDEO['scenes'] = scenes
+        widget.update()
+        vtimeline = getattr(widget.window(), 'vtimeline_panel', None)
+        if vtimeline is not None:
+            vtimeline.canvas.update()
 
     def on_waveform_loaded(widget, samples, samplerate):
         session.VIDEO["samplerate"] = samplerate
