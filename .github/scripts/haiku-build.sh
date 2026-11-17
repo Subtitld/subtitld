@@ -28,6 +28,11 @@ if [ -z "${LIBRARY_PATH:-}" ]; then
 fi
 
 pkgman install -y haikuporter > /dev/null
+# The image's gcc (13) beside the binutils haikuporter's dependencies bring
+# (2.46): libdatachannel's CMake finds no working C++ compiler with the two.
+# The current gcc, as a Haiku kept up to date has it.
+pkgman update -y gcc binutils > /dev/null
+gcc --version | head -1
 
 # A minimal ports tree: the recipes from this repository, nothing else.
 # (A failed run can leave a chroot mounted in the old tree: move it aside.)
