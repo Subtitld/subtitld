@@ -190,7 +190,8 @@ check('a Latin capital the Cyrillic G2 set leaves out: written as the Cyrillic l
       [s['text'] for s in tt.decode([(0, f) for f in tt.page_fields('TAXI', language='ru')]
                                     + [(90000, f) for f in tt.page_fields('', language='ru')], origin=0)], ['ТАХI'])
 check('the page\'s X/28/0 is sent only where a set is designated',
-      [len(tt.page_fields('Hello', language='en')), len(tt.page_fields('Привет', language='ru'))], [2, 3])
+      [tt._x28(tt.page_parts(tt.DEFAULT_PAGE)[0], 4, 4) in tt.page_fields(text, language=language)
+       for text, language in (('Hello', 'en'), ('Привет', 'ru'))], [False, True])
 
 ffmpeg = shutil.which('ffmpeg')
 decoders = subprocess.run([ffmpeg, '-hide_banner', '-decoders'], capture_output=True, text=True).stdout if ffmpeg else ''

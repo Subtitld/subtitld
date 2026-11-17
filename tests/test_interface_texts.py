@@ -38,7 +38,7 @@ app = QApplication([])
 import i18n
 from subtitld.modules import session, shortcuts
 from subtitld.modules.addons import installer
-from subtitld.interface import translation, utils, startscreen, left_panel_global, playercontrols
+from subtitld.interface import translation, utils, startscreen, recent_cards, left_panel_global, playercontrols
 from subtitld import __main__ as subtitld_main
 
 installer.fetch_catalog = lambda force_refresh=False, **_kwargs: {}
@@ -96,10 +96,11 @@ i18n.translations.container['pt_BR'] = {key: f'⟦{value}⟧' for key, value in 
 # the formatting bar's letters show them in every language.
 ENGLISH = {text for value in EN.values() for text in (value, value.upper()) if len(value) > 1}
 # Names, the same in every language: English in the language picker, the
-# plain-text editor's Subtitld theme, the subtitld.cc card's title, and the
-# machine's recording devices (ALSA has one called "default").
+# plain-text editor's Subtitld theme, the subtitld.cc card's title, Subtitld
+# Cloud's in its account header, and the machine's recording devices (ALSA
+# has one called "default").
 from subtitld.modules import recorder
-NAMES = {'English', 'Subtitld', 'subtitld.cc'} | {name for _index, name in recorder.list_input_devices()}
+NAMES = {'English', 'Subtitld', 'subtitld.cc', 'Subtitld Cloud'} | {name for _index, name in recorder.list_input_devices()}
 
 print('friendly_time, in another language')
 translation.set_language('pt_BR')
@@ -152,8 +153,9 @@ _project.mkdir()
 session.CONFIG['recent_files'] = {str(_project / 'film.srt'): {
     'video_filepath': str(_project / 'film.mp4'), 'last_opened': time.time() - 7200.5}}
 startscreen.update_recent_files_list(window)
-ages = [label for label in window.start_screen_recent_listwidget.findChildren(QLabel) if label.property('class') == 'age']
-check('a recent file\'s age', [label.text() for label in ages], ['⟦2 hours ago⟧'])
+# The card paints its age itself (recent_cards.RecentCard), so the age is read off the card.
+ages = window.start_screen_recent_listwidget.findChildren(recent_cards.RecentCard)
+check('a recent file\'s age', [card.age for card in ages], ['⟦2 hours ago⟧'])
 
 built = texts(window)
 check('no text is English', sorted({text for _i, _type, text in built if text in ENGLISH} - NAMES), [])
@@ -202,7 +204,7 @@ check('the step units', [window.step_unit.itemText(i) for i in range(window.step
 check('a shortcut', window.keyboard_panel_rows['zoom_in'].name_label.text(), 'Zoom in')
 check('a metadata field', metadata_labels['metadata_panel.field_has_hdr_content'].text(), 'HAS HDR CONTENT')
 check('a kept dialog\'s Cancel', dialog.reject_button.text(), 'Cancel')
-check('the recent file\'s age', [label.text() for label in ages], ['2 hours ago'])
+check('the recent file\'s age', [card.age for card in ages], ['2 hours ago'])
 pick(window, '')
 check('back to the system\'s', translation.get_language(), 'pt_BR')
 switched_back = texts(window)

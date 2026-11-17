@@ -1596,4 +1596,6 @@ class LiveBar(QWidget):
         self.chat.setToolTip(_('collab.chat_title'))
         self.toggle.setToolTip(_('collab.title'))
         self.share.setText(_('collab.share'))
+        self._media_dialog.retranslate()
+        self._media_dialog.set_title(_('collab.media'))
         self.refresh()
