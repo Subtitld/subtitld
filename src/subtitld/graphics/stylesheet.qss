@@ -2781,8 +2781,10 @@ QMenu#subtitle_formatting_menu::separator {
     background-color: #1a304251;
 }
 
+/* Icon buttons on the card's colour strip: flat, no contact line under them. */
 #left_panel_speakers_panel_content_item QPushButton {
     background-color: transparent;
+    border: 0;
 }
 
 #left_panel_speakers_panel_content_item QPushButton::hover {
@@ -4362,11 +4364,11 @@ QPushButton#account_header_connect:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d6e4ef, stop:1 #c8dbe9);
 }
 
-/* A word under the tab (subtitld.cc's Disconnect): plain text, lit on hover. */
+/* A word under the tab (subtitld.cc's Disconnect): plain text, lit on hover, square in the header's corner. */
 QPushButton#account_header_text_button {
     background: transparent;
     border: 0;
-    border-radius: 3px;
+    border-radius: 0;
     padding: 0 8px;
     font-family: 'Montserrat';
     font-size: 9px;
