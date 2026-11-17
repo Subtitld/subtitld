@@ -7,7 +7,9 @@
 #   smoke-render.sh <style.html> <command> [args...]
 #
 # <command> is the package's Subtitld; <style.html>, Classic's template in it.
-# Passes if a layer of the subtitle comes back within 60 seconds.
+# Passes if a layer of the subtitle comes back within 60 seconds, wide enough
+# to hold its text: "Smoke test" at 60px of a 1080p picture is some 120px of
+# this 640x360 one, and a layer with the box alone (no font, no text) is not.
 set -u
 
 template=$1
@@ -31,7 +33,7 @@ for attempt in 1 2; do
     # Where Chromium's sandbox cannot start, the helper stops before a page
     # is ready; Subtitld then starts it again without it, and so does this.
     { printf '{"cmd": "template", "path": "%s"}\n%s\n' "$template" "$job"; exec sleep 60; } \
-        | ${limit[@]+"${limit[@]}"} "$@" --subtitle-render-worker ${no_sandbox:-} > "$log.out" 2> "$log" &
+        | SUBTITLD_DEBUG=1 ${limit[@]+"${limit[@]}"} "$@" --subtitle-render-worker ${no_sandbox:-} > "$log.out" 2> "$log" &
     pid=$!
     for ((i = 1; i <= 60; i++)); do
         sleep 1
@@ -39,7 +41,14 @@ for attempt in 1 2; do
             # The helper, and the commands' keep-alive before it.
             kill "$pid" 2>/dev/null
             pkill -P $$ 2>/dev/null || true
-            grep -a '"id": 1' "$log.out" | head -1 | cut -c1-120
+            reply=$(grep -a '"id": 1' "$log.out" | head -1 | cut -c1-120)
+            echo "$reply"
+            width=$(echo "$reply" | sed -n 's/.*"w": \([0-9]*\).*/\1/p')
+            if [ "${width:-0}" -lt 100 ]; then
+                tail -30 "$log"
+                echo "::error::the subtitle renderer gave a layer ${width:-0}px wide: its text is not there"
+                exit 1
+            fi
             echo "rendered a subtitle after ${i}s"
             exit 0
         fi
