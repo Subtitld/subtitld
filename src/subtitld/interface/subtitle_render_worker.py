@@ -127,6 +127,10 @@ def main():
     os.environ['QT_QPA_OFFSCREEN_NO_GLX'] = '1'
     for name in ('DISPLAY', 'WAYLAND_DISPLAY'):
         os.environ.pop(name, None)
+    # Nor a platform theme: the Flatpak sets gtk3 for the app, and Qt's gtk3
+    # theme calls gtk_init(), which ends the process with no display to open
+    # (an X11 session, a CI runner; on Wayland GDK finds wayland-0 anyway).
+    os.environ.pop('QT_QPA_PLATFORMTHEME', None)
     # At scale 1, whatever started it (SCALING_VARIABLES).
     for name in SCALING_VARIABLES:
         os.environ.pop(name, None)
