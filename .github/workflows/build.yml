@@ -327,6 +327,12 @@ jobs:
             throw "expected the Subtitld window, found '$title'"
           }
           Stop-Process $p -Force
+      - name: Render a subtitle
+        # The preview's subtitle renderer: the app again, as a helper, with QtWebEngine's Chromium.
+        shell: bash
+        run: |
+          template=$(cygpath -m "$(find dist/Subtitld -path '*subtitle_styles/classic/style.html' | head -1)")
+          bash .github/scripts/smoke-render.sh "$template" dist/Subtitld/Subtitld.exe
       - name: Portable (zip)
         run: Compress-Archive dist\Subtitld "Subtitld-$env:VERSION-portable.zip"
       - name: Installer (NSIS)
@@ -431,6 +437,11 @@ jobs:
           fi
       - name: Start it
         run: bash .github/scripts/smoke.sh 40 dist/Subtitld.app/Contents/MacOS/Subtitld
+      - name: Render a subtitle
+        # The preview's subtitle renderer: the app again, as a helper, with QtWebEngine's Chromium.
+        run: |
+          template=$(find dist/Subtitld.app -path '*subtitle_styles/classic/style.html' | head -1)
+          bash .github/scripts/smoke-render.sh "$template" dist/Subtitld.app/Contents/MacOS/Subtitld
       - name: Create the DMG
         run: |
           create-dmg \
