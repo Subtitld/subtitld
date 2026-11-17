@@ -23,6 +23,7 @@ job='{"cmd": "render", "id": 1, "size": [640, 360], "urgent": true, "page": {"ht
   "aspect": 1.7778, "safe": [0.1, 0.1], "offset": 0, "duration": 1000, "pad": 0.03}}'
 job=$(echo "$job" | tr -d '\n')
 # macOS has no timeout(1); the loop below stops the helper after 60s anyway.
+# (An empty array written so that bash 3.2, macOS's, takes it under set -u.)
 limit=()
 command -v timeout > /dev/null && limit=(timeout 60)
 
@@ -30,7 +31,7 @@ for attempt in 1 2; do
     # Where Chromium's sandbox cannot start, the helper stops before a page
     # is ready; Subtitld then starts it again without it, and so does this.
     { printf '{"cmd": "template", "path": "%s"}\n%s\n' "$template" "$job"; exec sleep 60; } \
-        | "${limit[@]}" "$@" --subtitle-render-worker ${no_sandbox:-} > "$log.out" 2> "$log" &
+        | ${limit[@]+"${limit[@]}"} "$@" --subtitle-render-worker ${no_sandbox:-} > "$log.out" 2> "$log" &
     pid=$!
     for ((i = 1; i <= 60; i++)); do
         sleep 1
