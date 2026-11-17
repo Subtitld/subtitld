@@ -331,7 +331,7 @@ jobs:
         # The preview's subtitle renderer: the app again, as a helper, with QtWebEngine's Chromium.
         shell: bash
         run: |
-          template=$(cygpath -m "$(find dist/Subtitld -path '*subtitle_styles/classic/style.html' | head -1)")
+          template=$(cygpath -m "$(find "$PWD/dist/Subtitld" -path '*subtitle_styles/classic/style.html' | head -1)")
           bash .github/scripts/smoke-render.sh "$template" dist/Subtitld/Subtitld.exe
       - name: Portable (zip)
         run: Compress-Archive dist\Subtitld "Subtitld-$env:VERSION-portable.zip"
@@ -440,7 +440,7 @@ jobs:
       - name: Render a subtitle
         # The preview's subtitle renderer: the app again, as a helper, with QtWebEngine's Chromium.
         run: |
-          template=$(find dist/Subtitld.app -path '*subtitle_styles/classic/style.html' | head -1)
+          template=$(find "$PWD/dist/Subtitld.app" -path '*subtitle_styles/classic/style.html' | head -1)
           bash .github/scripts/smoke-render.sh "$template" dist/Subtitld.app/Contents/MacOS/Subtitld
       - name: Create the DMG
         run: |

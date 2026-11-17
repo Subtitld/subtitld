@@ -6,7 +6,8 @@
 #
 #   smoke-render.sh <style.html> <command> [args...]
 #
-# <command> is the package's Subtitld; <style.html>, Classic's template in it.
+# <command> is the package's Subtitld; <style.html>, Classic's template in it,
+# as an absolute path (the helper refuses a style at any other URL).
 # Passes if a layer of the subtitle comes back within 60 seconds, wide enough
 # to hold its text: "Smoke test" at 60px of a 1080p picture is some 120px of
 # this 640x360 one, and a layer with the box alone (no font, no text) is not.
