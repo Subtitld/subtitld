@@ -303,9 +303,11 @@ def html(document, size=11):
             parts += [f'<th width="{width:.0f}%">{escape(cell)}</th>'
                       for cell, width in zip(document.header, document.widths)]
             parts.append('</tr></thead>')
+            # No backslash inside the f-strings: Python before 3.12 (the snap's 3.10) cannot read one.
+            nowrap = ' style="white-space: nowrap;"'
             for row in rows:
                 parts.append('<tr>' + ''.join(
-                    f'<td{" style=\"white-space: nowrap;\"" if kind == "time" else ""}>'
+                    f'<td{nowrap if kind == "time" else ""}>'
                     f'{escape(cell).replace(chr(10), "<br>")}</td>' for cell, kind in zip(row, document.kinds))
                              + '</tr>')
             parts.append('</table>')
