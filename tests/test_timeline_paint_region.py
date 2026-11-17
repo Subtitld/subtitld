@@ -112,7 +112,7 @@ CURSOR = 806.25         # inside the viewport, between subtitles 402 and 403
 session.CONFIG = {'timeline': {'show_onset_markers': True, 'waveform_fill_color': WAVEFORM_FILL},
                   'default_values': {'minimum_subtitle_width': 0.5},
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
-session.VIDEO = {'duration': DURATION, 'scenes': [], 'samplerate': SAMPLERATE}
+session.VIDEO = {'duration': DURATION, 'shot_changes': [], 'samplerate': SAMPLERATE}
 session.SPEAKERS = {'A': {'color': '#ff2e93'}, 'B': {'color': '#2e93ff'}}
 # One subtitle every 2 s, 1.5 s long: subtitle i spans [2i, 2i + 1.5].
 session.SUBTITLE = {'segments': [{'start': i * 2.0, 'end': i * 2.0 + 1.5, 'text': f'sub {i}', 'speaker': 'AB'[i % 2]}

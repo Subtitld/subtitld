@@ -574,7 +574,7 @@ from subtitld.interface.translation import _
 
 
 class ThreadGenerateHashOfVideo(QThread):
-    """Thread to extract time positions of scenes"""
+    """Thread to hash the video file"""
     response = Signal(list)
     filepath = ''
 
@@ -1498,7 +1498,7 @@ def process_video_file(video_file=False):
         video_subtitles.tracks(json_result, language_of=_known_language), video_file, language_of=_known_language),
         video_file, language_of=_known_language)
     video_metadata['filepath'] = video_file
-    video_metadata['scenes'] = []
+    video_metadata['shot_changes'] = []
 
     return video_metadata
 

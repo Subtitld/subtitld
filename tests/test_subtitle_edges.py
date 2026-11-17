@@ -158,7 +158,7 @@ class Host(QWidget):
 
 session.CONFIG = {'timeline': {'snap': True, 'snap_limits': True, 'snap_value': .1, 'snap_grid': False, 'snap_move_nereast': True},
                   'default_values': {'minimum_subtitle_width': .5}, 'repeat_activated': False, 'shortcuts': {}}
-session.VIDEO = {'duration': 10.0, 'framerate': 25, 'scenes': []}
+session.VIDEO = {'duration': 10.0, 'framerate': 25, 'shot_changes': []}
 host = Host()
 
 print('the nudge keys, 1 and 7, with "snap moving to nearest" on')

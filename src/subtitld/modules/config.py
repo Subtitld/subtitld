@@ -37,7 +37,12 @@ class Config(dict):
             self['timeline_zoom'] = 100.0
         else:
             self['timeline_zoom'] = min(TIMELINE_ZOOM_MAX, max(TIMELINE_ZOOM_MIN, float(zoom)))
-        
+
+        # The shot changes grid used to be called the scenes grid.
+        timeline = self.get('timeline')
+        if isinstance(timeline, dict) and timeline.get('grid_type') == 'scenes':
+            timeline['grid_type'] = 'shot_changes'
+
     def __getitem__(self, key):
         return super().get(key, False)  # returns False if not found
     

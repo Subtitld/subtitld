@@ -72,7 +72,7 @@ def reset_document():
 
 session.CONFIG = {'timeline': {'snap': False}, 'default_values': {'minimum_subtitle_width': 0.5},
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
-session.VIDEO = {'duration': 60.0, 'scenes': []}
+session.VIDEO = {'duration': 60.0, 'shot_changes': []}
 session.SPEAKERS = {'A': {'color': '#ff2e93'}}
 reset_document()
 

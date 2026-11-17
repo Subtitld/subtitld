@@ -116,10 +116,10 @@ def _snap_to_grid(position, cfg):
     if grid_type == 'seconds':
         nearest = float(round(position))
         return nearest if abs(position - nearest) < value else position
-    if grid_type == 'scenes':
-        scenes = session.VIDEO.get('scenes') or []
-        if scenes:
-            nearest = min(scenes, key=lambda scene: abs(scene - position))
+    if grid_type == 'shot_changes':
+        cuts = session.VIDEO.get('shot_changes') or []
+        if cuts:
+            nearest = min(cuts, key=lambda cut: abs(cut - position))
             if abs(position - nearest) < value:
                 return float(nearest)
     return position
@@ -532,10 +532,10 @@ class VerticalTimeline(QWidget):
                 for frame in range(int(top_time * framerate), int(bottom_time * framerate) + 2):
                     y = self.y_at(frame / framerate)
                     painter.drawLine(QPointF(left, y), QPointF(right, y))
-        elif grid_type == 'scenes':
-            for scene in session.VIDEO.get('scenes') or []:
-                if top_time <= scene <= bottom_time:
-                    y = self.y_at(scene)
+        elif grid_type == 'shot_changes':
+            for cut in session.VIDEO.get('shot_changes') or []:
+                if top_time <= cut <= bottom_time:
+                    y = self.y_at(cut)
                     painter.drawLine(QPointF(left, y), QPointF(right, y))
 
     def _paint_waveform(self, painter, cfg, top_time, bottom_time, lane):

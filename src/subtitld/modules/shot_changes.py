@@ -1,5 +1,5 @@
-"""Scene changes (cuts) in the video, for the timeline's "scenes" grid and
-snapping.
+"""Shot changes (cuts) in the video, for the timeline's "shot changes" grid
+and snapping.
 
 FFmpeg's `scdet` filter scores every frame's change from the one before
 (0-100), on frames scaled down to 160 px wide: the comparison is a
@@ -39,17 +39,21 @@ WINDOW = 0.5
 RULES_VERSION = 2
 
 
-def cache_path(filepath):
-    """The JSON file the scene times of `filepath` are kept in, or None."""
+def cache_path(filepath, name='shot_changes'):
+    """The JSON file the shot change times of `filepath` are kept in, or
+    None. Before the rename they were kept under `name='scenes'`."""
     cache_key = utils.get_cache_key(filepath)
     if not cache_key:
         return None
-    return os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform', f'{cache_key}_scenes{RULES_VERSION}.json')
+    return os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform', f'{cache_key}_{name}{RULES_VERSION}.json')
 
 
-def cached_scenes(filepath):
-    """The scene times found earlier for `filepath`, or None."""
+def cached_shot_changes(filepath):
+    """The shot change times found earlier for `filepath`, or None; a file
+    cached under the old "scenes" name still counts."""
     path = cache_path(filepath)
+    if path and not os.path.isfile(path):
+        path = cache_path(filepath, name='scenes')
     if not path or not os.path.isfile(path):
         return None
     try:
@@ -59,14 +63,14 @@ def cached_scenes(filepath):
         return None
 
 
-def _save(filepath, scenes):
+def _save(filepath, times):
     path = cache_path(filepath)
     if not path:
         return
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'w') as cache_file:
-            json.dump(scenes, cache_file)
+            json.dump(times, cache_file)
     except OSError:
         pass
 
@@ -91,7 +95,7 @@ def cuts(scores):
     return found
 
 
-class SceneDetectionThread(QThread):
+class ShotChangeThread(QThread):
     """Reads `filepath` through scdet and emits [filepath, sorted times in
     seconds]. Emits nothing when stopped or when FFmpeg fails (an FFmpeg
     without scdet, older than 4.4, or a file it can't decode): the grid
@@ -144,6 +148,6 @@ class SceneDetectionThread(QThread):
         if process.wait() != 0 or self.isInterruptionRequested():
             return
         scores.sort()
-        scenes = cuts(scores)
-        _save(self.filepath, scenes)
-        self.response.emit([self.filepath, scenes])
+        times = cuts(scores)
+        _save(self.filepath, times)
+        self.response.emit([self.filepath, times])

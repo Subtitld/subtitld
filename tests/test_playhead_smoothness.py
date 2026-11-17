@@ -128,7 +128,7 @@ ZOOM = 100              # px a second
 
 session.CONFIG = {'timeline': {}, 'default_values': {'minimum_subtitle_width': 0.5},
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
-session.VIDEO = {'duration': DURATION, 'scenes': []}
+session.VIDEO = {'duration': DURATION, 'shot_changes': []}
 session.SPEAKERS = {}
 session.SUBTITLE = {'segments': [], 'selected': None, 'position': 0.0}
 

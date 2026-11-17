@@ -408,7 +408,7 @@ Done in M11:
 | Vocals/background stems | On request | Already FLAC. Slow to compute, so worth sending. |
 | Dub clips | **Automatically** | Small. Needed for playback and export. |
 | Speaker images | Automatically | Small |
-| Scene list | As ordinary data | Tiny; goes through the change log as data |
+| Shot change list | As ordinary data | Tiny; goes through the change log as data |
 | Proxy video | Later phase | Lower-quality option |
 
 **Transport:**

@@ -1,7 +1,7 @@
-"""Timeline: the scenes grid. Subtitles snap to the video's cuts, which
-scene_detection finds with FFmpeg's scdet and caches per video.
+"""Timeline: the shot changes grid. Subtitles snap to the video's cuts, which
+shot_changes finds with FFmpeg's scdet and caches per video.
 
-Nothing filled `session.VIDEO['scenes']` for years, so the grid did
+Nothing filled `session.VIDEO['shot_changes']` for years, so the grid did
 nothing; and the drag appended the video's duration to that list on every
 mouse move, and took the end handle's neighbouring cuts from the start side.
 
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtTest import QTest
 app = QApplication([])
-from subtitld.modules import session, history, scene_detection
+from subtitld.modules import session, history, shot_changes
 from subtitld.interface import timeline
 
 fails = []
@@ -72,7 +72,7 @@ def reset_document():
 
 session.CONFIG = {'timeline': {'snap': False}, 'default_values': {'minimum_subtitle_width': 0.5},
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
-session.VIDEO = {'duration': 60.0, 'scenes': [5.5, 12.0]}
+session.VIDEO = {'duration': 60.0, 'shot_changes': [5.5, 12.0]}
 session.SPEAKERS = {'A': {'color': '#ff2e93'}}
 reset_document()
 
@@ -107,21 +107,21 @@ def timing(index):
 
 
 SNAP = {'snap': True, 'snap_grid': True, 'snap_limits': False, 'snap_moving': False,
-        'snap_value': 0.1, 'show_grid': True, 'grid_type': 'scenes'}
+        'snap_value': 0.1, 'show_grid': True, 'grid_type': 'shot_changes'}
 
 print('dragging the start near a cut')
 reset_document()
 session.CONFIG['timeline'] = dict(SNAP)
 drag(x_at(6.0) + 5, x_at(5.55) + 5)
 check('snaps the start to it', timing(2), (5.5, 8.0))
-check('the scenes list is left as it was', session.VIDEO['scenes'], [5.5, 12.0])
+check('the list of shot changes is left as it was', session.VIDEO['shot_changes'], [5.5, 12.0])
 
 print('dragging the end near a cut')
 reset_document()
 segment(2)['end'] = 11.0
 drag(x_at(11.0) - 5, x_at(11.95) - 5)
 check('snaps the end to it', timing(2), (6.0, 12.0))
-check('the scenes list is still as it was', session.VIDEO['scenes'], [5.5, 12.0])
+check('the list of shot changes is still as it was', session.VIDEO['shot_changes'], [5.5, 12.0])
 
 print('moving a subtitle near a cut')
 reset_document()
@@ -135,36 +135,45 @@ check('it moves freely', timing(2), (8.0, 10.0))
 
 print('the video start and end are edges too')
 reset_document()
-session.VIDEO['scenes'] = []
+session.VIDEO['shot_changes'] = []
 drag(x_at(1.0) + 5, x_at(0.05) + 5)
 check('the start snaps to 0', timing(0), (0.0, 3.0))
-session.VIDEO['scenes'] = [5.5, 12.0]
+session.VIDEO['shot_changes'] = [5.5, 12.0]
 session.CONFIG['timeline'] = {'snap': False}
 
 print('telling cuts from motion')
 quiet = [(n / 10, 0.2) for n in range(100)]
 check('a lone spike in a still shot is a cut',
-      scene_detection.cuts(sorted(quiet[:50] + [(5.05, 3.0)] + quiet[50:])), [5.05])
+      shot_changes.cuts(sorted(quiet[:50] + [(5.05, 3.0)] + quiet[50:])), [5.05])
 busy = [(n / 10, 2.0 + (n % 3)) for n in range(100)]
 check('the same spike among moving frames is not',
-      scene_detection.cuts(sorted(busy[:50] + [(5.05, 5.0)] + busy[50:])), [])
+      shot_changes.cuts(sorted(busy[:50] + [(5.05, 5.0)] + busy[50:])), [])
 check('a score of 10 is a cut whatever is around it',
-      scene_detection.cuts(sorted(busy[:50] + [(5.05, 10.0)] + busy[50:])), [5.05])
-check('nothing under the floor is', scene_detection.cuts([(0.0, 0.0), (1.0, 2.4), (2.0, 0.0)]), [])
+      shot_changes.cuts(sorted(busy[:50] + [(5.05, 10.0)] + busy[50:])), [5.05])
+check('nothing under the floor is', shot_changes.cuts([(0.0, 0.0), (1.0, 2.4), (2.0, 0.0)]), [])
 
-print('loading the scenes of a video')
+print('loading the shot changes of a video')
 video = os.path.join(_xdg, 'video.mkv')
 open(video, 'wb').write(b'not really a video')
-scene_detection._save(video, [1.25, 3.5])
-session.VIDEO = {'duration': 60.0, 'scenes': [], 'filepath': video, 'width': 640}
-widget.load_scenes()
-check('a cached result is used at once', session.VIDEO['scenes'], [1.25, 3.5])
-check('without a thread', widget.scene_thread, None)
-widget._on_scenes_ready(['/elsewhere.mkv', [9.0]])
-check("another video's result is ignored", session.VIDEO['scenes'], [1.25, 3.5])
-session.VIDEO = {'duration': 60.0, 'scenes': [], 'filepath': video}
-widget.load_scenes()
-check('an audio-only file has none', (session.VIDEO['scenes'], widget.scene_thread), ([], None))
+shot_changes._save(video, [1.25, 3.5])
+session.VIDEO = {'duration': 60.0, 'shot_changes': [], 'filepath': video, 'width': 640}
+widget.load_shot_changes()
+check('a cached result is used at once', session.VIDEO['shot_changes'], [1.25, 3.5])
+check('without a thread', widget.shot_change_thread, None)
+widget._on_shot_changes_ready(['/elsewhere.mkv', [9.0]])
+check("another video's result is ignored", session.VIDEO['shot_changes'], [1.25, 3.5])
+session.VIDEO = {'duration': 60.0, 'shot_changes': [], 'filepath': video}
+widget.load_shot_changes()
+check('an audio-only file has none', (session.VIDEO['shot_changes'], widget.shot_change_thread), ([], None))
+os.rename(shot_changes.cache_path(video), shot_changes.cache_path(video, name='scenes'))
+check('a result cached under the old "scenes" name is still used', shot_changes.cached_shot_changes(video), [1.25, 3.5])
+os.rename(shot_changes.cache_path(video, name='scenes'), shot_changes.cache_path(video))
+
+print('a saved "scenes" grid')
+from subtitld.modules import config as config_module
+_config_file = os.path.join(_xdg, 'old_config.json')
+open(_config_file, 'w').write('{"timeline": {"show_grid": true, "grid_type": "scenes"}}')
+check('is the shot changes grid now', config_module.Config(_config_file)['timeline']['grid_type'], 'shot_changes')
 
 print('a real video, read by FFmpeg')
 import subprocess
@@ -172,7 +181,7 @@ clip = os.path.join(_xdg, 'cut.mp4')
 subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0x204060:s=320x180:r=25:d=2',
                 '-f', 'lavfi', '-i', 'testsrc=s=320x180:r=25:d=2', '-filter_complex', '[0][1]concat=n=2:v=1',
                 '-pix_fmt', 'yuv420p', clip], check=True)
-thread = scene_detection.SceneDetectionThread(clip, 4.0)
+thread = shot_changes.ShotChangeThread(clip, 4.0)
 progress, found = [], []
 thread.progress.connect(progress.append)
 thread.response.connect(found.append)
@@ -183,13 +192,13 @@ check('finds the one cut', found and found[0][1], [2.0])
 check('reports its progress, rising', bool(progress) and progress == sorted(progress) and progress[-1] >= 0.95, True)
 
 print('a file FFmpeg cannot read')
-os.remove(scene_detection.cache_path(video))
-session.VIDEO = {'duration': 60.0, 'scenes': [], 'filepath': video, 'width': 640}
-widget.load_scenes()
-widget.scene_thread.wait(10000)
+os.remove(shot_changes.cache_path(video))
+session.VIDEO = {'duration': 60.0, 'shot_changes': [], 'filepath': video, 'width': 640}
+widget.load_shot_changes()
+widget.shot_change_thread.wait(10000)
 QTest.qWait(50)
-check('leaves the grid empty', session.VIDEO['scenes'], [])
-check('and caches nothing', scene_detection.cached_scenes(video), None)
+check('leaves the grid empty', session.VIDEO['shot_changes'], [])
+check('and caches nothing', shot_changes.cached_shot_changes(video), None)
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

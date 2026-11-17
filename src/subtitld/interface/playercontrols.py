@@ -69,11 +69,11 @@ def _set_collapsed(button, collapsed, animate=True):
     button.adjustSize()
 
 
-class _ScenesGridButton(QPushButton):
-    """The grid's scenes button, which also shows how far the search for the
-    video's cuts has got (`modules.scene_detection`): a bar along its
+class _ShotChangesGridButton(QPushButton):
+    """The grid's shot changes button, which also shows how far the search for the
+    video's cuts has got (`modules.shot_changes`): a bar along its
     bottom edge, and the percentage in its tooltip. The cuts take a while on
-    a long video, and until then the scenes grid has nothing to draw."""
+    a long video, and until then the shot changes grid has nothing to draw."""
 
     # The icon's own colour.
     BAR_COLOR = QColor('#b8cee0')
@@ -85,9 +85,9 @@ class _ScenesGridButton(QPushButton):
     def set_progress(self, progress):
         self.progress = progress
         if progress is None:
-            self.setToolTip(_('playercontrols.grid_scenes'))
+            self.setToolTip(_('playercontrols.grid_shot_changes'))
         else:
-            self.setToolTip(_('playercontrols.grid_scenes_finding').format(percent=int(progress * 100)))
+            self.setToolTip(_('playercontrols.grid_shot_changes_finding').format(percent=int(progress * 100)))
         self.update()
 
     def paintEvent(self, event):
@@ -1389,14 +1389,14 @@ def load(self):
     self.grid_seconds_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
     self.grid_controls_container.layout().addWidget(self.grid_seconds_button)
 
-    self.grid_scenes_button = _ScenesGridButton()
-    self.grid_scenes_button.setObjectName('grid_scenes_button')
-    self.grid_scenes_button.setCheckable(True)
-    self.grid_scenes_button.setIconSize(QSize(16, 16))
-    self.grid_scenes_button.setFixedWidth(28)
-    self.grid_scenes_button.clicked.connect(lambda: grid_type_changed(self, 'scenes'))
-    self.grid_scenes_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-    self.grid_controls_container.layout().addWidget(self.grid_scenes_button)
+    self.grid_shot_changes_button = _ShotChangesGridButton()
+    self.grid_shot_changes_button.setObjectName('grid_shot_changes_button')
+    self.grid_shot_changes_button.setCheckable(True)
+    self.grid_shot_changes_button.setIconSize(QSize(16, 16))
+    self.grid_shot_changes_button.setFixedWidth(28)
+    self.grid_shot_changes_button.clicked.connect(lambda: grid_type_changed(self, 'shot_changes'))
+    self.grid_shot_changes_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+    self.grid_controls_container.layout().addWidget(self.grid_shot_changes_button)
 
     self.playercontrols_widget_right_bottom_line.layout().addWidget(self.grid_controls_container)
 
@@ -2046,10 +2046,10 @@ def grid_type_changed(self, gridtype):
     _repaint_grids(self)
 
 
-def scenes_progress(self, progress):
+def shot_changes_progress(self, progress):
     """How far the search for the video's cuts has got, 0-1, shown on
-    the grid's scenes button; None when none is running."""
-    self.grid_scenes_button.set_progress(progress)
+    the grid's shot changes button; None when none is running."""
+    self.grid_shot_changes_button.set_progress(progress)
 
 
 def _repaint_grids(self):
@@ -2068,8 +2068,8 @@ def update_grid_buttons(self):
     self.grid_frames_button.setChecked(True if session.CONFIG['timeline'].get('grid_type', False) == 'frames' else False)
     self.grid_seconds_button.setEnabled(session.CONFIG['timeline'].get('show_grid', False))
     self.grid_seconds_button.setChecked(True if session.CONFIG['timeline'].get('grid_type', False) == 'seconds' else False)
-    self.grid_scenes_button.setEnabled(session.CONFIG['timeline'].get('show_grid', False))
-    self.grid_scenes_button.setChecked(True if session.CONFIG['timeline'].get('grid_type', False) == 'scenes' else False)
+    self.grid_shot_changes_button.setEnabled(session.CONFIG['timeline'].get('show_grid', False))
+    self.grid_shot_changes_button.setChecked(True if session.CONFIG['timeline'].get('grid_type', False) == 'shot_changes' else False)
 
 
 def onset_button_clicked(self):
@@ -2898,7 +2898,7 @@ def translate(self):
     self.onset_button.setToolTip(_('playercontrols.onset_tooltip'))
     self.grid_frames_button.setToolTip(_('playercontrols.grid_frames'))
     self.grid_seconds_button.setToolTip(_('playercontrols.grid_seconds'))
-    self.grid_scenes_button.set_progress(self.grid_scenes_button.progress)   # its tooltip, with the progress if any
+    self.grid_shot_changes_button.set_progress(self.grid_shot_changes_button.progress)   # its tooltip, with the progress if any
     self.step_button.setToolTip(_('playercontrols.step'))
     for unit, label in (('Frames', _('units.frames')), ('Seconds', _('units.seconds'))):
         self.step_unit.setItemText(self.step_unit.findData(unit), label)

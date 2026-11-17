@@ -2548,17 +2548,17 @@ QMenu#subtitle_formatting_menu::separator {
     icon: url(graphics:grid_seconds_icon_disabled.svg);
 }
 
-#playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button {
-    icon: url(graphics:grid_scenes_icon.svg);
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_shot_changes_button {
+    icon: url(graphics:grid_shot_changes_icon.svg);
     border-top-right-radius: 3px;
 }
 
-#playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button::checked {
-    icon: url(graphics:grid_scenes_icon_checked.svg);
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_shot_changes_button::checked {
+    icon: url(graphics:grid_shot_changes_icon_checked.svg);
 }
 
-#playercontrols_widget_right_bottom_line #grid_controls_container #grid_scenes_button::disabled {
-    icon: url(graphics:grid_scenes_icon_disabled.svg);
+#playercontrols_widget_right_bottom_line #grid_controls_container #grid_shot_changes_button::disabled {
+    icon: url(graphics:grid_shot_changes_icon_disabled.svg);
 }
 
 #playercontrols_widget_right_bottom_line #step_button_container #step_button {

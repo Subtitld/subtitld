@@ -658,9 +658,9 @@ class Timeline(QWidget):
         # None / missing while their workers run — paint just skips.
         widget.background_onsets = None  # np.ndarray[float32] | None
         widget.background_onset_thread = None
-        # Fills `session.VIDEO['scenes']` for the scenes grid — see
-        # `subtitld.modules.scene_detection`.
-        widget.scene_thread = None
+        # Fills `session.VIDEO['shot_changes']` for the shot changes grid — see
+        # `subtitld.modules.shot_changes`.
+        widget.shot_change_thread = None
         widget.dub_onsets = {}    # path -> np.ndarray[float32]
         widget.dub_onset_workers = {}  # path -> DubOnsetsWorker
         # A single selected dub-clip onset mark (plosive). Clicking a mark
@@ -909,15 +909,15 @@ class Timeline(QWidget):
                     for frame_i in range(frame_start, frame_end):
                         xpos = frame_i * pixels_per_frame
                         painter.drawLine(xpos, 0, xpos, h)
-            elif grid_type == 'scenes' and session.VIDEO.get('scenes'):
+            elif grid_type == 'shot_changes' and session.VIDEO.get('shot_changes'):
                 painter.setPen(grid_pen)
                 h = widget.height()
                 visible_start_sec = iter_left / wpp
                 visible_end_sec = iter_right / wpp
-                for scene in session.VIDEO['scenes']:
-                    if scene < visible_start_sec or scene > visible_end_sec:
+                for cut in session.VIDEO['shot_changes']:
+                    if cut < visible_start_sec or cut > visible_end_sec:
                         continue
-                    xpos = scene * wpp
+                    xpos = cut * wpp
                     painter.drawLine(xpos, 0, xpos, h)
 
         if session.REPEAT_DURATION_BUFFER:
@@ -2824,15 +2824,15 @@ class Timeline(QWidget):
             # The video's start and end are edges to snap to as well. A
             # copy: appending to the session's own list grew it on every
             # mouse move.
-            scenes_list = [0.0] + list(session.VIDEO.get('scenes') or []) + [session.VIDEO.get('duration', 60)]
+            cuts_list = [0.0] + list(session.VIDEO.get('shot_changes') or []) + [session.VIDEO.get('duration', 60)]
             start_position = (event.pos().x() - widget.offset) / widget.width_proportion
 
-            def scenes_around(position):
+            def cuts_around(position):
                 """The cuts either side of `position`, held to the video."""
-                index = min(max(bisect(scenes_list, position), 1), len(scenes_list) - 1)
-                return scenes_list[index - 1], scenes_list[index]
+                index = min(max(bisect(cuts_list, position), 1), len(cuts_list) - 1)
+                return cuts_list[index - 1], cuts_list[index]
 
-            last_scene, next_scene = scenes_around(start_position)
+            last_cut, next_cut = cuts_around(start_position)
 
             # One undo step per drag: only the first move that actually
             # changes the subtitle records one.
@@ -2855,10 +2855,10 @@ class Timeline(QWidget):
                             subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=float(int(start_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(start_position) < float(float(int(start_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
                             subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=float(int(start_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
-                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and start_position > next_scene - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=next_scene, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
-                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and start_position < last_scene + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=last_scene, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
                         else:
                             subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
                     else:
@@ -2867,7 +2867,7 @@ class Timeline(QWidget):
                     widget.show_tug_of_war = session.SUBTITLE['selected']['start']
             elif widget.subtitle_end_is_clicked:
                 end_position = (event.pos().x() + widget.offset) / widget.width_proportion
-                last_scene, next_scene = scenes_around(end_position)
+                last_cut, next_cut = cuts_around(end_position)
                 if not end_position < (session.SUBTITLE['selected']['start'] + session.CONFIG.get('default_values', {}).get('minimum_subtitle_width', 1)):
                     if not (bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(end_position, 3) >= round(nextsub['start'] - 0.001, 3)) and session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_limits', True) and (nextsub['start'] - session.CONFIG.get('timeline', {}).get('snap_value', .1)) < end_position:
                         subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=(nextsub['start'] - 0.001), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
@@ -2879,10 +2879,10 @@ class Timeline(QWidget):
                             subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=float(int(end_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(end_position) < float(float(int(end_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
                             subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=float(int(end_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
-                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and end_position > next_scene - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=next_scene, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
-                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and end_position < last_scene + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=last_scene, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and end_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and end_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
                         else:
                             subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
                     else:
@@ -2903,10 +2903,10 @@ class Timeline(QWidget):
                         subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=float(int(start_position) + 1), record=record)
                     elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(start_position) < float(float(int(start_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
                         subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=float(int(start_position)), record=record)
-                    elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and start_position > next_scene - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                        subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=next_scene, record=record)
-                    elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'scenes' and start_position < last_scene + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                        subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=last_scene, record=record)
+                    elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
+                        subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=next_cut, record=record)
+                    elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
+                        subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=last_cut, record=record)
                     else:
                         subtitles.move_subtitle(selected_subtitle=session.SUBTITLE['selected'], absolute_time=start_position, record=record)
                 else:
@@ -2971,9 +2971,9 @@ class Timeline(QWidget):
         if not filepath:
             return
 
-        # Every video open comes through here, so the scene cuts are
+        # Every video open comes through here, so the shot changes are
         # started here too.
-        widget.load_scenes()
+        widget.load_shot_changes()
 
         # Update waveform manager filepath for cache key
         widget.waveform_manager.filepath = filepath
@@ -2993,45 +2993,45 @@ class Timeline(QWidget):
         widget.audio_thread.filepath = filepath
         widget.audio_thread.start()
 
-    def load_scenes(widget):
-        """Fill `session.VIDEO['scenes']` with the video's cuts, from the
+    def load_shot_changes(widget):
+        """Fill `session.VIDEO['shot_changes']` with the video's cuts, from the
         cache or from a background pass. Audio-only files (no 'width' from
         the probe) have none."""
-        from subtitld.modules import scene_detection
-        widget.stop_scene_detection()
+        from subtitld.modules import shot_changes
+        widget.stop_shot_change_detection()
         filepath = session.VIDEO.get('filepath')
         if not filepath or not session.VIDEO.get('width'):
             return
-        scenes = scene_detection.cached_scenes(filepath)
-        if scenes is not None:
-            session.VIDEO['scenes'] = scenes
+        cuts = shot_changes.cached_shot_changes(filepath)
+        if cuts is not None:
+            session.VIDEO['shot_changes'] = cuts
             return
-        thread = scene_detection.SceneDetectionThread(filepath, session.VIDEO.get('duration', 0.0), parent=widget)
-        thread.response.connect(widget._on_scenes_ready)
-        thread.progress.connect(widget._show_scenes_progress)
-        thread.finished.connect(lambda: widget._show_scenes_progress(None) if widget.scene_thread is thread else None)
-        widget.scene_thread = thread
-        widget._show_scenes_progress(0.0)
+        thread = shot_changes.ShotChangeThread(filepath, session.VIDEO.get('duration', 0.0), parent=widget)
+        thread.response.connect(widget._on_shot_changes_ready)
+        thread.progress.connect(widget._show_shot_changes_progress)
+        thread.finished.connect(lambda: widget._show_shot_changes_progress(None) if widget.shot_change_thread is thread else None)
+        widget.shot_change_thread = thread
+        widget._show_shot_changes_progress(0.0)
         thread.start()
 
-    def stop_scene_detection(widget):
-        thread = widget.scene_thread
-        widget.scene_thread = None
+    def stop_shot_change_detection(widget):
+        thread = widget.shot_change_thread
+        widget.shot_change_thread = None
         if thread is not None and thread.isRunning():
             thread.stop()
             thread.wait()
-        widget._show_scenes_progress(None)
+        widget._show_shot_changes_progress(None)
 
-    def _show_scenes_progress(widget, progress):
-        """On the grid's scenes button, in the player controls."""
-        if hasattr(widget.window(), 'grid_scenes_button'):
-            playercontrols.scenes_progress(widget.window(), progress)
+    def _show_shot_changes_progress(widget, progress):
+        """On the grid's shot changes button, in the player controls."""
+        if hasattr(widget.window(), 'grid_shot_changes_button'):
+            playercontrols.shot_changes_progress(widget.window(), progress)
 
-    def _on_scenes_ready(widget, response):
-        filepath, scenes = response
+    def _on_shot_changes_ready(widget, response):
+        filepath, cuts = response
         if session.VIDEO.get('filepath') != filepath:  # another video was opened meanwhile
             return
-        session.VIDEO['scenes'] = scenes
+        session.VIDEO['shot_changes'] = cuts
         widget.update()
         vtimeline = getattr(widget.window(), 'vtimeline_panel', None)
         if vtimeline is not None:
