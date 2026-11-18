@@ -24,6 +24,7 @@ from subtitld.modules import csv_export
 from subtitld.modules import dcp
 from subtitld.modules import documents
 from subtitld.modules import dvd_scripts
+from subtitld.modules import edl
 from subtitld.modules import export_options
 from subtitld.modules import file_io
 from subtitld.modules import hls
@@ -46,10 +47,12 @@ SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
                     'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
                     'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
-                    'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
+                    'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # The dialects of these two, one written at a time: which, an option.
 DIALECTS = {'XMLDIALECT': (xml_dialects, 'xml_dialect'), 'JSONDIALECT': (json_dialects, 'json_dialect')}
+# The formats an editor's timeline reads, frames counted at a rate.
+EDITOR_LISTS = ('EDL', 'EDIUS', 'PREMIERE')
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
 # drop-frame for the two whose tools write it.
 DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
@@ -200,6 +203,12 @@ class _SubtitlesPanel(QWidget):
         self.timeline_start_combo.combobox.addItem('00:00:00:00', '00:00:00:00')
         self.timeline_start_combo.combobox.addItem(_('export_dialog.timeline_start_hour'), '01:00:00:00')
         row.addWidget(self.timeline_start_combo, 1)
+        # EDL: the subtitles as events, Avid's locators or Resolve's markers.
+        self.edl_style_combo = utils.LabeledComboBox()
+        self.edl_style_combo.setLabel(_('export_dialog.edl_style'))
+        for style in edl.STYLES:
+            self.edl_style_combo.combobox.addItem(_(f'export_dialog.edl_style_{style}'), style)
+        row.addWidget(self.edl_style_combo, 1)
         self.layout().addWidget(self.timeline_options)
 
         # MacCaption: its frame rate, the video's; CEA-708 beside CEA-608, or not.
@@ -483,6 +492,7 @@ class _SubtitlesPanel(QWidget):
         _select(self.caption_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         _select(self.timeline_start_combo, remembered.get('timeline_start', '00:00:00:00'))
+        _select(self.edl_style_combo, remembered.get('edl_style', 'events'))
         _select(self.dcp_standard_combo, remembered.get('dcp_standard', dcp.SMPTE))
         _select(self.dcp_content_combo, remembered.get('dcp_content', 'text'))
         # The video's rate, as near as a DCP plays; else the last used, else 24.
@@ -568,12 +578,14 @@ class _SubtitlesPanel(QWidget):
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
         self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS
-                                    + VENDOR_FORMATS + tuple(DIALECTS))
+                                    + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS)
         self._show_dialects(fmt)
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
-        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP') + DVD_DROP_FRAME and _has_drop_frame(rate)))
-        self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
+        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP', 'EDL', 'PREMIERE') + DVD_DROP_FRAME
+                                                     and _has_drop_frame(rate)))
+        self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML', 'EDL'))
+        self.edl_style_combo.setVisible(fmt == 'EDL')
         self.cavena_options.setVisible(fmt == 'CAVENA890')
         self.lrc_options.setVisible(fmt == 'LRC')
         self.cdg_mp3_check.setVisible(fmt == 'CDG' and bool(session.VIDEO.get('filepath')))
@@ -717,6 +729,7 @@ class _SubtitlesPanel(QWidget):
             'display': self.stl_display_combo.combobox.currentData(),
             'start': self.stl_start_combo.combobox.currentData(),
             'timeline_start': self.timeline_start_combo.combobox.currentData(),
+            'edl_style': self.edl_style_combo.combobox.currentData(),
             'dcp_standard': self.dcp_standard_combo.combobox.currentData(),
             'dcp_fps': self.dcp_rate_combo.combobox.currentData(),
             'dcp_content': self.dcp_content_combo.combobox.currentData(),
@@ -741,12 +754,17 @@ class _SubtitlesPanel(QWidget):
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS:
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS + VENDOR_FORMATS + tuple(DIALECTS):
+        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS:
             options['fps'] = choices['fps']
         if fmt in DIALECTS:
             options[DIALECTS[fmt][1]] = self.dialect_combo.combobox.currentData()
         if fmt == 'ISMT':
             options['segment_duration'] = choices['segment_duration']
+        if fmt == 'EDL':
+            options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'],
+                           edl_style=choices['edl_style'])
+        if fmt == 'PREMIERE':
+            options['timecode'] = choices['timecode']
         if fmt in DVD_DROP_FRAME:
             options['timecode'] = choices['timecode']
         if fmt in ('AVID', 'FCPXML'):

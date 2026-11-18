@@ -36,6 +36,7 @@ from subtitld.modules import dvd_scripts
 from subtitld.modules import dvdsup
 from subtitld.modules import ebustl
 from subtitld.modules import eztitles
+from subtitld.modules import edl
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import fcpxml
@@ -54,6 +55,7 @@ from subtitld.modules import annotation
 from subtitld.modules import audacity
 from subtitld.modules import legacy
 from subtitld.modules import lrc
+from subtitld.modules import markers
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import mxf
@@ -1103,6 +1105,27 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if graphics:
                 raise PictureSubtitlesError(subtitle_file, 'bdn')
 
+        elif subtitle_file.lower().endswith(('.xml', '.csv')) and markers.kind(_text_of(subtitle_file)):
+            # An editor's markers as subtitles: EDIUS's list (CSV, or the XML
+            # of its version 4) and Premiere's CSV; the rate, EDIUS's
+            # version and units kept to save it again as it was.
+            found = markers.kind(_text_of(subtitle_file))
+            subtitle_format = 'PREMIERE' if found == 'premiere' else 'EDIUS'
+            try:
+                segments_list, marker_settings = markers.parse(_text_of(subtitle_file), session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            kept = {'fps': marker_settings['fps'], 'marker_units': marker_settings['units']}
+            if marker_settings['version']:
+                kept['marker_version'] = marker_settings['version']
+            if found == 'premiere':
+                kept['timecode'] = 'drop' if marker_settings['drop'] else 'non-drop'
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+
+        elif subtitle_file.lower().endswith('.csv'):
+            # Any other table has no times Subtitld knows where to find.
+            raise CorruptedProjectFileError("Not a marker list: neither EDIUS's nor Premiere's header is there")
+
         elif subtitle_file.lower().endswith('.xml') and picture_indexes.kind(subtitle_file):
             # spumux's, Timed Images', Final Cut Pro's and Rhozet's lists of
             # pictures: for an OCR add-on, as a BDN's are.
@@ -1464,6 +1487,18 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                                                     '(SMPTE ST 429-5) and no EBU STL (SMPTE ST 2075)')
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
+
+        elif subtitle_file.lower().endswith('.edl'):
+            # A CMX 3600 EDL: its locators or markers, else its events' clip
+            # names; the rate, the drop-frame, the hour it counts from and
+            # the way it held the subtitles kept to save it again so.
+            subtitle_format = 'EDL'
+            segments_list, edl_settings = edl.read(subtitle_file, session.VIDEO.get('framerate'))
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=edl_settings['fps'],
+                                             timecode='drop' if edl_settings['drop'] else 'non-drop',
+                                             timeline_start=edl_settings['start'], edl_style=edl_settings['style'])
+            if edl_settings['title']:
+                session.SUBTITLE['metadata'] = {'title': edl_settings['title']}
 
         elif subtitle_file.lower().endswith('.890'):
             # Cavena 890: frames counted at the video's rate, else 25; its
@@ -2563,6 +2598,34 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             with open(final_file, 'wb') as mxf_file:
                 mxf_file.write(mxf.write_stl(stl, language=export_options.language_tag(stl_language), reference=reference,
                                              duration=int(math.ceil(last * (stl_fps if stl_fps == 25 else 30000 / 1001)))))
+
+        elif subtitle_format == 'EDL':
+            # A CMX 3600 EDL: frames at the export's rate (the video's, else
+            # 25), drop-frame at 29.97 and 59.94 unless asked otherwise,
+            # from the timeline start asked, the subtitles as events,
+            # locators or markers.
+            edl.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or edl.DEFAULT_FPS),
+                     drop=options.get('timecode') != 'non-drop',
+                     start=options.get('timeline_start') if options.get('timeline_start') in avid_subcap.STARTS
+                     else avid_subcap.STARTS[0],
+                     style=options.get('edl_style') if options.get('edl_style') in edl.STYLES else 'events',
+                     title=(SUBTITLE.get('metadata') or {}).get('title')
+                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'EDIUS':
+            # EDIUS's marker list: the XML of version 4 for a .xml, else the
+            # CSV in the version it was opened in (3 for a new one); frames
+            # at the export's rate, or milliseconds as the file had them.
+            version = 4 if final_file.lower().endswith('.xml') else (
+                options.get('marker_version') if options.get('marker_version') in (2, 3) else 3)
+            markers.save(final_file, segments, kind='edius', fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                         version=version, units='ms' if options.get('marker_units') == 'ms' else 'frames')
+
+        elif subtitle_format == 'PREMIERE':
+            # Premiere's marker CSV: frames at the export's rate, drop-frame
+            # where asked at 29.97 and 59.94.
+            markers.save(final_file, segments, kind='premiere', fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                         drop=options.get('timecode') == 'drop')
 
         elif subtitle_format == 'TTXT':
             # An MP4 text track's samples, the stream the video's size.
