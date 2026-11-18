@@ -325,6 +325,7 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
     'AVI XSUB': {'description': 'AVI video with DivX (XSUB) subtitles', 'extensions': ['avi']},
     'TS ARIB': {'description': 'MPEG transport stream with ARIB captions', 'extensions': ['ts']},
+    'TS SCTE27': {'description': 'MPEG transport stream with SCTE 27 subtitles', 'extensions': ['ts']},
 }
 
 # Documents to read (modules.documents).

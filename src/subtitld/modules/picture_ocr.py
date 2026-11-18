@@ -83,8 +83,13 @@ def read_file(path):
     if str(path).lower().endswith('.cdg'):
         return cdg.read(path), ''
     if str(path).lower().endswith(TRANSPORT_STREAM_EXTENSIONS):
-        # The first DVB subtitle service the PMT lists.
-        pictures, info = dvbsub.read(path)
+        # The first DVB subtitle service the PMT lists; without one, the
+        # first SCTE 27 stream.
+        try:
+            pictures, info = dvbsub.read(path)
+        except ValueError:
+            from subtitld.modules import scte27
+            pictures, info = scte27.read(path)
         return pictures, info['language']
     if str(path).lower().endswith('.xml') and _is_dcp(path):
         return dcp_pictures(path)

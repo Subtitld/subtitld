@@ -10,7 +10,7 @@ opening the video already probed (session.VIDEO['subtitle_tracks']).
 `transcribe` takes the video's path, not an audio file's, and options
 {'track': the track's stream index, 'codec': its codec, 'duration': the
 video's, for progress, 'language': what a picture track is read as}. A
-PGS, VobSub or DVB track is read by an OCR add-on (picture_ocr.OCRJob); a
+PGS, VobSub, DVB or SCTE 27 track is read by an OCR add-on (picture_ocr.OCRJob); a
 teletext page ('page', of the stream 'pid' of a transport stream) by the
 teletext module, in a thread (video_subtitles.read_teletext), which
 gives the subtitles themselves, and ARIB captions by the aribb24 module the

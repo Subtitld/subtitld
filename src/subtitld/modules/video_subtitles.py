@@ -13,7 +13,9 @@ default or a forced one, and its kind:
   DVB's, DivX's XSUB), which only OCR would make text. A DVB subtitle
   stream may carry a service for each language (a composition page each),
   so `with_dvb_pages` makes a track of each, from the stream's subtitling
-  descriptor in the file's PMT;
+  descriptor in the file's PMT. SCTE 27's bitmaps (stream_type 0x82),
+  which FFmpeg lists as a stream it does not know, are pictures too
+  (codec 'scte_27'), which the scte27 module reads;
 - 'text' too: Japan's and Brazil's ISDB captions (ARIB STD-B24,
   FFmpeg's arib_caption), which FFmpeg here has no decoder for: the
   aribb24 module reads them (`read_arib`);
@@ -46,7 +48,7 @@ TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 't
 # Text tracks FFmpeg has no decoder for, which Subtitld decodes itself:
 # a Blu-ray's TextST (textst).
 TEXTST_CODECS = frozenset({'hdmv_text_subtitle'})
-PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'})
+PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub', 'scte_27'})
 CAPTION_CODECS = frozenset({'eia_608'})
 TELETEXT_CODECS = frozenset({'dvb_teletext'})
 # Text Subtitld decodes itself rather than FFmpeg (modules.aribb24).
@@ -61,9 +63,11 @@ def tracks(metadata, language_of=None):
     Subtitld's code for it, `language_of(tag)`, or ''."""
     found = []
     for stream in metadata.get('streams', []):
-        if stream.get('codec_type') != 'subtitle':
+        # SCTE 27's stream type, which FFmpeg does not know.
+        scte27 = stream.get('codec_type') in (None, 'unknown', 'data') and str(stream.get('codec_tag')) == '0x0082'
+        if stream.get('codec_type') != 'subtitle' and not scte27:
             continue
-        codec = str(stream.get('codec_name') or '')
+        codec = 'scte_27' if scte27 else str(stream.get('codec_name') or '')
         kind = 'text' if codec in TEXT_CODECS | ARIB_CODECS else 'pictures' if codec in PICTURE_CODECS else \
             'captions' if codec in CAPTION_CODECS else 'teletext' if codec in TELETEXT_CODECS else None
         if kind is None:
@@ -90,7 +94,7 @@ def tracks(metadata, language_of=None):
             'default': bool(disposition.get('default')),
             'forced': bool(disposition.get('forced')),
         })
-        if kind == 'teletext' or codec in ('dvb_subtitle', 'arib_caption'):
+        if kind == 'teletext' or codec in ('dvb_subtitle', 'arib_caption', 'scte_27'):
             # Its PID, in a transport stream ("0x102"), to find it there.
             try:
                 found[-1]['pid'] = int(str(stream.get('id') or ''), 0)
@@ -346,7 +350,7 @@ def _without_sizes(path):
 
 
 # Picture tracks Subtitld can read through an OCR add-on (picture_ocr).
-READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'})
+READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub', 'scte_27'})
 
 
 def _hexdump(text):
@@ -373,6 +377,10 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
     from subtitld.modules import dvbsub, pgs, teletext, vobsub
     if codec == 'dvb_subtitle' and teletext.is_transport_stream(path):
         return dvbsub.read(path, pid=pid, page=page)[0]
+    if codec == 'scte_27':
+        # Sections only a transport stream carries: read as it is.
+        from subtitld.modules import scte27
+        return scte27.read(path, pid=pid)[0]
     if codec == 'hdmv_pgs_subtitle':
         handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix='.sup', dir=folder)
         os.close(handle)

@@ -1380,6 +1380,7 @@
     "export_dialog.subtitle_codec_teletext": "Teletext pages",
     "export_dialog.subtitle_codec_dvb": "DVB subtitles, drawn as pictures",
     "export_dialog.subtitle_codec_arib": "ARIB captions (ISDB)",
+    "export_dialog.subtitle_codec_scte27": "SCTE 27 subtitles (cable), drawn as pictures",
     "export_dialog.subtitle_tracks_translations": "A track for each translation as well",
     "export_dialog.subtitle_track_forced": "Forced: shown even with subtitles turned off",
     "import_panel.subtitles_hearing_impaired": "for the hard of hearing",

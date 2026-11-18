@@ -1236,6 +1236,7 @@
     "export_dialog.subtitle_codec_teletext": "Páginas de teletexto",
     "export_dialog.subtitle_codec_dvb": "Legendas DVB, desenhadas como imagens",
     "export_dialog.subtitle_codec_arib": "Legendas ARIB (ISDB)",
+    "export_dialog.subtitle_codec_scte27": "Legendas SCTE 27 (TV a cabo), desenhadas como imagens",
     "export_dialog.subtitle_tracks_translations": "Uma faixa para cada tradução também",
     "export_dialog.video_captions_teletext": "Também legendas em teletexto, como a página 888 do OP-47",
     "export_dialog.subtitle_track_forced": "Forçada: mostrada mesmo com as legendas desligadas",

@@ -2,7 +2,7 @@
 subtitles a player lists and turns on and off, rather than drawn into the
 picture or kept in a file beside it.
 
-Five kinds of file take them:
+Six kinds of file take them:
 
 - **MP4 and QuickTime (.mp4, .m4v, .mov)**: 3GPP timed text (3GPP TS
   26.245), the `tx3g` track FFmpeg calls mov_text, which is what iTunes,
@@ -26,6 +26,10 @@ Five kinds of file take them:
 - **MPEG transport stream (.ts), ARIB captions**: Japan's and Brazil's
   ISDB captions (ARIB STD-B24), the first language's alone, laid out on
   the caption plane; the aribb24 module writes it.
+- **MPEG transport stream (.ts), SCTE 27**: North American cable's bitmap
+  subtitles, each subtitle drawn as the preview draws it and kept in one
+  colour with its outline or box, a stream for each language; the scte27
+  module writes it.
 
 The picture and sound are copied as they are, so the export is quick and
 loses nothing of them; the video's own subtitle tracks are left out, since
@@ -65,12 +69,13 @@ CONTAINERS = {
     'TS DVB': {'extension': 'ts', 'codecs': ('dvb_subtitle',)},
     'AVI XSUB': {'extension': 'avi', 'codecs': ('xsub',)},
     'TS ARIB': {'extension': 'ts', 'codecs': ('arib_caption',)},
+    'TS SCTE27': {'extension': 'ts', 'codecs': ('scte_27',)},
 }
 DEFAULT_CODEC = {'MP4': 'mov_text', 'MOV TEXT': 'mov_text', 'MKV': 'srt', 'TS': 'teletext',
                  'TS DVB': 'dvb_subtitle', 'AVI XSUB': 'xsub',
-                 'TS ARIB': 'arib_caption'}
+                 'TS ARIB': 'arib_caption', 'TS SCTE27': 'scte_27'}
 # The kinds of file with no forced track: a viewer chooses one or none.
-UNFORCED = frozenset({'TS', 'TS DVB', 'AVI XSUB', 'TS ARIB'})
+UNFORCED = frozenset({'TS', 'TS DVB', 'AVI XSUB', 'TS ARIB', 'TS SCTE27'})
 
 # FFmpeg's mov_text encoder changes the colour of a run for \1c alone; the
 # \c Subtitld's ASS writes (ASS's own short form of it) it leaves out. A
@@ -170,6 +175,10 @@ def write_video(video, output, tracks, container='MP4', codec=None, forced=False
         from subtitld.modules import xsub
         return xsub.write_video(video, output, tracks, width=width, height=height, ffmpeg=ffmpeg,
                                 startupinfo=startupinfo)
+    if container == 'TS SCTE27':
+        from subtitld.modules import scte27
+        return scte27.write_video(video, output, tracks, width=width, height=height, ffmpeg=ffmpeg,
+                                  startupinfo=startupinfo)
     if container == 'TS ARIB':
         from subtitld.modules import aribb24
         return aribb24.write_video(video, output, tracks, ffmpeg=ffmpeg, startupinfo=startupinfo)
