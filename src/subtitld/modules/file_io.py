@@ -42,6 +42,7 @@ from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
 from subtitld.modules import json_dialects
 from subtitld.modules import kar
+from subtitld.modules import kbp
 from subtitld.modules import lambdacap
 from subtitld.modules import aeneas
 from subtitld.modules import annotation
@@ -958,6 +959,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if kar_metadata:
                 session.SUBTITLE['metadata'] = kar_metadata
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kar_source=os.path.abspath(subtitle_file))
+
+        elif subtitle_file.lower().endswith('.kbp'):
+            # Karaoke Builder Studio: a line a subtitle, its syllables as
+            # karaoke codes, a page's first line marked; the title, the
+            # artist and the template kept to be written back.
+            subtitle_format = 'KBP'
+            try:
+                segments_list, kbp_metadata = kbp.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.SUBTITLE['metadata'] = kbp_metadata
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
@@ -2412,6 +2424,12 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             metadata.setdefault('title', os.path.splitext(video_name or os.path.basename(final_file))[0])
             ultrastar.save(final_file, segments, metadata=metadata, headers=metadata.get('ultrastar'),
                            audio=video_name)
+
+        elif subtitle_format == 'KBP':
+            # A Karaoke Builder Studio project: the template it was opened
+            # with, else kbputils' default, the video as its song.
+            kbp.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
+                     audio=os.path.basename(VIDEO.get('filepath') or ''))
 
         elif subtitle_format in ('KAR', 'MIDI'):
             # The words of a karaoke song, with the music of the MIDI file it

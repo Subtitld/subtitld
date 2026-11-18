@@ -159,6 +159,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # The same words as a MIDI file's lyric events (RP-026), which XF's
     # and most players read; KAR above keeps the extensions for opening.
     'MIDI': {'description': 'MIDI file with lyrics', 'extensions': ['mid', 'midi']},
+    'KBP': {'description': 'Karaoke Builder Studio project', 'extensions': ['kbp']},
     # Video editors' own: Avid SubCap's .txt is told from the player-era
     # .txt formats below by its bytes, in file_io.
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},

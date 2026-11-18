@@ -5,13 +5,13 @@ CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
-XML, LRC, UltraStar, KAR, MIDI lyrics, TTXT, ISMT, XMLDIALECT, JSONDIALECT, the
+XML, LRC, UltraStar, KAR, MIDI lyrics, KBP, TTXT, ISMT, XMLDIALECT, JSONDIALECT, the
 player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT, CTM,
 AUDACITY, AENEAS and TMX) and to VOBSUB and PGS, whose pictures are drawn of
 the text they write; USF, USFX and JSON keep the project as it is. TMX
 writes the original and every translation side by side, whatever `text`
 asks. Karaoke timing is formatting (modules.karaoke): removing the
-formatting takes the word timing of LRC, UltraStar, KAR, MIDI and TTXT with it,
+formatting takes the word timing of LRC, UltraStar, KAR, MIDI, KBP and TTXT with it,
 and CTM's words share out their subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
@@ -135,7 +135,7 @@ from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'TTXT',
+                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'ISMT', 'XMLDIALECT', 'JSONDIALECT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
