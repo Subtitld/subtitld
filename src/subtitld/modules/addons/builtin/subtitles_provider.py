@@ -13,7 +13,8 @@ video's, for progress, 'language': what a picture track is read as}. A
 PGS, VobSub or DVB track is read by an OCR add-on (picture_ocr.OCRJob); a
 teletext page ('page', of the stream 'pid' of a transport stream) by the
 teletext module, in a thread (video_subtitles.read_teletext), which
-gives the subtitles themselves; the others as follows. FFmpeg writes the track to a file of its own in
+gives the subtitles themselves, and ARIB captions by the aribb24 module the
+same way (video_subtitles.read_arib); the others as follows. FFmpeg writes the track to a file of its own in
 a thread (video_subtitles.extract): `progress` as it goes. The file is
 then read as Subtitld opens such a file, on the main thread, since that
 reader touches the session: `transcript_finished` with the subtitles, or
@@ -70,15 +71,15 @@ class _Extractor(QThread):
 
 
 class _TeletextReader(QThread):
-    """Reads a teletext page of a video, off the main thread: a transport
-    stream is read through to its end."""
+    """Reads a teletext page of a video (or its ARIB captions, by `codec`),
+    off the main thread: a transport stream is read through to its end."""
     read = Signal(list)
     failed = Signal(str)
     moved = Signal(float)
 
-    def __init__(self, path, index, page, pid):
+    def __init__(self, path, index, page, pid, codec='dvb_teletext'):
         super().__init__()
-        self.path, self.index, self.page, self.pid = path, index, page, pid
+        self.path, self.index, self.page, self.pid, self.codec = path, index, page, pid, codec
         self.process = None
         self.stopped = False
 
@@ -89,10 +90,16 @@ class _TeletextReader(QThread):
 
     def run(self):
         try:
-            segments = video_subtitles.read_teletext(
-                self.path, self.index, page=self.page, pid=self.pid, ffprobe=session.FFPROBE_EXECUTABLE,
-                startupinfo=session.STARTUPINFO, progress=self.moved.emit, stopped=lambda: self.stopped,
-                started=self._started)
+            if self.codec in video_subtitles.ARIB_CODECS:
+                segments = video_subtitles.read_arib(
+                    self.path, self.index, pid=self.pid, ffprobe=session.FFPROBE_EXECUTABLE,
+                    startupinfo=session.STARTUPINFO, progress=self.moved.emit, stopped=lambda: self.stopped,
+                    started=self._started)
+            else:
+                segments = video_subtitles.read_teletext(
+                    self.path, self.index, page=self.page, pid=self.pid, ffprobe=session.FFPROBE_EXECUTABLE,
+                    startupinfo=session.STARTUPINFO, progress=self.moved.emit, stopped=lambda: self.stopped,
+                    started=self._started)
         except Exception as error:                   # the video unreadable, no teletext, or stopped
             if not self.stopped:
                 self.failed.emit(str(error))
@@ -161,7 +168,7 @@ class SubtitlesProvider(ASRProvider):
         if str(options.get('codec') or '') in video_subtitles.READABLE_PICTURE_CODECS:
             self._read_pictures(audio_path, options, language)
             return
-        if str(options.get('codec') or '') in video_subtitles.TELETEXT_CODECS:
+        if str(options.get('codec') or '') in video_subtitles.TELETEXT_CODECS | video_subtitles.ARIB_CODECS:
             self._read_teletext(audio_path, options)
             return
         extractor = _Extractor(audio_path, int(options.get('track', 0)), str(options.get('codec') or ''),
@@ -191,7 +198,8 @@ class SubtitlesProvider(ASRProvider):
                 os.remove(path)
 
     def _read_teletext(self, video, options):
-        reader = _TeletextReader(video, int(options.get('track', 0)), options.get('page'), options.get('pid'))
+        reader = _TeletextReader(video, int(options.get('track', 0)), options.get('page'), options.get('pid'),
+                                 str(options.get('codec') or ''))
         reader.moved.connect(lambda share: self.progress.emit(share, ''))
         reader.read.connect(self._teletext_read)
         reader.failed.connect(self.error.emit)

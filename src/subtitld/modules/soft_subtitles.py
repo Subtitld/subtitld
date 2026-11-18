@@ -23,6 +23,9 @@ Five kinds of file take them:
 - **AVI (.avi), DivX subtitles**: each subtitle a picture, drawn as the
   preview draws it, in an XSUB stream for each language; the xsub module
   writes it.
+- **MPEG transport stream (.ts), ARIB captions**: Japan's and Brazil's
+  ISDB captions (ARIB STD-B24), the first language's alone, laid out on
+  the caption plane; the aribb24 module writes it.
 
 The picture and sound are copied as they are, so the export is quick and
 loses nothing of them; the video's own subtitle tracks are left out, since
@@ -61,11 +64,13 @@ CONTAINERS = {
     'TS': {'extension': 'ts', 'codecs': ('teletext',)},
     'TS DVB': {'extension': 'ts', 'codecs': ('dvb_subtitle',)},
     'AVI XSUB': {'extension': 'avi', 'codecs': ('xsub',)},
+    'TS ARIB': {'extension': 'ts', 'codecs': ('arib_caption',)},
 }
 DEFAULT_CODEC = {'MP4': 'mov_text', 'MOV TEXT': 'mov_text', 'MKV': 'srt', 'TS': 'teletext',
-                 'TS DVB': 'dvb_subtitle', 'AVI XSUB': 'xsub'}
+                 'TS DVB': 'dvb_subtitle', 'AVI XSUB': 'xsub',
+                 'TS ARIB': 'arib_caption'}
 # The kinds of file with no forced track: a viewer chooses one or none.
-UNFORCED = frozenset({'TS', 'TS DVB', 'AVI XSUB'})
+UNFORCED = frozenset({'TS', 'TS DVB', 'AVI XSUB', 'TS ARIB'})
 
 # FFmpeg's mov_text encoder changes the colour of a run for \1c alone; the
 # \c Subtitld's ASS writes (ASS's own short form of it) it leaves out. A
@@ -165,6 +170,9 @@ def write_video(video, output, tracks, container='MP4', codec=None, forced=False
         from subtitld.modules import xsub
         return xsub.write_video(video, output, tracks, width=width, height=height, ffmpeg=ffmpeg,
                                 startupinfo=startupinfo)
+    if container == 'TS ARIB':
+        from subtitld.modules import aribb24
+        return aribb24.write_video(video, output, tracks, ffmpeg=ffmpeg, startupinfo=startupinfo)
     codec = codec_for(container, codec)
     extension = '.srt' if codec == 'srt' else '.ass'
     written = []

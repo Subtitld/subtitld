@@ -408,7 +408,7 @@ _CODEC_NAMES = {
     'microdvd': 'MicroDVD', 'subviewer': 'SubViewer', 'subviewer1': 'SubViewer 1', 'mpl2': 'MPL2', 'pjs': 'PJS',
     'realtext': 'RealText', 'sami': 'SAMI', 'stl': 'Spruce STL', 'jacosub': 'JACOsub', 'vplayer': 'VPlayer',
     'hdmv_pgs_subtitle': 'PGS', 'dvd_subtitle': 'VobSub', 'dvb_subtitle': 'DVB', 'xsub': 'XSUB', 'eia_608': 'CEA-608',
-    'dvb_teletext': 'Teletext',
+    'dvb_teletext': 'Teletext', 'arib_caption': 'ARIB',
 }
 
 

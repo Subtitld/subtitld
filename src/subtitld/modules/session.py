@@ -324,6 +324,7 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'ALPHA MKV': {'description': 'Matroska video of the subtitles alone, transparent', 'extensions': ['mkv']},
     'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
     'AVI XSUB': {'description': 'AVI video with DivX (XSUB) subtitles', 'extensions': ['avi']},
+    'TS ARIB': {'description': 'MPEG transport stream with ARIB captions', 'extensions': ['ts']},
 }
 
 # Documents to read (modules.documents).

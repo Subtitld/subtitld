@@ -1128,7 +1128,9 @@ class _ProjectPanel(QWidget):
 
 # The video page's formats, as its header lists them: the ways the subtitles
 # can go in each, and the export each way makes (a transport stream's track
-# is teletext, 'TS', or DVB subtitles, 'TS DVB', as its track format says).
+# is teletext, 'TS', DVB subtitles, 'TS DVB', or ARIB captions, 'TS ARIB',
+# as its track format says).
+TS_TRACKS = ('TS', 'TS DVB', 'TS ARIB')
 VIDEO_FILES = {
     'MP4': {'label': 'video_mp4_track', 'ways': {'cc': 'MP4 A53', 'track': 'MP4', 'burn': 'BURN MP4'}},
     'MOV': {'label': 'video_mov', 'ways': {'cc': 'MOV', 'track': 'MOV TEXT', 'burn': 'BURN MOV', 'alpha': 'ALPHA MOV'}},
@@ -1142,7 +1144,7 @@ VIDEO_FILES = {
 
 def _video_file_of(export):
     """(format, way) of the video page that make `export`; None for none."""
-    export = 'TS' if export == 'TS DVB' else export
+    export = 'TS' if export in TS_TRACKS else export
     for video_file, spec in VIDEO_FILES.items():
         for way, key in spec['ways'].items():
             if key == export:
@@ -1254,6 +1256,7 @@ class _VideoPanel(QWidget):
         self.tracks_ts_combo.setLabel(_('export_dialog.subtitle_codec'))
         self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_teletext'), 'TS')
         self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_dvb'), 'TS DVB')
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_arib'), 'TS ARIB')
         self.tracks_ts_combo.activated.connect(self._refresh_tracks)
         self.tracks_panel.layout().addWidget(self.tracks_ts_combo)
 
@@ -1358,7 +1361,7 @@ class _VideoPanel(QWidget):
         if found is None:
             return False
         video_file, way = found
-        if export in ('TS', 'TS DVB'):
+        if export in TS_TRACKS:
             _select(self.tracks_ts_combo, export)
         _select(self.format_combo, video_file)
         self._ways[video_file] = way
@@ -1439,8 +1442,8 @@ class _VideoPanel(QWidget):
         stream, teletext pages or DVB subtitles, pictures."""
         container = self._container()
         self.tracks_codec_combo.setVisible(container == 'MKV')
-        self.tracks_ts_combo.setVisible(container in ('TS', 'TS DVB'))
-        # Teletext, DVB subtitles and XSUB have no forced streams: a viewer
+        self.tracks_ts_combo.setVisible(container in TS_TRACKS)
+        # Teletext, DVB subtitles, ARIB captions and XSUB have no forced streams: a viewer
         # chooses one or none.
         self.tracks_forced.setVisible(container not in soft_subtitles.UNFORCED)
 

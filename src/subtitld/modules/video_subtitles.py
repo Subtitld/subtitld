@@ -14,6 +14,9 @@ default or a forced one, and its kind:
   stream may carry a service for each language (a composition page each),
   so `with_dvb_pages` makes a track of each, from the stream's subtitling
   descriptor in the file's PMT;
+- 'text' too: Japan's and Brazil's ISDB captions (ARIB STD-B24,
+  FFmpeg's arib_caption), which FFmpeg here has no decoder for: the
+  aribb24 module reads them (`read_arib`);
 - 'captions': closed captions in a track of their own (QuickTime's
   CEA-608), which the closed_captions module reads;
 - 'teletext': a DVB teletext stream, whose subtitle pages the teletext
@@ -46,6 +49,8 @@ TEXTST_CODECS = frozenset({'hdmv_text_subtitle'})
 PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'})
 CAPTION_CODECS = frozenset({'eia_608'})
 TELETEXT_CODECS = frozenset({'dvb_teletext'})
+# Text Subtitld decodes itself rather than FFmpeg (modules.aribb24).
+ARIB_CODECS = frozenset({'arib_caption'})
 
 
 def tracks(metadata, language_of=None):
@@ -59,7 +64,7 @@ def tracks(metadata, language_of=None):
         if stream.get('codec_type') != 'subtitle':
             continue
         codec = str(stream.get('codec_name') or '')
-        kind = 'text' if codec in TEXT_CODECS else 'pictures' if codec in PICTURE_CODECS else \
+        kind = 'text' if codec in TEXT_CODECS | ARIB_CODECS else 'pictures' if codec in PICTURE_CODECS else \
             'captions' if codec in CAPTION_CODECS else 'teletext' if codec in TELETEXT_CODECS else None
         if kind is None:
             continue
@@ -85,7 +90,7 @@ def tracks(metadata, language_of=None):
             'default': bool(disposition.get('default')),
             'forced': bool(disposition.get('forced')),
         })
-        if kind == 'teletext' or codec == 'dvb_subtitle':
+        if kind == 'teletext' or codec in ('dvb_subtitle', 'arib_caption'):
             # Its PID, in a transport stream ("0x102"), to find it there.
             try:
                 found[-1]['pid'] = int(str(stream.get('id') or ''), 0)
@@ -203,6 +208,39 @@ def read_teletext(path, index, page=None, pid=None, ffprobe='ffprobe', startupin
     if page is None:
         page = teletext.busiest_subtitle_page(packets)
     return teletext.decode(packets, page, origin=round(offset * 90000))
+
+
+def read_arib(path, index, pid=None, ffprobe='ffprobe', startupinfo=None, progress=None, stopped=None,
+              started=None):
+    """The subtitles of the ARIB caption stream at `index` of the video at
+    `path` (its first language), timed as FFmpeg counts from the video's
+    start. A transport stream is read as it is (aribb24.read, the stream
+    `pid`); another container's stream packet by packet through ffprobe."""
+    from subtitld.modules import aribb24, teletext
+    if teletext.is_transport_stream(path):
+        return aribb24.read(path, pid=pid, progress=progress, stopped=stopped)[0]
+    import json
+    command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_packets', '-show_format',
+               '-show_data', '-of', 'json', str(path)]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               startupinfo=startupinfo)
+    if started:
+        started(process)
+    out, errors = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
+    probe = json.loads(out.decode('utf-8', 'replace') or '{}')
+    try:
+        offset = float((probe.get('format') or {}).get('start_time') or 0)
+    except ValueError:
+        offset = 0.0
+    packets = []
+    for packet in probe.get('packets') or []:
+        try:
+            packets.append((round(float(packet.get('pts_time')) * 90000), _hexdump(packet.get('data'))))
+        except (TypeError, ValueError):
+            continue
+    return aribb24.decode(packets, origin=round(offset * 90000))[0]
 
 
 def output_of(codec):
