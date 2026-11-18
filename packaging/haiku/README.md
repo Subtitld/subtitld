@@ -45,11 +45,10 @@ The same script runs locally in the image CI uses
 ([haiku-builder](https://github.com/cross-platform-actions/haiku-builder)
 releases, a qcow2 for QEMU; log in over SSH as `user`, no password).
 
-On a stable release, `release.yml` attaches
-`subtitld-<version>-haikuports.tar.gz` to the GitHub release: this tree's
-ports, with the app's recipe named after the tag (`subtitld-26.10.recipe` for
-`v26.10`) and the tag archive's checksum. Unpack it into a haikuports checkout
-(`tar -xzf ... -C haikuports`).
+On a stable release, `release.yml` attaches only Subtitld's own `.hpkg` to
+the GitHub release; the Python packages it needs are served from
+[hpkg.subtitld.org](https://hpkg.subtitld.org). The build's `haiku` artifact
+keeps every package and the ports (`haikuports/`).
 
 ## Dependencies
 

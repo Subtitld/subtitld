@@ -161,27 +161,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.build.outputs.version }}
-      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: '{pip,appimage,snap,flatpak,windows-*,macos-dmg,haiku}'
           merge-multiple: true
-      - name: Point the Haiku recipe at the tag
+      - name: Of Haiku's, Subtitld's own package only
         run: |
-          # The recipe fetches tag v$portVersion: named after the tag, it is
-          # the recipe for that release, as haikuports takes it.
-          curl -fsSL -o tag.tar.gz "https://github.com/Subtitld/subtitld/archive/refs/tags/$TAG.tar.gz"
-          sum=$(sha256sum tag.tar.gz | cut -d' ' -f1)
-          dir=artifacts/haikuports/media-video/subtitld
-          mv "$dir/subtitld-$VERSION.recipe" "$dir/subtitld-${TAG#v}.recipe"
-          sed -i "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$sum\"|" "$dir/subtitld-${TAG#v}.recipe"
-          # One file for the release: the ports, to unpack into haikuports.
-          tar -C artifacts/haikuports -czf "artifacts/subtitld-$VERSION-haikuports.tar.gz" dev-python media-video
+          # The Python packages it needs come from hpkg.subtitld.org, and the
+          # ports are not offered to haikuports any more (the haiku artifact
+          # keeps both).
           rm -r artifacts/haikuports
-          # Subtitld's own package only: the Python packages it needs come from
-          # hpkg.subtitld.org (the haiku artifact keeps them all).
           find artifacts -maxdepth 1 -name '*.hpkg' ! -name 'subtitld-*.hpkg' -delete
       # The release published: its title and notes stay, the build
       # version (the date; the tag is a free-form label) follows them,
