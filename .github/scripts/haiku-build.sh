@@ -34,8 +34,17 @@ pkgman install -y haikuporter > /dev/null
 pkgman update -y gcc binutils > /dev/null
 gcc --version | head -1
 # Subtitld's own repository, for QtWebEngine and its PySide6 modules, which
-# the app requires and HaikuPorts does not carry.
-pkgman list-repos | grep -q 'hpkg\.subtitld\.org' || pkgman add-repo https://hpkg.subtitld.org > /dev/null
+# the app requires and HaikuPorts does not carry. On GitHub's runners add-repo
+# can stop at the repository's checksum ("Interrupted system call") with the
+# repository already added but not its package list: refresh until it is there.
+pkgman list-repos | grep -q 'hpkg\.subtitld\.org' ||
+    pkgman add-repo https://hpkg.subtitld.org > /dev/null || true
+for _ in 1 2 3 4 5; do
+    [ -e /boot/system/cache/package-repositories/Subtitld ] && break
+    pkgman refresh > /dev/null || sleep 5
+done
+[ -e /boot/system/cache/package-repositories/Subtitld ] ||
+    { echo "hpkg.subtitld.org: no package list after 5 tries" >&2; exit 1; }
 
 # A minimal ports tree: the recipes from this repository, nothing else.
 # (A failed run can leave a chroot mounted in the old tree: move it aside.)
