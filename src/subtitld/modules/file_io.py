@@ -32,6 +32,7 @@ from subtitld.modules import collab_state
 from subtitld.modules import documents
 from subtitld.modules import cue_ids
 from subtitld.modules import dcp
+from subtitld.modules import detx
 from subtitld.modules import dvd_scripts
 from subtitld.modules import dvdsup
 from subtitld.modules import ebustl
@@ -1500,6 +1501,29 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if edl_settings['title']:
                 session.SUBTITLE['metadata'] = {'title': edl_settings['title']}
 
+        elif subtitle_file.lower().endswith('.detx'):
+            # A Cappella DetX into a dubbing session: each line a subtitle,
+            # its role the speaker, in the project's list with the role's
+            # colour and picture; what the file says of itself kept to write
+            # it back.
+            subtitle_format = 'DETX'
+            try:
+                segments_list, detx_settings = detx.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=detx_settings['fps'])
+            session.SUBTITLE['metadata'] = dict({'title': detx_settings['title']} if detx_settings['title'] else {},
+                                                detx=detx_settings['metadata'])
+            image_jobs = []
+            for speaker_name, speaker_data in detx_settings['speakers'].items():
+                existing = session.SPEAKERS.setdefault(speaker_name, {'image': None})
+                if speaker_data.get('color'):
+                    existing['color'] = speaker_data['color']
+                if speaker_data.get('image_bytes'):
+                    image_jobs.append((speaker_name, bytes(speaker_data['image_bytes']), None))
+            if image_jobs:
+                _start_speaker_image_loader(image_jobs)
+
         elif subtitle_file.lower().endswith('.890'):
             # Cavena 890: frames counted at the video's rate, else 25; its
             # language for the project's, its title the project's, its rate
@@ -2626,6 +2650,15 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # where asked at 29.97 and 59.94.
             markers.save(final_file, segments, kind='premiere', fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
                          drop=options.get('timecode') == 'drop')
+
+        elif subtitle_format == 'DETX':
+            # A Cappella DetX: a line each subtitle, a role each speaker in
+            # the speaker's colour, the header, loops and shots of the file
+            # opened, frames at its rate (the export's, the video's, else 25).
+            detx.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or detx.DEFAULT_FPS),
+                      metadata=(SUBTITLE.get('metadata') or {}).get('detx'), speakers=SPEAKERS,
+                      title=(SUBTITLE.get('metadata') or {}).get('title')
+                      or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
 
         elif subtitle_format == 'TTXT':
             # An MP4 text track's samples, the stream the video's size.

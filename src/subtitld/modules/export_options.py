@@ -6,16 +6,16 @@ CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC,
 UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, ISMT, XMLDIALECT, JSONDIALECT,
-the MXF track files (DCPMXF, IMSCMXF, STLMXF), EDL, EDIUS, PREMIERE, the
-player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT, CTM,
-AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the indexes of
-pictures (SCENARISTBMP, SON, DOST, SPUMUX, TIMEDIMAGES, FCPIMAGE, RHOZET),
-whose pictures are drawn of the text they write; USF, USFX and JSON keep the
-project as it is. TMX writes the original and every translation side by
-side, whatever `text` asks. Karaoke timing is formatting (modules.karaoke):
-removing the formatting takes the word timing of LRC, UltraStar, KAR, MIDI,
-KBP, TTXT and the wipe of CDG with it, and CTM's words share out their
-subtitle's time instead.
+the MXF track files (DCPMXF, IMSCMXF, STLMXF), EDL, EDIUS, PREMIERE, DETX,
+the player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT,
+CTM, AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the
+indexes of pictures (SCENARISTBMP, SON, DOST, SPUMUX, TIMEDIMAGES, FCPIMAGE,
+RHOZET), whose pictures are drawn of the text they write; USF, USFX and JSON
+keep the project as it is. TMX writes the original and every translation
+side by side, whatever `text` asks. Karaoke timing is formatting
+(modules.karaoke): removing the formatting takes the word timing of LRC,
+UltraStar, KAR, MIDI, KBP, TTXT and the wipe of CDG with it, and CTM's words
+share out their subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -46,11 +46,11 @@ And for a format of its own:
     fps          the subtitling houses' formats (EZTXML: the time code
                  standard of this rate, 30drop at 29.97, 60drop at 59.94),
                  SUB, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID, EDL, EDIUS,
-                 PREMIERE and the DVD authoring scripts: the frame rate its
-                 frame numbers count in; FCPXML: its sequence's, whose frames
-                 the captions are on; XMLDIALECT and JSONDIALECT: the rate of
-                 the dialects that count in frames (Rhozet Harmonic, JSON
-                 Type 16)
+                 PREMIERE, DETX and the DVD authoring scripts: the frame
+                 rate its frame numbers count in; FCPXML: its sequence's,
+                 whose frames the captions are on; XMLDIALECT and
+                 JSONDIALECT: the rate of the dialects that count in frames
+                 (Rhozet Harmonic, JSON Type 16)
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID,
                  FCPXML, LAMBDACAP, EDL and PREMIERE the same, at 29.97 and 59.94, the
                  rates that have it; DVDSTUDIOPRO and ENCORE too, where it
@@ -151,7 +151,7 @@ from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'KATE',
+                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'KATE',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'ISMT', 'XMLDIALECT', 'JSONDIALECT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',

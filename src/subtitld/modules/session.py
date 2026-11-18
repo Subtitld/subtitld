@@ -230,6 +230,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'EDL': {'description': 'CMX 3600 EDL with subtitles', 'extensions': ['edl']},
     'EDIUS': {'description': 'EDIUS marker list', 'extensions': ['csv', 'xml']},
     'PREMIERE': {'description': 'Adobe Premiere Pro markers', 'extensions': ['csv']},
+    # A dubbing detection (modules.detx).
+    'DETX': {'description': 'Cappella DetX dubbing detection', 'extensions': ['detx']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.
