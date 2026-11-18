@@ -56,6 +56,7 @@ from subtitld.modules import mcc
 from subtitld.modules import microdvd
 from subtitld.modules import pac
 from subtitld.modules import pgs
+from subtitld.modules import picture_indexes
 from subtitld.modules import plaintext
 from subtitld.modules import project_export
 from subtitld.modules import sami
@@ -92,11 +93,13 @@ class CorruptedProjectFileError(Exception):
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
     pictures (a VobSub's .idx or .sub, a PGS .sup, a DVD's bare .sup, a CD+G .cdg, a BDN's
-    PNGs, a TTML file in IMSC's Image Profile with pictures it gives no
+    PNGs, a picture index's images, a TTML file in IMSC's Image Profile with pictures it gives no
     words for, DCP subtitles with <Image>s), not text: nothing is wrong
     with it, but only an OCR add-on can make text of it (picture_ocr).
     `path` is the file,
-    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp' or 'cdg'."""
+    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp', 'cdg', or a key
+    of picture_indexes.FORMATS in lower case ('scenaristbmp', 'son', 'dost',
+    'spumux', 'timedimages', 'fcpimage', 'rhozet')."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -1064,6 +1067,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if graphics:
                 raise PictureSubtitlesError(subtitle_file, 'bdn')
 
+        elif subtitle_file.lower().endswith('.xml') and picture_indexes.kind(subtitle_file):
+            # spumux's, Timed Images', Final Cut Pro's and Rhozet's lists of
+            # pictures: for an OCR add-on, as a BDN's are.
+            raise PictureSubtitlesError(subtitle_file, picture_indexes.kind(subtitle_file).lower())
+
         elif subtitle_file.lower().endswith('.eztxml') or (
                 subtitle_file.lower().endswith('.xml') and eztitles.looks_like(_text_of(subtitle_file)[:4096])):
             # EZTitles' XML project: its times in its time code standard,
@@ -1236,6 +1244,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             else:
                 subtitle_format = 'SPRUCE'
                 segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
+
+        elif subtitle_file.lower().endswith(('.sst', '.son', '.dost')) and picture_indexes.kind(subtitle_file):
+            # Scenarist's and SON's scripts of BMPs or TIFFs, DOST's of PNGs:
+            # pictures, for an OCR add-on.
+            raise PictureSubtitlesError(subtitle_file, picture_indexes.kind(subtitle_file).lower())
 
         elif subtitle_file.lower().endswith('.sst') and dvd_scripts.is_picture_script(_text_of(subtitle_file)):
             raise CorruptedProjectFileError('A Scenarist subtitle script of pictures: its subtitles are '
@@ -2261,6 +2274,24 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 picture['href'] = os.path.basename(picture['path'])
             bdn.save(final_file, pictures, size, **bdn_options(options, language, final_file, SUBTITLE, VIDEO))
 
+        elif subtitle_format in picture_indexes.FORMATS:
+            # Scenarist's and SON's BMPs, DOST's, spumux's, Timed Images',
+            # Final Cut Pro's and Rhozet's PNGs: each subtitle drawn as the
+            # preview draws it, the images beside the index, named after it.
+            # The DVD tools' on DVD's PAL or NTSC frame as the export asks
+            # (else the video's, else the DVD frame of its rate), the others
+            # on the video's, else a 1920x1080 one.
+            from subtitld.interface import subtitle_pictures
+            width, height = int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)
+            if subtitle_format in picture_indexes.DVD_FORMATS:
+                size = vobsub.frame_size(options.get('vobsub_size'), width, height, VIDEO.get('framerate'))
+            else:
+                size = (width or picture_indexes.DEFAULT_SIZE[0], height or picture_indexes.DEFAULT_SIZE[1])
+            with tempfile.TemporaryDirectory(prefix='subtitld-pictures-') as folder:
+                drawn = subtitle_pictures.draw(segments, size, folder)
+                pictures = [dict(picture, rgba=subtitle_pictures.rgba(picture['path'])) for picture in drawn]
+                picture_indexes.save(final_file, subtitle_format, pictures, size, fps=VIDEO.get('framerate'))
+
         elif subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
             # A cinema's subtitles as pictures: each drawn as the preview
             # draws it, on a picture the video's size, else 1920x1080, a
@@ -3050,6 +3081,10 @@ def picture_frame(subtitle_format, options=None, video=None):
         return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
     if subtitle_format == 'BDN':
         return width or bdn.DEFAULT_SIZE[0], height or bdn.DEFAULT_SIZE[1]
+    if subtitle_format in picture_indexes.DVD_FORMATS:
+        return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
+    if subtitle_format in picture_indexes.FORMATS:
+        return width or picture_indexes.DEFAULT_SIZE[0], height or picture_indexes.DEFAULT_SIZE[1]
     if subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
         return width or 1920, height or 1080
     return None

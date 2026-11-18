@@ -44,7 +44,8 @@ from subtitld.modules import xml_dialects
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
+                    'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # The dialects of these two, one written at a time: which, an option.
@@ -56,7 +57,9 @@ DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
 # The subtitling houses' formats: frames each, at the rate chosen.
 VENDOR_FORMATS = ('EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER')
 # A DVD's pictures, placed on DVD's PAL or NTSC frame or the video's.
-DVD_PICTURES = ('VOBSUB', 'DVDSUP')
+DVD_PICTURES = ('VOBSUB', 'DVDSUP', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX')
+# Pictures and an index of them (modules.picture_indexes).
+PICTURE_INDEXES = ('SCENARISTBMP', 'SON', 'DOST', 'SPUMUX', 'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 
@@ -647,7 +650,7 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setText(_('export_dialog.cdg_note'))
             self.check_label.setVisible(True)
             return
-        if fmt in ('BDN', 'PGS') + DVD_PICTURES or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
+        if fmt in ('BDN', 'PGS') + DVD_PICTURES + PICTURE_INDEXES or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
             # Pictures: the preview shows one, nothing to say here.
             self.check_label.setVisible(False)
             return

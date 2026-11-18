@@ -1,11 +1,12 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub) or SUP (.sup), a Blu-ray PGS (.sup), karaoke CD+G
-(.cdg), a BDN's PNGs, a TTML file in IMSC's Image Profile or a DCP's
-subtitles with pictures in them, or reading a picture track of a video (a
-DVB subtitle stream among them), Subtitld decodes each subtitle into a
-picture (vobsub, pgs, cdg, dvbsub, `bdn_pictures`, `imsc_pictures`,
-`dcp_pictures`), and an
+Opening a DVD VobSub (.idx/.sub) or SUP (.sup), a Blu-ray PGS (.sup), karaoke CD+G (.cdg), a
+BDN's PNGs, the images of a Scenarist, SON, DOST, spumux, Timed Images,
+Final Cut Pro or Rhozet index, a TTML file in IMSC's Image Profile or a
+DCP's subtitles with pictures in them, or reading a picture track of a
+video (a DVB subtitle stream among them), Subtitld decodes each subtitle
+into a picture (vobsub, dvdsup, pgs, cdg, dvbsub, picture_indexes,
+`bdn_pictures`, `imsc_pictures`, `dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
 file's words are better than any reading of them. `OCRJob` runs the whole
@@ -89,6 +90,12 @@ def read_file(path):
         return dcp_pictures(path)
     if str(path).lower().endswith('.xml') and _is_bdn(path):
         return bdn_pictures(path)
+    from subtitld.modules import picture_indexes
+    if picture_indexes.kind(path):
+        # Scenarist's, SON's, DOST's, spumux's, Timed Images', Final Cut
+        # Pro's or Rhozet's images, timed at the video's rate where the
+        # file gives none.
+        return picture_indexes.read(path, fps=(session.VIDEO or {}).get('framerate'))[0], ''
     if str(path).lower().endswith(TTML_EXTENSIONS):
         return imsc_pictures(path)
     found, track = vobsub.read(path)

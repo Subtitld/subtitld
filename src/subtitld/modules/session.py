@@ -268,6 +268,16 @@ LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     # A DVD's bare subpicture units, which share .sup with PGS; the bytes
     # tell them apart (modules.dvdsup).
     'DVDSUP': {'description': 'DVD SUP subtitles (pictures)', 'extensions': ['sup']},
+    # Image files and an index timing them (modules.picture_indexes). .sst
+    # is Scenarist's text script's too, and .xml many formats'; the bytes
+    # tell them apart, in file_io.
+    'SCENARISTBMP': {'description': 'Sonic Scenarist bitmap script (pictures)', 'extensions': ['sst']},
+    'SON': {'description': 'DVD Maestro SON script (pictures)', 'extensions': ['son']},
+    'DOST': {'description': 'DOST script with PNG pictures', 'extensions': ['dost']},
+    'SPUMUX': {'description': 'dvdauthor spumux XML with PNG pictures', 'extensions': ['xml']},
+    'TIMEDIMAGES': {'description': 'Timed Images XML with PNG pictures', 'extensions': ['xml']},
+    'FCPIMAGE': {'description': 'Final Cut Pro XML with PNG pictures', 'extensions': ['xml']},
+    'RHOZET': {'description': 'Rhozet Harmonic XML with PNG pictures', 'extensions': ['xml']},
 }
 
 # Formats Subtitld opens but does not write, as no source says how (or the
