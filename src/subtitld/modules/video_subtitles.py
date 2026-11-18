@@ -7,7 +7,8 @@ opens a video (file_io.process_video_file), so listing them runs nothing.
 Each has its stream index, codec, language, title, whether it is the
 default or a forced one, and its kind:
 
-- 'text': subtitles FFmpeg decodes as text, which Subtitld can read;
+- 'text': subtitles FFmpeg decodes as text, which Subtitld can read, and
+  a Blu-ray's TextST, which Subtitld decodes itself (textst);
 - 'pictures': subtitles drawn as pictures (Blu-ray's PGS, DVD's VobSub,
   DVB's, DivX's XSUB), which only OCR would make text. A DVB subtitle
   stream may carry a service for each language (a composition page each),
@@ -37,7 +38,11 @@ import subprocess
 import tempfile
 
 TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'microdvd', 'subviewer',
-                         'subviewer1', 'mpl2', 'pjs', 'realtext', 'sami', 'stl', 'jacosub', 'vplayer'})
+                         'subviewer1', 'mpl2', 'pjs', 'realtext', 'sami', 'stl', 'jacosub', 'vplayer',
+                         'hdmv_text_subtitle'})
+# Text tracks FFmpeg has no decoder for, which Subtitld decodes itself:
+# a Blu-ray's TextST (textst).
+TEXTST_CODECS = frozenset({'hdmv_text_subtitle'})
 PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'})
 CAPTION_CODECS = frozenset({'eia_608'})
 TELETEXT_CODECS = frozenset({'dvb_teletext'})
@@ -211,13 +216,17 @@ def output_of(codec):
 
 
 def extract(path, index, codec, ffmpeg='ffmpeg', folder=None, duration=0.0, startupinfo=None, progress=None,
-            started=None):
+            started=None, ffprobe='ffprobe'):
     """Write the text track at stream `index` of the video at `path`, of
     `codec`, to a new file in `folder` (the system's temporary folder by
     default) and return its path; the caller removes it. `progress(share)`
     hears how far FFmpeg has got through the `duration` seconds, from 0 to
     1; `started(process)` gets the FFmpeg process, to stop it. Raises
-    RuntimeError, the file removed, when FFmpeg fails or is stopped."""
+    RuntimeError, the file removed, when FFmpeg fails or is stopped. A
+    TextST track is read through `ffprobe` packet by packet and written
+    as SRT."""
+    if codec in TEXTST_CODECS:
+        return _extract_textst(path, index, ffprobe, folder, startupinfo, started)
     extension, encoder = output_of(codec)
     handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix=extension, dir=folder)
     os.close(handle)
@@ -249,6 +258,32 @@ def extract(path, index, codec, ffmpeg='ffmpeg', folder=None, duration=0.0, star
         raise
     finally:
         errors.close()
+    return target
+
+
+def _extract_textst(path, index, ffprobe, folder, startupinfo, started):
+    """A TextST track's subtitles (textst.decode), as an SRT in `folder`."""
+    import json
+    from subtitld.modules import srt, textst
+    command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_packets', '-show_format',
+               '-show_data', '-of', 'json', str(path)]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               startupinfo=startupinfo)
+    if started:
+        started(process)
+    out, errors = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
+    probe = json.loads(out.decode('utf-8', 'replace') or '{}')
+    try:
+        offset = float((probe.get('format') or {}).get('start_time') or 0)
+    except ValueError:
+        offset = 0.0
+    segments = textst.decode([_hexdump(packet.get('data')) for packet in probe.get('packets') or []],
+                             origin=round(offset * 90000))
+    handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix='.srt', dir=folder)
+    os.close(handle)
+    srt.save(target, segments)
     return target
 
 

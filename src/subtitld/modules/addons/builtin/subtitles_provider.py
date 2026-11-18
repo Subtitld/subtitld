@@ -53,7 +53,7 @@ class _Extractor(QThread):
             target = video_subtitles.extract(
                 self.path, self.index, self.codec, ffmpeg=session.FFMPEG_EXECUTABLE, folder=session.PATH_TEMP,
                 duration=self.duration, startupinfo=session.STARTUPINFO, progress=self.moved.emit,
-                started=self._started)
+                started=self._started, ffprobe=session.FFPROBE_EXECUTABLE)
         except Exception as error:                   # FFmpeg missing, the video unreadable, or stopped
             if not self.stopped:
                 self.failed.emit(str(error))
