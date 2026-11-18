@@ -49,12 +49,39 @@ A song opened from a MIDI file keeps its music: given the file's bytes as
 and "@" headers taken out of them), and puts the words track after them,
 so the song plays as it did with the words edited.
 
+Tune 1000 made type 0 files too, the words and the music in one track:
+the words are found there the same way.
+
+Yamaha's XF (the XF Format Specifications, version 2.03) keeps lyric
+events too, its karaoke message: in a track, or in an "XFKM" chunk after
+the tracks, which is read first when it has lyrics (the spec's order; a
+separate .xkm file is not looked for). A cue point "$Lyrc:4,12:240:JP" is
+its Lyrics Header: the melody's channels, how many ticks the words are
+shown before they are sung (taken from each moment), and the character
+set (`XF_CODECS`, "JP" Shift-JIS). In the words, "<" starts a page, "/" a
+line, "^" is a space, "%" and ">" are left out, a reading in brackets
+after a kanji is left out (a display may), a ruby in square brackets is
+kept as one (modules.markup), "\\" makes the next character text; "{@JP}"
+changes the character set and "{#Title=...}" says the title. Cue points
+"&m", "&f" and the other vocal parts give each line its speaker
+(`XF_PARTS`). The song's name is the first track's, and the information
+header ("XFhd:", "XFln:", in an "XFIH" chunk or the first track) gives
+the performer as the artist and the lyricist as the songwriter.
+
+Asked for lyrics (`lyrics`), writing gives a Standard MIDI File with the
+words as lyric events, the way RP-026 (and XF, for its plain lyrics) has
+them: a syllable an event, a carriage return event before each line, a
+line feed before each paragraph; a type 0 file named after the title, or
+the music of the file opened kept with the words where its lyrics were.
+XF's own characters are not written, nor its karaoke chunk.
+
 What is lost on the way: formatting and places (KAR has none); a
 subtitle's lines, each a subtitle of its own when read again; where a
 syllable or a line ends, which reads back as the next one's start or
 `HOLD` after its own; times to the tick (about a millisecond).
 """
 
+import re
 import struct
 
 from subtitld.modules import karaoke, markup
@@ -70,7 +97,15 @@ PPQ = 480
 TEMPO = 500000                                   # microseconds a quarter note: 120 a minute
 KMIDI = '@KMIDI KARAOKE FILE'
 
-_TEXT, _NAME, _LYRIC, _END, _SET_TEMPO = 0x01, 0x03, 0x05, 0x2F, 0x51
+_TEXT, _NAME, _LYRIC, _CUE, _END, _SET_TEMPO = 0x01, 0x03, 0x05, 0x07, 0x2F, 0x51
+
+# Yamaha XF: the character sets its Lyrics Header and information header
+# name (the spec's Appendix A; TCVN-5773 for Vietnamese has no codec here,
+# and is read as Latin-1), and its vocal part cues as speakers.
+XF_CODECS = {'L1': 'latin-1', 'JP': 'cp932', 'KR': 'iso2022_kr', 'HZ': 'hz', 'B5': 'big5', 'CY': 'koi8_r'}
+XF_PARTS = {'m': 'Male', 'f': 'Female', 'c': 'Chorus', 's': 'Solo', 'p': 'Mixed', 'w': 'Spoken', 'x': ''}
+# Where a ruby goes while its reading is still being read.
+_RUBY = ''
 
 
 def is_midi(data):
@@ -139,9 +174,10 @@ def _track(data):
     return events
 
 
-def parse_smf(data):
-    """(type, division, [tracks]) for a Standard MIDI File's bytes. Raises
-    ValueError for bytes that are not one."""
+def _chunks(data):
+    """(type, division, [tracks], {name: [(tick, event)]} of Yamaha's XF
+    chunks, XFIH and XFKM, which follow the tracks) for a Standard MIDI
+    File's bytes. Raises ValueError for bytes that are not one."""
     data = bytes(data)
     if data.startswith(b'RIFF') and data[8:12] == b'RMID':
         # Microsoft's RMID wraps the file in a "data" chunk.
@@ -151,14 +187,24 @@ def parse_smf(data):
         raise ValueError('Not a MIDI file: it does not begin with MThd')
     length = struct.unpack('>I', data[4:8])[0]
     kind, count, division = struct.unpack('>HHH', data[8:14])
-    tracks = []
+    tracks, extra = [], {}
     position = 8 + length
-    while position + 8 <= len(data) and len(tracks) < count:
+    while position + 8 <= len(data):
         name, size = data[position:position + 4], struct.unpack('>I', data[position + 4:position + 8])[0]
         body = data[position + 8:position + 8 + size]
         position += 8 + size
-        if name == b'MTrk':
+        if name == b'MTrk' and len(tracks) < count:
             tracks.append(_track(body))
+        elif name in (b'XFIH', b'XFKM'):
+            # Events as a track has them, after delta times.
+            extra.setdefault(name.decode('ascii'), []).extend(_track(body))
+    return kind, division, tracks, extra
+
+
+def parse_smf(data):
+    """(type, division, [tracks]) for a Standard MIDI File's bytes. Raises
+    ValueError for bytes that are not one."""
+    kind, division, tracks, _extra = _chunks(data)
     return kind, division, tracks
 
 
@@ -227,16 +273,152 @@ def _words(tracks):
     return None, None
 
 
-def _syllables(events, clock, utf8):
-    """[[(seconds, text, paragraph)]] lines for a track's words."""
+def _lyrc(events):
+    """(melody channels, offset in ticks, language) of the first XF Lyrics
+    Header ("$Lyrc:4,12:240:JP", a cue point) among `events`, or None."""
+    for _tick, event in events:
+        if event[0] == 'meta' and event[1] == _CUE and event[2].startswith(b'$Lyrc'):
+            fields = event[2].decode('ascii', 'replace').split(':') + ['', '', '']
+            offset = int(fields[2]) if fields[2].strip().isdigit() else 0
+            return fields[1], offset, fields[3].strip().upper()
+    return None
+
+
+def _xf_texts(events, codec):
+    """([(tick, text, part)], info) for the lyric and cue events of XF
+    lyrics, their control characters (the XF spec's Karaoke Message) made
+    what _syllables reads: "<" a new page (LF before the text), "/" and CR
+    a new line (CR), LF a new paragraph; "^" a space; "%" (a meaningful
+    break inside a line) and ">" (a tab) nothing; a reading in "(" ")"
+    left out, as a display may; a ruby in "[" "]" a <ruby> on the text
+    before it in the same event (or the event before, when there is none),
+    across the events it spans; "\\" before a character takes its meaning
+    away. "{@JP}" and "{@LATIN}" at an event's start change the character
+    set, "{#Title=...}" and its kin are kept as `info`; a vocal part cue
+    ("&m", a cue point) gives the part of the syllables after it."""
+    out, info, rubies = [], {}, []
+    part = ''
+    reading = None                  # a ruby's reading while it is open
+    in_yomi = False
+    for tick, event in events:
+        raw = event[2]
+        if event[1] == _CUE:
+            if raw[:1] == b'&' and len(raw) >= 2:
+                part = XF_PARTS.get(chr(raw[1]).lower(), part)
+            continue
+        while raw.startswith(b'{'):
+            close = raw.find(b'}')
+            if close < 0:
+                break
+            tag = raw[1:close].decode(codec, 'replace')
+            if tag.startswith('@'):
+                name = tag[1:].strip().upper()
+                codec = 'latin-1' if name == 'LATIN' else XF_CODECS.get(name, codec)
+            elif tag.startswith('#') and '=' in tag:
+                key, value = tag[1:].split('=', 1)
+                info[key.strip().lower()] = value.strip()
+            raw = raw[close + 1:]
+        text = raw.decode(codec, 'replace')
+        pieces = ['']               # the text, a new piece after each break
+        position = 0
+        while position < len(text):
+            char = text[position]
+            position += 1
+            if char == '\\' and position < len(text):
+                char = text[position]
+                position += 1
+                if reading is not None:
+                    reading += char
+                elif not in_yomi:
+                    pieces[-1] += char
+                continue
+            if in_yomi:
+                in_yomi = char != ')'
+            elif reading is not None and char in '/<\r\n':
+                # A ruby left open (the spec's own examples leave some)
+                # ends with its line.
+                rubies[-1][1] = reading
+                reading = None
+                pieces.append('\r' if char in '/\r' else '\n')
+            elif reading is not None:
+                if char == ']':
+                    rubies[-1][1] = reading
+                    reading = None
+                else:
+                    reading += char
+            elif char == '(':
+                in_yomi = True
+            elif char == '[':
+                # The text before it in this event is what is read; else the
+                # event before's.
+                base = pieces[-1].lstrip('\r\n')
+                if base:
+                    pieces[-1] = pieces[-1][:len(pieces[-1]) - len(base)] + _RUBY
+                elif out:
+                    before = out[-1][1]
+                    lead = before[:len(before) - len(before.lstrip('\r\n'))]
+                    base = before[len(lead):].rstrip(' ')
+                    out[-1] = (out[-1][0], lead + _RUBY + before[len(lead) + len(base):], out[-1][2])
+                rubies.append([base, ''])
+                reading = ''
+            elif char in '/\r':
+                pieces.append('\r')
+            elif char in '<\n':
+                pieces.append('\n')
+            elif char == '^':
+                pieces[-1] += ' '
+            elif char not in '%>':
+                pieces[-1] += char
+        for piece in pieces:
+            if piece:
+                out.append((tick, piece, part))
+    # The rubies, once their readings are all known, where they were opened.
+    found = iter(rubies)
+    done = []
+    for tick, text, part in out:
+        while _RUBY in text:
+            base, said = next(found, ['', ''])
+            text = text.replace(_RUBY, f'<ruby>{base}<rt>{said}</rt></ruby>' if said else base, 1)
+        done.append((tick, text, part))
+    return done, info
+
+
+def _xf_info(events):
+    """Metadata from XF's information header: "XFhd:" (the performer, the
+    lyricist and the composer, in ASCII) and "XFln:" (the song's name in
+    its language, and those people again)."""
+    metadata = {}
+    for _tick, event in events:
+        if not (event[0] == 'meta' and event[1] == _TEXT and event[2][:5] in (b'XFhd:', b'XFln:')):
+            continue
+        if event[2].startswith(b'XFln:'):
+            language = event[2][5:].split(b':', 1)[0].decode('ascii', 'replace').strip().upper()
+            fields = event[2].decode(XF_CODECS.get(language, 'latin-1'), 'replace').split(':') + [''] * 8
+            # A Japanese name carries its reading in brackets.
+            names = [re.sub(r'\([^)]*\)', '', field).strip() if language == 'JP' else field.strip() for field in fields]
+            title, composer, lyricist, performer = names[2], names[3], names[4], names[6]
+        else:
+            fields = event[2].decode('latin-1', 'replace').split(':') + [''] * 13
+            title, composer, lyricist, performer = '', fields[7].strip(), fields[8].strip(), fields[10].strip()
+        for key, value in (('title', title), ('artist', performer), ('songwriter', lyricist or composer)):
+            if value and (key not in metadata or event[2].startswith(b'XFln:')):
+                metadata[key] = value
+    return metadata
+
+
+def _syllables(events, clock, marks='/\\\r\n', offset=0):
+    """[[(seconds, text, paragraph, part)]] lines for [(tick, text, part)]
+    words; `marks` the characters that break a line ("/" and CR) or a
+    paragraph ("\\" and LF) before a syllable, CR and LF after one;
+    `offset` ticks taken from each moment."""
     lines = []
     paragraph = True
-    for tick, raw in events:
-        text = _decode(raw, utf8).replace('\r\n', '\r')
-        at = round(clock.seconds(tick), 3)
+    for tick, text, part in events:
+        text = text.replace('\r\n', '\r')
+        at = round(clock.seconds(max(0, tick - offset)), 3)
         # A syllable may carry a break before it ("/", "\\", CR or LF), and
         # some files put the break after one ("lo\r"), for the next.
-        while text and text[0] in '/\\\r\n':
+        while text and text[0] in marks:
             paragraph = paragraph or text[0] in '\\\n'
             lines.append([])
             text = text[1:]
@@ -247,7 +429,7 @@ def _syllables(events, clock, utf8):
         if text:
             if not lines:
                 lines.append([])
-            lines[-1].append((at, text, paragraph))
+            lines[-1].append((at, text, paragraph, part))
             paragraph = False
         for char in ending:
             paragraph = paragraph or char == '\n'
@@ -255,17 +437,44 @@ def _syllables(events, clock, utf8):
     return [line for line in lines if line]
 
 
+def _source(tracks, extra):
+    """(the events with the words, the meta type they are in, the XF
+    Lyrics Header or None, the index of their track or None): an XF
+    karaoke chunk's lyrics before any track's (the spec's order), else
+    what _words finds."""
+    chunk = extra.get('XFKM') or []
+    lyrc = _lyrc(chunk) or next((found for found in (_lyrc(track) for track in tracks) if found), None)
+    if any(event[0] == 'meta' and event[1] == _LYRIC for _tick, event in chunk):
+        return chunk, _LYRIC, lyrc, None
+    index, meta = _words(tracks)
+    if index is None:
+        return None, None, None, None
+    return tracks[index], meta, (lyrc if meta == _LYRIC else None), index
+
+
+def words_kind(data):
+    """What carries the words of a MIDI file's bytes: 'kar' (Tune 1000's
+    text events), 'xf' (Yamaha's XF lyrics), 'lyrics' (lyric events), or
+    None for a file with none."""
+    _kind, _division, tracks, extra = _chunks(data)
+    _events, meta, lyrc, _index = _source(tracks, extra)
+    if meta is None:
+        return None
+    return 'kar' if meta == _TEXT else 'xf' if lyrc else 'lyrics'
+
+
 def parse(data):
     """(subtitles, metadata) in a KAR or MIDI file's bytes: [{'start',
     'end', 'text'}] a line, the syllables as karaoke codes, 'kar' on one
-    that starts a paragraph; and {'title', 'artist', 'kar'}. Raises
-    ValueError for a file that is not MIDI or has no words."""
-    _kind, division, tracks = parse_smf(data)
-    index, meta = _words(tracks)
-    if index is None:
+    that starts a paragraph (or an XF page), the speaker of an XF vocal
+    part; and {'title', 'artist', 'kar'} ('songwriter' too from XF).
+    Raises ValueError for a file that is not MIDI or has no words."""
+    _kind, division, tracks, extra = _chunks(data)
+    source, meta, lyrc, _index = _source(tracks, extra)
+    if meta is None:
         raise ValueError('No words in this MIDI file: it has no karaoke text or lyric events')
     clock = _Clock(division, tracks)
-    events = [(tick, event[2]) for tick, event in tracks[index] if event[0] == 'meta' and event[1] == meta]
+    events = [(tick, event[2]) for tick, event in source if event[0] == 'meta' and event[1] == meta]
     headers = [raw for raw in (event[2] for track in tracks for _tick, event in track
                                if event[0] == 'meta' and event[1] == _TEXT) if raw.startswith(b'@')]
     words = [(tick, raw) for tick, raw in events if not raw.startswith(b'@')]
@@ -292,13 +501,32 @@ def parse(data):
     if any(kept.values()):
         metadata['kar'] = kept
 
-    lines = _syllables(words, clock, utf8)
+    if lyrc:
+        # Yamaha's XF: the characters the Lyrics Header names (else utf-8
+        # or Windows-1252, as for any lyrics), its control characters, and
+        # the moments brought forward by its offset. The song's name is the
+        # first track's, and its information header says who made it.
+        codec = XF_CODECS.get(lyrc[2]) or ('utf-8' if utf8 else 'cp1252')
+        cued = [(tick, event) for tick, event in source if event[0] == 'meta' and (
+            event[1] == _LYRIC or (event[1] == _CUE and event[2][:1] == b'&'))]
+        texts, info = _xf_texts(cued, codec)
+        lines = _syllables(texts, clock, marks='\r\n', offset=lyrc[1])
+        first = tracks[0] if tracks else []
+        name = next((event[2] for _tick, event in first if event[0] == 'meta' and event[1] == _NAME), b'')
+        if name.strip():
+            metadata['title'] = name.decode(codec, 'replace').strip()
+        metadata.update(_xf_info((extra.get('XFIH') or []) + first))
+        for key, field in (('title', 'title'), ('artist', 'artist'), ('songwriter', 'lyrics')):
+            if info.get(field):
+                metadata[key] = info[field]
+    else:
+        lines = _syllables([(tick, _decode(raw, utf8), '') for tick, raw in words], clock)
     segments = []
     for number, line in enumerate(lines):
         following = lines[number + 1][0][0] if number + 1 < len(lines) else None
         start = line[0][0]
         pieces = []
-        for position, (at, text, _paragraph) in enumerate(line):
+        for position, (at, text, _paragraph, _part) in enumerate(line):
             after = line[position + 1][0] if position + 1 < len(line) else following
             end = at + HOLD if after is None else min(after, at + HOLD)
             if position == 0:
@@ -315,6 +543,8 @@ def parse(data):
         segment = {'start': start, 'end': pieces[-1][1], 'text': text}
         if line[0][2]:
             segment['kar'] = {'paragraph': True}
+        if line[0][3]:
+            segment['speaker'] = line[0][3]
         segments.append(segment)
     return segments, metadata
 
@@ -395,10 +625,16 @@ def _lines(segments):
     return out
 
 
-def write(segments, metadata=None, source=None):
+def write(segments, metadata=None, source=None, lyrics=False):
     """KAR bytes for `segments`, with the title and artist of `metadata`
     (and the headers it kept from a KAR); keeping the music of `source`,
-    the bytes of the MIDI file they were opened from, when given."""
+    the bytes of the MIDI file they were opened from, when given. With
+    `lyrics`, a Standard MIDI File with the words as lyric events instead
+    (RP-026's way): a syllable an event, a carriage return before a line,
+    a line feed before a paragraph, no "@" headers; in a type 0 file of
+    one track named after the title, or, keeping the music of `source`,
+    in the track its lyrics were in (its one track, for a type 0 file),
+    else in a track of their own after the others."""
     metadata = metadata or {}
     kept = metadata.get('kar') if isinstance(metadata.get('kar'), dict) else {}
     lines = _lines(segments)
@@ -408,36 +644,66 @@ def write(segments, metadata=None, source=None):
         value = str(metadata.get(key) or '').strip()
         if value:
             titles[number:number + 1] = [value]
-    headers = (['@LENGL' if not kept.get('language') else '@L' + kept['language']]
-               + ['@T' + title for title in titles] + ['@I' + info for info in kept.get('info') or []])
+    headers = [] if lyrics else (['@LENGL' if not kept.get('language') else '@L' + kept['language']]
+                                 + ['@T' + title for title in titles] + ['@I' + info for info in kept.get('info') or []])
     try:
-        ''.join(texts + headers).encode('cp1252')
+        ''.join(texts + headers + titles[:1]).encode('cp1252')
         encoding = 'cp1252'
     except UnicodeEncodeError:
         encoding = 'utf-8'
 
+    kind, index, meta = 1, None, None
     if source:
-        _kind, division, tracks = parse_smf(source)
-        index, meta = _words(tracks)
+        kind, division, tracks, extra = _chunks(source)
+        _events, meta, _lyrc_header, index = _source(tracks, extra)
         kept_tracks = []
         for number, track in enumerate(tracks):
-            # The words and the headers are written anew, so they go.
+            # The words and the headers are written anew, so they go, and
+            # XF's Lyrics Header and vocal part cues with them: the words
+            # written are not in XF's way. (An XF karaoke chunk is not
+            # written again either.)
             events = [(tick, event) for tick, event in track if not (
                 event[0] == 'meta' and (event[1] == _LYRIC or (event[1] == _TEXT and (
-                    event[2].startswith(b'@') or (number == index and meta == _TEXT)))))]
+                    event[2].startswith(b'@') or (number == index and meta == _TEXT)))
+                    or (event[1] == _CUE and event[2][:1] in (b'$', b'&'))))]
             if number == index and meta == _TEXT and not any(event[0] != 'meta' or event[1] not in (_NAME, _END)
                                                              for _tick, event in events):
                 continue                            # the words track: replaced
             kept_tracks.append(events)
         if not kept_tracks:
             kept_tracks = [[]]
+    elif lyrics:
+        division, tracks = PPQ, []
+        kind = 0
+        name = titles[0].encode(encoding, 'replace') if titles else b''
+        kept_tracks = [([(0, _meta(_NAME, name))] if name else [])
+                       + [(0, _meta(_SET_TEMPO, TEMPO.to_bytes(3, 'big'))), (0, _meta(0x58, bytes([4, 2, 24, 8])))]]
     else:
         division, tracks = PPQ, []
         kept_tracks = [[(0, _meta(_NAME, b'Tempo')), (0, _meta(_SET_TEMPO, TEMPO.to_bytes(3, 'big'))),
                         (0, _meta(0x58, bytes([4, 2, 24, 8])))]]
     clock = _Clock(division, tracks)
-    kept_tracks[0] = [(0, _meta(_TEXT, KMIDI.encode('ascii')))] + kept_tracks[0]
 
+    if lyrics:
+        words = []
+        for number, (_start, line, paragraph) in enumerate(lines):
+            for position, (at, text) in enumerate(line):
+                if position == 0:
+                    text = text.lstrip()
+                    if number:
+                        words.append((clock.tick(at), _meta(_LYRIC, b'\n' if paragraph else b'\r')))
+                words.append((clock.tick(at), _meta(_LYRIC, text.encode(encoding, 'replace'))))
+        if source and kind == 0 or len(kept_tracks) == 1 and not source:
+            kept_tracks[0] = kept_tracks[0] + words
+        elif source and meta == _LYRIC and index is not None and index < len(kept_tracks):
+            kept_tracks[index] = kept_tracks[index] + words
+        else:
+            kept_tracks.append([(0, _meta(_NAME, b'Words'))] + words)
+        kind = 0 if len(kept_tracks) == 1 else 1
+        chunks = [_chunk(track) for track in kept_tracks]
+        return b'MThd' + struct.pack('>IHHH', 6, kind, len(chunks), division) + b''.join(chunks)
+
+    kept_tracks[0] = [(0, _meta(_TEXT, KMIDI.encode('ascii')))] + kept_tracks[0]
     words = [(0, _meta(_NAME, b'Words'))] + [(0, _meta(_TEXT, header.encode(encoding, 'replace'))) for header in headers]
     for _start, line, paragraph in lines:
         for number, (at, text) in enumerate(line):
@@ -448,9 +714,9 @@ def write(segments, metadata=None, source=None):
     return b'MThd' + struct.pack('>IHHH', 6, 1, len(chunks), division) + b''.join(chunks)
 
 
-def save(path, segments, metadata=None, source=None):
-    """Write `segments` to `path` as KAR; `metadata` and `source` as
-    write() takes them."""
-    data = write(segments, metadata, source)
+def save(path, segments, metadata=None, source=None, lyrics=False):
+    """Write `segments` to `path` as KAR, or as a MIDI file with lyric
+    events; `metadata`, `source` and `lyrics` as write() takes them."""
+    data = write(segments, metadata, source, lyrics)
     with open(path, 'wb') as kar_file:
         kar_file.write(data)

@@ -237,7 +237,7 @@ file_io.save_file(str(folder / 'alone.kar'), 'KAR')
 check('the source gone: the words alone', len(read_smf((folder / 'alone.kar').read_bytes())[2]), 2)
 (folder / 'lyrics.mid').write_bytes(LYRICS)
 opened, fmt = file_io.process_subtitles_file(str(folder / 'lyrics.mid'))
-check("a .mid's lyrics open too", (fmt, len(opened)), ('KAR', 3))
+check("a .mid's lyrics open too, as MIDI lyrics", (fmt, len(opened)), ('MIDI', 3))
 (folder / 'no words.mid').write_bytes(smf(1, 96, [MELODY_TRACK]))
 try:
     file_io.process_subtitles_file(str(folder / 'no words.mid'))

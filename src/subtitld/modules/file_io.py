@@ -945,10 +945,14 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
         elif subtitle_file.lower().endswith(('.kar', '.mid', '.midi')):
             # Karaoke MIDI: a line a subtitle, its syllables as karaoke codes,
             # the title and artist (and the other @ headers) as metadata; the
-            # file's path kept, so saving it again keeps its music.
+            # file's path kept, so saving it again keeps its music. A .mid
+            # whose words are lyric events (XF's among them) is saved as one.
             subtitle_format = 'KAR'
             try:
                 segments_list, kar_metadata = kar.read(subtitle_file)
+                with open(subtitle_file, 'rb') as midi_file:
+                    if not subtitle_file.lower().endswith('.kar') and kar.words_kind(midi_file.read()) != 'kar':
+                        subtitle_format = 'MIDI'
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
             if kar_metadata:
@@ -2409,10 +2413,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             ultrastar.save(final_file, segments, metadata=metadata, headers=metadata.get('ultrastar'),
                            audio=video_name)
 
-        elif subtitle_format == 'KAR':
+        elif subtitle_format in ('KAR', 'MIDI'):
             # The words of a karaoke song, with the music of the MIDI file it
             # was opened from when that is still there; else words alone, the
-            # video's name as the title when it has none.
+            # video's name as the title when it has none. MIDI: as lyric
+            # events, not KAR's text events.
             source = None
             if options.get('kar_source') and os.path.isfile(options['kar_source']):
                 with open(options['kar_source'], 'rb') as source_file:
@@ -2421,7 +2426,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     source = None
             metadata = dict(SUBTITLE.get('metadata') or {})
             metadata.setdefault('title', os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
-            kar.save(final_file, segments, metadata=metadata, source=source)
+            kar.save(final_file, segments, metadata=metadata, source=source, lyrics=subtitle_format == 'MIDI')
 
         elif subtitle_format in legacy.SESSION_FORMATS:
             # The player era. The ones counted in frames (AQTitle, Spruce)

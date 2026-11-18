@@ -156,6 +156,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
     # Karaoke MIDI: the words of a .kar, or the lyrics of any MIDI file.
     'KAR': {'description': 'KAR MIDI Karaoke format', 'extensions': ['kar', 'mid', 'midi']},
+    # The same words as a MIDI file's lyric events (RP-026), which XF's
+    # and most players read; KAR above keeps the extensions for opening.
+    'MIDI': {'description': 'MIDI file with lyrics', 'extensions': ['mid', 'midi']},
     # Video editors' own: Avid SubCap's .txt is told from the player-era
     # .txt formats below by its bytes, in file_io.
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
