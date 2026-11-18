@@ -180,6 +180,9 @@ jobs:
           # One file for the release: the ports, to unpack into haikuports.
           tar -C artifacts/haikuports -czf "artifacts/subtitld-$VERSION-haikuports.tar.gz" dev-python media-video
           rm -r artifacts/haikuports
+          # Subtitld's own package only: the Python packages it needs come from
+          # hpkg.subtitld.org (the haiku artifact keeps them all).
+          find artifacts -maxdepth 1 -name '*.hpkg' ! -name 'subtitld-*.hpkg' -delete
       # The release published: its title and notes stay, the build
       # version (the date; the tag is a free-form label) follows them,
       # and every package is attached.
