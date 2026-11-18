@@ -4,17 +4,17 @@ The options apply to the formats that hold only timed text (SRT, VTT, HLS,
 CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
-AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
-XML, LRC, UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, ISMT, XMLDIALECT, JSONDIALECT, the
-player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT, CTM,
-AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the indexes of pictures (SCENARISTBMP, SON,
-DOST, SPUMUX, TIMEDIMAGES, FCPIMAGE, RHOZET), whose pictures are drawn of
-the text they write; USF, USFX and JSON keep the project as it is. TMX
-writes the original and every translation side by side, whatever `text`
-asks. Karaoke timing is formatting (modules.karaoke): removing the
-formatting takes the word timing of LRC, UltraStar, KAR, MIDI, KBP, TTXT and the wipe of CDG with
-it,
-and CTM's words share out their subtitle's time instead.
+AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC,
+UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, ISMT, XMLDIALECT, JSONDIALECT,
+the player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT,
+CTM, AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the
+indexes of pictures (SCENARISTBMP, SON, DOST, SPUMUX, TIMEDIMAGES, FCPIMAGE,
+RHOZET), whose pictures are drawn of the text they write; USF, USFX and JSON
+keep the project as it is. TMX writes the original and every translation
+side by side, whatever `text` asks. Karaoke timing is formatting
+(modules.karaoke): removing the formatting takes the word timing of LRC,
+UltraStar, KAR, MIDI, KBP, TTXT and the wipe of CDG with it, and CTM's words
+share out their subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the

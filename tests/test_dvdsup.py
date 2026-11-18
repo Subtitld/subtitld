@@ -226,7 +226,7 @@ panel.format_combo.setCurrentText('DVDSUP')
 panel._refresh_options()
 check('the picture size, as VobSub\'s', (panel.vobsub_options.isHidden(), panel.get_config()['options'].get('vobsub_size')),
       (False, 'pal'))
-check('what the pictures will be said', (panel.check_label.isHidden(), '.ifo' in panel.check_label.text()), (False, True))
+check('no note: the preview shows the pictures', panel.check_label.isHidden(), True)
 
 shutil.rmtree(folder, ignore_errors=True)
 print()

@@ -285,9 +285,9 @@ panel = _SubtitlesPanel()
 for which in picture_indexes.FORMATS:
     panel.format_combo.setCurrentText(which)
     panel._refresh_options()
-    check(f'{which}: the DVD frame for the DVD tools\', what the pictures will be said',
-          (panel.vobsub_options.isHidden(), panel.check_label.isHidden(), bool(panel.check_label.text())),
-          (which not in picture_indexes.DVD_FORMATS, False, True))
+    check(f'{which}: the DVD frame for the DVD tools\', no note as the preview shows the pictures',
+          (panel.vobsub_options.isHidden(), panel.check_label.isHidden()),
+          (which not in picture_indexes.DVD_FORMATS, True))
 
 shutil.rmtree(folder, ignore_errors=True)
 print()

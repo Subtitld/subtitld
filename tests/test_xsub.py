@@ -176,12 +176,10 @@ session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.avi'}
 session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
 panel = _VideoPanel()
-panel.video_tabwidget.setCurrentWidget(panel.tracks_panel)
-panel.tracks_format_combo.combobox.setCurrentIndex(panel.tracks_format_combo.combobox.findData('AVI XSUB'))
-panel._refresh_tracks()
-check('an AVI with XSUB: no codec, nor forced, to choose; what it does said',
+panel.choose('AVI XSUB')
+check('an AVI with XSUB: no codec, nor forced, to choose',
       (panel.get_config()['format'], panel.tracks_codec_combo.isHidden(), panel.tracks_forced.isHidden(),
-       soft_subtitles.is_soft('AVI XSUB'), 'XSUB' in panel.tracks_note.text()), ('AVI XSUB', True, True, True, True))
+       soft_subtitles.is_soft('AVI XSUB')), ('AVI XSUB', True, True, True))
 check('its file name', session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS['AVI XSUB']['extensions'], ['avi'])
 
 shutil.rmtree(folder, ignore_errors=True)

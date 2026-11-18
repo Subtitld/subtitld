@@ -781,9 +781,10 @@ def _open_txt(path):
     """The subtitles in a .txt and the format they were in, asked in order:
 
     1. the named formats that write .txt, each sure of its own: UltraStar,
-       Avid SubCap, the DVD authoring scripts (Encore, DVD Architect,
-       Scenarist, DVD Producer, Avid DVD), then the player era's (VPlayer,
-       TMPlayer, MPL2, Captions 32, Oresme, DVDSS, QTtext ...);
+       Avid SubCap, Softel Swift, the DVD authoring scripts (Encore, DVD
+       Architect, Scenarist, DVD Producer, Avid DVD), Audacity's labels,
+       then the player era's (VPlayer, TMPlayer, MPL2, Captions 32, Oresme,
+       DVDSS, QTtext ...);
     2. the shapes of the nameless ones (modules.generic_text): times and
        text on a line, times over text, frames, a table, JSON; an SRT,
        WebVTT or MicroDVD saved as .txt is read by its own reader there;

@@ -173,9 +173,15 @@ else:
 
 print('the dialog')
 from subtitld.interface import export_dialog
-check('the subtitle track tab offers a transport stream with ARIB captions, with no forced track',
-      ('TS ARIB' in soft_subtitles.CONTAINERS, 'TS ARIB' in soft_subtitles.UNFORCED,
-       export_dialog._('export_dialog.video_ts_arib')), (True, True, 'Transport stream (.ts), ARIB captions (ISDB)'))
+from subtitld.modules import session
+session.CONFIG.pop('export_video', None)
+session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.ts'}
+session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
+panel = export_dialog._VideoPanel()
+panel.choose('TS ARIB')
+check('a transport stream\'s track as ARIB captions, with no forced track',
+      ('TS ARIB' in soft_subtitles.CONTAINERS, panel.get_config()['format'], panel.tracks_forced.isHidden(),
+       panel.tracks_ts_combo.combobox.currentText()), (True, 'TS ARIB', True, 'ARIB captions (ISDB)'))
 check('a transport stream is still a video', teletext.is_transport_stream(str(folder / 'ja.ts')), True)
 
 print()
