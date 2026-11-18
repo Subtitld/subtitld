@@ -46,6 +46,7 @@ from subtitld.modules import json_dialects
 from subtitld.modules import cdg
 from subtitld.modules import kar
 from subtitld.modules import kbp
+from subtitld.modules import kate
 from subtitld.modules import lambdacap
 from subtitld.modules import aeneas
 from subtitld.modules import annotation
@@ -637,6 +638,15 @@ def _known_language(tag):
     return next((code for code in known if code.split('-')[0] == primary), '')
 
 
+def _is_kate(path):
+    """Whether the Ogg file at `path` holds a Kate stream, by its bytes."""
+    try:
+        with open(path, 'rb') as ogg_file:
+            return kate.is_kate(ogg_file.read(65536))
+    except OSError:
+        return False
+
+
 def _youtube_xml(path):
     """Whether the XML file at `path` is YouTube's timed text, by its root."""
     try:
@@ -977,6 +987,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
             session.SUBTITLE['metadata'] = kbp_metadata
+
+        elif subtitle_file.lower().endswith(('.ogg', '.oga', '.ogv')) and _is_kate(subtitle_file):
+            # Ogg Kate: the first Kate stream of the file, its language for
+            # the project's and its category kept for a save as Kate.
+            subtitle_format = 'KATE'
+            try:
+                segments_list, kate_info = kate.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(kate_info['language']):
+                session.SUBTITLE['language'] = _known_language(kate_info['language'])
+            if kate_info['category']:
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kate_category=kate_info['category'])
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
@@ -2493,6 +2516,14 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # with, else kbputils' default, the video as its song.
             kbp.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
                      audio=os.path.basename(VIDEO.get('filepath') or ''))
+
+        elif subtitle_format == 'KATE':
+            # Ogg Kate, alone in its file: the category it was opened with
+            # (subtitles, SUB, without one), the canvas the video's size.
+            kate.save(final_file, segments,
+                      language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                      else language, category=options.get('kate_category') or 'SUB',
+                      width=int(VIDEO.get('width') or 0), height=int(VIDEO.get('height') or 0))
 
         elif subtitle_format in ('KAR', 'MIDI'):
             # The words of a karaoke song, with the music of the MIDI file it

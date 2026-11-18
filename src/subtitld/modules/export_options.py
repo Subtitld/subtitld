@@ -5,7 +5,7 @@ CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
-XML, LRC, UltraStar, KAR, MIDI lyrics, KBP, TTXT, ISMT, XMLDIALECT, JSONDIALECT, the
+XML, LRC, UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, ISMT, XMLDIALECT, JSONDIALECT, the
 player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT, CTM,
 AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the indexes of pictures (SCENARISTBMP, SON,
 DOST, SPUMUX, TIMEDIMAGES, FCPIMAGE, RHOZET), whose pictures are drawn of
@@ -140,7 +140,7 @@ from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT',
+                'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT', 'KATE',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'ISMT', 'XMLDIALECT', 'JSONDIALECT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',

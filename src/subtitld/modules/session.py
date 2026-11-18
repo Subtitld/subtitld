@@ -217,6 +217,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
                    'extensions': ['xml']},
     'JSONDIALECT': {'description': 'Platform JSON subtitles (Wistia, TED, TwentyThree, ...)',
                     'extensions': ['json', 'atpj', 'clqtt', 'gst']},
+    # Xiph's Kate in an Ogg file of its own; an .ogg with no Kate stream in
+    # it is no subtitle file (file_io looks at its bytes).
+    'KATE': {'description': 'Ogg Kate Subtitle format', 'extensions': ['ogg']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.
