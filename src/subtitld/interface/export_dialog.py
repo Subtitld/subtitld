@@ -41,7 +41,8 @@ from subtitld.modules import vobsub
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
-                    'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC']
+                    'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC',
+                    'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
 # drop-frame for the two whose tools write it.
 DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
@@ -490,6 +491,10 @@ class _SubtitlesPanel(QWidget):
             combo.addItem(_('export_dialog.speaker_names_chevrons'), 'voice')
         elif fmt == 'SBV':
             combo.addItem(_('export_dialog.speaker_names_youtube'), 'voice')
+        elif fmt in ('TEXTGRID', 'EAF', 'EXB'):
+            combo.addItem(_('export_dialog.speaker_names_tiers'), 'voice')
+        elif fmt in ('TRS', 'CHAT'):
+            combo.addItem(_('export_dialog.speaker_names_participants'), 'voice')
         if not _select(self.speakers_combo, self._speakers_wanted):
             _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
         combo.blockSignals(False)
@@ -541,7 +546,8 @@ class _SubtitlesPanel(QWidget):
         # Avid DVD's (italics, and DVD Studio Pro's places) have no
         # formatting to keep.
         self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
-                                                     'DVDPRODUCER'))
+                                                     'DVDPRODUCER', 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM',
+                                                     'AUDACITY', 'AENEAS', 'TMX'))
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML') or stpp)
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'

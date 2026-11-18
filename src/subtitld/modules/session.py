@@ -176,6 +176,19 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # MP4Box's text tracks as XML; CCExtractor's transcripts share .ttxt and
     # are told apart by their bytes (file_io).
     'TTXT': {'description': 'GPAC TTXT (MP4 Timed Text) format', 'extensions': ['ttxt']},
+    # Transcripts of speech research and recognition (modules.transcripts,
+    # modules.annotation, modules.audacity, modules.aeneas, modules.tmx).
+    # Audacity's .txt and aeneas's .json are told from the formats above
+    # that share them by their bytes (file_io).
+    'TEXTGRID': {'description': 'Praat TextGrid', 'extensions': ['TextGrid', 'textgrid']},
+    'EAF': {'description': 'ELAN Annotation Format', 'extensions': ['eaf']},
+    'TRS': {'description': 'Transcriber transcription', 'extensions': ['trs']},
+    'EXB': {'description': 'EXMARaLDA basic transcription', 'extensions': ['exb']},
+    'CHAT': {'description': 'CHAT transcript (CLAN, TalkBank)', 'extensions': ['cha']},
+    'CTM': {'description': 'CTM word timings (NIST, Kaldi)', 'extensions': ['ctm']},
+    'AUDACITY': {'description': 'Audacity labels', 'extensions': ['txt']},
+    'AENEAS': {'description': 'Aeneas sync map (JSON)', 'extensions': ['json']},
+    'TMX': {'description': 'TMX translation memory with times', 'extensions': ['tmx']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

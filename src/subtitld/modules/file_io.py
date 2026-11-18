@@ -39,6 +39,9 @@ from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
 from subtitld.modules import kar
 from subtitld.modules import lambdacap
+from subtitld.modules import aeneas
+from subtitld.modules import annotation
+from subtitld.modules import audacity
 from subtitld.modules import legacy
 from subtitld.modules import lrc
 from subtitld.modules import mcc
@@ -54,6 +57,8 @@ from subtitld.modules import srt
 from subtitld.modules import subtitle_styles
 from subtitld.modules import session
 from subtitld.modules import ttml
+from subtitld.modules import tmx
+from subtitld.modules import transcripts
 from subtitld.modules import ttxt
 from subtitld.modules import waveform
 from subtitld.modules import webvtt
@@ -768,6 +773,12 @@ def _open_txt(path):
         # The DVD authoring tools' scripts, told apart (and from DVDSS,
         # whose lines Encore's look like) by their layouts.
         return _open_script(path, found), dvd_scripts.SESSION_IDS[found]
+    if audacity.looks_like(text):
+        # Audacity's labels: tab-parted seconds and a text, nothing else.
+        try:
+            return audacity.read(path), 'AUDACITY'
+        except ValueError as error:
+            raise CorruptedProjectFileError(str(error)) from error
     found = legacy.kind(text)
     if found:
         # VPlayer, TMPlayer and their kin wrote .txt.
@@ -780,6 +791,35 @@ def _open_txt(path):
             'VTT' if detected.shape == generic_text.WEBVTT else 'SRT'
     # Plain text: a transcript, a script, notes.
     return (_plain_text_segments(text) if text.strip() else []), 'TXT'
+
+
+def _word_limits():
+    """The length the quality check asks of a subtitle, for files of words
+    grouped into subtitles (modules.json_subtitles.from_words)."""
+    quality = session.CONFIG.get('quality_check') or {}
+    return {'characters': int(quality.get('maximum_characters_per_line') or 42),
+            'lines': int(quality.get('maximum_lines') or 2),
+            'seconds': float(quality.get('maximum_duration') or 7)}
+
+
+def _transcript_opened(segments_list, language=None):
+    """A transcript's speakers listed for the project and kept as its
+    speakers when saved again ('voice'), translations by Subtitld's
+    language codes, its language the project's."""
+    named = False
+    for segment in segments_list:
+        if segment.get('translations'):
+            segment['translations'] = {_language_like_project(tag) or tag.lower(): text
+                                       for tag, text in segment['translations'].items()}
+        if segment.get('speaker'):
+            named = True
+            session.SPEAKERS.setdefault(segment['speaker'], {'image': None})
+        segment.setdefault('speaker', 'A')
+    if named:
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, speakers='voice')
+    code = _language_like_project(language)
+    if code:
+        session.SUBTITLE['language'] = code
 
 
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
@@ -1140,6 +1180,34 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
 
+        elif subtitle_file.lower().endswith(('.textgrid', '.eaf', '.trs', '.exb', '.cha', '.ctm', '.tmx')):
+            # Transcripts of speech research and recognition: Praat's
+            # TextGrid, CHAT and CTM (modules.transcripts), ELAN, Transcriber
+            # and EXMARaLDA (modules.annotation), and Subtitle Edit's TMX.
+            # Their speakers and translations become the project's.
+            extension = subtitle_file.lower().rsplit('.', 1)[-1]
+            subtitle_format = {'textgrid': 'TEXTGRID', 'eaf': 'EAF', 'trs': 'TRS', 'exb': 'EXB', 'cha': 'CHAT',
+                               'ctm': 'CTM', 'tmx': 'TMX'}[extension]
+            language = None
+            try:
+                if extension == 'textgrid':
+                    segments_list = transcripts.read_textgrid(subtitle_file, limits=_word_limits())
+                elif extension == 'cha':
+                    segments_list, language = transcripts.read_chat(subtitle_file)
+                elif extension == 'ctm':
+                    segments_list = transcripts.read_ctm(subtitle_file, _word_limits())
+                elif extension == 'eaf':
+                    segments_list, language = annotation.read_eaf(subtitle_file)
+                elif extension == 'trs':
+                    segments_list, language = annotation.read_trs(subtitle_file)
+                elif extension == 'exb':
+                    segments_list = annotation.read_exb(subtitle_file, _word_limits())
+                else:
+                    segments_list, language = tmx.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            _transcript_opened(segments_list, language)
+
         elif subtitle_file.lower().endswith('.890'):
             # Cavena 890: frames counted at the video's rate, else 25; its
             # language for the project's, its title the project's, its rate
@@ -1474,7 +1542,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(f"Line {getattr(error, 'lineno', '?')}, column {getattr(error, 'colno', '?')}: "
                                                 f"{getattr(error, 'msg', error)}") from error
             language = None
-            if json_subtitles.kind(data) is None and json_subtitles.is_subtitlds(data):
+            if aeneas.looks_like(data):
+                # An aeneas sync map: "fragments" of lines.
+                subtitle_format = 'AENEAS'
+                segments_list, language = aeneas.parse(data)
+                for segment in segments_list:
+                    segment.setdefault('speaker', 'A')
+            elif json_subtitles.kind(data) is None and json_subtitles.is_subtitlds(data):
                 result = plaintext.parse(text, plaintext.JSON, session.LANGUAGE_DICT_LIST.values())
                 if not result.ok:
                     problem = result.errors[0]
@@ -2045,6 +2119,42 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format == 'TTXT':
             # An MP4 text track's samples, the stream the video's size.
             ttxt.save(final_file, segments, width=VIDEO.get('width'), height=VIDEO.get('height'))
+
+        elif subtitle_format in ('TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT'):
+            # Transcripts: plain text; the speakers as the format keeps
+            # them (tiers, participants) when the export asks for them, the
+            # video as the media they are linked to.
+            by_speaker = options.get('speakers') == 'voice'
+            media = VIDEO.get('filepath') or ''
+            stem = os.path.splitext(os.path.basename(media or final_file))[0]
+            if subtitle_format == 'TEXTGRID':
+                transcripts.save_textgrid(final_file, segments, by_speaker)
+            elif subtitle_format == 'CHAT':
+                transcripts.save_chat(final_file, segments, language, by_speaker, stem if media else None,
+                                      video=bool(VIDEO.get('width')))
+            elif subtitle_format == 'EAF':
+                annotation.save_eaf(final_file, segments, language, by_speaker, media or None)
+            elif subtitle_format == 'TRS':
+                annotation.save_trs(final_file, segments, language, by_speaker, media or None)
+            else:
+                annotation.save_exb(final_file, segments, by_speaker, media or None, stem)
+
+        elif subtitle_format == 'CTM':
+            # A word a line: the recording the video's name.
+            transcripts.save_ctm(final_file, segments, os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'AUDACITY':
+            audacity.save(final_file, segments)
+
+        elif subtitle_format == 'AENEAS':
+            aeneas.save(final_file, segments, language)
+
+        elif subtitle_format == 'TMX':
+            # The original and every translation, side by side: the text
+            # option does not apply.
+            from subtitld import __version__
+            tmx.save(final_file, export_options.prepare(SUBTITLE['segments'], dict(options, text='original')),
+                     language, __version__)
 
         elif subtitle_format == 'CAVENA890':
             # In the character table of the text's language; frames at the

@@ -634,6 +634,8 @@
     "export_dialog.speaker_names_source": "As the Source line (ID=Source)",
     "export_dialog.speaker_names_chevrons": "As >> at each change of speaker",
     "export_dialog.speaker_names_youtube": "As >> NAME: (YouTube's way)",
+    "export_dialog.speaker_names_tiers": "As tiers, one a speaker",
+    "export_dialog.speaker_names_participants": "As the file's speakers",
     "export_dialog.formatting": "Formatting",
     "export_dialog.formatting_keep": "Keep (italic, bold, colours…)",
     "export_dialog.formatting_remove": "Remove",

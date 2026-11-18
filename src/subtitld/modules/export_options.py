@@ -3,11 +3,14 @@
 The options apply to the formats that hold only timed text (SRT, VTT, HLS,
 CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
-XML, LRC, UltraStar, KAR, TTXT and the player-era formats) and to VOBSUB and
-PGS, whose pictures are drawn of the text they write; USF, USFX and JSON
-keep the project as it is. Karaoke timing is formatting (modules.karaoke):
-removing the formatting takes the word timing of LRC, UltraStar, KAR and
-TTXT with it.
+XML, LRC, UltraStar, KAR, TTXT, the player-era formats and the transcripts:
+TextGrid, EAF, TRS, EXB, CHAT, CTM, AUDACITY, AENEAS and TMX) and to VOBSUB
+and PGS, whose pictures are drawn of the text they write; USF, USFX and
+JSON keep the project as it is. TMX writes the original and every
+translation side by side, whatever `text` asks. Karaoke timing is
+formatting (modules.karaoke): removing the formatting takes the word timing
+of LRC, UltraStar, KAR and TTXT with it, and CTM's words share out their
+subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -17,7 +20,9 @@ TTXT with it.
     speakers     'none'; 'prefix': the speaker's name before the text; or
                  'voice', the format's own way: WebVTT's (and HLS's) voice tags
                  (<v Name>), TTML's agents, SAMI's Source line, SCC's
-                 and MCC's ">>" at each change of speaker, SBV's ">> NAME: "
+                 and MCC's ">>" at each change of speaker, SBV's ">> NAME: ",
+                 a tier a speaker in TextGrid, EAF and EXB, the speakers
+                 (participants) of TRS and CHAT
     formatting   'keep' the formatting tags (modules.markup), or 'remove'
                  them (SBV has none to keep)
     offset       seconds to shift every subtitle by; one that ends up
@@ -113,6 +118,7 @@ from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
+                'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
