@@ -7,11 +7,12 @@ SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
 XML, LRC, UltraStar, KAR, MIDI lyrics, KBP, TTXT, ISMT, XMLDIALECT, JSONDIALECT, the
 player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT, CTM,
-AUDACITY, AENEAS and TMX) and to VOBSUB and PGS, whose pictures are drawn of
+AUDACITY, AENEAS and TMX) and to VOBSUB, PGS and CDG, whose pictures are drawn of
 the text they write; USF, USFX and JSON keep the project as it is. TMX
 writes the original and every translation side by side, whatever `text`
 asks. Karaoke timing is formatting (modules.karaoke): removing the
-formatting takes the word timing of LRC, UltraStar, KAR, MIDI, KBP and TTXT with it,
+formatting takes the word timing of LRC, UltraStar, KAR, MIDI, KBP, TTXT and the wipe of CDG with
+it,
 and CTM's words share out their subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
@@ -65,6 +66,8 @@ And for a format of its own:
                  'no_end' (hundredths, no moment where a line ends; each
                  line until the next), modules.lrc.DIALECTS; a file opened
                  keeps its own
+    cdg_mp3      CDG: whether the video's sound is written beside the .cdg as
+                 an MP3 by the same name, which makes them MP3+G
     mcc_rate     MCC: its frame rate, a key of modules.mcc.RATES ('29.97DF' ...)
     mcc_captions MCC: 'both' (CEA-608 and CEA-708), '608' (CEA-608 alone) or
                  'op47' (both, and the subtitles as OP-47 teletext beside
@@ -141,7 +144,7 @@ TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAM
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
-                'VOBSUB', 'PGS')
+                'VOBSUB', 'PGS', 'CDG')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)

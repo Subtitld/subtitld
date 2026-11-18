@@ -4,6 +4,7 @@ import copy
 import re
 import hashlib
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -41,6 +42,7 @@ from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
 from subtitld.modules import json_dialects
+from subtitld.modules import cdg
 from subtitld.modules import kar
 from subtitld.modules import kbp
 from subtitld.modules import lambdacap
@@ -88,11 +90,12 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (a VobSub's .idx or .sub, a PGS .sup, a BDN's PNGs, a TTML
-    file in IMSC's Image Profile with pictures it gives no words for, DCP
-    subtitles with <Image>s), not text: nothing is wrong with it, but only
-    an OCR add-on can make text of it (picture_ocr). `path` is the file,
-    `kind` 'vobsub', 'pgs', 'bdn', 'imsc' or 'dcp'."""
+    pictures (a VobSub's .idx or .sub, a PGS .sup, a CD+G .cdg, a BDN's
+    PNGs, a TTML file in IMSC's Image Profile with pictures it gives no
+    words for, DCP subtitles with <Image>s), not text: nothing is wrong
+    with it, but only an OCR add-on can make text of it (picture_ocr).
+    `path` is the file,
+    `kind` 'vobsub', 'pgs', 'bdn', 'imsc', 'dcp' or 'cdg'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -1209,6 +1212,13 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             # DVD's VobSub index and Blu-ray's PGS: pictures, for an OCR add-on.
             raise PictureSubtitlesError(subtitle_file, 'pgs' if subtitle_file.lower().endswith('.sup') else 'vobsub')
 
+        elif subtitle_file.lower().endswith('.cdg'):
+            # CD+G karaoke graphics: pictures too, when the bytes are packs.
+            with open(subtitle_file, 'rb') as cdg_file:
+                if not cdg.is_cdg(cdg_file.read(cdg.PACK * 300)):
+                    raise CorruptedProjectFileError('Not a CD+G file: its packs are not graphics packs')
+            raise PictureSubtitlesError(subtitle_file, 'cdg')
+
         elif subtitle_file.lower().endswith('.stl') and _spruce_stl(subtitle_file):
             # Spruce's script is .stl too, and is text where EBU STL is
             # binary. Three unrelated formats share this extension. DVD
@@ -2038,6 +2048,17 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                     else language,
                     profile=options['profile'], metadata=SUBTITLE.get('metadata')))
+
+        elif subtitle_format == 'CDG':
+            # CD+G karaoke graphics, a page a subtitle wiped as it is sung,
+            # as long as the video; MP3+G: the video's sound beside it as an
+            # MP3 by the same name, when the export asks.
+            cdg.save(final_file, segments, duration=float(VIDEO.get('duration') or 0))
+            if options.get('cdg_mp3') and VIDEO.get('filepath') and os.path.isfile(VIDEO['filepath']):
+                subprocess.run([str(session.FFMPEG_EXECUTABLE), '-hide_banner', '-loglevel', 'error', '-y',
+                                '-i', VIDEO['filepath'], '-vn', '-codec:a', 'libmp3lame', '-q:a', '2',
+                                os.path.splitext(final_file)[0] + '.mp3'],
+                               check=True, capture_output=True, startupinfo=session.STARTUPINFO)
 
         elif subtitle_format in ('VOBSUB', 'PGS'):
             # A DVD's VobSub and a Blu-ray's PGS: each subtitle drawn as the

@@ -669,6 +669,8 @@
     "export_dialog.ttml_tunnel_608": "Carry the subtitles as CEA-608 captions too (for what takes captions, not text)",
     "export_dialog.ttml_profile_imsc1_image": "IMSC 1.0.1 Image",
     "export_dialog.ttml_profile_imsc11_image": "IMSC 1.1 Image",
+    "export_dialog.cdg_note": "Each subtitle is a page of CD+G's 300x216 screen in 16 colours, its words wiped as they are sung (by their karaoke timing, else evenly over the subtitle).",
+    "export_dialog.cdg_mp3": "Write the video's sound beside it as an MP3 (MP3+G)",
     "export_dialog.picture_size": "Picture size",
     "export_dialog.picture_size_video": "The video's ({size})",
     "export_dialog.picture_size_pal": "DVD PAL (720x576)",

@@ -45,7 +45,7 @@ def _language_guess(path):
             code = ''
         if code:
             return code
-    elif not str(path).lower().endswith('.sup'):
+    elif not str(path).lower().endswith(('.sup', '.cdg')):
         from subtitld.modules import vobsub
         idx, _sub = vobsub.paths(path)
         try:

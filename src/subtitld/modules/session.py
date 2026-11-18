@@ -262,6 +262,9 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
 LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     'VOBSUB': {'description': 'DVD VobSub subtitles (pictures)', 'extensions': ['idx']},
     'PGS': {'description': 'Blu-ray PGS subtitles (pictures)', 'extensions': ['sup']},
+    # Karaoke graphics, a .cdg alone or beside an .mp3 (MP3+G); drawn with
+    # QPainter and wiped as the karaoke codes say (modules.cdg).
+    'CDG': {'description': 'CD+G karaoke graphics (MP3+G)', 'extensions': ['cdg']},
 }
 
 # Formats Subtitld opens but does not write, as no source says how (or the

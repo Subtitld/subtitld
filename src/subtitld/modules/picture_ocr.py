@@ -1,10 +1,11 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), a BDN's PNGs, a
-TTML file in IMSC's Image Profile or a DCP's subtitles with pictures in
-them, or reading a picture track of a video (a DVB subtitle stream among
-them), Subtitld decodes each subtitle into a picture (vobsub, pgs, dvbsub,
-`bdn_pictures`, `imsc_pictures`, `dcp_pictures`), and an
+Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), karaoke CD+G
+(.cdg), a BDN's PNGs, a TTML file in IMSC's Image Profile or a DCP's
+subtitles with pictures in them, or reading a picture track of a video (a
+DVB subtitle stream among them), Subtitld decodes each subtitle into a
+picture (vobsub, pgs, cdg, dvbsub, `bdn_pictures`, `imsc_pictures`,
+`dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
 file's words are better than any reading of them. `OCRJob` runs the whole
@@ -35,7 +36,7 @@ from subtitld.modules.addons.provider import TASK_OCR_RECOGNIZE
 
 # Pictures read with less confidence than this are read again the other way.
 RETRY_BELOW = 0.6
-PICTURE_EXTENSIONS = ('.sup', '.idx')
+PICTURE_EXTENSIONS = ('.sup', '.idx', '.cdg')
 # Transport streams, whose DVB subtitles read_file reads.
 TRANSPORT_STREAM_EXTENSIONS = ('.ts', '.m2ts', '.mts')
 
@@ -70,9 +71,11 @@ _IMSC_SCREEN = (1920, 1080)
 
 def read_file(path):
     """(pictures, language tag the file gives or '') of a picture subtitle file."""
-    from subtitld.modules import dvbsub, pgs, vobsub
+    from subtitld.modules import cdg, dvbsub, pgs, vobsub
     if str(path).lower().endswith('.sup'):
         return pgs.read(path), ''
+    if str(path).lower().endswith('.cdg'):
+        return cdg.read(path), ''
     if str(path).lower().endswith(TRANSPORT_STREAM_EXTENSIONS):
         # The first DVB subtitle service the PMT lists.
         pictures, info = dvbsub.read(path)

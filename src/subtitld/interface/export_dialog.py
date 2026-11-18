@@ -44,7 +44,7 @@ from subtitld.modules import xml_dialects
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'CDG', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # The dialects of these two, one written at a time: which, an option.
@@ -335,6 +335,10 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.lrc_options)
 
+        # CD+G: the song beside it as an MP3 by the same name (MP3+G).
+        self.cdg_mp3_check = QCheckBox(_('export_dialog.cdg_mp3'))
+        self.layout().addWidget(self.cdg_mp3_check)
+
         # HLS, CMAF and DASH: how long each segment is; HLS's timestamp its
         # cue times map to; what a CMAF track carries, WebVTT or TTML.
         self.stream_options = QWidget()
@@ -488,6 +492,7 @@ class _SubtitlesPanel(QWidget):
         opened_options = session.FORMAT.get('options') if isinstance(session.FORMAT, dict) else None
         if not _select(self.lrc_times_combo, (opened_options or {}).get('lrc_times')):
             _select(self.lrc_times_combo, remembered.get('lrc_times', 'hundredths'))
+        self.cdg_mp3_check.setChecked(bool(remembered.get('cdg_mp3', True)))
         _select(self.segment_combo, remembered.get('segment_duration', hls.SEGMENT_DURATION))
         _select(self.mpegts_combo, remembered.get('mpegts', hls.MPEGTS))
         _select(self.carriage_combo, remembered.get('mp4_text', 'wvtt'))
@@ -566,6 +571,7 @@ class _SubtitlesPanel(QWidget):
         self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
         self.cavena_options.setVisible(fmt == 'CAVENA890')
         self.lrc_options.setVisible(fmt == 'LRC')
+        self.cdg_mp3_check.setVisible(fmt == 'CDG' and bool(session.VIDEO.get('filepath')))
         self.vobsub_options.setVisible(fmt == 'VOBSUB')
         self.pac_options.setVisible(fmt == 'PAC')
         self.stl_options.setVisible(fmt == 'STL')
@@ -634,6 +640,11 @@ class _SubtitlesPanel(QWidget):
         the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
+        if fmt == 'CDG':
+            # Drawn with QPainter, which every build has.
+            self.check_label.setText(_('export_dialog.cdg_note'))
+            self.check_label.setVisible(True)
+            return
         if fmt in ('BDN', 'VOBSUB', 'PGS') or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
             # Pictures: the preview shows one, nothing to say here.
             self.check_label.setVisible(False)
@@ -703,6 +714,7 @@ class _SubtitlesPanel(QWidget):
             'bdn_fps': self.bdn_rate_combo.combobox.currentData(),
             'cavena_start': self.cavena_start_combo.combobox.currentData(),
             'lrc_times': self.lrc_times_combo.combobox.currentData(),
+            'cdg_mp3': self.cdg_mp3_check.isChecked(),
             'segment_duration': self.segment_combo.combobox.currentData(),
             'mpegts': self.mpegts_combo.combobox.currentData(),
             'mp4_text': self.carriage_combo.combobox.currentData(),
@@ -734,6 +746,8 @@ class _SubtitlesPanel(QWidget):
             options['start'] = choices['cavena_start']
         if fmt == 'LRC':
             options['lrc_times'] = choices['lrc_times']
+        if fmt == 'CDG':
+            options['cdg_mp3'] = choices['cdg_mp3'] and bool(session.VIDEO.get('filepath'))
         if fmt == 'VOBSUB':
             options['vobsub_size'] = choices['vobsub_size']
         if fmt == 'PAC':
