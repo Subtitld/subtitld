@@ -40,6 +40,7 @@ from subtitld.modules import vobsub
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+                    'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
                     'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
@@ -47,6 +48,8 @@ SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 
 # drop-frame for the two whose tools write it.
 DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
 DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
+# The subtitling houses' formats: frames each, at the rate chosen.
+VENDOR_FORMATS = ('EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 
@@ -512,7 +515,8 @@ class _SubtitlesPanel(QWidget):
             if text == 'both':
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
-        self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS)
+        self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS
+                                    + VENDOR_FORMATS)
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
         self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP') + DVD_DROP_FRAME and _has_drop_frame(rate)))
@@ -646,7 +650,7 @@ class _SubtitlesPanel(QWidget):
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS:
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS:
+        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS + VENDOR_FORMATS:
             options['fps'] = choices['fps']
         if fmt in DVD_DROP_FRAME:
             options['timecode'] = choices['timecode']

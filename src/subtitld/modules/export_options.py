@@ -2,7 +2,9 @@
 
 The options apply to the formats that hold only timed text (SRT, VTT, HLS,
 CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
-CAVENA890, AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
+CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
+SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
+AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
 XML, LRC, UltraStar, KAR, TTXT, the player-era formats and the transcripts:
 TextGrid, EAF, TRS, EXB, CHAT, CTM, AUDACITY, AENEAS and TMX) and to VOBSUB
 and PGS, whose pictures are drawn of the text they write; USF, USFX and
@@ -37,7 +39,9 @@ And for a format of its own:
                  European), 'cp1251' (Cyrillic) or 'cp949' (Korean)
     line_ends    SRT, SAMI, SUB, LRC, AVID and the DVD authoring scripts:
                  'lf' or 'crlf'
-    fps          SUB, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID and the DVD
+    fps          the subtitling houses' formats (EZTXML: the time code
+                 standard of this rate, 30drop at 29.97, 60drop at 59.94),
+                 SUB, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID and the DVD
                  authoring scripts: the frame rate its frame numbers count
                  in; FCPXML: its sequence's, whose frames the captions are on
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID,
@@ -117,6 +121,7 @@ And for a format of its own:
 from subtitld.modules import markup
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+                'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
                 'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',

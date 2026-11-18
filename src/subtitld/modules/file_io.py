@@ -21,7 +21,9 @@ from PySide6.QtGui import QImage, QPixmap
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
+from subtitld.modules import ayato
 from subtitld.modules import bdn
+from subtitld.modules import caption_vendors
 from subtitld.modules import cavena890
 from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
@@ -30,6 +32,7 @@ from subtitld.modules import cue_ids
 from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
 from subtitld.modules import ebustl
+from subtitld.modules import eztitles
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import fcpxml
@@ -52,9 +55,13 @@ from subtitld.modules import plaintext
 from subtitld.modules import project_export
 from subtitld.modules import sami
 from subtitld.modules import sbv
+from subtitld.modules import softni
+from subtitld.modules import spot
 from subtitld.modules import scc
 from subtitld.modules import srt
 from subtitld.modules import subtitle_styles
+from subtitld.modules import swift
+from subtitld.modules import tsb4
 from subtitld.modules import session
 from subtitld.modules import ttml
 from subtitld.modules import tmx
@@ -648,6 +655,21 @@ def _is_lambda_cap(path):
         return False
 
 
+def _cap_vendor(path):
+    """'NCI' or 'CAPMAKER' for a .cap of either house's, by its bytes, else
+    None (Cheetah's, Lambda's)."""
+    try:
+        with open(path, 'rb') as cap_file:
+            return caption_vendors.looks_like_cap(cap_file.read(4096))
+    except OSError:
+        return None
+
+
+def _vendor_fps():
+    """The rate to count a vendor format's frames at: the video's, else 25."""
+    return float(session.VIDEO.get('framerate') or 0) or 25.0
+
+
 def _text_of(path):
     """The text of a subtitle file, decoded as SRT's bytes are."""
     with open(path, 'rb') as subtitle_file:
@@ -768,6 +790,12 @@ def _open_txt(path):
                                          timecode='drop' if subcap_settings['drop'] else 'non-drop',
                                          timeline_start=subcap_settings['start'])
         return segments_list, 'AVID'
+    if swift.looks_like(text):
+        # Softel Swift's text export, in one of its three layouts.
+        segments_list, swift_settings = swift.parse_text(text, fps)
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=swift_settings['fps'])
+        return segments_list, {'duration': 'SWIFTTEXT', 'number': 'SWIFTNUMBERS',
+                               'number-duration': 'SWIFTNUMBERSDURATION'}[swift_settings['layout']]
     found = dvd_scripts.kind(text, 'txt')
     if found:
         # The DVD authoring tools' scripts, told apart (and from DVDSS,
@@ -986,6 +1014,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if graphics:
                 raise PictureSubtitlesError(subtitle_file, 'bdn')
 
+        elif subtitle_file.lower().endswith('.eztxml') or (
+                subtitle_file.lower().endswith('.xml') and eztitles.looks_like(_text_of(subtitle_file)[:4096])):
+            # EZTitles' XML project: its times in its time code standard,
+            # kept to save it again at the same rate.
+            subtitle_format = 'EZTXML'
+            try:
+                segments_list, ezt_settings = eztitles.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=ezt_settings['fps'])
+
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
             subtitle_format = 'DFXP' if subtitle_file.lower().endswith('.dfxp') else 'TTML'
@@ -1067,7 +1106,21 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             sub_kind = microdvd.kind(data)
             if sub_kind == 'vobsub':
                 raise PictureSubtitlesError(subtitle_file, 'vobsub')
-            if sub_kind == 'subviewer':
+            if tsb4.looks_like(data):
+                # SubtitleNext's binary TSB4, read only: frames at the
+                # video's rate, else 25.
+                subtitle_format = 'TSB4'
+                try:
+                    segments_list, _settings = tsb4.parse(data, _vendor_fps())
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
+            elif softni.looks_like(data):
+                # SoftNi's text, its times with a period or a colon before
+                # the frames; the rate its *TIMING* says kept.
+                subtitle_format = 'SOFTNICOLON' if softni.looks_like(data) == softni.COLON else 'SOFTNI'
+                segments_list, softni_settings = softni.parse(srt.decode(data), session.VIDEO.get('framerate'))
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=softni_settings['fps'])
+            elif sub_kind == 'subviewer':
                 subtitle_format = 'SBV'
                 segments_list = sbv.parse(srt.decode(data))
             elif legacy.kind(data) in ('mpsub', 'subviewer1', 'subsonic'):
@@ -1161,6 +1214,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                                              timecode='drop' if lambda_settings['drop'] else 'non-drop',
                                              lambda_encoding=lambda_settings['encoding'])
 
+        elif subtitle_file.lower().endswith('.cap') and _cap_vendor(subtitle_file):
+            # NCI's captions (read only) and CapMaker Plus: frames at the
+            # video's rate, else 25, kept to save it again.
+            try:
+                segments_list, vendor_settings, subtitle_format = caption_vendors.read(subtitle_file, _vendor_fps())
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=vendor_settings['fps'])
+
         elif subtitle_file.lower().endswith('.cap'):
             # Cheetah CAP: frames that do not say their rate, counted at the
             # video's, else 25; the rate kept to save it again as it was.
@@ -1223,6 +1285,47 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['metadata'] = {'title': cavena_settings['title']}
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cavena_settings['fps'],
                                              start=cavena_settings['start'])
+
+        elif subtitle_file.lower().endswith(('.ezt', '.aya', '.spt', '.sptx', '.xif', '.sif', '.asc', '.cin',
+                                             '.ult', '.uld')):
+            # Subtitling houses' own formats, each by its bytes: the rate a
+            # file says, else the video's, else 25, kept to save it again.
+            lowered = subtitle_file.lower()
+            try:
+                if lowered.endswith('.ezt'):
+                    subtitle_format = 'EZT'
+                    segments_list, vendor_settings = eztitles.read_binary(subtitle_file, session.VIDEO.get('framerate'))
+                elif lowered.endswith('.aya'):
+                    subtitle_format = 'AYATO'
+                    segments_list, vendor_settings = ayato.read(subtitle_file, _vendor_fps())
+                elif lowered.endswith(('.spt', '.sptx')):
+                    subtitle_format = 'SPOT'
+                    segments_list, vendor_settings = spot.read(subtitle_file, _vendor_fps())
+                elif lowered.endswith(('.xif', '.sif')):
+                    subtitle_format = 'XIF' if lowered.endswith('.xif') else 'SIF'
+                    segments_list, vendor_settings = swift.read(subtitle_file, session.VIDEO.get('framerate'))
+                elif lowered.endswith('.asc'):
+                    if not cheetahcap.looks_like_asc(_text_of(subtitle_file)):
+                        raise ValueError('Not a Cheetah ASCII file: it has no "** Caption Number" line')
+                    subtitle_format = 'CHEETAHASC'
+                    segments_list, vendor_settings = cheetahcap.read_asc(subtitle_file, session.VIDEO.get('framerate'))
+                else:
+                    segments_list, vendor_settings, subtitle_format = caption_vendors.read(subtitle_file, _vendor_fps())
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=vendor_settings['fps'])
+
+        elif subtitle_file.lower().endswith('.rac'):
+            # Screen's PAC recovery file: PAC's records without its header,
+            # read only, opened as PAC to be saved as one.
+            subtitle_format = 'PAC'
+            rate = _vendor_fps()
+            try:
+                segments_list, pac_settings = pac.read(subtitle_file, fps=rate)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=rate,
+                                             pac_code_page=pac_settings['code_page'])
 
         elif subtitle_file.lower().endswith(('.pac', '.fpc')):
             # Screen's PAC and UniPac. Neither says its frame rate, so the
@@ -2115,6 +2218,37 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             lambdacap.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or lambdacap.DEFAULT_FPS),
                            drop=options.get('timecode') != 'non-drop',
                            encoding=options.get('lambda_encoding') or 'utf-8-sig')
+
+        elif subtitle_format == 'EZTXML':
+            # Cued in the time code standard of the export's rate (the
+            # video's, else 25): 30drop at 29.97, 60drop at 59.94.
+            eztitles.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'AYATO':
+            # Frames from the start at the export's rate (the video's, else 25).
+            ayato.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format in ('SOFTNI', 'SOFTNICOLON'):
+            # Frames of a second at the export's rate, in *TIMING* too.
+            softni.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                        separator=softni.COLON if subtitle_format == 'SOFTNICOLON' else softni.PERIOD)
+
+        elif subtitle_format in ('SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF'):
+            # Softel Swift: frames of a second at the export's rate; XIF and
+            # SIF name the project (its title, else the video's name).
+            kind = {'SWIFTTEXT': 'duration', 'SWIFTNUMBERS': 'number', 'SWIFTNUMBERSDURATION': 'number-duration',
+                    'XIF': 'xif', 'SIF': 'sif'}[subtitle_format]
+            swift.save(final_file, segments, kind, fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                       title=(SUBTITLE.get('metadata') or {}).get('title')
+                       or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'CHEETAHASC':
+            # Drop-frame at 29.97 and 59.94, else frames of a second.
+            cheetahcap.save_asc(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'CAPMAKER':
+            # Frames of a second at the export's rate (the video's, else 25).
+            caption_vendors.save_capmaker(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
 
         elif subtitle_format == 'TTXT':
             # An MP4 text track's samples, the stream the video's size.

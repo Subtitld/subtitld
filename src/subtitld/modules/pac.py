@@ -67,6 +67,12 @@ it, else the language's, else the first that holds every character, with
 lines that need another written in a second one, marked; italics,
 colours, places and margins as they read. UniPac writes every line as
 UTF-8 and no colours.
+
+A .rac (read only) holds the same records without the header, with other
+bytes between them: Subtitle Edit takes it for a recovery or autosave
+file of Screen's and reads it by finding the records, as this does; it is
+one when two of its records at least have text and an end after their
+start.
 """
 
 import unicodedata
@@ -557,10 +563,10 @@ def _record_at(data, at, fps):
     return start, finish, body, end
 
 
-def _records(data, fps):
+def _records(data, fps, first=len(_HEADER) + 3):
     """Every record in `data`: the next where one ends, else the first
-    found after it."""
-    at = len(_HEADER) + 3
+    found after it; the first looked for at `first`."""
+    at = first
     while at < len(data):
         found = _record_at(data, at, fps)
         if not found:
@@ -592,15 +598,29 @@ def _story(lines):
     return said[0][:8].upper() if said else ''
 
 
-def parse(data, fps=DEFAULT_FPS, code_page=None):
+def is_rac(data):
+    """True when `data` holds PAC records without PAC's header, as a .rac
+    does: two of them at least with text and an end after the start (the
+    test Subtitle Edit makes)."""
+    try:
+        segments, _settings = parse(data, DEFAULT_FPS, recovery=True)
+    except ValueError:
+        return False
+    return sum(1 for segment in segments if segment['end'] > segment['start']) >= 2
+
+
+def parse(data, fps=DEFAULT_FPS, code_page=None, recovery=False):
     """(subtitles, {'code_page', 'secondary_code_page', 'language',
     'unicode'}) in PAC or UniPac bytes; frames at `fps` a second. The code
-    page is found from the text unless `code_page` names one. Raises
-    ValueError for bytes that are not PAC."""
+    page is found from the text unless `code_page` names one. `recovery`
+    reads a .rac, Screen's recovery file: PAC's records with no header and
+    other bytes between them (Subtitle Edit, Pac.cs, reads it so; it is not
+    written). Raises ValueError for bytes that are not PAC."""
     fps = float(fps or DEFAULT_FPS)
-    if len(data) < 24 or data[0] != 1 or any(data[1:20]):
+    if not recovery and (len(data) < 24 or data[0] != 1 or any(data[1:20])):
         raise ValueError('Not a PAC file: it does not begin as PAC files do')
-    records = [(start, end, body[0], _lines(body)) for start, end, body in _records(data, fps)]
+    first = 3 if recovery else len(_HEADER) + 3
+    records = [(start, end, body[0], _lines(body)) for start, end, body in _records(data, fps, first)]
     if not records:
         raise ValueError('Not a PAC file: it holds no subtitle records')
     language, pages = '', [None, None]
@@ -648,10 +668,10 @@ def parse(data, fps=DEFAULT_FPS, code_page=None):
 
 
 def read(path, fps=DEFAULT_FPS, code_page=None):
-    """(subtitles, its settings) in the PAC or UniPac file at `path`, as
-    parse() gives them."""
+    """(subtitles, its settings) in the PAC or UniPac file at `path`, or a
+    .rac recovery file, as parse() gives them."""
     with open(path, 'rb') as pac_file:
-        return parse(pac_file.read(), fps=fps, code_page=code_page)
+        return parse(pac_file.read(), fps=fps, code_page=code_page, recovery=path.lower().endswith('.rac'))
 
 
 # -- Writing -----------------------------------------------------------------

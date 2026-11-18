@@ -163,6 +163,21 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # (file_io), and Cheetah's, first here, keeps the extension.
     'LAMBDACAP': {'description': 'Lambda CAP Japanese Subtitle format', 'extensions': ['cap']},
     'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
+    # Subtitling houses' formats (modules eztitles, ayato, softni, swift,
+    # cheetahcap's ASCII, caption_vendors). Those sharing
+    # .sub, .txt and .cap come after the formats that already claim them;
+    # file_io tells them apart by their bytes.
+    'EZTXML': {'description': 'EZTitles XML project', 'extensions': ['eztxml']},
+    'AYATO': {'description': 'Ayato Subtitle format', 'extensions': ['aya']},
+    'SOFTNI': {'description': 'SoftNi Subtitle format', 'extensions': ['sub']},
+    'SOFTNICOLON': {'description': 'SoftNi Subtitle format (colon timecodes)', 'extensions': ['sub']},
+    'SWIFTTEXT': {'description': 'Softel Swift text (TIMEIN, DURATION)', 'extensions': ['txt']},
+    'SWIFTNUMBERS': {'description': 'Softel Swift text (SUBTITLE, TIMEIN)', 'extensions': ['txt']},
+    'SWIFTNUMBERSDURATION': {'description': 'Softel Swift text (SUBTITLE, TIMEIN, DURATION)', 'extensions': ['txt']},
+    'XIF': {'description': 'Softel Swift XIF', 'extensions': ['xif']},
+    'SIF': {'description': 'Softel Swift Interchange File', 'extensions': ['sif']},
+    'CHEETAHASC': {'description': 'Cheetah ASCII Caption format', 'extensions': ['asc']},
+    'CAPMAKER': {'description': 'CapMaker Plus Caption format', 'extensions': ['cap']},
     # The DVD authoring tools' scripts (modules.dvd_scripts). DVD Studio
     # Pro's .stl is EBU STL's extension and Spruce's; the rest share .txt,
     # .sub and .sst with formats above and below. The bytes decide, in
@@ -234,6 +249,19 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
 LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     'VOBSUB': {'description': 'DVD VobSub subtitles (pictures)', 'extensions': ['idx']},
     'PGS': {'description': 'Blu-ray PGS subtitles (pictures)', 'extensions': ['sup']},
+}
+
+# Formats Subtitld opens but does not write, as no source says how (or the
+# one there is disagrees with its own reader). They are offered when
+# opening a file and nowhere else; file_io reads them by their bytes.
+LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS = {
+    'EZT': {'description': 'EZTitles binary project', 'extensions': ['ezt']},
+    'TSB4': {'description': 'TSB4 SubtitleNext Subtitle format', 'extensions': ['sub']},
+    'SPOT': {'description': 'Spot Subtitle format', 'extensions': ['spt', 'sptx']},
+    'NCI': {'description': 'NCI Caption format', 'extensions': ['cap']},
+    'CAPTIONSINC': {'description': 'Captions Inc. Caption format', 'extensions': ['cin']},
+    'ULTECH': {'description': 'Ultech 1.30 Caption format', 'extensions': ['ult', 'uld']},
+    'RAC': {'description': 'Screen PAC recovery file', 'extensions': ['rac']},
 }
 
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
