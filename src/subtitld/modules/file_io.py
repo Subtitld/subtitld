@@ -33,6 +33,7 @@ from subtitld.modules import ebustl
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import fcpxml
+from subtitld.modules import generic_text
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
@@ -706,6 +707,81 @@ def _usf_language(code, name=''):
     return _known_language(code) or (code or '').strip()
 
 
+def _plain_text_segments(text):
+    """The Import panel's reading of plain text: a subtitle a sentence,
+    five seconds each, one after the other."""
+    segments = []
+    pos = 0.0
+    for phrase in text.split('. '):
+        segments.append({
+            'start': pos,
+            'end': pos + 5.0,
+            'text': phrase + '.'
+        })
+        pos += 5.0
+    return segments
+
+
+def _open_txt(path):
+    """The subtitles in a .txt and the format they were in, asked in order:
+
+    1. the named formats that write .txt, each sure of its own: UltraStar,
+       Avid SubCap, the DVD authoring scripts (Encore, DVD Architect,
+       Scenarist, DVD Producer, Avid DVD), then the player era's (VPlayer,
+       TMPlayer, MPL2, Captions 32, Oresme, DVDSS, QTtext ...);
+    2. the shapes of the nameless ones (modules.generic_text): times and
+       text on a line, times over text, frames, a table, JSON; an SRT,
+       WebVTT or MicroDVD saved as .txt is read by its own reader there;
+    3. plain text, read as the Import panel reads it.
+
+    The order matters: a later step would read an earlier step's file,
+    worse (Avid SubCap's lines as DVDSS, any of them as generic times).
+    """
+    text = _text_of(path)
+    fps = session.VIDEO.get('framerate')
+    if ultrastar.kind(text):
+        # An UltraStar song: its syllables as karaoke codes, its notes'
+        # pitches on the subtitles, its title and artist as metadata and
+        # the rest of its headers (BPM, GAP, the audio...) beside them,
+        # so it is written back as it was; its language the project's.
+        try:
+            segments_list, song, headers = ultrastar.parse(text)
+        except ValueError as error:
+            raise CorruptedProjectFileError(str(error)) from error
+        session.SUBTITLE['metadata'] = dict(song, ultrastar=headers)
+        code = _language_like_project(dict(headers).get('LANGUAGE'))
+        if code:
+            session.SUBTITLE['language'] = code
+        return segments_list, 'ULTRASTAR'
+    if avid_subcap.is_subcap(text):
+        # Avid SubCap, which Media Composer writes as .txt: its times in
+        # frames, at the video's rate (drop-frame when the file is); the
+        # rate, the drop-frame and the hour it counts from kept to save
+        # it again as it was. Its timecode lines would read as DVDSS.
+        segments_list, subcap_settings = avid_subcap.read(path, fps)
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
+                                         timecode='drop' if subcap_settings['drop'] else 'non-drop',
+                                         timeline_start=subcap_settings['start'])
+        return segments_list, 'AVID'
+    found = dvd_scripts.kind(text, 'txt')
+    if found:
+        # The DVD authoring tools' scripts, told apart (and from DVDSS,
+        # whose lines Encore's look like) by their layouts.
+        return _open_script(path, found), dvd_scripts.SESSION_IDS[found]
+    found = legacy.kind(text)
+    if found:
+        # VPlayer, TMPlayer and their kin wrote .txt.
+        return legacy.parse(text, found, fps), legacy.SESSION_IDS[found]
+    detected = generic_text.detect(text, fps)
+    if detected:
+        # Nobody's format, in a shape it can be read in. Read only, so it
+        # is saved as SRT; an SRT or a WebVTT found here as itself.
+        return [dict(segment) for segment in detected.segments], \
+            'VTT' if detected.shape == generic_text.WEBVTT else 'SRT'
+    # Plain text: a transcript, a script, notes.
+    return (_plain_text_segments(text) if text.strip() else []), 'TXT'
+
+
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
@@ -996,48 +1072,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = 'SCENARIST'
             segments_list = _open_script(subtitle_file, 'scenarist')
 
-        elif subtitle_file.lower().endswith('.txt') and ultrastar.kind(_text_of(subtitle_file)):
-            # An UltraStar song: its syllables as karaoke codes, its notes'
-            # pitches on the subtitles, its title and artist as metadata and
-            # the rest of its headers (BPM, GAP, the audio...) beside them,
-            # so it is written back as it was; its language the project's.
-            subtitle_format = 'ULTRASTAR'
-            try:
-                segments_list, song, headers = ultrastar.parse(_text_of(subtitle_file))
-            except ValueError as error:
-                raise CorruptedProjectFileError(str(error)) from error
-            session.SUBTITLE['metadata'] = dict(song, ultrastar=headers)
-            code = _language_like_project(dict(headers).get('LANGUAGE'))
-            if code:
-                session.SUBTITLE['language'] = code
-
-        elif subtitle_file.lower().endswith('.txt') and avid_subcap.is_subcap(_text_of(subtitle_file)):
-            # Avid SubCap, which Media Composer writes as .txt: its times in
-            # frames, at the video's rate (drop-frame when the file is); the
-            # rate, the drop-frame and the hour it counts from kept to save
-            # it again as it was. Its timecode lines would read as DVDSS.
-            subtitle_format = 'AVID'
-            segments_list, subcap_settings = avid_subcap.read(subtitle_file, session.VIDEO.get('framerate'))
-            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
-                                             timecode='drop' if subcap_settings['drop'] else 'non-drop',
-                                             timeline_start=subcap_settings['start'])
-
-        elif subtitle_file.lower().endswith('.txt') and dvd_scripts.kind(_text_of(subtitle_file), 'txt'):
-            # The DVD authoring tools' scripts: Encore, DVD Architect,
-            # Scenarist, DVD Producer and Avid DVD, told apart (and from
-            # DVDSS, whose lines Encore's look like) by their layouts.
-            found = dvd_scripts.kind(_text_of(subtitle_file), 'txt')
-            subtitle_format = dvd_scripts.SESSION_IDS[found]
-            segments_list = _open_script(subtitle_file, found)
-
-        elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
-            # VPlayer, TMPlayer and their kin wrote .txt, which is also what
-            # a plain transcript is: only a file that reads as one of them
-            # is opened as subtitles, and anything else stays plain text.
-            text = _text_of(subtitle_file)
-            found = legacy.kind(text)
-            subtitle_format = legacy.SESSION_IDS[found]
-            segments_list = legacy.parse(text, found, session.VIDEO.get('framerate'))
+        elif subtitle_file.lower().endswith('.txt'):
+            # .txt is everybody's: the cascade in `_open_txt` asks the
+            # named formats, then the shapes of the nameless ones, then
+            # reads what is left as plain text.
+            segments_list, subtitle_format = _open_txt(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
                                              '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
@@ -1454,7 +1493,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 try:
                     segments_list, language, _tool = json_subtitles.read(data, limits)
                 except ValueError as error:
-                    raise CorruptedProjectFileError(str(error)) from error
+                    # No tool it knows: an array of timed objects all the
+                    # same (modules.generic_text), else nothing to read.
+                    detected = generic_text.from_json(data, session.VIDEO.get('framerate'))
+                    if detected is None or detected.confidence < generic_text.THRESHOLD:
+                        raise CorruptedProjectFileError(str(error)) from error
+                    segments_list = [dict(segment) for segment in detected.segments]
                 for segment in segments_list:
                     segment.setdefault('speaker', 'A')
             # The language: the file's, else its name's ("video.en.json3").
@@ -1533,14 +1577,7 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
 
                 # txt_content = clean(txt_file.read())
                 txt_content = txt_file.read()
-                pos = 0.0
-                for phrase in txt_content.split('. '):
-                    session.SUBTITLE['segments'].append({
-                        'start': pos,
-                        'end': pos + 5.0, 
-                        'text': phrase + '.'
-                    })
-                    pos += 5.0
+                session.SUBTITLE['segments'] += _plain_text_segments(txt_content)
 
         elif filename.lower().endswith(('.srt')):
             subtitle_format = 'SRT'
