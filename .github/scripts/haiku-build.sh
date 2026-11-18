@@ -8,8 +8,7 @@
 # cross-platform-actions VM, locally in the same image under QEMU. The tarball
 # is the source shaped like GitHub's tag archive (top directory
 # "subtitld-<version>"), so no release is needed: the recipe is pointed at a
-# copy served from localhost. Out come the packages, and the ports for
-# haikuports (haikuports/: the recipes, the app's for that version).
+# copy served from localhost. Out come the packages, for hpkg.subtitld.org.
 set -euo pipefail
 
 VERSION=${1:?usage: haiku-build.sh <version> <source-tarball> [out-dir]}
@@ -51,13 +50,6 @@ done
 rm -rf "$TREE" 2>/dev/null || mv "$TREE" "$TREE.stale.$(date +%s)"
 mkdir -p "$TREE/licenses" "$TREE/files"
 cp -r "$SRC"/packaging/haiku/dev-python "$SRC"/packaging/haiku/media-video "$TREE/"
-# Python 3.14 versions HaikuPorts does not have yet, from Subtitld's pull
-# request there (packaging/haiku/pending/README.md): built first, in order.
-pending=()
-if [ -d "$SRC/packaging/haiku/pending" ]; then
-    cp -r "$SRC"/packaging/haiku/pending/dev-python "$TREE/"
-    mapfile -t pending < <(grep -v '^#' "$SRC/packaging/haiku/pending/build-order")
-fi
 # libdatachannel's patches, kept with its other builds (packaging/libdatachannel).
 cp "$SRC"/packaging/libdatachannel/*.patch "$TREE/media-video/subtitld/additional-files/"
 printf 'RecipeFormatVersion=1\nRepositoryFormatVersion=2\n' > "$TREE/FormatVersions"
@@ -84,7 +76,7 @@ haikuporter --config=haikuports.conf --lint
 # Everything in the tree: the Python packages Haiku lacks, then the app. What
 # the repositories do have is installed as needed.
 haikuporter --config=haikuports.conf -y --no-source-packages --get-dependencies \
-    "${pending[@]}" $(ls "$SRC/packaging/haiku/dev-python") subtitld
+    $(ls "$SRC/packaging/haiku/dev-python") subtitld
 
 # Install the lot as a user would, check the app's modules import with what
 # the packages bring, and start it (headless: no screen or sound card here).
@@ -117,16 +109,4 @@ QT_QPA_PLATFORM=offscreen bash "$SRC/.github/scripts/smoke.sh" 25 "$app"
 
 mkdir -p "$OUT"
 cp "$TREE"/packages/*.hpkg "$OUT/"
-# For haikuports: what goes into its tree, as it would be submitted. The app's
-# recipe points at the GitHub tag v$portVersion; release.yml names it after
-# the tag and fills in the tag archive's checksum.
-ports=$OUT/haikuports
-rm -rf "$ports"
-mkdir -p "$ports/media-video/subtitld"
-cp -r "$SRC/packaging/haiku/dev-python" "$ports/"
-cp -r "$SRC/packaging/haiku/media-video/subtitld/additional-files" "$ports/media-video/subtitld/"
-cp "$SRC"/packaging/libdatachannel/*.patch "$ports/media-video/subtitld/additional-files/"
-sed -e "s|^CHECKSUM_SHA256=.*|CHECKSUM_SHA256=\"$(printf '0%.0s' $(seq 64))\"|" \
-    "$SRC"/packaging/haiku/media-video/subtitld/subtitld-*.recipe \
-    > "$ports/media-video/subtitld/subtitld-$VERSION.recipe"
 ls -la "$OUT"
