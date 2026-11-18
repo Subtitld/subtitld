@@ -238,6 +238,7 @@ def load(self):
     left_panel_subtitles_panel.layout().addWidget(self.subtitles_panel_empty_state)
 
     self.subtitles_panel_simplelist_qsplitter = QSplitter(Qt.Vertical)
+    self.subtitles_panel_simplelist_qsplitter.setObjectName('subtitles_panel_simplelist_qsplitter')
     subtitles_panel_simplelist_qsplitter = self.subtitles_panel_simplelist_qsplitter
 
     self.subtitles_panel_qlistwidget = subtitles_panel_qlistwidget()
