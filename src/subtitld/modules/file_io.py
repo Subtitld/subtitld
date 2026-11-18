@@ -32,6 +32,7 @@ from subtitld.modules import documents
 from subtitld.modules import cue_ids
 from subtitld.modules import dcp
 from subtitld.modules import dvd_scripts
+from subtitld.modules import dvdsup
 from subtitld.modules import ebustl
 from subtitld.modules import eztitles
 from subtitld.modules import hls
@@ -90,12 +91,12 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (a VobSub's .idx or .sub, a PGS .sup, a CD+G .cdg, a BDN's
+    pictures (a VobSub's .idx or .sub, a PGS .sup, a DVD's bare .sup, a CD+G .cdg, a BDN's
     PNGs, a TTML file in IMSC's Image Profile with pictures it gives no
     words for, DCP subtitles with <Image>s), not text: nothing is wrong
     with it, but only an OCR add-on can make text of it (picture_ocr).
     `path` is the file,
-    `kind` 'vobsub', 'pgs', 'bdn', 'imsc', 'dcp' or 'cdg'."""
+    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp' or 'cdg'."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -1210,7 +1211,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.idx', '.sup')):
             # DVD's VobSub index and Blu-ray's PGS: pictures, for an OCR add-on.
-            raise PictureSubtitlesError(subtitle_file, 'pgs' if subtitle_file.lower().endswith('.sup') else 'vobsub')
+            # A .sup of bare DVD subpicture units ("SP", not PGS's "PG") is
+            # a DVD's, told by its bytes.
+            if subtitle_file.lower().endswith('.sup'):
+                with open(subtitle_file, 'rb') as sup_file:
+                    raise PictureSubtitlesError(subtitle_file, 'dvdsup' if dvdsup.is_dvdsup(sup_file.read(16)) else 'pgs')
+            raise PictureSubtitlesError(subtitle_file, 'vobsub')
 
         elif subtitle_file.lower().endswith('.cdg'):
             # CD+G karaoke graphics: pictures too, when the bytes are packs.
@@ -2060,12 +2066,12 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                                 os.path.splitext(final_file)[0] + '.mp3'],
                                check=True, capture_output=True, startupinfo=session.STARTUPINFO)
 
-        elif subtitle_format in ('VOBSUB', 'PGS'):
-            # A DVD's VobSub and a Blu-ray's PGS: each subtitle drawn as the
-            # preview draws it, then cut to the colours the disc's pictures
-            # hold. PGS on the video's frame, else a 1920x1080 one; VobSub
-            # on DVD's PAL or NTSC frame as the export asks, else the
-            # video's, else the DVD frame of its rate. The drawings go once
+        elif subtitle_format in ('VOBSUB', 'PGS', 'DVDSUP'):
+            # A DVD's VobSub or SUP and a Blu-ray's PGS: each subtitle drawn
+            # as the preview draws it, then cut to the colours the disc's
+            # pictures hold. PGS on the video's frame, else a 1920x1080 one;
+            # VobSub and SUP on DVD's PAL or NTSC frame as the export asks,
+            # else the video's, else the DVD frame of its rate. The drawings go once
             # they are encoded.
             from subtitld.interface import subtitle_pictures
             width, height = int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)
@@ -2078,6 +2084,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 pictures = (dict(picture, rgba=subtitle_pictures.rgba(picture['path'])) for picture in drawn)
                 if subtitle_format == 'PGS':
                     pgs.save(final_file, pictures, size, fps=VIDEO.get('framerate'))
+                elif subtitle_format == 'DVDSUP':
+                    # A DVD's .sup, its palette in an .ifo beside it.
+                    dvdsup.save(final_file, pictures, size,
+                                language=options.get('language') if options.get('text') == 'translation'
+                                and options.get('language') else language)
                 else:
                     vobsub.save(final_file, pictures, size,
                                 language=options.get('language') if options.get('text') == 'translation'
@@ -3035,7 +3046,7 @@ def picture_frame(subtitle_format, options=None, video=None):
         return width or 1920, height or 1080
     if subtitle_format == 'PGS':
         return width or 1920, height or 1080
-    if subtitle_format == 'VOBSUB':
+    if subtitle_format in ('VOBSUB', 'DVDSUP'):
         return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
     if subtitle_format == 'BDN':
         return width or bdn.DEFAULT_SIZE[0], height or bdn.DEFAULT_SIZE[1]

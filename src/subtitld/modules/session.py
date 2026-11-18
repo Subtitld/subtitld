@@ -265,6 +265,9 @@ LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     # Karaoke graphics, a .cdg alone or beside an .mp3 (MP3+G); drawn with
     # QPainter and wiped as the karaoke codes say (modules.cdg).
     'CDG': {'description': 'CD+G karaoke graphics (MP3+G)', 'extensions': ['cdg']},
+    # A DVD's bare subpicture units, which share .sup with PGS; the bytes
+    # tell them apart (modules.dvdsup).
+    'DVDSUP': {'description': 'DVD SUP subtitles (pictures)', 'extensions': ['sup']},
 }
 
 # Formats Subtitld opens but does not write, as no source says how (or the

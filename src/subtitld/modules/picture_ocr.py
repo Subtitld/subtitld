@@ -1,6 +1,6 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub), a Blu-ray PGS (.sup), karaoke CD+G
+Opening a DVD VobSub (.idx/.sub) or SUP (.sup), a Blu-ray PGS (.sup), karaoke CD+G
 (.cdg), a BDN's PNGs, a TTML file in IMSC's Image Profile or a DCP's
 subtitles with pictures in them, or reading a picture track of a video (a
 DVB subtitle stream among them), Subtitld decodes each subtitle into a
@@ -71,8 +71,13 @@ _IMSC_SCREEN = (1920, 1080)
 
 def read_file(path):
     """(pictures, language tag the file gives or '') of a picture subtitle file."""
-    from subtitld.modules import cdg, dvbsub, pgs, vobsub
+    from subtitld.modules import cdg, dvbsub, dvdsup, pgs, vobsub
     if str(path).lower().endswith('.sup'):
+        # A DVD's bare subpicture units or a Blu-ray's PGS, by their bytes.
+        with open(path, 'rb') as handle:
+            if dvdsup.is_dvdsup(handle.read(16)):
+                found, language = dvdsup.read(path)
+                return found, language
         return pgs.read(path), ''
     if str(path).lower().endswith('.cdg'):
         return cdg.read(path), ''

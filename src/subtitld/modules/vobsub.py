@@ -479,12 +479,12 @@ def _language_id(language):
     return {'cmn': 'zh', 'yue': 'zh'}.get(code, code) if code.isalpha() else 'en'
 
 
-def save(path, pictures, size, language='en'):
-    """Write the VobSub of `pictures` (disc_pictures' dicts, in order of
-    start) on a frame of `size`: the .idx at `path` (or beside it, when
-    `path` is the .sub) and the .sub beside it. One track, in `language`."""
+def spus(pictures, size):
+    """(palette, [(start, SPU)]) for `pictures` (disc_pictures' dicts, in
+    order of start) on a frame of `size`: the sixteen colours the SPUs pick
+    theirs from, and an SPU for each picture on screen, with its time.
+    VobSub's .idx and a DVD .sup's .ifo (dvdsup) carry the palette."""
     import numpy
-    stem = os.path.splitext(path)[0]
     width, height = int(size[0]), int(size[1])
     # Each subtitle cut to four colours first, as the palette is made of
     # all of them; its pixels kept compressed until then, a film's worth
@@ -520,17 +520,30 @@ def save(path, pictures, size, language='en'):
     def entry(colour):
         return int(numpy.argmin(((table - colour[:3]) ** 2).sum(1)))
 
-    data = bytearray()
-    entries = []
+    found = []
     for unit in units:
         colours = [0] + [entry(colour) for colour in unit['colours'][1:]]
         alphas = [0] + [int(round(colour[3] / 17)) for colour in unit['colours'][1:]]
         colours += [0] * (4 - len(colours))
         alphas += [0] * (4 - len(alphas))
-        spu = encode_spu(zlib.decompress(unit['indices']), unit['width'], unit['height'], unit['x'], unit['y'], unit['duration'],
-                         colours, alphas, unit['forced'])
-        entries.append((unit['start'], len(data)))
-        data += packs(spu, unit['start'])
+        found.append((unit['start'], encode_spu(zlib.decompress(unit['indices']), unit['width'], unit['height'],
+                                                unit['x'], unit['y'], unit['duration'], colours, alphas,
+                                                unit['forced'])))
+    return palette, found
+
+
+def save(path, pictures, size, language='en'):
+    """Write the VobSub of `pictures` (disc_pictures' dicts, in order of
+    start) on a frame of `size`: the .idx at `path` (or beside it, when
+    `path` is the .sub) and the .sub beside it. One track, in `language`."""
+    stem = os.path.splitext(path)[0]
+    width, height = int(size[0]), int(size[1])
+    palette, units = spus(pictures, size)
+    data = bytearray()
+    entries = []
+    for start, spu in units:
+        entries.append((start, len(data)))
+        data += packs(spu, start)
     with open(stem + '.sub', 'wb') as handle:
         handle.write(bytes(data))
     lines = ['# VobSub index file, v7 (do not modify this line!)',

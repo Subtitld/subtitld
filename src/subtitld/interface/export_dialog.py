@@ -44,7 +44,7 @@ from subtitld.modules import xml_dialects
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'CDG', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # The dialects of these two, one written at a time: which, an option.
@@ -55,6 +55,8 @@ DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
 DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
 # The subtitling houses' formats: frames each, at the rate chosen.
 VENDOR_FORMATS = ('EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER')
+# A DVD's pictures, placed on DVD's PAL or NTSC frame or the video's.
+DVD_PICTURES = ('VOBSUB', 'DVDSUP')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 
@@ -572,7 +574,7 @@ class _SubtitlesPanel(QWidget):
         self.cavena_options.setVisible(fmt == 'CAVENA890')
         self.lrc_options.setVisible(fmt == 'LRC')
         self.cdg_mp3_check.setVisible(fmt == 'CDG' and bool(session.VIDEO.get('filepath')))
-        self.vobsub_options.setVisible(fmt == 'VOBSUB')
+        self.vobsub_options.setVisible(fmt in DVD_PICTURES)
         self.pac_options.setVisible(fmt == 'PAC')
         self.stl_options.setVisible(fmt == 'STL')
         self.stream_options.setVisible(fmt in ('HLS', 'CMFT', 'DASH', 'ISMT'))
@@ -645,7 +647,7 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setText(_('export_dialog.cdg_note'))
             self.check_label.setVisible(True)
             return
-        if fmt in ('BDN', 'VOBSUB', 'PGS') or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
+        if fmt in ('BDN', 'PGS') + DVD_PICTURES or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
             # Pictures: the preview shows one, nothing to say here.
             self.check_label.setVisible(False)
             return
@@ -748,7 +750,7 @@ class _SubtitlesPanel(QWidget):
             options['lrc_times'] = choices['lrc_times']
         if fmt == 'CDG':
             options['cdg_mp3'] = choices['cdg_mp3'] and bool(session.VIDEO.get('filepath'))
-        if fmt == 'VOBSUB':
+        if fmt in DVD_PICTURES:
             options['vobsub_size'] = choices['vobsub_size']
         if fmt == 'PAC':
             options['pac_code_page'] = choices['pac_code_page']
