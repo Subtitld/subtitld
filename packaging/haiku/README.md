@@ -1,13 +1,16 @@
 # Haiku packaging for Subtitld
 
-A haikuports recipe tree for Subtitld and the Python packages it needs that
-Haiku does not package yet.
+A haikuporter recipe tree for Subtitld and the Python packages it needs that
+HaikuPorts does not have. The packages are served from Subtitld's own
+repository, [hpkg.subtitld.org](https://hpkg.subtitld.org):
+
+    pkgman add-repo https://hpkg.subtitld.org
+    pkgman install subtitld
 
     media-video/subtitld/subtitld-26.10.recipe   the application
     media-video/subtitld/additional-files/       its attributes, file type and icon
     dev-python/<name>/<name>-<version>.recipe    7 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
-    haikudepot/                                  HaikuDepot's listing: screenshots, texts
 
 ## A native application
 
@@ -20,8 +23,7 @@ Subtitld is Python, but on Haiku it looks and behaves like a native app:
   with `rc` and written with `resattr`, as frescobaldi's recipe does). Started
   from Deskbar or Tracker, it shows there as Subtitld, with its icon; started
   by its path from a Terminal, as python3.14. Tracker, the Deskbar menu and
-  HaikuDepot show the icon. HaikuDepot's server takes an app's icon
-  from its package when the package holds a single application with one.
+  HaikuDepot show the icon.
 * The icon, `subtitld.hvif`, is generated from `packaging/branding/icon.svg`
   by `packaging/branding/render-icons.py`, along with the resources: the
   mark's two shapes in their colours over a darker outline, and its shadow,
@@ -36,7 +38,7 @@ project from any other zip. Opened from Tracker, a project opens in Subtitld.
 
 The Build workflow (`.github/workflows/build.yml`, job `haiku`) runs
 `.github/scripts/haiku-build.sh` in a Haiku R1/beta6 VM: it lints the tree,
-builds all 10 recipes with haikuporter, installs the packages with `pkgman`
+builds all 8 recipes with haikuporter, installs the packages with `pkgman`
 and checks the app's modules import. No release is needed: the app's recipe
 is renamed to the build's version and pointed at a tarball of the checkout,
 shaped like GitHub's tag archive and served from localhost.
@@ -48,17 +50,16 @@ releases, a qcow2 for QEMU; log in over SSH as `user`, no password).
 On a stable release, `release.yml` attaches only Subtitld's own `.hpkg` to
 the GitHub release; the Python packages it needs are served from
 [hpkg.subtitld.org](https://hpkg.subtitld.org). The build's `haiku` artifact
-keeps every package and the ports (`haikuports/`).
+keeps every package.
 
 ## Dependencies
 
-For Python 3.14, already in haikuports: pyside6, numpy, lxml, requests,
-certifi, chardet. From hpkg.subtitld.org only: QtWebEngine and PySide6's
+For Python 3.14, from HaikuPorts: pyside6, numpy, lxml, requests, certifi,
+chardet, typing_extensions, click, pycparser, soupsieve, beautifulsoup4 and
+cffi. From hpkg.subtitld.org only: QtWebEngine and PySide6's
 modules for it (pyside6_webengine), which haikuports does not carry; the
 preview draws the subtitles with them, and the CI build adds that repository
-before it builds. Given a 3.14 version in a pull request of their own, and kept
-in `pending/` until it is merged: typing_extensions, click (8.1.8), pycparser
-(2.23), soupsieve (2.10), beautifulsoup4 and cffi (2.1.1). Left out on Haiku,
+before it builds. Left out on Haiku,
 as Subtitld runs without them: OpenCV and scipy (no 3.14 build there; face
 detection needs MediaPipe anyway, which Haiku lacks) and edge-tts (aiohttp and
 its own dependencies have none either), so Edge's voices are not offered
@@ -92,29 +93,15 @@ come from the project's own LICENSE file. Check those again on a version bump.
 
 ## Building it yourself
 
-    pkgman install haikuporter
-    git clone https://github.com/haikuports/haikuports.git
-    cp -r dev-python media-video haikuports/    # merge this tree in
-    cd haikuports && haikuporter --lint
-    haikuporter -y subtitld
+On Haiku x86_64, from the repository root, with a source tarball shaped like
+GitHub's tag archive (top directory `subtitld-<version>`):
 
-To build in a throwaway tree instead of a full haikuports checkout, a minimal
-tree needs `haikuports.conf` (with `PACKAGER`, `TREE_PATH`,
-`TARGET_ARCHITECTURE`), a `licenses/` directory, and a `FormatVersions` file
-containing `RecipeFormatVersion=1`; `.github/scripts/haiku-build.sh` sets one
-up.
+    bash .github/scripts/haiku-build.sh <version> subtitld-<version>.tar.gz
 
-## Submitting
-
-haikuports takes contributions as pull requests against
-<https://github.com/haikuports/haikuports>, from a branch of your fork. Each
-package is its own commit, as in `pysubs2, new recipe`. Run
-`haikuporter --lint` before opening the PR. Its template asks you to confirm
-that you built the recipes on your own Haiku machine and that their license
-and copyright lines are right.
-The dependency recipes are independently useful and can go first; several
-(`platformdirs`, `soundfile`, `sounddevice`) are common enough
-that other ports will want them.
+It sets up a minimal tree (`haikuports.conf` with `PACKAGER`, `TREE_PATH`,
+`TARGET_ARCHITECTURE`, a `licenses/` directory and a `FormatVersions` file),
+adds hpkg.subtitld.org, builds every recipe with haikuporter, and installs and
+checks the result. The packages land in `haiku-out/`.
 
 ## Known rough edges
 

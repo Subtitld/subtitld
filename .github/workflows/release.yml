@@ -152,8 +152,7 @@ jobs:
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
   # ──────────────────────────────────────────────────────────────
-  # GitHub Release: stable only, with every package and the Haiku
-  # ports as they go to haikuports
+  # GitHub Release: stable only, with every package
   # ──────────────────────────────────────────────────────────────
   publish-github-release:
     needs: [channel, build]
@@ -169,10 +168,8 @@ jobs:
           merge-multiple: true
       - name: Of Haiku's, Subtitld's own package only
         run: |
-          # The Python packages it needs come from hpkg.subtitld.org, and the
-          # ports are not offered to haikuports any more (the haiku artifact
-          # keeps both).
-          rm -r artifacts/haikuports
+          # The Python packages it needs come from hpkg.subtitld.org (the
+          # haiku artifact keeps them all).
           find artifacts -maxdepth 1 -name '*.hpkg' ! -name 'subtitld-*.hpkg' -delete
       # The release published: its title and notes stay, the build
       # version (the date; the tag is a free-form label) follows them,
