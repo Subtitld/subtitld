@@ -140,6 +140,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # which is a video's; the bytes of a .cmft say which it carries.
     'CMFT': {'description': 'CMAF text track (WebVTT or TTML in MP4)', 'extensions': ['cmft']},
     'DASH': {'description': 'DASH manifest of a WebVTT or TTML track', 'extensions': ['mpd']},
+    # Smooth Streaming's text track: TTML in PIFF fragments (modules.isobmff_text).
+    'ISMT': {'description': 'Smooth Streaming text track (TTML in PIFF)', 'extensions': ['ismt']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
@@ -204,6 +206,13 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'AUDACITY': {'description': 'Audacity labels', 'extensions': ['txt']},
     'AENEAS': {'description': 'Aeneas sync map (JSON)', 'extensions': ['json']},
     'TMX': {'description': 'TMX translation memory with times', 'extensions': ['tmx']},
+    # Dialects Subtitle Edit reads (modules.xml_dialects, json_dialects):
+    # .xml is DCP's and .json Subtitld's own, which keep them; the bytes
+    # tell a dialect apart (file_io), and which one is an export option.
+    'XMLDIALECT': {'description': 'XML subtitle dialects (Flash, Timed Text 2006, Rhozet, ...)',
+                   'extensions': ['xml']},
+    'JSONDIALECT': {'description': 'Platform JSON subtitles (Wistia, TED, TwentyThree, ...)',
+                    'extensions': ['json', 'atpj', 'clqtt', 'gst']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

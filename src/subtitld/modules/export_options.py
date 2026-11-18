@@ -5,14 +5,14 @@ CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC,
-XML, LRC, UltraStar, KAR, TTXT, the player-era formats and the transcripts:
-TextGrid, EAF, TRS, EXB, CHAT, CTM, AUDACITY, AENEAS and TMX) and to VOBSUB
-and PGS, whose pictures are drawn of the text they write; USF, USFX and
-JSON keep the project as it is. TMX writes the original and every
-translation side by side, whatever `text` asks. Karaoke timing is
-formatting (modules.karaoke): removing the formatting takes the word timing
-of LRC, UltraStar, KAR and TTXT with it, and CTM's words share out their
-subtitle's time instead.
+XML, LRC, UltraStar, KAR, TTXT, ISMT, XMLDIALECT, JSONDIALECT, the
+player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT, CTM,
+AUDACITY, AENEAS and TMX) and to VOBSUB and PGS, whose pictures are drawn of
+the text they write; USF, USFX and JSON keep the project as it is. TMX
+writes the original and every translation side by side, whatever `text`
+asks. Karaoke timing is formatting (modules.karaoke): removing the
+formatting takes the word timing of LRC, UltraStar, KAR and TTXT with it,
+and CTM's words share out their subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -43,7 +43,9 @@ And for a format of its own:
                  standard of this rate, 30drop at 29.97, 60drop at 59.94),
                  SUB, PAC, FPC, CAP, LAMBDACAP, CAVENA890, AVID and the DVD
                  authoring scripts: the frame rate its frame numbers count
-                 in; FCPXML: its sequence's, whose frames the captions are on
+                 in; FCPXML: its sequence's, whose frames the captions are on;
+                 XMLDIALECT and JSONDIALECT: the rate of the dialects that
+                 count in frames (Rhozet Harmonic, JSON Type 16)
     timecode     SCC: 'drop' (drop-frame, 00:00:01;00) or 'non-drop'; AVID,
                  FCPXML and LAMBDACAP the same, at 29.97 and 59.94, the
                  rates that have it; DVDSTUDIOPRO and ENCORE too, where it
@@ -103,8 +105,14 @@ And for a format of its own:
                  which draw each subtitle as a PNG beside the file
     tunnel_608   TTML and DFXP in SMPTE-TT: whether the file carries the
                  subtitles as CEA-608 captions too (RP 2052-10)
+    xml_dialect  XMLDIALECT: which of modules.xml_dialects.WRITABLE to write
+                 ('flash', 'ttaf2006', 'rhozet', 'timexml', 'timexml2'); a
+                 file opened in one keeps it
+    json_dialect JSONDIALECT: which of modules.json_dialects.WRITABLE to
+                 write ('wistia', 'ted', 'podcastindex', ...); a file opened
+                 in one keeps it
     segment_duration
-                 HLS, CMFT and DASH: the seconds each segment (a fragment
+                 HLS, CMFT, DASH and ISMT: the seconds each segment (a fragment
                  of a CMAF track) lasts (6, as Apple recommends;
                  modules.hls.SEGMENT_DURATIONS)
     mp4_text     CMFT and DASH: what the track carries, 'wvtt' (WebVTT) or
@@ -124,6 +132,7 @@ TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAM
                 'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
                 'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'TTXT',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
+                'ISMT', 'XMLDIALECT', 'JSONDIALECT',
                 'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',

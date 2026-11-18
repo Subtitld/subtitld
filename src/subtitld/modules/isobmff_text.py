@@ -13,6 +13,13 @@ and in its sample description (stsd) what its samples are:
   identifier (iden), or an empty-cue box (vtte) for a time with nothing to
   show. Cues that overlap are cut where each starts and ends, so that a
   sample follows the one before it with no gap and no overlap.
+- 'dfxp': TTML as Microsoft's Smooth Streaming carries it (PIFF, the
+  .ismt of a Smooth Streaming presentation): a description with nothing in
+  it, and a sample a whole TTML document whose times count from the
+  sample's start (FFmpeg's ismv muxer, movenc.c and movenc_ttml.c, writes
+  it so). Its fragments say when they start in a tfxd box (a uuid box,
+  6D1D9B05-42D5-44E6-80E2-141DAFF757B2: a version, flags, the fragment's
+  time and duration on the track's clock) instead of a tfdt.
 - 'stpp': XML subtitles, TTML (IMSC, EBU-TT-D). The description names the
   document's namespace, and a MIME type with the profile ('im1t' IMSC 1.0.1
   Text, 'im2t' IMSC 1.1 Text, 'etd1' EBU-TT-D); a sample is one whole TTML
@@ -39,6 +46,9 @@ time; a cue that goes on from one sample to the next, the same, is one
 cue again. A document that counts its times from its sample's start,
 as some packagers once wrote, is read so.
 
+Reading takes Smooth Streaming's text tracks (.ismt) the same way, and
+writing gives one (write_ismt): FFmpeg's layout, as above.
+
 Writing gives a CMAF track file: a movie with the one text track and, for
 each segment (6 seconds by default), a fragment of it. WebVTT as
 modules.webvtt writes it, its header in vttC and each cue cut into the
@@ -62,6 +72,11 @@ from subtitld.modules.srt import decode
 
 SEGMENT_DURATION = 6.0
 CODECS = ('wvtt', 'stpp')
+# What is read: Smooth Streaming's TTML too.
+_READ_CODECS = CODECS + ('dfxp',)
+# PIFF's track fragment extended header (tfxd), and Smooth Streaming's clock.
+_TFXD = bytes.fromhex('6d1d9b0542d544e680e2141daff757b2')
+ISMT_TIMESCALE = 10000000
 STPP_PROFILES = ('imsc1.1', 'imsc1', 'ebu-tt-d')
 # What the export dialog offers: WebVTT, or TTML in one of its profiles.
 CARRIAGES = ('wvtt',) + STPP_PROFILES
@@ -177,6 +192,8 @@ def _track(data, start, end):
                 config = _first(data, entry, stop, b'vttC')
                 if config:
                     found['config'] = data[config[0]:config[1]].decode('utf-8', 'replace')
+            elif kind == b'dfxp':
+                pass                               # PIFF's TTML: nothing but the reserved bytes
             elif kind == b'stpp':
                 found['namespace'], at = _string(data, entry, stop)
                 found['schema_location'], at = _string(data, at, stop)
@@ -299,6 +316,13 @@ def fragment_samples(data, track_id, defaults=(0, 0), clock=0):
             if b'tfdt' in parts:
                 at = parts[b'tfdt'][0][0]
                 clock = struct.unpack_from('>Q' if data[at] == 1 else '>I', data, at + 4)[0]
+            else:
+                # PIFF (Smooth Streaming): the fragment's time in its tfxd.
+                for uuid_start, uuid_end in parts.get(b'uuid', []):
+                    if data[uuid_start - 16:uuid_start] == _TFXD and uuid_end - uuid_start >= 12:
+                        version = data[uuid_start]
+                        clock = struct.unpack_from('>Q' if version == 1 else '>I', data, uuid_start + 4)[0]
+                        break
             following = None
             for run_start, _run_end in parts.get(b'trun', []):
                 head = struct.unpack_from('>I', data, run_start)[0]
@@ -372,11 +396,17 @@ def joined(segments):
     return kept
 
 
-def _ttml_cues(document, start, end):
+def _ttml_cues(document, start, end, relative=False):
     """The subtitles of one TTML sample shown from `start` to `end` (seconds),
-    and its language."""
+    and its language. With `relative` (Smooth Streaming's), the document's
+    times are tried from the sample's start first."""
     segments, language, _metadata = ttml.read_text(decode(document))
-    inside = [segment for segment in segments if segment['start'] < end and segment['end'] > start]
+    inside = []
+    if relative and start > 0:
+        moved = [dict(segment, start=segment['start'] + start, end=segment['end'] + start) for segment in segments]
+        inside = [segment for segment in moved if segment['start'] < end and segment['end'] > start]
+    if not inside:
+        inside = [segment for segment in segments if segment['start'] < end and segment['end'] > start]
     if start > 0 and not inside:
         # A document that counts from its sample's start.
         moved = [dict(segment, start=segment['start'] + start, end=segment['end'] + start) for segment in segments]
@@ -407,11 +437,11 @@ def subtitles(track, samples, shift=0.0):
                     blocks.append(f'{start} --> {end}' + (f' {settings.strip()}' if settings.strip() else '')
                                   + '\n' + payload.replace('-->', '->'))
         found = webvtt.parse('\n\n'.join(blocks) + '\n')
-    elif track['codec'] == 'stpp':
+    elif track['codec'] in ('stpp', 'dfxp'):
         found = []
         for clock, duration, data in samples:
             start, end = clock / scale + shift, (clock + duration) / scale + shift
-            cues, document_language = _ttml_cues(data, start, end)
+            cues, document_language = _ttml_cues(data, start, end, relative=track['codec'] == 'dfxp')
             found += cues
             language = language or document_language
     else:
@@ -421,7 +451,7 @@ def subtitles(track, samples, shift=0.0):
 
 def text_tracks(tracks):
     """The WebVTT and TTML tracks of {id: track}, in order of id."""
-    return [tracks[number] for number in sorted(tracks) if tracks[number]['codec'] in CODECS]
+    return [tracks[number] for number in sorted(tracks) if tracks[number]['codec'] in _READ_CODECS]
 
 
 def _choose(tracks, language=None, track_id=None):
@@ -860,6 +890,79 @@ def save(path, segments, **options):
     init, fragments = write(segments, **options)
     with open(path, 'wb') as mp4_file:
         mp4_file.write(init + b''.join(fragments))
+
+
+def _ismt_init(language):
+    """The ftyp and movie of a Smooth Streaming text track, as FFmpeg's ismv
+    muxer writes one: brand isml with piff, handler 'text', a null media
+    header and a 'dfxp' description of nothing but the reserved bytes."""
+    ftyp = _box(b'ftyp', b'isml', struct.pack('>I', 1), b'isml', b'piff')
+    mvhd = _full(b'mvhd', 0, 0, struct.pack('>IIII', 0, 0, ISMT_TIMESCALE, 0), struct.pack('>IH', 0x10000, 0x100),
+                 b'\0' * 10, _MATRIX, b'\0' * 24, struct.pack('>I', 2))
+    tkhd = _full(b'tkhd', 0, 3, struct.pack('>IIIII', 0, 0, 1, 0, 0), b'\0' * 8, struct.pack('>hhhH', 0, 0, 0, 0),
+                 _MATRIX, struct.pack('>II', 0, 0))
+    mdhd = _full(b'mdhd', 0, 0, struct.pack('>IIIIHH', 0, 0, ISMT_TIMESCALE, 0, _packed_language(language), 0))
+    hdlr = _full(b'hdlr', 0, 0, struct.pack('>I', 0), b'text', b'\0' * 12, b'SubtitleHandler\0')
+    dinf = _box(b'dinf', _full(b'dref', 0, 0, struct.pack('>I', 1), _full(b'url ', 0, 1)))
+    entry = _box(b'dfxp', b'\0' * 6 + struct.pack('>H', 1))
+    stbl = _box(b'stbl', _full(b'stsd', 0, 0, struct.pack('>I', 1), entry),
+                _full(b'stts', 0, 0, struct.pack('>I', 0)), _full(b'stsc', 0, 0, struct.pack('>I', 0)),
+                _full(b'stsz', 0, 0, struct.pack('>II', 0, 0)), _full(b'stco', 0, 0, struct.pack('>I', 0)))
+    trak = _box(b'trak', tkhd, _box(b'mdia', mdhd, hdlr, _box(b'minf', _full(b'nmhd', 0, 0), dinf, stbl)))
+    mvex = _box(b'mvex', _full(b'trex', 0, 0, struct.pack('>IIIII', 1, 1, 0, 0, 0)))
+    return ftyp + _box(b'moov', mvhd, trak, mvex)
+
+
+def _ismt_fragment(sequence, decode_time, duration, document):
+    """A PIFF fragment of one TTML sample: no base data offset and no tfdt
+    (PIFF forbids the one, predates the other), the time in a tfxd."""
+    def moof(offset):
+        trun = _full(b'trun', 0, 0x000301, struct.pack('>Ii', 1, offset), struct.pack('>II', duration, len(document)))
+        tfxd = struct.pack('>I4s', 8 + 16 + 4 + 16, b'uuid') + _TFXD + struct.pack('>IQQ', 1 << 24, decode_time, duration)
+        traf = _box(b'traf', _full(b'tfhd', 0, 0, struct.pack('>I', 1)), trun, tfxd)
+        return _box(b'moof', _full(b'mfhd', 0, 0, struct.pack('>I', sequence)), traf)
+
+    head = moof(0)
+    head = moof(len(head) + 8)
+    return head + _box(b'mdat', document)
+
+
+def write_ismt(segments, duration=SEGMENT_DURATION, language='en', voices=False, profile='ttml1', look='clean',
+               preview=None, metadata=None, total=0.0):
+    """The bytes of a Smooth Streaming text track (.ismt) of `segments`: a
+    fragment each `duration` seconds, its one sample a TTML document (in
+    `profile`, TTML 1 by default, which is what DFXP was) of the subtitles
+    shown during it, cut to its time, their times from the fragment's
+    start, as FFmpeg's 'dfxp' mode writes them; the clock in Smooth
+    Streaming's 10 MHz units."""
+    profile = profile if profile in ttml.PROFILES else 'ttml1'
+    step = max(1.0, float(duration or SEGMENT_DURATION))
+    segments = [segment for segment in segments if str(segment.get('text') or '').strip()]
+    last = max([float(segment.get('end', 0)) for segment in segments] + [float(total or 0), 0.001])
+    edges = []
+    at = 0.0
+    while at < last:
+        edges.append(at)
+        at = round(at + step, 6)
+    edges.append(last)
+    fragments = []
+    for number, (low, high) in enumerate(zip(edges, edges[1:]), 1):
+        shown = [dict(segment, start=max(low, float(segment.get('start', 0))) - low,
+                      end=min(high, float(segment.get('end', 0))) - low)
+                 for segment in segments
+                 if float(segment.get('start', 0)) < high and float(segment.get('end', 0)) > low]
+        document = ttml.write(shown, language=language, agents=voices, look=look, preview=preview,
+                              profile=profile, metadata=metadata)
+        begin = int(round(low * ISMT_TIMESCALE))
+        fragments.append(_ismt_fragment(number, begin, int(round(high * ISMT_TIMESCALE)) - begin,
+                                        document.encode('utf-8')))
+    return _ismt_init(language) + b''.join(fragments)
+
+
+def save_ismt(path, segments, **options):
+    """Write `segments` to `path` as a Smooth Streaming text track; see write_ismt."""
+    with open(path, 'wb') as ismt_file:
+        ismt_file.write(write_ismt(segments, **options))
 
 
 def codecs_string(codec, profile='imsc1.1'):

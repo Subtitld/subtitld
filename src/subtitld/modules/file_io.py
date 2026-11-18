@@ -40,6 +40,7 @@ from subtitld.modules import generic_text
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
+from subtitld.modules import json_dialects
 from subtitld.modules import kar
 from subtitld.modules import lambdacap
 from subtitld.modules import aeneas
@@ -69,6 +70,7 @@ from subtitld.modules import transcripts
 from subtitld.modules import ttxt
 from subtitld.modules import waveform
 from subtitld.modules import webvtt
+from subtitld.modules import xml_dialects
 from subtitld.modules import youtube_timedtext
 from subtitld.modules import usf
 from subtitld.modules import ultrastar
@@ -646,6 +648,14 @@ def _is_ebu_stl(path):
         return False
 
 
+def _xml_dialect(path):
+    """Which of modules.xml_dialects' dialects the XML file at `path` is, or ''."""
+    try:
+        return xml_dialects.looks_like(_text_of(path))
+    except (OSError, ValueError):
+        return ''
+
+
 def _is_lambda_cap(path):
     """Whether the .cap at `path` is Lambda's text and not Cheetah's binary."""
     try:
@@ -901,6 +911,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mp4_text=carriage,
                                              segment_duration=mp4_settings['segment_duration'] or isobmff_text.SEGMENT_DURATION)
 
+        elif subtitle_file.lower().endswith('.ismt'):
+            # Smooth Streaming's text track: TTML in PIFF fragments; its
+            # language and fragments' length kept to save it again.
+            subtitle_format = 'ISMT'
+            try:
+                segments_list, mp4_settings = isobmff_text.read(subtitle_file, language=session.SUBTITLE.get('language'))
+            except (ValueError, OSError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(mp4_settings['language']):
+                session.SUBTITLE['language'] = _known_language(mp4_settings['language'])
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                             segment_duration=mp4_settings['segment_duration'] or isobmff_text.SEGMENT_DURATION)
+
         elif subtitle_file.lower().endswith('.lrc'):
             # Lyrics: word stamps as karaoke codes, the ID tags (title,
             # artist, album ...) as metadata to write back.
@@ -1024,6 +1047,25 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=ezt_settings['fps'])
+
+        elif subtitle_file.lower().endswith(('.xml', '.dfxp', '.ttml')) and _xml_dialect(subtitle_file):
+            # The smaller XML dialects (Flash, the 2006 Timed Text draft,
+            # Rhozet, Ninsight, ...): which one kept, to save it again so;
+            # frames at the video's rate, else 25.
+            subtitle_format = 'XMLDIALECT'
+            try:
+                segments_list, xml_language, xml_metadata, dialect = xml_dialects.read(
+                    subtitle_file, fps=session.VIDEO.get('framerate'))
+            except ET.ParseError as error:
+                line, column = error.position
+                raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(xml_language):
+                session.SUBTITLE['language'] = _known_language(xml_language)
+            if xml_metadata:
+                session.SUBTITLE['metadata'] = xml_metadata
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, xml_dialect=dialect)
 
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
@@ -1631,7 +1673,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['format'] = 'USFX'
             session.FORMAT['options'] = {}
 
-        elif subtitle_file.lower().endswith(('.json', '.json3', '.bcc')):
+        elif subtitle_file.lower().endswith(('.json', '.json3', '.bcc', '.atpj', '.clqtt', '.gst')):
             # Subtitld's own JSON (Whisper's shape) is read as the plain-text
             # editor reads it, every field kept and every mistake placed; what
             # other tools write (whisper.cpp, WhisperX, YouTube, Bilibili,
@@ -1651,6 +1693,18 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list, language = aeneas.parse(data)
                 for segment in segments_list:
                     segment.setdefault('speaker', 'A')
+            # The platforms' own shapes (modules.json_dialects), which neither
+            # Subtitld's JSON nor json_subtitles' tools are.
+            elif json_dialects.kind(data):
+                dialect = json_dialects.kind(data)
+                subtitle_format = 'JSONDIALECT'
+                try:
+                    segments_list, language, _dialect = json_dialects.read(data, dialect, fps=session.VIDEO.get('framerate'))
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
+                for segment in segments_list:
+                    segment.setdefault('speaker', 'A')
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, json_dialect=dialect)
             elif json_subtitles.kind(data) is None and json_subtitles.is_subtitlds(data):
                 result = plaintext.parse(text, plaintext.JSON, session.LANGUAGE_DICT_LIST.values())
                 if not result.ok:
@@ -2367,6 +2421,32 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         fps=float(options.get('fps') or VIDEO.get('framerate') or legacy.DEFAULT_FPS),
                         encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                         line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'ISMT':
+            # Smooth Streaming's text track: TTML in PIFF fragments, in the
+            # language of the text written, for as long as the video lasts.
+            isobmff_text.save_ismt(
+                final_file, segments, duration=float(options.get('segment_duration') or isobmff_text.SEGMENT_DURATION),
+                language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                else language,
+                voices=options.get('speakers') == 'voice', metadata=SUBTITLE.get('metadata'),
+                total=float(VIDEO.get('duration') or 0) if VIDEO.get('filepath') else 0.0)
+
+        elif subtitle_format == 'XMLDIALECT':
+            # One of the smaller XML dialects, the one asked for (Flash's
+            # by default); frames at the export's rate, the video's, else 25.
+            xml_dialects.save(final_file, segments,
+                              options.get('xml_dialect') if options.get('xml_dialect') in xml_dialects.WRITABLE else 'flash',
+                              fps=float(options.get('fps') or VIDEO.get('framerate') or xml_dialects.DEFAULT_FPS))
+
+        elif subtitle_format == 'JSONDIALECT':
+            # One of the platforms' JSON shapes, the one asked for (Wistia's
+            # by default), in the language of the text written.
+            json_dialects.save(final_file, segments,
+                               options.get('json_dialect') if options.get('json_dialect') in json_dialects.WRITABLE else 'wistia',
+                               language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                               else language,
+                               fps=float(options.get('fps') or VIDEO.get('framerate') or json_dialects.DEFAULT_FPS))
 
         elif subtitle_format in ['XML']:
             # YouTube's timed text, srv3: pens for the formatting, window

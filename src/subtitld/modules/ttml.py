@@ -2102,9 +2102,117 @@ def read_images(path):
     return images['pictures'], language, images['size']
 
 
-def check(text, profile='imsc1.1'):
+# Services whose delivery rules `check` knows, on top of a profile's.
+DELIVERIES = {'netflix': 'Netflix'}
+# Netflix's IMSC 1.1 Text Profile: right-to-left languages may say a
+# direction; others may not.
+_RIGHT_TO_LEFT_LANGUAGES = ('ar', 'he', 'iw', 'fa', 'ur', 'yi', 'ps', 'dv', 'sd', 'ug', 'ckb')
+_NCNAME_ID = re.compile(r'^[A-Za-z_][\w.-]*$')
+
+
+def _netflix_problems(root, profile):
+    """What Netflix would reject, by the rules its Partner Help Center
+    publishes and nothing else:
+
+    - Timed Text Style Guide: General Requirements (article 215758617):
+      5/6 of a second to 7 seconds a subtitle (1), two lines at most (4),
+      centred (5; Japanese may be vertical), lengths in percent and never
+      pixels, tts:fontSize 100% (13; also "What does a properly formatted
+      TTML file look like?", 360000456768);
+    - Additional TTML Schema Inspections (115001869828): xml:lang written
+      with a hyphen (pt-BR, not pt_BR), xml:id and not the old id, an
+      xml:id that starts with a letter and is not used twice;
+    - Netflix IMSC 1.1 Text Profile (360053755033), for 'imsc1.1': IMSC
+      1.1 is taken for Japanese only, its font sizes are 50%, 100%, 150%
+      and 200%, and the features it marks "Prohibited": animation and
+      <set>, timed regions, timeContainer, zIndex, activeArea, altText,
+      aspectRatio, forcedDisplay, progressivelyDecodable, a direction
+      outside right-to-left languages, and ruby, shear, textCombine,
+      textEmphasis and vertical writing outside Japanese. What it says
+      "should not be used" is accepted, and is not listed.
+    """
+    problems = []
+    language = (root.get(_XML_NS + 'lang') or '').strip()
+    primary = language.replace('_', '-').split('-')[0].lower()
+    japanese = primary == 'ja'
+    if '_' in language:
+        problems.append(f'Netflix: xml:lang="{language}" is not a language tag: it is written with a hyphen '
+                        f'({language.replace("_", "-")})')
+    plain_ids = sorted({element.get('id') for element in root.iter() if element.get('id') is not None})
+    if plain_ids:
+        problems.append(f'Netflix: id="..." where TTML has xml:id ({", ".join(plain_ids[:5])})')
+    ids = [element.get(_XML_NS + 'id') for element in root.iter() if element.get(_XML_NS + 'id') is not None]
+    twice = sorted({value for value in ids if ids.count(value) > 1})
+    if twice:
+        problems.append(f'Netflix: xml:id used more than once: {", ".join(twice[:5])}')
+    malformed = sorted({value for value in ids if not _NCNAME_ID.match(value)})
+    if malformed:
+        problems.append(f'Netflix: xml:id that does not start with a letter: {", ".join(malformed[:5])}')
+    pixels = sorted({f'{_local(key)}="{value}"' for element in root.iter() for key, value in element.attrib.items()
+                     if any(length and length.group(2) == 'px'
+                            for length in (_LENGTH.match(part) for part in str(value).split()))})
+    if pixels:
+        problems.append(f'Netflix: lengths in pixels ({", ".join(pixels[:3])}): only percentages are taken')
+    sizes = sorted({value.strip() for element in root.iter() for value in [_attr(element, 'fontSize')]
+                    if value is not None and value.strip() != '100%'})
+    if profile == 'imsc1.1':
+        sizes = [value for value in sizes if value not in ('50%', '150%', '200%')]
+        if sizes:
+            problems.append(f'Netflix: tts:fontSize {", ".join(sizes)}: its IMSC 1.1 profile takes 50%, 100%, '
+                            '150% and 200%')
+    elif sizes:
+        problems.append(f'Netflix: tts:fontSize {", ".join(sizes)}: it is to be 100%')
+    vertical = any((_attr(element, 'writingMode') or '').startswith('tb') for element in root.iter())
+    aligned = sorted({value for element in root.iter() for value in [_attr(element, 'textAlign')]
+                      if value and value != 'center'})
+    if aligned and not (japanese and vertical):
+        problems.append(f'Netflix: tts:textAlign {", ".join(aligned)}: subtitles are to be centred')
+    try:
+        segments = _document(ET.tostring(root, encoding='unicode'))[0]
+    except (ValueError, ET.ParseError):
+        segments = []
+    short = sum(1 for segment in segments if segment['end'] - segment['start'] < 5 / 6 - 0.0005)
+    long = sum(1 for segment in segments if segment['end'] - segment['start'] > 7 + 0.0005)
+    if short:
+        problems.append(f'Netflix: {short} subtitle(s) last less than 5/6 of a second')
+    if long:
+        problems.append(f'Netflix: {long} subtitle(s) last more than 7 seconds')
+    from subtitld.modules import markup
+    crowded = sum(1 for segment in segments
+                  if len([line for line in markup.plain(markup.split_lead(segment['text'])[1]).split('\n')
+                          if line.strip()]) > 2)
+    if crowded:
+        problems.append(f'Netflix: {crowded} subtitle(s) of more than two lines')
+    if profile != 'imsc1.1':
+        return problems
+    if not japanese:
+        problems.append('Netflix: IMSC 1.1 is taken for Japanese only')
+    prohibited = []
+    if any(_local(element.tag) in ('set', 'animate') for element in root.iter()):
+        prohibited.append('animation (<set>)')
+    if any(_local(element.tag) == 'region' and (element.get('begin') or element.get('end') or element.get('dur'))
+           for element in root.iter()):
+        prohibited.append('timed regions')
+    for name in ('timeContainer', 'zIndex', 'activeArea', 'altText', 'aspectRatio', 'forcedDisplay',
+                 'progressivelyDecodable'):
+        if any(_attr(element, name) is not None or _local(element.tag) == name for element in root.iter()):
+            prohibited.append(name)
+    if primary not in _RIGHT_TO_LEFT_LANGUAGES and any(_attr(element, 'direction') for element in root.iter()):
+        prohibited.append('tts:direction outside a right-to-left language')
+    if not japanese:
+        prohibited += [f'tts:{name} outside Japanese' for name in ('ruby', 'shear', 'textCombine', 'textEmphasis')
+                       if any(_attr(element, name) is not None for element in root.iter())]
+        if vertical:
+            prohibited.append('vertical writing outside Japanese')
+    if prohibited:
+        problems.append(f'Netflix: its IMSC 1.1 profile prohibits {", ".join(prohibited)}')
+    return problems
+
+
+def check(text, profile='imsc1.1', delivery=None):
     """What breaks `profile`'s rules in TTML text: ["what is wrong", ...],
-    empty when this finds nothing.
+    empty when this finds nothing. With `delivery` (a key of DELIVERIES),
+    what that service's published delivery rules reject too.
 
     A useful set of checks, not a conformance certificate: it holds the
     rules that are written down plainly and that a file Subtitld wrote or
@@ -2263,6 +2371,8 @@ def check(text, profile='imsc1.1'):
                       if element.get('region') and element.get('region') not in regions})
     if missing:
         problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    if delivery == 'netflix':
+        problems += _netflix_problems(root, profile)
     return problems
 
 
