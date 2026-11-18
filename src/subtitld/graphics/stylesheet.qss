@@ -936,6 +936,20 @@ QSplitter::hover {
     margin-top:-1px;
 }
 
+/* Between the subtitle list and the editor: a dark gap with a small pill grip
+   in the middle, like the scrollbars. Without it each platform style draws its
+   own grip (Haiku's is a full-width light-grey bar). */
+#subtitles_panel_simplelist_qsplitter::handle:vertical {
+    height: 6px;
+    background: transparent;
+    image: url(graphics:splitter_handle_horizontal.svg);
+}
+
+#subtitles_panel_simplelist_qsplitter::handle:vertical:hover,
+#subtitles_panel_simplelist_qsplitter::handle:vertical:pressed {
+    image: url(graphics:splitter_handle_horizontal_hover.svg);
+}
+
 /* Scrollbars: just the handle, an 8px raised pill (SVG, so its ends stay
    round and smooth); no track. The SVG border-image needs a border-width or Qt
    draws it square. */
