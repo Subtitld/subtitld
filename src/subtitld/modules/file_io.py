@@ -1,6 +1,7 @@
 import os
 import codecs
 import copy
+import math
 import re
 import hashlib
 import shutil
@@ -55,6 +56,7 @@ from subtitld.modules import legacy
 from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
+from subtitld.modules import mxf
 from subtitld.modules import pac
 from subtitld.modules import pgs
 from subtitld.modules import picture_indexes
@@ -879,6 +881,16 @@ def _transcript_opened(segments_list, language=None):
         session.SUBTITLE['language'] = code
 
 
+def _edit_rate(fps):
+    """(numerator, denominator) of a frame rate: 24000/1001 for 23.976,
+    30000/1001 for 29.97 and 60000/1001 for 59.94, as video has them."""
+    fps = float(fps or 24)
+    for nominal in (24, 30, 48, 60):
+        if abs(fps - nominal * 1000 / 1001) < 0.01:
+            return (nominal * 1000, 1001)
+    return (int(round(fps)), 1)
+
+
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
@@ -1387,6 +1399,71 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
             _transcript_opened(segments_list, language)
+
+        elif subtitle_file.lower().endswith('.mxf'):
+            # MXF with subtitles in it: a timed text track file (SMPTE ST
+            # 429-5), a DCP's SMPTE subtitles or IMF's IMSC, or EBU STL in
+            # MXF (SMPTE ST 2075), told by the essence its header names.
+            with open(subtitle_file, 'rb') as mxf_file:
+                found = mxf.kind(mxf_file.read(4096))
+            try:
+                if found == 'stl':
+                    carried = mxf.read_stl(subtitle_file)
+                    subtitle_format = 'STLMXF'
+                    segments_list, stl_settings = ebustl.parse(carried['stl'])
+                    language = _known_language(stl_settings['language']) or _language_like_project(carried['language'])
+                    if language:
+                        session.SUBTITLE['language'] = language
+                    session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
+                                                     display=stl_settings['display'], start=stl_settings['start'])
+                    gsi = ebustl.gsi_values(carried['stl'][:ebustl.GSI_SIZE])
+                    if gsi:
+                        session.SUBTITLE['metadata'] = dict({'title': gsi['OPT']} if gsi.get('OPT') else {}, stl=gsi)
+                elif found == 'timed-text':
+                    carried = mxf.read_timed_text(subtitle_file)
+                    if carried['namespace'].startswith('http://www.smpte-ra.org/schemas/428-7/'):
+                        subtitle_format = 'DCPMXF'
+                        segments_list, dcp_settings = dcp.parse(carried['document'])
+                        kept = {}
+                        if dcp_settings['fps'] in dcp.RATES:
+                            kept['dcp_fps'] = dcp_settings['fps']
+                        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+                        language = _language_like_project(dcp_settings['language'])
+                        if language:
+                            session.SUBTITLE['language'] = language
+                        if dcp_settings['metadata']:
+                            session.SUBTITLE['metadata'] = dcp_settings['metadata']
+                        # Pictures are for an OCR add-on, as a loose reel's
+                        # are: the reel and its PNGs taken out beside each
+                        # other, as a mastering tool's input would be.
+                        if b'Image' in carried['document']:
+                            folder = tempfile.mkdtemp(prefix='subtitld-dcp-mxf-')
+                            reel = os.path.join(folder, os.path.splitext(os.path.basename(subtitle_file))[0] + '.xml')
+                            with open(reel, 'wb') as reel_file:
+                                reel_file.write(carried['document'])
+                            for resource in carried['resources']:
+                                if resource['id'] and resource['data'] is not None and resource['type'] == 'image/png':
+                                    with open(os.path.join(folder, f'{resource["id"]}.png'), 'wb') as png_file:
+                                        png_file.write(resource['data'])
+                            if dcp.has_images(reel):
+                                raise PictureSubtitlesError(reel, 'dcp')
+                    else:
+                        subtitle_format = 'IMSCMXF'
+                        segments_list, ttml_language, ttml_metadata = ttml.read_text(ttml._text_of(carried['document']))
+                        language = _known_language(ttml_language)
+                        if language:
+                            session.SUBTITLE['language'] = language
+                        if ttml_metadata:
+                            session.SUBTITLE['metadata'] = ttml_metadata
+                        rate = carried['rate']
+                        if rate and rate[1]:
+                            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                                             fps=round(rate[0] / rate[1], 3))
+                else:
+                    raise CorruptedProjectFileError('This MXF carries no subtitles Subtitld reads: no timed text '
+                                                    '(SMPTE ST 429-5) and no EBU STL (SMPTE ST 2075)')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
 
         elif subtitle_file.lower().endswith('.890'):
             # Cavena 890: frames counted at the video's rate, else 25; its
@@ -2414,6 +2491,79 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Frames of a second at the export's rate (the video's, else 25).
             caption_vendors.save_capmaker(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
 
+        elif subtitle_format == 'DCPMXF':
+            # A SMPTE DCP's subtitle track file (ST 429-5): the reel, text or
+            # pictures, wrapped with its PNGs, at the reel's rate; the
+            # track file's duration to the last subtitle's end.
+            fps = options.get('dcp_fps') if options.get('dcp_fps') in dcp.RATES else dcp.rate_for(VIDEO.get('framerate'))
+            reel_language = options.get('language') if options.get('text') == 'translation' and options.get('language') \
+                else language
+            title = (SUBTITLE.get('metadata') or {}).get('title') or \
+                os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0]
+            identifier = uuid.uuid4()
+            resources = []
+            if options.get('dcp_content') == 'pictures':
+                from subtitld.interface import subtitle_pictures
+                size = (int(VIDEO.get('width') or 0) or 1920, int(VIDEO.get('height') or 0) or 1080)
+                folder = tempfile.mkdtemp(prefix='subtitld-dcp-mxf-')
+                try:
+                    pictures = subtitle_pictures.draw(segments, size, folder, stem='picture_')
+                    for picture in pictures:
+                        picture_id = uuid.uuid4()
+                        with open(picture['path'], 'rb') as png_file:
+                            resources.append((picture_id, 'image/png', png_file.read()))
+                        picture['href'] = f'urn:uuid:{picture_id}'
+                finally:
+                    shutil.rmtree(folder, ignore_errors=True)
+                reel = dcp.write_images(pictures, size, standard=dcp.SMPTE, fps=fps, language=reel_language, title=title,
+                                        identifier=identifier)
+            else:
+                reel = dcp.write(segments, standard=dcp.SMPTE, fps=fps, language=reel_language, title=title,
+                                 identifier=identifier)
+            last = max([float(segment.get('end', 0)) for segment in segments] or [0])
+            with open(final_file, 'wb') as mxf_file:
+                mxf_file.write(mxf.write_timed_text(reel.encode('utf-8'), resources, (fps, 1), int(math.ceil(last * fps)),
+                                                    dcp.SMPTE_NAMESPACE, identifier, mxf.DCP))
+
+        elif subtitle_format == 'IMSCMXF':
+            # IMF's timed text track file: an IMSC 1.1 document in an ST
+            # 429-5 track file laid out as IMF's are, at the video's rate
+            # (else 24), to the last subtitle's end.
+            rate = _edit_rate(VIDEO.get('framerate') or options.get('fps') or 24)
+            document = ttml.write(segments, language=options.get('language') if options.get('text') == 'translation'
+                                  and options.get('language') else language,
+                                  agents=options.get('speakers') == 'voice',
+                                  look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
+                                  preview=subtitle_styles.preview_look(), profile='imsc1.1',
+                                  metadata=SUBTITLE.get('metadata'))
+            last = max([float(segment.get('end', 0)) for segment in segments] or [0])
+            with open(final_file, 'wb') as mxf_file:
+                mxf_file.write(mxf.write_timed_text(document.encode('utf-8'), [], rate,
+                                                    int(math.ceil(last * rate[0] / rate[1])),
+                                                    'http://www.w3.org/ns/ttml', None, mxf.IMF))
+
+        elif subtitle_format == 'STLMXF':
+            # EBU STL in MXF (SMPTE ST 2075): the STL written as a .stl is,
+            # in a Generic Stream, its language and programme start in the
+            # descriptor.
+            video_rate = float(VIDEO.get('framerate') or 25)
+            stl_language = options.get('language') if options.get('text') == 'translation' and options.get('language') \
+                else language
+            stl_start = options.get('start') if options.get('start') in ebustl.STARTS else ebustl.STARTS[0]
+            stl_fps = int(options.get('stl_fps') or (30 if abs(video_rate - 30) < 0.1 or abs(video_rate - 60) < 0.1 else 25))
+            stl = ebustl.write(segments, fps=stl_fps,
+                               display=options.get('display') if options.get('display') in ebustl.DISPLAYS else 'teletext',
+                               start=stl_start, language=stl_language,
+                               title=(SUBTITLE.get('metadata') or {}).get('title')
+                               or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
+                               gsi=(SUBTITLE.get('metadata') or {}).get('stl'))
+            hours = int(stl_start[:2])
+            reference = hours * 3600 * stl_fps
+            last = max([float(segment.get('end', 0)) for segment in segments] or [0])
+            with open(final_file, 'wb') as mxf_file:
+                mxf_file.write(mxf.write_stl(stl, language=export_options.language_tag(stl_language), reference=reference,
+                                             duration=int(math.ceil(last * (stl_fps if stl_fps == 25 else 30000 / 1001)))))
+
         elif subtitle_format == 'TTXT':
             # An MP4 text track's samples, the stream the video's size.
             ttxt.save(final_file, segments, width=VIDEO.get('width'), height=VIDEO.get('height'))
@@ -3117,7 +3267,7 @@ def picture_frame(subtitle_format, options=None, video=None):
         return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
     if subtitle_format in picture_indexes.FORMATS:
         return width or picture_indexes.DEFAULT_SIZE[0], height or picture_indexes.DEFAULT_SIZE[1]
-    if subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
+    if subtitle_format in ('DCP', 'DCPMXF') and options.get('dcp_content') == 'pictures':
         return width or 1920, height or 1080
     return None
 

@@ -220,6 +220,11 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # Xiph's Kate in an Ogg file of its own; an .ogg with no Kate stream in
     # it is no subtitle file (file_io looks at its bytes).
     'KATE': {'description': 'Ogg Kate Subtitle format', 'extensions': ['ogg']},
+    # Mastering: subtitles in MXF (modules.mxf), told apart by the essence
+    # the file's header names; the first keeps the extension for new files.
+    'DCPMXF': {'description': 'SMPTE DCP subtitle track file (MXF)', 'extensions': ['mxf']},
+    'IMSCMXF': {'description': 'IMF timed text track file (IMSC 1.1 in MXF)', 'extensions': ['mxf']},
+    'STLMXF': {'description': 'EBU STL in MXF (SMPTE ST 2075)', 'extensions': ['mxf']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.

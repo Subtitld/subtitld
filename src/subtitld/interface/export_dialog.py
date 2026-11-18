@@ -46,7 +46,7 @@ SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
                     'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
                     'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
-                    'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
+                    'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # The dialects of these two, one written at a time: which, an option.
 DIALECTS = {'XMLDIALECT': (xml_dialects, 'xml_dialect'), 'JSONDIALECT': (json_dialects, 'json_dialect')}
@@ -536,7 +536,7 @@ class _SubtitlesPanel(QWidget):
         wvtt = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() == 'wvtt'
         if fmt in ('VTT', 'HLS') or wvtt:
             combo.addItem(_('export_dialog.speaker_names_voice'), 'voice')
-        elif fmt in ('DFXP', 'TTML', 'CMFT', 'DASH'):
+        elif fmt in ('DFXP', 'TTML', 'CMFT', 'DASH', 'IMSCMXF'):
             combo.addItem(_('export_dialog.speaker_names_agent'), 'voice')
         elif fmt == 'SAMI':
             combo.addItem(_('export_dialog.speaker_names_source'), 'voice')
@@ -579,12 +579,15 @@ class _SubtitlesPanel(QWidget):
         self.cdg_mp3_check.setVisible(fmt == 'CDG' and bool(session.VIDEO.get('filepath')))
         self.vobsub_options.setVisible(fmt in DVD_PICTURES)
         self.pac_options.setVisible(fmt == 'PAC')
-        self.stl_options.setVisible(fmt == 'STL')
+        self.stl_options.setVisible(fmt in ('STL', 'STLMXF'))
         self.stream_options.setVisible(fmt in ('HLS', 'CMFT', 'DASH', 'ISMT'))
         self.mpegts_combo.setVisible(fmt == 'HLS')
         self.carriage_combo.setVisible(fmt in ('CMFT', 'DASH'))
         stpp = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() != 'wvtt'
-        self.dcp_options.setVisible(fmt == 'DCP')
+        self.dcp_options.setVisible(fmt in ('DCP', 'DCPMXF'))
+        # A track file is SMPTE's alone (ST 429-5).
+        self.dcp_standard_combo.setVisible(fmt == 'DCP')
+        self.dcp_rate_combo.setVisible(fmt == 'DCPMXF' or self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE)
         self.bdn_options.setVisible(fmt == 'BDN')
         self.mcc_options.setVisible(fmt == 'MCC')
         # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
@@ -607,7 +610,7 @@ class _SubtitlesPanel(QWidget):
         self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
                                                      'DVDPRODUCER', 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM',
                                                      'AUDACITY', 'AENEAS', 'TMX'))
-        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML') or stpp)
+        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML', 'IMSCMXF') or stpp)
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
                                              else _('export_dialog.ttml_look_preview'))
@@ -650,14 +653,15 @@ class _SubtitlesPanel(QWidget):
             self.check_label.setText(_('export_dialog.cdg_note'))
             self.check_label.setVisible(True)
             return
-        if fmt in ('BDN', 'PGS') + DVD_PICTURES + PICTURE_INDEXES or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
+        if fmt in ('BDN', 'PGS') + DVD_PICTURES + PICTURE_INDEXES or (fmt in ('DCP', 'DCPMXF') and self.dcp_content_combo.combobox.currentData() == 'pictures'):
             # Pictures: the preview shows one, nothing to say here.
             self.check_label.setVisible(False)
             return
-        if fmt not in ('DFXP', 'TTML') or not segments:
+        if fmt not in ('DFXP', 'TTML', 'IMSCMXF') or not segments:
             self.check_label.setVisible(False)
             return
-        profile = self.profile_combo.combobox.currentData() or 'ttml1'
+        # IMF's track file holds IMSC 1.1, whatever the TTML profile chosen.
+        profile = 'imsc1.1' if fmt == 'IMSCMXF' else self.profile_combo.combobox.currentData() or 'ttml1'
         if profile in ttml.IMAGE_PROFILES:
             # Pictures are drawn when the file is written, not to check it
             # here; the preview shows one.
@@ -667,7 +671,7 @@ class _SubtitlesPanel(QWidget):
                              metadata=session.SUBTITLE.get('metadata'))
         delivery = self.delivery_combo.combobox.currentData() or None
         problems = ttml.check(written, profile, delivery=delivery)
-        name = self.profile_combo.combobox.currentText()
+        name = _('export_dialog.ttml_profile_imsc11') if fmt == 'IMSCMXF' else self.profile_combo.combobox.currentText()
         if delivery:
             name = f'{name}, {ttml.DELIVERIES[delivery]}'
         if problems:
@@ -757,7 +761,7 @@ class _SubtitlesPanel(QWidget):
             options['vobsub_size'] = choices['vobsub_size']
         if fmt == 'PAC':
             options['pac_code_page'] = choices['pac_code_page']
-        if fmt in ('ASS', 'DFXP', 'TTML'):
+        if fmt in ('ASS', 'DFXP', 'TTML', 'IMSCMXF'):
             options['look'] = choices['look']
         if fmt in ('DFXP', 'TTML'):
             options['profile'] = choices['profile']
@@ -768,7 +772,7 @@ class _SubtitlesPanel(QWidget):
         if fmt in ('SCC', 'MCC'):
             options.update(caption_mode=choices['caption_mode'],
                            caption_channel=self.caption_channel_combo.combobox.currentData() or 1)
-        if fmt == 'STL':
+        if fmt in ('STL', 'STLMXF'):
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
         if fmt == 'HLS':
             options.update(segment_duration=choices['segment_duration'], mpegts=choices['mpegts'])
@@ -779,6 +783,8 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'DCP':
             options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'],
                            dcp_content=choices['dcp_content'])
+        if fmt == 'DCPMXF':
+            options.update(dcp_fps=choices['dcp_fps'], dcp_content=choices['dcp_content'])
         if fmt == 'BDN':
             options['bdn_fps'] = choices['bdn_fps']
         if fmt == 'MCC':

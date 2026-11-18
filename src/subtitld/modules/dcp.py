@@ -78,10 +78,10 @@ file, an <Image> a subtitle, centred across where the picture's middle is
 and placed down from the top or up from the bottom, whichever edge it is
 nearer. Interop's <Image> names its PNG, which a package carries beside the
 XML. SMPTE's names a PNG by urn:uuid, and ST 429-5 asks for the PNGs to be
-in the MXF track file with the XML; Subtitld does not wrap MXF, so it
-writes the XML with the PNGs loose beside it, each named <uuid>.png (as
-`image_files` looks for them), for a mastering tool to wrap; a projector
-does not play the loose files.
+in the MXF track file with the XML. Here, the XML is written with the
+PNGs loose beside it, each named <uuid>.png (as `image_files` looks for
+them), for a mastering tool to wrap; a projector does not play the loose
+files. The track file itself is the export's DCPMXF (modules.mxf).
 """
 
 import datetime
