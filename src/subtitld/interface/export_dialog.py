@@ -1136,6 +1136,7 @@ VIDEO_FILES = {
     'MXF': {'label': 'video_mxf', 'ways': {'cc': 'MXF'}},
     'TS': {'label': 'video_ts_track', 'ways': {'cc': 'TS A53', 'track': 'TS', 'burn': 'BURN TS'}},
     'WEBM': {'label': 'video_webm', 'ways': {'burn': 'BURN WEBM', 'alpha': 'ALPHA WEBM'}},
+    'AVI': {'label': 'video_avi_xsub', 'ways': {'track': 'AVI XSUB'}},
 }
 
 
@@ -1235,8 +1236,8 @@ class _VideoPanel(QWidget):
         # Subtitle track sub-tab -------------------------------------------
         # The subtitles as a track of their own, which a player lists and
         # turns on and off: MP4's timed text, Matroska's SRT or ASS, or a
-        # transport stream's teletext or DVB subtitles (soft_subtitles,
-        # teletext, dvbsub).
+        # transport stream's teletext or DVB subtitles, or an AVI's XSUB
+        # (soft_subtitles, teletext, dvbsub, xsub).
         self.tracks_panel = QWidget()
         self.tracks_panel.setLayout(QVBoxLayout())
         self.tracks_panel.layout().setContentsMargins(0, 0, 0, 0)
@@ -1439,8 +1440,8 @@ class _VideoPanel(QWidget):
         container = self._container()
         self.tracks_codec_combo.setVisible(container == 'MKV')
         self.tracks_ts_combo.setVisible(container in ('TS', 'TS DVB'))
-        # Teletext and DVB subtitles have no forced pages: a viewer chooses
-        # one or none.
+        # Teletext, DVB subtitles and XSUB have no forced streams: a viewer
+        # chooses one or none.
         self.tracks_forced.setVisible(container not in soft_subtitles.UNFORCED)
 
     def get_config(self):

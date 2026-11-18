@@ -4,8 +4,8 @@ Opening a DVD VobSub (.idx/.sub) or SUP (.sup), a Blu-ray PGS (.sup), karaoke CD
 BDN's PNGs, the images of a Scenarist, SON, DOST, spumux, Timed Images,
 Final Cut Pro or Rhozet index, a TTML file in IMSC's Image Profile or a
 DCP's subtitles with pictures in them, or reading a picture track of a
-video (a DVB subtitle stream among them), Subtitld decodes each subtitle
-into a picture (vobsub, dvdsup, pgs, cdg, dvbsub, picture_indexes,
+video (DVB and XSUB streams among them), Subtitld decodes each subtitle
+into a picture (vobsub, dvdsup, pgs, cdg, dvbsub, xsub, picture_indexes,
 `bdn_pictures`, `imsc_pictures`, `dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the

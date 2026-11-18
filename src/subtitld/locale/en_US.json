@@ -1381,5 +1381,6 @@
     "export_dialog.subtitle_tracks_translations": "A track for each translation as well",
     "export_dialog.subtitle_track_forced": "Forced: shown even with subtitles turned off",
     "import_panel.subtitles_hearing_impaired": "for the hard of hearing",
-    "export_dialog.video_ts_track": "Transport stream (.ts)"
+    "export_dialog.video_ts_track": "Transport stream (.ts)",
+    "export_dialog.video_avi_xsub": "AVI (.avi), DivX subtitles (XSUB)"
 }

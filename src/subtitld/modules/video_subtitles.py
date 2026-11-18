@@ -65,6 +65,11 @@ def tracks(metadata, language_of=None):
         if kind == 'teletext' or codec == 'dvb_subtitle':
             # A stream of several pages names all their languages ("eng,ger").
             tag = tag.split(',')[0].strip()
+        divx = re.fullmatch(r'Subtitle - ([a-z]{2,3})-xx;\d+', str(tags.get('title') or '').strip())
+        if codec == 'xsub' and not tag and divx:
+            # An AVI keeps an XSUB stream's language in its name, as DivX
+            # writes it and FFmpeg's AVI muxer does: "Subtitle - pt-xx;02".
+            tag = divx.group(1)
         found.append({
             'index': int(stream.get('index', 0)),
             'codec': codec,
@@ -268,7 +273,7 @@ def _without_sizes(path):
 
 
 # Picture tracks Subtitld can read through an OCR add-on (picture_ocr).
-READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle'})
+READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'})
 
 
 def _hexdump(text):
@@ -283,12 +288,13 @@ def _hexdump(text):
 
 def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', folder=None, startupinfo=None,
                      started=None, pid=None, page=None):
-    """The pictures of the picture track at stream `index` (PGS, VobSub or
-    DVB) of the video at `path`, timed as FFmpeg counts from the video's
-    start: [picture_subtitles.Picture]. A PGS track is written out by
-    FFmpeg as a .sup; a VobSub track is read packet by packet through
+    """The pictures of the picture track at stream `index` (PGS, VobSub,
+    DVB or XSUB) of the video at `path`, timed as FFmpeg counts from the
+    video's start: [picture_subtitles.Picture]. A PGS track is written out
+    by FFmpeg as a .sup; a VobSub track is read packet by packet through
     ffprobe, with the palette and frame size its extradata (an .idx header)
-    gives. A DVB track of a transport stream is read as it is (dvbsub.read:
+    gives; an XSUB track packet by packet too, each packet its own times
+    and colours (xsub). A DVB track of a transport stream is read as it is (dvbsub.read:
     the stream `pid`, its composition page `page`); in another container,
     packet by packet through ffprobe, the pages its extradata names."""
     from subtitld.modules import dvbsub, pgs, teletext, vobsub
@@ -310,7 +316,7 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
             return pgs.read(target)
         finally:
             os.remove(target)
-    if codec in ('dvd_subtitle', 'dvb_subtitle'):
+    if codec in ('dvd_subtitle', 'dvb_subtitle', 'xsub'):
         import json
         command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_streams',
                    '-show_packets', '-show_format', '-show_data', '-of', 'json', str(path)]
@@ -323,6 +329,16 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
             raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
         probe = json.loads(out.decode('utf-8', 'replace') or '{}')
         stream = (probe.get('streams') or [{}])[0]
+        if codec == 'xsub':
+            from subtitld.modules import xsub
+            try:
+                offset = float((probe.get('format') or {}).get('start_time') or 0)
+            except ValueError:
+                offset = 0.0
+            screen = (int(stream.get('width') or 0), int(stream.get('height') or 0))
+            return xsub.pictures([_hexdump(packet.get('data')) for packet in probe.get('packets') or []],
+                                 has_alpha=str(stream.get('codec_tag_string') or '').upper() == 'DXSA',
+                                 screen=screen if all(screen) else xsub.DEFAULT_SIZE, offset=offset)
         if codec == 'dvb_subtitle':
             # The extradata: the composition and ancillary pages.
             extradata = _hexdump(stream.get('extradata'))

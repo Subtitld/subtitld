@@ -1238,5 +1238,6 @@
     "export_dialog.video_captions_teletext": "Também legendas em teletexto, como a página 888 do OP-47",
     "export_dialog.subtitle_track_forced": "Forçada: mostrada mesmo com as legendas desligadas",
     "import_panel.subtitles_hearing_impaired": "para deficientes auditivos",
-    "export_dialog.video_ts_track": "Transport stream (.ts)"
+    "export_dialog.video_ts_track": "Transport stream (.ts)",
+    "export_dialog.video_avi_xsub": "AVI (.avi), legendas DivX (XSUB)"
 }
