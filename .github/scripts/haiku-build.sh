@@ -33,6 +33,9 @@ pkgman install -y haikuporter > /dev/null
 # The current gcc, as a Haiku kept up to date has it.
 pkgman update -y gcc binutils > /dev/null
 gcc --version | head -1
+# Subtitld's own repository, for QtWebEngine and its PySide6 modules, which
+# the app requires and HaikuPorts does not carry.
+pkgman list-repos | grep -q 'hpkg\.subtitld\.org' || pkgman add-repo https://hpkg.subtitld.org > /dev/null
 
 # A minimal ports tree: the recipes from this repository, nothing else.
 # (A failed run can leave a chroot mounted in the old tree: move it aside.)

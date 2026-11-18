@@ -53,7 +53,10 @@ keeps every package and the ports (`haikuports/`).
 ## Dependencies
 
 For Python 3.14, already in haikuports: pyside6, numpy, lxml, requests,
-certifi, chardet. Given a 3.14 version in a pull request of their own, and kept
+certifi, chardet. From hpkg.subtitld.org only: QtWebEngine and PySide6's
+modules for it (pyside6_webengine), which haikuports does not carry; the
+preview draws the subtitles with them, and the CI build adds that repository
+before it builds. Given a 3.14 version in a pull request of their own, and kept
 in `pending/` until it is merged: typing_extensions, click (8.1.8), pycparser
 (2.23), soupsieve (2.10), beautifulsoup4 and cffi (2.1.1). Left out on Haiku,
 as Subtitld runs without them: OpenCV and scipy (no 3.14 build there; face

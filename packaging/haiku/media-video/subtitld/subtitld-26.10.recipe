@@ -63,6 +63,9 @@ REQUIRES="
 	numpy_python314
 	platformdirs_python314
 	pyside6_python314
+	# The preview draws the subtitles with QtWebEngine. HaikuPorts does not
+	# carry it: it comes from Subtitld's repository, hpkg.subtitld.org.
+	pyside6_webengine_python314
 	pysubs2_python314
 	python_docx_python314
 	python_i18n_python314
