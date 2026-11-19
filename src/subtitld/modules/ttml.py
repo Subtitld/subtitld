@@ -130,9 +130,12 @@ a service that checks what it is given accepts it (PROFILES):
                 by its alias, its talent a person agent); its text a <p>
                 in the subtitle's language and each translation a <p>
                 translated from it (xml:lang and daptm:langSrc); the dub
-                heard for it an <audio> for each clip of a file. Written
-                by _write_dapt, read by _dapt_document, which says what a
-                subtitle has no room for and keeps it
+                heard for it an <audio> for each clip of a file, linked,
+                or embedded in the script where it came embedded (a
+                <data> in /tt/head/resources, in Base64, that a <source>
+                points to). Written by _write_dapt, read by
+                _dapt_document, which says what a subtitle has no room
+                for and keeps it
 
 The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
 instead, a PNG beside the file drawn as Subtitld's preview draws it, with
@@ -1453,6 +1456,7 @@ def _dapt_document(root, clock, styles, folder=None):
     """
     characters, talents = _dapt_agents(root)
     language = (root.get(_XML_NS + 'lang') or '').strip()
+    resources = _dapt_resources(root)
     events = []
 
     def lang_of(element, inherited):
@@ -1473,7 +1477,8 @@ def _dapt_document(root, clock, styles, folder=None):
                 found.append({'sources': [source for source in sources if source], 'start': start, 'end': stop,
                               'type': child.get('type') or '',
                               'clip_begin': clock.seconds(child.get('clipBegin')),
-                              'clip_end': clock.seconds(child.get('clipEnd'))})
+                              'clip_end': clock.seconds(child.get('clipEnd')),
+                              'embedded': _embedded_recordings(child, resources)})
             elif name == 'animate':
                 said = {_local(key): value for key, value in child.attrib.items()
                         if _local(key) in ('begin', 'end', 'dur', 'fill', 'gain', 'pan')}
@@ -1567,15 +1572,28 @@ def _dapt_document(root, clock, styles, folder=None):
             kept['speak'] = chosen['speak']
         # The recordings of the subtitle's own text, as its dub, where the
         # files are there: each a clip of its file, placed where it plays.
-        clips, missing = [], []
+        # A recording the script holds itself is put in a file of its own,
+        # and the dub made of it is saved in a USFX (a uid) and embedded
+        # again when the script is (its 'dapt' says it came embedded).
+        clips, missing, embedded = [], [], False
         for audio in (chosen['audio'] if chosen else []):
-            path = _audio_path(audio['sources'], folder)
+            path = None
+            if audio['embedded']:
+                payload, kind = audio['embedded'][0]
+                path, embedded = _embedded_audio_file(payload, kind), True
+            path = path or _audio_path([source for source in audio['sources'] if not source.startswith('#')], folder)
             if path is None:
-                missing.append({key: value for key, value in audio.items() if value not in (None, '', [])})
+                missing.append({key: value for key, value in audio.items()
+                                if key != 'embedded' and value not in (None, '', [])})
                 continue
             clips.append((path, audio))
         if clips:
-            segment['dubbing'] = [_dub_of(clips)]
+            dub = _dub_of(clips)
+            if embedded:
+                import secrets
+                dub['uid'] = f'dapt_{secrets.token_hex(4)}'
+                kept['audio_embedded'] = True
+            segment['dubbing'] = [dub]
         if missing:
             kept['audio'] = missing
         segment['dapt'] = kept
@@ -1610,6 +1628,100 @@ def _audio_path(sources, folder):
         if os.path.isfile(path):
             return os.path.abspath(path)
     return None
+
+
+# TTML2's <data>: its content in one of these encodings (Base64 when it
+# names none), as text or as <chunk>s, each with an encoding of its own.
+_DATA_ENCODINGS = {'base16': base64.b16decode, 'base32': base64.b32decode, 'base32hex': base64.b32hexdecode,
+                   'base64': base64.b64decode, 'base64url': base64.urlsafe_b64decode}
+# The extension a recording is kept under, by the MIME type it says it is.
+_AUDIO_EXTENSIONS = {'audio/wave': '.wav', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/vnd.wave': '.wav',
+                     'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/flac': '.flac', 'audio/x-flac': '.flac',
+                     'audio/mp4': '.m4a', 'audio/aac': '.aac', 'audio/aiff': '.aiff', 'audio/x-aiff': '.aiff'}
+
+
+def _decode_data(element):
+    """The bytes of a TTML2 <data> element, or None: its text, or its
+    <chunk>s one after another, in the encoding each names."""
+    def decoded(text, encoding):
+        decoder = _DATA_ENCODINGS.get((encoding or 'base64').strip().lower())
+        if decoder is None:
+            return None
+        text = ''.join(str(text or '').split())
+        if decoder in (base64.b64decode, base64.urlsafe_b64decode):
+            text += '=' * (-len(text) % 4)
+        try:
+            return decoder(text.upper() if decoder is base64.b16decode else text)
+        except (binascii.Error, ValueError):
+            return None
+
+    chunks = [child for child in element if _local(child.tag) == 'chunk']
+    if not chunks:
+        return decoded(element.text, element.get('encoding')) or None
+    parts = [decoded(chunk.text, chunk.get('encoding')) for chunk in chunks]
+    return b''.join(parts) if all(part is not None for part in parts) and any(parts) else None
+
+
+def _dapt_resources(root):
+    """{xml:id: element} of the <data> and <audio> in /tt/head/resources,
+    which DAPT's embedded recordings point to."""
+    found = {}
+    for head in (child for child in root if _local(child.tag) == 'head'):
+        for resources in (child for child in head if _local(child.tag) == 'resources'):
+            for element in resources:
+                if _local(element.tag) in ('data', 'audio') and _xml_id(element):
+                    found[_xml_id(element)] = element
+    return found
+
+
+def _embedded_recordings(audio, resources):
+    """[(bytes, MIME type)] an <audio> embeds, in its sources' order, as DAPT
+    has it: src="#id" naming an <audio> in the resources (whose type it
+    has, its own <source> holding the data), or <source>s that hold a
+    <data> or point with src="#id" to one in the resources."""
+    def from_audio(element, kind, depth=0):
+        out = []
+        reference = (element.get('src') or '').strip()
+        if reference.startswith('#') and depth < 2:
+            target = resources.get(reference[1:])
+            if target is not None and _local(target.tag) == 'audio':
+                out += from_audio(target, target.get('type') or kind, depth + 1)
+            elif target is not None:
+                out += from_data(target, kind)
+        for source in (child for child in element if _local(child.tag) == 'source'):
+            pointed = (source.get('src') or '').strip()
+            if pointed.startswith('#') and resources.get(pointed[1:]) is not None \
+                    and _local(resources[pointed[1:]].tag) == 'data':
+                out += from_data(resources[pointed[1:]], source.get('type') or kind)
+            for data in (child for child in source if _local(child.tag) == 'data'):
+                out += from_data(data, source.get('type') or kind)
+        return out
+
+    def from_data(data, kind):
+        payload = _decode_data(data)
+        return [(payload, (data.get('type') or kind or '').strip())] if payload else []
+
+    return from_audio(audio, audio.get('type') or '')
+
+
+def _embedded_audio_file(payload, kind):
+    """A recording embedded in a script, as a file a dub can play: in the
+    cache's dubbing folder, where the dubs Subtitld makes are, named by
+    what is in it."""
+    import hashlib
+    import os
+    from subtitld.modules import session
+    extension = _AUDIO_EXTENSIONS.get(kind.split(';')[0].strip().lower()) or \
+        ('.wav' if payload[:4] == b'RIFF' else '.mp3' if payload[:3] == b'ID3' else
+         '.ogg' if payload[:4] == b'OggS' else '.flac' if payload[:4] == b'fLaC' else '.wav')
+    folder = os.path.join(str(session.PATH_SUBTITLD_USER_CACHE), 'dubbing')
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f'dapt_{hashlib.sha256(payload).hexdigest()[:20]}{extension}')
+    if not os.path.isfile(path) or os.path.getsize(path) != len(payload):
+        with open(path + '.part', 'wb') as out:
+            out.write(payload)
+        os.replace(path + '.part', path)
+    return path
 
 
 def _dub_of(clips):
@@ -1746,6 +1858,16 @@ def _dapt_problems(root, declared_profile, content_profiles):
                 untyped += 1
     if untyped:
         problems.append(f'{untyped} recording(s) linked with no type: DAPT asks for the audio\'s MIME type')
+    # An embedded one says its type on its <data>, or on the <audio> in the
+    # resources that holds it.
+    in_resources = set(id(element) for element in _dapt_resources(root).values())
+    untyped = sum(1 for element in _dapt_resources(root).values() if not element.get('type'))
+    for element in root.iter():
+        if _local(element.tag) == 'audio' and id(element) not in in_resources:
+            untyped += sum(1 for source in element if _local(source.tag) == 'source'
+                           for data in source if _local(data.tag) == 'data' and not data.get('type'))
+    if untyped:
+        problems.append(f'{untyped} recording(s) embedded with no type: DAPT asks for the audio\'s MIME type')
     return problems
 
 
@@ -1757,10 +1879,14 @@ def _dapt_text(text):
     return _content(rest) if markup.plain(rest).strip() else ''
 
 
-def _dapt_audio(segment, start, audio_base):
+def _dapt_audio(segment, start, audio_base, embedded=None, prefix='recording'):
     """<audio> elements for the dub of `segment` that is heard (its first
     un-muted take), each clip of a file placed where it plays, from the
-    text's start, and linked relative to `audio_base`."""
+    text's start, and linked relative to `audio_base`. With `embedded` (a
+    dict, {path: xml:id}, that fills as files are met) the recordings are
+    the script's own: each <audio> a <source> pointing to the <data> in
+    the resources that holds its file, as DAPT's embedded, referenced
+    source has it, its xml:id `prefix` and a number."""
     import os
     import urllib.parse
     dubs = segment.get('dubbing') or []
@@ -1774,14 +1900,19 @@ def _dapt_audio(segment, start, audio_base):
     out = []
     for clip in clips:
         path = str(clip['path'])
-        if audio_base:
-            try:
-                path = os.path.relpath(path, audio_base)
-            except ValueError:
-                pass
-        source = urllib.parse.quote(path.replace(os.sep, '/'))
         kind = _AUDIO_TYPES.get(os.path.splitext(path)[1].lower(), 'audio/wave')
-        attrs = [f'src={quoteattr(source)}', f'type="{kind}"']
+        inside = None
+        if embedded is not None and os.path.isfile(path):
+            inside = embedded.setdefault(path, f'{prefix}{len(embedded) + 1}')
+            attrs = []
+        else:
+            if audio_base:
+                try:
+                    path = os.path.relpath(path, audio_base)
+                except ValueError:
+                    pass
+            source = urllib.parse.quote(path.replace(os.sep, '/'))
+            attrs = [f'src={quoteattr(source)}', f'type="{kind}"']
         at = begin + float(clip.get('offset') or 0) - start
         if at > 0.0005:
             attrs.append(f'begin="{format_time(at)}"')
@@ -1789,7 +1920,10 @@ def _dapt_audio(segment, start, audio_base):
             attrs.append(f'clipBegin="{format_time(float(clip["start"]))}"')
             if clip.get('end') is not None:
                 attrs.append(f'clipEnd="{format_time(float(clip["end"]))}"')
-        out.append(f'<audio {" ".join(attrs)}/>')
+        if inside:
+            out.append(f'<audio{"".join(" " + attr for attr in attrs)}><source src="#{inside}"/></audio>')
+        else:
+            out.append(f'<audio {" ".join(attrs)}/>')
     return out
 
 
@@ -1837,7 +1971,12 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                     f'</ttm:name>{actor}</ttm:agent>')
 
     used = set(characters.values()) | set(persons.values())
-    events, audio_used = [], False
+    events, audio_used, embedded = [], False, {}
+    # The embedded recordings' xml:ids, which no event's may begin as.
+    prefix = 'recording'
+    while any(str((segment.get('dapt') or {}).get('id') or '').startswith(prefix) for segment in ordered
+              if isinstance(segment.get('dapt'), dict)):
+        prefix += '_'
     for number, segment in enumerate(ordered, start=1):
         kept = segment.get('dapt') if isinstance(segment.get('dapt'), dict) else {}
         event_id = str(kept.get('id') or '')
@@ -1866,7 +2005,7 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                 said = ' '.join(f'{"tta:" if key in ("gain", "pan") else ""}{key}={quoteattr(str(value))}'
                                 for key, value in mix.items() if key in ('begin', 'end', 'dur', 'fill', 'gain', 'pan'))
                 inner.append(f'<animate {said}/>')
-        recordings = _dapt_audio(segment, start, audio_base)
+        recordings = _dapt_audio(segment, start, audio_base, embedded if kept.get('audio_embedded') else None, prefix)
         audio_used = audio_used or bool(recordings or inner or kept.get('speak'))
         speak = f' tta:speak={quoteattr(str(kept["speak"]))}' if kept.get('speak') else ''
         own_source = kept.get('lang_src') if kept.get('lang_src') is not None else source
@@ -1892,9 +2031,19 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                                   f'daptm:langSrc={quoteattr(str(source))}',
                                   f'daptm:scriptRepresents={quoteattr(script_represents)}',
                                   f'daptm:scriptType="{script_type}"'])
+    # The recordings the script holds itself, each file once, in Base64.
+    resources = []
+    for clip_path, data_id in embedded.items():
+        import os
+        with open(clip_path, 'rb') as clip_file:
+            payload = base64.b64encode(clip_file.read()).decode('ascii')
+        kind = _AUDIO_TYPES.get(os.path.splitext(clip_path)[1].lower(), 'audio/wave')
+        resources.append(f'      <data type="{kind}" xml:id="{data_id}">{payload}</data>')
+    if resources:
+        resources = ['    <resources>', *resources, '    </resources>']
     return '\n'.join(['<?xml version="1.0" encoding="UTF-8"?>', f'<tt {root}>', '  <head>', '    <metadata>', *head,
-                      '    </metadata>', '  </head>', f'  <body daptm:represents={quoteattr(represents)}>', *events,
-                      '  </body>', '</tt>', ''])
+                      '    </metadata>', *resources, '  </head>', f'  <body daptm:represents={quoteattr(represents)}>',
+                      *events, '  </body>', '</tt>', ''])
 
 
 def _document(text, images=None, folder=None):

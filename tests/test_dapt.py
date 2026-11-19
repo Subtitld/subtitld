@@ -7,12 +7,19 @@ ttml.check against DAPT's rules, and opened and saved through file_io.
 
 The first two documents are Examples 10 and 4 of the DAPT specification
 (https://www.w3.org/TR/dapt/), Copyright © 2026 World Wide Web Consortium,
-used under the W3C Document License.
+used under the W3C Document License; the embedded recordings are its
+examples of them (the specification's examples/ folder:
+intro-script-with-embedded-audio, audio-single-embedded-inline-source,
+audio-single-embedded-referenced-source and
+audio-multiple-embedded-referenced-source), a real WAV in place of their
+"[base64-encoded audio data]".
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
+import base64
+import io
 import os
 import re
 import sys
@@ -253,6 +260,88 @@ check('written again: both characters, on screen, described, mixed, spoken',
        '<animate begin="0.0s" end="0.3s" tta:gain="1;0.39" fill="freeze"/>' in again,
        'tta:speak="normal"' in again, ttml.check(again, 'dapt')), (True, True, True, True, []))
 check('the absent recording is the one thing not written back', 'clip3.wav' in again, False)
+
+print('embedded recordings')
+
+
+def tone(seconds, rate=16000):
+    """A WAV of `seconds` of a square wave, as bytes."""
+    out = io.BytesIO()
+    with wave.open(out, 'wb') as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(2)
+        clip.setframerate(rate)
+        clip.writeframes((b'\x00\x10' * 20 + b'\x00\xf0' * 20) * int(seconds * rate / 40))
+    return out.getvalue()
+
+
+WAV, MP3ISH = tone(2.4), tone(0.5)
+B64 = base64.b64encode(WAV).decode('ascii')
+# Split across lines, as a document holds a long Base64 text.
+WRAPPED = '\n'.join(B64[at:at + 76] for at in range(0, len(B64), 76))
+EMBEDDED_HEAD = (KEPT.split('<body')[0].replace('<head><metadata>', '<head><resources>{resources}</resources><metadata>'))
+# DAPT's intro script with embedded audio: event a3, the gain ducked
+# around a span that holds an <audio><source><data type="audio/wave">.
+INLINE = EMBEDDED_HEAD.format(resources='') + f'''<body daptm:represents="visual.nonText">
+    <div begin="25s" end="28s" xml:id="a3">
+      <p>
+        <animate begin="0.0s" end="0.3s" tta:gain="1;0.39" fill="freeze"/>
+        <animate begin="2.7s" end="3s" tta:gain="0.39;1"/>
+        <span begin="0.3s" end="2.7s">
+          <audio><source><data type="audio/wave">
+            {WRAPPED}
+          </data></source></audio>
+          The sails billow in the wind.</span>
+      </p>
+    </div>
+  </body>
+</tt>'''
+segments, _language, _metadata = ttml.read_text(INLINE)
+dub = segments[0]['dubbing'][0]
+check('inline <source><data>: the recording a file of its own, the very bytes, played from the span\'s start',
+      (Path(dub['path']).read_bytes() == WAV, Path(dub['path']).suffix, dub['start'], segments[0]['dapt'].get('audio_embedded')),
+      (True, '.wav', 25.3, True))
+check('a dub of an embedded recording has a uid, so a USFX saves its file', dub.get('uid', '').startswith('dapt_'), True)
+# DAPT's referenced forms: <audio src="#audio1"> naming an <audio> in the
+# resources (the type its own), and <source src="#audio1wav"> naming a
+# <data>; the second source, an MP3, is the same recording another way.
+REFERENCED = EMBEDDED_HEAD.format(resources=f'''
+      <audio type="audio/wave" xml:id="audio1"><source><data>{B64}</data></source></audio>
+      <data type="audio/wave" xml:id="audio1wav">{WRAPPED}</data>
+      <data type="audio/mpeg" xml:id="audio1mp3">{base64.b64encode(MP3ISH).decode('ascii')}</data>''') + '''<body daptm:represents="visual.nonText">
+    <div begin="1s" end="4s" xml:id="e1"><p><span begin="0.5s"><audio src="#audio1"/>One.</span></p></div>
+    <div begin="5s" end="8s" xml:id="e2"><p><audio clipBegin="1s" clipEnd="2s"><source src="#audio1wav"/><source src="#audio1mp3"/></audio>Two.</p></div>
+  </body>
+</tt>'''
+segments, language, metadata = ttml.read_text(REFERENCED)
+check('<audio src="#id"> to an <audio> in the resources; <source src="#id"> to a <data>, the first source taken',
+      [(Path(s['dubbing'][0]['path']).read_bytes() == WAV, s['dubbing'][0]['start']) for s in segments],
+      [(True, 1.5), (True, 5.0)])
+check('a clip of the embedded recording: its part of the file', segments[1]['dubbing'][0].get('segments'),
+      [{'type': 'audio', 'path': segments[1]['dubbing'][0]['path'], 'start': 1.0, 'end': 2.0, 'offset': 0.0}])
+check('and DAPT, as ttml.check reads it', ttml.check(REFERENCED, 'dapt'), [])
+again = ttml.write(segments, language, profile='dapt', metadata=metadata)
+check('written again embedded: the file once, in the resources, each <audio> a <source> pointing to it',
+      (re.findall(r'<data type="audio/wave" xml:id="([^"]+)">', again), re.findall(r'<audio[^>]*>.*?</audio>', again),
+       'src="/' in again or 'dubbing' in again),
+      (['recording1'], ['<audio begin="00:00:00.500"><source src="#recording1"/></audio>',
+                        '<audio clipBegin="00:00:01.000" clipEnd="00:00:02.000"><source src="#recording1"/></audio>'],
+       False))
+read_again, _language, _metadata = ttml.read_text(again)
+check('read back: the same recording, the same places', [(Path(s['dubbing'][0]['path']).read_bytes() == WAV,
+                                                          s['dubbing'][0]['start'], s['dubbing'][0].get('segments') is not None)
+                                                         for s in read_again], [(True, 1.5, False), (True, 5.0, True)])
+check('and DAPT still', ttml.check(again, 'dapt'), [])
+check('an embedded recording with no type: DAPT asks for one', ttml.check(INLINE.replace(' type="audio/wave"', ''), 'dapt'),
+      ['1 recording(s) embedded with no type: DAPT asks for the audio\'s MIME type'])
+linked = ttml.write([dict(s, dapt={k: v for k, v in s['dapt'].items() if k != 'audio_embedded'}) for s in segments],
+                    language, profile='dapt', metadata=metadata)
+check('a dub that did not come embedded is linked, as before', ('<resources>' in linked, '<audio src=' in linked),
+      (False, True))
+check('an event named like the recordings: their ids step aside',
+      re.findall(r'xml:id="(recording[^"]*)"', ttml.write([dict(segments[0], dapt=dict(segments[0]['dapt'], id='recording1'))],
+                                                         language, profile='dapt', metadata=metadata)),
+      ['recording_1', 'recording1'])
 
 print('what check finds')
 broken = (EXAMPLE_10.replace('ttp:contentProfiles="http://www.w3.org/ns/ttml/profile/dapt1.0/content"',
