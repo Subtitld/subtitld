@@ -20,7 +20,8 @@ default or a forced one, and its kind:
   FFmpeg's arib_caption), which FFmpeg here has no decoder for: the
   aribb24 module reads them (`read_arib`);
 - 'captions': closed captions in a track of their own (QuickTime's
-  CEA-608), which the closed_captions module reads;
+  CEA-608, and its c708 track of CEA-708 and CEA-608, which FFmpeg does
+  not know: codec 'eia_708'), which the closed_captions module reads;
 - 'teletext': a DVB teletext stream, whose subtitle pages the teletext
   module reads. One stream carries a page for each language (888, 777
   ...), so `with_teletext_pages` makes a track of each, from the stream's
@@ -49,7 +50,7 @@ TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 't
 # a Blu-ray's TextST (textst).
 TEXTST_CODECS = frozenset({'hdmv_text_subtitle'})
 PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub', 'scte_27'})
-CAPTION_CODECS = frozenset({'eia_608'})
+CAPTION_CODECS = frozenset({'eia_608', 'eia_708'})
 TELETEXT_CODECS = frozenset({'dvb_teletext'})
 # Text Subtitld decodes itself rather than FFmpeg (modules.aribb24).
 ARIB_CODECS = frozenset({'arib_caption'})
@@ -68,6 +69,8 @@ def tracks(metadata, language_of=None):
         if stream.get('codec_type') != 'subtitle' and not scte27:
             continue
         codec = 'scte_27' if scte27 else str(stream.get('codec_name') or '')
+        if codec in ('', 'unknown') and str(stream.get('codec_tag_string')) == 'c708':
+            codec = 'eia_708'
         kind = 'text' if codec in TEXT_CODECS | ARIB_CODECS else 'pictures' if codec in PICTURE_CODECS else \
             'captions' if codec in CAPTION_CODECS else 'teletext' if codec in TELETEXT_CODECS else None
         if kind is None:
@@ -329,7 +332,9 @@ def _extract_textst(path, index, ffprobe, folder, startupinfo, started):
     return target
 
 
-_BARE_SIZE = re.compile(r'<font\s+size="?\d+"?\s*>', re.IGNORECASE)
+_SIZED = re.compile(r'<font\b[^>]*\bsize=', re.IGNORECASE)
+# The track's own font, which every cue starts with: <font face="Serif" size="18">.
+_TRACK_FONT = re.compile(r'<font\s+face="([^"]*)"\s+size=', re.IGNORECASE)
 
 
 def _without_sizes(path):
@@ -337,15 +342,23 @@ def _without_sizes(path):
     wraps each run in: a style record says a size in pixels, which FFmpeg
     writes as an HTML <font size="13"> at every change of style. Such a
     size says nothing about a proportion, so Subtitld would only carry it
-    along unread."""
+    along unread. A track whose sample description names a font gets that
+    font and its size around every cue (<font face="Serif" size="18">),
+    which is the track's look rather than a cue's, as FFmpeg's own ASS
+    puts it in its Default style: when every cue starts with the same, it
+    goes."""
     from subtitld.modules import markup, srt
     with open(path, encoding='utf-8', errors='replace') as track:
-        if not _BARE_SIZE.search(track.read()):
+        if not _SIZED.search(track.read()):
             return
     segments = srt.read(path)
-    for segment in segments:
-        lead, rest = markup.split_lead(segment['text'])
-        segment['text'] = lead + markup.from_spans(markup.spans(rest))
+    parts = [markup.split_lead(segment['text']) for segment in segments]
+    faces = {match.group(1) if match else None for match in (_TRACK_FONT.match(rest) for _lead, rest in parts)}
+    track_font = faces.pop() if len(faces) == 1 else None
+    for segment, (lead, rest) in zip(segments, parts):
+        runs = [(text, style._replace(face='') if track_font and style.face == track_font else style)
+                for text, style in markup.spans(rest)]
+        segment['text'] = lead + markup.from_spans(runs)
     srt.save(path, segments)
 
 
