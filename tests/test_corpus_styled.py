@@ -96,7 +96,7 @@ NAMES = ['pysubs2/' + name for name in (
     'ttml_example.ttml', 'ttml_example.ass', 'ttml_example2.ttml', 'ttml_example2.ass', 'ttml_example_apple.ttml',
     'ttml_example_apple.ass', 'subtitle_with_attached_fonts_aegisub.ass', 'subtitle_with_attached_fonts_no_events.ass',
     'subtitle_with_attached_fonts_pysubs2_ref.ass', 'subtitle_with_attached_images_aegisub.ass',
-    'subtitle_with_attached_images_pysubs2_ref.ass')] + ['subtitleedit/' + name for name in (
+    'subtitle_with_attached_images_pysubs2_ref.ass', 'EBGaramond08-Regular.ttf', 'EBGaramond08-Italic.ttf')] + ['subtitleedit/' + name for name in (
         'auto_detect_Danish.srt', 'auto_detect_Russian.srt', 'auto_detect_windows-1250.srt',
         'auto_detect_windows-1251.srt', 'auto_detect_windows-1254.srt', 'sample_WebVTT_AppleTV.webvtt',
         'sample_mcc_cea608_only.mcc', 'sample_mcc_cea608_708.mcc', 'scc_16038_pop_on.scc')]
@@ -157,6 +157,49 @@ check('no events: none read from the fonts', opened(found['pysubs2/subtitle_with
 # Its one event has no text: nothing to show, so no subtitle.
 for name in ('subtitle_with_attached_images_aegisub.ass', 'subtitle_with_attached_images_pysubs2_ref.ass'):
     check(f'{name}: the pictures not read as events', opened(found['pysubs2/' + name])[0], [])
+
+
+def section(path, name):
+    """The lines of a script's [Fonts] or [Graphics] section, as text."""
+    lines = Path(path).read_text(encoding='utf-8-sig').replace('\r\n', '\n').split('\n')
+    start = lines.index(f'[{name}]')
+    end = next(index for index in range(start + 1, len(lines)) if lines[index].startswith('['))
+    return '\n'.join(lines[start:end]).strip()
+
+
+print('pysubs2: the attached fonts and pictures kept')
+# The fonts Aegisub attached are pysubs2's EBGaramond08-Regular.ttf and
+# -Italic.ttf (beside them in its test data, the same sizes), named with
+# Aegisub's "_0": decoded, byte for byte those files.
+fonts, _fmt = opened(found['pysubs2/subtitle_with_attached_fonts_aegisub.ass'])
+kept = session.SUBTITLE.get('attachments') or {}
+check('the fonts decoded are the font files', {name: data == found['pysubs2/' + name.replace('_0', '')].read_bytes()
+                                               for name, data in (kept.get('fonts') or {}).items()},
+      {'EBGaramond08-Regular_0.ttf': True, 'EBGaramond08-Italic_0.ttf': True})
+# pysubs2's test_attachment: what it writes of the Aegisub file is its
+# _pysubs2_ref.ass, the [Fonts] section byte for byte (names sorted, the
+# lines as they came). Subtitld writes its own script around it.
+again('fonts.ass', 'ASS')
+check('saved: the [Fonts] section pysubs2\'s reference has', section(SCRATCH / 'fonts.ass', 'Fonts'),
+      section(found['pysubs2/subtitle_with_attached_fonts_pysubs2_ref.ass'], 'Fonts'))
+opened(found['pysubs2/subtitle_with_attached_images_aegisub.ass'])
+again('images.ass', 'ASS')
+check('saved: the [Graphics] section pysubs2\'s reference has', section(SCRATCH / 'images.ass', 'Graphics'),
+      section(found['pysubs2/subtitle_with_attached_images_pysubs2_ref.ass'], 'Graphics'))
+check('a picture decoded: a PNG and a JPEG', sorted((name, data[:4]) for name, data in
+                                                   (session.SUBTITLE.get('attachments') or {})['graphics'].items()),
+      [('github.jpg', b'\xff\xd8\xff\xe0'), ('github.png', b'\x89PNG')])
+# A USFX keeps them as members of its own, and an ASS saved from it has
+# them again.
+opened(found['pysubs2/subtitle_with_attached_fonts_aegisub.ass'])
+again('fonts.usfx', 'USFX')
+check('a USFX keeps the fonts', {name: len(data) for name, data in (session.SUBTITLE.get('attachments') or {})['fonts'].items()},
+      {'EBGaramond08-Regular_0.ttf': 280540, 'EBGaramond08-Italic_0.ttf': 180220})
+again('from_usfx.ass', 'ASS')
+check('an ASS saved from the USFX: the same [Fonts]', section(SCRATCH / 'from_usfx.ass', 'Fonts'),
+      section(found['pysubs2/subtitle_with_attached_fonts_pysubs2_ref.ass'], 'Fonts'))
+opened(found['pysubs2/ttml_example.ttml'])
+check('the next file opened has none of them', session.SUBTITLE.get('attachments'), None)
 
 print('Subtitle Edit: charset detection')
 # Subtitle Edit's LanguageAutoDetectTest: the Danish and Russian files

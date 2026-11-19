@@ -13,6 +13,7 @@ import zipfile
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape as xml_escape
 from docx import Document
 import datetime
 from bs4 import BeautifulSoup
@@ -220,6 +221,46 @@ def _fsync_dir(path):
         pass
     finally:
         os.close(fd)
+
+
+# The fonts and pictures a project carries (session.SUBTITLE['attachments'],
+# from an ASS script's [Fonts] and [Graphics]): in a USFX, each a member of
+# its own under assets/attachments/, and in the manifest an <attachment>
+# naming its kind, the name it had and its member. Read from the zip as the
+# project opens: they are small, and the next save needs them.
+USFX_ATTACHMENTS = 'assets/attachments/'
+_ATTACHMENT_KINDS = ('fonts', 'graphics')
+# More than any font a subtitle file carries: a crafted project's member is
+# not read whole into memory.
+_ATTACHMENT_MAX = 64 * 1024 * 1024
+
+
+def _usfx_attachment_members(attachments):
+    """{member: (kind, name, bytes)} for a project's attachments."""
+    members = {}
+    for kind in _ATTACHMENT_KINDS:
+        for index, (name, data) in enumerate(sorted(((attachments or {}).get(kind) or {}).items())):
+            if data:
+                members[f'{USFX_ATTACHMENTS}{kind}/{index}_{_safe_asset_name(name)}'] = (kind, str(name), bytes(data))
+    return members
+
+
+def _usfx_attachments(zf, names):
+    """The attachments a USFX's manifest lists, from its open zip `zf`."""
+    if 'manifest.xml' not in names:
+        return {}
+    try:
+        manifest = BeautifulSoup(zf.read('manifest.xml'), 'lxml-xml')
+    except Exception:
+        return {}
+    found = {}
+    for tag in manifest.find_all('attachment'):
+        kind, name, member = tag.get('kind'), tag.get('name') or '', tag.get('path') or ''
+        if kind not in _ATTACHMENT_KINDS or not name or not member.startswith(USFX_ATTACHMENTS) \
+                or member not in names or zf.getinfo(member).file_size > _ATTACHMENT_MAX:
+            continue
+        found.setdefault(kind, {})[name] = zf.read(member)
+    return found
 
 
 def _is_phase1_usfx_member(name):
@@ -929,6 +970,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     # What a file says about itself belongs to that file: the one opened
     # before must not lend its title to the next.
     session.SUBTITLE.pop('metadata', None)
+    # So are the fonts and pictures it carries (an ASS script's [Fonts] and
+    # [Graphics], a USFX's assets/attachments/).
+    session.SUBTITLE.pop('attachments', None)
 
     # Final Cut Pro's bundle is a folder with the document in it.
     if subtitle_file and os.path.isdir(subtitle_file) and subtitle_file.lower().rstrip('/\\').endswith('.fcpxmld'):
@@ -1267,7 +1311,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.ass', '.ssa')):
             subtitle_format = 'ASS'
-            segments_list = ass.read(subtitle_file)
+            segments_list, attachments = ass.read_file(subtitle_file)
+            if attachments:
+                session.SUBTITLE['attachments'] = attachments
 
         elif subtitle_file.lower().endswith(('.sub')):
             # MicroDVD, counted in frames: the rate it declares, else the
@@ -1737,6 +1783,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     # From the file itself, not the extract folder: that can
                     # still hold an earlier save's.
                     names = zf.namelist()
+                    attachments = _usfx_attachments(zf, names)
+                    if attachments:
+                        session.SUBTITLE['attachments'] = attachments
                     if collab_state.STATE_MEMBER in names:
                         pending = zf.read(collab_state.PENDING_MEMBER) if collab_state.PENDING_MEMBER in names else b''
                         base = zf.read(collab_state.BASE_MEMBER) if collab_state.BASE_MEMBER in names else None
@@ -2374,7 +2423,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Sized to the video, in the export's look; .ssa as SSA v4.
             ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
-                     preview=subtitle_styles.preview_look())
+                     preview=subtitle_styles.preview_look(), attachments=SUBTITLE.get('attachments'))
 
         elif subtitle_format == 'MCC':
             # Captions the way the export asks for them, in CEA-608 and
@@ -3075,6 +3124,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         thumbnail = old_bundle.read('thumbnail.png')
                 except (KeyError, OSError, zipfile.BadZipFile):
                     thumbnail = None
+            attachment_members = _usfx_attachment_members(SUBTITLE.get('attachments'))
             manifest_entries = [('subtitles.usf', 'application/x-usf+xml')]
             if thumbnail:
                 manifest_entries.append(('thumbnail.png', 'image/png'))
@@ -3086,6 +3136,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 manifest_entries.append((arc, _mime_for(arc)))
             for arc in collab_members:
                 manifest_entries.append((arc, 'application/json' if arc.endswith('.json') else 'application/x-ndjson'))
+            for arc in attachment_members:
+                manifest_entries.append((arc, 'application/octet-stream'))
 
             manifest_lines = ['<?xml version="1.0" encoding="UTF-8"?>',
                               '<manifest version="1.0">',
@@ -3103,6 +3155,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     pass
             for path, mime in manifest_entries:
                 manifest_lines.append(f'  <entry path="{path}" type="{mime}"/>')
+            for arc, (kind, name, _data) in attachment_members.items():
+                manifest_lines.append(f'  <attachment kind="{kind}" name="{xml_escape(name, {chr(34): "&quot;"})}" '
+                                      f'path="{arc}"/>')
             manifest_lines.append('</manifest>')
             manifest_xml = '\n'.join(manifest_lines)
 
@@ -3121,6 +3176,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     for source, arc in extra_files_to_include.items():
                         zf.write(source, arc)
                     for arc, data in collab_members.items():
+                        zf.writestr(arc, data)
+                    for arc, (_kind, _name, data) in attachment_members.items():
                         zf.writestr(arc, data)
                 # Verify the tmp file is a structurally valid zip with
                 # intact CRCs for every member BEFORE atomic rename —
