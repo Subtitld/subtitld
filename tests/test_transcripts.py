@@ -220,7 +220,7 @@ try:
     check('not a TextGrid: says so', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('not a TextGrid: says so', str(error).startswith('Not a TextGrid'), True)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.SUBTITLE['language'] = 'en-us'
 session.VIDEO = {'width': 1280, 'height': 720, 'filepath': '/videos/clip.mp4'}
 for fmt, name in (('TEXTGRID', 'out.TextGrid'), ('CHAT', 'out.cha'), ('CTM', 'out.ctm')):

@@ -144,7 +144,7 @@ for name, data, fmt, count in cases:
 check('read only: NCI, Captions Inc., Ultech', [key in session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS and
                                                 key not in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS
                                                 for key in ('NCI', 'CAPTIONSINC', 'ULTECH')], [True] * 3)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.cap'), 'CAPMAKER')

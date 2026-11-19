@@ -23,6 +23,7 @@ import numpy
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, export_options, file_io, pgs, session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import subtitle_pictures
 
 fails = []
@@ -94,7 +95,7 @@ SEGMENTS = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <i>there</i>'},
             {'start': 2.5, 'end': 4.0, 'text': '{\\an8}A sign', 'forced': True},
             {'start': 5.0, 'end': 6.0, 'text': ''},
             {'start': 7.0, 'end': 9.25, 'text': 'Ação, coração\ne emoção'}]
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'pt-br'})
 session.VIDEO = {'width': 1280, 'height': 720, 'framerate': 25}
 session.FORMAT = {'format': 'PGS', 'options': {}}
 target = folder / 'film.sup'

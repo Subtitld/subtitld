@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, Signal, QTimer as _RealQTimer
 from PySide6.QtGui import QImage, QPainter
 app = QApplication(sys.argv)
 from subtitld.modules import session, history, recorder as recorder_mod
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import record_controls, timeline
 import soundfile as sf
 
@@ -72,12 +73,12 @@ def feed(ctrl, audio):
 def reset(segments=None, pos=0.0):
     session.CONFIG.setdefault('record', {}).update({'mode': 'transcript', 'armed': True, 'device': 0})
     session.SPEAKERS = {}
-    session.SUBTITLE = {'segments': list(segments or []), 'language': 'en-us', 'position': pos}
+    session.SUBTITLE = Subtitle({'segments': list(segments or []), 'language': 'en-us', 'position': pos})
     history.history_clear()
     TIMERS.clear()
 
 def subs():
-    return session.SUBTITLE['segments']
+    return session.SUBTITLE.segments
 
 def texts():
     return [s['text'] for s in subs()]
@@ -474,6 +475,7 @@ ctrl.on_pause(); eng.stream_finished.emit([]); pump(); ctrl.shutdown()
 # with no cue left never lands on it.
 mine = {'start': 40.0, 'end': 60.0, 'text': 'my hand-written line'}
 eng = FakeStream(); ctrl = stream_take(eng, [mine])
+mine = subs()[0]
 feed(ctrl, UTT); at(2.6)
 eng.interim('first'); eng.final('first sentence.')
 ctrl.on_pause()
@@ -488,6 +490,7 @@ eng.stream_finished.emit([]); pump(); ctrl.shutdown()
 # adopting the subtitle next to it.
 mine = {'start': 2.0, 'end': 5.0, 'text': 'mine'}
 eng = FakeStream(); ctrl = stream_take(eng, [mine])
+mine = subs()[0]
 feed(ctrl, UTT); at(2.6)
 eng.interim('first'); eng.final('first sentence.')
 ctrl.on_pause()
@@ -574,7 +577,7 @@ ctrl.on_pause(); eng.stream_finished.emit([]); pump(); ctrl.shutdown()
 ctrl, eng = batch_take()
 feed(ctrl, UTT)
 session.SUBTITLE['current'] = subs()[0]
-session.SUBTITLE['selected'] = subs()[0]
+session.SUBTITLE.selected = subs()[0]
 session.FORMAT = {'format': 'JSON', 'options': {'standard': 'Whisper'}}
 file_io.save_file(os.path.join(tmp, 'y.json'), 'JSON')
 session.FORMAT = {}
@@ -582,8 +585,8 @@ check('R8 _rec not saved through current/selected', '_rec' not in open(os.path.j
 
 # R9 (U9): removing a selected noise cue clears the selection to None.
 eng.answer(segs=[])
-check('R9 selection cleared to None', subs() == [] and session.SUBTITLE.get('selected') is None,
-      session.SUBTITLE.get('selected'))
+check('R9 selection cleared to None', subs() == [] and session.SUBTITLE.selected is None,
+      session.SUBTITLE.selected)
 session.SUBTITLE.pop('current', None)
 ctrl.on_pause(); pump(); ctrl.shutdown()
 
@@ -604,6 +607,7 @@ ctrl.shutdown()
 # R11 (U1): a split survives undoing an unrelated later edit.
 later = {'start': 30.0, 'end': 31.0, 'text': 'mine'}
 ctrl, eng = batch_take([later])
+later = subs()[0]
 feed(ctrl, np.concatenate([sil(0.5), tone(3.0), sil(0.9)]))
 history.history_append(); later['text'] = 'mine, edited'
 eng.answer(segs=[{'start': 0.1, 'end': 1.4, 'text': 'first half'},
@@ -616,6 +620,7 @@ ctrl.on_pause(); pump(); ctrl.shutdown()
 # R12 (U10): a noise cue removed after an unrelated edit stays removed on undo.
 later = {'start': 30.0, 'end': 31.0, 'text': 'mine'}
 ctrl, eng = batch_take([later])
+later = subs()[0]
 feed(ctrl, UTT)
 history.history_append(); later['text'] = 'mine, edited'
 eng.answer(segs=[])
@@ -627,6 +632,7 @@ ctrl.on_pause(); pump(); ctrl.shutdown()
 # the deletion, even with other edits after it.
 later = {'start': 30.0, 'end': 31.0, 'text': 'mine'}
 ctrl, eng = batch_take([later])
+later = subs()[0]
 feed(ctrl, UTT)
 subtitles_mod.remove_subtitle(subs()[0])        # pushes its own undo step
 history.history_append(); later['text'] = 'mine, edited'

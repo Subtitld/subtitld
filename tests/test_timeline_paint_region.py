@@ -32,6 +32,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session, utils
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 
 fails = []
@@ -115,9 +116,9 @@ session.CONFIG = {'timeline': {'show_onset_markers': True, 'waveform_fill_color'
 session.VIDEO = {'duration': DURATION, 'shot_changes': [], 'samplerate': SAMPLERATE}
 session.SPEAKERS = {'A': {'color': '#ff2e93'}, 'B': {'color': '#2e93ff'}}
 # One subtitle every 2 s, 1.5 s long: subtitle i spans [2i, 2i + 1.5].
-session.SUBTITLE = {'segments': [{'start': i * 2.0, 'end': i * 2.0 + 1.5, 'text': f'sub {i}', 'speaker': 'AB'[i % 2]}
+session.SUBTITLE = Subtitle({'segments': [{'start': i * 2.0, 'end': i * 2.0 + 1.5, 'text': f'sub {i}', 'speaker': 'AB'[i % 2]}
                                  for i in range(int(DURATION / 2))],
-                    'selected': None, 'position': CURSOR}
+                    'selected': None, 'position': CURSOR})
 
 host = Host()
 timeline.load(host)
@@ -177,7 +178,7 @@ def paint(rect=None):
 def subtitles_drawn(got):
     """Indexes of the subtitles drawn, known by their rectangles."""
     rects = {(round(s['start'] * wpp), round((s['end'] - s['start']) * wpp)): i
-             for i, s in enumerate(session.SUBTITLE['segments'])}
+             for i, s in enumerate(session.SUBTITLE.segments)}
     found = []
     for kind, *rest in got:
         if kind == 'rect':
@@ -189,7 +190,7 @@ def subtitles_drawn(got):
 
 def subtitles_within(left, right):
     """Indexes of the subtitles that reach into [left, right) px."""
-    return [i for i, s in enumerate(session.SUBTITLE['segments'])
+    return [i for i, s in enumerate(session.SUBTITLE.segments)
             if s['start'] * wpp < right and s['end'] * wpp > left]
 
 

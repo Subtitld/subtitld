@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 app = QApplication([])
 from subtitld.modules import burned_video, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -115,7 +116,7 @@ else:
     print('the export')
     from subtitld.modules import bounce
     session.VIDEO = {}
-    session.SUBTITLE = {'segments': segments, 'language': 'en-us'}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us'})
     out = folder / 'thread.webm'
     worker = bounce.CaptionsThread(str(out), 'ALPHA WEBM', {'width': 320, 'height': 180, 'fps': 25})
     result = []
@@ -187,7 +188,7 @@ else:
           ('BURN MOV', 'h264'))
 
     print('its preview')
-    session.SUBTITLE = {'segments': segments, 'language': 'en-us', 'position': 1.2}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us', 'position': 1.2})
     dialog = export_dialog.ExportDialog(initial_category='video')
     dialog.show()
     started = time.time()

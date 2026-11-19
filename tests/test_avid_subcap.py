@@ -117,11 +117,11 @@ check('opens as AVID; its rate, drop-frame and hour kept to save it again', (
     fmt, [(s['start'], s['end']) for s in opened],
     {key: session.FORMAT['options'].get(key) for key in ('fps', 'timecode', 'timeline_start')}),
       ('AVID', [(3.6, 8.2), (10.0, 12.48)], {'fps': 25.0, 'timecode': 'non-drop', 'timeline_start': '01:00:00:00'}))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.txt'), 'AVID')
 check('saved again as it was', (folder / 'again.txt').read_text(encoding='utf-8').split('\n')[3:5],
       ['01:00:03:15 01:00:08:05', 'Ich muss dafür sorgen,'])
-session.SUBTITLE['segments'] = [dict(segment) for segment in SEGMENTS]
+session.SUBTITLE.segments = [dict(segment) for segment in SEGMENTS]
 session.VIDEO = {'framerate': 29.97}
 session.FORMAT = {'options': {'text': 'original', 'speakers': 'none', 'formatting': 'keep', 'offset': 0,
                               'encoding': 'cp1252', 'line_ends': 'crlf'}}
@@ -141,7 +141,7 @@ for name, fmt in sorted(legacy.SESSION_FORMATS.items()):
     if legacy.EXTENSIONS[fmt] != 'txt':
         continue
     path = folder / f'{fmt}.txt'
-    session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
+    session.SUBTITLE.segments = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
                                     {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
     session.VIDEO = {'framerate': 25.0}
     session.FORMAT = {}
@@ -151,7 +151,7 @@ for name, fmt in sorted(legacy.SESSION_FORMATS.items()):
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE['segments'] = [dict(segment) for segment in SEGMENTS]
+session.SUBTITLE.segments = [dict(segment) for segment in SEGMENTS]
 session.VIDEO = {'framerate': 29.97}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('AVID')

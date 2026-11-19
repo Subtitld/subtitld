@@ -213,7 +213,7 @@ session.VIDEO = {'framerate': 30.0}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.fpc'))
 check("a .fpc opens as UniPac, at the video's rate", (fmt, opened[0]['text'][:4], session.FORMAT['options']['fps']),
       ('FPC', 'Ação', 30.0))
-session.SUBTITLE['segments'] = [{'start': 1.5, 'end': 2.5, 'text': 'Γεια σου, <i>κόσμε</i>'},
+session.SUBTITLE.segments = [{'start': 1.5, 'end': 2.5, 'text': 'Γεια σου, <i>κόσμε</i>'},
                                 {'start': 3.0, 'end': 4.0, 'text': '{\\an8}Δεύτερο'}]
 session.SUBTITLE['language'] = 'el-gr'
 session.VIDEO = {'framerate': 25.0}

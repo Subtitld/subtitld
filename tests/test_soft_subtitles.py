@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import soft_subtitles, srt, video_subtitles
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -140,7 +141,7 @@ else:
     print('the export path')
     from subtitld.modules import bounce, session
     session.VIDEO = {'filepath': str(source), 'framerate': 25.0, 'duration': 4.0, 'width': 320, 'height': 240}
-    session.SUBTITLE = {'segments': segments, 'language': 'pt-br'}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': 'pt-br'})
     session.FFMPEG_EXECUTABLE = ffmpeg
     said = []
     worker = bounce.CaptionsThread(str(folder / 'wired.mp4'), 'MP4', {'translations': False, 'speakers': 'none'})
@@ -175,7 +176,7 @@ print('the dialog')
 from subtitld.modules import session
 session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
-session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a', 'translations': {'fr-fr': 'b'}}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 0, 'end': 1, 'text': 'a', 'translations': {'fr-fr': 'b'}}], 'language': 'en-us'})
 from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
 panel.choose('MP4')
@@ -197,7 +198,7 @@ check('remembered, on its own tab', (again.video_pages.currentWidget() is again.
       (True, 'MKV', 'ass'))
 check('a file name for each', [session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS[key]['extensions'][0]
                                for key in ('MP4', 'MOV TEXT', 'MKV')], ['mp4', 'mov', 'mkv'])
-session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'})
 plain = _VideoPanel()
 check('no translations: nothing to ask', plain.tracks_translations.isHidden(), True)
 

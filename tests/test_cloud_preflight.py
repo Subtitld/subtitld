@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget
 from PySide6.QtCore import QObject, Signal
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import left_panel_import as lpi
 from subtitld.interface import cloud_dashboard
@@ -92,8 +93,8 @@ class Host(QWidget):
         self.layout().addWidget(self.left_panel_stackedwidgets)
 
 
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'keep me', 'speaker': 'A'}],
-                    'selected': None, 'language': 'en-us', 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'keep me', 'speaker': 'A'}],
+                    'selected': None, 'language': 'en-us', 'position': 0.0})
 session.CONFIG = {'transcription': {'scope': 'all'}}
 host = Host()
 host.show()
@@ -122,7 +123,7 @@ def click(answer):
     FakeWorker.answer = answer
     started.clear()
     shown.clear()
-    session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 2.0, 'text': 'keep me', 'speaker': 'A'}]
+    session.SUBTITLE.segments = [{'start': 1.0, 'end': 2.0, 'text': 'keep me', 'speaker': 'A'}]
     lpi.global_panel_import_start_transcription_button_clicked(host)
     app.processEvents()
 
@@ -135,7 +136,7 @@ for answer, label, url_part in ((('failed', 'bad_key'), 'a rejected key', '/dash
     print(f'{label} stops the job before it starts')
     click(answer)
     check('nothing started', started, [])
-    check('the subtitles were not cleared', [s['text'] for s in session.SUBTITLE['segments']], ['keep me'])
+    check('the subtitles were not cleared', [s['text'] for s in session.SUBTITLE.segments], ['keep me'])
     check('one message explains it', len(cloud_messages()), 1)
     if url_part:
         check('with where to fix it', url_part in cloud_messages()[0], True)

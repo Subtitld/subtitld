@@ -660,7 +660,7 @@ try:
     check('broken XML: a message, not a crash', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('broken XML: a message, not a crash', str(error).startswith('Line 1, column '), True)
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 session.SUBTITLE['language'] = 'pt-br'
 session.SUBTITLE['translations'] = {}
 session.CONFIG['subtitle_style'] = {'settings': {'subtitld.classic': {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}}}
@@ -705,13 +705,13 @@ check('chosen', {key: panel.get_config()['options'].get(key) for key in ('speake
 check('and what the dialog chose is what the file declares',
       ttml._IMSC11_TEXT in ttml.write([{'start': 1, 'end': 2, 'text': 'Hi'}], 'en',
                                       profile=panel.get_config()['options']['profile']), True)
-kept_segments = session.SUBTITLE.get('segments')
-session.SUBTITLE['segments'] = [{'start': 1, 'end': 2, 'text': 'Hi'}]
+kept_segments = session.SUBTITLE.segments
+session.SUBTITLE.segments = [{'start': 1, 'end': 2, 'text': 'Hi'}]
 panel._run_check()
 check('the file it would write, checked against the profile it declares',
       (panel.check_label.isHidden(), panel.check_label.text()),
       (False, 'Nothing Subtitld checks for breaks IMSC 1.1 Text in this file.'))
-session.SUBTITLE['segments'] = [{'start': 1, 'end': 2, 'text': f'{{\\an{place}}}Line'} for place in (1, 2, 3, 7, 9)]
+session.SUBTITLE.segments = [{'start': 1, 'end': 2, 'text': f'{{\\an{place}}}Line'} for place in (1, 2, 3, 7, 9)]
 panel.profile_combo.combobox.setCurrentIndex(1)
 check('and what it would break, listed, as soon as the profile is chosen',
       panel.check_label.text().split('\n'),
@@ -727,7 +727,7 @@ panel.profile_combo.combobox.setCurrentIndex(2)
 panel.format_combo.setCurrentText('ASS')
 panel._refresh_options()
 check('a format with no profile has nothing checked', panel.check_label.isHidden(), True)
-session.SUBTITLE['segments'] = kept_segments
+session.SUBTITLE.segments = kept_segments
 check('ASS: its own words for the look, and no profile to declare',
       (panel.look_combo.combobox.itemText(1).endswith('(font, colour, shadow, box)'), panel.profile_combo.isHidden()),
       (True, True))

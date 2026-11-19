@@ -19,6 +19,7 @@ import soundfile
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import audio_report, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -102,7 +103,7 @@ class Engine:
 
 
 session.VIDEO = video
-session.SUBTITLE = {'segments': segments, 'filepath': '/films/film.usfx'}
+session.SUBTITLE = Subtitle({'segments': segments, 'filepath': '/films/film.usfx'})
 session.CONFIG.setdefault('selected_language', 'en')
 dialog = export_dialog.ExportDialog(initial_category='audio', audio_engine=Engine())
 dialog.show()

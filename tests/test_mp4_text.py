@@ -249,7 +249,7 @@ session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(dash / 'show.mpd'))
 check('a DASH manifest opened', (fmt, len(opened), session.FORMAT['options'].get('mp4_text'),
                                  session.FORMAT['options'].get('segment_duration')), ('DASH', 3, 'ebu-tt-d', 10.0))
-session.SUBTITLE['segments'] = [dict(segment) for segment in SUBTITLES]
+session.SUBTITLE.segments = [dict(segment) for segment in SUBTITLES]
 session.SUBTITLE['language'] = 'en-us'
 session.VIDEO = {'filepath': '/videos/show.mp4', 'duration': 30.0}
 session.FORMAT = {'options': {'mp4_text': 'imsc1', 'segment_duration': 10.0}}

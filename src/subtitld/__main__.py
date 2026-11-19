@@ -350,7 +350,7 @@ class Window(_MainWindowBase):
         #         history.history_redo()
         #     elif event.modifiers() == Qt.ControlModifier:
         #         history.history_undo()
-        #     session.SUBTITLE['selected'] = None
+        #     session.SUBTITLE.selected = None
         #     subtitles_panel.update_subtitles_panel_widget_vision_content(self)
         #     # self.properties.update_properties_widget(self)
         #     timeline.update(self)

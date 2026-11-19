@@ -22,6 +22,7 @@ from PySide6.QtCore import Qt, QPoint
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session, audio_effects, audioengine
+from subtitld.modules.segment import Subtitle
 from subtitld.modules import recorder as recorder_mod
 from subtitld.interface import utils
 from subtitld.interface import audio_widgets as aw
@@ -160,7 +161,7 @@ class Host(QWidget):
 
 session.CONFIG = {'record': {}}
 session.VIDEO = {'filepath': '/videos/talk.mp4'}
-session.SUBTITLE = {'filepath': '', 'segments': [], 'selected': None}
+session.SUBTITLE = Subtitle({'filepath': '', 'segments': [], 'selected': None})
 session.SPEAKERS = {'A': {'color': '#e57373'}, 'B': {'color': '#64b5f6'}}
 host = Host()
 lpa.load(host)
@@ -281,7 +282,7 @@ comp_card.range_some.click()
 check('part of it', comp_spec['range'], [0.0, 10.0])
 comp_card.range_to.setValue(30.5)
 check('edited', (comp_spec['range'], comp_card.range_chip.text()), ([0.0, 30.5], '0:00.0 – 0:30.5'))
-session.SUBTITLE['selected'] = {'start': 12.0, 'end': 14.5, 'text': 'x'}
+session.SUBTITLE.selected = {'start': 12.0, 'end': 14.5, 'text': 'x'}
 comp_card._show_range()
 comp_card.range_selected.click()
 check('from the selected subtitle', comp_spec['range'], [12.0, 14.5])

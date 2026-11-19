@@ -124,7 +124,7 @@ try:
     check('another CSV: says it is not a marker list', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('another CSV: says it is not a marker list', 'Not a marker list' in str(error), True)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25.0}
 file_io.save_file(str(folder / 'out.csv'), 'EDIUS')
 check('saved as the version opened, with a byte order mark', (folder / 'out.csv').read_bytes()[:44],

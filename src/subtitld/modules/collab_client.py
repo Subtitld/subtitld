@@ -35,10 +35,10 @@ class SessionLive(Live):
         session.capture_changes()
 
     def snapshot(self):
-        return docops.snapshot(session.SUBTITLE.get('segments') or [], session.SPEAKERS, session.SUBTITLE)
+        return docops.snapshot(session.SUBTITLE.segments, session.SPEAKERS, session.SUBTITLE)
 
     def apply(self, ops):
-        document = {'segments': session.SUBTITLE.setdefault('segments', []), 'speakers': session.SPEAKERS,
+        document = {'segments': session.SUBTITLE.segments, 'speakers': session.SPEAKERS,
                     'meta': session.SUBTITLE}
         # Not undoable here and not sent back: they are the server's. Undo here no longer reverts what they
         # replaced: the person's earlier change to it is gone.
@@ -56,9 +56,9 @@ class SessionLive(Live):
                         segment.update(journal.runtime('cue', segment['id']))
             # A collaborator's dubs name their files by content: the copies here, where there are some.
             collab_media.resolve_dubs(document['segments'])
-            selected = session.SUBTITLE.get('selected')
+            selected = session.SUBTITLE.selected
             if isinstance(selected, dict) and not any(s is selected for s in document['segments']):
-                session.SUBTITLE['selected'] = False
+                session.SUBTITLE.selected = False
             session.set_unsaved()
 
 

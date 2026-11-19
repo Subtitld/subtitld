@@ -836,7 +836,7 @@ class PlainTextPanel(QWidget):
             self._apply(self.result)
         if self.result.ok and not self.stale:
             self.pending = False
-            self.cue_segments = plaintext.segments_for(session.SUBTITLE.get('segments') or [], self.result.cues)
+            self.cue_segments = plaintext.segments_for(session.SUBTITLE.segments, self.result.cues)
         else:
             self.cue_segments = []
         self._update_status()
@@ -847,11 +847,11 @@ class PlainTextPanel(QWidget):
             self._select_under_cursor()
 
     def _serialize(self):
-        return plaintext.serialize(session.SUBTITLE.get('segments') or [], self.fmt, _LANGUAGES,
+        return plaintext.serialize(session.SUBTITLE.segments, self.fmt, _LANGUAGES,
                                    session.SUBTITLE.get('language'))
 
     def _apply(self, result):
-        segments = session.SUBTITLE.setdefault('segments', [])
+        segments = session.SUBTITLE.segments
         language = result.language if result.language not in (None, session.SUBTITLE.get('language')) else None
         if not plaintext.apply_cues(segments, result.cues, dry_run=True) and language is None:
             self._refresh_full_text()
@@ -860,9 +860,9 @@ class PlainTextPanel(QWidget):
         plaintext.apply_cues(segments, result.cues)
         if language is not None:
             session.SUBTITLE['language'] = language
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected is not None and not any(segment is selected for segment in segments):
-            session.SUBTITLE['selected'] = None
+            session.SUBTITLE.selected = None
         self.model_text = self._serialize()
         self._applying = True
         try:
@@ -883,7 +883,7 @@ class PlainTextPanel(QWidget):
             block = block.previous()
         if not block.isValid():
             return
-        expected = plaintext.json_text_line(session.SUBTITLE.get('segments') or [])
+        expected = plaintext.json_text_line(session.SUBTITLE.segments)
         if block.text().rstrip().endswith(','):
             expected += ','
         if block.text() == expected:
@@ -948,9 +948,9 @@ class PlainTextPanel(QWidget):
         if index is None or index >= len(self.cue_segments):
             return
         segment = self.cue_segments[index]
-        if segment is None or segment is session.SUBTITLE.get('selected'):
+        if segment is None or segment is session.SUBTITLE.selected:
             return
-        session.SUBTITLE['selected'] = segment
+        session.SUBTITLE.selected = segment
         self._selected_id = id(segment)
         self._sync_selected_mark(force=True)
         _selection_changed(self.window_ref)
@@ -960,7 +960,7 @@ class PlainTextPanel(QWidget):
         was changed elsewhere (the timeline, the list), also take the
         cursor and the view to the start of its text; a selection made
         from here (`_select_under_cursor`) is already where the cursor is."""
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         changed = id(selected) != self._selected_id
         if not force and not changed:
             return
@@ -1103,7 +1103,7 @@ def _subtitles_changed(window):
         player.update()
         device = getattr(player, '_audio_device', None)
         if device is not None and hasattr(device, 'sync_subtitle_dubs'):
-            device.sync_subtitle_dubs(session.SUBTITLE.get('segments') or [])
+            device.sync_subtitle_dubs(session.SUBTITLE.segments)
 
 
 def _selection_changed(window):

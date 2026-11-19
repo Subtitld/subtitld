@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, file_io, session, ttml
+from subtitld.modules.segment import Subtitle
 from subtitld.interface.export_dialog import _SubtitlesPanel
 
 fails = []
@@ -297,7 +298,7 @@ check('a DAPT .xml opens as TTML; its language the original\'s, the translation 
       'a speaker, kept to be saved as DAPT', (fmt, session.SUBTITLE['language'], list(opened[0]['translations']),
                                               'ASSANE' in session.SPEAKERS, session.FORMAT['options'].get('profile')),
       ('TTML', file_io._known_language('fr'), [english], True, 'dapt'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.FORMAT = {'format': 'TTML', 'options': {'profile': 'dapt', 'text': 'translation', 'language': english}}
 file_io.save_file(str(folder / 'saved.ttml'), 'TTML')
 saved = (folder / 'saved.ttml').read_text(encoding='utf-8')
@@ -308,7 +309,7 @@ check('saved as DAPT: the original and its translation both, whatever the export
 
 print('the export dialog')
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [dict(s) for s in SESSION], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SESSION], 'language': 'en'})
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('TTML')
 panel._refresh_options()

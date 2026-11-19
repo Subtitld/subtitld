@@ -99,7 +99,7 @@ class _SubtitlesPanel(QWidget):
         self.text_combo.setLabel(_('export_dialog.text'))
         self.text_combo.combobox.addItem(_('export_dialog.text_original'), ('original', ''))
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
-        for language in export_options.translation_languages(session.SUBTITLE.get('segments')):
+        for language in export_options.translation_languages(session.SUBTITLE.segments):
             name = names.get(language, language)
             self.text_combo.combobox.addItem(_('export_dialog.text_translation').format(language=name), ('translation', language))
             self.text_combo.combobox.addItem(_('export_dialog.text_both').format(language=name), ('both', language))
@@ -252,7 +252,7 @@ class _SubtitlesPanel(QWidget):
         self.caption_service_combo = utils.LabeledComboBox()
         self.caption_service_combo.setLabel(_('export_dialog.caption_service'))
         self.caption_service_combo.combobox.addItem(_('export_dialog.caption_service_none'), '')
-        for language in export_options.translation_languages(session.SUBTITLE.get('segments')):
+        for language in export_options.translation_languages(session.SUBTITLE.segments):
             self.caption_service_combo.combobox.addItem(
                 _('export_dialog.caption_service_language').format(language=names.get(language, language)), language)
         row.addWidget(self.caption_service_combo, 1)
@@ -659,7 +659,7 @@ class _SubtitlesPanel(QWidget):
         """What the TTML this export writes would break in its profile:
         the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         if fmt == 'CDG':
             # Drawn with QPainter, which every build has.
             self.check_label.setText(_('export_dialog.cdg_note'))
@@ -975,7 +975,7 @@ class _DocumentsPanel(QWidget):
         self.languages_combo.setLabel(_('export_dialog.document_languages'))
         self.languages_combo.combobox.addItem(_('export_dialog.document_languages_all'), '')
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
-        for language in documents.languages_of(session.SUBTITLE.get('segments')):
+        for language in documents.languages_of(session.SUBTITLE.segments):
             self.languages_combo.combobox.addItem(names.get(language, language), language)
         self.layout().addWidget(self.languages_combo)
 
@@ -1075,7 +1075,7 @@ class _ProjectPanel(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(10)
         remembered = session.CONFIG.get('export_project') or {}
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         has_video = bool((session.VIDEO or {}).get('filepath'))
 
         self.format_combo = utils.HeaderComboBox()
@@ -1286,7 +1286,7 @@ class _VideoPanel(QWidget):
         self.tracks_panel.layout().addWidget(self.tracks_ts_combo)
 
         self.tracks_translations = QCheckBox(_('export_dialog.subtitle_tracks_translations'))
-        self._has_translations = bool(export_options.translation_languages(session.SUBTITLE.get('segments')))
+        self._has_translations = bool(export_options.translation_languages(session.SUBTITLE.segments))
         self.tracks_translations.setVisible(self._has_translations)
         self.tracks_panel.layout().addWidget(self.tracks_translations)
         self.tracks_forced = QCheckBox(_('export_dialog.subtitle_track_forced'))
@@ -2269,7 +2269,7 @@ class ExportDialog(utils.SimpleDialog):
         self._picture = None
         self._picture_timeout.stop()
         self._still_again = False
-        if self._current_category() == 'video' and session.SUBTITLE.get('segments'):
+        if self._current_category() == 'video' and session.SUBTITLE.segments:
             self._preview_still()
             return
         if self._current_category() == 'audio':
@@ -2278,10 +2278,10 @@ class ExportDialog(utils.SimpleDialog):
         if self._current_category() == 'project':
             self._preview_project()
             return
-        if self._current_category() == 'documents' and session.SUBTITLE.get('segments'):
+        if self._current_category() == 'documents' and session.SUBTITLE.segments:
             self._preview_document()
             return
-        if self._current_category() != 'subtitles' or not session.SUBTITLE.get('segments'):
+        if self._current_category() != 'subtitles' or not session.SUBTITLE.segments:
             self.preview_panel.show_nothing()
             return
         try:
@@ -2307,7 +2307,7 @@ class ExportDialog(utils.SimpleDialog):
         """What the loudness of an audio export depends on: the choices, and
         each speech that plays and where."""
         playing = []
-        for segment in session.SUBTITLE.get('segments') or []:
+        for segment in session.SUBTITLE.segments:
             dub = audio_report._playing(segment.get('dubbing'))
             if dub:
                 playing.append((float(dub.get('start', 0.0)), str(dub.get('path')), repr(dub.get('segments'))))
@@ -2322,7 +2322,7 @@ class ExportDialog(utils.SimpleDialog):
         loudness once measured in the background."""
         from subtitld.modules import bounce
         fmt, mode, include_background = self.audio_panel.export_choices()
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         base = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
                                                  or 'subtitle'))[0]
         engine = self._audio_engine
@@ -2375,7 +2375,7 @@ class ExportDialog(utils.SimpleDialog):
             files = [f'{stem}.{spec["extension"]}']
         if sounds:
             files.append(_('export_dialog.project_sounds').format(count=len(sounds), size=_size_text(size)))
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         problems = []
         gone = audio_report.problems('mixdown', segments).get('files_gone') if choices.get('speeches') else 0
         if gone:
@@ -2398,7 +2398,7 @@ class ExportDialog(utils.SimpleDialog):
         fmt, chosen = self.documents_panel.export_choices()
         chosen = dict(chosen)
         content = chosen.pop('content')
-        segments = session.SUBTITLE.get('segments')
+        segments = session.SUBTITLE.segments
         try:
             if content == documents.MARKERS:
                 self.preview_panel.show_text(csv_export.write(segments))
@@ -2441,7 +2441,7 @@ class ExportDialog(utils.SimpleDialog):
         path = os.path.join(self._still_folder, f'{self._still_count}.png')
         self._still = (self._still_count, path)
         self.preview_panel.show_note(_('export_dialog.preview_drawing'))
-        video_preview.still_async(container, captions, copy.deepcopy(session.SUBTITLE.get('segments')), cue,
+        video_preview.still_async(container, captions, copy.deepcopy(session.SUBTITLE.segments), cue,
                                   float(session.SUBTITLE.get('position') or 0), path, self._still_done,
                                   language=session.SUBTITLE.get('language') or '')
 
@@ -2475,7 +2475,7 @@ class ExportDialog(utils.SimpleDialog):
         """The subtitle under the timeline's cursor, else the next after it,
         as the export writes it; None when there is none to draw."""
         position = float(session.SUBTITLE.get('position') or 0)
-        segments = sorted(session.SUBTITLE.get('segments') or [], key=lambda segment: float(segment.get('start', 0)))
+        segments = sorted(session.SUBTITLE.segments, key=lambda segment: float(segment.get('start', 0)))
         under = [segment for segment in segments if float(segment['start']) <= position < float(segment['end'])]
         after = [segment for segment in segments if float(segment['start']) > position]
         for segment in under + after:
@@ -2508,7 +2508,7 @@ class ExportDialog(utils.SimpleDialog):
         if fmt == 'BDN':
             # Its XML too, which says where each picture is and how large:
             # the first ones drawn for it, numbered as the export numbers them.
-            drawable = [segment for segment in export_options.prepare(session.SUBTITLE.get('segments') or [], options)
+            drawable = [segment for segment in export_options.prepare(session.SUBTITLE.segments, options)
                         if markup.plain(str(segment.get('text') or '')).strip()]
             wanted += [(self._renderer._job(segment, float(segment['start']), *style)[0], segment)
                        for segment in drawable[:self.BDN_EVENTS]]

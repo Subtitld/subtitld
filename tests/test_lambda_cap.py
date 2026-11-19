@@ -200,7 +200,7 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'in.cap'))
 check('opens as Lambda CAP, Shift-JIS, at 30; the rate, timecode and encoding kept',
       (fmt, len(opened), opened[2].get('writing'), session.FORMAT['options']),
       ('LAMBDACAP', 10, 'vertical-rl', {'fps': 30.0, 'timecode': 'non-drop', 'lambda_encoding': 'cp932'}))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.cap'), 'LAMBDACAP')
 check('saved again in its encoding, and read back the same',
       ((folder / 'again.cap').read_bytes().startswith('Lambda字幕V4'.encode('cp932')),
@@ -209,7 +209,7 @@ check('saved again in its encoding, and read back the same',
 (folder / 'cheetah.cap').write_bytes(cheetah)
 opened, fmt = file_io.process_subtitles_file(str(folder / 'cheetah.cap'))
 check("a Cheetah .cap still opens as Cheetah's", (fmt, opened[0]['text']), ('CAP', 'Hello'))
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 29.97, 'filepath': '/videos/eiga.mov'}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.cap'), 'LAMBDACAP')

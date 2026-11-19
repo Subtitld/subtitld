@@ -284,7 +284,7 @@ except file_io.CorruptedProjectFileError:
 
 print('saved: read only, so exported as another format')
 fmt, read_back = opened('export.txt', '00:00:01.000 00:00:03.000 Hello\n00:00:04.000 00:00:06.000 World\n')
-session.SUBTITLE['segments'] = file_io.process_subtitles_file(str(folder / 'export.txt'))[0]
+session.SUBTITLE.segments = file_io.process_subtitles_file(str(folder / 'export.txt'))[0]
 file_io.save_file(str(folder / 'export.srt'), fmt)
 check('as SRT through save_file', [(s['start'], s['end'], s['text']) for s in srt.read(str(folder / 'export.srt'))], TWO)
 

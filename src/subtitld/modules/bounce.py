@@ -137,7 +137,7 @@ def bounce(output_path, audio_format, mode, audio_engine=None,
     if mode == 'clips':
         folder = os.path.splitext(output_path)[0] + '_clips'
         os.makedirs(folder, exist_ok=True)
-        for segment in session.SUBTITLE.get('segments', []):
+        for segment in session.SUBTITLE.segments:
             dubs = segment.get('dubbing') or []
             if not dubs:
                 continue
@@ -172,7 +172,7 @@ def bounce(output_path, audio_format, mode, audio_engine=None,
         duration = float(session.VIDEO.get('duration', 0.0))
         if duration <= 0.0:
             # Fall back to the latest dub endpoint
-            for segment in session.SUBTITLE.get('segments', []):
+            for segment in session.SUBTITLE.segments:
                 for dub in segment.get('dubbing') or []:
                     try:
                         duration = max(duration, float(dub.get('start', 0.0)) + float(dub.get('end', 0.0)) - float(dub.get('start', 0.0)))
@@ -350,7 +350,7 @@ class CaptionsThread(QThread):
             if not video and not burned_video.is_alpha(self._container):
                 raise ValueError('No video loaded to write captions into')
             write_captioned_video(video, self._output_path, self._container, self._options,
-                                  session.SUBTITLE.get('segments'), session.VIDEO,
+                                  session.SUBTITLE.segments, session.VIDEO,
                                   session.SUBTITLE.get('language') or '')
             self.captions_finished.emit(self._output_path, True, '')
         except Exception as exc:

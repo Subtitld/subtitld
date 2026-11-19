@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import a53, closed_captions, embedded_captions, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -148,7 +149,7 @@ else:
     print('the export path')
     from subtitld.modules import bounce
     session.VIDEO = {'filepath': str(sources['H.264 with B-frames']), 'framerate': RATE, 'duration': 6.0}
-    session.SUBTITLE = {'segments': segments, 'language': 'en-us'}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us'})
     session.FFMPEG_EXECUTABLE, session.FFPROBE_EXECUTABLE = ffmpeg, ffprobe
     said = []
     worker = bounce.CaptionsThread(str(folder / 'wired.mp4'), 'MP4 A53', {'caption_mode': 'pop', 'caption_channel': 1})

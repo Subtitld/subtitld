@@ -165,17 +165,18 @@ print('through file_io')
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import export_options, file_io, session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import export_dialog
 
 folder = Path(tempfile.mkdtemp())
 (folder / 'song.lrc').write_text(SONG + '[00:30.00]<00:30.00>Hel<00:30.40>lo<00:31.00>\n', encoding='utf-8')
-session.SUBTITLE = {'segments': []}
+session.SUBTITLE = Subtitle({'segments': []})
 session.FORMAT = {}
 session.VIDEO = {}
 opened, found = file_io.process_subtitles_file(str(folder / 'song.lrc'))
 check('opened as LRC', (found, len(opened)), ('LRC', 6))
 check('its tags kept on the subtitles', session.SUBTITLE['metadata']['title'], 'Tears of Steel')
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.lrc'), 'LRC')
 again = (folder / 'again.lrc').read_text(encoding='utf-8')
 check('saved with its tags and word stamps',
@@ -193,7 +194,7 @@ check('the export\'s encoding, line ends and offset',
 
 print('karaoke into ASS')
 session.FORMAT = {'format': 'ASS', 'options': {}}
-session.SUBTITLE['segments'] = [dict(segment) for segment in opened]
+session.SUBTITLE.segments = [dict(segment) for segment in opened]
 file_io.save_file(str(folder / 'song.ass'), 'ASS')
 check('the word timing is ASS karaoke', '{\\k40}Hel{\\k60}lo' in (folder / 'song.ass').read_text(encoding='utf-8'), True)
 
@@ -260,7 +261,7 @@ opened, _found = file_io.process_subtitles_file(str(folder / 'duet.lrc'))
 check('a file opened keeps its dialect and its parts to be saved again',
       (session.FORMAT['options'].get('lrc_times'), session.FORMAT['options'].get('speakers'), opened[0].get('speaker')),
       ('milliseconds', 'voice', 'Female'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'duet again.lrc'), 'LRC')
 check('and is', (folder / 'duet again.lrc').read_text(encoding='utf-8'),
       '[00:01.250]F: One\n[00:02.500]\n[00:03.005]Two\n[00:04.999]\n')

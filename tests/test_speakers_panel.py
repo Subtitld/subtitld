@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import left_panel_speakers as lps
 from subtitld.interface.scope_selector import ScopeFooter
 
@@ -55,7 +56,7 @@ class Host(QWidget):
 
 session.CONFIG = {'dubbing': {'enabled': False}}
 session.VIDEO = {'duration': 60}
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hi', 'speaker': 'A'}], 'selected': None}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hi', 'speaker': 'A'}], 'selected': None})
 session.SPEAKERS = {'A': {'color': '#ff2e93'}, 'B': {'color': '#2e7fb8'}}
 host = Host()
 lps.load(host)
@@ -74,7 +75,7 @@ print('speakers with no subtitles are faded')
 cards = host._speakers_list_widgets
 check('A has a subtitle, B none', (cards['A'].unused_fade.isEnabled(), cards['B'].unused_fade.isEnabled()), (False, True))
 check('at half strength', cards['B'].unused_fade.opacity(), 0.5)
-session.SUBTITLE['segments'].append({'start': 3.0, 'end': 4.0, 'text': 'Hello', 'speaker': 'B'})
+session.SUBTITLE.segments.append({'start': 3.0, 'end': 4.0, 'text': 'Hello', 'speaker': 'B'})
 lps.update(host)
 QTest.qWait(100)
 check('given a subtitle, B is drawn fully', cards['B'].unused_fade.isEnabled(), False)

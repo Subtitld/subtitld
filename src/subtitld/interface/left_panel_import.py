@@ -156,7 +156,7 @@ class _GenericASRPanel(QWidget):
         if target is not None:
             # Selection run: the text belongs to the selected subtitle, so
             # fill it in as it arrives instead of adding cues of our own.
-            if any(seg is target for seg in session.SUBTITLE.get('segments', []) or []):
+            if any(seg is target for seg in session.SUBTITLE.segments):
                 text = str(segment.get('text', '') or '').strip()
                 if text:
                     widget._scope_target_parts.append(text)
@@ -170,7 +170,7 @@ class _GenericASRPanel(QWidget):
         # Offset back onto the full timeline when a scope range was used
         # (the provider saw a slice starting at 0).
         offset = getattr(widget, '_scope_offset', 0.0)
-        session.SUBTITLE.setdefault('segments', []).append({
+        session.SUBTITLE.segments.append({
             'start': float(segment.get('start', 0.0)) + offset,
             'end': float(segment.get('end', 0.0)) + offset,
             'text': segment.get('text', ''),
@@ -203,7 +203,7 @@ class _GenericASRPanel(QWidget):
                         seg['end'] = float(seg.get('end', 0.0)) + offset
             target = getattr(widget, '_scope_target', None)
             if target is not None and not any(
-                    seg is target for seg in session.SUBTITLE.get('segments', []) or []):
+                    seg is target for seg in session.SUBTITLE.segments):
                 target = None  # deleted mid-run; fall back to a plain scoped merge
             if target is not None and scope_range is not None:
                 # Selection run: the whole transcript is this subtitle's text.
@@ -213,26 +213,26 @@ class _GenericASRPanel(QWidget):
                 if text:
                     target['text'] = text
                 f, t = scope_range
-                existing = session.SUBTITLE.get('segments', []) or []
+                existing = session.SUBTITLE.segments
                 kept = [s for s in existing
                         if s is target or not (f - 1e-6 <= float(s.get('start', 0.0)) < t)]
                 kept.sort(key=lambda s: float(s.get('start', 0.0)))
-                session.SUBTITLE['segments'] = kept
+                session.SUBTITLE.segments = kept
             elif scope_range is not None:
                 # Scoped run: replace only the subtitles inside the range
                 # (including any partials appended live during this run),
                 # keep everything outside it, then splice the results in.
                 f, t = scope_range
-                existing = session.SUBTITLE.get('segments', []) or []
+                existing = session.SUBTITLE.segments
                 merged = [s for s in existing
                           if not (f - 1e-6 <= float(s.get('start', 0.0)) < t)]
                 merged.extend(segments)
                 merged.sort(key=lambda s: float(s.get('start', 0.0)))
-                session.SUBTITLE['segments'] = merged
+                session.SUBTITLE.segments = merged
             else:
-                session.SUBTITLE['segments'] = list(segments)
+                session.SUBTITLE.segments = list(segments)
             any_added = False
-            for seg in session.SUBTITLE['segments']:
+            for seg in session.SUBTITLE.segments:
                 speaker = seg.get('speaker', 'A')
                 if speaker not in session.SPEAKERS:
                     session.SPEAKERS[speaker] = {'image': None}
@@ -1078,14 +1078,14 @@ def _start_transcription(self, scope_range):
     if scope_range is None:
         # Whole-media transcription REPLACES all subtitles → confirm when
         # some already exist, then clear.
-        if session.SUBTITLE['segments']:
+        if session.SUBTITLE.segments:
             confirm_dialog = utils.SimpleDialog(self, title=_('transcription_panel.start_transcription'))
             label = QLabel(_('transcription_panel.start_transcription_text'))
             confirm_dialog.content.layout().addWidget(label)
             confirm_dialog.exec()
             if confirm_dialog.result() != 1:
                 return
-        session.SUBTITLE['segments'] = []
+        session.SUBTITLE.segments = []
         self.timeline_widget.update()
     # A scoped (range/selection) run MERGES: it only replaces subtitles
     # inside the range (handled in _on_finished), so no clear / confirm.
@@ -1138,8 +1138,8 @@ def _import_subtitles_from_file(self):
     supported_import_files = 'Text files' + ' ({})'.format(' '.join('*.{}'.format(fo) for fo in _list_of_supported_import_extensions))
     file_to_open = QFileDialog.getOpenFileName(parent=self, caption='Select the file to import', dir=os.path.expanduser('~'), filter=supported_import_files)[0]
     if file_to_open:
-        session.SUBTITLE['segments'] += file_io.import_file(filename=file_to_open)[0]
-        session.SUBTITLE['segments'].sort(key=lambda s: s.get('start', 0))
+        session.SUBTITLE.segments += file_io.import_file(filename=file_to_open)[0]
+        session.SUBTITLE.segments.sort(key=lambda s: s.get('start', 0))
         timeline_widget = getattr(self, 'timeline_widget', None)
         if timeline_widget is not None:
             timeline_widget.update()

@@ -22,6 +22,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, dcp, file_io, picture_ocr, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules.addons.provider import OCRProvider
 from subtitld.interface import subtitle_pictures
 
@@ -54,7 +55,7 @@ for box in ((760, 912, 400, 60), (200, 54, 300, 60), (1500, 500, 301, 41), (0, 0
 drawn = subtitle_pictures.draw(SEGMENTS, SCREEN, str(folder / 'drawn'), stem='cue')
 
 print('written')
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'fr-fr', 'metadata': {'title': 'Pictures'}}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'fr-fr', 'metadata': {'title': 'Pictures'}})
 session.VIDEO = {'width': SCREEN[0], 'height': SCREEN[1], 'framerate': 25.0}
 for standard in dcp.STANDARDS:
     out = folder / standard
@@ -109,7 +110,7 @@ before = sorted(os.listdir(out))
 (out / 'notes.txt').write_text('mine')
 (out / '5c7a1b2e-0000-4000-8000-00000000abcd.png').write_bytes(b'some other reel\'s')
 session.FORMAT = {'format': 'DCP', 'options': {'dcp_standard': dcp.SMPTE, 'dcp_content': 'pictures'}}
-session.SUBTITLE = {'segments': SEGMENTS[:1], 'language': 'fr-fr'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS[:1], 'language': 'fr-fr'})
 file_io.save_file(str(out / 'reel.xml'), 'DCP')
 after = sorted(os.listdir(out))
 check('SMPTE: the PNGs the reel there named are gone, what it did not name stays', (
@@ -153,7 +154,7 @@ check('every picture read by OCR, the sign at the top', (engine.calls, [s['text'
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'en-us'})
 session.VIDEO = {'framerate': 24.0}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('DCP')

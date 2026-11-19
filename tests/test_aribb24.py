@@ -174,9 +174,10 @@ else:
 print('the dialog')
 from subtitld.interface import export_dialog
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.ts'}
-session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'})
 panel = export_dialog._VideoPanel()
 panel.choose('TS ARIB')
 check('a transport stream\'s track as ARIB captions, with no forced track',

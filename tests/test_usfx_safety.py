@@ -23,6 +23,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules.signals import SIGNALS
 
 fails = []
@@ -56,11 +57,11 @@ def dub_paths(segments):
 
 def open_project(path):
     """Open as the app does, and let the background extractor finish."""
-    session.SUBTITLE, session.SPEAKERS, session.FORMAT, session.VIDEO = {}, {}, {}, {}
+    session.SUBTITLE, session.SPEAKERS, session.FORMAT, session.VIDEO = Subtitle(), {}, {}, {}
     segments = file_io.process_subtitles_file(str(path))[0]
     if session.USFX_BACKGROUND_LOAD is not None:
         session.USFX_BACKGROUND_LOAD.wait(10000)
-    session.SUBTITLE['segments'] = segments
+    session.SUBTITLE.segments = segments
     return segments
 
 
@@ -93,9 +94,9 @@ def dub(uid, path):
                            'start': 0.0, 'end': 1.0, 'offset': 0.0}]}]
 
 
-session.SUBTITLE = {'language': 'en-us', 'segments': [
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': [
     {'start': 1.0, 'end': 2.0, 'text': 'Kept', 'dubbing': dub('ok', folder / 'ok.wav')},
-    {'start': 3.0, 'end': 4.0, 'text': 'Crafted', 'dubbing': dub('bad', folder / 'bad.wav')}]}
+    {'start': 3.0, 'end': 4.0, 'text': 'Crafted', 'dubbing': dub('bad', folder / 'bad.wav')}]})
 session.SPEAKERS, session.FORMAT, session.VIDEO = {}, {}, {}
 file_io.save_file(str(folder / 'base.usfx'), 'USFX')
 

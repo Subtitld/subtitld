@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import cdg, export_options, file_io, picture_ocr, picture_subtitles, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -154,7 +155,7 @@ check('through picture_ocr: the same pictures, no language', (len(picture_ocr.re
 check('a transparent background, the letters opaque', (pictures[0].colours[0][3], pictures[0].colours[3][3]), (0, 255))
 
 print('through file_io')
-session.SUBTITLE = {'segments': []}
+session.SUBTITLE = Subtitle({'segments': []})
 session.FORMAT = {}
 session.VIDEO = {}
 try:
@@ -171,7 +172,7 @@ except file_io.PictureSubtitlesError:
 except file_io.CorruptedProjectFileError as error:
     check('a .cdg that is not one says so', str(error).startswith('Not a CD+G'), True)
 
-session.SUBTITLE = {'segments': [dict(segment) for segment in SONG]}
+session.SUBTITLE = Subtitle({'segments': [dict(segment) for segment in SONG]})
 if ffmpeg:
     subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=11',
                     '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=11', '-shortest', '-c:v', 'libx264', '-c:a', 'aac',

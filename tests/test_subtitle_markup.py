@@ -67,14 +67,14 @@ check('colour and position carry over', markup.rebalance('{\\an8}<font color="re
 check('closed before the cut', markup.rebalance('<i>a</i> b', 'c'), ('<i>a</i> b', 'c'))
 check('plain', markup.rebalance('plain', 'text'), ('plain', 'text'))
 
-session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 3.0, 'text': '<i>Hello world</i>'}]
-session.SUBTITLE['selected'] = session.SUBTITLE['segments'][0]
-subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE['segments'][0], position=2.0,
+session.SUBTITLE.segments = [{'start': 1.0, 'end': 3.0, 'text': '<i>Hello world</i>'}]
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
+subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE.segments[0], position=2.0,
                          last_text='<i>Hello ', next_text='world</i>')
-check('slicing a subtitle', [s['text'] for s in session.SUBTITLE['segments']], ['<i>Hello</i>', '<i>world</i>'])
-session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 2.0, 'text': '<b>one two</b>'}, {'start': 3.0, 'end': 4.0, 'text': 'three'}]
-subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE['segments'][0], last_text='<b>one', next_text='two</b>')
-check('sending text to the next subtitle', [s['text'] for s in session.SUBTITLE['segments']], ['<b>one</b>', '<b>two</b> three'])
+check('slicing a subtitle', [s['text'] for s in session.SUBTITLE.segments], ['<i>Hello</i>', '<i>world</i>'])
+session.SUBTITLE.segments = [{'start': 1.0, 'end': 2.0, 'text': '<b>one two</b>'}, {'start': 3.0, 'end': 4.0, 'text': 'three'}]
+subtitles.send_text_to_next_subtitle(selected_subtitle=session.SUBTITLE.segments[0], last_text='<b>one', next_text='two</b>')
+check('sending text to the next subtitle', [s['text'] for s in session.SUBTITLE.segments], ['<b>one</b>', '<b>two</b> three'])
 
 print('a ruby carries a reading')
 RUBY = '<ruby>漢字<rt>かんじ</rt></ruby>を<i>読</i>む'

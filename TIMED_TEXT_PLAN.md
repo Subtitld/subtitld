@@ -143,7 +143,11 @@ file of every format, restores an autosave, imports and merges, applies a
 co-editing snapshot and an undo, and finds every item of
 `SUBTITLE.segments` a `Segment` and `SUBTITLE.selected` one of them.
 
-**M2. Segments switched over.** `SUBTITLE['segments']` and
+**M2. Segments switched over.** *(Done on branch `timed-text`: 502 reads
+in 37 app files, 288 in the tests, 144 test assignments wrapped in
+`Subtitle(...)`; `selected` set to a copy finds the subtitle with its
+'id', and `Subtitle({'segments': [...], 'selected': d})` the copy of `d`;
+`reset()` where the list and the selection were cleared together.)* `SUBTITLE['segments']` and
 `SUBTITLE.get('segments')` (~320) → `SUBTITLE.segments`; `selected` (~175)
 with it, since the two go together. Mechanical, file by file.
 *Done when:* no `SUBTITLE['segments']`/`['selected']` left; tests pass.

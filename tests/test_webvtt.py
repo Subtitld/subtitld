@@ -128,7 +128,7 @@ source.write_text('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 line:0\n<v Thom><i>He
 opened, fmt = file_io.process_subtitles_file(str(source))
 check('opens with its speaker and position', ([(s['text'], s.get('speaker')) for s in opened], fmt),
       ([('{\\an8}<i>Hello</i>', 'Thom')], 'VTT'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.SUBTITLE['language'] = 'en'
 session.VIDEO = {}
 for speakers, want in (('voice', '<v Thom><i>Hello</i>'), ('prefix', 'Thom: <i>Hello</i>'), ('none', '<i>Hello</i>')):

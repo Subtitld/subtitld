@@ -254,7 +254,7 @@ def load_productionscreen(self, collab=None):
     if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
         try:
             try:
-                session.SUBTITLE['segments'], session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
+                session.SUBTITLE.segments, session.CONFIG['format_to_save'] = file_io.process_subtitles_file(session.SUBTITLE['filepath'])
             except file_io.PictureSubtitlesError as pictures:
                 # VobSub, PGS, a BDN's, IMSC's or a DCP's pictures: read by an OCR add-on, which the dialog runs
                 # (or says to install). Stopped, the open stops as for a
@@ -263,10 +263,10 @@ def load_productionscreen(self, collab=None):
                 read = picture_ocr_dialog.read_file(self, pictures.path)
                 if read is None:
                     session.SUBTITLE['filepath'] = ''
-                    session.SUBTITLE['segments'] = []
+                    session.SUBTITLE.segments = []
                     session.VIDEO = {}
                     return
-                session.SUBTITLE['segments'], info = read
+                session.SUBTITLE.segments, info = read
                 # Saved as text: TTML again for an IMSC file, DCP subtitles
                 # again (in text) for a DCP's, SRT for a disc's and a BDN's
                 # (saved as BDN, its own PNGs would be drawn over).
@@ -280,10 +280,10 @@ def load_productionscreen(self, collab=None):
             # show a dialog explaining why we couldn't open the file.
             _show_corrupted_project_dialog(self, session.SUBTITLE['filepath'], str(exc))
             session.SUBTITLE['filepath'] = ''
-            session.SUBTITLE['segments'] = []
+            session.SUBTITLE.segments = []
             session.VIDEO = {}
             return
-        for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE['segments']}:
+        for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE.segments}:
             session.SPEAKERS.setdefault(name, {})
     session.document_loaded()
 
@@ -318,7 +318,7 @@ def load_productionscreen(self, collab=None):
             self.music_voice_separation_thread.start()
 
         if session.SUBTITLE.get('filepath', False) and pathlib.Path(session.SUBTITLE['filepath']).exists():
-            self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+            self.preview_panel_player._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             # Load this project's saved audio effects into the engine (applies to
             # existing speaker tracks now; the separation-finished handler
             # re-applies once the background/vocals tracks appear).

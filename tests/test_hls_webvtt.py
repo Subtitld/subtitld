@@ -208,7 +208,7 @@ check("opened: HLS, the rendition in the project's language, its settings kept",
       (fmt, cues(opened), session.SUBTITLE['language'],
        {key: session.FORMAT['options'].get(key) for key in ('segment_duration', 'mpegts')}),
       ('HLS', [(1.0, 2.0, 'Hello')], 'en-us', {'segment_duration': 6.0, 'mpegts': 0}))
-session.SUBTITLE['segments'] = [dict(segment) for segment in SUBTITLES]
+session.SUBTITLE.segments = [dict(segment) for segment in SUBTITLES]
 session.VIDEO = {'filepath': '/videos/show.mp4', 'duration': 30.0}
 session.FORMAT = {'options': {'segment_duration': 10.0, 'mpegts': 900000, 'speakers': 'voice'}}
 file_io.save_file(str(folder / 'saved.m3u8'), 'HLS')

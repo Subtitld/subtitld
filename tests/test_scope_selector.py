@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget
 from PySide6.QtCore import QDir
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', str(session.PATH_SUBTITLD_GRAPHICS))
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import scope_selector
@@ -56,7 +57,7 @@ print('each host keeps its own scope — picking Range to translate does not')
 print('also narrow the next transcription')
 session.CONFIG = {}
 session.VIDEO = {'duration': 60.0}
-session.SUBTITLE = {'segments': [], 'selected': None, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [], 'selected': None, 'position': 0.0})
 one = ScopeSelector('transcription')
 two = ScopeSelector('translation')
 session.CONFIG['translation']['scope'] = 'range'
@@ -65,7 +66,10 @@ check('the two read different config sections', (one.scope, two.scope), ('all', 
 
 print('scoped_segments narrows to what the scope covers')
 a, b, c = cue(0.0, 2.0, 'first'), cue(10.0, 12.0, 'middle'), cue(50.0, 52.0, 'last')
-session.SUBTITLE = {'segments': [a, b, c], 'selected': b, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [a, b, c], 'selected': b, 'position': 0.0})
+a = session.SUBTITLE.segments[0]
+b = session.SUBTITLE.segments[1]
+c = session.SUBTITLE.segments[2]
 sel = ScopeSelector('probe')
 session.CONFIG['probe'].update({'scope': 'all'})
 check('all → every subtitle', [s['text'] for s in sel.scoped_segments()], ['first', 'middle', 'last'])
@@ -75,7 +79,7 @@ check('range → only what overlaps it', [s['text'] for s in sel.scoped_segments
 session.CONFIG['probe']['scope'] = 'selection'
 sel.refresh()
 check('selection → the selected subtitle', [s['text'] for s in sel.scoped_segments()], ['middle'])
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 sel.refresh()
 check('selection with nothing selected → nothing', sel.scoped_segments(), [])
 check('and it reports itself as not ready', sel.is_ready(), False)
@@ -110,7 +114,8 @@ class FakeManager(QObject):
 translator, manager = FakeTranslator(), FakeManager()
 addons.get_manager = lambda: manager
 picked = cue(5.0, 8.0, 'translate me')
-session.SUBTITLE = {'segments': [picked], 'selected': picked, 'language': 'en-us', 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [picked], 'selected': picked, 'language': 'en-us', 'position': 0.0})
+picked = session.SUBTITLE.segments[0]
 session.CONFIG['translation'] = {'engine': 'translate-offline', 'engine_options': {'target_language': 'pt-br'},
                                  'scope': 'selection'}
 host = Host()
@@ -124,7 +129,7 @@ check('a usable selection leaves the button live',
       host.global_panel_translation_start_translation_button.isEnabled(), True)
 check('and it translates just that subtitle',
       [s['text'] for s in host.translation_scope.scoped_segments()], ['translate me'])
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 lpt.update(host)
 check('nothing selected disables the button',
       host.global_panel_translation_start_translation_button.isEnabled(), False)
@@ -147,7 +152,9 @@ check('scope "all" needs no selection',
 print('a dubbing speaker panel scopes to ITS speaker, then to the scope')
 from subtitld.interface import left_panel_dubbing as lpd
 alice, bob = cue(1.0, 2.0, 'alice line', speaker='A'), cue(10.0, 12.0, 'bob line', speaker='B')
-session.SUBTITLE = {'segments': [alice, bob], 'selected': bob, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [alice, bob], 'selected': bob, 'position': 0.0})
+alice = session.SUBTITLE.segments[0]
+bob = session.SUBTITLE.segments[1]
 session.CONFIG['dubbing'] = {'scope': 'all'}
 panel = QWidget()
 panel.setLayout(QVBoxLayout())
@@ -163,11 +170,11 @@ check("selection → nothing, because the selected line is another speaker's",
       lpd._speaker_scoped_segments(panel, 'A'), [])
 check("but it IS in scope for its own speaker",
       [s['text'] for s in lpd._speaker_scoped_segments(panel, 'B')], ['bob line'])
-session.SUBTITLE['selected'] = alice
+session.SUBTITLE.selected = alice
 panel.scope_selector.refresh()
 check('selecting this speaker\'s line puts it in scope',
       [s['text'] for s in lpd._speaker_scoped_segments(panel, 'A')], ['alice line'])
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 panel.scope_selector.refresh()
 lpd._reconcile_generate_button(panel)
 check('nothing selected disables "generate all speeches"',

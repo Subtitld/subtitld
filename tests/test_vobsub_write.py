@@ -23,6 +23,7 @@ import numpy
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, disc_pictures, export_options, file_io, session, vobsub
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import subtitle_pictures
 
 fails = []
@@ -132,7 +133,7 @@ SEGMENTS = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <i>there</i>'},
             {'start': 3.0, 'end': 4.0, 'text': '{\\an8}A sign', 'forced': True},
             {'start': 5.0, 'end': 6.0, 'text': ''},
             {'start': 7.0, 'end': 9.25, 'text': 'Ação, coração\ne emoção'}]
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'pt-br'})
 session.VIDEO = {}
 session.FORMAT = {'format': 'VOBSUB', 'options': {'vobsub_size': 'pal'}}
 target = folder / 'film.idx'
@@ -172,11 +173,11 @@ file_io.save_file(str(folder / 'ntsc.idx'), 'VOBSUB')
 check('no video size: the DVD frame of the rate', vobsub.parse_idx((folder / 'ntsc.idx').read_text())['size'],
       (720, 480))
 session.FORMAT = {'format': 'VOBSUB', 'options': {'text': 'translation', 'language': 'fr'}}
-session.SUBTITLE = {'segments': [dict(SEGMENTS[0], translations={'fr': 'Bonjour'})], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [dict(SEGMENTS[0], translations={'fr': 'Bonjour'})], 'language': 'en'})
 file_io.save_file(str(folder / 'fr.idx'), 'VOBSUB')
 check('a translation: in its language', vobsub.parse_idx((folder / 'fr.idx').read_text())['tracks'][0]['language'],
       'fr')
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'pt-br'})
 session.VIDEO = {}
 
 print('FFmpeg')

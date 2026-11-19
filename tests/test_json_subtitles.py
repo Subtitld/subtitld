@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, json_subtitles as js, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -225,22 +226,22 @@ check('read back', cues(written)[0], [(1.0, 2.0, 'Hello\nthere', None), (2.0, 3.
 
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
-session.FORMAT, session.SUBTITLE = {}, {'language': 'pt-br', 'segments': []}
+session.FORMAT, session.SUBTITLE = {}, Subtitle({'language': 'pt-br', 'segments': []})
 (folder / 'assembly.json').write_text(json.dumps(ASSEMBLYAI), encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'assembly.json'))
 check("a service's transcript opens; its en_us the project's language", (
     fmt, [(s['text'], s['speaker']) for s in opened], session.SUBTITLE['language']),
       ('JSON', [('Smoke from Canada.', 'A'), ('Yes.', 'B')], 'en-us'))
-session.SUBTITLE = {'language': 'pt-br', 'segments': []}
+session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': []})
 (folder / 'pt.json').write_text(json.dumps({**WHISPER_CPP, 'result': {'language': 'pt'}}), encoding='utf-8')
 file_io.process_subtitles_file(str(folder / 'pt.json'))
 check('"pt" in a pt-br project: pt-br kept', session.SUBTITLE['language'], 'pt-br')
-session.SUBTITLE = {'language': 'pt-br', 'segments': []}
+session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': []})
 (folder / 'video.en.json3').write_text(json.dumps(YOUTUBE), encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'video.en.json3'))
 check("YouTube's .json3: its language from its name; no speaker, Subtitld's A", (
     fmt, len(opened), session.SUBTITLE['language'], opened[0]['speaker']), ('JSON', 4, 'en-us', 'A'))
-session.SUBTITLE = {'language': 'en-us', 'segments': []}
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': []})
 (folder / 'whisper.json').write_text(json.dumps({'segments': [{'start': 0, 'end': 1, 'text': ' Hi'}], 'language': 'English'}),
                                      encoding='utf-8')
 file_io.process_subtitles_file(str(folder / 'whisper.json'))
@@ -259,8 +260,8 @@ for name, content, want in (
         check(name, None, 'CorruptedProjectFileError')
     except file_io.CorruptedProjectFileError as error:
         check(name, str(error), want)
-session.SUBTITLE = {'language': 'pt-br', 'segments': [
-    {'start': 1.0, 'end': 2.0, 'text': '<b>Olá</b>', 'speaker': 'Ana', 'translations': {'en-us': 'Hello'}}]}
+session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': [
+    {'start': 1.0, 'end': 2.0, 'text': '<b>Olá</b>', 'speaker': 'Ana', 'translations': {'en-us': 'Hello'}}]})
 session.FORMAT = {'options': {'text': 'both', 'language': 'en-us', 'speakers': 'prefix'}}
 file_io.save_file(str(folder / 'out.bcc'), 'BCC')
 check('exported: original and translation, speaker before, plain', json.loads((folder / 'out.bcc').read_text(encoding='utf-8'))['body'],

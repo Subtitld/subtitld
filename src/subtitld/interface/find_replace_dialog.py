@@ -445,7 +445,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         )
         found: list[tuple[tuple[float, int, int], tuple[dict, int, int]]] = []
         if pattern is not None:
-            for index, segment in enumerate(session.SUBTITLE.get('segments', []) or []):
+            for index, segment in enumerate(session.SUBTITLE.segments):
                 text = segment.get('text') or ''
                 start_time = _cue_start(segment)
                 for m in pattern.finditer(text):
@@ -621,7 +621,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         # Mutate each segment in place — the cue list and timeline read
         # from these dicts, so the next host refresh shows the new text.
         affected_segments = set()
-        for segment in session.SUBTITLE.get('segments', []) or []:
+        for segment in session.SUBTITLE.segments:
             text = segment.get('text') or ''
             new_text, n = pattern.subn(replacement, text)
             if n > 0:
@@ -643,7 +643,7 @@ class FindReplaceDialog(utils.SimpleDialog):
 
         Concretely:
 
-        * Stash the dict in ``session.SUBTITLE['selected']`` (what the
+        * Stash the dict in ``session.SUBTITLE.selected`` (what the
           cue list's own click handler does first).
         * Seek the video preview to the cue's start. ``set_position`` is
           unconditional — we deliberately don't gate on ``is_paused()``
@@ -659,7 +659,7 @@ class FindReplaceDialog(utils.SimpleDialog):
           across cue boundaries during playback — for a find-jump to
           an off-screen row we need ``EnsureVisible`` ourselves.
         """
-        session.SUBTITLE['selected'] = segment
+        session.SUBTITLE.selected = segment
         self._refresh_host(seek_to=segment)
 
     def _refresh_host(self, seek_to: dict | None = None) -> None:

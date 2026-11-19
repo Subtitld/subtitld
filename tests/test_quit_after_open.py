@@ -123,6 +123,7 @@ from PySide6.QtGui import QImage, QColor
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session
+from subtitld.modules.segment import Subtitle
 folder = os.path.dirname(USFX)
 video = os.path.join(folder, 'clip.mp4')
 open(video, 'wb').close()
@@ -137,7 +138,7 @@ for index in range(8):
     speakers[name] = {'color': '#3366cc', 'image': image}
     segments.append({'start': float(index), 'end': index + 0.5, 'text': f'Line {index}', 'speaker': name,
                      'dubbing': [{'uid': f'd{index}', 'path': dub, 'start': float(index), 'end': index + 0.5}]})
-session.SUBTITLE = {'language': 'en-us', 'segments': segments}
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': segments})
 session.SPEAKERS, session.FORMAT, session.VIDEO = speakers, {}, {'filepath': video}
 file_io.save_file(USFX, 'USFX')
 '''

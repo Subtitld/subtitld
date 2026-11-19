@@ -177,7 +177,7 @@ check('told apart by the containers its header names', [mxf.kind(data[:300]) for
 
 print('through file_io')
 session.VIDEO = {'framerate': 24.0, 'filepath': '/films/film.mov'}
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 session.SUBTITLE.pop('metadata', None)
 session.FORMAT = {'options': {'dcp_fps': 24, 'dcp_content': 'text'}}
 file_io.save_file(str(folder / 'dcp.mxf'), 'DCPMXF')
@@ -280,7 +280,7 @@ panel._refresh_options()
 check("STLMXF: STL's options", (panel.stl_options.isHidden(), sorted(key for key in panel.export_choices()[2]
                                                                     if key in ('stl_fps', 'display', 'start'))),
       (False, ['display', 'start', 'stl_fps']))
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 panel.format_combo.setCurrentText('IMSCMXF')
 panel._refresh_options()
 check('IMSCMXF: the look, the check against IMSC 1.1', (panel.ass_options.isHidden(), panel.check_label.isHidden(),

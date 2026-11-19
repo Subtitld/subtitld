@@ -452,7 +452,7 @@ class ChatCard(QWidget):
         parts = []
         cue_id = message.get('cue_id')
         if cue_id:
-            index = next((i for i, segment in enumerate(session.SUBTITLE.get('segments') or [])
+            index = next((i for i, segment in enumerate(session.SUBTITLE.segments)
                           if segment.get('id') == cue_id), None)
             parts.append(_('collab.chat_line').format(number=index + 1) if index is not None
                          else _('collab.chat_line_gone'))
@@ -530,7 +530,7 @@ class ChatCard(QWidget):
         else:
             cue_id = at_ms = None
             if self.attach.isChecked():
-                selected = session.SUBTITLE.get('selected')
+                selected = session.SUBTITLE.selected
                 cue_id = selected.get('id') if isinstance(selected, dict) else None
                 at_ms = int(float(session.SUBTITLE.get('position') or 0) * 1000)
             collab_service.chat_say(text, cue_id=cue_id, at_ms=at_ms)
@@ -560,9 +560,9 @@ class ChatCard(QWidget):
     def go(self, cue_id, at_ms):
         """Select the subtitle a message points at and move the playhead where it says."""
         window = self.panel.window_
-        segment = next((s for s in session.SUBTITLE.get('segments') or [] if cue_id and s.get('id') == cue_id), None)
+        segment = next((s for s in session.SUBTITLE.segments if cue_id and s.get('id') == cue_id), None)
         if segment is not None:
-            session.SUBTITLE['selected'] = segment
+            session.SUBTITLE.selected = segment
         seconds = at_ms / 1000 if at_ms is not None else (segment or {}).get('start')
         if seconds is not None:
             try:

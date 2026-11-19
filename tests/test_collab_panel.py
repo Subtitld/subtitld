@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget, QVBoxLayout,
 app = QApplication([])
 from subtitld.interface import left_panel, left_panel_subtitldcc as panel_module, top_bar
 from subtitld.modules import collab_client, collab_service, collab_state, history, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules import subtitldcc_service as service
 
 fails = []
@@ -156,8 +157,8 @@ class Host(QWidget):
 
 
 session.CONFIG = {}
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}, {'start': 3.0, 'end': 4.0, 'text': 'Bye'}],
-                    'filepath': '', 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}, {'start': 3.0, 'end': 4.0, 'text': 'Bye'}],
+                    'filepath': '', 'language': 'en'})
 session.SPEAKERS = {}
 session.VIDEO = {'filepath': '/videos/Sintel.2010.mkv'}
 history.history_clear()
@@ -227,7 +228,7 @@ print('collaborators in the editor')
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QTextEdit
 from subtitld.interface import left_panel_subtitleslist, timeline
-first = session.SUBTITLE['segments'][0]
+first = session.SUBTITLE.segments[0]
 connection.engine.peers['p1']['state'] = {'selected': first['id'], 'playhead': 3.5, 'editing': first['id']}
 check('each with a colour of their own, the same everywhere',
       (collab_service.collaborators()[0]['color'], collab_service.color_for('joao')) ,
@@ -249,7 +250,7 @@ connection.engine.locked_by = lambda cue: {'handle': 'joao'} if connection.engin
 editor = types.SimpleNamespace(left_panel_subtitleslist_textedit=QTextEdit(),
                                left_panel_subtitleslist_formatting_bar=QWidget(),
                                left_panel_subtitleslist_locked_notice=QLabel())
-session.SUBTITLE['selected'] = first
+session.SUBTITLE.selected = first
 left_panel_subtitleslist.refresh_lock(editor)
 check('someone typing: the text can\'t be typed in here, and says who',
       (editor.left_panel_subtitleslist_textedit.isReadOnly(), editor.left_panel_subtitleslist_locked_notice.text()),
@@ -270,7 +271,7 @@ buttons('Use theirs')[0].click()
 check('theirs, as an edit here (undoable)', (first['text'], len(history.ALL_HISTORY)), ('Olá <b>', undo_steps + 1))
 buttons('OK')[0].click() if wait(lambda: buttons('OK')) else None
 check('settled', collab_service.conflicts(), [])
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 
 print('publishing from the project')
 card.published('Xk3pQ9aZ2bT', 2)
@@ -306,7 +307,7 @@ print('the editors\' chat')
 chat = panel.chat_card
 panel.live_bar.chat.setChecked(True)                    # the chat shows in the live bar's drawer
 check('shown while shared', chat.isVisible(), True)
-segments = session.SUBTITLE['segments']
+segments = session.SUBTITLE.segments
 
 
 def engine_says(kind, *args):
@@ -329,7 +330,7 @@ bubbles = lambda: [(' '.join(l.text() for l in w.findChildren(QLabel)), [x.acces
 check('their message, pointing at the line and the moment',
       wait(lambda: any('Is line 2 too fast?' in t and 'Line 2 · 00:00:03' in t for t, _b in bubbles())), True)
 check('unread until read', collab_service.chat_unread() in (0, 1), True)
-session.SUBTITLE['selected'] = segments[0]
+session.SUBTITLE.selected = segments[0]
 chat.attach.setChecked(True)
 chat.field.setText('Splitting it')
 chat.send()
@@ -353,7 +354,7 @@ forged = stamped(collab_chat.edit(theirs['id'], 'joao never said this'), 'ana', 
 engine_says('chat', forged)
 check("someone else's message can't be edited", any('joao never said this' in t for t in labels()), False)
 chat._link(f"go:{segments[1]['id']}:3500")
-check('a click on the place selects that line', session.SUBTITLE['selected'] is segments[1], True)
+check('a click on the place selects that line', session.SUBTITLE.selected is segments[1], True)
 calls[:] = [c for c in calls if c[0] not in ('chat_history_request', 'chat_history')]
 collab_service._chat_asked.clear()
 engine_says('peers')
@@ -427,11 +428,11 @@ else:
 print("a project's dubs show here")
 from subtitld.interface import left_panel_dubbing  # noqa: E402
 session.CONFIG.setdefault('dubbing', {})['enabled'] = False
-session.SUBTITLE['segments'][0]['dubbing'] = [{'hash': 'd' * 64, 'start': 1.0, 'end': 2.0}]
+session.SUBTITLE.segments[0]['dubbing'] = [{'hash': 'd' * 64, 'start': 1.0, 'end': 2.0}]
 connection.changed.emit('document')
 check('dubs that came from a collaborator turn dubbing on', wait(lambda: session.CONFIG['dubbing']['enabled']), True)
 session.CONFIG['dubbing']['enabled'] = False
-del session.SUBTITLE['segments'][0]['dubbing']
+del session.SUBTITLE.segments[0]['dubbing']
 left_panel_dubbing.show_project_dubs()
 check('a project without dubs leaves it as it is', session.CONFIG['dubbing']['enabled'], False)
 
@@ -498,7 +499,7 @@ print('stop sharing')
 card.stop_button.click()
 card.confirm_yes.click()
 check('closed for everyone', wait(lambda: ('close', 'Dk3pQ9aZ2bT') in calls), True)
-check('the project stays, not shared', wait(lambda: not collab_state.shared()) and len(session.SUBTITLE['segments']), 2)
+check('the project stays, not shared', wait(lambda: not collab_state.shared()) and len(session.SUBTITLE.segments), 2)
 check('disconnected', ('disconnect',) in calls, True)
 check('the share form again', wait(lambda: card.share_box.isVisible()), True)
 
@@ -511,7 +512,7 @@ opens()[0].click()
 check('asks first: it replaces the subtitles', card.confirm.isVisible(), True)
 card.confirm_yes.click()
 check('joined: shared, empty until the server sends it, not a file yet',
-      (collab_state.STATE['doc'], session.SUBTITLE['segments'], session.SUBTITLE['filepath']), ('Other0000aa', [], ''))
+      (collab_state.STATE['doc'], session.SUBTITLE.segments, session.SUBTITLE['filepath']), ('Other0000aa', [], ''))
 check('connects to it', calls[-1], ('connect', collab_client.websocket_url(service.base_url(), 'Other0000aa')))
 
 print('leaving it')

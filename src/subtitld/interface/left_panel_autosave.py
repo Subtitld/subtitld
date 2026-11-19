@@ -524,8 +524,7 @@ def _open_backup_into_session(self, backup_path):
     # Reset session containers so segments/speakers from the previous project
     # don't leak in.
     history.history_clear()
-    session.SUBTITLE['segments'] = []
-    session.SUBTITLE['selected'] = None
+    session.SUBTITLE.reset()
     session.SPEAKERS.clear()
     session.SUBTITLE['filepath'] = backup_path
     session.set_unsaved(False)
@@ -541,8 +540,8 @@ def _open_backup_into_session(self, backup_path):
         session.VIDEO = {}
 
     segments, format_to_save = file_io.process_subtitles_file(backup_path)
-    session.SUBTITLE['segments'] = segments
-    segments = session.SUBTITLE['segments']  # the Segments it holds, not the dicts given
+    session.SUBTITLE.segments = segments
+    segments = session.SUBTITLE.segments  # the Segments it holds, not the dicts given
     session.CONFIG['format_to_save'] = format_to_save
     for name in {segment.get('speaker', 'A') for segment in segments}:
         session.SPEAKERS.setdefault(name, {})

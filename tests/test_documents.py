@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import documents, file_io, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -126,7 +127,7 @@ check('the text dark on the white page, whatever the application\'s palette', da
 app.setPalette(saved_palette)
 
 print('through file_io')
-session.SUBTITLE = {'segments': segments, 'language': 'en-us', 'metadata': {}}
+session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us', 'metadata': {}})
 session.VIDEO = {'filepath': '/films/My film.mp4', 'framerate': 25.0}
 session.FORMAT = {'options': {'document': {'content': 'script', 'time_format': 'frames', 'times': 'start'}}}
 file_io.save_file(str(folder / 'saved.txt'), 'TXT')

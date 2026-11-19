@@ -32,7 +32,7 @@ def check(name, got, want):
 
 
 def all_segments(segments=None):
-    segments = session.SUBTITLE['segments'] if segments is None else segments
+    segments = session.SUBTITLE.segments if segments is None else segments
     return bool(segments) and isinstance(segments, SegmentList) and all(type(s) is Segment for s in segments)
 
 
@@ -94,7 +94,7 @@ check('setdefault segments is the list', subtitle.setdefault('segments', []) is 
 check('setdefault a field', subtitle.setdefault('metadata', {'title': 'T'}), {'title': 'T'})
 check('pop', (subtitle.pop('metadata'), 'metadata' in subtitle), ({'title': 'T'}, False))
 check('pop a missing one', subtitle.pop('origin', None), None)
-check('keys', sorted(subtitle), ['language', 'segments'])
+check('keys', sorted(subtitle), ['language', 'segments', 'selected'])
 subtitle['segments'] = [{'text': 'x'}]
 check('a list given is made Segments', all_segments(subtitle.segments), True)
 subtitle['segments'] += [{'text': 'y'}]
@@ -103,7 +103,32 @@ subtitle.segments = sample()
 check('the attribute too', all_segments(subtitle.segments), True)
 check('to_dict is plain', type(subtitle.to_dict()['segments'][0]) is dict, True)
 check('from_dict', all_segments(Subtitle.from_dict(subtitle.to_dict()).segments), True)
-check('a save takes it as a dict', type(file_io._detached(subtitle)) is dict, True)
+subtitle.segments = [dict(s, id=f'id{n}') for n, s in enumerate(sample())]
+subtitle.selected = subtitle.segments[1]
+detached = file_io._detached(subtitle)
+check('a save takes a copy', (type(detached) is Subtitle, detached == subtitle, detached.segments[0] is subtitle.segments[0]),
+      (True, True, False))
+check('its selected one is among its own', any(s is detached.selected for s in detached.segments), True)
+check('equal to the dict it was', Subtitle(language='en') == {'segments': [], 'selected': None, 'language': 'en'}, True)
+
+print('selected')
+subtitle = Subtitle(segments=[{'id': 'a', 'text': 'A'}, {'id': 'b', 'text': 'B'}])
+subtitle.selected = subtitle.segments[1]
+check('one in the list', subtitle.selected is subtitle.segments[1], True)
+subtitle.selected = {'id': 'a', 'text': 'A'}
+check('a copy picks the one with its id', subtitle.selected is subtitle.segments[0], True)
+subtitle['selected'] = dict(subtitle.segments[1])
+check('as a key too', subtitle.selected is subtitle.segments[1], True)
+stray = {'id': 'z', 'text': 'Z'}
+subtitle.selected = stray
+check('one with no match stays as given', subtitle.selected is stray, True)
+subtitle.selected = False
+check('False for none', subtitle.selected, False)
+check('built with both, the selected one found', Subtitle({'selected': {'id': 'b'}, 'segments': [{'id': 'b'}]}).selected.get('id'), 'b')
+check('in and get', ('selected' in Subtitle(), Subtitle().get('selected', 'x')), (True, None))
+subtitle.selected = subtitle.segments[0]
+subtitle.reset()
+check('reset', (list(subtitle.segments), subtitle.selected), ([], None))
 
 print('session')
 check('session.SUBTITLE is a Subtitle', isinstance(session.SUBTITLE, Subtitle), True)
@@ -114,12 +139,12 @@ opened, skipped = [], []
 for fmt, info in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS.items():
     if fmt == 'BDN':
         continue  # pictures only: written from rendered images, not text
-    session.SUBTITLE['segments'] = sample()
+    session.SUBTITLE.segments = sample()
     path = os.path.join(folder, f'{fmt}.{info["extensions"][0]}')
     try:
         file_io.save_file(path, fmt)
         # As the start screen opens a file.
-        session.SUBTITLE['segments'], _format = file_io.process_subtitles_file(path, fmt)
+        session.SUBTITLE.segments, _format = file_io.process_subtitles_file(path, fmt)
     except Exception as error:
         skipped.append(f'{fmt} ({error})')
         continue
@@ -130,7 +155,7 @@ print(f'  {len(opened)} formats opened' + (f', skipped: {", ".join(skipped)}' if
 check('every writable format opened', skipped, [])
 
 print('a backup restored')
-session.SUBTITLE['segments'] = sample()
+session.SUBTITLE.segments = sample()
 backup = os.path.join(folder, 'backup.usfx')
 file_io.save_file(backup, 'USFX')
 for module in (left_panel, top_bar):
@@ -142,39 +167,39 @@ check('restored', all_segments(), True)
 
 print('a subtitle from subtitld.cc')
 usf = os.path.join(folder, 'cloud.usf')
-session.SUBTITLE['segments'] = sample()
+session.SUBTITLE.segments = sample()
 file_io.save_file(usf, 'USF')
 returned = subtitldcc_service.open_in_editor(types.SimpleNamespace(), Path(usf).read_bytes())
 check('opened', all_segments(), True)
-check('what it returns is the session\'s', returned is session.SUBTITLE['segments'], True)
+check('what it returns is the session\'s', returned is session.SUBTITLE.segments, True)
 
 print('editing and undo')
 history.history_clear()
-session.SUBTITLE['segments'] = sample()
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.segments = sample()
+session.SUBTITLE.selected = None
 subtitles.add_subtitle(position=10.0, text='new')
-check('a new subtitle', (all_segments(), len(session.SUBTITLE['segments'])), (True, 3))
-subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE['segments'][0], position=2.0,
+check('a new subtitle', (all_segments(), len(session.SUBTITLE.segments)), (True, 3))
+subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE.segments[0], position=2.0,
                          last_text='Hello', next_text='there')
-check('a split', (all_segments(), len(session.SUBTITLE['segments'])), (True, 4))
+check('a split', (all_segments(), len(session.SUBTITLE.segments)), (True, 4))
 history.history_undo()
-check('undone', (all_segments(), len(session.SUBTITLE['segments'])), (True, 3))
+check('undone', (all_segments(), len(session.SUBTITLE.segments)), (True, 3))
 history.history_redo()
-check('redone', (all_segments(), len(session.SUBTITLE['segments'])), (True, 4))
+check('redone', (all_segments(), len(session.SUBTITLE.segments)), (True, 4))
 
 print('the plain-text panel')
-session.SUBTITLE['segments'] = sample()
-text = plaintext.serialize(session.SUBTITLE['segments'], plaintext.SRT) + \
+session.SUBTITLE.segments = sample()
+text = plaintext.serialize(session.SUBTITLE.segments, plaintext.SRT) + \
     '\n3\n00:00:06,000 --> 00:00:07,000\nAdded in the panel\n'
-plaintext.apply_cues(session.SUBTITLE['segments'], plaintext.parse(text, plaintext.SRT).cues)
-check('applied', (all_segments(), len(session.SUBTITLE['segments'])), (True, 3))
+plaintext.apply_cues(session.SUBTITLE.segments, plaintext.parse(text, plaintext.SRT).cues)
+check('applied', (all_segments(), len(session.SUBTITLE.segments)), (True, 3))
 
 print('a collaborator\'s change')
 history.history_clear()
-session.SUBTITLE['segments'] = sample()
+session.SUBTITLE.segments = sample()
 collab_client.SessionLive.apply(None, [{'op': 'cue.insert', 'cue': {'id': 'remote0000000001', 'start': 5.0,
                                                                      'end': 5.5, 'text': 'From afar'}}])
-check('inserted', (all_segments(), len(session.SUBTITLE['segments'])), (True, 3))
+check('inserted', (all_segments(), len(session.SUBTITLE.segments)), (True, 3))
 check('the snapshot is plain', type(collab_client.SessionLive.snapshot(None)['segments'][0]) is dict, True)
 
 print()

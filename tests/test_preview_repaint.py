@@ -36,7 +36,7 @@ def spin(ms):
 
 
 session.CONFIG = config.Config(Path(tempfile.mkdtemp()) / 'subtitld.config')
-session.SUBTITLE['segments'] = [{'start': 0.0, 'end': 1.0, 'text': 'First'},
+session.SUBTITLE.segments = [{'start': 0.0, 'end': 1.0, 'text': 'First'},
                                 {'start': 1.0, 'end': 2.0, 'text': 'second'},
                                 {'start': 2.0, 'end': 3.0, 'text': 'third'}]
 player = preview_panel.PlayerWidget()
@@ -50,13 +50,13 @@ spin(300)
 
 print('an edit repaints the subtitle')
 before = len(paints)
-session.SUBTITLE['selected'] = subtitles.merge_next_subtitle(selected_subtitle=session.SUBTITLE['segments'][0])
+session.SUBTITLE.selected = subtitles.merge_next_subtitle(selected_subtitle=session.SUBTITLE.segments[0])
 session.set_unsaved()
 spin(200)
-check('merged', [s['text'] for s in session.SUBTITLE['segments']], ['First second', 'third'])
+check('merged', [s['text'] for s in session.SUBTITLE.segments], ['First second', 'third'])
 check('the preview painted again', len(paints) > before, True)
 before = len(paints)
-session.SUBTITLE['selected'] = subtitles.merge_back_subtitle(selected_subtitle=session.SUBTITLE['segments'][1])
+session.SUBTITLE.selected = subtitles.merge_back_subtitle(selected_subtitle=session.SUBTITLE.segments[1])
 session.set_unsaved()
 spin(200)
 check('merged back, painted again', len(paints) > before, True)

@@ -164,7 +164,7 @@ session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.ezt'))
 check('.ezt opens, read only', (fmt, len(opened), 'EZT' in session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS,
                                 'EZT' in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS), ('EZT', 2, True, False))
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 29.97}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.eztxml'), 'EZTXML')

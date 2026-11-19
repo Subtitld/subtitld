@@ -89,7 +89,7 @@ class AddonTranslatorPanel(QWidget):
         widget.info_label.setText(widget.provider.display_name)
 
     def translate_process(widget, segments_list=None):
-        segments = segments_list if segments_list is not None else session.SUBTITLE['segments']
+        segments = segments_list if segments_list is not None else session.SUBTITLE.segments
         widget._queue = [s for s in segments if isinstance(s, dict) and s.get('text', '').strip()]
         widget._index = 0
         widget._reqmap = {}
@@ -130,7 +130,7 @@ class AddonTranslatorPanel(QWidget):
             return  # stale result / from a different run
         original = seg.get('text', '')
         if isinstance(text, str) and text.strip():
-            for s in session.SUBTITLE.get('segments', []):
+            for s in session.SUBTITLE.segments:
                 if s.get('text') == original:
                     s.setdefault('translations', {})[widget._target_language] = text.strip()
             try:
@@ -261,7 +261,7 @@ def update(self):
     target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
     has_translations = any(
         isinstance(seg.get('translations'), dict) and seg['translations'].get(target_language)
-        for seg in session.SUBTITLE.get('segments', []) or []
+        for seg in session.SUBTITLE.segments
     )
     self.global_panel_translation_invert_translation_button.setVisible(has_translations)
 
@@ -414,7 +414,7 @@ def global_panel_translation_invert_translation_button_clicked(self):
         # capable TTS addons (qwen3-clone, xtts-clone, f5-clone).
         if not session.SUBTITLE.get('source_language'):
             session.SUBTITLE['source_language'] = original_language
-        for segment in session.SUBTITLE['segments']:
+        for segment in session.SUBTITLE.segments:
             translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else None
             if not translations or not translations.get(target_language):
                 continue

@@ -129,7 +129,7 @@ class PlayerWidget(QWidget):
                     ratio = widget.devicePixelRatioF() if widget is not None else 1.0
                     renderer.set_size(video_rect.width() * ratio, video_rect.height() * ratio)
                     at = outer._picture_time()
-                    showing = next((item for item in session.SUBTITLE.get('segments') or []
+                    showing = next((item for item in session.SUBTITLE.segments
                                     if item['start'] <= at < item['end']), None)
                     painter.setRenderHint(QPainter.SmoothPixmapTransform)
                     outer._subtitle_hit = None
@@ -346,7 +346,7 @@ class PlayerWidget(QWidget):
     def update_subtitle_layer(widget):
         session.SUBTITLE['current'] = subtitles.subtitle_under_current_position()
         if widget._subtitle_renderer is not None:
-            widget._subtitle_renderer.prefetch(session.SUBTITLE.get('segments') or [],
+            widget._subtitle_renderer.prefetch(session.SUBTITLE.segments,
                                                session.SUBTITLE.get('position', 0.0))
         widget.update()
 
@@ -567,7 +567,7 @@ class PlayerWidget(QWidget):
         from subtitld.interface import project_thumbnail
         frame = widget._last_video_frame
         image = frame.toImage() if frame is not None and frame.isValid() else None
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         if (image is None or image.isNull()) and not segments:
             return None
         manager = getattr(getattr(widget.window(), 'timeline_widget', None), 'waveform_manager', None)
@@ -662,7 +662,7 @@ class PlayerWidget(QWidget):
         hit = widget._subtitle_hit
         if hit is None or widget._media_player.playbackState() == QMediaPlayer.PlayingState:
             return None
-        if not hit['rect'].contains(point) or hit['segment'] not in (session.SUBTITLE.get('segments') or []):
+        if not hit['rect'].contains(point) or hit['segment'] not in (session.SUBTITLE.segments):
             return None
         from subtitld.modules import collab_service
         if collab_service.locked_by(hit['segment'].get('id')):
@@ -709,7 +709,7 @@ class PlayerWidget(QWidget):
             delta, video = drag['delta'], drag['video']
             segment = drag['segment']
             if abs(delta.x()) + abs(delta.y()) < 3 or video.width() <= 0 or video.height() <= 0 \
-                    or segment not in (session.SUBTITLE.get('segments') or []):
+                    or segment not in (session.SUBTITLE.segments):
                 widget._graphics_video_item.update()
                 return True
             player = session.CONFIG.get('videoplayer', {})

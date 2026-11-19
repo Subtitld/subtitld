@@ -16,6 +16,7 @@ from PySide6.QtCore import QDir, QPoint, Qt
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', session.PATH_SUBTITLD_GRAPHICS)
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import find_replace_dialog as frd
@@ -32,7 +33,8 @@ host = types.SimpleNamespace(preview_panel_player=Player())
 fails = []
 
 def fresh(segments, cursor):
-    session.SUBTITLE = {'segments': segments, 'position': cursor}
+    session.SUBTITLE = Subtitle({'segments': segments, 'position': cursor})
+    segments[:] = session.SUBTITLE.segments  # the caller's list holds the session's subtitles
     d = frd.FindReplaceDialog.__new__(frd.FindReplaceDialog)
     frd.FindReplaceDialog.__init__(d, None)
     d._host = host

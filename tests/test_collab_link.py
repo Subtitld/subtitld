@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QStackedLayout, QStackedWidg
 app = QApplication([])
 from subtitld.interface import left_panel, left_panel_subtitldcc as panel_module, startscreen, subtitldcc_open, top_bar
 from subtitld.modules import collab_client, collab_media, collab_service, collab_state, history, link_handover, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules import subtitldcc_links as links
 from subtitld.modules import subtitldcc_service as service
 
@@ -276,7 +277,7 @@ def load_productionscreen(window, collab=None):
 
 startscreen.load_productionscreen = load_productionscreen
 session.CONFIG = {'subtitldcc': {'media_folder': folder}}
-session.SUBTITLE = {'segments': [], 'filepath': ''}
+session.SUBTITLE = Subtitle({'segments': [], 'filepath': ''})
 session.SPEAKERS = {}
 session.VIDEO = {}
 history.history_clear()
@@ -315,7 +316,7 @@ check('the card says whose it is', (card.title.text(), card.status.text()),
 
 print('live, looking for the video')
 connection = collab_service.connection()
-session.SUBTITLE['segments'] = [{'id': 'a', 'start': 1.0, 'end': 2.0, 'text': 'Hello'}]
+session.SUBTITLE.segments = [{'id': 'a', 'start': 1.0, 'end': 2.0, 'text': 'Hello'}]
 connection.engine.state = 'live'
 MEDIA.append({'hash': VIDEO_HASH, 'kind': 'video', 'name': 'Sintel.2010.mkv', 'size': 3 * 1024 ** 3,
               'chunk_size': 4 * 1024 ** 2, 'fingerprint': 'f' * 64})
@@ -388,7 +389,7 @@ collab_service.connection().engine.state = 'live'
 collab_service.connection().changed.emit('state')
 check('waiting for the video', wait(lambda: 'Waiting for one to be online' in card.video.text()), True)
 card.cancel_button.click()
-check('nothing stays open, nothing to save', (collab_state.shared(), session.SUBTITLE['segments'], session.UNSAVED,
+check('nothing stays open, nothing to save', (collab_state.shared(), session.SUBTITLE.segments, session.UNSAVED,
                                               card.isVisible()), (False, [], False, False))
 check('disconnected', calls[-1], ('disconnect',))
 
@@ -445,7 +446,7 @@ check('nothing left behind', [name for name in os.listdir(session.PATH_TEMP) if 
 
 print('a private one, before connecting')
 host.central_widget.layout().setCurrentWidget(host.start_screen)
-session.SUBTITLE = {'segments': [], 'filepath': ''}
+session.SUBTITLE = Subtitle({'segments': [], 'filepath': ''})
 read.clear()
 ANSWER['subtitle'] = ApiError(404, 'not_found', 'Not found.')
 subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}')
@@ -468,7 +469,7 @@ card.cancel_button.click()
 
 print('with subtitles in the editor')
 host.central_widget.layout().setCurrentWidget(host.main_vertical_splitter)
-session.SUBTITLE['segments'] = [{'id': 'b', 'start': 1.0, 'end': 2.0, 'text': 'Mine'}]
+session.SUBTITLE.segments = [{'id': 'b', 'start': 1.0, 'end': 2.0, 'text': 'Mine'}]
 replaced = []
 service.open_in_editor = lambda window, data: replaced.append(data)
 subtitldcc_open.open_link(host, f'subtitld://subtitld.cc/subtitle/{SHARE}')

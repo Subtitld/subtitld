@@ -252,13 +252,13 @@ check("opens; its language the project's, French translations; its settings kept
     fmt, len(opened), session.SUBTITLE['language'], opened[0].get('translations'),
     {key: session.FORMAT['options'].get(key) for key in ('fps', 'timecode', 'timeline_start')}),
       ('FCPXML', 3, 'en-us', {'fr-fr': '{\\an8}Bonjour'}, {'fps': 23.976, 'timecode': 'non-drop', 'timeline_start': '01:00:00:00'}))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.fcpxml'), 'FCPXML')
 again = ET.fromstring((folder / 'again.fcpxml').read_text(encoding='utf-8').split('\n', 3)[3])
 check('saved again as it was', (again.find('.//sequence').get('tcStart'), again.find('.//format').get('frameDuration'),
                                 [c.get('offset') for c in again.iter('caption')]),
       ('86486400/24000s', '1001/24000s', ['24024/24000s', '144144/24000s', '288288/24000s']))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/Interview.mov', 'width': 1920, 'height': 1080}
 session.FORMAT = {'options': {'text': 'both', 'language': 'fr-fr', 'speakers': 'none', 'formatting': 'keep', 'offset': 0}}
 file_io.save_file(str(folder / 'both.fcpxml'), 'FCPXML')
@@ -271,7 +271,7 @@ bundle = folder / 'Captions.fcpxmld'
 session.FORMAT = {'options': {}}
 file_io.save_file(str(bundle), 'FCPXML')
 check('a bundle: a folder with Info.fcpxml in it', (bundle / 'Info.fcpxml').is_file(), True)
-session.SUBTITLE['segments'] = []
+session.SUBTITLE.segments = []
 check('the bundle opens', (lambda r: (r[1], len(r[0])))(file_io.process_subtitles_file(str(bundle))), ('FCPXML', 3))
 (folder / 'broken.fcpxml').write_text('<fcpxml version="1.10"><resources>', encoding='utf-8')
 try:
@@ -283,7 +283,7 @@ except file_io.CorruptedProjectFileError as error:
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.VIDEO = {'framerate': 29.97}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('FCPXML')

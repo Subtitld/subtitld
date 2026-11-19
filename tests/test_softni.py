@@ -70,7 +70,7 @@ for name, text, fmt in (('a.sub', SAMPLE, 'SOFTNI'), ('b.sub', COLON, 'SOFTNICOL
 (folder / 'm.sub').write_text('{25}{75}Hello\n', encoding='utf-8')
 session.FORMAT = {}
 check('MicroDVD still MicroDVD', file_io.process_subtitles_file(str(folder / 'm.sub'))[1], 'SUB')
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 session.VIDEO = {'framerate': 25}
 for fmt, punctuation in (('SOFTNI', '.'), ('SOFTNICOLON', ':')):
     session.FORMAT = {'options': {}}

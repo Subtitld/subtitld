@@ -489,7 +489,7 @@ class OpenCard(QWidget):
         owner = (project.get('owner') or {}).get('handle', '')
         connection_state = collab_service.state()
         if connection_state == 'live':
-            subtitles = _('open_link.subtitles').format(count=len(session.SUBTITLE.get('segments') or []))
+            subtitles = _('open_link.subtitles').format(count=len(session.SUBTITLE.segments))
         elif connection_state == 'joining':
             subtitles = _('open_link.subtitles_coming')
         else:

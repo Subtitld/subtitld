@@ -220,7 +220,7 @@ def _release_lines_following(speaker_name, voice, voice_speaker=None):
     anything else was set in the per-subtitle panel and keeps it."""
     if not voice:
         return
-    for subtitle in session.SUBTITLE.get('segments', []) or []:
+    for subtitle in session.SUBTITLE.segments:
         overrides = subtitle.get('dubbing_options')
         if (subtitle.get('speaker', 'A') != speaker_name or not overrides
                 or overrides.get('voice') != voice):
@@ -315,7 +315,7 @@ def _speaker_scoped_segments(widget, speaker_name):
     subtitle only when it actually belongs to this speaker — the panel
     synthesizes one speaker's voice, and generating it over someone else's
     line would put the wrong voice on it."""
-    segments = session.SUBTITLE.get('segments', []) or []
+    segments = session.SUBTITLE.segments
     speaker_segments = [s for s in segments if s.get('speaker', 'A') == speaker_name]
     selector = getattr(widget, 'scope_selector', None)
     if selector is None:
@@ -564,28 +564,28 @@ class _EdgeTTSDubbingPanel(QWidget):
             widget.voice_combobox.setCurrentText(current)
 
     def voice_combobox_changed(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected is None:
             return
         selected.setdefault('dubbing_options', {})['voice'] = widget.voice_combobox.currentText()
         session.set_unsaved()
 
     def voice_rate_changed(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected is None:
             return
         selected.setdefault('dubbing_options', {})['rate'] = widget.voice_rate.value()
         session.set_unsaved()
 
     def voice_pitch_changed(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected is None:
             return
         selected.setdefault('dubbing_options', {})['pitch'] = widget.voice_pitch.value()
         session.set_unsaved()
 
     def generate_speech_button_clicked(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if not selected:
             return
         speaker_name = selected.get('speaker', 'A')
@@ -608,7 +608,7 @@ class _EdgeTTSDubbingPanel(QWidget):
             timeline_widget.update()
 
     def update(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if not selected:
             return
 
@@ -734,7 +734,7 @@ class _GenericTTSDubbingPanel(QWidget):
                                  widget.voice_speaker_combobox.combobox.currentData() or '')
 
     def voice_combobox_changed(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected is None:
             return
         # Persist the voice ID, not the display label.
@@ -749,7 +749,7 @@ class _GenericTTSDubbingPanel(QWidget):
         session.set_unsaved()
 
     def voice_speaker_changed(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         voice_id = widget.voice_combobox.combobox.currentData()
         speaker = widget.voice_speaker_combobox.combobox.currentData()
         if selected is None or not voice_id or speaker is None:
@@ -761,7 +761,7 @@ class _GenericTTSDubbingPanel(QWidget):
         session.set_unsaved()
 
     def generate_speech_button_clicked(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if not selected:
             return
         speaker_name = selected.get('speaker', 'A')
@@ -854,7 +854,7 @@ class _GenericTTSDubbingPanel(QWidget):
             timeline_widget.update()
 
     def update(widget):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if not selected:
             return
         speaker_dubbing = session.SPEAKERS.get(selected.get('speaker', 'A'), {}).get('dubbing', {})
@@ -1337,7 +1337,7 @@ def show_project_dubs():
     after it opens); never turns dubbing off."""
     if session.CONFIG.get('dubbing', {}).get('enabled'):
         return
-    if not any(segment.get('dubbing') for segment in session.SUBTITLE.get('segments') or []):
+    if not any(segment.get('dubbing') for segment in session.SUBTITLE.segments):
         return
     for window in QApplication.topLevelWidgets():
         checkbox = getattr(window, 'left_panel_dubbing_enable_checkbox', None)
@@ -1377,7 +1377,7 @@ def update(self):
     self.left_panel_dubbing_enable_checkbox.setChecked(enabled)
     _engine_combobox_set_id(self.left_panel_dubbing_engine_combobox, session.CONFIG['dubbing'].get('selected_engine', 'edge-tts'))
 
-    has_selection = session.SUBTITLE.get('selected') is not None
+    has_selection = session.SUBTITLE.selected is not None
     self.left_panel_dubbing_no_subtitle_label.setVisible(not has_selection)
     self.left_panel_dubbing_subtitle_settings.setVisible(has_selection)
 
@@ -1388,7 +1388,7 @@ def update(self):
     # before "Generate speech" would target the right provider. The pinned
     # value is only honored if its engine is currently available — falls
     # through to the global default if the addon has been uninstalled.
-    selected = session.SUBTITLE.get('selected') if has_selection else None
+    selected = session.SUBTITLE.selected if has_selection else None
     if selected is not None:
         pinned_engine = (selected.get('dubbing_options') or {}).get('engine')
         if not pinned_engine:

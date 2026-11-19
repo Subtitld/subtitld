@@ -478,7 +478,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         # re-synthesizing) and the dub entry stores both paths.
         rate = int(original_subtitle.get('rate', 0) or 0)
         rendered_path = str(audio_stretch.stretch_by_rate(Path(file_path), rate))
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if subtitle.get('start') == original_subtitle.get('start'):
                 dubs = subtitle.setdefault('dubbing', [])
                 inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
@@ -515,12 +515,12 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 # Drain any pending dub-stretching state for this subtitle.
                 pending = getattr(timeline_widget, 'dub_stretching', None)
                 if pending is not None and pending.get('subtitle', None) is not None:
-                    for subtitle in session.SUBTITLE['segments']:
+                    for subtitle in session.SUBTITLE.segments:
                         if subtitle.get('start') == original_subtitle.get('start') and pending['subtitle'] is subtitle:
                             timeline_widget.dub_stretching = None
                             break
@@ -532,7 +532,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         from PySide6.QtWidgets import QApplication
         log.error('%s: uid=%s %s', self._addon_id, uid, message)
         target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if target_start is not None and subtitle.get('start') == target_start:
                 subtitle['locked'] = False
                 break
@@ -568,7 +568,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 timeline_widget.dub_stretching = None
                 timeline_widget.update()

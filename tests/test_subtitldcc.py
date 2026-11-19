@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget, QLabel
 app = QApplication([])
 from subtitld.modules import session, usf
+from subtitld.modules.segment import Subtitle
 from subtitld.modules import subtitldcc_service as service
 from subtitld.modules.subtitldcc import fingerprint
 from subtitld.interface import left_panel_subtitldcc as panel_module
@@ -79,11 +80,11 @@ check('unknown', service.bcp47('xx', known), '')
 
 print('what gets published: one language, no dubbing, images or file paths')
 session.CONFIG = {}
-session.SUBTITLE = {'language': 'en', 'filepath': '', 'segments': [
+session.SUBTITLE = Subtitle({'language': 'en', 'filepath': '', 'segments': [
     {'start': 1.0, 'end': 2.0, 'text': 'Hello', 'speaker': 'Ann', 'translations': {'pt-BR': 'Olá'},
      'dubbing': [{'path': '/home/me/secret/dub1.wav', 'start': 1.0}]},
     {'start': 3.0, 'end': 4.0, 'text': 'Bye', 'speaker': 'Ann', 'translations': {'pt-BR': ''}},
-]}
+]})
 session.SPEAKERS = {'Ann': {'color': '#ff0000', 'image_bytes': b'PNG', 'dubbing': {'engine': 'edge-tts'}}}
 original = service.usf_for_publishing().decode()
 check('original text, no dubbing or images', ('Hello' in original, 'Olá' in original, 'secret' in original,
@@ -173,7 +174,7 @@ class Host(QWidget):
 
 
 session.CONFIG = {}
-session.SUBTITLE = {'segments': [], 'filepath': ''}
+session.SUBTITLE = Subtitle({'segments': [], 'filepath': ''})
 session.SPEAKERS = {}
 session.VIDEO = {}
 host = Host()
@@ -213,7 +214,7 @@ panel.auto_lookup.setChecked(True)
 wait(lambda: panel._lookup_call is None and panel._matches is not None)
 
 print('opening over subtitles in the editor asks first, in the row (never a dialog)')
-session.SUBTITLE['segments'] = [{'start': 0.0, 'end': 1.0, 'text': 'mine', 'speaker': 'A'}]
+session.SUBTITLE.segments = [{'start': 0.0, 'end': 1.0, 'text': 'mine', 'speaker': 'A'}]
 calls.clear()
 rows = [panel.video_results.itemAt(i).widget() for i in range(panel.video_results.count())]
 rows[0].open_button.click()
@@ -222,14 +223,14 @@ check('asks in the row', (rows[0].confirm.isVisibleTo(host), 'Sintel (2010)' in 
       (True, True))
 check('nothing downloaded yet', calls, [])
 rows[0].confirm.no.click()
-check('cancel keeps the editor', (rows[0].confirm.isVisibleTo(host), session.SUBTITLE['segments'][0]['text']),
+check('cancel keeps the editor', (rows[0].confirm.isVisibleTo(host), session.SUBTITLE.segments[0]['text']),
       (False, 'mine'))
 
 print('opening a subtitle replaces the editor\'s and remembers where it came from')
 rows[0].open_button.click()
 rows[0].confirm.yes.click()
-check('opened', wait(lambda: len(session.SUBTITLE.get('segments', [])) == 2), True)
-check('texts', [s['text'] for s in session.SUBTITLE['segments']], ['Primeira', 'Segunda'])
+check('opened', wait(lambda: len(session.SUBTITLE.segments) == 2), True)
+check('texts', [s['text'] for s in session.SUBTITLE.segments], ['Primeira', 'Segunda'])
 check('origin', service.origin(), {'share_id': 'Xk3pQ9aZ2bT', 'version': 2})
 check('not a file yet, nothing unsaved', (session.SUBTITLE['filepath'], session.UNSAVED), ('', False))
 check('speakers', sorted(session.SPEAKERS), ['A', 'B'])
@@ -272,7 +273,7 @@ check('the steps are in the panel', (flow is not None, flow.parent() is not None
                                      panel.publish_buttons.isVisibleTo(host)), (True, True, False))
 check('checking in the background', (flow.check_page.isVisibleTo(host), 'keep working' in flow.check_status.text()),
       (True, True))
-session.SUBTITLE['segments'][0]['text'] = 'Primeira, editada'  # the person keeps working meanwhile
+session.SUBTITLE.segments[0]['text'] = 'Primeira, editada'  # the person keeps working meanwhile
 check('checked', wait(lambda: flow.upload is not None), True)
 check('sent the subtitles as they were', b'Primeira</text>' in calls[0][3] and calls[0][2] == 'Xk3pQ9aZ2bT', True)
 flow.next_button.click()
@@ -309,7 +310,7 @@ check('nothing deleted yet', calls, [])
 panel.delete_confirm.yes.click()
 check('deleted', wait(lambda: ('delete', 'Xk3pQ9aZ2bT') in calls), True)
 check('the editor forgets the link, keeps the text', wait(lambda: service.origin() is None), True)
-check('still there', [s['text'] for s in session.SUBTITLE['segments']][:1], ['Primeira, editada'])
+check('still there', [s['text'] for s in session.SUBTITLE.segments][:1], ['Primeira, editada'])
 check('says so', 'deleted from subtitld.cc' in panel.message.text(), True)
 check('the card goes away', panel.origin_card.isVisibleTo(host), False)
 

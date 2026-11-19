@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import closed_captions, embedded_captions, mcc, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules import teletext as tt
 
 fails = []
@@ -142,7 +143,7 @@ else:
     print('the export path')
     from subtitld.modules import bounce
     session.VIDEO = {'filepath': str(source), 'framerate': 25.0, 'duration': 5.0}
-    session.SUBTITLE = {'segments': segments, 'language': 'en-us'}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us'})
     session.FFMPEG_EXECUTABLE = ffmpeg
     said = []
     worker = bounce.CaptionsThread(str(folder / 'wired.mxf'), 'MXF', {'teletext': True, 'codec': 'mpeg2'})

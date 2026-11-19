@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import session, file_io
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -34,15 +35,15 @@ def without_ids(segments):
 
 
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE = {
+session.SUBTITLE = Subtitle({
     'language': 'pt-br', 'filepath': '/somewhere/project.usfx', 'position': 12.5,
     'segments': [
         {'start': 1.0, 'end': 2.5, 'text': 'Olá\nmundo', 'speaker': 'A',
          'translations': {'en-us': 'Hello world'}, 'dubbing': [{'path': 'a.wav', 'uid': 'd1'}], '_rec': 'runtime'},
         {'start': 3.0, 'end': 4.0, 'text': 'Tchau', 'speaker': 'B', 'locked': True},
     ],
-}
-session.SUBTITLE['selected'] = session.SUBTITLE['segments'][0]
+})
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
 session.FORMAT = {}
 
 print('saving writes Whisper\'s format')
@@ -58,7 +59,7 @@ check('segments: Whisper\'s keys, then every field, no runtime keys', data['segm
 check('no project internals (selection, position, paths)', [k for k in ('selected', 'position', 'filepath') if k in data], [])
 
 print('opening reads it all back')
-session.SUBTITLE = {'language': 'en-us', 'segments': []}
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': []})
 segments, fmt = file_io.process_subtitles_file(str(path))
 check('format', fmt, 'JSON')
 check('each gets a stable ID, not Whisper\'s number', all(isinstance(segment.get('id'), str) for segment in segments), True)
@@ -74,7 +75,7 @@ whisper.write_text(json.dumps({
     'text': ' Hello there.', 'language': 'en',
     'segments': [{'id': 0, 'seek': 0, 'start': 0.0, 'end': 2.0, 'text': ' Hello there.', 'tokens': [1, 2],
                   'temperature': 0.0, 'avg_logprob': -0.3, 'compression_ratio': 0.8, 'no_speech_prob': 0.01}]}))
-session.SUBTITLE = {'language': 'pt-br', 'segments': []}
+session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': []})
 segments, fmt = file_io.process_subtitles_file(str(whisper))
 check('one subtitle, speaker A as for other formats, no decoder statistics', without_ids(segments),
       [{'start': 0.0, 'end': 2.0, 'text': 'Hello there.', 'speaker': 'A'}])

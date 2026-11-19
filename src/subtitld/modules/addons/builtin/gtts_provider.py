@@ -342,7 +342,7 @@ class GTTSProvider(TTSProvider):
         if size <= 0:
             self._on_speech_error(uid, original_subtitle, 'gTTS produced an empty audio file')
             return
-        for subtitle in session.SUBTITLE['segments']:
+        for subtitle in session.SUBTITLE.segments:
             if subtitle.get('start') == original_subtitle['start']:
                 dubs = subtitle.setdefault('dubbing', [])
                 inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
@@ -369,7 +369,7 @@ class GTTSProvider(TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 timeline_widget.update()
             session.set_unsaved()
@@ -379,7 +379,7 @@ class GTTSProvider(TTSProvider):
         from PySide6.QtWidgets import QApplication
         log.error('gtts: uid=%s %s', uid, message)
         target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if target_start is not None and subtitle.get('start') == target_start:
                 subtitle['locked'] = False
                 break

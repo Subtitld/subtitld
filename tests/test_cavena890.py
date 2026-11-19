@@ -195,7 +195,7 @@ check("opens; its language the project's, its title too; its rate and start kept
     fmt, len(opened), session.SUBTITLE['language'], session.SUBTITLE.get('metadata'),
     {key: session.FORMAT['options'].get(key) for key in ('fps', 'start')}),
       ('CAVENA890', 5, 'da-dk', {'title': 'Tears of Steel'}, {'fps': 25.0, 'start': '10:00:00:00'}))
-session.SUBTITLE['segments'] = trips['da']
+session.SUBTITLE.segments = trips['da']
 session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/tears.mov'}
 session.FORMAT['options'] = dict(session.FORMAT['options'])
 file_io.save_file(str(folder / 'out.890'), 'CAVENA890')

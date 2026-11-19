@@ -100,7 +100,7 @@ session.SUBTITLE['language'] = 'pt-br'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'other.usf'))
 check('ISO 639-2 codes become Subtitld\'s', (fmt, session.SUBTITLE['language'], opened[0]['translations']),
       ('USF', 'en-us', {'fr-fr': 'Il était une fois'}))
-session.SUBTITLE['segments'] = segments_pt
+session.SUBTITLE.segments = segments_pt
 session.SUBTITLE['language'] = 'en-us'
 session.FORMAT = {}
 file_io.save_file(str(folder / 'export.usf'), 'USF')
@@ -120,7 +120,7 @@ check("reopened: the names tell Brazil's Portuguese from Portugal's", (session.S
 check('none spoken said, none read', session.SUBTITLE.get('source_language'), None)
 
 print('what the media speaks survives a save, once a translation is inverted')
-session.SUBTITLE['segments'] = [{'start': 0, 'end': 1, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]
+session.SUBTITLE.segments = [{'start': 0, 'end': 1, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]
 session.SUBTITLE['language'] = 'pt-br'
 session.SUBTITLE['source_language'] = 'en-us'
 for name, kind in (('inverted.usf', 'USF'), ('inverted.usfx', 'USFX')):

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import history, session, subtitles
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -30,16 +31,16 @@ def check(name, got, want):
 
 
 def project(*texts):
-    session.SUBTITLE = {'segments': [{'start': float(i * 2), 'end': i * 2 + 1.0, 'text': text, 'speaker': 'A'}
-                                     for i, text in enumerate(texts)], 'language': 'en'}
+    session.SUBTITLE = Subtitle({'segments': [{'start': float(i * 2), 'end': i * 2 + 1.0, 'text': text, 'speaker': 'A'}
+                                     for i, text in enumerate(texts)], 'language': 'en'})
     session.SPEAKERS.clear()
     session.SPEAKERS['A'] = {'color': '#ff0000'}
     history.history_clear()
-    return session.SUBTITLE['segments']
+    return session.SUBTITLE.segments
 
 
 def texts():
-    return [s['text'] for s in session.SUBTITLE['segments']]
+    return [s['text'] for s in session.SUBTITLE.segments]
 
 
 def edit(fn):
@@ -62,7 +63,7 @@ edit(lambda: one.update(text='ONE'))
 elsewhere(lambda: two.update(text='TWO'))
 history.history_undo()
 check('the step is undone, the other edit stays', texts(), ['one', 'TWO'])
-check('the subtitle is still the same dict', session.SUBTITLE['segments'][0] is one, True)
+check('the subtitle is still the same dict', session.SUBTITLE.segments[0] is one, True)
 history.history_redo()
 check('redo', texts(), ['ONE', 'TWO'])
 
@@ -70,7 +71,7 @@ print('a change whose subtitle is gone is skipped')
 one, two = project('one', 'two')
 edit(lambda: one.update(text='ONE'))
 edit(lambda: two.update(text='TWO'))
-elsewhere(lambda: session.SUBTITLE['segments'].remove(one))
+elsewhere(lambda: session.SUBTITLE.segments.remove(one))
 check('undo still happens', history.history_undo(), True)
 check('the other step undoes', history.history_undo() and texts(), ['two'])
 
@@ -93,11 +94,11 @@ one, two = project('one', 'two')
 one['_rec'] = 'take-1'
 session.SPEAKERS['B'] = {'color': '#00ff00', 'image': 'a picture', 'image_bytes': b'png'}
 session.set_unsaved()
-edit(lambda: session.SUBTITLE['segments'].remove(one))
+edit(lambda: session.SUBTITLE.segments.remove(one))
 edit(lambda: session.SPEAKERS.pop('B'))
 history.history_undo()
 history.history_undo()
-back = session.SUBTITLE['segments'][0]
+back = session.SUBTITLE.segments[0]
 check('a subtitle brought back has its runtime keys', (back['text'], back.get('_rec')), ('one', 'take-1'))
 check('a speaker brought back has its picture',
       (session.SPEAKERS['B'].get('image'), session.SPEAKERS['B'].get('image_bytes')), ('a picture', b'png'))
@@ -123,23 +124,23 @@ session.document_loaded()
 check('each dub file named by its content', bool(one['dubbing'][0].get('hash')) and bool(one['dubbing'][0]['segments'][0].get('hash')), True)
 edit(lambda: one.update(dubbing=[{'uid': 'u2', 'path': take_two, 'start': 0.0}]))
 history.history_undo()
-check('undoing a new take brings the old one back, with its file here', session.SUBTITLE['segments'][0]['dubbing'][0].get('path'), take_one)
-check('and its subclip\'s', session.SUBTITLE['segments'][0]['dubbing'][0]['segments'][0].get('path'), take_one)
+check('undoing a new take brings the old one back, with its file here', session.SUBTITLE.segments[0]['dubbing'][0].get('path'), take_one)
+check('and its subclip\'s', session.SUBTITLE.segments[0]['dubbing'][0]['segments'][0].get('path'), take_one)
 history.history_redo()
-check('redo, the new one', session.SUBTITLE['segments'][0]['dubbing'][0].get('path'), take_two)
-edit(lambda: session.SUBTITLE['segments'].remove(session.SUBTITLE['segments'][0]))
+check('redo, the new one', session.SUBTITLE.segments[0]['dubbing'][0].get('path'), take_two)
+edit(lambda: session.SUBTITLE.segments.remove(session.SUBTITLE.segments[0]))
 history.history_undo()
-check('a deleted subtitle comes back with its dub\'s file', session.SUBTITLE['segments'][0]['dubbing'][0].get('path'), take_two)
+check('a deleted subtitle comes back with its dub\'s file', session.SUBTITLE.segments[0]['dubbing'][0].get('path'), take_two)
 
 print('selection')
 one, two = project('one', 'two')
-session.SUBTITLE['selected'] = two
+session.SUBTITLE.selected = two
 edit(lambda: subtitles.remove_subtitle(two))
-session.SUBTITLE['selected'] = one
+session.SUBTITLE.selected = one
 history.history_undo()
-check('undo selects what was selected when the step began', session.SUBTITLE['selected']['text'], 'two')
+check('undo selects what was selected when the step began', session.SUBTITLE.selected['text'], 'two')
 history.history_redo()
-check('redo what was selected when it was undone', session.SUBTITLE['selected']['text'], 'one')
+check('redo what was selected when it was undone', session.SUBTITLE.selected['text'], 'one')
 
 print('steps hold changes, not the document')
 segments = project(*[f'line {i}' for i in range(5000)])

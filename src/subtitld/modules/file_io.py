@@ -1993,7 +1993,7 @@ def process_video_file(video_file=False):
 
 def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False, length=.01, distribute_fixed_duration=False):
     """Function to import file into the subtitle project."""
-    session.SUBTITLE['segments'] = []
+    session.SUBTITLE.segments = []
     if filename:
         if filename.lower().endswith(('.txt')):
             subtitle_format = 'TXT'
@@ -2021,11 +2021,11 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
 
                 # txt_content = clean(txt_file.read())
                 txt_content = txt_file.read()
-                session.SUBTITLE['segments'] += _plain_text_segments(txt_content)
+                session.SUBTITLE.segments += _plain_text_segments(txt_content)
 
         elif filename.lower().endswith(('.srt')):
             subtitle_format = 'SRT'
-            session.SUBTITLE['segments'] += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
+            session.SUBTITLE.segments += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
 
         elif filename.lower().endswith(('.docx')):
             subtitle_format = 'DOCX'
@@ -2037,16 +2037,16 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
 
             pos = 0.0
             for phrase in txt_content.split('. '):
-                session.SUBTITLE['segments'].append({
+                session.SUBTITLE.segments.append({
                     'start': pos,
                     'end': pos + 5.0,
                     'text': phrase + '.'
                 })
                 pos += 5.0
 
-            session.SUBTITLE['segments'] += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
+            session.SUBTITLE.segments += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
 
-    return session.SUBTITLE['segments'], subtitle_format
+    return session.SUBTITLE.segments, subtitle_format
 
 
 def _ensure_dub_files_present(segments, existing_usfx_path):
@@ -2158,7 +2158,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
     # reference, speakers, manifest). The old truthiness check made the
     # whole body a no-op, and the caller saw `success=True` because
     # nothing raised — UI showed "saved" while no file landed.
-    if SUBTITLE.get('segments') is not None:
+    if SUBTITLE.segments is not None:
         # if not final_file.lower().endswith('.' + format.lower()):
         #     final_file += '.' + format.lower()
 
@@ -2175,7 +2175,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         # speakers' names, without formatting, shifted.
         options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
         if subtitle_format in export_options.TEXT_FORMATS:
-            segments = export_options.prepare(SUBTITLE['segments'], options)
+            segments = export_options.prepare(SUBTITLE.segments, options)
 
         if subtitle_format == 'SRT':
             srt.save(final_file, segments,
@@ -2284,7 +2284,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # speaker a character, the dubs heard, whatever the export asks
             # of the text.
             if profile == 'dapt':
-                segments = export_options.prepare(SUBTITLE['segments'], dict(options, text='original', speakers='none'))
+                segments = export_options.prepare(SUBTITLE.segments, dict(options, text='original', speakers='none'))
                 options = dict(options, text='original')
             # EBU-TT is timed in timecode where there is a frame rate (the
             # video's, else the STL's it came from), from the programme
@@ -2313,10 +2313,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
             translation = options.get('language') or ''
             if options.get('text') == 'both' and translation:
-                translated = [segment for segment in export_options.prepare(SUBTITLE['segments'], dict(options, text='translation'))
+                translated = [segment for segment in export_options.prepare(SUBTITLE.segments, dict(options, text='translation'))
                               if str((segment.get('translations') or {}).get(translation) or '').strip()]
                 tracks = [(language, names.get(language, language),
-                           export_options.prepare(SUBTITLE['segments'], dict(options, text='original'))),
+                           export_options.prepare(SUBTITLE.segments, dict(options, text='original'))),
                           (translation, names.get(translation, translation), translated)]
             else:
                 written = translation if options.get('text') == 'translation' and translation else language
@@ -2347,7 +2347,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             rate = options.get('mcc_rate') if options.get('mcc_rate') in mcc.RATES else mcc.rate_for(VIDEO.get('framerate'))
             services = {}
             if options.get('caption_service_language'):
-                beside = export_options.prepare(SUBTITLE.get('segments'), dict(
+                beside = export_options.prepare(SUBTITLE.segments, dict(
                     options, text='translation', language=options['caption_service_language']))
                 services = {2: beside}
             # OP-47 asked for: the same subtitles as a teletext page beside them.
@@ -2406,9 +2406,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # export's rate (the video's), from the timeline start it asks.
             translation = options.get('language') or ''
             if options.get('text') == 'both' and translation:
-                tracks = [(language, export_options.prepare(SUBTITLE['segments'], dict(options, text='original'))),
+                tracks = [(language, export_options.prepare(SUBTITLE.segments, dict(options, text='original'))),
                           (translation, [segment for segment in export_options.prepare(
-                              SUBTITLE['segments'], dict(options, text='translation'))
+                              SUBTITLE.segments, dict(options, text='translation'))
                               if str((segment.get('translations') or {}).get(translation) or '').strip()])]
             else:
                 tracks = [(translation if options.get('text') == 'translation' and translation else language, segments)]
@@ -2698,7 +2698,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # The original and every translation, side by side: the text
             # option does not apply.
             from subtitld import __version__
-            tmx.save(final_file, export_options.prepare(SUBTITLE['segments'], dict(options, text='original')),
+            tmx.save(final_file, export_options.prepare(SUBTITLE.segments, dict(options, text='original')),
                      language, __version__)
 
         elif subtitle_format == 'CAVENA890':
@@ -2831,7 +2831,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format in ['JSON']:
             # Whisper's format, as the plain-text editor writes it. Runtime
             # keys (`_`-prefixed, e.g. `_rec`) are never written.
-            text = plaintext.serialize(SUBTITLE.get('segments') or [], plaintext.JSON,
+            text = plaintext.serialize(SUBTITLE.segments, plaintext.JSON,
                                        language=SUBTITLE.get('language'))
             open(final_file, mode='w', encoding='utf-8').write(text)
 
@@ -2848,7 +2848,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # markers.
             chosen = dict(options.get('document') or {})
             content = chosen.pop('content', None) or (documents.MARKERS if options.get('csv_type') else None)
-            documents.save(final_file, subtitle_format, content, SUBTITLE['segments'], chosen,
+            documents.save(final_file, subtitle_format, content, SUBTITLE.segments, chosen,
                            fps=VIDEO.get('framerate'), title=documents.title_for(SUBTITLE, VIDEO, final_file),
                            columns={key: _(f'export_dialog.document_column_{key}') for key in documents.COLUMNS})
 
@@ -2879,7 +2879,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Languages by their ISO 639-2 codes and names, and a title, as USF
             # specifies.
             open(final_file, mode='w', encoding='utf-8').write(usf.USFWriter().write(
-                SUBTITLE['segments'],
+                SUBTITLE.segments,
                 speakers=writer_speakers,
                 language=language,
                 metadata={'title': os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
@@ -2918,7 +2918,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # deepcopy is on a stable snapshot taken under the main
             # thread — safe from the iteration race that took the
             # whole app down before the snapshot path landed.
-            segments_copy = copy.deepcopy(SUBTITLE['segments'])
+            segments_copy = copy.deepcopy(SUBTITLE.segments)
 
             # Before bundling: rescue any dub files we're about to lose.
             #
@@ -3195,7 +3195,7 @@ def _prune_backups(stem):
 #      USFX writes concurrently. `_save_lock` serialises them so at most
 #      one save runs at a time — the second blocks until the first
 #      releases.
-#   2. The save thread used to deepcopy `session.SUBTITLE['segments']`
+#   2. The save thread used to deepcopy `session.SUBTITLE.segments`
 #      directly while the UI thread could still be editing the list
 #      (add/remove subtitle). That can raise `RuntimeError: list changed
 #      size during iteration` deep inside CPython's deepcopy, taking the
@@ -3228,7 +3228,9 @@ def _detached(value):
     thread edits the original. Pictures (a speaker's QImage) cannot be
     deep-copied, which made every snapshot fail; Qt's own copy of one is
     shared until either side writes to it, so it is taken instead."""
-    if isinstance(value, (dict, segment.Subtitle)):
+    if isinstance(value, segment.Subtitle):
+        return segment.Subtitle({key: _detached(item) for key, item in value.items()})
+    if isinstance(value, dict):
         return {key: _detached(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_detached(item) for item in value]
@@ -3433,7 +3435,7 @@ def autosave_backup_timer_timeout(force=False):
     # finishing) skip this tick. It fires every few minutes; the next
     # one will catch up. Without this, two save threads can spawn in
     # the same event-loop pass and crash on a shared deepcopy of
-    # `session.SUBTITLE['segments']`.
+    # `session.SUBTITLE.segments`.
     if _save_in_progress:
         return
     stem = _autosave_filename_stem()

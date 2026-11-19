@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtCore import QObject, Signal
 app = QApplication(sys.argv)
 from subtitld.modules import session, recorder as recorder_mod
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import record_controls
 import soundfile as sf
 recorder_mod.sd=None
@@ -40,8 +41,8 @@ fails=[]
 
 def drive_transcript(base, segments, selected=None):
     session.CONFIG.setdefault('record',{}); session.CONFIG['record'].update({'mode':'transcript','armed':True,'device':0})
-    session.SPEAKERS={}; session.SUBTITLE={'segments':segments,'language':'en-us','position':base}
-    if selected is not None: session.SUBTITLE['selected']=selected
+    session.SPEAKERS={}; session.SUBTITLE=Subtitle({'segments':segments,'selected':selected,'language':'en-us','position':base})
+    segments[:]=session.SUBTITLE.segments   # the caller's list holds the session's subtitles
     ctrl=record_controls.RecordController(Host()); fake=FakeASR(); ctrl._resolve_asr_provider=lambda:fake
     ctrl.on_play()
     stream=np.concatenate([sil(0.6),tone(1.5),sil(0.9),tone(1.2),sil(0.8)]); blk=int(0.1*SR)
@@ -52,7 +53,7 @@ def drive_transcript(base, segments, selected=None):
 
 # ===== TRANSCRIPT: no subtitle under cursor -> new subtitles from phrase boundaries =====
 drive_transcript(10.0, [])
-subs=session.SUBTITLE['segments']
+subs=session.SUBTITLE.segments
 print("[1] no-sub transcript (base=10):", [(round(s['start'],2),s['text']) for s in subs])
 if not (len(subs)==2 and subs[0]['start']>=10.0 and (subs[1]['start']-subs[0]['start'])>2.0 and all(s['text']=='hi' for s in subs)):
     fails.append('transcript_new')
@@ -60,7 +61,8 @@ if not (len(subs)==2 and subs[0]['start']>=10.0 and (subs[1]['start']-subs[0]['s
 # ===== TRANSCRIPT: subtitle under cursor -> text REPLACED (old text discarded), no new subtitle =====
 existing={'start':10.0,'end':20.0,'text':'old text to discard','speaker':'A'}   # spans both utterances
 drive_transcript(10.0, [existing])
-subs=session.SUBTITLE['segments']
+subs=session.SUBTITLE.segments
+existing=subs[0]
 print("[2] under-cursor replace:", len(subs), "sub(s); text=", repr(existing['text']))
 if not (len(subs)==1 and existing['text']=='hi hi'):   # replaced on 1st utterance, appended on 2nd
     fails.append('transcript_replace')
@@ -69,10 +71,10 @@ if not (len(subs)==1 and existing['text']=='hi hi'):   # replaced on 1st utteran
 shared=FakeASR(); wiped={'n':0}
 def import_handler(segs):
     wiped['n']+=1
-    session.SUBTITLE['segments']=list(segs)   # mimics left_panel_import._on_finished (full replace)
+    session.SUBTITLE.segments=list(segs)   # mimics left_panel_import._on_finished (full replace)
 shared.transcript_finished.connect(import_handler)
 session.CONFIG['record'].update({'mode':'transcript','armed':True,'device':0})
-session.SPEAKERS={}; session.SUBTITLE={'segments':[{'start':100.0,'end':102.0,'text':'keep me','speaker':'A'}],'language':'en-us','position':10.0}
+session.SPEAKERS={}; session.SUBTITLE=Subtitle({'segments':[{'start':100.0,'end':102.0,'text':'keep me','speaker':'A'}],'language':'en-us','position':10.0})
 ctrl_iso=record_controls.RecordController(Host())
 ctrl_iso._resolve_shared_asr_provider=lambda: shared   # real resolver clones this via type(base)()
 ctrl_iso.on_play()
@@ -85,7 +87,7 @@ else:
     for i in range(0,len(st),blk): ctrl_iso._recorder.feed(st[i:i+blk])
 ctrl_iso.on_pause()
 for _ in range(120): app.processEvents()
-subs=session.SUBTITLE['segments']
+subs=session.SUBTITLE.segments
 kept=any(s['text']=='keep me' for s in subs)
 transcribed=any(s['text']=='hi' for s in subs)
 print(f"[2b] isolation: import_handler_fired={wiped['n']} kept_existing={kept} transcribed={transcribed} total={len(subs)}")
@@ -98,7 +100,9 @@ ctrl_iso.shutdown()
 session.CONFIG['record']['mode']='audio'
 under={'start':5.0,'end':8.0,'text':'under'}
 other={'start':30.0,'end':33.0,'text':'other'}
-session.SUBTITLE={'segments':[under,other],'selected':other,'language':'en-us','position':6.0}  # cursor at 6 -> inside `under`
+session.SUBTITLE=Subtitle({'segments':[under,other],'selected':other,'language':'en-us','position':6.0})  # cursor at 6 -> inside `under`
+under = session.SUBTITLE.segments[0]
+other = session.SUBTITLE.segments[1]
 session.SPEAKERS={}
 ctrl2=record_controls.RecordController(Host())
 ctrl2.on_play()
@@ -121,7 +125,9 @@ ctrl2.shutdown()
 # ===== WAVE: take PASSES the next subtitle -> cue stops at next.start, clip overflows, no stretch =====
 under2={'start':5.0,'end':7.0,'text':'here'}
 nextsub={'start':9.0,'end':12.0,'text':'do not touch'}
-session.SUBTITLE={'segments':[under2,nextsub],'language':'en-us','position':6.0}  # base=6 inside under2
+session.SUBTITLE=Subtitle({'segments':[under2,nextsub],'language':'en-us','position':6.0})  # base=6 inside under2
+under2 = session.SUBTITLE.segments[0]
+nextsub = session.SUBTITLE.segments[1]
 session.SPEAKERS={}
 ctrl2b=record_controls.RecordController(Host())
 ctrl2b.on_play()
@@ -143,13 +149,13 @@ if not okb: fails.append('wave_passes_next')
 ctrl2b.shutdown()
 
 # ===== WAVE: no subtitle under cursor, none selected -> creates one =====
-session.SUBTITLE={'segments':[],'language':'en-us','position':2.0}; session.SPEAKERS={}
+session.SUBTITLE=Subtitle({'segments':[],'language':'en-us','position':2.0}); session.SPEAKERS={}
 ctrl3=record_controls.RecordController(Host())
 ctrl3.on_play()
 for _ in range(2): ctrl3._recorder.feed(tone(1.0))
 ctrl3.on_pause()
 for _ in range(20): app.processEvents()
-segs=session.SUBTITLE['segments']
+segs=session.SUBTITLE.segments
 print("[4] wave no-target -> created", len(segs), "subtitle(s)")
 if not (len(segs)==1 and segs[0].get('dubbing')): fails.append('wave_create')
 ctrl3.shutdown()
@@ -157,7 +163,7 @@ ctrl3.shutdown()
 # ===== engine exists, but none can be RESOLVED for recording -> fail closed =====
 # (e.g. the configured engine cannot produce a private instance)
 session.CONFIG['record'].update({'mode':'transcript','armed':True})
-session.SUBTITLE={'segments':[],'language':'en-us','position':0.0}; session.SPEAKERS={}
+session.SUBTITLE=Subtitle({'segments':[],'language':'en-us','position':0.0}); session.SPEAKERS={}
 ctrl4=record_controls.RecordController(Host()); ctrl4._resolve_asr_provider=lambda:None
 ctrl4.on_play()
 print("[5] no-engine status:", ctrl4.status, " recording=", ctrl4.is_recording)
@@ -180,7 +186,7 @@ if c7.mode!='audio' or session.CONFIG['record']['mode']!='transcript':
 # Recording then does what the UI shows (audio is the checked switch), rather
 # than arming, playing and producing nothing at all.
 session.CONFIG['record'].update({'armed':True})
-session.SUBTITLE={'segments':[],'language':'en-us','position':0.0}; session.SPEAKERS={}
+session.SUBTITLE=Subtitle({'segments':[],'language':'en-us','position':0.0}); session.SPEAKERS={}
 c7.on_play()
 print("[7b] no engine: recording=",c7.is_recording," status=",c7.status)
 if not c7.is_recording: fails.append('no_engine_records_audio')

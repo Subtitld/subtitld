@@ -220,7 +220,7 @@ opened, _fmt = file_io.process_subtitles_file(str(folder / 'in.eaf'))
 check("a translation by Subtitld's code for its language", opened[0].get('translations'), {'pt-pt': 'Olá'})
 check("TRS's language the project's", (file_io.process_subtitles_file(str(folder / 'in.trs'))[1], session.SUBTITLE['language']),
       ('TRS', 'fr-fr'))
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.SUBTITLE['language'] = 'en-us'
 session.VIDEO = {'width': 1280, 'height': 720, 'filepath': '/videos/clip.mp4'}
 for fmt, name in (('EAF', 'out.eaf'), ('TRS', 'out.trs'), ('EXB', 'out.exb')):

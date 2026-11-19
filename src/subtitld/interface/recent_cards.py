@@ -82,11 +82,11 @@ def remember(window, look_ahead=False):
         duration = 0.0
     if duration > 0:
         entry['duration'] = duration
-        entry['cues'] = summary(session.SUBTITLE.get('segments'), duration)
+        entry['cues'] = summary(session.SUBTITLE.segments, duration)
     player = getattr(window, 'preview_panel_player', None)
     if player is None:
         return
-    segments = [s for s in session.SUBTITLE.get('segments') or [] if isinstance(s, dict)]
+    segments = [s for s in session.SUBTITLE.segments if isinstance(s, dict)]
     position = float(session.SUBTITLE.get('position') or 0.0)
     showing = _showing(segments, position)
     if showing is None and look_ahead:

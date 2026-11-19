@@ -457,7 +457,7 @@ class LiveCard(QWidget):
         player = getattr(window, 'preview_panel_player', None)
         if player is not None and hasattr(player, '_audio_device'):
             # Dubs that changed, or whose files just came, play as they are now.
-            player._audio_device.sync_subtitle_dubs(session.SUBTITLE.get('segments') or [])
+            player._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
         if not self.isHidden():
             self.refresh(load=False)
 

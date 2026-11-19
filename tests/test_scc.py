@@ -200,7 +200,7 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.scc').write_text(POP, encoding='ascii')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.scc'))
 check('opens', (fmt, len(opened), opened[1]['text']), ('SCC', 5, '{\\an8}<font color="#ffff00">Yellow at the top</font>'))
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 session.SUBTITLE['language'] = 'en-us'
 session.FORMAT['options'] = {'timecode': 'non-drop', 'speakers': 'voice'}
 file_io.save_file(str(folder / 'out.scc'), 'SCC')

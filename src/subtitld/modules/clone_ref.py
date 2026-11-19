@@ -97,7 +97,7 @@ def has_translations() -> bool:
     translation), and only an explicit `source_language` says which is: it
     must not be taken from `SUBTITLE['language']`."""
     return any(isinstance(seg, dict) and seg.get('translations')
-               for seg in session.SUBTITLE.get('segments') or [])
+               for seg in session.SUBTITLE.segments)
 
 
 def _segment_text_for_source_language(seg: dict, source_lang: str | None) -> str:
@@ -211,7 +211,7 @@ def _pick_spans_for_speaker(
     conditions; jumping around the timeline introduces louder/softer
     discontinuities the embedding extractor doesn't like.
     """
-    segments = session.SUBTITLE.get('segments') or []
+    segments = session.SUBTITLE.segments
     # Resolve once, outside the loop — the source language is a
     # project-level property, identical for every segment.
     source_lang = _resolve_source_language()

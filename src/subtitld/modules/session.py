@@ -569,9 +569,9 @@ _before_capture_callbacks = []
 def capture_changes():
     """Record what the document's last edit changed (modules.journal)."""
     # Whatever the edit made, every subtitle leaves it with its own ID.
-    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    cue_ids.ensure_ids(SUBTITLE.segments)
     _before_capture()
-    return journal.capture(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+    return journal.capture(SUBTITLE.segments, SPEAKERS, SUBTITLE)
 
 
 def _before_capture():
@@ -587,9 +587,9 @@ def document_loaded():
     """A project was opened or started: the journal starts from it, so that
     opening it is not recorded as an edit, and it is shared for co-editing
     if its file says so (modules.collab_state)."""
-    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    cue_ids.ensure_ids(SUBTITLE.segments)
     _before_capture()
-    journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+    journal.reset(SUBTITLE.segments, SPEAKERS, SUBTITLE)
     collab_state.opened()
     for callback in list(_document_loaded_callbacks):
         callback()

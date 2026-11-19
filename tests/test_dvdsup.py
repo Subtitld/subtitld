@@ -23,6 +23,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, dvdsup, export_options, file_io, picture_ocr, pgs, session, vobsub
+from subtitld.modules.segment import Subtitle
 from subtitld.modules.addons.provider import OCRProvider
 
 fails = []
@@ -125,7 +126,7 @@ check('an .ifo that is none is not read', dvdsup.parse_ifo(b'\x00' * 0x1800), No
 
 print('opened')
 session.FORMAT = {}
-session.SUBTITLE = {'language': 'en-us'}
+session.SUBTITLE = Subtitle({'language': 'en-us'})
 for name, want in (('film.sup', 'dvdsup'),):
     try:
         file_io.process_subtitles_file(str(folder / name))
@@ -151,7 +152,7 @@ from subtitld.interface import subtitle_pictures
 SEGMENTS = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <i>there</i>'},
             {'start': 3.0, 'end': 4.0, 'text': '{\\an8}A sign', 'forced': True},
             {'start': 5.0, 'end': 6.0, 'text': ''}]
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'pt-br'})
 session.VIDEO = {}
 session.FORMAT = {'format': 'DVDSUP', 'options': {'vobsub_size': 'ntsc'}}
 out_folder = folder / 'out'

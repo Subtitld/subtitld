@@ -77,7 +77,7 @@ try:
     check('another .asc says it is not one', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError:
     check('another .asc says it is not one', True, True)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.asc'), 'CHEETAHASC')

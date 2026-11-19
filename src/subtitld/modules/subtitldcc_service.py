@@ -296,14 +296,13 @@ def open_in_editor(window, data):
         temporary.write(data)
     try:
         history.history_clear()
-        session.SUBTITLE['segments'] = []
-        session.SUBTITLE['selected'] = None
+        session.SUBTITLE.reset()
         session.SPEAKERS.clear()
         segments, _format = file_io.process_subtitles_file(path)
     finally:
         os.unlink(path)
-    session.SUBTITLE['segments'] = segments
-    segments = session.SUBTITLE['segments']  # the Segments it holds, not the dicts given
+    session.SUBTITLE.segments = segments
+    segments = session.SUBTITLE.segments  # the Segments it holds, not the dicts given
     session.SUBTITLE['filepath'] = ''
     session.CONFIG['format_to_save'] = 'USFX'
     for name in {segment.get('speaker', 'A') for segment in segments}:
@@ -338,7 +337,7 @@ def text_languages():
     """The texts the editor can publish: [(language or None, is_translation)], the original first."""
     languages = [(session.SUBTITLE.get('language') or None, False)]
     seen = set()
-    for segment in session.SUBTITLE.get('segments', []):
+    for segment in session.SUBTITLE.segments:
         for language in (segment.get('translations') or {}):
             if language and language not in seen:
                 seen.add(language)
@@ -350,7 +349,7 @@ def usf_for_publishing(translation=None, title=''):
     """The subtitles as USF to publish: one language (the original text, or the translation in
     ``translation``), speaker names and colors. Never dubbing, speaker images or file paths."""
     segments = []
-    for segment in session.SUBTITLE.get('segments', []):
+    for segment in session.SUBTITLE.segments:
         text = segment.get('text', '')
         if translation:
             text = (segment.get('translations') or {}).get(translation, '')

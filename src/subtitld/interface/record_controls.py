@@ -494,7 +494,7 @@ class RecordController(QObject):
     def _find_by_key(key):
         if not key:
             return None
-        for s in session.SUBTITLE.get('segments', []) or []:
+        for s in session.SUBTITLE.segments:
             if isinstance(s, dict) and s.get('_rec') == key:
                 return s
         return None
@@ -514,19 +514,19 @@ class RecordController(QObject):
 
     @staticmethod
     def _insert_segment(seg):
-        segs = session.SUBTITLE.setdefault('segments', [])
+        segs = session.SUBTITLE.segments
         starts = [float(s.get('start', 0.0)) for s in segs]
         segs.insert(bisect.bisect_right(starts, float(seg['start'])), seg)
 
     @staticmethod
     def _remove_segment(seg):
-        segs = session.SUBTITLE.get('segments', [])
+        segs = session.SUBTITLE.segments
         for i, s in enumerate(segs):
             if s is seg:
                 del segs[i]
                 break
-        if session.SUBTITLE.get('selected') is seg:
-            session.SUBTITLE['selected'] = None
+        if session.SUBTITLE.selected is seg:
+            session.SUBTITLE.selected = None
 
     @staticmethod
     def _untouched(seg, rec):
@@ -1369,11 +1369,11 @@ class RecordController(QObject):
             end = min(natural_end if natural_end is not None else base + 3.0, cap)
             subtitles_mod.add_subtitle(position=base, duration=max(0.1, end - base), text='')
             subtitle = next(
-                (s for s in session.SUBTITLE.get('segments', [])
+                (s for s in session.SUBTITLE.segments
                  if abs(float(s.get('start', 0.0)) - base) < 0.05), None)
             if subtitle is None:
                 return
-            session.SUBTITLE['selected'] = subtitle
+            session.SUBTITLE.selected = subtitle
         elif natural_end is not None:
             # Grow the existing cue to cover the take, capped at the next
             # subtitle's start, but never shorten it.
@@ -1396,7 +1396,7 @@ class RecordController(QObject):
         subtitle['locked'] = False
         try:
             self._host.preview_panel_player._audio_device.sync_subtitle_dubs(
-                session.SUBTITLE['segments'])
+                session.SUBTITLE.segments)
         except Exception:
             pass
         self._refresh_ui()
@@ -1405,14 +1405,14 @@ class RecordController(QObject):
     def _next_subtitle_start(self, base):
         """Start time of the earliest subtitle beginning after ``base``, or None."""
         starts = [float(s.get('start', 0.0))
-                  for s in session.SUBTITLE.get('segments', [])
+                  for s in session.SUBTITLE.segments
                   if isinstance(s, dict) and float(s.get('start', 0.0)) > base]
         return min(starts) if starts else None
 
     # -- helpers -----------------------------------------------------------
     def _subtitle_at(self, position):
         """The subtitle whose time range contains ``position`` (seconds), if any."""
-        for s in session.SUBTITLE.get('segments', []):
+        for s in session.SUBTITLE.segments:
             if isinstance(s, dict) and \
                     float(s.get('start', 0.0)) <= position <= float(s.get('end', 0.0)):
                 return s
@@ -1422,7 +1422,7 @@ class RecordController(QObject):
         """Trim a new-subtitle range so it can't overlap existing subtitles:
         push the start past any subtitle it lands inside, and cap the end at the
         next subtitle's start."""
-        segs = session.SUBTITLE.get('segments', [])
+        segs = session.SUBTITLE.segments
         for s in segs:
             s_start = float(s.get('start', 0.0))
             s_end = float(s.get('end', 0.0))
@@ -1439,7 +1439,7 @@ class RecordController(QObject):
         under = self._subtitle_at(position)
         if under is not None:
             return under
-        sel = session.SUBTITLE.get('selected')
+        sel = session.SUBTITLE.selected
         return sel if isinstance(sel, dict) else None
 
     def _refresh_ui(self):

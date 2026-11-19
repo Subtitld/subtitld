@@ -29,9 +29,9 @@ def check(name, got, want):
 
 def fresh(*segments):
     history.history_clear()
-    session.SUBTITLE['segments'] = [dict(segment) for segment in segments]
-    session.SUBTITLE['selected'] = None
-    return session.SUBTITLE['segments']
+    session.SUBTITLE.segments = [dict(segment) for segment in segments]
+    session.SUBTITLE.selected = None
+    return session.SUBTITLE.segments
 
 
 def ids(segments):
@@ -74,13 +74,13 @@ print('undo')
 segments = fresh({'start': 0, 'end': 1, 'text': 'a'}, {'start': 2, 'end': 3, 'text': 'b'})
 cue_ids.ensure_ids(segments)
 before = ids(segments)
-session.SUBTITLE['selected'] = segments[1]
+session.SUBTITLE.selected = segments[1]
 subtitles.add_subtitle(position=10.0, text='c')
 history.history_undo()
-check('undo brings the same IDs back', ids(session.SUBTITLE['segments']), before)
-check('undo keeps the selection by ID', session.SUBTITLE['selected']['id'], before[1])
+check('undo brings the same IDs back', ids(session.SUBTITLE.segments), before)
+check('undo keeps the selection by ID', session.SUBTITLE.selected['id'], before[1])
 history.history_redo()
-check('redo too', session.SUBTITLE['selected']['id'], before[1])
+check('redo too', session.SUBTITLE.selected['id'], before[1])
 
 print('USF')
 segments = [{'id': 'aaaa0000aaaa0000', 'start': 1.0, 'end': 2.0, 'text': 'Hi', 'translations': {'pt': 'Oi'}},

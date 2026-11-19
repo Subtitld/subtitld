@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session
+from subtitld.modules.segment import Subtitle
 from subtitld import thumbnailer
 
 fails = []
@@ -33,7 +34,7 @@ PNG = b'\x89PNG\r\n\x1a\n' + b'picture' * 10
 folder = Path(tempfile.mkdtemp())
 video = folder / 'clip.mp4'
 video.write_bytes(b'')
-session.SUBTITLE = {'language': 'en-us', 'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]}
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]})
 session.VIDEO = {'filepath': str(video)}
 session.SPEAKERS, session.FORMAT = {}, {}
 
@@ -70,7 +71,7 @@ check('a provider that fails: no thumbnail, the save goes on', file_io._thumbnai
 file_io.thumbnail_provider = None
 
 print('reading')
-session.SUBTITLE = {}
+session.SUBTITLE = Subtitle()
 segments = file_io.process_subtitles_file(str(folder / 'a.usfx'))[0]
 check('the project reads as before', [(s['start'], s['text']) for s in segments], [(1.0, 'Hello')])
 

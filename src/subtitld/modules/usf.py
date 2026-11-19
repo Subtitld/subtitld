@@ -563,7 +563,7 @@ class USFWriter():
         """Serialize subtitles to USF XML.
 
         Parameters:
-          subtitles: list of subtitle dicts (from session.SUBTITLE['segments']).
+          subtitles: list of subtitle dicts (from session.SUBTITLE.segments).
           speakers:  dict name -> {'color': '#RRGGBB', 'image_bytes': bytes, ...}.
                      Emits one <style> per speaker; writes `speaker` + `style` on
                      <text>. If a speaker has `image_bytes`, embeds it inside the

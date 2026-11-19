@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, kdenlive_project, project_export, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -275,7 +276,7 @@ check('another sound chosen: the video\'s turned down', etree.parse(str(cut)).ge
       .find('adjust-volume').get('amount'), '-96dB')
 
 print('through file_io')
-session.SUBTITLE = subtitle
+session.SUBTITLE = Subtitle(subtitle)
 session.VIDEO = video
 session.FORMAT = {'options': {'project': {'translations': False}}}
 saved = folder / 'saved' / 'film.kdenlive'

@@ -146,7 +146,7 @@ try:
     check("a CCExtractor transcript's .ttxt: says what it is", None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check("a CCExtractor transcript's .ttxt: says what it is", 'CCExtractor' in str(error), True)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'width': 1280, 'height': 720, 'filepath': '/videos/clip.mp4'}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.ttxt'), 'TTXT')

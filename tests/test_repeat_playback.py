@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 
 fails = []
@@ -67,7 +68,7 @@ def wraps(path):
 
 
 session.CONFIG = {'repeat_activated': True, 'playback_repeat_duration': 2.0, 'playback_repeat_times': 3}
-session.SUBTITLE = {'position': 10.0}
+session.SUBTITLE = Subtitle({'position': 10.0})
 session.REPEAT_DURATION_BUFFER = []
 host = Host()
 

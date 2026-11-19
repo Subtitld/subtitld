@@ -23,6 +23,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import bdn, config, file_io, picture_ocr, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules.addons.provider import OCRProvider
 
 fails = []
@@ -117,7 +118,7 @@ check('in the language the file gives', language, 'fr-fr')
 
 print('through file_io, beside the other .xml')
 session.FORMAT = {}
-session.SUBTITLE = {'language': 'en-us'}
+session.SUBTITLE = Subtitle({'language': 'en-us'})
 try:
     file_io.process_subtitles_file(str(folder / 'film.xml'))
     check('a BDN goes to the OCR dialog', None, 'PictureSubtitlesError')
@@ -186,7 +187,7 @@ SEGMENTS = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <i>there</i>'},
             # Two at once, the second overlapping the first's end.
             {'start': 7.0, 'end': 9.0, 'text': 'First'},
             {'start': 8.0, 'end': 10.0, 'text': '{\\an8}Second'}]
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'en-us', 'metadata': {'title': 'Pictures'}}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'en-us', 'metadata': {'title': 'Pictures'}})
 session.VIDEO = {'width': 1280, 'height': 720, 'framerate': 25.0}
 session.FORMAT = {'format': 'BDN', 'options': {'bdn_fps': 25.0}}
 target = folder / 'out' / 'reel.xml'
@@ -216,7 +217,7 @@ check('where the preview puts them: the sign at the top, the line at the bottom'
       (graphics[1]['y'] < 720 / 3, graphics[0]['y'] + graphics[0]['height'] > 720 * 2 / 3), (True, True))
 
 session.FORMAT = {}
-session.SUBTITLE = {'language': 'en-us'}
+session.SUBTITLE = Subtitle({'language': 'en-us'})
 try:
     file_io.process_subtitles_file(str(target))
     check('what Subtitld writes opens for OCR', None, 'PictureSubtitlesError')
@@ -241,7 +242,7 @@ check('offered, a timed-text format, an .xml', ('BDN' in SUBTITLE_FORMATS, 'BDN'
 from subtitld.modules import utils
 check('.xml still a DCP\'s by its extension', utils.get_format_from_extension('xml'), 'DCP')
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'en-us'})
 session.VIDEO = {'framerate': 29.97}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('BDN')

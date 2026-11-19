@@ -121,7 +121,7 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'in.edl'))
 check('opens as EDL, the locators, the style and the hour kept', (fmt, len(opened), session.FORMAT['options']['edl_style'],
                                                                    session.FORMAT['options']['timeline_start']),
       ('EDL', 3, 'locators', '01:00:00:00'))
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/show.mov'}
 session.FORMAT = {'options': {'edl_style': 'events', 'timeline_start': '01:00:00:00', 'timecode': 'non-drop'}}
 session.SUBTITLE.pop('metadata', None)

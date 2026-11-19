@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import startscreen
 
 fails = []
@@ -34,7 +35,7 @@ video = folder / 'clip.mp4'
 video.write_bytes(b'')
 srt = folder / 'clip.srt'
 srt.write_text('1\n00:00:01,000 --> 00:00:02,000\nHello\n', encoding='utf-8')
-session.SUBTITLE = {'language': 'en-us', 'segments': file_io.process_subtitles_file(str(srt))[0]}
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': file_io.process_subtitles_file(str(srt))[0]})
 session.VIDEO = {'filepath': str(video)}
 session.FORMAT = {}
 usfx = folder / 'project.usfx'
@@ -48,7 +49,7 @@ startscreen.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (asked.ap
 
 def open_(paths, ask=True):
     loaded.clear(); asked.clear()
-    session.SUBTITLE, session.VIDEO = {}, {}
+    session.SUBTITLE, session.VIDEO = Subtitle(), {}
     return startscreen.open_files(None, [str(p) for p in paths], ask=ask), list(loaded), list(asked)
 
 

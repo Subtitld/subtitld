@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtMultimedia import QMediaPlayer
 app = QApplication([])
 from subtitld.modules import audioengine, session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import preview_panel, left_panel_videoproperties as vp
 
 fails = []
@@ -41,7 +42,7 @@ def no_device(**_kwargs):
 
 
 audioengine.sd.OutputStream = no_device
-session.SUBTITLE = {'segments': [], 'selected': None, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [], 'selected': None, 'position': 0.0})
 
 video = Path(tempfile.mkdtemp()) / 'clip.mkv'
 video.write_bytes(b'not really a video')

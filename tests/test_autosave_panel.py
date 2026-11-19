@@ -20,6 +20,7 @@ from PySide6.QtCore import QTimer, QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import left_panel_autosave as lpa
 
 fails = []
@@ -88,7 +89,7 @@ class Host(QWidget):
 
 session.CONFIG = {'autosave': {'backup_enabled': True, 'original_enabled': True, 'backup_interval': 300000,
                                'original_interval': 60000, 'backup_max_count': 20}}
-session.SUBTITLE = {'filepath': '/projects/talk.srt', 'segments': []}
+session.SUBTITLE = Subtitle({'filepath': '/projects/talk.srt', 'segments': []})
 session.VIDEO = {}
 session.AUTOSAVE_LAST_BACKUP = now - datetime.timedelta(minutes=4)
 session.AUTOSAVE_LAST_ORIGINAL = None

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import docops, history, journal, plaintext, session, subtitles
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -126,12 +127,12 @@ check('no translations at all is not an empty set of them', ops, [{'op': 'cue.un
 
 print('the journal')
 history.history_clear()
-session.SUBTITLE = {'segments': [], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [], 'language': 'en'})
 session.SPEAKERS.clear()
 session.SPEAKERS['A'] = {'color': '#ff0000'}
 history.history_clear()
 recorded = []
-replica = docops.snapshot(session.SUBTITLE['segments'], session.SPEAKERS, session.SUBTITLE)
+replica = docops.snapshot(session.SUBTITLE.segments, session.SPEAKERS, session.SUBTITLE)
 
 
 def on_changes(ops, _undo):
@@ -154,10 +155,10 @@ def edit(action):
 
 
 def live_document():
-    return docops.snapshot(session.SUBTITLE['segments'], session.SPEAKERS, session.SUBTITLE)
+    return docops.snapshot(session.SUBTITLE.segments, session.SPEAKERS, session.SUBTITLE)
 
 
-segments = session.SUBTITLE['segments']
+segments = session.SUBTITLE.segments
 edit(lambda: subtitles.add_subtitle(position=1.0, duration=4.0, text='one two'))
 edit(lambda: subtitles.add_subtitle(position=8.0, duration=2.0, text='three'))
 edit(lambda: subtitles.slice_subtitle(selected_subtitle=segments[0], position=3.0, last_text='one', next_text='two'))
@@ -181,8 +182,8 @@ check('undo is recorded', len(recorded), count + 2)
 history.history_redo()
 check('so is redo, and the replica follows', same_document(replica, live_document()), True)
 
-text = plaintext.serialize(session.SUBTITLE['segments'], plaintext.SRT).replace('three', 'THREE')
-edit(lambda: plaintext.apply_cues(session.SUBTITLE['segments'], plaintext.parse(text, plaintext.SRT).cues))
+text = plaintext.serialize(session.SUBTITLE.segments, plaintext.SRT).replace('three', 'THREE')
+edit(lambda: plaintext.apply_cues(session.SUBTITLE.segments, plaintext.parse(text, plaintext.SRT).cues))
 check('the plain-text panel', same_document(replica, live_document()), True)
 
 # An edit some code made without calling set_unsaved: the next undo step
@@ -195,19 +196,19 @@ check('recorded changes are JSON', all(json.loads(json.dumps(ops)) == ops for op
 
 print('opening a project')
 count = len(recorded)
-session.SUBTITLE['segments'] = [{'start': 0.0, 'end': 1.0, 'text': 'Opened'}]
+session.SUBTITLE.segments = [{'start': 0.0, 'end': 1.0, 'text': 'Opened'}]
 session.document_loaded()
 session.set_unsaved(False)
 check('is not an edit', len(recorded), count)
-check('and its subtitles have IDs', bool(session.SUBTITLE['segments'][0].get('id')), True)
+check('and its subtitles have IDs', bool(session.SUBTITLE.segments[0].get('id')), True)
 journal.remove_listener(on_changes)
 
 print('speed')
-session.SUBTITLE['segments'] = [{'start': float(i), 'end': i + 0.5, 'text': f'Line {i}', 'speaker': 'A',
+session.SUBTITLE.segments = [{'start': float(i), 'end': i + 0.5, 'text': f'Line {i}', 'speaker': 'A',
                                  'translations': {'pt': f'Linha {i}'}, 'dubbing': [{'uid': str(i), 'start': float(i)}]}
                                 for i in range(5000)]
 session.document_loaded()
-session.SUBTITLE['segments'][2500]['text'] = 'Changed'
+session.SUBTITLE.segments[2500]['text'] = 'Changed'
 started = time.perf_counter()
 ops = session.capture_changes()
 took = (time.perf_counter() - started) * 1000

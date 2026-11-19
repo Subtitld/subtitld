@@ -90,7 +90,7 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.sbv').write_text(YOUTUBE, encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.sbv'))
 check('opens', (fmt, len(opened), opened[0]['speaker']), ('SBV', 3, 'ALICE'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 for options, want in (({'speakers': 'voice'}, '>> ALICE: Hi, my name'), ({'speakers': 'prefix'}, 'ALICE: Hi, my name is'),
                       ({'speakers': 'none', 'offset': 1.0}, 'Hi, my name is Alice ')):
     session.FORMAT['options'] = options
