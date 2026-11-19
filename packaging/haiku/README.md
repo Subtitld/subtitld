@@ -9,7 +9,7 @@ repository, [hpkg.subtitld.org](https://hpkg.subtitld.org):
 
     media-video/subtitld/subtitld-26.10.recipe   the application
     media-video/subtitld/additional-files/       its attributes, file type and icon
-    dev-python/<name>/<name>-<version>.recipe    7 dependencies
+    dev-python/<name>/<name>-<version>.recipe    8 dependencies
     gen_recipes.py                               regenerates the dev-python recipes
 
 ## A native application

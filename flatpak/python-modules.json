@@ -136,6 +136,20 @@
             ]
         },
         {
+            "name": "python3-pyphen",
+            "buildsystem": "simple",
+            "build-commands": [
+                "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"pyphen\" --no-build-isolation"
+            ],
+            "sources": [
+                {
+                    "type": "file",
+                    "url": "https://files.pythonhosted.org/packages/ec/1d/23801cf008f71575f0a4800463f349afa5f04b27fe783178a45cdc4d5edf/pyphen-0.18.1-py3-none-any.whl",
+                    "sha256": "0aa9051e15928cecadd4c632cea0258ba57215b2a197a39baa46abcdb0f47e84"
+                }
+            ]
+        },
+        {
             "name": "python3-certifi",
             "buildsystem": "simple",
             "build-commands": [

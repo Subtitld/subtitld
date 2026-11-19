@@ -46,6 +46,9 @@ dependencies = [
     "chardet==6.0.0",
     "pysubs2",
     "platformdirs",
+    # Where a word's syllables start, in the subtitle's language, for timing
+    # it syllable by syllable (modules/segment.py).
+    "pyphen",
     # Trusted CAs for urllib downloads in frozen builds (modules/net.py).
     "certifi",
     # Imported directly by the audio, recording and timeline code. It used to

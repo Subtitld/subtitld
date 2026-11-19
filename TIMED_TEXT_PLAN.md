@@ -172,8 +172,8 @@ the subtitle's; effect and level are `subtitldcc:` attributes on `<k>`.
 The ASS reader now keeps its karaoke (it dropped it before). Every writer
 of karaoke codes gets them from export_options.prepare(karaoke_codes=True).
 Merging keeps both timings (`joined`), cutting shares the pieces by time
-(`cut`). Syllables need a `hyphenate` function: pyphen is not a dependency
-yet, a decision for M5.)* `split`/`unsplit`/`set_text` with their rules
+(`cut`). Syllables come from pyphen, a dependency since (LibreOffice's
+hyphenation dictionaries, 84 files; `segment.hyphenator(language)`).)* `split`/`unsplit`/`set_text` with their rules
 (below), USFX `<karaoke>` read and write, `{\k}` opening into pieces, and
 the `{\k}` writers (ASS, LRC, UltraStar, KAR, KBP, CDG) writing from pieces.
 If USF's `<karaoke>` has no place for a piece's effect, USFX adds a
@@ -185,8 +185,8 @@ word stamps → USFX → LRC), `set_text` rules have unit tests.
 words / syllables / letters" and "Join". Its pieces show as a row (chips
 or a small table) under the text box: each piece's text, start and end,
 editable; click between two letters to split a piece there, click a split
-to remove it. Syllables use `pyphen` for the subtitle's language, times
-spread by letter count as a first pass.
+to remove it. Syllables use `segment.hyphenator()` for the subtitle's
+language (pyphen), times spread by letter count as a first pass.
 *Done when:* tested in a real GUI session (window opened on Wayland, not
 offscreen): split, retime, edit text, undo, save, reopen.
 

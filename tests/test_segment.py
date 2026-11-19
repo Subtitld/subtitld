@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import collab_client, export_options, file_io, history, karaoke, plaintext, quality_check, session, subtitles, subtitldcc_service
-from subtitld.modules.segment import Segment, SegmentList, Subtitle, cut, joined, set_text, text_of, timed_pieces
+from subtitld.modules.segment import Segment, SegmentList, Subtitle, cut, hyphenator, joined, set_text, text_of, timed_pieces
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
 fails = []
@@ -295,6 +295,15 @@ check('unsplit', segment['text'], 'karaoke time')
 segment = Segment({'start': 0.0, 'end': 1.0, 'text': [dict(TIMED[0], effect='wipe'), *TIMED[1:]]})
 segment.split('letter')
 check('a piece cut keeps its effect', [p.get('effect') for p in segment.pieces()][:4], ['wipe', 'wipe', 'wipe', None])
+
+print('syllables by the subtitle\'s language')
+segment = Segment({'start': 0.0, 'end': 3.0, 'text': 'Cantando junto a palavra'})
+segment.split('syllable', hyphenator('pt-br'))
+check('Portuguese', [p['text'] for p in segment.pieces()], ['Can', 'tan', 'do ', 'jun', 'to ', 'a ', 'pa', 'la', 'vra'])
+check('a region without a dictionary of its own: its language\'s', hyphenator('de-de')('Liederabend'), [3, 6])
+check('a language without one: none (split gives words)', (hyphenator('ja-jp'), hyphenator(''), hyphenator(None)),
+      (None, None, None))
+check('a one-letter syllable at a word\'s start, not at its end', hyphenator('en-us')('along'), [1])
 
 print('set_text')
 segment = Segment({'start': 0.0, 'end': 3.0, 'text': [dict(piece) for piece in TIMED]})

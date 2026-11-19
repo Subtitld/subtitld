@@ -180,6 +180,25 @@ def _recut(pieces, level, hyphenate=None, cuts=None):
     return out
 
 
+def hyphenator(language):
+    """`hyphenate(word)` for split(): where the syllables of a word start, by
+    the hyphenation dictionary (pyphen's, LibreOffice's) of `language`, a
+    code as Subtitld writes one ('pt-br', 'en'). None when there is none for
+    it. A syllable may be one letter at a word's start ("a-long"), not at
+    its end, where the dictionaries would cut a lone consonant off."""
+    try:
+        import pyphen
+    except ImportError:
+        return None
+    parts = str(language or '').replace('-', '_').split('_')
+    code = parts[0].lower() + (f'_{parts[1].upper()}' if len(parts) > 1 and parts[1] else '')
+    found = pyphen.language_fallback(code) if code else None
+    if not found:
+        return None
+    dictionary = pyphen.Pyphen(lang=found, left=1, right=2)
+    return lambda word: [int(place) for place in dictionary.positions(word)]
+
+
 def split(segment, level, hyphenate=None):
     """Cut the text of `segment` (any dict) into timed pieces at `level`, a
     word, syllable or letter each: a text not timed yet over the whole
