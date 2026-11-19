@@ -369,15 +369,10 @@ want = srt_ref('sub-srt-madness-timeshift', shift=3.14)
 # The times: "00:00:07,777 --> 00:00:06,666", ending before it starts,
 # lasts until the next subtitle, as FFmpeg has it.
 same('times', [cue[:2] + ('',) for cue in cues(segments, 3)], [cue[:2] + ('',) for cue in want], tolerance=0.0011)
-# FFmpeg takes any line beginning with a number just before a timing for
-# that subtitle's number ("21 lol jk", "44 yes we can", '0 now this is the
-# "id" of the next event'); Subtitld only a number alone, so those three
-# lines stay in the text. Everything else is the same.
-differ = [index for index, (ours, theirs) in enumerate(zip(cues(segments), want)) if ours[2] != theirs[2]]
-check('the same text but those three lines', differ, [0, 3, 4])
-check('...which are the only difference', [lines_of('\n'.join(line for line in ours[2].split('\n') if line not in (
-    '21 lol jk', '44 yes we can', '0 now this is the "id" of the next event'))) for ours in cues(segments)],
-    [theirs[2] for theirs in want])
+# A line beginning with a number just before a timing is that subtitle's
+# number, as FFmpeg's srtdec takes it ("21 lol jk", "44 yes we can",
+# '0 now this is the "id" of the next event'): the text is FFmpeg's.
+check('the text, FFmpeg\'s', [ours[2] for ours in cues(segments)], [theirs[2] for theirs in want])
 round_trip('SubRip, madness', segments, 'SRT', 'srt')
 
 print('SubRip, \\r\\r\\n line ends (sub-srt-rrn-remux)')

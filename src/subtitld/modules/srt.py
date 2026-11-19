@@ -36,6 +36,7 @@ from subtitld.modules import markup
 _STAMP = r'(\d+):(\d{1,2}):(\d{1,2})(?:[,.](\d+))?'
 _TIMING = re.compile(r'^\s*' + _STAMP + r'\s*(?:-{1,2}|–|—)\s*>\s*' + _STAMP)
 _NUMBER = re.compile(r'^\s*(\d+)\s*$')
+_LEADING_NUMBER = re.compile(r'^\s*\+?\d')
 _BOMS = (
     (b'\xef\xbb\xbf', 'utf-8'),
     (b'\xff\xfe\x00\x00', 'utf-32-le'),     # before UTF-16's, which it starts with
@@ -126,34 +127,29 @@ def parse(text):
     lines = text.split('\n')
     timings = [(index, match) for index, line in enumerate(lines) if (match := _TIMING.match(line))]
     segments = []
-    # The number written before a subtitle, when there is one: the next is
-    # most likely one more.
-    number = None
-    if timings and timings[0][0] > 0:
-        found = _NUMBER.match(lines[timings[0][0] - 1])
-        number = int(found.group(1)) if found else None
+    # Whether the file numbers its subtitles: what stands before its first
+    # timing says so. One that does not keeps every line it has.
+    numbered = bool(timings) and any(line.strip() for line in lines[:timings[0][0]])
     for position, (index, match) in enumerate(timings):
         last = position + 1 == len(timings)
         body = [line.strip() for line in lines[index + 1:timings[position + 1][0] if not last else len(lines)]]
-        while body and not body[-1]:
-            body.pop()
-        next_number = None
-        if not last and body:
-            found = _NUMBER.match(body[-1])
-            # The next subtitle's number, unless it is this one's text: it
-            # stands after a blank line, or is the number that comes next.
-            expected = number + 1 if number is not None else position + 2
-            if found and (len(body) > 1 and not body[-2] or int(found.group(1)) == expected):
-                next_number = int(found.group(1))
+        body = [line for line in body if line]
+        # The next subtitle's number, as FFmpeg's srtdec takes it: the last
+        # line before a timing, when it begins with a number not below 0
+        # ("21 lol jk" too); kept when it is all the text this subtitle has
+        # and more than a number. The last subtitle keeps all of its lines:
+        # a number at the end of a file is more likely a year than the
+        # number of a subtitle that is not there.
+        if numbered and not last and body and _LEADING_NUMBER.match(body[-1]):
+            if len(body) > 1 or _NUMBER.match(body[-1]):
                 body.pop()
         start = _seconds(*match.groups()[0:4])
         end = _seconds(*match.groups()[4:8])
         segments.append({
             'start': start,
             'end': end if end >= start else None,
-            'text': '\n'.join(line for line in body if line),
+            'text': '\n'.join(body),
         })
-        number = next_number
     segments.sort(key=lambda segment: segment['start'])
     # An end before its start is a typo the subtitle should not vanish
     # for: it lasts until the next one, as FFmpeg shows it.
