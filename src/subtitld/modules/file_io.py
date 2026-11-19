@@ -1,4 +1,5 @@
 import os
+import contextlib
 import codecs
 import copy
 import math
@@ -2258,11 +2259,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
     user actually picked, not the UI-default.
 
     Reads document state through local bindings (`SUBTITLE` / `SPEAKERS`
-    / `VIDEO` / `FORMAT`) that come from `_active_save_snapshot` when
-    one is set (background save threads), falling back to live session
+    / `VIDEO` / `FORMAT`) that come from the calling thread's snapshot
+    when one is set (background save threads), falling back to live session
     when called synchronously on the main thread. The snapshot path
     avoids racing the UI thread's edits during the write."""
-    snap = _active_save_snapshot
+    snap = getattr(_thread_snapshot, 'snapshot', None) or _active_save_snapshot
     if snap is not None:
         SUBTITLE = snap['SUBTITLE']
         SPEAKERS = snap['SPEAKERS']
@@ -3064,7 +3065,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 if entry:
                     writer_speakers[name] = entry
 
-            # When `_active_save_snapshot` populated SUBTITLE, this
+            # When a save thread's snapshot populated SUBTITLE, this
             # deepcopy is on a stable snapshot taken under the main
             # thread — safe from the iteration race that took the
             # whole app down before the snapshot path landed.
@@ -3359,9 +3360,13 @@ def _prune_backups(stem):
 #      size during iteration` deep inside CPython's deepcopy, taking the
 #      whole app down. `_snapshot_for_save()` runs on the main thread
 #      BEFORE the worker starts, producing a stable copy that the worker
-#      reads through `_active_save_snapshot`. The lock keeps the
-#      snapshot single-writer.
+#      reads through `_thread_snapshot`, each thread its own.
+# Only a .usfx write takes the lock: an export to another format writes
+# its own file from its own snapshot, so it does not wait out an autosave
+# of a large project (its dubs zipped and checked take seconds).
 _save_lock = threading.Lock()
+_thread_snapshot = threading.local()
+# The snapshot a save on the main thread reads, set by tests.
 _active_save_snapshot = None
 
 # Set by the preview: a function returning the picture as it is (the
@@ -3399,14 +3404,16 @@ def _detached(value):
     return copy.deepcopy(value)
 
 
-def _snapshot_for_save():
+def _snapshot_for_save(thumbnail=True):
     """Main thread only. Deep-copy the mutable session collections so
     the save thread sees a stable view regardless of user edits during
     the write. Returns None if the live state itself is mid-mutation —
-    callers (especially autosave) can use that to retry later."""
+    callers (especially autosave) can use that to retry later.
+    `thumbnail`: whether to draw the picture a .usfx carries; the other
+    formats have no use for it."""
     try:
         return {
-            'THUMBNAIL': _thumbnail_png(),
+            'THUMBNAIL': _thumbnail_png() if thumbnail else None,
             'COLLAB': collab_state.export(),
             'SUBTITLE': _detached(session.SUBTITLE),
             'SPEAKERS': _detached(session.SPEAKERS),
@@ -3430,23 +3437,22 @@ class SaveFileThread(QThread):
         self._snapshot = snapshot
 
     def run(self):
-        global _active_save_snapshot
         success = False
         error = ''
         try:
-            # Serialise: a previous save thread (autosave-backup,
-            # autosave-original, manual save) holding `_save_lock`
-            # forces this one to wait rather than writing to the same
-            # paths concurrently.
-            with _save_lock:
-                _active_save_snapshot = self._snapshot
+            # Serialise .usfx writes: a previous save thread
+            # (autosave-backup, autosave-original, manual save) holding
+            # `_save_lock` forces this one to wait rather than writing
+            # to the same paths concurrently. Exports go straight on.
+            with _save_lock if self._subtitle_format == 'USFX' else contextlib.nullcontext():
+                _thread_snapshot.snapshot = self._snapshot
                 try:
                     save_file(self._final_file, self._subtitle_format, self._language)
                     success = True
                 except Exception as exc:
                     error = str(exc)
                 finally:
-                    _active_save_snapshot = None
+                    _thread_snapshot.snapshot = None
         except Exception as exc:
             error = str(exc)
         self.save_finished.emit(self._final_file, success, error)
@@ -3474,7 +3480,7 @@ def save_file_async(final_file, subtitle_format='USFX', language='en', on_done=N
     thread before starting the worker — without this, the worker's own
     deepcopy could race a UI-thread edit and crash."""
     global _save_in_progress
-    snapshot = _snapshot_for_save()
+    snapshot = _snapshot_for_save(thumbnail=subtitle_format == 'USFX')
     thread = SaveFileThread(final_file, subtitle_format, language, snapshot=snapshot, parent=parent)
 
     def _cleanup(path, success, error):
@@ -3543,28 +3549,28 @@ def preview_file(subtitle_format, options, language='en', max_lines=200, max_byt
     text. Written to a folder of its own and thrown away; the session is
     read through a snapshot (as a save thread reads it), so nothing in it
     changes. Raises PreviewBinary for a file that is not text, PreviewBusy
-    while a save runs; whatever the writer raises otherwise."""
-    global _active_save_snapshot
-    snapshot = _snapshot_for_save()
+    for a .usfx while a .usfx save runs; whatever the writer raises
+    otherwise."""
+    snapshot = _snapshot_for_save(thumbnail=False)
     if snapshot is None:
         raise PreviewBusy()
-    snapshot['THUMBNAIL'] = None
     snapshot['FORMAT'] = dict(snapshot['FORMAT'] if isinstance(snapshot['FORMAT'], dict) else {},
                               format=subtitle_format, options=dict(options or {}))
-    if not _save_lock.acquire(blocking=False):
+    lock = _save_lock if subtitle_format == 'USFX' else threading.Lock()
+    if not lock.acquire(blocking=False):
         raise PreviewBusy()
     folder = tempfile.mkdtemp(prefix='subtitld-preview-')
     try:
-        _active_save_snapshot = snapshot
+        _thread_snapshot.snapshot = snapshot
         try:
             path = os.path.join(folder, 'preview.' + subtitle_format.lower())
             save_file(path, subtitle_format, language)
         finally:
-            _active_save_snapshot = None
+            _thread_snapshot.snapshot = None
         with open(path, 'rb') as written:
             data = written.read(max_bytes)
     finally:
-        _save_lock.release()
+        lock.release()
         shutil.rmtree(folder, ignore_errors=True)
 
     # SRT's encoding as chosen; the others write UTF-8, some with a mark.
