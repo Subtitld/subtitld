@@ -586,12 +586,15 @@ def units(payload):
     return found
 
 
-def scan(path, progress=None, stopped=None):
+def scan(path, progress=None, stopped=None, pid=None):
     """What the transport stream at `path` holds of teletext:
     ({pid: [page]}, {pid: [(pts, 44-byte field)]}, origin), the pages each
     teletext stream's descriptor lists, the teletext packets of each, and
     the earliest PTS of any of its streams (where FFmpeg counts its times
-    from), in 90 kHz ticks."""
+    from), in 90 kHz ticks. A stream cut out of its multiplex has no PMT to
+    list it: the stream `pid` (FFmpeg's, which tells teletext by its data)
+    is read as teletext then, its pages unlisted."""
+    wanted = pid
     streams, pmt_pids, sections = {}, set(), {}
     pending, packets, first = {}, {}, {}
     with open(path, 'rb') as stream:
@@ -610,10 +613,13 @@ def scan(path, progress=None, stopped=None):
                                 pmt_pids.add(((section[index + 2] & 0x1F) << 8) | section[index + 3])
                     elif section[0] == 0x02:
                         for found, info in _pmt_streams(bytes(section)).items():
-                            streams.setdefault(found, info)
+                            if streams.get(found) in (None, {'pages': []}):    # unlisted, or read before its PMT came
+                                streams[found] = info
                     del sections[pid]
                 continue
             info = streams.get(pid)
+            if info is None and pid == wanted:
+                info = streams.setdefault(pid, {'pages': []})
             if info is None:
                 continue
             if info['pages'] is None:
@@ -1009,7 +1015,7 @@ def read(path, page=None, pid=None, progress=None, stopped=None):
     first subtitle page any descriptor lists. Times count from the earliest
     start of the file's streams, as FFmpeg counts them. Raises ValueError
     for a file with no teletext."""
-    pages, packets, origin = scan(path, progress=progress, stopped=stopped)
+    pages, packets, origin = scan(path, progress=progress, stopped=stopped, pid=pid)
     if pid is None or not packets.get(pid):
         # The stream that lists the page, else any that carries teletext.
         listing = [found for found, listed in pages.items() if page and any(p['page'] == str(page) for p in listed)]

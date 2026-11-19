@@ -596,12 +596,15 @@ def streams(path, limit=8 * 1024 * 1024):
     return found
 
 
-def scan(path, progress=None, stopped=None):
+def scan(path, progress=None, stopped=None, pid=None):
     """What the transport stream at `path` holds of DVB subtitles: ({pid:
     [service]}, {pid: [(pts, PES packet data)]}, origin), the services each
     stream's descriptor lists, the PES packets of each, and the earliest
     PTS of any of the file's streams (where FFmpeg counts its times from),
-    in 90 kHz ticks."""
+    in 90 kHz ticks. A stream cut out of its multiplex has no PMT to list
+    it: the stream `pid` (FFmpeg's, which tells DVB subtitles by their data)
+    is read as DVB subtitles then, its services unlisted."""
+    wanted = pid
     listed, pending, packets, first = {}, {}, {}, {}
 
     def take(pid, pes):
@@ -618,8 +621,11 @@ def scan(path, progress=None, stopped=None):
         for pid, start, payload in _pmt_sections(stream, layout, progress=progress, stopped=stopped):
             if pid is None:
                 for key, services in start.items():
-                    listed.setdefault(key, services)
+                    if listed.get(key, []) == []:          # unlisted, or read before its PMT came
+                        listed[key] = services
                 continue
+            if pid not in listed and pid == wanted:
+                listed[pid] = []
             if pid not in listed:
                 continue
             if listed[pid] is None:
@@ -648,7 +654,7 @@ def read(path, pid=None, page=None, progress=None, stopped=None):
     the stream `pid`, or the first service any descriptor lists. Times
     count from the earliest start of the file's streams, as FFmpeg counts
     them. Raises ValueError for a file with no DVB subtitles."""
-    listed, packets, origin = scan(path, progress=progress, stopped=stopped)
+    listed, packets, origin = scan(path, progress=progress, stopped=stopped, pid=pid)
     page = int(page) if page not in (None, '') else None
     if pid is None or not packets.get(pid):
         candidates = [found for found, services in listed.items()
