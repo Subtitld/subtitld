@@ -16,7 +16,9 @@ first CEA-608 channel with captions (decoded as the SCC module does).
 A video carries them in its frames (ATSC broadcasts and their
 recordings: MPEG-2 user data, H.264 and HEVC SEI), which FFmpeg hands on
 as it decodes each frame, so reading them takes as long as decoding the
-video; as a track of their own, as QuickTime's c608; or as the ancillary
+video; as a track of their own, as QuickTime's c608 (CEA-608 pairs) and
+c708 (each sample a 'ccdp' atom: a caption distribution packet, as SMPTE
+334 carries one, with CEA-608 pairs and CEA-708 packets); or as the ancillary
 data of each frame, as broadcast MXF files carry them (SMPTE ST 436,
 whose packets hold the same caption distribution packets an MCC file
 does). `from_video` asks ffprobe for whichever it finds, the times
@@ -150,6 +152,21 @@ def anc_packets(data):
     return out
 
 
+def ccdp_triplets(data):
+    """[(cc_type, byte, byte)] in a sample of a QuickTime c708 track: its
+    'ccdp' atoms, each a caption distribution packet."""
+    found, index = [], 0
+    while index + 8 <= len(data):
+        size = int.from_bytes(data[index:index + 4], 'big')
+        if size < 8:
+            break
+        if data[index + 4:index + 8] == b'ccdp':
+            cdp = data[index + 8:index + size][:255]
+            found += anc_triplets(bytes((0x61, 0x01, len(cdp))) + cdp)[0]
+        index += size
+    return found
+
+
 def anc_frame(data):
     """[(cc_type, byte, byte)] in a frame of ancillary data as SMPTE ST 436
     wraps it."""
@@ -171,24 +188,35 @@ def _rate(value):
         return 0.0
 
 
+def _caption_codec(stream):
+    """'eia_608' for a stream of CEA-608 pairs, 'eia_708' for a QuickTime
+    c708 track (which FFmpeg does not know), else None."""
+    if stream.get('codec_name') == 'eia_608':
+        return 'eia_608'
+    if stream.get('codec_type') == 'subtitle' and str(stream.get('codec_tag_string')) == 'c708':
+        return 'eia_708'
+    return None
+
+
 def probe(path, ffprobe='ffprobe', startupinfo=None):
     """What reading a video's captions needs: (the time it starts at, its
     frame rate, its duration, the index of a caption track or None, the
-    index of an ancillary data track or None)."""
+    index of an ancillary data track or None, the caption track's codec:
+    'eia_608', or 'eia_708' for a c708 track)."""
     result = subprocess.run([str(ffprobe), '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams',
                              str(path)], capture_output=True, startupinfo=startupinfo, check=False)
     metadata = json.loads(result.stdout or b'{}')
     start = float(metadata.get('format', {}).get('start_time') or 0)
     duration = float(metadata.get('format', {}).get('duration') or 0)
-    rate, track, ancillary = 0.0, None, None
+    rate, track, ancillary, codec = 0.0, None, None, None
     for stream in metadata.get('streams', []):
         if stream.get('codec_type') == 'video' and not rate and stream.get('codec_name') not in ('png', 'mjpeg'):
             rate = _rate(stream.get('avg_frame_rate')) or _rate(stream.get('r_frame_rate'))
-        elif stream.get('codec_name') == 'eia_608' and track is None:
-            track = int(stream.get('index', 0))
+        elif _caption_codec(stream) and track is None:
+            track, codec = int(stream.get('index', 0)), _caption_codec(stream)
         elif stream.get('codec_name') == 'smpte_436m_anc' and ancillary is None:
             ancillary = int(stream.get('index', 0))
-    return start, rate or _PAIR_RATE, duration, track, ancillary
+    return start, rate or _PAIR_RATE, duration, track, ancillary, codec
 
 
 def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress=None, started=None):
@@ -196,10 +224,12 @@ def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress
     video carries: a caption track's, else its frames'. `progress(share)`
     hears how far it has read, from 0 to 1; `started(process)` gets the
     ffprobe process, to stop it."""
-    start, video_rate, duration, caption_track, ancillary = probe(path, ffprobe, startupinfo)
+    start, video_rate, duration, caption_track, ancillary, codec = probe(path, ffprobe, startupinfo)
     entries_of = triplets
     if caption_track is not None:
-        rate = _PAIR_RATE
+        # c608's pairs go out at CEA-608's pace; c708's packets a frame each.
+        rate = video_rate if codec == 'eia_708' else _PAIR_RATE
+        entries_of = ccdp_triplets if codec == 'eia_708' else triplets
         command = [str(ffprobe), '-v', 'error', '-select_streams', str(caption_track), '-show_packets', '-show_data',
                    '-show_entries', 'packet=pts_time,data', '-of', 'compact=p=0:nk=1', str(path)]
     elif ancillary is not None:
