@@ -41,7 +41,7 @@ from subtitld.modules import subtitle_styles
 from subtitld.modules import ttml
 from subtitld.modules import vobsub
 from subtitld.modules import xml_dialects
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import text_of, timed_pieces
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
@@ -121,6 +121,15 @@ class _SubtitlesPanel(QWidget):
         self.formatting_combo.combobox.addItem(_('export_dialog.formatting_keep'), 'keep')
         self.formatting_combo.combobox.addItem(_('export_dialog.formatting_remove'), 'remove')
         grid.addWidget(self.formatting_combo, 1, 1)
+
+        # Subtitles timed word by word, in a format with no timing inside a
+        # subtitle: whole, or their words revealed one after another.
+        self.timed_combo = utils.LabeledComboBox()
+        self.timed_combo.setLabel(_('export_dialog.timed'))
+        self.timed_combo.combobox.addItem(_('export_dialog.timed_words'), 'words')
+        self.timed_combo.combobox.addItem(_('export_dialog.timed_reveal'), 'reveal')
+        grid.addWidget(self.timed_combo, 2, 1)
+        self._has_timed = any(timed_pieces(segment) for segment in session.SUBTITLE.segments)
 
         self.offset_spin = utils.LabeledDoubleSpinBox()
         self.offset_spin.setLabel(_('export_dialog.shift_times'))
@@ -468,6 +477,7 @@ class _SubtitlesPanel(QWidget):
         self.caption_channel_combo.combobox.activated.connect(
             lambda _index: setattr(self, '_caption_channel_wanted', self.caption_channel_combo.combobox.currentData()))
         _select(self.formatting_combo, remembered.get('formatting', 'keep'))
+        _select(self.timed_combo, remembered.get('timed', 'words'))
         _select(self.encoding_combo, remembered.get('encoding', 'utf-8'))
         _select(self.line_ends_combo, remembered.get('line_ends', 'lf'))
         # The video's frame rate when there is a video; else the last one used.
@@ -623,6 +633,9 @@ class _SubtitlesPanel(QWidget):
         self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
                                                      'DVDPRODUCER', 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM',
                                                      'AUDACITY', 'AENEAS', 'TMX'))
+        # Karaoke formats and WebVTT keep the timing as it is.
+        self.timed_combo.setVisible(self._has_timed and fmt not in export_options.KARAOKE_FORMATS
+                                    + export_options.INLINE_TIMED_FORMATS)
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML', 'IMSCMXF') or stpp)
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
@@ -714,6 +727,7 @@ class _SubtitlesPanel(QWidget):
             'language': language,
             'speakers': self.speakers_combo.combobox.currentData(),
             'formatting': self.formatting_combo.combobox.currentData(),
+            'timed': self.timed_combo.combobox.currentData(),
             'encoding': self.encoding_combo.combobox.currentData(),
             'line_ends': self.line_ends_combo.combobox.currentData(),
             'fps': self.fps_combo.combobox.currentData(),
@@ -751,7 +765,7 @@ class _SubtitlesPanel(QWidget):
         # Every export sets its options, so none is left over from the last.
         options = {}
         if fmt in export_options.TEXT_FORMATS:
-            options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting')})
+            options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting', 'timed')})
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS:
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])

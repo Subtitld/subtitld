@@ -13,9 +13,9 @@ indexes of pictures (SCENARISTBMP, SON, DOST, SPUMUX, TIMEDIMAGES, FCPIMAGE,
 RHOZET), whose pictures are drawn of the text they write; USF, USFX and JSON
 keep the project as it is. TMX writes the original and every translation
 side by side, whatever `text` asks. Karaoke timing is formatting
-(modules.karaoke): removing the formatting takes the word timing of LRC,
-UltraStar, KAR, MIDI, KBP, TTXT and the wipe of CDG with it, and CTM's words
-share out their subtitle's time instead.
+(modules.karaoke): removing the formatting takes the word timing of ASS, LRC,
+UltraStar, KAR, MIDI, KBP, TTXT, WebVTT's timestamps and the wipe of CDG
+with it, and CTM's words share out their subtitle's time instead.
 
     text         'original', 'translation' (in `language`, falling back to
                  the original where a subtitle has none) or 'both' (the
@@ -33,6 +33,12 @@ share out their subtitle's time instead.
                  them (SBV has none to keep)
     offset       seconds to shift every subtitle by; one that ends up
                  before 0 is left out, one that starts before 0 starts at 0
+    timed        a subtitle timed word by word (modules.segment), in a format
+                 with no timing inside a subtitle: 'words', the subtitle
+                 whole, or 'reveal', its words shown one after another, a
+                 subtitle a word (DFXP and TTML: a span a word, in one
+                 paragraph). Karaoke formats, and WebVTT's timestamps, keep
+                 the timing either way.
 
 And for a format of its own:
 
@@ -167,6 +173,22 @@ _KARAOKE_CODE = re.compile(r'\{[^{}]*\\(?:kf|ko|k|K)\d')
 # The formats that read a subtitle's timing word by word as karaoke codes in
 # its text (modules.karaoke): their copies of a timed subtitle carry them.
 KARAOKE_FORMATS = ('ASS', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'CDG', 'TTXT', 'CTM')
+# WebVTT writes the codes as its timestamps, which leave the words shown and
+# only say when each is sung; TTML shows a timed span only while it is
+# active, so its words are timed only to be revealed one after another.
+INLINE_TIMED_FORMATS = ('VTT',)
+REVEALED_FORMATS = ('DFXP', 'TTML')
+
+
+def karaoke_codes_for(fmt, options=None):
+    """Whether an export to `fmt` with `options` writes a timed subtitle's
+    timing as karaoke codes, which its writer turns into its own."""
+    options = options or {}
+    if options.get('formatting') == 'remove':
+        return False
+    if fmt in KARAOKE_FORMATS or fmt in INLINE_TIMED_FORMATS:
+        return True
+    return fmt in REVEALED_FORMATS and options.get('timed') == 'reveal'
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
@@ -178,6 +200,7 @@ DEFAULTS = {
     'speakers': 'none',
     'formatting': 'keep',
     'offset': 0.0,
+    'timed': 'words',
     'encoding': 'utf-8',
     'line_ends': 'lf',
 }
@@ -214,44 +237,64 @@ def _with_speaker(text, name):
 
 def prepare(segments, options=None, karaoke_codes=False):
     """Copies of `segments` with the text and times the options ask for,
-    in order of start: a timed subtitle's words, or with `karaoke_codes`
-    (a format of KARAOKE_FORMATS) its words with their timing as karaoke
-    codes."""
+    in order of start. A subtitle timed word by word (modules.segment) gives
+    its words; with `karaoke_codes` (a format that reads them: KARAOKE_FORMATS,
+    INLINE_TIMED_FORMATS) its words with their timing as karaoke codes; with
+    `timed` 'reveal', for a format that does not, one copy a piece, each
+    showing the words up to it, from its start to the next one's. Removing
+    the formatting takes the timing with it."""
     settings = dict(DEFAULTS)
     settings.update({key: value for key, value in (options or {}).items() if value is not None})
     language = settings['language']
     offset = float(settings['offset'] or 0)
+    remove = settings['formatting'] == 'remove'
     prepared = []
     for segment in sorted(segments or [], key=lambda s: float(s.get('start', 0))):
-        remove = settings['formatting'] == 'remove'
-        # Karaoke codes are formatting too: without it, each piece is made
-        # plain and the codes stay.
-        pieces = timed_pieces(segment) if karaoke_codes else None
-        if pieces:
-            original = karaoke.codes_of([dict(piece, text=markup.plain(piece['text'])) for piece in pieces]
-                                        if remove else pieces)
-        else:
-            original = text_of(segment)
         translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else {}
         translated = str(translations.get(language) or '').strip() if language else ''
-        if remove and pieces:
-            translated = markup.plain(translated)
-        if settings['text'] == 'translation' and translated:
-            text = translated
-        elif settings['text'] == 'both' and translated:
-            text = original.rstrip() + '\n' + translated
+        pieces = [] if remove or (settings['text'] == 'translation' and translated) else timed_pieces(segment)
+        start = float(segment.get('start', 0))
+        if pieces and karaoke_codes:
+            shown = [(start, float(segment.get('end', 0)), karaoke.codes_of(pieces))]
+        elif pieces and settings['timed'] == 'reveal':
+            shown = _revealed(segment, pieces)
         else:
-            text = original
-        speaker = str(segment.get('speaker') or '').strip()
-        if settings['speakers'] == 'prefix' and speaker and markup.plain(text).strip():
-            text = _with_speaker(text, speaker)
-        if remove and not pieces:
-            text = markup.plain(text)
-        start = float(segment.get('start', 0)) + offset
-        end = float(segment.get('end', 0)) + offset
-        if end <= 0:
-            continue
-        copy = dict(segment)
-        copy.update(start=max(0.0, round(start, 3)), end=round(end, 3), text=text)
-        prepared.append(copy)
+            shown = [(start, float(segment.get('end', 0)), text_of(segment))]
+        for number, (begin, end, original) in enumerate(shown):
+            if settings['text'] == 'translation' and translated:
+                text = translated
+            elif settings['text'] == 'both' and translated:
+                text = original.rstrip() + '\n' + translated
+            else:
+                text = original
+            speaker = str(segment.get('speaker') or '').strip()
+            if settings['speakers'] == 'prefix' and speaker and markup.plain(text).strip():
+                text = _with_speaker(text, speaker)
+            if remove:
+                text = markup.plain(text)
+            begin, end = begin + offset, end + offset
+            if end <= 0:
+                continue
+            copy = dict(segment)
+            copy.update(start=max(0.0, round(begin, 3)), end=round(end, 3), text=text)
+            if number and copy.get('id'):
+                copy['id'] = f'{copy["id"]}-{number}'
+            prepared.append(copy)
     return prepared
+
+
+def _revealed(segment, pieces):
+    """[(start, end, text)] for a subtitle revealed word by word: one a
+    piece, from its start to the next one's (the last to the subtitle's
+    end), with the words up to it, their formatting closed. A piece taking
+    no time shows with the next."""
+    start, end = float(segment.get('start', 0)), float(segment.get('end', 0))
+    out = []
+    for number, piece in enumerate(pieces):
+        begin = start + float(piece['start'])
+        until = start + float(pieces[number + 1]['start']) if number + 1 < len(pieces) else end
+        if until <= begin:
+            continue
+        words = ''.join(earlier['text'] for earlier in pieces[:number + 1]).rstrip()
+        out.append((begin, until, markup.rebalance(words, '')[0]))
+    return out or [(start, end, text_of(segment))]

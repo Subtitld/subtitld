@@ -2178,8 +2178,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         # speakers' names, without formatting, shifted.
         options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
         if subtitle_format in export_options.TEXT_FORMATS:
-            segments = export_options.prepare(SUBTITLE.segments, options,
-                                              karaoke_codes=subtitle_format in export_options.KARAOKE_FORMATS)
+            segments = export_options.prepare(SUBTITLE.segments, options, karaoke_codes=export_options.karaoke_codes_for(
+                subtitle_format, dict(options, timed='words' if options.get('profile') in ttml.IMAGE_PROFILES
+                                      else options.get('timed'))))
 
         if subtitle_format == 'SRT':
             srt.save(final_file, segments,

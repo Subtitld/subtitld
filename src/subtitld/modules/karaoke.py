@@ -196,20 +196,30 @@ def marked_pieces(text, marks):
     """A subtitle's timed pieces from a text with MARK where each karaoke
     code stood and `marks`, in order, each a code's length in seconds and
     what else its piece says ({'effect': ...}): each piece the text after
-    its mark, from the end of the one before. Text with no words after a
-    mark is a pause (its spaces stay with the piece before); text before
-    the first, a piece of its own taking no time if it has words. None for
-    no words after any mark."""
+    its mark, from the end of the one before (pieces_at)."""
+    times, at = [], 0.0
+    for length, extras in marks:
+        times.append((at, at + length, extras))
+        at += length
+    return pieces_at(text, times)
+
+
+def pieces_at(text, times):
+    """A subtitle's timed pieces from a text with MARK before each and
+    `times`, in order, each piece's (start, end, what else it says) in
+    seconds from the subtitle's start. Text with no words after a mark is a
+    pause (its spaces stay with the piece before); text before the first
+    mark, a piece of its own taking no time if it has words. None for no
+    words after any mark."""
     parts = text.split(MARK)
-    lead, pieces, at = parts[0], [], 0.0
-    for part, (length, extras) in zip(parts[1:], marks):
+    lead, pieces = parts[0], []
+    for part, (start, end, extras) in zip(parts[1:], times):
         if part.strip():
-            pieces.append(dict(extras, text=part, start=round(at, 3), end=round(at + length, 3)))
+            pieces.append(dict(extras, text=part, start=round(start, 3), end=round(max(start, end), 3)))
         elif pieces:
             pieces[-1]['text'] += part
         else:
             lead += part
-        at += length
     if not pieces:
         return None
     if markup.plain(lead).strip():
@@ -217,3 +227,13 @@ def marked_pieces(text, marks):
     else:
         pieces[0]['text'] = lead + pieces[0]['text']
     return pieces
+
+
+def marked_text(pieces):
+    """A subtitle's timed pieces as one text with MARK before each, what the
+    first starts with that places the subtitle ({\\an8}) before them all,
+    and each piece's (start, end): what a writer turns into its own marks,
+    the text's formatting written as it always is around them."""
+    lead, first = markup.split_lead(pieces[0]['text'])
+    text = lead + ''.join(MARK + (first if number == 0 else piece['text']) for number, piece in enumerate(pieces))
+    return text, [(float(piece['start']), float(piece['end'])) for piece in pieces]

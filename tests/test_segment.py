@@ -433,6 +433,67 @@ session.SUBTITLE.segments[0].split('word')
 opened, path = saved_and_opened('ULTRASTAR', 'txt')
 check('UltraStar: its notes opened as pieces', [p['text'].strip() for p in timed_pieces(opened[0])], ['Hello', 'world'])
 
+print('WebVTT, TTML and the others')
+session.FORMAT = {}
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+opened, path = saved_and_opened('VTT', 'vtt')
+check('WebVTT: a timestamp before each piece but the first', '<i>Hel<00:00:01.500>lo</i> <00:00:02.000>world'
+      in Path(path).read_text(encoding='utf-8'), True)
+check('read as pieces, each to the next (WebVTT has no pause)', spans(opened[0]),
+      [('{\\an8}<i>Hel', 0.0, 0.5), ('lo</i> ', 0.5, 1.0), ('world', 1.0, 2.0)])
+check('a subtitle not timed stays a string', opened[1]['text'], 'Not timed')
+session.FORMAT = {'options': {'formatting': 'remove'}}
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+opened, path = saved_and_opened('VTT', 'vtt')
+check('without formatting, no timing', ('<00:' in Path(path).read_text(encoding='utf-8'), opened[0]['text']),
+      (False, 'Hello world'))
+session.FORMAT = {}
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+opened, path = saved_and_opened('TTML', 'ttml')
+check('TTML: the words, as a timed span would hide them', ('begin="00:00:00.500"' in Path(path).read_text(encoding='utf-8'),
+                                                            text_of(opened[0])), (False, '{\\an8}<i>Hello</i> world'))
+session.FORMAT = {'options': {'timed': 'reveal'}}
+opened, path = saved_and_opened('TTML', 'ttml')
+written = Path(path).read_text(encoding='utf-8')
+check('revealed: a span a piece, begun when it is, to the paragraph\'s end',
+      ('<span begin="00:00:00.500">' in written, '<span begin="00:00:01.000">world</span>' in written,
+       'end="00:00:00.800"' in written), (True, True, False))
+check('read back as pieces', [(t, a, b) for t, a, b in spans(opened[0])],
+      [('{\\an8}<i>Hel</i>', 0.0, 0.5), ('<i>lo</i> ', 0.5, 1.0), ('world', 1.0, 2.0)])
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+opened, path = saved_and_opened('SRT', 'srt')
+check('SRT revealed: a subtitle a piece, the words up to it', [(s['start'], s['end'], s['text']) for s in opened],
+      [(1.0, 1.5, '{\\an8}<i>Hel</i>'), (1.5, 2.0, '{\\an8}<i>Hello</i>'), (2.0, 3.0, '{\\an8}<i>Hello</i> world'),
+       (4.0, 5.0, 'Not timed')])
+session.FORMAT = {'options': {'timed': 'reveal', 'text': 'translation', 'language': 'pt'}}
+session.SUBTITLE.segments = [dict(KARAOKE[0], translations={'pt': 'Olá mundo'})]
+opened, path = saved_and_opened('SRT', 'srt')
+check('a translation is not revealed', [s['text'] for s in opened], ['Olá mundo'])
+session.FORMAT = {}
+
+print('the export dialog')
+from subtitld.interface.export_dialog import _SubtitlesPanel
+session.CONFIG.pop('export_subtitles', None)
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+panel = _SubtitlesPanel()
+shown = {}
+for fmt in ('SRT', 'TTML', 'ASS', 'VTT', 'LRC'):
+    panel.format_combo.setCurrentText(fmt)
+    panel._refresh_options()
+    shown[fmt] = not panel.timed_combo.isHidden()
+check('offered where the format has no timing of its own', shown,
+      {'SRT': True, 'TTML': True, 'ASS': False, 'VTT': False, 'LRC': False})
+panel.format_combo.setCurrentText('SRT')
+panel._refresh_options()
+panel.timed_combo.combobox.setCurrentIndex(1)
+check('the choice is an option of the export', panel.get_config()['options'].get('timed'), 'reveal')
+check('remembered', _SubtitlesPanel().timed_combo.combobox.currentData(), 'reveal')
+session.SUBTITLE.segments = [{'start': 0.0, 'end': 1.0, 'text': 'Not timed'}]
+panel = _SubtitlesPanel()
+panel.format_combo.setCurrentText('SRT')
+panel._refresh_options()
+check('not offered for a project with nothing timed', panel.timed_combo.isHidden(), True)
+
 print('merging and cutting in the editor')
 history.history_clear()
 session.SUBTITLE.segments = copy.deepcopy(KARAOKE)

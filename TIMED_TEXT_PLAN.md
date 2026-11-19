@@ -196,7 +196,16 @@ language (pyphen), times spread by letter count as a first pass.
 *Done when:* tested in a real GUI session (window opened on Wayland, not
 offscreen): split, retime, edit text, undo, save, reopen.
 
-**M6. Exporters.** WebVTT inline timestamps, TTML/IMSC `<span begin end>`,
+**M6. Exporters.** *(Done on branch `timed-text`. WebVTT writes a
+timestamp before each piece and reads them back (each piece to the next:
+WebVTT has no pause). TTML shows a timed span only while it is active, so
+a span per piece would make words vanish: TTML gets the words, or, with
+"revealed word by word", a span a piece begun at its time and lasting to
+the paragraph's end; spans with times are read back as pieces. Other text
+formats: "revealed word by word" is a subtitle a piece with the words up
+to it (export_options.prepare, option `timed`). Removing formatting takes
+the timing with it, as export_options always said. Enhanced LRC was M4's.
+HLS, CMFT, DASH and IMSC in MXF write the words.)* WebVTT inline timestamps, TTML/IMSC `<span begin end>`,
 enhanced LRC; for formats with no timing inside a line, an export option
 "reveal word by word" (one cue per piece, text up to it).
 

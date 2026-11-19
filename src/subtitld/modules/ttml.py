@@ -148,7 +148,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from subtitld.modules import export_options, look as subtitld_look, markup, position
+from subtitld.modules import export_options, karaoke, look as subtitld_look, markup, position
 from subtitld.modules.srt import decode
 
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
@@ -1126,9 +1126,12 @@ def _own_look(style, box, outline):
     return style if style.edge else style._replace(edge_color='')
 
 
-def _runs(element, styles, props, preserve, out, agent):
+def _runs(element, styles, props, preserve, out, agent, timed=None):
     """Collect `element`'s text into `out` as [(text, Style)]; the first
-    ttm:agent met goes in `agent`."""
+    ttm:agent met goes in `agent`. With `timed`, (a list, a span's (start,
+    stop) for a span), a span with times of its own starts with
+    karaoke.MARK, its times added to the list: the paragraph is timed word
+    by word."""
     if (props.get('ruby') or '').strip() == 'delimiter':
         # Brackets a player draws around a reading. They are not words of
         # the subtitle, and taking them for words would cut the ruby in two.
@@ -1148,9 +1151,12 @@ def _runs(element, styles, props, preserve, out, agent):
         if name == 'br':
             out.append(('\n', _look(props)))
         elif name == 'span':
-            _runs(child, styles, styles.of(child, props), preserve, out, agent)
+            if timed is not None and child.get('begin') is not None:
+                out.append((karaoke.MARK, _look(props)))
+                timed[0].append(timed[1](child))
+            _runs(child, styles, styles.of(child, props), preserve, out, agent, timed)
         elif name and name not in ('metadata', 'set', 'animate', 'style', 'region', 'audio', 'source', 'data', 'desc'):
-            _runs(child, styles, props, preserve, out, agent)
+            _runs(child, styles, props, preserve, out, agent, timed)
         text(child.tail)
 
 
@@ -1924,7 +1930,9 @@ def _document(text, images=None, folder=None):
         # goes over them.
         p_props = styles.of(element, dict(region_props, **props))
         runs, agent = [], [None]
-        _runs(element, styles, p_props, preserve, runs, agent)
+        stamps = []
+        _runs(element, styles, p_props, preserve, runs, agent,
+              (stamps, lambda span: _span_of(span, start, stop, clock)))
         box, outline = _whole_look(element, styles, p_props)
         runs = [(run, _own_look(style, box, outline)) for run, style in runs]
         body = markup.tidy(runs)
@@ -1951,8 +1959,17 @@ def _document(text, images=None, folder=None):
             keypad = (_keypad(dict(p_props, textAlign='left'), frame) - 1) // 3 * 3 + 1 + column
         else:
             keypad = _keypad(p_props, frame, geometry=not stated)
-        segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
-                   'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + body}
+        text = (markup.with_alignment('', keypad) if keypad != 2 else '') + body
+        if stamps:
+            # Spans timed within it: the subtitle timed word by word, each
+            # piece the text from its span on, over by the next one's begin.
+            # Text before the first is shown from the paragraph's start.
+            begins = [begin for begin, _end in stamps] + [stop]
+            times = [(0.0, stamps[0][0] - start, {})] + [
+                (begin - start, min(end if end is not None else stop, begins[number + 1]) - start, {})
+                for number, (begin, end) in enumerate(stamps)]
+            text = karaoke.pieces_at(karaoke.MARK + text, times) or text.replace(karaoke.MARK, '')
+        segment = {'start': round(start, 3), 'end': round(max(start, stop), 3), 'text': text}
         speaker = agent[0] or outer_agent
         if speaker:
             segment['speaker'] = agents.get(speaker, speaker)
@@ -2802,6 +2819,28 @@ def _content(text, shear=False, annotations='full', ruby_ids=None):
     return ''.join(out)
 
 
+def _timed_content(pieces, shear=False, annotations='full', ruby_ids=None):
+    """A subtitle revealed word by word as TTML: each piece a span that
+    begins when the piece does, from the paragraph's begin, and lasts to the
+    paragraph's end, so the words appear one after another and stay; its
+    formatting closed at its end and opened again in the next. TTML shows a
+    span only while it is active, so a span ending with its piece would make
+    the word vanish: this is a reveal, not a highlight. Words before the
+    first piece with a time are there from the start."""
+    texts = [piece['text'] for piece in pieces]
+    texts[0] = markup.split_lead(texts[0])[1]
+    for number in range(len(texts) - 1):
+        texts[number], texts[number + 1] = markup.rebalance(texts[number], texts[number + 1])
+    out = []
+    for piece, text in zip(pieces, texts):
+        inner = _content(text, shear, annotations, ruby_ids)
+        if float(piece['end']) > float(piece['start']) and float(piece['start']) > 0:
+            out.append(f'<span begin="{format_time(piece["start"])}">{inner}</span>')
+        else:
+            out.append(inner)
+    return ''.join(out)
+
+
 def _styles(look, preview, profile='ttml1'):
     """(<style> elements, the id of the box's or None) for `look`. The box
     goes on a span around each subtitle's text: a span's background is
@@ -3199,7 +3238,11 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         looking = _look_attributes(styling, profile)
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
-        content = _content(rest, shear, annotations, ruby_ids)
+        timed = karaoke.pieces_of(raw) if smpte is None else None
+        if timed:
+            content = _timed_content(timed, shear, annotations, ruby_ids)
+        else:
+            content = _content(rest, shear, annotations, ruby_ids)
         # A box the file brought stands in for the style's own, and goes on
         # a span: on the paragraph TTML paints a band the width of the
         # region instead of a box around the words.

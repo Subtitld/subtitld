@@ -102,7 +102,7 @@ panel.speakers_combo.combobox.setCurrentIndex(1)
 panel.encoding_combo.combobox.setCurrentIndex(1)
 panel.offset_spin.setValue(-2.5)
 check('SRT config', panel.get_config(), {'category': 'subtitles', 'format': 'SRT', 'options': {
-    'text': 'both', 'language': 'pt-br', 'speakers': 'prefix', 'formatting': 'keep', 'offset': -2.5,
+    'text': 'both', 'language': 'pt-br', 'speakers': 'prefix', 'formatting': 'keep', 'timed': 'words', 'offset': -2.5,
     'encoding': 'utf-8-sig', 'line_ends': 'lf'}})
 panel.format_combo.setCurrentText('USF')
 panel._refresh_options()

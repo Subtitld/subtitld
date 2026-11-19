@@ -16,8 +16,10 @@ Reading forgives, as for SRT (modules.srt):
 - the cue text keeps <i>, <b> and <u>, and <ruby> with its readings
   (<rt>), which Subtitld keeps the same way; <c.class> takes the colour
   its class has (WebVTT's own colour classes, or a STYLE block's);
-  <v Name> is the subtitle's speaker; <lang> and karaoke timestamps go;
-  entities (&amp;, &lt;, &nbsp;, ...) are characters.
+  <v Name> is the subtitle's speaker; <lang> goes; karaoke timestamps
+  (<00:00:01.500>) time it word by word (modules.segment), each piece
+  lasting to the next and the last to the cue's end; entities (&amp;,
+  &lt;, &nbsp;, ...) are characters.
 
 Writing gives "WEBVTT" and the cues in order of start: times as
 "HH:MM:SS.mmm"; italic, bold and underline as tags (WebVTT has no
@@ -26,12 +28,16 @@ class, WebVTT's own where it is one of them, else one a STYLE block
 defines; the position as cue settings, ``vertical:`` with them for a
 subtitle written in columns; the speaker as a voice tag when
 asked; &, < and > escaped; no blank line in a cue and no "-->" in its text.
+A subtitle timed word by word (its text with karaoke codes, as
+export_options.prepare gives one) has a timestamp before each piece but a
+first that starts with the cue; a pause between two is lost, as WebVTT has
+none.
 """
 
 import html
 import re
 
-from subtitld.modules import markup, position
+from subtitld.modules import karaoke, markup, position
 from subtitld.modules.srt import decode
 
 _STAMP = r'(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:[.,](\d+))?'
@@ -99,8 +105,10 @@ def _keypad(settings):
     return (1, 4, 7)[row] + column
 
 
-def cue_text(text, classes=None):
-    """(text with tags, speaker or None) for a cue's WebVTT text."""
+def cue_text(text, classes=None, stamps=None):
+    """(text with tags, speaker or None) for a cue's WebVTT text. Given a
+    list `stamps`, each karaoke timestamp is karaoke.MARK in the text and
+    its time in seconds in `stamps`."""
     classes = dict(DEFAULT_CLASSES, **(classes or {}))
     out = []
     stack = []                                  # [(tag name, what closes what it opened)]
@@ -111,6 +119,10 @@ def cue_text(text, classes=None):
             out.append(html.unescape(text[position:match.start()]))
         position = match.end()
         if match.group(5):                      # a karaoke timestamp
+            stamp = re.fullmatch(_STAMP, match.group(5))
+            if stamps is not None and stamp:
+                out.append(karaoke.MARK)
+                stamps.append(_seconds(*stamp.groups()))
             continue
         closing, name, dotted = match.group(1), match.group(2).lower(), match.group(3)
         if closing:
@@ -217,11 +229,22 @@ def parse(text):
             index += 1
         groups = timing.groups()
         start, end = _seconds(*groups[0:4]), _seconds(*groups[4:8])
-        text_, speaker = cue_text('\n'.join(body), classes)
+        stamps = []
+        text_, speaker = cue_text('\n'.join(body), classes, stamps)
         text_ = '\n'.join(part.strip() for part in text_.split('\n') if part.strip())
+        if stamps:
+            # Timed word by word: the text before the first timestamp from
+            # the cue's start, each piece to the next, the last to its end.
+            starts = [start] + [min(max(start, stamp), end) for stamp in stamps]
+            times = [(at - start, (starts[number + 1] if number + 1 < len(starts) else end) - start, {})
+                     for number, at in enumerate(starts)]
+            text_ = karaoke.pieces_at(karaoke.MARK + text_, times) or text_.replace(karaoke.MARK, '')
         keypad = _keypad(groups[8] or '')
         if keypad != 2:
-            text_ = markup.with_alignment('', keypad) + text_
+            if isinstance(text_, list):
+                text_[0]['text'] = markup.with_alignment('', keypad) + text_[0]['text']
+            else:
+                text_ = markup.with_alignment('', keypad) + text_
         segment = {'start': start, 'end': max(start, end), 'text': text_}
         vertical = re.search(r'(?:^|\s)vertical:(rl|lr)(?:\s|$)', groups[8] or '')
         if vertical:
@@ -330,6 +353,21 @@ def _cue_body(text, classes):
     return ''.join(out)
 
 
+def _timestamped(body, times, start, end):
+    """A cue's text with karaoke.MARK before each piece made a timestamp:
+    none before a first piece starting with the cue, and none that would not
+    fall after the one before and before the cue's end."""
+    out, last = [], start
+    for number, part in enumerate(body.split(karaoke.MARK)):
+        if number:
+            at = round(start + times[number - 1][0], 3)
+            if last < at < end:
+                out.append(f'<{format_time(at)}>')
+                last = at
+        out.append(part)
+    return ''.join(out)
+
+
 def write(segments, voices=False):
     """WebVTT text for `segments`; with `voices`, each subtitle's speaker as
     a voice tag."""
@@ -337,17 +375,22 @@ def write(segments, voices=False):
     cues = []
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
         raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', start)))
+        timed = karaoke.pieces_of(raw)
+        if timed:
+            raw, times = karaoke.marked_text(timed)
         lead, rest = markup.split_lead(raw)
         lines = [line.strip() for line in rest.split('\n')]
         rest = '\n'.join(line for line in lines if line)
-        if not markup.plain(rest).strip():
+        if not markup.plain(rest.replace(karaoke.MARK, '')).strip():
             continue
         body = _cue_body(rest, classes)
+        if timed:
+            body = _timestamped(body, times, start, end)
         speaker = str(segment.get('speaker') or '').strip()
         if voices and speaker:
             body = f'<v {_escape(speaker)}>' + body
-        start = float(segment.get('start', 0))
-        end = max(start, float(segment.get('end', start)))
         settings = _settings(markup.alignment(lead), position.writing(segment))
         cues.append(f'{format_time(start)} --> {format_time(end)}' + (f' {settings}' if settings else '') + '\n' + body)
     head = 'WEBVTT\n'

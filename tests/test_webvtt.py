@@ -70,9 +70,9 @@ check('entities', cues('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nTom &amp; Jerry
       [(1.0, 2.0, 'Tom & Jerry <3\xa0you > me ♥')])
 check("WebVTT's own colour classes", cues('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<c.yellow>Yellow</c> <c.cyan.bg_black>cyan</c> <c.loud>no colour</c>\n'),
       [(1.0, 2.0, '<font color="#ffff00">Yellow</font> <font color="#00ffff">cyan</font> no colour')])
-check('karaoke timestamps and lang go', cues(
+check('lang goes; karaoke timestamps time it word by word, each piece to the next', cues(
     'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nNever <00:00:01.500>drink <lang pt>Olá</lang>\n'),
-      [(1.0, 3.0, 'Never drink Olá')])
+      [(1.0, 3.0, [{'text': 'Never ', 'start': 0.0, 'end': 0.5}, {'text': 'drink Olá', 'start': 0.5, 'end': 2.0}])])
 check('a ruby keeps its readings', cues(
     'WEBVTT\n\n00:00:04.000 --> 00:00:05.000\n<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>\n'),
       [(4.0, 5.0, '<ruby>漢<rt>kan</rt>字<rt>ji</rt></ruby>')])
