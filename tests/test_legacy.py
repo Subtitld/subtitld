@@ -56,6 +56,17 @@ check('ends at the next', cues('00:00:01:First cue\n00:00:05:Second cue\n', 'vpl
       [(1.0, 5.0, 'First cue'), (5.0, 8.0, 'Second cue')])
 check('"=" separator', cues('00:00:01=First cue\n00:00:05=Second cue\n', 'tmplayer'),
       [(1.0, 5.0, 'First cue'), (5.0, 8.0, 'Second cue')])
+# FFmpeg's vplayerdec reads "hh:mm:ss.cc" with hundredths: VPlayer is
+# written so between seconds, and on the second as before; TMPlayer to the
+# second, as it has no fraction.
+check('VPlayer written to the hundredth', legacy.write([{'start': 0.12, 'end': 1, 'text': 'Hello'},
+                                                        {'start': 23.51, 'end': 25, 'text': 'World'},
+                                                        {'start': 62.0, 'end': 63, 'text': 'Whole'},
+                                                        {'start': 59.996, 'end': 61, 'text': 'Carried'}], 'vplayer'),
+      '00:00:00.12:Hello\n00:00:23.51:World\n00:01:00:Carried\n00:01:02:Whole\n')
+check('...and read back so', cues('00:00:00.12:Hello\n00:00:23.51:World\n', 'vplayer'),
+      [(0.12, 23.51, 'Hello'), (23.51, 26.51, 'World')])
+check('TMPlayer to the second', legacy.write([{'start': 23.51, 'end': 25, 'text': 'World'}], 'tmplayer'), '00:00:23:World\n')
 
 print('AQTitle: frames, the next marker ends the subtitle')
 check('at 25 fps', cues('-->> 25\nFirst cue\n\n-->> 75\nSecond cue\n', 'aqtitle'),

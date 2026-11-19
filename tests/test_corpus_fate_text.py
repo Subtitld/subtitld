@@ -223,14 +223,9 @@ want = ffmpeg('sub-vplayer')
 # subtitle with no end.
 same('times and text', cues(segments)[:-1], want[:-1])
 check('the last one', cues(segments)[-1], (want[-1][0], round(want[-1][0] + 3, 2), want[-1][2]))
-# VPlayer is written in whole seconds, as its players read it.
-path = SCRATCH / 'vplayer.txt'
-session.SUBTITLE['segments'] = [dict(segment) for segment in segments]
-file_io.save_file(str(path), 'VPLAYER')
-again, found = opened('vplayer.txt', SCRATCH)
-check('VPlayer: saved and opened again, to the second',
-      (found, [(int(s['start']), s['text']) for s in again]),
-      ('VPLAYER', [(int(s['start']), s['text']) for s in segments]))
+# VPlayer is written to the hundredth, as FFmpeg reads it (the sample's
+# 0.12 and 23.51 kept).
+round_trip('VPlayer', segments, 'VPLAYER', 'txt')
 
 # --------------------------------------------------------------------------
 print('SubViewer 1 (sub-subviewer1)')

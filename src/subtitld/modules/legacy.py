@@ -22,7 +22,9 @@ What is read, and written:
   time, which needs no rate to be right.
 - **VPlayer** and **TMPlayer** (.txt): "00:00:12:text" and its variants
   ("=" or ";" for the colon, a comma inside the clock). No end times: a
-  subtitle runs to the next one, and the last for `TAIL`. Read and written.
+  subtitle runs to the next one, and the last for `TAIL`. Read and written:
+  TMPlayer to the second, VPlayer to the hundredth ("00:00:23.51:") when
+  a subtitle starts between seconds, as FFmpeg reads it.
 - **AQTitle** (.aqt): "-->> 25" and the text under it, counted in frames at
   the video's rate; the next marker ends the subtitle. Read and written.
 - **SubViewer 1** (.sub): "[00:00:01]", the text, "[00:00:03]". Read and
@@ -433,16 +435,22 @@ def _parse_clock(text, fps=DEFAULT_FPS):
     return _ends_at_next(_ordered(segments))
 
 
-def _write_clock(segments, fps=DEFAULT_FPS, separator=':'):
+def _write_clock(segments, fps=DEFAULT_FPS, separator=':', hundredths=False):
+    """TMPlayer's whole seconds; with `hundredths`, VPlayer's
+    "00:00:23.51:" for a start between seconds (FFmpeg's vplayerdec reads
+    the two digits after the dot as hundredths), whole seconds as before
+    for one on the second."""
     lines = []
     for segment in _ordered(segments):
         body = _packed(segment)
         if not body:
             continue
-        total = int(float(segment.get('start', 0)))
+        start = max(0.0, float(segment.get('start', 0)))
+        total, cents = divmod(int(round(start * 100)), 100) if hundredths else (int(start), 0)
         hours, rest = divmod(total, 3600)
         minutes, seconds = divmod(rest, 60)
-        lines.append(f'{hours:02d}:{minutes:02d}:{seconds:02d}{separator}{body}')
+        clock = f'{hours:02d}:{minutes:02d}:{seconds:02d}' + (f'.{cents:02d}' if cents else '')
+        lines.append(f'{clock}{separator}{body}')
     return '\n'.join(lines) + '\n' if lines else ''
 
 
@@ -2153,7 +2161,7 @@ _WRITERS = {
     'mpl2': _write_mpl2,
     'pjs': _write_pjs,
     'mpsub': _write_mpsub,
-    'vplayer': _write_clock,
+    'vplayer': lambda segments, fps=DEFAULT_FPS: _write_clock(segments, fps, hundredths=True),
     'tmplayer': lambda segments, fps=DEFAULT_FPS: _write_clock(segments, fps, separator=':'),
     'aqtitle': _write_aqtitle,
     'subviewer1': _write_subviewer1,
