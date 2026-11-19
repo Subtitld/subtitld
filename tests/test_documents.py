@@ -1,5 +1,6 @@
 """Documents to read (modules.documents): what each holds (transcript,
-script, translation sheet, dubbing script), each format written and read
+line-numbered transcript, dialogue list, spotting list, translation sheet,
+dubbing script, speaker list), each format written and read
 back (TXT, CSV, Word, OpenDocument, PDF), through file_io's save thread,
 and the Documents tab's choices and preview.
 
@@ -45,50 +46,102 @@ check('milliseconds; frames at the video\'s rate', (documents.timestamp(3725.5),
 
 print('what each holds')
 transcript = documents.build('transcript', segments, title='Film')
-check('transcript: a paragraph a turn, a new one after a pause, in order, the empty left out',
-      transcript.paragraphs, [('[00:00:01.000] Ana', 'Hello there. Hi. How are you? Fine.'),
-                              ('[00:00:09.000] Bo', 'Me & you')])
-check('no times, no speakers: the words alone, a paragraph after a pause',
-      documents.build('transcript', segments, {'times': 'none', 'speakers': False}).paragraphs,
-      [('', 'Hello there. Hi. How are you? Fine.'), ('', 'Me & you')])
-script = documents.build('script', segments, {'times': 'start_end'})
-check('script: start, end, speaker, text, its lines kept', (script.header, script.rows[2]),
+check('transcript: a turn a speaker, a new one after a pause, in order, the empty left out',
+      transcript.sections[0].turns, [('00:00:01.000', 'Ana', 'Hello there. Hi. How are you? Fine.'),
+                                     ('00:00:09.000', 'Bo', 'Me & you')])
+check('its heading: the title, the kind, the details, the speakers in colour', (
+    transcript.title, transcript.kind, [label for label, _value in transcript.details],
+    transcript.speakers), ('Film', 'Transcript', ['Running time', 'Subtitles', 'Speakers', 'Words', 'Date'],
+                           [('Ana', '#1a73a8'), ('Bo', '#c5653a')]))
+check('the project\'s colour for a speaker', documents.build('transcript', segments,
+                                                              speakers={'Bo': {'color': '#123456'}}).colors['Bo'],
+      '#123456')
+check('no times, no speakers, no title: the words alone, a paragraph after a pause',
+      [(d.title, d.details, d.sections[0].turns) for d in [documents.build(
+          'transcript', segments, {'times': 'none', 'speakers': False, 'title': False}, title='Film')]][0],
+      ('', [], [('', '', 'Hello there. Hi. How are you? Fine.'), ('', '', 'Me & you')]))
+script = documents.build('script', segments, {'times': 'start_end'}).sections[0]
+check('dialogue list: start, end, speaker, text, its lines kept', (script.header, script.rows[2]),
       (['Start', 'End', 'Speaker', 'Text'], ['00:00:04.000', '00:00:05.500', 'Ana', 'How are you?\nFine.']))
-sheet = documents.build('translation', segments)
+check('and a column for notes', documents.build('script', segments, {'notes': True}).sections[0].header,
+      ['Time', 'Speaker', 'Text', 'Notes'])
+spotting = documents.build('spotting', segments + [{'start': 20.0, 'end': 20.5, 'text': 'Far too many words, here.'}],
+                           {'time_format': 'frames'}, fps=25).sections[0]
+check('spotting list: number, in, out, duration, text, reading speed', (spotting.header, spotting.rows[0],
+                                                                         spotting.rows[-1][-1]),
+      (['#', 'Start', 'End', 'Duration', 'Text', 'Chars/s'],
+       ['1', '00:00:01:00', '00:00:02:12', '01:12', 'Hello there.', '8.0'], '50.0'))
+sheet = documents.build('translation', segments).sections[0]
 check('translation sheet: a column for each language, empty where none', (sheet.header, sheet.rows[0], sheet.rows[1]),
       (['Time', 'Text', 'pt-br', 'es'], ['00:00:01.000', 'Hello there.', 'Olá.', 'Hola.'],
        ['00:00:02.600', 'Hi.', '', '']))
-check('or one language', documents.build('translation', segments, {'languages': ['es']}).header, ['Time', 'Text', 'es'])
+check('or one language', documents.build('translation', segments, {'languages': ['es']}).sections[0].header,
+      ['Time', 'Text', 'es'])
 dubbing = documents.build('dubbing', segments, {'by_speaker': True})
-check('dubbing script: number, speaker, start, time it has, text, characters; by speaker',
-      (dubbing.rows[0], [name for name, _rows in dubbing.groups]),
-      (['1', 'Ana', '00:00:01.000', '1.5s', 'Hello there.', '12'], ['Ana', 'Bo']))
-check('the columns share the page, the text the most', (sum(dubbing.widths) <= 100, max(dubbing.widths) == dubbing.widths[4]),
+check('dubbing script: the characters, then number, character, in, out, duration, text, characters; by character',
+      ([s.heading for s in dubbing.sections], dubbing.sections[0].rows[0], dubbing.sections[1].rows[0]),
+      (['Characters', 'Ana', 'Bo'], ['Ana', '3', '7', '0:04', '00:00:01.000'],
+       ['1', 'Ana', '00:00:01.000', '00:00:02.500', '1.50s', 'Hello there.', '12']))
+check('the columns share the page, the text the most', (round(sum(dubbing.sections[1].widths)) <= 100,
+                                                        max(dubbing.sections[1].widths) == dubbing.sections[1].widths[5]),
       (True, True))
+listed_speakers = documents.build('speakers', segments + [{'start': 13.0, 'end': 14.0, 'text': 'Who?'}]).sections[0]
+check('speaker list: who speaks longest first, the share of the speaking, someone with no name',
+      (listed_speakers.header, listed_speakers.rows),
+      (['Speaker', 'Subtitles', 'Words', 'Speaking', 'Share', 'First', 'Last'],
+       [['Ana', '3', '7', '0:04', '68%', '00:00:01.000', '00:00:05.500'],
+        ['Bo', '1', '3', '0:01', '16%', '00:00:09.000', '00:00:10.000'],
+        ['No speaker', '1', '1', '0:01', '16%', '00:00:13.000', '00:00:14.000']]))
+numbered = documents.build('numbered', segments, {'pauses': True, 'times': 'none'}).sections[0]
+check('line-numbered: a turn opens on its speaker in capitals; pauses timed, (Jefferson)', numbered.pages,
+      [[('', 'ANA:', 'Hello there. (0.1) Hi. (0.1) How are you? Fine.'.replace(' (0.1)', '')),
+        ('', '', '(3.5)'), ('', 'BO:', 'Me & you')]])
+long_talk = [{'start': n * 3.0, 'end': n * 3.0 + 2.5, 'speaker': 'Q' if n % 2 else 'A',
+              'text': 'A rather long answer that goes on and on, more than a line can hold. ' * 2} for n in range(20)]
+pages = documents.build('numbered', long_talk).sections[0].pages
+check('25 lines a page, of at most 60 characters, the time on a turn\'s first', (
+    [len(page) for page in pages], max(len(label) + 1 + len(text) for page in pages for _t, label, text in page),
+    pages[0][0][0], pages[0][1][0]), ([25, 25, 10], 57, '00:00:00.000', ''))
 check('a format holds what it can', (documents.content_of('TXT', 'dubbing'), documents.content_of('CSV', 'markers')),
       ('transcript', 'markers'))
 
 print('each format')
 folder = Path(tempfile.mkdtemp())
-check('TXT', documents.txt(documents.build('script', segments, title='Film')).splitlines(),
-      ['Film', '', '00:00:01.000  Ana:  Hello there.', '00:00:02.600  Ana:  Hi.',
-       '00:00:04.000  Ana:  How are you? Fine.', '00:00:09.000  Bo:  Me & you'])
-documents.save(str(folder / 'sheet.csv'), 'CSV', 'translation', segments, columns={'text': 'Texto'})
+check('TXT', documents.txt(documents.build('script', segments, title='Film')).splitlines()[2:],
+      ['', 'Time          Speaker   Text', '----------------------------', '00:00:01.000  Ana:      Hello there.',
+       '00:00:02.600  Ana:      Hi.', '00:00:04.000  Ana:      How are you? / Fine.', '00:00:09.000  Bo:       Me & you'])
+check('TXT: its title, then its kind and details', documents.txt(documents.build('script', segments, title='Film'))
+      .splitlines()[:2][1].split(' · ')[:3], ['Dialogue list', 'Running time 0:10', 'Subtitles 4'])
+check('TXT: a transcript\'s paragraphs', documents.txt(documents.build('transcript', segments, {'title': False}))
+      .splitlines(), ['[00:00:01.000] Ana: Hello there. Hi. How are you? Fine.', '', '[00:00:09.000] Bo: Me & you'])
+check('TXT: numbered lines, a page heading each page', [line for line in documents.txt(
+    documents.build('numbered', long_talk, {'title': False})).splitlines() if line.startswith(('Page', ' 1 '))][:3],
+      ['Page 1', ' 1  00:00:00.000  A: A rather long answer that goes on and on, more than a', 'Page 2'])
+documents.save(str(folder / 'sheet.csv'), 'CSV', 'translation', segments, texts={'column_text': 'Texto'})
 rows = list(csv.reader(io.StringIO((folder / 'sheet.csv').read_text('utf-8-sig'))))
 check('CSV: with a byte order mark, the header in English, a row each', (
     (folder / 'sheet.csv').read_bytes()[:3], rows[0], len(rows)), (b'\xef\xbb\xbf', ['Time', 'Text', 'pt-br', 'es'], 5))
+documents.save(str(folder / 'dubbing.csv'), 'CSV', 'dubbing', segments)
+check('CSV: a dubbing script, its table alone', next(csv.reader(io.StringIO(
+    (folder / 'dubbing.csv').read_text('utf-8-sig')))), ['#', 'Character', 'Start', 'End', 'Duration', 'Text', 'Characters'])
 
 from docx import Document as Word
 documents.save(str(folder / 'script.docx'), 'DOCX', 'script', segments, title='Film',
-               columns={'speaker': 'Locutor'})
+               texts={'column_speaker': 'Locutor'})
 word = Word(str(folder / 'script.docx'))
 table = word.tables[0]
-check('Word: the title, a table, its header as given', (word.paragraphs[0].text, len(table.rows),
-                                                         [cell.text for cell in table.rows[0].cells]),
-      ('Film', 5, ['Time', 'Locutor', 'Text']))
+check('Word: the kind, the title, a table, its header as given', (word.paragraphs[0].text, word.paragraphs[1].text,
+                                                                   len(table.rows),
+                                                                   [cell.text for cell in table.rows[0].cells]),
+      ('DIALOGUE LIST', 'Film', 5, ['TIME', 'LOCUTOR', 'TEXT']))
+check('Word: the page\'s number in the footer', 'PAGE' in word.sections[0].footer._element.xml, True)
 documents.save(str(folder / 'transcript.docx'), 'DOCX', 'transcript', segments, title='Film')
-check('Word: the transcript\'s paragraphs', [p.text for p in Word(str(folder / 'transcript.docx')).paragraphs][1:],
-      ['[00:00:01.000] Ana: Hello there. Hi. How are you? Fine.', '[00:00:09.000] Bo: Me & you'])
+check('Word: the transcript\'s turns, the speaker beside the words',
+      [[cell.text for cell in row.cells] for row in Word(str(folder / 'transcript.docx')).tables[0].rows],
+      [['●  Ana\n00:00:01.000', 'Hello there. Hi. How are you? Fine.'], ['●  Bo\n00:00:09.000', 'Me & you']])
+documents.save(str(folder / 'numbered.docx'), 'DOCX', 'numbered', long_talk)
+check('Word: a table a page of numbered lines', [len(t.rows) for t in Word(str(folder / 'numbered.docx')).tables],
+      [25, 25, 10])
 
 documents.save(str(folder / 'dubbing.odt'), 'ODT', 'dubbing', segments, {'by_speaker': True}, title='Film & co')
 with zipfile.ZipFile(folder / 'dubbing.odt') as odt:
@@ -96,12 +149,17 @@ with zipfile.ZipFile(folder / 'dubbing.odt') as odt:
     first = odt.infolist()[0]
     from lxml import etree
     content = etree.fromstring(odt.read('content.xml'))
-    etree.fromstring(odt.read('styles.xml'))
+    styles = etree.fromstring(odt.read('styles.xml'))
 ns = {'table': 'urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
-check('OpenDocument: the mimetype first and stored, the parts well formed, a table each speaker',
+check('OpenDocument: the mimetype first and stored, the parts well formed, the characters and a table each',
       (first.filename, first.compress_type, 'META-INF/manifest.xml' in names,
-       len(content.findall('.//table:table', ns)), content.find('.//text:h', ns).text),
-      ('mimetype', zipfile.ZIP_STORED, True, 2, 'Film & co'))
+       len(content.findall('.//table:table', ns)), content.find('.//text:h', ns).text,
+       styles.find('.//text:page-number', ns) is not None),
+      ('mimetype', zipfile.ZIP_STORED, True, 3, 'Film & co', True))
+for content_kind in documents.contents_of('ODT'):
+    documents.save(str(folder / f'{content_kind}.odt'), 'ODT', content_kind, segments, {'notes': True, 'pauses': True})
+    with zipfile.ZipFile(folder / f'{content_kind}.odt') as odt:
+        etree.fromstring(odt.read('content.xml'))
 
 documents.save(str(folder / 'sheet.pdf'), 'PDF', 'translation', segments, title='Film')
 pdf = (folder / 'sheet.pdf').read_bytes()
@@ -109,7 +167,14 @@ check('PDF: one A4 page', (pdf[:5], pdf.count(b'/Type /Page\n') + pdf.count(b'/T
       (b'%PDF-', 1, True))
 if shutil.which('pdftotext'):
     said = subprocess.run(['pdftotext', str(folder / 'sheet.pdf'), '-'], capture_output=True, text=True).stdout
-    check('PDF: its text', all(word in said for word in ('Film', 'Hello there.', 'Olá.', 'Hola.', '00:00:09.000')), True)
+    check('PDF: its text, and its footer', all(word in said for word in (
+        'Film', 'Hello there.', 'Olá.', 'Hola.', '00:00:09.000', 'Film · Translation sheet')), True)
+documents.save(str(folder / 'numbered.pdf'), 'PDF', 'numbered', long_talk, title='Film')
+if shutil.which('pdfinfo'):
+    info = subprocess.run(['pdfinfo', str(folder / 'numbered.pdf')], capture_output=True, text=True).stdout
+    check('PDF: a page each 25 lines', 'Pages:           3' in info, True)
+for content_kind in documents.contents_of('PDF'):
+    documents.save(str(folder / f'{content_kind}.pdf'), 'PDF', content_kind, segments)
 image = documents.page_image(documents.build('script', segments, title='Film'), 400)
 check('the first page, for the preview: A4 in shape, something on it', (image.width(), image.height(),
                                                                        image.pixelColor(10, 10).name()), (400, 566, '#ffffff'))
@@ -118,12 +183,12 @@ print('in a dark theme')
 from PySide6.QtGui import QPalette, QColor
 palette = app.palette()
 saved_palette = QPalette(palette)
+light = documents.page_image(documents.build('translation', segments, title='Film'), 400)
 palette.setColor(QPalette.Text, QColor('#e9eef2'))
 palette.setColor(QPalette.WindowText, QColor('#e9eef2'))
 app.setPalette(palette)
 page = documents.page_image(documents.build('translation', segments, title='Film'), 400)
-dark = sum(1 for y in range(0, page.height(), 2) for x in range(0, page.width(), 2) if page.pixelColor(x, y).lightness() < 100)
-check('the text dark on the white page, whatever the application\'s palette', dark > 50, True)
+check('the page the same, whatever the application\'s palette', page == light, True)
 app.setPalette(saved_palette)
 
 print('through file_io')
@@ -131,8 +196,8 @@ session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us', 'metadat
 session.VIDEO = {'filepath': '/films/My film.mp4', 'framerate': 25.0}
 session.FORMAT = {'options': {'document': {'content': 'script', 'time_format': 'frames', 'times': 'start'}}}
 file_io.save_file(str(folder / 'saved.txt'), 'TXT')
-check('TXT: titled after the video, in frames', (folder / 'saved.txt').read_text().splitlines()[:3],
-      ['My film', '', '00:00:01:00  Ana:  Hello there.'])
+check('TXT: titled after the video, in frames', [(lines[0], lines[5]) for lines in [
+    (folder / 'saved.txt').read_text().splitlines()]][0], ('My film', '00:00:01:00  Ana:      Hello there.'))
 result = []
 file_io.save_file_async(str(folder / 'saved.pdf'), 'PDF', on_done=lambda path, ok, error: result.append((ok, error)))
 started = time.time()
@@ -158,15 +223,23 @@ def listed(combobox):
 
 check('the formats, CSV first', listed(panel.format_combo.combobox), ['CSV', 'TXT', 'DOCX', 'ODT', 'PDF'])
 panel.choose('TXT')
-check('TXT: a transcript or a script', listed(contents), ['transcript', 'script'])
+check('TXT: what it can hold', listed(contents), ['transcript', 'numbered', 'script', 'spotting', 'speakers'])
+panel.choose('PDF', 'numbered')
+check('a line-numbered transcript: the times, the speakers, the pauses', (
+    panel.times_combo.isHidden(), panel.speakers_check.isHidden(), panel.pauses_check.isHidden(),
+    panel.notes_check.isHidden()), (False, False, False, True))
+panel.choose('DOCX', 'spotting')
+check('a spotting list: the time\'s format alone', (
+    panel.times_combo.isHidden(), panel.time_format_combo.isHidden(), panel.speakers_check.isHidden()),
+    (True, False, True))
 panel.choose('PDF', 'translation')
 check('a translation sheet: the times and the languages, no speakers', (
     panel.times_combo.isHidden(), panel.languages_combo.isHidden(), panel.speakers_check.isHidden(),
     listed(panel.languages_combo.combobox)), (False, False, True, ['', 'pt-br', 'es']))
 panel.choose('PDF', 'dubbing')
-check('a dubbing script: the time\'s format, by speaker, no times to choose', (
-    panel.times_combo.isHidden(), panel.time_format_combo.isHidden(), panel.by_speaker_check.isHidden()),
-    (True, False, False))
+check('a dubbing script: the time\'s format, by speaker, notes, no times to choose', (
+    panel.times_combo.isHidden(), panel.time_format_combo.isHidden(), panel.by_speaker_check.isHidden(),
+    panel.notes_check.isHidden()), (True, False, False, False))
 _times = panel.times_combo.combobox
 panel.choose('DOCX', 'script')
 _times.setCurrentIndex(_times.findData('none'))

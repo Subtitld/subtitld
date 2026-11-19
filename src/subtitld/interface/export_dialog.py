@@ -998,6 +998,10 @@ class _DocumentsPanel(QWidget):
         self.layout().addWidget(self.speakers_check)
         self.by_speaker_check = QCheckBox(_('export_dialog.document_by_speaker'))
         self.layout().addWidget(self.by_speaker_check)
+        self.pauses_check = QCheckBox(_('export_dialog.document_pauses'))
+        self.layout().addWidget(self.pauses_check)
+        self.notes_check = QCheckBox(_('export_dialog.document_notes'))
+        self.layout().addWidget(self.notes_check)
         self.title_check = QCheckBox(_('export_dialog.document_title'))
         self.layout().addWidget(self.title_check)
 
@@ -1009,11 +1013,14 @@ class _DocumentsPanel(QWidget):
         _select(self.languages_combo, remembered.get('language', ''))
         self.speakers_check.setChecked(bool(remembered.get('speakers', documents.DEFAULTS['speakers'])))
         self.by_speaker_check.setChecked(bool(remembered.get('by_speaker', documents.DEFAULTS['by_speaker'])))
+        self.pauses_check.setChecked(bool(remembered.get('pauses', documents.DEFAULTS['pauses'])))
+        self.notes_check.setChecked(bool(remembered.get('notes', documents.DEFAULTS['notes'])))
         self.title_check.setChecked(bool(remembered.get('title', documents.DEFAULTS['title'])))
         for combo in (self.format_combo, self.content_combo, self.times_combo, self.time_format_combo,
                       self.languages_combo):
             combo.combobox.currentIndexChanged.connect(self.changed)
-        for check in (self.speakers_check, self.by_speaker_check, self.title_check):
+        for check in (self.speakers_check, self.by_speaker_check, self.pauses_check, self.notes_check,
+                      self.title_check):
             check.toggled.connect(self.changed)
         self._refresh_format()
 
@@ -1047,13 +1054,17 @@ class _DocumentsPanel(QWidget):
         """The options the chosen content takes in the chosen format."""
         fmt, content = self._format(), self._content()
         self._contents[fmt] = content
-        timed = content in (documents.TRANSCRIPT, documents.SCRIPT, documents.TRANSLATION)
+        timed = content in (documents.TRANSCRIPT, documents.NUMBERED, documents.SCRIPT, documents.TRANSLATION)
         self.times_combo.setVisible(timed)
-        self.time_format_combo.setVisible(content == documents.DUBBING or (
+        self.time_format_combo.setVisible(content in (documents.SPOTTING, documents.DUBBING, documents.SPEAKERS) or (
             timed and self.times_combo.combobox.currentData() != 'none'))
         self.languages_combo.setVisible(content == documents.TRANSLATION and self.languages_combo.combobox.count() > 2)
-        self.speakers_check.setVisible(content in (documents.TRANSCRIPT, documents.SCRIPT))
+        self.speakers_check.setVisible(content in (documents.TRANSCRIPT, documents.NUMBERED, documents.SCRIPT))
         self.by_speaker_check.setVisible(content == documents.DUBBING)
+        self.pauses_check.setVisible(content == documents.NUMBERED)
+        # A column for notes: on paper, to be written in, or in a sheet.
+        self.notes_check.setVisible(content in (documents.SCRIPT, documents.TRANSLATION, documents.DUBBING)
+                                    and fmt != 'TXT')
         self.title_check.setVisible(fmt != 'CSV' and content != documents.MARKERS)
 
     def export_choices(self):
@@ -1066,6 +1077,8 @@ class _DocumentsPanel(QWidget):
             'languages': [language] if language else None,
             'speakers': self.speakers_check.isChecked(),
             'by_speaker': self.by_speaker_check.isChecked(),
+            'pauses': self.pauses_check.isChecked(),
+            'notes': self.notes_check.isChecked(),
             'title': self.title_check.isChecked(),
         }
 
@@ -2418,11 +2431,13 @@ class ExportDialog(utils.SimpleDialog):
             if content == documents.MARKERS:
                 self.preview_panel.show_text(csv_export.write(segments))
                 return
+            if fmt == 'CSV':
+                chosen['title'] = False
             document = documents.build(
                 content, segments, chosen, fps=(session.VIDEO or {}).get('framerate'),
                 title=documents.title_for(session.SUBTITLE, session.VIDEO),
-                columns=None if fmt == 'CSV' else {key: _(f'export_dialog.document_column_{key}')
-                                                   for key in documents.COLUMNS})
+                texts=None if fmt == 'CSV' else {key: _(f'export_dialog.document_{key}') for key in documents.TEXTS},
+                speakers=session.SPEAKERS)
             if fmt == 'TXT':
                 self.preview_panel.show_text(documents.txt(document))
             elif fmt == 'CSV':
