@@ -74,6 +74,7 @@ from subtitld.modules import scc
 from subtitld.modules import srt
 from subtitld.modules import subtitle_styles
 from subtitld.modules import swift
+from subtitld.modules import teletext
 from subtitld.modules import tsb4
 from subtitld.modules import session
 from subtitld.modules import ttml
@@ -1654,6 +1655,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=vendor_settings['fps'])
+
+        elif subtitle_file.lower().endswith('.dvbttx'):
+            # A Manzanita dump of a DVB teletext stream, read only: its
+            # first subtitle page, in the language its preamble gives.
+            subtitle_format = 'DVBTTX'
+            try:
+                segments_list, teletext_info = teletext.read_manzanita(subtitle_file)
+            except (OSError, ValueError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(teletext_info['language']):
+                session.SUBTITLE['language'] = _known_language(teletext_info['language'])
 
         elif subtitle_file.lower().endswith('.rac'):
             # Screen's PAC recovery file: PAC's records without its header,

@@ -322,6 +322,22 @@ check('each after 1 s and before 10 s',
       all(s['start'] > 1 and s['end'] < 10 for segments in pages.values() for s in segments), True)
 check('the page read when none is chosen is one of them', default in pages.values(), True)
 
+print('Manzanita teletext dumps')
+X26, X28_COLOURS, X28_OPTION = need(SE + 'teletext_x26_enhancements.dvbttx', SE + 'teletext_x28_colour_map.dvbttx',
+                                    SE + 'teletext_x28_national_option.dvbttx')
+# Subtitle Edit, ManzanitaTeletextTest (SE 80b7c034): page 888 of each.
+for label, path, want in (
+        ('X/26: "@" over the star (a G0 character), the music note over the hash (G2 0x55)', X26,
+         'mail@se.org ♪ note'),
+        ('X/28/0\'s national option: French, as the header\'s bits would not have it', X28_OPTION,
+         'On est déjà allés'),
+        ('X/28/0\'s colour map (CLUT 2 entry 1, #ff8822) and X/26\'s foreground colour', X28_COLOURS,
+         '<font color="#ff8822">Level 2.5 orange</font>')):
+    found, info = teletext.read_manzanita(path)
+    check(label, ([markup.split_lead(s['text'])[1] for s in found], info['page'], found[0]['start']), ([want], '888', 1.0))
+segments, fmt = file_io.process_subtitles_file(str(X26))
+check('a .dvbttx opened as Subtitld opens files', (fmt, len(segments)), ('DVBTTX', 1))
+
 print('ARIB captions')
 found = tracks(ARIB_CLEAR)
 check('FATE aribcaption_clear: one ARIB track', brief(found), [(0, 'arib_caption', 'text')])

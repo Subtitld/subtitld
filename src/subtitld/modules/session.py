@@ -306,6 +306,7 @@ LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS = {
     'CAPTIONSINC': {'description': 'Captions Inc. Caption format', 'extensions': ['cin']},
     'ULTECH': {'description': 'Ultech 1.30 Caption format', 'extensions': ['ult', 'uld']},
     'RAC': {'description': 'Screen PAC recovery file', 'extensions': ['rac']},
+    'DVBTTX': {'description': 'Manzanita DVB teletext dump', 'extensions': ['dvbttx']},
 }
 
 # Formats Subtitld writes but does not open as subtitles: a Blu-ray's
