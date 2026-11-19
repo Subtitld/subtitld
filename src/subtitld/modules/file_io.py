@@ -2855,7 +2855,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             content = chosen.pop('content', None) or (documents.MARKERS if options.get('csv_type') else None)
             documents.save(final_file, subtitle_format, content, SUBTITLE.segments, chosen,
                            fps=VIDEO.get('framerate'), title=documents.title_for(SUBTITLE, VIDEO, final_file),
-                           columns={key: _(f'export_dialog.document_column_{key}') for key in documents.COLUMNS})
+                           texts={key: _(f'export_dialog.document_{key}') for key in documents.TEXTS},
+                           speakers=session.SPEAKERS)
 
         elif subtitle_format in ['USF']:
             options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
