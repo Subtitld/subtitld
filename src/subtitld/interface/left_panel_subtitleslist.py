@@ -17,6 +17,7 @@ from subtitld.modules import subtitles
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import quality_check
+from subtitld.modules import segment as segments
 from subtitld.modules.segment import set_text, text_of
 
 
@@ -281,7 +282,8 @@ def load(self):
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
 
-    # A subtitle timed piece by piece: its pieces, to cut, join and time.
+    # A subtitle timed piece by piece: its pieces, in place of the text
+    # above, to type in, cut, join and time.
     self.left_panel_subtitleslist_timed_text = timed_text_strip.TimedTextStrip(lambda: session.SUBTITLE.selected)
     self.left_panel_subtitleslist_timed_text.changed.connect(lambda: timed_text_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_timed_text)
@@ -508,16 +510,33 @@ def align_selected(self):
 
 
 def timed_text_changed(self):
-    """The selected subtitle's pieces were cut, joined or timed."""
+    """The selected subtitle's pieces were typed in, cut, joined or timed."""
     session.set_unsaved(True)
+    if session.SUBTITLE.selected:
+        # The editor, hidden, keeps its words for the formatting bar to format.
+        self.left_panel_subtitleslist_textedit.blockSignals(True)
+        subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE.selected.text())
+        self.left_panel_subtitleslist_textedit.blockSignals(False)
+        show_text_or_pieces(self)
+        self.subtitles_panel_qlistwidget.viewport().update()
     self.left_panel_subtitleslist_formatting_bar.refresh()
     self.timeline_widget.update()
+    self.preview_panel_player.update()
+
+
+def show_text_or_pieces(self):
+    """A subtitle timed piece by piece shows its pieces, which its words are
+    typed in, not its text."""
+    selected = session.SUBTITLE.selected
+    self.left_panel_subtitleslist_textedit.setVisible(
+        not (isinstance(selected, dict) and segments.timed_pieces(selected)))
 
 
 def left_panel_subtitleslist_textedit_changed(self):
     if session.SUBTITLE.selected:
         set_text(session.SUBTITLE.selected, subtitle_text_editor.text(self.left_panel_subtitleslist_textedit))
         self.left_panel_subtitleslist_timed_text.refresh()
+        show_text_or_pieces(self)
         # In a shared project, the others leave this text be while it is typed in.
         collab_service.typing(session.SUBTITLE.selected.get('id'))
         session.set_unsaved(True)
@@ -531,6 +550,7 @@ def refresh_lock(self):
     holder = collab_service.locked_by(selected.get('id')) if isinstance(selected, dict) else None
     self.left_panel_subtitleslist_textedit.setReadOnly(bool(holder))
     self.left_panel_subtitleslist_formatting_bar.setEnabled(not holder)
+    self.left_panel_subtitleslist_timed_text.setEnabled(not holder)
     self.left_panel_subtitleslist_locked_notice.setVisible(bool(holder))
     if holder:
         self.left_panel_subtitleslist_locked_notice.setText(_('collab.typing_here').format(handle=holder.get('handle', '')))
@@ -586,6 +606,7 @@ def update(self):
         self.left_panel_subtitleslist_textedit.blockSignals(False)
         self.left_panel_subtitleslist_formatting_bar.refresh()
         self.left_panel_subtitleslist_timed_text.refresh()
+        show_text_or_pieces(self)
 
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(True)

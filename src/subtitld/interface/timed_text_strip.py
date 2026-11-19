@@ -1,28 +1,31 @@
 """The pieces of a subtitle timed word by word, syllable by syllable or letter
-by letter (modules.segment), under its text in the subtitles list.
+by letter (modules.segment), in the subtitles list in place of its text.
 
-Each piece is a chip, in the order they are sung, wrapping as the text does.
-A click chooses one; in the chosen one, a click between two letters cuts it
-there, its time shared by letters; a click in the gap between two joins them.
-Under the chips, the chosen piece's start and end, in seconds from the
-subtitle's start, and how it lights up. Each change is one undo step; its
-words are edited in the text above it, as any subtitle's are.
+Each piece is a field its words are typed in, in the order they are sung,
+wrapping as the text does. A click goes into one, at the letter clicked,
+and chooses it; Enter or a click away keeps what was typed, Escape leaves it
+as it was, Tab goes on to the next (Shift+Tab, back). With Ctrl held, a
+click between two letters of a piece cuts it there instead, its time shared
+by letters; a click in the gap between two joins them. Under them, the
+chosen piece's start and end, in seconds from the subtitle's start, and how
+it lights up. Each change is one undo step.
 """
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from subtitld.interface.translation import _
 from subtitld.modules import history, segment as segments
 
-_PAD = 7            # inside a chip, either side of its letters
-_GAP = 6            # between two chips, where a click joins them
-_HEIGHT = 24        # a chip, as tall as the formatting bar's buttons
+_PAD = 7            # inside a field, either side of its letters
+_GAP = 6            # between two fields, where a click joins them
+_HEIGHT = 24        # a field, as tall as the formatting bar's buttons
 _RADIUS = 3
 
-_CHIP = QColor('#304251')
-_CHOSEN = QColor('#3e5363')
+# The fields' own look (stylesheet.qss): sunken, darker at the top.
+_FIELD = (QColor('#324350'), QColor('#445b6c'))
+_FIELD_HOVER = (QColor('#3a4a58'), QColor('#4c6173'))
 _TEXT = QColor('#b8cee0')
 _TEXT_CHOSEN = QColor('#ffffff')
 
@@ -31,7 +34,7 @@ EFFECTS = ('', *segments.EFFECTS)
 
 
 def _shown(text):
-    """A piece's letters as its chip shows them, with where each starts in
+    """A piece's letters as its field shows them, with where each starts in
     its text: a line break as ⏎, its trailing spaces left out."""
     letters = [(index, '⏎' if character == '\n' else character) for index, character in segments.letters_of(text)]
     while letters and letters[-1][1].isspace():
@@ -39,29 +42,95 @@ def _shown(text):
     return letters
 
 
+class CtrlWatch(QObject):
+    """While started, tells `changed(held)` each time Ctrl is pressed or let
+    go, whichever widget has the keyboard."""
+
+    def __init__(self, changed, parent=None):
+        super().__init__(parent)
+        self.changed = changed
+        self.on = False
+
+    def start(self):
+        if not self.on:
+            QApplication.instance().installEventFilter(self)
+            self.on = True
+
+    def stop(self):
+        if self.on:
+            QApplication.instance().removeEventFilter(self)
+            self.on = False
+
+    def eventFilter(self, watched, event):
+        if (event.type() in (QEvent.KeyPress, QEvent.KeyRelease) and event.key() == Qt.Key_Control
+                and not event.isAutoRepeat()):
+            self.changed(event.type() == QEvent.KeyPress)
+        return False
+
+
+class _Editor(QLineEdit):
+    """The field a piece is typed in, over where it is drawn. `finished`
+    says how it was left: 'keep', 'cancel', 'next' or 'previous'."""
+
+    finished = Signal(str)
+
+    _KEYS = {Qt.Key_Return: 'keep', Qt.Key_Enter: 'keep', Qt.Key_Escape: 'cancel', Qt.Key_Tab: 'next',
+             Qt.Key_Backtab: 'previous'}
+
+    def event(self, event):
+        # Taken before the window's shortcuts, and before Tab moves the focus.
+        if event.type() in (QEvent.ShortcutOverride, QEvent.KeyPress) and event.key() in self._KEYS:
+            if event.type() == QEvent.KeyPress:
+                how = self._KEYS[event.key()]
+                self.finished.emit('previous' if how == 'next' and event.modifiers() & Qt.ShiftModifier else how)
+            event.accept()
+            return True
+        return super().event(event)
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        if event.reason() != Qt.PopupFocusReason:
+            self.finished.emit('keep')
+
+
 class _Chips(QWidget):
-    """The pieces as chips, laid out in rows as wide as the strip."""
+    """The pieces as fields, laid out in rows as wide as the strip."""
 
     chose = Signal(int)
     cut = Signal(int, int)        # piece, index in its text
     joined = Signal(int)          # piece, joined with the next
+    typed = Signal(int, str, str)  # piece, its words as typed, how it was left (_Editor.finished)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName('timed_text_chips')
         self.setMouseTracking(True)
+        # A click here takes the keyboard from a piece being typed in, which keeps what was typed.
+        self.setFocusPolicy(Qt.ClickFocus)
         font = QFont('Montserrat')
         font.setPixelSize(12)
         self.setFont(font)
         self.pieces = []
         self.chosen = 0
         self.hover = None          # ('chip', n) | ('cut', n, index, x) | ('gap', n)
+        self.editing = None        # the piece being typed in
         self._chips = []           # [(rect, [(index, x)])] in this widget's coordinates
+        self.editor = _Editor(self)
+        self.editor.setObjectName('timed_text_chip_editor')
+        self.editor.setFont(font)
+        self.editor.hide()
+        self.editor.textEdited.connect(self._typing)
+        self.editor.finished.connect(self.finish)
+        self.ctrl = CtrlWatch(self._ctrl, self)
 
     def set_pieces(self, pieces, chosen):
+        if self.editing is not None and pieces is not self.pieces:
+            # Pieces changed under it (an undo): what was typed is of others.
+            self.finish('cancel')
         self.pieces, self.chosen = pieces, chosen
         self.hover = None
         self._lay_out(self.width())
+        self._place_editor()
         self.updateGeometry()
         self.update()
 
@@ -76,19 +145,25 @@ class _Chips(QWidget):
 
     def resizeEvent(self, event):
         self._lay_out(event.size().width())
+        self._place_editor()
         super().resizeEvent(event)
 
+    def _letters(self, number):
+        if number == self.editing:
+            return list(enumerate(self.editor.text()))
+        return _shown(self.pieces[number]['text'])
+
     def _lay_out(self, width, keep=True):
-        """Place the chips in rows `width` wide; gives the height they take."""
+        """Place the fields in rows `width` wide; gives the height they take."""
         metrics = QFontMetricsF(self.font())
         chips, x, y = [], 0.0, 0.0
-        for piece in self.pieces:
-            letters = _shown(piece['text'])
+        for number in range(len(self.pieces)):
             edges, at = [], _PAD
-            for index, character in letters:
+            for index, character in self._letters(number):
                 edges.append((index, at))
                 at += metrics.horizontalAdvance(character)
-            chip_width = max(at + _PAD, 2 * _PAD + 4)
+            # Room for the caret after the last letter, while it is typed in.
+            chip_width = max(at + _PAD + (2 if number == self.editing else 0), 2 * _PAD + 4)
             if x and x + chip_width > width:
                 x, y = 0.0, y + _HEIGHT + _GAP
             chips.append((QRectF(x, y, chip_width, _HEIGHT), [(index, x + edge) for index, edge in edges]))
@@ -97,33 +172,52 @@ class _Chips(QWidget):
             self._chips = chips
         return int(y + _HEIGHT) if chips else 0
 
-    def _at(self, point):
+    def _at(self, point, ctrl=False):
         for number, (rect, edges) in enumerate(self._chips):
             if rect.contains(point):
-                if number == self.chosen and len(edges) > 1:
+                if not ctrl:
+                    return 'chip', number
+                if len(edges) > 1:
                     # The edge between two letters nearest the pointer, not
                     # the one before the first.
                     index, x = min(edges[1:], key=lambda edge: abs(edge[1] - point.x()))
-                    if abs(x - point.x()) <= 6:
-                        return 'cut', number, index, x
-                return 'chip', number
+                    return 'cut', number, index, x
+                return None
             gap = QRectF(rect.right(), rect.top(), _GAP, rect.height())
             if number + 1 < len(self._chips) and gap.contains(point):
                 return 'gap', number
         return None
 
-    def mouseMoveEvent(self, event):
-        hover = self._at(event.position())
+    def _caret(self, number, x):
+        """How many letters of piece `number` are left of `x`, to the nearest edge."""
+        rect, edges = self._chips[number]
+        places = [edge for _index, edge in edges] + [rect.right() - _PAD]
+        return min(range(len(places)), key=lambda place: abs(places[place] - x))
+
+    def _hover(self, point, ctrl):
+        hover = self._at(point, ctrl)
         if hover != self.hover:
             self.hover = hover
             kind = hover[0] if hover else None
-            self.setCursor(Qt.PointingHandCursor if kind == 'chip' else Qt.SplitHCursor if kind == 'cut'
+            self.setCursor(Qt.IBeamCursor if kind == 'chip' else Qt.SplitHCursor if kind == 'cut'
                            else Qt.PointingHandCursor if kind == 'gap' else Qt.ArrowCursor)
-            self.setToolTip({'chip': _('timed_text.choose_tip'), 'cut': _('timed_text.cut_tip'),
+            self.setToolTip({'chip': _('timed_text.type_tip'), 'cut': _('timed_text.cut_tip'),
                              'gap': _('timed_text.join_tip')}.get(kind, ''))
             self.update()
 
+    def _ctrl(self, held):
+        if self.underMouse():
+            self._hover(self.mapFromGlobal(QCursor.pos()).toPointF(), held)
+
+    def mouseMoveEvent(self, event):
+        self._hover(event.position(), bool(event.modifiers() & Qt.ControlModifier))
+
+    def enterEvent(self, event):
+        self.ctrl.start()
+        super().enterEvent(event)
+
     def leaveEvent(self, event):
+        self.ctrl.stop()
         self.hover = None
         self.update()
         super().leaveEvent(event)
@@ -131,7 +225,9 @@ class _Chips(QWidget):
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
-        hover = self._at(event.position())
+        # A piece still typed in keeps its words first, which may move the others.
+        self.finish('keep')
+        hover = self._at(event.position(), bool(event.modifiers() & Qt.ControlModifier))
         if hover is None:
             return
         if hover[0] == 'cut':
@@ -140,15 +236,66 @@ class _Chips(QWidget):
             self.joined.emit(hover[1])
         else:
             self.chose.emit(hover[1])
+            self.edit(hover[1], self._caret(hover[1], event.position().x()))
+
+    # --- typing ---------------------------------------------------------------
+    def edit(self, number, caret=None):
+        """Type in piece `number`: the caret `caret` letters in, or all of
+        them selected."""
+        if not 0 <= number < len(self.pieces):
+            return
+        self.editing = number
+        self.editor.setText(''.join(character for _index, character in _shown(self.pieces[number]['text'])))
+        self._lay_out(self.width())
+        self._place_editor()
+        self.editor.show()
+        self.editor.setFocus(Qt.MouseFocusReason)
+        if caret is None:
+            self.editor.selectAll()
+        else:
+            self.editor.setCursorPosition(caret)
+        self.update()
+
+    def _place_editor(self):
+        if self.editing is not None and self.editing < len(self._chips):
+            self.editor.setGeometry(self._chips[self.editing][0].toAlignedRect())
+
+    def _typing(self, _text):
+        self._lay_out(self.width())
+        self._place_editor()
+        self.updateGeometry()
+        self.update()
+
+    def finish(self, how):
+        """Stop typing in a piece: what was typed kept ('keep', 'next',
+        'previous'), or left out ('cancel')."""
+        number, self.editing = self.editing, None
+        if number is None:
+            return
+        words = self.editor.text().replace('⏎', '\n')
+        if self.editor.hasFocus():
+            self.setFocus(Qt.OtherFocusReason)
+        self.editor.hide()
+        self._lay_out(self.width())
+        self.updateGeometry()
+        self.update()
+        if how != 'cancel':
+            self.typed.emit(number, words, how)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setFont(self.font())
         for number, (rect, edges) in enumerate(self._chips):
+            if number == self.editing:
+                continue
             chosen = number == self.chosen
+            lit = chosen or (self.hover is not None and self.hover[1] == number and self.hover[0] != 'gap')
+            shade = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+            for stop, color in zip((0, 1), _FIELD_HOVER if lit else _FIELD):
+                shade.setColorAt(stop, color)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(_CHOSEN if chosen else _CHIP)
+            painter.setBrush(shade)
             painter.drawRoundedRect(rect, _RADIUS, _RADIUS)
             painter.setPen(_TEXT_CHOSEN if chosen else _TEXT)
             text = ''.join(character for _index, character in _shown(self.pieces[number]['text']))
@@ -178,6 +325,7 @@ class TimedTextStrip(QWidget):
         self.segment = segment
         self.chosen = 0
         self._shown = None         # the id of the subtitle shown, its first piece chosen when another is
+        self._subtitle = None      # the subtitle shown, which a piece typed in keeps its words in
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 2, 6, 6)
         layout.setSpacing(6)
@@ -186,6 +334,7 @@ class TimedTextStrip(QWidget):
         self.chips.chose.connect(self._choose)
         self.chips.cut.connect(self._cut)
         self.chips.joined.connect(self._join)
+        self.chips.typed.connect(self._type)
         layout.addWidget(self.chips)
 
         row = QHBoxLayout()
@@ -232,6 +381,12 @@ class TimedTextStrip(QWidget):
         times and effect."""
         subtitle = self.segment()
         pieces = segments.timed_pieces(subtitle) if subtitle else []
+        if self.chips.editing is not None and not (pieces and subtitle.get('id') == self._shown):
+            # Another subtitle chosen while one of this one's pieces is typed
+            # in: what was typed is kept, in this one.
+            self.chips.finish('keep')
+            return self.refresh()
+        self._subtitle = subtitle
         self.setVisible(bool(pieces))
         if not pieces:
             return
@@ -260,6 +415,25 @@ class TimedTextStrip(QWidget):
     def _done(self):
         self.refresh()
         self.changed.emit()
+
+    def _type(self, number, words, how):
+        """Piece `number` typed in: its words; then on to the next or the
+        one before, if Tab or Shift+Tab left it."""
+        subtitle = self._subtitle
+        pieces = segments.timed_pieces(subtitle)
+        if not 0 <= number < len(pieces):
+            return
+        became = 1
+        if words != segments.piece_words(pieces[number]['text']):
+            history.history_append()
+            became = segments.set_piece_text(subtitle, number, words)
+            self.chosen = number if became else max(0, number - 1)
+            self._done()
+        if how in ('next', 'previous') and self.segment() is subtitle:
+            following = number + became if how == 'next' else number - 1
+            if 0 <= following < len(segments.timed_pieces(subtitle)):
+                self.choose(following)
+                self.chips.edit(following)
 
     def _cut(self, number, at):
         subtitle = self.segment()

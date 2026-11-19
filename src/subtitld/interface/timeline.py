@@ -16,7 +16,7 @@ from subtitld.modules import utils
 from subtitld.modules import waveform_cache
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import text_of, timed_pieces
 
 from subtitld.interface import left_panel
 from subtitld.interface import playercontrols
@@ -1808,8 +1808,17 @@ class Timeline(QWidget):
 
                 if subtitle.get('dubbing'):
                     subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
-                # Where its pieces go, if it is timed word by word: the box, above a dub's clips.
+                # A subtitle timed word by word shows its pieces where its
+                # text would be, as wide as its box, above a dub's clips.
                 pieces_box = QRectF(subtitle_rect)
+                timed = bool(timed_pieces(subtitle))
+
+                def text_or_pieces(rect, text):
+                    if timed:
+                        timeline_pieces.paint(widget, painter, subtitle,
+                                              QRectF(pieces_box.left(), rect.top(), pieces_box.width(), rect.height()))
+                    else:
+                        painter.drawText(rect, widget.subtitle_alignment | Qt.TextWordWrap, text)
 
                 if _live_sub is not None and subtitle is _live_sub:
                     # Reuse the rect the loop already computed (speaker tracks,
@@ -1835,8 +1844,7 @@ class Timeline(QWidget):
                             painter.setPen(smart_splice_line_color)
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
-                        # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
-                        painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, markup.plain(text_of(subtitle)))
+                        text_or_pieces(original_subtitle_rect - QMarginsF(0, 5, 0, 5), markup.plain(text_of(subtitle)))
 
                     translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
 
@@ -1865,8 +1873,7 @@ class Timeline(QWidget):
                             painter.setPen(smart_splice_line_color)
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
-                        painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap,
-                                         markup.plain(text_of(subtitle)) or ('…' if rec_pending else ''))
+                        text_or_pieces(original_subtitle_rect, markup.plain(text_of(subtitle)) or ('…' if rec_pending else ''))
 
                 if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                     track_height = widget.subtitle_height / subtitle_track[1]
@@ -1911,9 +1918,6 @@ class Timeline(QWidget):
                         painter.setPen(edge_pen)
                         painter.setBrush(Qt.NoBrush)
                         painter.drawPath(edge_path)
-
-                if subtitle_is_selected:
-                    timeline_pieces.paint(widget, painter, subtitle, pieces_box)
 
                 if subtitle_locked:
                     painter.restore()
@@ -2396,6 +2400,7 @@ class Timeline(QWidget):
             changed = True
         if changed:
             widget.update()
+        timeline_pieces.leave(widget)
         event.accept()
 
     def mouseReleaseEvent(widget, event):

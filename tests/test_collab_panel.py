@@ -249,15 +249,18 @@ connection.engine.locks = {first['id']: 'p1'}
 connection.engine.locked_by = lambda cue: {'handle': 'joao'} if connection.engine.locks.get(cue) == 'p1' else None
 editor = types.SimpleNamespace(left_panel_subtitleslist_textedit=QTextEdit(),
                                left_panel_subtitleslist_formatting_bar=QWidget(),
+                               left_panel_subtitleslist_timed_text=QWidget(),
                                left_panel_subtitleslist_locked_notice=QLabel())
 session.SUBTITLE.selected = first
 left_panel_subtitleslist.refresh_lock(editor)
 check('someone typing: the text can\'t be typed in here, and says who',
       (editor.left_panel_subtitleslist_textedit.isReadOnly(), editor.left_panel_subtitleslist_locked_notice.text()),
       (True, '@joao is typing in this subtitle. You can type in it once they stop.'))
+check('nor its pieces, when it is timed', editor.left_panel_subtitleslist_timed_text.isEnabled(), False)
 connection.engine.locks = {}
 left_panel_subtitleslist.refresh_lock(editor)
-check('and can be once they stop', editor.left_panel_subtitleslist_textedit.isReadOnly(), False)
+check('and can be once they stop', (editor.left_panel_subtitleslist_textedit.isReadOnly(),
+                                    editor.left_panel_subtitleslist_timed_text.isEnabled()), (False, True))
 
 print('conflicts')
 connection.engine.conflicts[:] = [{'cue_id': first['id'], 'field': 'text', 'mine': first['text'], 'theirs': 'Olá <b>', 'author': 'joao'},

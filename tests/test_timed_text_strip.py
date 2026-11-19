@@ -1,15 +1,17 @@
 """Timing a subtitle in the subtitles list: the formatting bar's timing menu
 times its text word by word, syllable by syllable (in its language) or
 letter by letter, or takes the timing away; the pieces strip under it shows
-the pieces, a click choosing one, cutting the chosen one between two
-letters or joining two at the gap between them, and sets the chosen one's
-times and effect. Each change is one undo step.
+the pieces, each a field: a click chooses one and types in it, Enter or a
+click away keeping the words, Escape not, Tab going on to the next; with
+Ctrl a click cuts one between two letters, and a click on the gap between
+two joins them. It sets the chosen one's times and effect too. Each change
+is one undo step.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import os, sys, tempfile
+import copy, os, sys, tempfile
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 _xdg = tempfile.mkdtemp()
@@ -35,11 +37,11 @@ def check(name, got, want):
         fails.append(name)
 
 
-def hover(point):
+def hover(point, keys=Qt.NoModifier):
     """The pointer moved over the chips, no button down: sent to them
     directly, as a display with no pointer of its own may not."""
     at = QPointF(point)
-    strip.chips.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, at, at, Qt.NoButton, Qt.NoButton, Qt.NoModifier))
+    strip.chips.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, at, at, Qt.NoButton, Qt.NoButton, keys))
 
 
 def texts():
@@ -92,12 +94,20 @@ QTest.mouseClick(strip.chips, Qt.LeftButton, pos=chips[1][0].center().toPoint())
 check('a click chooses another', strip.chosen, 1)
 check('its times shown', (strip.start_spin.value(), strip.end_spin.value()),
       tuple(float(timed_pieces(session.SUBTITLE.selected)[1][key]) for key in ('start', 'end')))
+check('and types in it', (strip.chips.editing, strip.chips.editor.isVisible(), strip.chips.editor.text()),
+      (1, True, 'junto'))
+strip.chips.finish('cancel')
 rect, edges = strip.chips._chips[1]
 index, x = edges[2]                       # before the third letter of "junto"
 point = QPoint(int(x), int(rect.center().y()))
 hover(point)
-check('between two letters of the chosen one: a cut', strip.chips.hover[:3], ('cut', 1, index))
-QTest.mouseClick(strip.chips, Qt.LeftButton, pos=point)
+check('between two letters, no Ctrl: typed in', strip.chips.hover, ('chip', 1))
+hover(point, Qt.ControlModifier)
+check('with Ctrl: a cut', strip.chips.hover[:3], ('cut', 1, index))
+rect, edges = strip.chips._chips[3]
+hover(QPoint(int(edges[3][1]), int(rect.center().y())), Qt.ControlModifier)
+check('with Ctrl, any piece, not only the chosen one', strip.chips.hover[:2], ('cut', 3))
+QTest.mouseClick(strip.chips, Qt.LeftButton, Qt.ControlModifier, point)
 check('cut there', texts(), ['Cantando ', 'ju', 'nto ', 'a ', 'palavra'])
 check('the second half chosen', strip.chosen, 2)
 history.history_undo()
@@ -110,6 +120,71 @@ hover(gap)
 check('the gap after a chip: a join', strip.chips.hover, ('gap', 0))
 QTest.mouseClick(strip.chips, Qt.LeftButton, pos=gap)
 check('joined', texts(), ['Cantando junto ', 'a ', 'palavra'])
+
+print('typing')
+before_typing = copy.deepcopy(session.SUBTITLE.selected['text'])
+
+
+def type_in(number, keys, caret=None):
+    strip.choose(number)
+    strip.chips.edit(number, caret)
+    QTest.keyClicks(strip.chips.editor, keys)
+
+
+type_in(0, 'Dancando')
+check('typed over the words, all selected', texts(), ['Cantando junto ', 'a ', 'palavra'])
+QTest.keyClick(strip.chips.editor, Qt.Key_Return)
+check('Enter keeps them, the space after', texts(), ['Dancando ', 'a ', 'palavra'])
+check('the field gone', (strip.chips.editing, strip.chips.editor.isVisible()), (None, False))
+history.history_undo()
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
+strip.refresh()
+check('one undo step', texts(), ['Cantando junto ', 'a ', 'palavra'])
+times = [(piece['start'], piece['end']) for piece in timed_pieces(session.SUBTITLE.selected)]
+type_in(2, 's', caret=7)
+QTest.keyClick(strip.chips.editor, Qt.Key_Escape)
+check('Escape leaves it as it was', texts(), ['Cantando junto ', 'a ', 'palavra'])
+type_in(2, 's', caret=7)
+QTest.keyClick(strip.chips.editor, Qt.Key_Tab)
+check('Tab keeps it', texts(), ['Cantando junto ', 'a ', 'palavras'])
+check('its times as they were', [(piece['start'], piece['end']) for piece in timed_pieces(session.SUBTITLE.selected)],
+      times)
+check('the last: nowhere to go', strip.chips.editing, None)
+type_in(1, 'b')
+QTest.keyClick(strip.chips.editor, Qt.Key_Backtab)
+check('Shift+Tab keeps it and goes back', (texts()[1], strip.chips.editing, strip.chosen), ('b ', 0, 0))
+check('all its words selected', strip.chips.editor.selectedText(), 'Cantando junto')
+QTest.keyClick(strip.chips.editor, Qt.Key_Escape)
+type_in(1, 'a seu')
+QTest.keyClick(strip.chips.editor, Qt.Key_Return)
+check('a word typed a space into: cut in two', texts(), ['Cantando junto ', 'a ', 'seu ', 'palavras'])
+type_in(2, '')
+strip.chips.editor.clear()
+QTest.keyClick(strip.chips.editor, Qt.Key_Return)
+check('emptied: gone, its time to the one before', (texts(), timed_pieces(session.SUBTITLE.selected)[1]['end']),
+      (['Cantando junto ', 'a ', 'palavras'], times[2][0]))
+type_in(2, 'x', caret=0)
+QTest.mouseClick(strip.chips, Qt.LeftButton, pos=strip.chips._chips[0][0].center().toPoint())
+check('a click on another keeps it, then types in that one', (texts()[2], strip.chips.editing), ('xpalavras', 0))
+strip.chips.finish('cancel')
+type_in(2, 'y', caret=0)
+history.history_undo()
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
+strip.refresh()
+check('an undo while typed in: the field gone, nothing typed kept', (strip.chips.editing, texts()[2]),
+      (None, 'palavras'))
+session.SUBTITLE.segments.append({'id': 'b2', 'start': 5.0, 'end': 6.0, 'text': 'Outra'})
+type_in(2, 'z', caret=0)
+session.SUBTITLE.selected = session.SUBTITLE.segments[1]
+strip.refresh()
+check('another subtitle chosen while typed in: kept in the first',
+      timed_pieces(session.SUBTITLE.segments[0])[2]['text'], 'zpalavras')
+check('the strip hides for it', strip.isVisible(), False)
+del session.SUBTITLE.segments[1]
+session.SUBTITLE.segments[0]['text'] = before_typing
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
+strip.refresh()
+history.history_clear()
 
 print('times and effect')
 strip.choose(1)

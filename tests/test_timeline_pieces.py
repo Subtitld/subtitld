@@ -1,9 +1,10 @@
 """The pieces of a subtitle timed word by word on the timeline
-(interface.timeline_pieces): dragging the edge two pieces share moves both,
-with Alt only the one dragged towards; an edge of its own moves alone; edges
-snap to the playhead; a click on a chip takes the playhead to it, a double
-click cuts it finer; tapping K while it plays times one piece after another.
-Each change is one undo step.
+(interface.timeline_pieces), where its text would be: dragging the edge two
+pieces share moves both, with Alt only the one dragged towards; an edge of
+its own moves alone; edges snap to the playhead; a click on a chip takes the
+playhead to it (a drag from it is the timeline's), a double click cuts it
+finer; with Ctrl, a click cuts it in two where the pointer is; tapping K
+while it plays times one piece after another. Each change is one undo step.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -103,7 +104,31 @@ check('kept where it painted them', tl._pieces_strip[0], 's1')
 check('the edge two pieces share', timeline_pieces.hit(tl, QPointF(151, Y)), ('edge', 0, 'between'))
 check('an edge of its own (after a gap)', timeline_pieces.hit(tl, QPointF(181, Y)), ('edge', 1, 'end'))
 check('a chip', timeline_pieces.hit(tl, QPointF(220, Y)), ('piece', 2))
-check('above the strip: none', timeline_pieces.hit(tl, QPointF(220, 125)), None)
+check('above them: none', timeline_pieces.hit(tl, QPointF(220, 110)), None)
+other = {'id': 's2', 'start': 5.0, 'end': 6.0, 'text': [{'text': 'Yo', 'start': 0.0, 'end': 1.0}]}
+image = QImage(1000, 200, QImage.Format_ARGB32)
+painter = QPainter(image)
+timeline_pieces.paint(tl, painter, other, QRectF(500, 120, 100, 60))
+painter.end()
+check('another painted, not selected: not the one the mouse finds', tl._pieces_strip[0], 's1')
+
+print('with Ctrl')
+document()
+check('in a piece: where it would cut, its time shared by letters',
+      timeline_pieces.hit(tl, QPointF(225, Y), ctrl=True), ('cut', 2, 2, 224.0))
+check('by an edge: still the piece it is in, cut', timeline_pieces.hit(tl, QPointF(151, Y), ctrl=True)[:2], ('cut', 1))
+mouse(QEvent.MouseMove, 225, Qt.ControlModifier, Qt.NoButton)
+check('the pointer over it shows the cut', (tl._pieces_hover[:3], tl.cursor().shape()),
+      (('cut', 2, 2), Qt.SplitHCursor))
+mouse(QEvent.MouseButtonPress, 225, Qt.ControlModifier)
+mouse(QEvent.MouseButtonRelease, 225, Qt.ControlModifier, Qt.NoButton)
+check('a click cuts it there', [(p['text'], p['start'], p['end']) for p in timed_pieces(session.SUBTITLE.selected)][2:],
+      [('wo', 1.0, 1.24), ('rld', 1.24, 1.6)])
+history.history_undo()
+check('one undo step', len(timed_pieces(session.SUBTITLE.segments[0])), 3)
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
+session.SUBTITLE.segments[0]['text'][0]['text'] = 'H'
+check('a piece of one letter: nothing to cut', timeline_pieces.hit(tl, QPointF(120, Y), ctrl=True), None)
 
 print('dragging an edge')
 document()
@@ -141,9 +166,23 @@ tl.background_onsets = None
 
 print('a click, a double click')
 document()
-mouse(QEvent.MouseButtonPress, 220)
-mouse(QEvent.MouseButtonRelease, 220, buttons=Qt.NoButton)
-check('a chip: the playhead to where it starts', (host.preview_panel_player.at, session.SUBTITLE.position), (2.0, 2.0))
+
+
+def piece_mouse(kind, x):
+    point = QPointF(x, Y)
+    event = QMouseEvent(kind, point, point, Qt.LeftButton,
+                        Qt.LeftButton if kind == QEvent.MouseButtonPress else Qt.NoButton, Qt.NoModifier)
+    return (timeline_pieces.press if kind == QEvent.MouseButtonPress else timeline_pieces.release)(tl, event)
+
+
+check('a press on a chip is the timeline\'s (a drag moves the subtitle)', piece_mouse(QEvent.MouseButtonPress, 220), False)
+check('its release too', piece_mouse(QEvent.MouseButtonRelease, 221), False)
+check('a chip clicked: the playhead to where it starts', (host.preview_panel_player.at, session.SUBTITLE.position),
+      (2.0, 2.0))
+host.preview_panel_player.at = None
+piece_mouse(QEvent.MouseButtonPress, 220)
+piece_mouse(QEvent.MouseButtonRelease, 240)
+check('dragged from: the playhead stays', host.preview_panel_player.at, None)
 mouse(QEvent.MouseButtonDblClick, 220)
 check('double: cut a level finer (a word into letters, with no dictionary)',
       [p['text'] for p in timed_pieces(session.SUBTITLE.selected)], ['Hel', 'lo ', 'w', 'o', 'r', 'l', 'd'])

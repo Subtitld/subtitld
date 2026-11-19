@@ -1826,8 +1826,9 @@ QPushButton[class="subtitle_formatting_button"]::menu-indicator {
 }
 
 /* A subtitle timed piece by piece (interface/timed_text_strip.py): its pieces
-   are chips the widget draws; under them the chosen one's times and how it
-   lights up, in the fields' and combo boxes' own look. */
+   are fields the widget draws, a line edit over the one typed in; under them
+   the chosen one's times and how it lights up, in the fields' and combo
+   boxes' own look. */
 #timed_text_strip {
     background: transparent;
 }
@@ -1835,6 +1836,21 @@ QPushButton[class="subtitle_formatting_button"]::menu-indicator {
 #timed_text_strip QLabel {
     color: #b8cee0;
     font-size: 10px;
+}
+
+/* A piece typed in: the field it is drawn as, lit, its letters where the
+   drawing has them (7px in, the line edit's own 2px margin taken off). */
+#timed_text_strip QLineEdit#timed_text_chip_editor {
+    font-family: 'Montserrat';
+    font-size: 12px;
+    font-weight: 400;
+    color: #ffffff;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a4a58, stop:1 #4c6173);
+    border: 0;
+    border-radius: 3px;
+    padding: 0 5px;
+    min-width: 0;
+    min-height: 0;
 }
 
 QPushButton[class="subtitle_formatting_swatch"] {

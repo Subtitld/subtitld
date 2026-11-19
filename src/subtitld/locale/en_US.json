@@ -1345,7 +1345,7 @@
     "formatting.timing_letter": "Letter by letter",
     "formatting.timing_none": "Not timed",
     "formatting.timing_align": "Align to the audio",
-    "timed_text.choose_tip": "Choose this piece",
+    "timed_text.type_tip": "Click to type its words; hold Ctrl to cut it in two",
     "timed_text.cut_tip": "Cut it in two here",
     "timed_text.join_tip": "Join these two pieces",
     "timed_text.start": "Start",
