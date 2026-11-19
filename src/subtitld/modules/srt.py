@@ -5,7 +5,9 @@ Reading forgives, because SRT files come from everywhere:
 - the encoding: a byte order mark (UTF-8, UTF-16, UTF-32) when there is
   one, else UTF-8, else the detected one (or the Windows code page that
   extends it: CP949 for EUC-KR, CP932 for Shift JIS ...), else
-  Windows-1252;
+  Windows-1252; Windows-1250 (Czech, Slovak, Polish, Croatian ...) when
+  the guess is Windows-1252 or none and the letters say otherwise (see
+  _central_european);
 - line ends of any kind;
 - subtitles are found by their timing lines, not by blank lines, so a
   missing blank line, a blank line inside the text, missing numbers and
@@ -48,6 +50,18 @@ _DETECT_BYTES = 256 * 1024
 # would fail the whole file.
 _SUPERSETS = {'euc-kr': 'cp949', 'shift_jis': 'cp932', 'gb2312': 'gb18030', 'gbk': 'gb18030',
               'big5': 'big5hkscs', 'iso-8859-1': 'cp1252', 'windows-1252': 'cp1252'}
+# Windows-1250 against Windows-1252, byte by byte (the two code pages'
+# tables). Letters in 1250 that 1252 leaves undefined: Ť, Ź, ť.
+_CE_ONLY = frozenset(b'\x8d\x8f\x9d')
+# Letters in 1250 that are signs in 1252, which no Western word has after a
+# letter: ł/³, ą/¹, ľ/¾, Ľ/¼, Ą/¥, ż/¿, ź/Ÿ.
+_CE_SIGNS = frozenset(b'\xb3\xb9\xbe\xbc\xa5\xbf\x9f')
+# Š, Ž, š, ž: the same in both, and Central European words' letters.
+_CE_SHARED = frozenset(b'\x8a\x8e\x9a\x9e')
+# Letters both have, different ones: č/è, ě/ì, ř/ø, ů/ù, ň/ò, ď/ï, ć/æ,
+# đ/ð, ő/õ, ű/û, ĺ/å, ă/ã, ę/ê, ń/ñ, ŕ/à, in both cases.
+_CE_LETTERS = frozenset(b'\xe8\xec\xf8\xf9\xf2\xef\xe6\xf0\xf5\xfb\xe5\xe3\xea\xf1\xe0'
+                        b'\xc8\xcc\xd8\xd9\xd2\xcf\xc6\xd0\xd5\xdb\xc5\xc3\xca\xd1\xc0')
 
 
 def decode(data):
@@ -61,8 +75,7 @@ def decode(data):
         try:
             text = data.decode('utf-8')
         except UnicodeDecodeError:
-            encoding = chardet.detect(data[:_DETECT_BYTES]).get('encoding')
-            encoding = _SUPERSETS.get((encoding or '').lower(), encoding)
+            encoding = _guess(data[:_DETECT_BYTES])
             try:
                 text = data.decode(encoding) if encoding else None
             except (LookupError, UnicodeDecodeError):
@@ -70,6 +83,35 @@ def decode(data):
             if text is None:
                 text = data.decode('cp1252', 'replace')
     return text.replace('\r\n', '\n').replace('\r', '\n')
+
+
+def _guess(data):
+    """The code page chardet takes legacy text in, or None. Short files of
+    a few lines with letters past ASCII can leave it without a guess (a
+    Czech AQTitle among many time lines, FFmpeg's sample): asked again
+    of those lines alone, it has one."""
+    encoding = chardet.detect(data).get('encoding')
+    if not encoding:
+        lettered = b'\n'.join(line for line in data.split(b'\n') if any(byte > 0x7f for byte in line))
+        encoding = chardet.detect(lettered).get('encoding') if lettered else None
+    encoding = _SUPERSETS.get((encoding or '').lower(), encoding)
+    if encoding in (None, 'cp1252') and _central_european(data):
+        return 'cp1250'
+    return encoding
+
+
+def _central_european(data):
+    """Whether bytes that are not UTF-8 read as Windows-1250 rather than
+    Windows-1252: a letter only 1250 has, a 1252 sign standing after a
+    letter (Polish "się" is fine both ways, "ł" is "³" in 1252), or Š or
+    Ž beside a letter the two read differently (Czech "ř" is "ø")."""
+    if any(byte in _CE_ONLY for byte in data):
+        return True
+    for index in range(1, len(data)):
+        if data[index] in _CE_SIGNS and (chr(data[index - 1]).isalpha() if data[index - 1] < 0x80
+                                         else data[index - 1] >= 0xc0):
+            return True
+    return any(byte in _CE_SHARED for byte in data) and any(byte in _CE_LETTERS for byte in data)
 
 
 def _seconds(hours, minutes, seconds, fraction):

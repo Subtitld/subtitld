@@ -158,13 +158,9 @@ check('opened as AQTitle', fmt, 'AQTITLE')
 want = ffmpeg('sub-aqtitle')
 # An empty "-->> N" marker ends the subtitle before it (FFmpeg: 3:29.92 to
 # 3:31.28, not to the next subtitle's 3:33.36). FFmpeg was told the file is
-# Windows-1250; Subtitld guesses the encoding and takes it for Windows-1252,
-# so the Czech letters only Windows-1250 has differ: times for all, text
-# where FFmpeg's is in both code pages.
-same('times', [cue[:2] + ('',) for cue in cues(segments)], [cue[:2] + ('',) for cue in want])
-both = [(ours, theirs) for ours, theirs in zip(cues(segments), want) if all(ord(char) < 0x100 for char in theirs[2])]
-check('text where the code pages agree', [ours[2] for ours, _theirs in both], [theirs[2] for _ours, theirs in both])
-check('...which is a good part of it', len(both) >= 10, True)
+# Windows-1250 (-sub_charenc cp1250); Subtitld guesses it, Czech letters
+# and all ("pořádku").
+same('times and text', cues(segments), want)
 round_trip('AQTitle', segments, 'AQTITLE', 'aqt', tolerance=0.041)
 
 # --------------------------------------------------------------------------
