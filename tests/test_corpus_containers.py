@@ -184,8 +184,18 @@ check('FATE MovText_capability_tester: as FFmpeg reads it', cues(text_track(MOVT
     (0.97, 2.54, '- Test 1.\n- Test 2.'), (3.05, 4.74, 'Test 3.'), (5.85, 8.14, '- Test 4.\n- Test 5.')])
 
 # Subtitle Edit, MatroskaUsfTrackTest: one S_TEXT/USF track, 5 cues. FFmpeg
-# does not know the codec, and Subtitld lists only what FFmpeg names.
-known('MKS with a USF track: listed', brief(tracks(MKS_USF)), [(0, 'usf', 'text')])
+# does not know the codec; its CodecPrivate (the USF header) tells it.
+found = tracks(MKS_USF)
+check('MKS with a USF track: listed', brief(found), [(0, 'usf', 'text')])
+check('its language, from the track', (found[0]['language_tag'], found[0]['language']), ('eng', 'en-us'))
+read = cues(text_track(MKS_USF, found[0]))
+# The same cues as the stz2 file above (Subtitle Edit's tests share them):
+# each block at its own time and for its duration (ffprobe -show_packets).
+check('USF: 5 cues, the first 1.0-2.5 "Line one plain"', (len(read), read[0]), (5, (1.0, 2.5, 'Line one plain')))
+check('USF: each block at its time, for its duration', [(s, e) for s, e, _t in read],
+      [(round(p, 3), round(p + d, 3)) for p, d, _size in packets(MKS_USF, 0)])
+check('USF: its styles and its Japanese', [read[1][2], read[3][2], read[4][2]],
+      ['<i>Italic line</i>', '<b>Bold</b> and <u>underline</u>', '日本語のテスト'])
 
 print('no subtitle tracks')
 # Subtitle Edit, VideoChapterReaderTest: a chapter track is not a subtitle

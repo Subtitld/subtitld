@@ -2071,6 +2071,10 @@ def process_video_file(video_file=False):
     # A teletext stream lists its pages in the file's PMT, read at its
     # start, which the probe does not give, and a DVB subtitle stream its
     # services.
+    # A subtitle stream FFmpeg does not know may say what it is in its
+    # extradata (Matroska's USF), which the probe gives only when asked.
+    json_result = video_subtitles.with_extradata(json_result, video_file, waveform.FFPROBE_EXECUTABLE,
+                                                 session.STARTUPINFO)
     video_metadata['subtitle_tracks'] = video_subtitles.with_dvb_pages(video_subtitles.with_teletext_pages(
         video_subtitles.tracks(json_result, language_of=_known_language), video_file, language_of=_known_language),
         video_file, language_of=_known_language)
