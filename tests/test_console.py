@@ -31,6 +31,7 @@ SRC = str(Path(__file__).resolve().parents[1] / 'src')
 sys.path.insert(0, SRC)
 os.environ.pop('SUBTITLD_DEBUG', None)
 os.environ.pop('QTWEBENGINE_CHROMIUM_FLAGS', None)
+os.environ.pop('QT_LOGGING_RULES', None)
 from subtitld.modules import console
 
 fails = []
@@ -59,6 +60,9 @@ check("Python's warnings hidden", len(caught), 0)
 check("Chromium's messages: fatal only", os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS'), '--log-level=3')
 console.configure(False)
 check('(said once, however often configured)', os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS'), '--log-level=3')
+FFMPEG_RULES = 'qt.multimedia.ffmpeg*.debug=false;qt.multimedia.ffmpeg*.info=false'
+check("the video player's FFmpeg: no info", os.environ.get('QT_LOGGING_RULES'), FFMPEG_RULES)
+check('(said once too)', os.environ.get('QT_LOGGING_RULES'), FFMPEG_RULES)
 check('one handler of its own on the root logger',
       sum(1 for h in logging.getLogger().handlers if getattr(h, '_subtitld', False)), 1)
 
@@ -103,6 +107,44 @@ print('the command line')
 help_text = subprocess.run([sys.executable, '-m', 'subtitld', '--help'], capture_output=True, text=True,
                            env=dict(os.environ, PYTHONPATH=SRC), timeout=120).stdout
 check('--debug is there, said what it does', ('--debug' in help_text, 'diagnostic' in help_text), (True, True))
+
+print("the video player's FFmpeg")
+if not shutil.which('ffmpeg'):
+    print('  SKIP: needs ffmpeg to make a video')
+else:
+    import tempfile
+    PLAY = """
+import sys
+sys.path.insert(0, %r)
+from subtitld.modules import console
+console.configure('--debug' in sys.argv)
+from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtWidgets import QApplication
+from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
+app = QApplication([])
+player, sink = QMediaPlayer(), QVideoSink()
+console.quiet_video_player()
+player.setVideoSink(sink)
+player.setSource(QUrl.fromLocalFile(sys.argv[1]))
+QTimer.singleShot(2000, app.quit)
+app.exec()
+""" % SRC
+
+    def player_says(video, *flags):
+        env = {k: v for k, v in os.environ.items() if k not in ('QT_LOGGING_RULES', 'SUBTITLD_DEBUG')}
+        return subprocess.run([sys.executable, '-c', PLAY, video, *flags], capture_output=True, text=True,
+                              env=dict(env, QT_QPA_PLATFORM='offscreen'), timeout=60).stderr
+
+    with tempfile.TemporaryDirectory() as folder:
+        video = os.path.join(folder, 'video.mp4')
+        subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-f', 'lavfi', '-i',
+                        'testsrc=size=64x64:duration=1', '-pix_fmt', 'yuv420p', video], check=True)
+        check('a video opened: no "Input #0" dump', 'Input #0' in player_says(video), False)
+        check('(with --debug, there it is)', 'Input #0' in player_says(video, '--debug'), True)
+        broken = os.path.join(folder, 'broken.mp4')
+        Path(broken).write_bytes(b'not a video')
+        check("a broken one: not FFmpeg's errors either", 'moov atom not found' in player_says(broken), False)
+        check('(with --debug, there they are)', 'moov atom not found' in player_says(broken, '--debug'), True)
 
 print('the terminal it is started from')
 if sys.platform.startswith('win') or not shutil.which('ffmpeg'):

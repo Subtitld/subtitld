@@ -11,6 +11,7 @@ from subtitld.interface import subtitle_renderer
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
+from subtitld.modules import console
 from subtitld.modules import history
 from subtitld.modules import markup
 from subtitld.modules import position as subtitle_position
@@ -34,7 +35,8 @@ class PlayerWidget(QWidget):
         widget.layout().setContentsMargins(0, 0, 0, 0)
 
         widget._media_player = QMediaPlayer()
-        
+        console.quiet_video_player()
+
         widget._audio_output = QAudioOutput()
         widget._media_player.setAudioOutput(widget._audio_output)
         # widget._media_player.setAudioOutput(QAudioOutput())

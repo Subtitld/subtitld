@@ -3,8 +3,8 @@ leaves that terminal.
 
 Quiet by default: Subtitld's warnings and errors, and Qt's critical messages.
 `subtitld --debug` (or SUBTITLD_DEBUG=1 in the environment) shows the rest:
-Subtitld's informational lines, Qt's messages, what the subtitle renderer's
-Chromium says, the add-ons' own logs, Python's warnings. The processes
+Subtitld's informational lines, Qt's messages, what the video player's FFmpeg
+and the subtitle renderer's Chromium say, the add-ons' own logs, Python's warnings. The processes
 Subtitld starts (the subtitle renderer, the add-ons) learn which it is from
 the environment.
 
@@ -55,6 +55,14 @@ def configure(debug: bool = False) -> bool:
         flags = os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS', '')
         if '--log-level' not in flags:
             os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = (flags + ' --log-level=3').strip()
+        # The video player's FFmpeg (Qt Multimedia): its log level follows
+        # these categories, and it writes to stderr itself, past
+        # qt_message below: the "Input #0" dump of every video opened.
+        # Its warnings and errors: quiet_video_player.
+        rules = os.environ.get('QT_LOGGING_RULES', '')
+        if 'qt.multimedia.ffmpeg' not in rules:
+            os.environ['QT_LOGGING_RULES'] = ';'.join(filter(None, (
+                rules, 'qt.multimedia.ffmpeg*.debug=false', 'qt.multimedia.ffmpeg*.info=false')))
     return debug
 
 
@@ -74,6 +82,35 @@ def qt_message(mode, context, message):
             sys.stderr.write(message + '\n')
         except Exception:
             pass
+
+
+def quiet_video_player():
+    """Silence the video player's FFmpeg (Qt Multimedia's own copy) unless
+    debugging. The logging rules in `configure` reach only its debug and
+    info lines; its warnings and errors (an AV1 video the GPU cannot decode
+    says so at every frame) it writes to stderr itself, past qt_message.
+    Call it once a QMediaPlayer exists: Qt's FFmpeg library is loaded then,
+    and loading it before fails (it needs the OpenSSL that Qt loads first)."""
+    if enabled():
+        return
+    import ctypes
+    import glob
+    try:
+        import PySide6
+        from PySide6.QtCore import QLibraryInfo
+        folders = (QLibraryInfo.path(QLibraryInfo.LibraryPath.LibrariesPath),
+                   QLibraryInfo.path(QLibraryInfo.LibraryPath.BinariesPath),
+                   os.path.dirname(PySide6.__file__))
+    except Exception:
+        return
+    for folder in folders:
+        for pattern in ('libavutil.so.*', 'avutil-*.dll', 'libavutil.*.dylib'):
+            for path in sorted(glob.glob(os.path.join(folder, pattern))):
+                try:
+                    ctypes.CDLL(path).av_log_set_level(-8)      # AV_LOG_QUIET
+                    return
+                except (OSError, AttributeError):
+                    pass
 
 
 def detach_from_terminal():
