@@ -475,7 +475,7 @@
     "export_dialog.document_column_speaker": "Konuşmacı",
     "export_dialog.document_column_text": "Metin",
     "export_dialog.document_column_duration": "Süre",
-    "export_dialog.document_column_characters": "Karakter",
+    "export_dialog.document_column_characters": "Karakter sayısı",
     "export_dialog.document_content_numbered": "Satır numaralı transkript",
     "export_dialog.document_content_spotting": "Spotting listesi",
     "export_dialog.document_content_speakers": "Konuşmacı listesi",
