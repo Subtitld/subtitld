@@ -60,6 +60,12 @@ check('the ID tags as metadata, the program and comments left out', lrc.parse(SO
 check('an offset shows every line sooner', cues('[offset:+500]\n[00:12.00]A\n[00:15.00]B\n'),
       [(11.5, 14.5, 'A'), (14.5, 17.5, 'B')])
 check('a negative one later', cues('[offset:-250]\n[00:12.00]A\n')[0][:2], (12.25, 15.25))
+# FFmpeg's test-lrc.lrc: "[-00:01.02]" is before the song, and FFmpeg keeps
+# the line (its sub-lrc-remux writes it first); shown from the start until
+# the next moment.
+check('a moment before the start shows from it', cues('[-00:01.02]Before\n[00:05.00]A\n'),
+      [(0.0, 5.0, 'Before'), (5.0, 8.0, 'A')])
+check('...and is an LRC moment', lrc.is_lrc('[-00:01.02]Before\n'), True)
 check('thousandths, a colon before them, none at all, minutes past 99',
       [start for start, _end, _text in cues('[00:01.5]A\n[00:02.250]B\n[00:03:10]C\n[00:04]D\n[100:00.00]E\n')],
       [1.5, 2.25, 3.1, 4.0, 6000.0])

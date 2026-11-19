@@ -435,10 +435,11 @@ for name, ref, digits in (('test-lrc.lrc', 'sub-lrc-remux', 2), ('test-lrc-ms.lr
     lines = [(round(seconds, digits), text) for seconds, text in lines]
     # FFmpeg writes a line a time, the repeated ones apart, in order. Each
     # line lasts until the next time (an empty one too). The one at
-    # -00:01.02 (FFmpeg keeps it) is before the start: Subtitld leaves it out.
-    shown = [(seconds, text) for seconds, text in lines if text and seconds >= 0]
+    # -00:01.02, before the start, FFmpeg keeps: Subtitld shows it from 0.
+    lines = [(max(0.0, seconds), text) for seconds, text in lines]
+    shown = [(seconds, text) for seconds, text in lines if text]
     check(f'{name}: the times and lines', [(round(s['start'], digits), s['text']) for s in segments], shown)
-    nexts = [seconds for seconds, _text in lines if seconds >= 0]
+    nexts = [seconds for seconds, _text in lines]
     check(f'{name}: each until the next time', [round(s['end'], digits) for s in segments],
           [nexts[nexts.index(round(s['start'], digits)) + 1] for s in segments])
     round_trip(f'LRC {name}', segments, 'LRC', 'lrc', tolerance=0.0011 if digits == 3 else 0.011, digits=digits)

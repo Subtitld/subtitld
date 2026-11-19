@@ -4,9 +4,11 @@ and the enhanced LRC karaoke players light word by word.
 An LRC is a line of lyrics after the moment it is sung, "[01:12.40]", in
 minutes, seconds and hundredths (some write thousandths, a colon before
 them, or none at all). A line sung more than once may carry all its
-moments, "[00:21.10][01:12.40]Chorus". A line is shown until the next one,
-and a moment with no words after it clears the screen, so that is where
-a line ends; the last line, with nothing after it, gets `TAIL`.
+moments, "[00:21.10][01:12.40]Chorus"; one before the song starts,
+"[-00:01.02]", is shown from the start, as FFmpeg shows it. A line is
+shown until the next one, and a moment with no words after it clears the
+screen, so that is where a line ends; the last line, with nothing after
+it, gets `TAIL`.
 
 At the top, ID tags say what the song is: [ti:] its title, [ar:] the
 artist, [al:] the album, [au:] who wrote it, [by:] who made the LRC,
@@ -58,7 +60,7 @@ from subtitld.modules.srt import decode
 # The last line, with no line after it to end it, lasts this long.
 TAIL = 3.0
 
-_STAMP = re.compile(r'\[\s*(\d+)\s*:\s*(\d{1,2})(?:\s*[.:]\s*(\d{1,3}))?\s*\]')
+_STAMP = re.compile(r'\[\s*(-?\d+)\s*:\s*(\d{1,2})(?:\s*[.:]\s*(\d{1,3}))?\s*\]')
 _WORD = re.compile(r'<\s*(\d+)\s*:\s*(\d{1,2})(?:\s*[.:]\s*(\d{1,3}))?\s*>')
 _TAG = re.compile(r'^\s*\[\s*([A-Za-z#]+)\s*:(.*)\]\s*$')
 _OFFSET = re.compile(r'^\s*([+-]?\d+)')
@@ -76,10 +78,12 @@ TAGS = {'ti': 'title', 'ar': 'artist', 'al': 'album', 'au': 'songwriter', 'by': 
 
 
 def _seconds(minutes, seconds, fraction):
-    value = int(minutes) * 60 + int(seconds)
+    """The seconds of a moment; "-00:01.02", before the song starts, is
+    negative (shown from the start, as FFmpeg shows it)."""
+    value = abs(int(minutes)) * 60 + int(seconds)
     if fraction:
         value += int(fraction) / 10 ** len(fraction)
-    return value
+    return -value if str(minutes).lstrip().startswith('-') else value
 
 
 def _stamp(seconds, brackets='[]', milliseconds=False):
