@@ -157,6 +157,121 @@ wrapped = [((pts + (1 << 33) - 45000) % (1 << 33), field) for pts, field in stre
 check('PTS wrapping round', [(s['start'], s['end']) for s in tt.decode(wrapped, '888')],
       [(1.0, 3.0), (4.0, 5.0), (5.0, 6.0)])
 
+print('Level 2.5: X/28/0\'s national option and colours, X/26\'s foreground colour')
+
+
+def x28(group=0, option=0, clut2=None):
+    """Packet X/28/0 Format 1 as EN 300 706 9.4.2.2 lays it out: the
+    designation (group, then the option in table 32's C12 C13 C14 order,
+    C12 highest), side panels, CLUTs 2 and 3 (`clut2` its first entries
+    redefined, each red, green, blue 0 to 15), the rest 0."""
+    bits = []
+
+    def put(value, count):
+        bits.extend((value >> index) & 1 for index in range(count))
+
+    put(0, 7)
+    put((group << 3) | option, 7)
+    put((group << 3) | option, 7)
+    put(0, 7)
+    entries = list(clut2 or []) + list(tt._CLUTS_2_AND_3[len(clut2 or []):])
+    for red, green, blue in entries:
+        put(red, 4)
+        put(green, 4)
+        put(blue, 4)
+    put(0, 234 - len(bits))
+    triplets = [sum(bit << k for k, bit in enumerate(bits[start:start + 18])) for start in range(0, 234, 18)]
+    return tt._field(8, 28, bytes([tt.ham84_encode(0)]) + b''.join(tt.ham2418_encode(t) for t in triplets))
+
+
+def x26(*triplets):
+    """Packet X/26/0 of (address, mode, data) triplets, the rest termination markers."""
+    values = [address | mode << 6 | data << 11 for address, mode, data in triplets]
+    values += [63 | 0x1F << 6] * (13 - len(values))
+    return tt._field(8, 26, bytes([tt.ham84_encode(0)]) + b''.join(tt.ham2418_encode(v) for v in values))
+
+
+# Subtitle Edit, ManzanitaTeletextTest.X28NationalOptionIsRead: the header
+# says German, X/28/0 French (option 100, C12 set), which the page is in.
+french = at(1.0, header(option=1), x28(0, 4), line('888', 22, ' ' * 14, SB, SB, 'D', 0x23, 'j', 0x40, EB)) + \
+    at(2.0, header())
+check('X/28/0\'s national option, over the header\'s', [s['text'] for s in tt.decode(french, '888', origin=0)],
+      ['Déjà'])
+plain_x28 = at(1.0, header(option=1), x28(0, 0), line('888', 22, ' ' * 14, SB, SB, 'Gr', 0x7D, 0x7E, 'e', EB)) + \
+    at(2.0, header())
+check('an X/28/0 that names none (English, 000): the header\'s (German)',
+      [s['text'] for s in tt.decode(plain_x28, '888', origin=0)], ['Grüße'])
+# EN 300 706 table 27: X/26 mode 00000 at a column is a foreground colour,
+# one of the 32 entries of CLUTs 0 to 3 (12.4): 16 on are CLUT 2 and 3,
+# their defaults table 30's, X/28/0 may redefine them (Subtitle Edit,
+# X28ColourMapAndX26ForegroundColourAreRead: entry 17 as #ff8822).
+painted = line('888', 22, ' ' * 14, SB, SB, 'Orange', ' ', 0x03, 'yellow', EB)
+check('X/26 foreground colour, CLUT 2 entry 1 as X/28/0 redefines it, until a spacing colour',
+      [s['text'] for s in tt.decode(at(1.0, header(), x28(clut2=[(0, 0, 0), (15, 8, 2)]),
+                                       x26((62, 0x04, 0), (16, 0x00, 17)), painted) + at(2.0, header()),  # row 22, column 16
+                                    '888', origin=0)],
+      ['<font color="#ff8822">Orange</font> <font color="#ffff00">yellow</font>'])
+check('without X/28/0: CLUT 2\'s default entry 1 (table 30: orange, F70)',
+      [s['text'] for s in tt.decode(at(1.0, header(), x26((62, 0x04, 0), (16, 0x00, 17)), painted) + at(2.0, header()),  # row 22, column 16
+                                    '888', origin=0)],
+      ['<font color="#ff7700">Orange</font> <font color="#ffff00">yellow</font>'])
+check('X/26 foreground white: no colour said',
+      [s['text'] for s in tt.decode(at(1.0, header(), x26((62, 0x04, 0), (16, 0x00, 7)),
+                                       line('888', 22, ' ' * 14, SB, SB, 'White', EB)) + at(2.0, header()),
+                                    '888', origin=0)], ['White'])
+
+print('a Manzanita dump (.dvbttx)')
+
+
+def manzanita(transmissions, pages=(('eng', 0, 0x88, 'subtitle'),), stream_type='dvb_teletext'):
+    """A .dvbttx as Subtitle Edit's reader takes one: the XML preamble, its
+    descriptor entries and data index, then each packet's data (a
+    data_identifier and data units, no PES header) after the closing line."""
+    data, index = b'', []
+    for pts, fields in transmissions:
+        payload = tt._pes_payload(tt._pes(fields, pts))
+        index.append(f'    <packet pts="{pts}" offset="{len(data)}" length="{len(payload)}" />')
+        data += payload
+    entries = ''.join(f'<dvb_teletext_content ISO_639_language_code="{language}" teletext_type="{kind}" '
+                      f'teletext_magazine_number="{magazine}" teletext_page_number="{number}" />'
+                      for language, magazine, number, kind in pages)
+    preamble = (f'<private_stream_1\n  xmlns="{tt.MANZANITA_NAMESPACE}"\n  version="1.03"\n  type="{stream_type}">\n'
+                f'  <preamble><descriptors><dvb_teletext_descriptor>{entries}</dvb_teletext_descriptor></descriptors>'
+                '</preamble>\n  <data_index>\n' + '\n'.join(index) + '\n  </data_index>\n</private_stream_1>\n')
+    return preamble.encode() + data
+
+
+folder = Path(tempfile.mkdtemp())
+(folder / 'fr.dvbttx').write_bytes(manzanita([(90000, tt.page_fields('Déjà vu', '888', 'fr-fr')),
+                                              (270000, tt.page_fields('', '888')),
+                                              (360000, tt.page_fields('Encore', '888', 'fr-fr')),
+                                              (450000, tt.page_fields('', '888'))],
+                                             pages=(('fre', 0, 0x88, 'subtitle'),)))
+check('read back: each subtitle from its PTS, the page and language the preamble gives',
+      tt.read_manzanita(folder / 'fr.dvbttx'),
+      ([{'start': 1.0, 'end': 3.0, 'text': 'Déjà vu'}, {'start': 4.0, 'end': 5.0, 'text': 'Encore'}],
+       {'page': '888', 'language': 'fre'}))
+(folder / 'two.dvbttx').write_bytes(manzanita([(90000, tt.page_fields('Hearing', '777') + tt.page_fields('Subs', '888')),
+                                               (180000, tt.page_fields('', '777') + tt.page_fields('', '888'))],
+                                              pages=(('eng', 7, 0x77, 'subtitle_for_hearing_impaired'),
+                                                     ('eng', 0, 0x88, 'subtitle'))))
+check('two pages: the first listed, or the one asked for',
+      ([s['text'] for s in tt.read_manzanita(folder / 'two.dvbttx')[0]],
+       [s['text'] for s in tt.read_manzanita(folder / 'two.dvbttx', '888')[0]]), (['Hearing'], ['Subs']))
+(folder / 'dvb.dvbttx').write_bytes(manzanita([], stream_type='dvb_subtitle'))
+(folder / 'none.dvbttx').write_bytes(b'<tt xmlns="http://www.w3.org/ns/ttml"/>')
+for name in ('dvb.dvbttx', 'none.dvbttx'):
+    try:
+        tt.read_manzanita(folder / name)
+        check(f'{name}: an error', None, 'ValueError')
+    except ValueError:
+        check(f'{name}: an error', True, True)
+from subtitld.modules import file_io
+check('opened as Subtitld opens files: read only, its language the project\'s',
+      (file_io.process_subtitles_file(str(folder / 'fr.dvbttx'))[1], session.SUBTITLE.get('language'),
+       session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS['DVBTTX']['extensions'],
+       'DVBTTX' in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS), ('DVBTTX', 'fr-fr', ['dvbttx'], False))
+
 print('a transport stream')
 folder = Path(tempfile.mkdtemp())
 segments = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <font color="#ffff00">yellow</font> world\nSecond line'},

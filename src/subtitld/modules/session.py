@@ -242,6 +242,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'VPLAYER': {'description': 'VPlayer and TMPlayer format', 'extensions': ['txt']},
     'AQTITLE': {'description': 'AQTitle Subtitle format', 'extensions': ['aqt']},
     'SUBVIEWER1': {'description': 'SubViewer 1.0 Subtitle format', 'extensions': ['sub']},
+    'SUBVIEWER2': {'description': 'SubViewer 2.0 Subtitle format', 'extensions': ['sub']},
     'SPRUCE': {'description': 'Spruce Subtitle File format', 'extensions': ['stl']},
     'REALTEXT': {'description': 'RealText Subtitle format', 'extensions': ['rt']},
     'TURBOTITLE': {'description': 'TurboTitle Subtitle format', 'extensions': ['tts']},
@@ -306,6 +307,17 @@ LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS = {
     'CAPTIONSINC': {'description': 'Captions Inc. Caption format', 'extensions': ['cin']},
     'ULTECH': {'description': 'Ultech 1.30 Caption format', 'extensions': ['ult', 'uld']},
     'RAC': {'description': 'Screen PAC recovery file', 'extensions': ['rac']},
+    'DVBTTX': {'description': 'Manzanita DVB teletext dump', 'extensions': ['dvbttx']},
+    # Times and text in columns (modules.generic_text); a .csv that is
+    # EDIUS's or Premiere's markers is theirs.
+    'TABLE': {'description': 'Timed text table (CSV, TSV)', 'extensions': ['csv', 'tsv']},
+}
+
+# Formats Subtitld writes but does not open as subtitles: a Blu-ray's
+# TextST, in a transport stream of its own (modules.textst), which opens
+# as a video and is read as its track, as a disc's is.
+LIST_OF_WRITE_ONLY_SUBTITLE_EXTENSIONS = {
+    'TEXTST': {'description': 'Blu-ray TextST text subtitles (in a transport stream)', 'extensions': ['m2ts']},
 }
 
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {

@@ -21,7 +21,9 @@ parent (the CONSTRAINT stereotypes), and LANGUAGEs a tier refers to.
 
 Reading gives a subtitle an annotation of a top tier (one with no parent)
 that is time-aligned: the tiers with a PARTICIPANT when any has one, else
-all of them. The speaker is the PARTICIPANT, else the tier's name when
+all of them; a tier whose LINGUISTIC_TYPE takes its values from a
+CONTROLLED_VOCABULARY (gesture phases, coded events) is left out when
+there is a tier of free text. The speaker is the PARTICIPANT, else the tier's name when
 there is more than one tier. A child tier of reference annotations in a
 language other than its parent's (its LANG_REF) is a translation: its
 annotations are the subtitles' in that language. Time subdivisions and
@@ -155,6 +157,12 @@ def parse_eaf(data):
             entry is None or entry.get('TIME_ALIGNABLE', 'true') != 'false')
 
     top = [tier for tier in tiers if not tier.get('PARENT_REF') and aligned(tier)]
+    # A tier whose type takes its values from a controlled vocabulary holds
+    # codes from a fixed list (gesture phases, events), not what is said:
+    # left out where a tier of free text is there to read instead.
+    said = [tier for tier in top if not (types.get(tier.get('LINGUISTIC_TYPE_REF')) is not None and
+                                         types[tier.get('LINGUISTIC_TYPE_REF')].get('CONTROLLED_VOCABULARY_REF'))]
+    top = said or top
     # A tier's name is its speaker's only in a file that names none: there
     # a tier is a person's (or ELAN's own "default", nobody's).
     named = any(tier.get('PARTICIPANT', '').strip() for tier in top)

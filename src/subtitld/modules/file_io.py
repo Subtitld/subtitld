@@ -13,6 +13,7 @@ import zipfile
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape as xml_escape
 from docx import Document
 import datetime
 from bs4 import BeautifulSoup
@@ -73,9 +74,11 @@ from subtitld.modules import scc
 from subtitld.modules import srt
 from subtitld.modules import subtitle_styles
 from subtitld.modules import swift
+from subtitld.modules import teletext
 from subtitld.modules import tsb4
 from subtitld.modules import session
 from subtitld.modules import ttml
+from subtitld.modules import textst
 from subtitld.modules import tmx
 from subtitld.modules import transcripts
 from subtitld.modules import ttxt
@@ -100,10 +103,10 @@ class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
     pictures (a VobSub's .idx or .sub, a PGS .sup, a DVD's bare .sup, a CD+G .cdg, a BDN's
     PNGs, a picture index's images, a TTML file in IMSC's Image Profile with pictures it gives no
-    words for, DCP subtitles with <Image>s), not text: nothing is wrong
+    words for, DCP subtitles with <Image>s, an Ogg Kate stream's bitmaps), not text: nothing is wrong
     with it, but only an OCR add-on can make text of it (picture_ocr).
     `path` is the file,
-    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp', 'cdg', or a key
+    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp', 'cdg', 'kate', or a key
     of picture_indexes.FORMATS in lower case ('scenaristbmp', 'son', 'dost',
     'spumux', 'timedimages', 'fcpimage', 'rhozet')."""
 
@@ -220,6 +223,46 @@ def _fsync_dir(path):
         pass
     finally:
         os.close(fd)
+
+
+# The fonts and pictures a project carries (session.SUBTITLE['attachments'],
+# from an ASS script's [Fonts] and [Graphics]): in a USFX, each a member of
+# its own under assets/attachments/, and in the manifest an <attachment>
+# naming its kind, the name it had and its member. Read from the zip as the
+# project opens: they are small, and the next save needs them.
+USFX_ATTACHMENTS = 'assets/attachments/'
+_ATTACHMENT_KINDS = ('fonts', 'graphics')
+# More than any font a subtitle file carries: a crafted project's member is
+# not read whole into memory.
+_ATTACHMENT_MAX = 64 * 1024 * 1024
+
+
+def _usfx_attachment_members(attachments):
+    """{member: (kind, name, bytes)} for a project's attachments."""
+    members = {}
+    for kind in _ATTACHMENT_KINDS:
+        for index, (name, data) in enumerate(sorted(((attachments or {}).get(kind) or {}).items())):
+            if data:
+                members[f'{USFX_ATTACHMENTS}{kind}/{index}_{_safe_asset_name(name)}'] = (kind, str(name), bytes(data))
+    return members
+
+
+def _usfx_attachments(zf, names):
+    """The attachments a USFX's manifest lists, from its open zip `zf`."""
+    if 'manifest.xml' not in names:
+        return {}
+    try:
+        manifest = BeautifulSoup(zf.read('manifest.xml'), 'lxml-xml')
+    except Exception:
+        return {}
+    found = {}
+    for tag in manifest.find_all('attachment'):
+        kind, name, member = tag.get('kind'), tag.get('name') or '', tag.get('path') or ''
+        if kind not in _ATTACHMENT_KINDS or not name or not member.startswith(USFX_ATTACHMENTS) \
+                or member not in names or zf.getinfo(member).file_size > _ATTACHMENT_MAX:
+            continue
+        found.setdefault(kind, {})[name] = zf.read(member)
+    return found
 
 
 def _is_phase1_usfx_member(name):
@@ -894,6 +937,31 @@ def _edit_rate(fps):
     return (int(round(fps)), 1)
 
 
+def _not_read_message(path):
+    """Why a file of a kind Subtitld does not read cannot be opened. Praat
+    saves many kinds of object as the same "ooTextFile" text (a PitchTier,
+    a PointProcess, a KlattGrid...), and only a TextGrid holds labels to
+    read as subtitles."""
+    try:
+        with open(path, 'rb') as unknown_file:
+            head = srt.decode(unknown_file.read(256))
+    except (OSError, ValueError):
+        head = ''
+    praat = re.match(r'File type = "ooTextFile[^"]*"\s+Object class = "([^"\s]+)', head)
+    if praat and praat.group(1) != 'TextGrid':
+        return (f'This is a Praat {praat.group(1)}, which holds no text. Subtitld reads Praat\'s TextGrid: '
+                'make one in Praat (Annotate, To TextGrid...) and save it with "Save as text file".')
+    extension = os.path.splitext(path)[1]
+    # An extension some readers take only by what the file holds (an Ogg
+    # with Kate in it, a .son index of pictures).
+    known = {ext.lower() for listed in (session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, session.LIST_OF_PICTURE_SUBTITLE_EXTENSIONS,
+                                        session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS)
+             for kind in listed.values() for ext in kind['extensions']}
+    if extension[1:].lower() in known:
+        return f'This {extension} file holds no subtitles Subtitld can read.'
+    return f'Subtitld does not read {extension} files.' if extension else 'Subtitld does not read this file.'
+
+
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
@@ -904,6 +972,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     # What a file says about itself belongs to that file: the one opened
     # before must not lend its title to the next.
     session.SUBTITLE.pop('metadata', None)
+    # So are the fonts and pictures it carries (an ASS script's [Fonts] and
+    # [Graphics], a USFX's assets/attachments/).
+    session.SUBTITLE.pop('attachments', None)
 
     # Final Cut Pro's bundle is a folder with the document in it.
     if subtitle_file and os.path.isdir(subtitle_file) and subtitle_file.lower().rstrip('/\\').endswith('.fcpxmld'):
@@ -911,6 +982,16 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     if subtitle_file and (os.path.isfile(subtitle_file) or (os.path.isdir(subtitle_file) and subtitle_file.lower().endswith('.fcpxmld'))):
         if subtitle_file.lower().endswith(('.srt')):
             segments_list = srt.read(subtitle_file)
+            if not segments_list:
+                # MicroDVD saved as .srt, as players and FFmpeg read it by
+                # its lines: no SRT timing in it, "{start}{end}" lines.
+                with open(subtitle_file, 'rb') as srt_file:
+                    data = srt_file.read()
+                if microdvd.kind(data) == 'microdvd' and microdvd.parse(srt.decode(data))[0]:
+                    subtitle_format = 'SUB'
+                    segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
+                    if declared:
+                        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=declared)
 
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'
@@ -1016,6 +1097,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = _known_language(kate_info['language'])
             if kate_info['category']:
                 session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kate_category=kate_info['category'])
+            # Pictures (as kateenc makes of a DVD's): for an OCR add-on.
+            with open(subtitle_file, 'rb') as kate_file:
+                if kate.has_bitmaps(kate_file.read()):
+                    raise PictureSubtitlesError(subtitle_file, 'kate')
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
@@ -1123,9 +1208,22 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 kept['timecode'] = 'drop' if marker_settings['drop'] else 'non-drop'
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
 
-        elif subtitle_file.lower().endswith('.csv'):
-            # Any other table has no times Subtitld knows where to find.
-            raise CorruptedProjectFileError("Not a marker list: neither EDIUS's nor Premiere's header is there")
+        elif subtitle_file.lower().endswith(('.csv', '.tsv')):
+            # Any other table of times and text (modules.generic_text):
+            # Subtitle Edit's Csv to Csv5 and Tsv, Audition's markers as
+            # Subtitld exports them, a spreadsheet's. Read only.
+            detected = generic_text.detect(_text_of(subtitle_file), session.VIDEO.get('framerate'),
+                                           extension=subtitle_file.lower().rsplit('.', 1)[1])
+            if detected is None:
+                raise CorruptedProjectFileError("Not a marker list (neither EDIUS's nor Premiere's header is there), "
+                                                'nor columns of times and text Subtitld can read')
+            subtitle_format = 'TABLE'
+            segments_list = [dict(segment) for segment in detected.segments]
+            # A speaker column (Audition's description, Nuendo's character)
+            # names speakers the project lists.
+            for segment in segments_list:
+                if segment.get('speaker'):
+                    session.SPEAKERS.setdefault(segment['speaker'], {'image': None})
 
         elif subtitle_file.lower().endswith('.xml') and picture_indexes.kind(subtitle_file):
             # spumux's, Timed Images', Final Cut Pro's and Rhozet's lists of
@@ -1232,7 +1330,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.ass', '.ssa')):
             subtitle_format = 'ASS'
-            segments_list = ass.read(subtitle_file)
+            segments_list, attachments = ass.read_file(subtitle_file)
+            if attachments:
+                session.SUBTITLE['attachments'] = attachments
 
         elif subtitle_file.lower().endswith(('.sub')):
             # MicroDVD, counted in frames: the rate it declares, else the
@@ -1258,8 +1358,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list, softni_settings = softni.parse(srt.decode(data), session.VIDEO.get('framerate'))
                 session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=softni_settings['fps'])
             elif sub_kind == 'subviewer':
-                subtitle_format = 'SBV'
+                # SubViewer 2 (SBV is YouTube's take on it), saved as
+                # itself under the header it came with.
+                subtitle_format = 'SUBVIEWER2'
                 segments_list = sbv.parse(srt.decode(data))
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                                 subviewer_header=sbv.subviewer2_header(srt.decode(data)))
             elif legacy.kind(data) in ('mpsub', 'subviewer1', 'subsonic'):
                 # MPSub and SubViewer 1 are .sub as well, and neither is
                 # MicroDVD: counted in frames, the text would come out at
@@ -1569,6 +1673,17 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=vendor_settings['fps'])
 
+        elif subtitle_file.lower().endswith('.dvbttx'):
+            # A Manzanita dump of a DVB teletext stream, read only: its
+            # first subtitle page, in the language its preamble gives.
+            subtitle_format = 'DVBTTX'
+            try:
+                segments_list, teletext_info = teletext.read_manzanita(subtitle_file)
+            except (OSError, ValueError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(teletext_info['language']):
+                session.SUBTITLE['language'] = _known_language(teletext_info['language'])
+
         elif subtitle_file.lower().endswith('.rac'):
             # Screen's PAC recovery file: PAC's records without its header,
             # read only, opened as PAC to be saved as one.
@@ -1702,6 +1817,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     # From the file itself, not the extract folder: that can
                     # still hold an earlier save's.
                     names = zf.namelist()
+                    attachments = _usfx_attachments(zf, names)
+                    if attachments:
+                        session.SUBTITLE['attachments'] = attachments
                     if collab_state.STATE_MEMBER in names:
                         pending = zf.read(collab_state.PENDING_MEMBER) if collab_state.PENDING_MEMBER in names else b''
                         base = zf.read(collab_state.BASE_MEMBER) if collab_state.BASE_MEMBER in names else None
@@ -1952,6 +2070,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if code:
                 session.SUBTITLE['language'] = code
 
+        else:
+            # A file of a kind no reader here takes: said so, rather than
+            # opened as an empty SRT.
+            raise CorruptedProjectFileError(_not_read_message(subtitle_file))
+
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
 
@@ -1981,6 +2104,10 @@ def process_video_file(video_file=False):
     # A teletext stream lists its pages in the file's PMT, read at its
     # start, which the probe does not give, and a DVB subtitle stream its
     # services.
+    # A subtitle stream FFmpeg does not know may say what it is in its
+    # extradata (Matroska's USF), which the probe gives only when asked.
+    json_result = video_subtitles.with_extradata(json_result, video_file, waveform.FFPROBE_EXECUTABLE,
+                                                 session.STARTUPINFO)
     video_metadata['subtitle_tracks'] = video_subtitles.with_dvb_pages(video_subtitles.with_teletext_pages(
         video_subtitles.tracks(json_result, language_of=_known_language), video_file, language_of=_known_language),
         video_file, language_of=_known_language)
@@ -2042,8 +2169,6 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
                     'text': phrase + '.'
                 })
                 pos += 5.0
-
-            session.SUBTITLE['segments'] += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
 
     return session.SUBTITLE['segments'], subtitle_format
 
@@ -2285,6 +2410,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             if profile == 'dapt':
                 segments = export_options.prepare(SUBTITLE['segments'], dict(options, text='original', speakers='none'))
                 options = dict(options, text='original')
+                # The recordings linked or held in the script itself.
+                if options.get('dapt_audio') in ttml.DAPT_AUDIO:
+                    extra['audio'] = options['dapt_audio']
             # EBU-TT is timed in timecode where there is a frame rate (the
             # video's, else the STL's it came from), from the programme
             # start the file was opened with; in media time without one.
@@ -2336,7 +2464,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Sized to the video, in the export's look; .ssa as SSA v4.
             ass.save(final_file, segments, VIDEO.get('width'), VIDEO.get('height'),
                      look=options.get('look') if options.get('look') in ass.LOOKS else 'clean',
-                     preview=subtitle_styles.preview_look())
+                     preview=subtitle_styles.preview_look(), attachments=SUBTITLE.get('attachments'))
 
         elif subtitle_format == 'MCC':
             # Captions the way the export asks for them, in CEA-608 and
@@ -2587,7 +2715,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format == 'IMSCMXF':
             # IMF's timed text track file: an IMSC 1.1 document in an ST
             # 429-5 track file laid out as IMF's are, at the video's rate
-            # (else 24), to the last subtitle's end.
+            # (else 24), to the last subtitle's end. Its descriptor names the
+            # document's IMSC profile, not TTML's namespace: ST 2067-2 has it
+            # so, asdcplib writes it so and bmx refuses any other value.
             rate = _edit_rate(VIDEO.get('framerate') or options.get('fps') or 24)
             document = ttml.write(segments, language=options.get('language') if options.get('text') == 'translation'
                                   and options.get('language') else language,
@@ -2599,7 +2729,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             with open(final_file, 'wb') as mxf_file:
                 mxf_file.write(mxf.write_timed_text(document.encode('utf-8'), [], rate,
                                                     int(math.ceil(last * rate[0] / rate[1])),
-                                                    'http://www.w3.org/ns/ttml', None, mxf.IMF))
+                                                    'http://www.w3.org/ns/ttml/profile/imsc1.1/text', None, mxf.IMF))
 
         elif subtitle_format == 'STLMXF':
             # EBU STL in MXF (SMPTE ST 2075): the STL written as a .stl is,
@@ -2730,6 +2860,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # them written when the export asks.
             sbv.save(final_file, segments, speakers=options.get('speakers') == 'voice')
 
+        elif subtitle_format == 'SUBVIEWER2':
+            # Hundredths and "[br]", under the header the file opened had,
+            # in the export's encoding and line ends.
+            sbv.save_subviewer2(final_file, segments, options.get('subviewer_header') or '',
+                                encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                                line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
         elif subtitle_format == 'SUB':
             # MicroDVD counts in frames: the export's frame rate, or the
             # video's, which its first line declares; in the export's encoding
@@ -2763,6 +2900,14 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # with, else kbputils' default, the video as its song.
             kbp.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
                      audio=os.path.basename(VIDEO.get('filepath') or ''))
+
+        elif subtitle_format == 'TEXTST':
+            # A Blu-ray's TextST, in a transport stream of its own, on a
+            # plane the video's size (else 1920x1080), its language the
+            # text's.
+            textst.save(final_file, segments, size=(int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)),
+                        language=usf.iso639_2(options.get('language') if options.get('text') == 'translation'
+                                              and options.get('language') else language) or 'und')
 
         elif subtitle_format == 'KATE':
             # Ogg Kate, alone in its file: the category it was opened with
@@ -3035,6 +3180,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         thumbnail = old_bundle.read('thumbnail.png')
                 except (KeyError, OSError, zipfile.BadZipFile):
                     thumbnail = None
+            attachment_members = _usfx_attachment_members(SUBTITLE.get('attachments'))
             manifest_entries = [('subtitles.usf', 'application/x-usf+xml')]
             if thumbnail:
                 manifest_entries.append(('thumbnail.png', 'image/png'))
@@ -3046,6 +3192,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 manifest_entries.append((arc, _mime_for(arc)))
             for arc in collab_members:
                 manifest_entries.append((arc, 'application/json' if arc.endswith('.json') else 'application/x-ndjson'))
+            for arc in attachment_members:
+                manifest_entries.append((arc, 'application/octet-stream'))
 
             manifest_lines = ['<?xml version="1.0" encoding="UTF-8"?>',
                               '<manifest version="1.0">',
@@ -3063,6 +3211,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     pass
             for path, mime in manifest_entries:
                 manifest_lines.append(f'  <entry path="{path}" type="{mime}"/>')
+            for arc, (kind, name, _data) in attachment_members.items():
+                manifest_lines.append(f'  <attachment kind="{kind}" name="{xml_escape(name, {chr(34): "&quot;"})}" '
+                                      f'path="{arc}"/>')
             manifest_lines.append('</manifest>')
             manifest_xml = '\n'.join(manifest_lines)
 
@@ -3081,6 +3232,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     for source, arc in extra_files_to_include.items():
                         zf.write(source, arc)
                     for arc, data in collab_members.items():
+                        zf.writestr(arc, data)
+                    for arc, (_kind, _name, data) in attachment_members.items():
                         zf.writestr(arc, data)
                 # Verify the tmp file is a structurally valid zip with
                 # intact CRCs for every member BEFORE atomic rename —

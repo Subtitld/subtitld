@@ -62,7 +62,7 @@ files = {
     'subviewer.sub': b'[INFORMATION]\n[TITLE]x\n[END INFORMATION]\n[SUBTITLE]\n00:00:01.00,00:00:03.00\nHello[br]world\n\n',
     'softni.sub': b'*PART 1*\r\n00:00:00.00\\00:00:00.00\r\nHello\r\n00:00:01.00\\00:00:03.00\r\n*END*\r\n',
 }
-want = {'tsb4.sub': 'TSB4', 'microdvd.sub': 'SUB', 'subviewer.sub': 'SBV', 'softni.sub': 'SOFTNI'}
+want = {'tsb4.sub': 'TSB4', 'microdvd.sub': 'SUB', 'subviewer.sub': 'SUBVIEWER2', 'softni.sub': 'SOFTNI'}
 for name, data in files.items():
     (folder / name).write_bytes(data)
     session.VIDEO = {}

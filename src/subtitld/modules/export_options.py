@@ -5,7 +5,7 @@ CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC,
-UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, ISMT, XMLDIALECT, JSONDIALECT,
+UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, TEXTST, ISMT, XMLDIALECT, JSONDIALECT,
 the MXF track files (DCPMXF, IMSCMXF, STLMXF), EDL, EDIUS, PREMIERE, DETX,
 the player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT,
 CTM, AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the
@@ -154,10 +154,10 @@ TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAM
                 'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'KATE',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'ISMT', 'XMLDIALECT', 'JSONDIALECT',
-                'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
+                'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SUBVIEWER2', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
-                'VOBSUB', 'PGS', 'DVDSUP', 'CDG',
+                'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'TEXTST',
                 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX', 'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}

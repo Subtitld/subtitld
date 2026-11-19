@@ -205,7 +205,7 @@ file_io.save_file(str(folder / 'imf.mxf'), 'IMSCMXF')
 written = mxf.read_timed_text(str(folder / 'imf.mxf'))
 check('IMSCMXF: IMSC 1.1 at 24000/1001, nothing it breaks', (written['rate'], written['namespace'],
                                                              ttml.check(written['document'].decode(), 'imsc1.1')),
-      ((24000, 1001), 'http://www.w3.org/ns/ttml', []))
+      ((24000, 1001), 'http://www.w3.org/ns/ttml/profile/imsc1.1/text', []))
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'imf.mxf'))
 check('opened again as IMSCMXF', (fmt, [(s['start'], s['end'], s['text']) for s in opened]),

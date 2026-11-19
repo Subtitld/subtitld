@@ -100,16 +100,19 @@ def write_video(video, output, segments, fps, duration, container='MOV', codec=D
     as OP-47 teletext pages, 888 and up. Raises ValueError when the video's
     frame rate is not one captions can be written at, and RuntimeError with
     what FFmpeg said when it cannot write the file."""
-    rate = rate_of(fps)
+    holder = CONTAINERS.get(str(container).upper(), CONTAINERS['MOV'])
+    fields = bool(holder.get('frames')) and a53.fields_of(video, ffprobe, startupinfo)
+    # A video coded a field a picture: its pictures a second are its fields
+    # (as FFmpeg gives its rate), the captions go by its frames, half as many.
+    rate = (fields and rate_of(float(fps or 0) / 2)) or rate_of(fps)
     if not rate:
         raise ValueError(f'Closed captions cannot be written at {float(fps or 0):g} frames a second')
-    holder = CONTAINERS.get(str(container).upper(), CONTAINERS['MOV'])
     if holder.get('frames'):
         # Into the pictures themselves: no caption file for FFmpeg to read.
         data, count = mcc.caption_frames(segments, rate, speaker_changes, holder['captions'], mode, channel,
                                          services)
         return a53.write_video(video, output, data, count, mcc.RATES[rate][2], str(container).upper(),
-                               ffmpeg=ffmpeg, ffprobe=ffprobe, startupinfo=startupinfo)
+                               ffmpeg=ffmpeg, ffprobe=ffprobe, startupinfo=startupinfo, fields=fields)
     teletext_tracks = teletext_tracks if holder['captions'] == 'both' else None
     frames = max(1, int(math.ceil(float(duration or 0) * mcc.RATES[rate][2])) + 1)
     handle, captions = tempfile.mkstemp(suffix='.mcc')

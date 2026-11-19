@@ -6,7 +6,10 @@ Reading forgives, as for SRT (modules.srt):
   the detected encoding), with any line ends;
 - the header ("WEBVTT", a title, header lines) and the NOTE, STYLE and
   REGION blocks are not subtitles; the colours a STYLE block gives classes
-  (``::cue(.gold) { color: #ffd700 }``) are kept for the cues;
+  (``::cue(.gold) { color: #ffd700 }``) are kept for the cues, and so are
+  its bold (font-weight bold, or 600 and up), italic (font-style italic or
+  oblique) and underline (text-decoration underline), which Apple TV+'s
+  files give their classes with the colour;
 - cues are found by their timing lines: an identifier before one is
   skipped, hours may be left out, a comma reads as the dot; the cue settings
   give where the subtitle sits (``line:``, ``align:``, ``position:``) and
@@ -15,7 +18,8 @@ Reading forgives, as for SRT (modules.srt):
   the columns start at, and ``position:`` down;
 - the cue text keeps <i>, <b> and <u>, and <ruby> with its readings
   (<rt>), which Subtitld keeps the same way; <c.class> takes the colour
-  its class has (WebVTT's own colour classes, or a STYLE block's);
+  (and the bold, italic, underline) its class has (WebVTT's own colour
+  classes, or a STYLE block's);
   <v Name> is the subtitle's speaker; <lang> and karaoke timestamps go;
   entities (&amp;, &lt;, &nbsp;, ...) are characters.
 
@@ -40,6 +44,9 @@ _BLOCK = re.compile(r'^(NOTE|STYLE|REGION)(?:[ \t]|$)')
 _TAG = re.compile(r'<(/?)([a-zA-Z]*)((?:\.[\w-]+)*)(?:[ \t]+([^>]*))?>|<(\d[\d:.]*)>')
 _CUE_RULE = re.compile(r'::cue\(\s*(?:c)?\.([\w-]+)\s*\)\s*\{([^}]*)\}')
 _CSS_COLOR = re.compile(r'(?:^|;)\s*color\s*:\s*([^;]+)')
+_CSS_WEIGHT = re.compile(r'(?:^|;)\s*font-weight\s*:\s*([^;]+)')
+_CSS_STYLE = re.compile(r'(?:^|;)\s*font-style\s*:\s*([^;]+)')
+_CSS_DECORATION = re.compile(r'(?:^|;)\s*text-decoration(?:-line)?\s*:\s*([^;]+)')
 
 # WebVTT's own colour classes, which players colour without a STYLE block.
 DEFAULT_CLASSES = {
@@ -56,12 +63,27 @@ def _seconds(hours, minutes, seconds, fraction):
 
 
 def _style_classes(css):
-    """{class: '#rrggbb'} for the ::cue(.class) rules of a STYLE block."""
+    """{class: {'color': '#rrggbb', 'b', 'i', 'u': True}} for the
+    ::cue(.class) rules of a STYLE block, what each one sets."""
     classes = {}
     for match in _CUE_RULE.finditer(css):
-        color = _CSS_COLOR.search(match.group(2))
+        rule, found = match.group(2), {}
+        color = _CSS_COLOR.search(rule)
         if color and markup.color_hex(color.group(1).strip()):
-            classes[match.group(1)] = markup.color_hex(color.group(1).strip())
+            found['color'] = markup.color_hex(color.group(1).strip())
+        weight = _CSS_WEIGHT.search(rule)
+        if weight:
+            weight = weight.group(1).strip().lower()
+            if weight in ('bold', 'bolder') or (weight.isdigit() and int(weight) >= 600):
+                found['b'] = True
+        style = _CSS_STYLE.search(rule)
+        if style and style.group(1).strip().lower().split()[:1] in (['italic'], ['oblique']):
+            found['i'] = True
+        decoration = _CSS_DECORATION.search(rule)
+        if decoration and 'underline' in decoration.group(1).lower().split():
+            found['u'] = True
+        if found:
+            classes.setdefault(match.group(1), {}).update(found)
     return classes
 
 
@@ -131,9 +153,14 @@ def cue_text(text, classes=None):
         if name in ('i', 'b', 'u', 'ruby', 'rt'):
             opened, closer = f'<{name}>', f'</{name}>'
         elif name == 'c':
-            color = next((classes[c] for c in dotted.split('.') if c in classes), '')
-            if color:
-                opened, closer = f'<font color="{color}">', '</font>'
+            # What its classes set, a colour class of WebVTT's own being
+            # a colour alone; the first class with a colour gives it.
+            sets = [{'color': classes[c]} if isinstance(classes[c], str) else classes[c]
+                    for c in dotted.split('.') if c in classes]
+            color = next((found['color'] for found in sets if found.get('color')), '')
+            tags = [tag for tag in ('b', 'i', 'u') if any(found.get(tag) for found in sets)]
+            opened = (f'<font color="{color}">' if color else '') + ''.join(f'<{tag}>' for tag in tags)
+            closer = ''.join(f'</{tag}>' for tag in reversed(tags)) + ('</font>' if color else '')
         elif name == 'v':
             voice = html.unescape((match.group(4) or '').strip())
             if voice and speaker is None:

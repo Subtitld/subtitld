@@ -2,7 +2,10 @@
 segments as libbluray reads them (region styles, inline font styles, line
 breaks, two regions, forced, the PTS), and a hand-built .m2ts holding a
 TextST stream: listed by ffprobe as a video's text track, read packet by
-packet, and read through "Subtitles in the video".
+packet, and read through "Subtitles in the video". Then Subtitld's own
+TextST written (textst.save, the export's 'TEXTST'): its segments laid out
+as libbluray's textst_decode.c and graphics_processor.c read them, and the
+.m2ts read by FFmpeg as a TextST stream and back.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -18,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import config, file_io, session, teletext, textst, video_subtitles
+from subtitld.modules import config, export_options, file_io, session, teletext, textst, video_subtitles
 
 fails = []
 
@@ -113,6 +116,72 @@ else:
     check('the track read through the built-in engine', ([s['text'] for s in heard.get('finished', [])][:2],
                                                          heard.get('error')),
           (['First line\nand <i>the second</i>.', '{\\an8}<i>A sign</i>'], None))
+
+print('written')
+CUES = [{'start': 1.0, 'end': 3.0, 'text': 'First line\nand <i>the second</i>.'},
+        {'start': 4.0, 'end': 5.5, 'text': '{\\an8}<b>A sign</b>', 'forced': True},
+        {'start': 6.0, 'end': 7.0, 'text': 'In <font color="#ffff00">yellow</font>, Ação'},
+        {'start': 8.0, 'end': 9.0, 'text': ('Long ' * 70).strip()}]
+written = textst.stream(CUES)
+check('a dialog style segment, then a dialog presentation segment a subtitle',
+      [segment[0] for segment in written], [textst.DIALOG_STYLE] + [textst.DIALOG_PRESENTATION] * 4)
+check('each segment as long as it says (type, 16-bit length, body: libbluray\'s graphics processor)',
+      [len(segment) - 3 == int.from_bytes(segment[1:3], 'big') for segment in written], [True] * 5)
+palette = {}
+styles, count = textst.parse_style(written[0][3:], palette)
+# libbluray's textst_decode reads the style segment through to its
+# palette; graphics_processor.c then the number of dialogs that follow.
+check('the style: nine region styles, the number of dialogs that follow it', (sorted(styles), count),
+      (list(range(1, 10)), 4))
+check('the top places in the upper part of the plane, the others not',
+      [styles[k]['y'] + styles[k]['height'] / 2 < 1080 * 0.4 for k in range(1, 10)], [False] * 6 + [True] * 3)
+check('a palette of transparent, white, black and the yellow (BT.709, a step off at most)',
+      [palette[k][3] for k in range(4)] + [max(abs(a - b) for a, b in zip(palette[3][:3], (255, 255, 0))) <= 2],
+      [0, 255, 255, 255, True])
+dialogs = [textst.parse_dialog(segment[3:]) for segment in written[1:]]
+check('each dialog at its times (90 kHz), in its place, forced where the subtitle is',
+      [(d['start'], d['end'], d['regions'][0]['style'], d['regions'][0]['forced']) for d in dialogs],
+      [(90000, 270000, 2, False), (360000, 495000, 8, True), (540000, 630000, 2, False), (720000, 810000, 2, False)])
+long_strings = [len(s) for s in written[4].split(b'\x1b\x01')[1:]]
+check('a string longer than an element holds (255 bytes) in two', len(long_strings), 2)
+check('decoded again: the same subtitles', textst.decode(written), [
+    {'start': 1.0, 'end': 3.0, 'text': 'First line\nand <i>the second</i>.'},
+    {'start': 4.0, 'end': 5.5, 'text': '{\\an8}<b>A sign</b>', 'forced': True},
+    {'start': 6.0, 'end': 7.0, 'text': 'In <font color="#feff00">yellow</font>, Ação'},
+    {'start': 8.0, 'end': 9.0, 'text': ('Long ' * 70).strip()}])
+overlapping = textst.stream([{'start': 1.0, 'end': 3.0, 'text': 'Below'},
+                             {'start': 2.0, 'end': 4.0, 'text': '{\\an8}Above'}])
+check('overlapping subtitles: a dialog for each stretch, the shared one of two regions, the top first',
+      [(d['start'] / 90000, d['end'] / 90000, [r['style'] for r in d['regions']])
+       for d in (textst.parse_dialog(segment[3:]) for segment in overlapping[1:])],
+      [(1.0, 2.0, [2]), (2.0, 3.0, [8, 2]), (3.0, 4.0, [8])])
+
+session.SUBTITLE = {'segments': CUES, 'language': 'pt-br'}
+session.VIDEO = {}
+session.FORMAT = {'format': 'TEXTST', 'options': {}}
+file_io.save_file(str(folder / 'out.m2ts'), 'TEXTST')
+data = (folder / 'out.m2ts').read_bytes()
+check('saved: a Blu-ray transport stream, 192-byte packets, sync byte after each 4-byte arrival time',
+      (len(data) % 192, {data[k + 4] for k in range(0, len(data), 192)}), (0, {0x47}))
+check('registered: written alone, as a .m2ts, among the text formats',
+      (session.LIST_OF_WRITE_ONLY_SUBTITLE_EXTENSIONS['TEXTST']['extensions'], 'TEXTST' in export_options.TEXT_FORMATS,
+       'TEXTST' in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS), (['m2ts'], True, False))
+from subtitld.interface.export_dialog import SUBTITLE_FORMATS
+check('offered by the export', 'TEXTST' in SUBTITLE_FORMATS, True)
+if FFPROBE:
+    probe = json.loads(subprocess.run([FFPROBE, '-v', 'error', '-show_streams', '-show_packets', '-show_format', '-of',
+                                       'json', str(folder / 'out.m2ts')], capture_output=True, check=True).stdout)
+    check('FFmpeg reads it: a TextST stream at PID 0x1800 in Portuguese, a packet a segment',
+          ([(s['codec_name'], s['id'], s['tags'].get('language')) for s in probe['streams']], len(probe['packets'])),
+          ([('hdmv_text_subtitle', '0x1800', 'por')], 5))
+    target = video_subtitles.extract(str(folder / 'out.m2ts'), 0, 'hdmv_text_subtitle', ffprobe=FFPROBE,
+                                     folder=str(folder))
+    from subtitld.modules import srt
+    check('and read back through FFmpeg as a video\'s track: the subtitles\' times and words',
+          [(s['start'], s['end'], s['text']) for s in srt.read(target)],
+          [(c['start'], c['end'], c['text'].replace('#ffff00', '#feff00').strip()) for c in CUES])
+else:
+    print('  (no ffprobe: FFmpeg\'s reading of it skipped)')
 
 shutil.rmtree(folder, ignore_errors=True)
 print()

@@ -135,6 +135,16 @@ check('Portuguese in the Latin sets, read back', aribb24.read(str(folder / 'pt.t
 check('English in UTF-8, read back; a ruby in brackets, which only the 8-unit code can make',
       aribb24.read(str(folder / 'en.ts'))[0], TRIP + [{'start': 4.0, 'end': 5.0, 'text': '東(ひがし)'}])
 check('a data group\'s CRC-16 (ITU-T from 0): "123456789"', aribb24.crc16(b'123456789'), 0x31C3)
+good = statement((0x20, b'\x0c' + APS(1, 1) + kanji('左')))
+damaged = good[:-4] + bytes((good[-4] ^ 0x01,)) + good[-3:]
+check('a data group whose CRC-16 holds read; one damaged on the way left out; one cut short of its CRC taken',
+      (aribb24.data_group(good) is not None, aribb24.data_group(damaged), aribb24.data_group(good[:-2]) is not None),
+      (True, None, True))
+before = statement((0x20, b'\x0c' + APS(1, 1) + kanji('上')))
+check('the damaged statement shows nothing; the one before it stays on',
+      [(s['start'], s['text']) for s in aribb24.decode([(0, management()), (90000, before), (180000, damaged)],
+                                                       origin=0)[0]],
+      [(1.0, '{\\an7}上')])
 
 print('FFmpeg')
 ffprobe = shutil.which('ffprobe')
