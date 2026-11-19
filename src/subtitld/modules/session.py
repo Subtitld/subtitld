@@ -308,6 +308,13 @@ LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS = {
     'RAC': {'description': 'Screen PAC recovery file', 'extensions': ['rac']},
 }
 
+# Formats Subtitld writes but does not open as subtitles: a Blu-ray's
+# TextST, in a transport stream of its own (modules.textst), which opens
+# as a video and is read as its track, as a disc's is.
+LIST_OF_WRITE_ONLY_SUBTITLE_EXTENSIONS = {
+    'TEXTST': {'description': 'Blu-ray TextST text subtitles (in a transport stream)', 'extensions': ['m2ts']},
+}
+
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
     'TXT': {'description': 'Simple TXT file', 'extensions': ['txt']},
     'DOCX': {'description': 'Microsoft Word document (docx)', 'extensions': ['docx']},

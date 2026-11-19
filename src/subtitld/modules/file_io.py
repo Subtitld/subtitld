@@ -77,6 +77,7 @@ from subtitld.modules import swift
 from subtitld.modules import tsb4
 from subtitld.modules import session
 from subtitld.modules import ttml
+from subtitld.modules import textst
 from subtitld.modules import tmx
 from subtitld.modules import transcripts
 from subtitld.modules import ttxt
@@ -2852,6 +2853,14 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # with, else kbputils' default, the video as its song.
             kbp.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
                      audio=os.path.basename(VIDEO.get('filepath') or ''))
+
+        elif subtitle_format == 'TEXTST':
+            # A Blu-ray's TextST, in a transport stream of its own, on a
+            # plane the video's size (else 1920x1080), its language the
+            # text's.
+            textst.save(final_file, segments, size=(int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)),
+                        language=usf.iso639_2(options.get('language') if options.get('text') == 'translation'
+                                              and options.get('language') else language) or 'und')
 
         elif subtitle_format == 'KATE':
             # Ogg Kate, alone in its file: the category it was opened with
