@@ -16,7 +16,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, markup, session, ttml
+from subtitld.modules import file_io, karaoke, markup, session, ttml
 
 fails = []
 
@@ -900,7 +900,29 @@ _apple = ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://
                     '<p begin="1:01" end="1:02.79">But</p></div></body></tt>')
 check('Apple Music lyrics: times from the start of the song, in seconds or minutes and seconds',
       [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in _apple],
-      [(19.764, 21.9, 'When here'), (61.0, 62.79, 'But')])
+      [(19.764, 21.9, '{\\k34}When {\\k180}here'), (61.0, 62.79, 'But')])
+# Apple Music's lyrics as Apple serves them, a paragraph on one line: a
+# space between two spans ends a word, none joins two syllables of one
+# ("an" "gel"), and each span's times are karaoke codes from the line's
+# start (modules.karaoke). The times are the file's.
+_sung = ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" '
+                   'itunes:timing="Syllable"><body><div><p begin="29.862" end="33.048"><span begin="29.862" end="30.249">'
+                   "You're</span> <span begin=\"30.886\" end=\"31.176\">an</span> <span begin=\"31.176\" end=\"31.723\">an</span>"
+                   '<span begin="31.723" end="33.048">gel</span></p>'
+                   '<p begin="34.0" end="36.0"><span begin="34.0" end="34.5">be</span><span begin="34.5" end="36.0">fore</span>'
+                   '</p></div></body></tt>')
+check('Apple Music lyrics: words joined by the spacing, timed as karaoke (hundredths from the line\'s start)',
+      [(markup.plain(s['text']), karaoke.syllables(s['text'])) for s in _sung],
+      [("You're an angel", [(39, "You're "), (63, ''), (29, 'an '), (55, 'an'), (133, 'gel')]),
+       ('before', [(50, 'be'), (150, 'fore')])])
+_back = ttml.parse(ttml.write(_sung))
+check('...written as a span a word or syllable, and read back so', [s['text'] for s in _back], [s['text'] for s in _sung])
+check('...in a profile that times paragraphs alone, the words', markup.plain(ttml.parse(ttml.write(_sung, profile='ebu-tt-d'))[0]['text']),
+      "You're an angel")
+check('timed spans with styled words are left as they are', ttml.parse(
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div><p begin="1s" end="3s">'
+    '<span begin="0s" end="1s" tts:fontStyle="italic">One</span> <span begin="1s" end="2s">two</span></p></div></body></tt>')[0]['text'],
+      '<i>One</i> two')
 check('elsewhere a time still counts from what holds it',
       [round(s['start'], 3) for s in ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml"><body><div begin="10s">'
                                                  '<p begin="2s" end="3s">x</p></div></body></tt>')], [12.0])

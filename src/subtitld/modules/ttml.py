@@ -75,6 +75,12 @@ Reading:
   SCC or a video's captions are;
 - a DAPT script is read as the dubbing session it describes (see the
   'dapt' profile below, and _dapt_document);
+- a paragraph whose words are each a timed span, as Apple Music's lyrics
+  time them (itunes:timing "Word" and "Syllable"), keeps those times as
+  karaoke codes (modules.karaoke): whitespace between two spans ends a
+  word, none joins two syllables of one, as Apple writes a paragraph on
+  one line; a file laid out a span a line has whitespace between all of
+  them, and so a word a span;
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -84,7 +90,10 @@ tts:color, line breaks as <br/>, and, when asked, each speaker as a
 ttm:agent. Its one style is white with a black outline, or the look of
 Subtitld's preview: its font, colour and box. A subtitle written down the
 picture gets a region of its own, with tts:writingMode; every profile here
-has vertical writing, IMSC 1.0.1's and EBU-TT-D's included.
+has vertical writing, IMSC 1.0.1's and EBU-TT-D's included. Karaoke codes
+are written as a span a word or syllable, timed from the paragraph's
+begin, a space between words and none inside one, where the profile times
+spans (not EBU-TT's, which time paragraphs alone).
 
 `profile` says which of TTML's profiles the file declares itself to be, so
 a service that checks what it is given accepts it (PROFILES):
@@ -154,7 +163,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from subtitld.modules import export_options, look as subtitld_look, markup, position
+from subtitld.modules import export_options, karaoke, look as subtitld_look, markup, position
 from subtitld.modules.srt import decode
 
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
@@ -216,6 +225,9 @@ _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
 _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
+# The profiles whose spans may be timed (EBU-TT-D times paragraphs alone):
+# karaoke is written in them as a span a word.
+_TIMED_SPANS = ('ttml1', 'imsc1', 'imsc1.1', 'smpte-tt')
 
 PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'arib-ttml', 'dapt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
@@ -1276,6 +1288,51 @@ def _region_props(element, styles, clock, at):
     return props
 
 
+def _sung(element, start, stop, clock):
+    """[(start, end, text)] for a paragraph whose words are each timed, as
+    Apple Music's lyrics time them (itunes:timing "Word" or "Syllable"),
+    or None. A span with a begin and an end is a word or a syllable; the
+    text between two of them says which: whitespace (a space, a line
+    break) ends a word, nothing at all joins two syllables of one ("an" and
+    "gel" written <span>an</span><span>gel</span> are "angel"). Two timed
+    spans or more, and no words outside them; the times count as the
+    paragraph's do (from the song's start in Apple's)."""
+    pieces = []
+    loose = []
+
+    def text(value):
+        if not value:
+            return
+        if value.strip():
+            loose.append(value)
+        elif pieces and not pieces[-1][2].endswith(' '):
+            pieces[-1][2] += ' '
+
+    def visit(parent):
+        for child in parent:
+            if _local(child.tag) == 'span' and child.get('begin') is not None and \
+                    not any(inner.get('begin') is not None for inner in child.iter() if inner is not child):
+                begin, end = _span_of(child, start, stop, clock)
+                words = re.sub(r'[ \t\r\n]+', ' ', ''.join(child.itertext()))
+                if end is not None and words.strip():
+                    if pieces and words[:1] == ' ' and not pieces[-1][2].endswith(' '):
+                        pieces[-1][2] += ' '
+                    # To the millisecond, as the times are written.
+                    begin, end = round(begin, 3), round(max(begin, end), 3)
+                    pieces.append([begin, end, words.strip() + (' ' if words.endswith(' ') else '')])
+            elif _local(child.tag) in ('span', 'br'):
+                text(child.text)
+                visit(child)
+            text(child.tail)
+
+    text(element.text)
+    visit(element)
+    if len(pieces) < 2 or loose:
+        return None
+    pieces[-1][2] = pieces[-1][2].rstrip()
+    return [tuple(piece) for piece in pieces]
+
+
 def _plain_paragraph(element, styles, props):
     """A paragraph's words, its lines kept apart and its formatting not."""
     runs = []
@@ -2119,6 +2176,12 @@ def _document(text, images=None, folder=None):
         body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
+        # Each word timed (Apple Music's lyrics, or a karaoke file): the
+        # times as karaoke codes, as modules.karaoke keeps them, where the
+        # words carry no styles of their own.
+        sung = _sung(element, start, stop, clock) if markup.plain(body) == body else None
+        if sung:
+            body = karaoke.text_from(round(start, 3), sung)
         # A file that states both alignments means them; one that leaves
         # them out is read by where its region sits, as before.
         stated = p_props.get('displayAlign') is not None and p_props.get('textAlign') is not None
@@ -3388,7 +3451,17 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         looking = _look_attributes(styling, profile)
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
-        content = _content(rest, shear, annotations, ruby_ids)
+        sung = karaoke.timed(raw, begin) if profile in _TIMED_SPANS and not smpte else None
+        if sung and '\n' not in markup.plain(rest):
+            # Karaoke: each word or syllable a span timed from the
+            # paragraph's begin, a space between words and none between
+            # the syllables of one, as Apple Music's lyrics write them.
+            content = ''.join(f'<span begin="{stamp(max(0.0, at - begin))}" '
+                              f'end="{stamp(min(end, max(at, until)) - begin)}">'
+                              f'{escape(piece.strip())}</span>' + (' ' if piece.endswith(' ') else '')
+                              for at, until, piece in sung if piece.strip()).rstrip()
+        else:
+            content = _content(rest, shear, annotations, ruby_ids)
         # A box the file brought stands in for the style's own, and goes on
         # a span: on the paragraph TTML paints a band the width of the
         # region instead of a box around the words.

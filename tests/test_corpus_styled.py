@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, markup, session
+from subtitld.modules import file_io, karaoke, markup, session
 from corpus_common import need
 
 fails = []
@@ -140,8 +140,22 @@ apple, _fmt = opened(found['pysubs2/ttml_example_apple.ttml'])
 # ttm:agent v1, whose ttm:name is Radiohead; times in bare seconds, from
 # the start of the song.
 check('Apple lyrics: the agent\'s name the speaker', {s.get('speaker') for s in apple}, {'Radiohead'})
-check('Apple lyrics: first and last line', (timed(apple)[0], timed(apple)[-1]),
-      ((19.764, 21.9, 'When you were here be fore'), (227.741, 230.693, "I don't be long here")))
+check('Apple lyrics: first and last line', [(s['start'], s['end'], plain(s)) for s in (apple[0], apple[-1])],
+      [(19.764, 21.9, 'When you were here be fore'), (227.741, 230.693, "I don't be long here")])
+# Each <span begin end> a word's time, as karaoke codes (modules.karaoke):
+# the spans of the first and the last <p>, to the hundredth the codes keep.
+# Every span stands on a line of its own, so whitespace parts all of them,
+# and "be" "fore" stay two words, as TTML's whitespace says (and pysubs2
+# reads them).
+spans = [[(19.764, 20.105, 'When'), (20.105, 20.326, 'you were'), (20.326, 20.607, 'here'), (20.607, 20.841, 'be'),
+          (20.841, 21.9, 'fore')],
+         [(227.741, 228.24, 'I'), (228.24, 228.609, "don't"), (228.609, 228.859, 'be'), (228.859, 229.695, 'long'),
+          (229.695, 230.693, 'here')]]
+words = [[(start, end, word.strip()) for start, end, word in karaoke.timed(s['text'], s['start'])] for s in (apple[0], apple[-1])]
+check('Apple lyrics: every word timed as its span, within the hundredth the codes keep',
+      [[(word, abs(start - want[0]) <= 0.011 and abs(end - want[1]) <= 0.011) for (start, end, word), want in zip(line, wanted)]
+       for line, wanted in zip(words, spans)],
+      [[(word, True) for _start, _end, word in wanted] for wanted in spans])
 
 print('pysubs2: Aegisub files with attached fonts and pictures')
 # pysubs2's test_attachment: the Aegisub file and pysubs2's own writing of
