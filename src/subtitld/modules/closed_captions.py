@@ -219,6 +219,19 @@ def probe(path, ffprobe='ffprobe', startupinfo=None):
     return start, rate or _PAIR_RATE, duration, track, ancillary, codec
 
 
+def within(segments, end):
+    """`segments` with a caption nobody takes away, which gets a length of
+    its own, ending where its track does (`end`, in seconds: the end of a
+    caption track's last sample, or of the video), not past it: Subtitle
+    Edit ends one with its track's last sample."""
+    if end is None:
+        return segments
+    for segment in segments:
+        if segment['end'] > end > segment['start']:
+            segment['end'] = round(end, 3)
+    return segments
+
+
 def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress=None, started=None):
     """(subtitles, the track they are from or None) in the closed captions a
     video carries: a caption track's, else its frames'. `progress(share)`
@@ -231,28 +244,35 @@ def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress
         rate = video_rate if codec == 'eia_708' else _PAIR_RATE
         entries_of = ccdp_triplets if codec == 'eia_708' else triplets
         command = [str(ffprobe), '-v', 'error', '-select_streams', str(caption_track), '-show_packets', '-show_data',
-                   '-show_entries', 'packet=pts_time,data', '-of', 'compact=p=0:nk=1', str(path)]
+                   '-show_entries', 'packet=pts_time,duration_time,data', '-of', 'compact=p=0:nk=1', str(path)]
     elif ancillary is not None:
         # An MXF's ancillary data: a frame of it a packet, SMPTE ST 436.
         rate, entries_of = video_rate, anc_frame
         command = [str(ffprobe), '-v', 'error', '-select_streams', str(ancillary), '-show_packets', '-show_data',
-                   '-show_entries', 'packet=pts_time,data', '-of', 'compact=p=0:nk=1', str(path)]
+                   '-show_entries', 'packet=pts_time,duration_time,data', '-of', 'compact=p=0:nk=1', str(path)]
     else:
         rate = video_rate
         command = [str(ffprobe), '-v', 'error', '-f', 'lavfi', '-i', f'movie={_filter_path(path)}[out0+subcc]',
-                   '-select_streams', 's', '-show_packets', '-show_data', '-show_entries', 'packet=pts_time,data',
+                   '-select_streams', 's', '-show_packets', '-show_data', '-show_entries',
+                   'packet=pts_time,duration_time,data',
                    '-of', 'compact=p=0:nk=1']
     errors = tempfile.TemporaryFile()
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, startupinfo=startupinfo)
     if started:
         started(process)
-    batches, subtitles = [], []
+    batches, subtitles, last = [], [], None
     for line in process.stdout:
-        when, _bar, dump = line.decode('ascii', 'replace').strip().partition('|')
+        when, _bar, rest = line.decode('ascii', 'replace').strip().partition('|')
+        length, _bar, dump = rest.partition('|')
         try:
             seconds = float(when) - start
         except ValueError:
             continue
+        try:
+            length = float(length)
+        except ValueError:                           # N/A: a frame's
+            length = 1.0 / rate
+        last = max(last if last is not None else seconds + length, seconds + length)
         data = bytes.fromhex(''.join(row.replace(' ', '') for row in _HEX_ROW.findall(dump.replace('\\n', '\n'))))
         entries = entries_of(data)
         if entries:
@@ -271,7 +291,9 @@ def from_video(path, track='auto', ffprobe='ffprobe', startupinfo=None, progress
     if track != 'teletext':
         segments, found = decode(batches, rate, track)
         if segments or track != 'auto' or not subtitles:
-            return segments, found
+            # A caption track ends with its last sample; captions in the
+            # frames, or the ancillary data beside them, with the video.
+            return within(segments, last if caption_track is not None or not duration else duration), found
     # OP-47 teletext in the ancillary data: asked for, or the only
     # subtitles there.
     segments = teletext.op47_decode(subtitles, rate)[0]

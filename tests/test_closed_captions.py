@@ -95,6 +95,12 @@ check('only field 2: CC3', closed_captions.decode(batches_of(cc3=spanish), RATE)
 check('nothing: none', closed_captions.decode(batches_of(), RATE), ([], None))
 check('the entries that count: valid ones, their type', closed_captions.triplets(bytes.fromhex('fc9420 fd8080 fa0000 f81111 ff4222 fe8901')),
       [(0, 0x94, 0x20), (1, 0x80, 0x80), (3, 0x42, 0x22), (2, 0x89, 0x01)])
+# Subtitle Edit (MovC608TrackTest) ends a caption nobody takes away with its
+# track's last sample: not past where the track ends, one that ends sooner
+# left as it is, and none that starts after.
+check('a caption nobody takes away ends with its track, not after', closed_captions.within(
+    [{'start': 1.0, 'end': 3.0}, {'start': 4.0, 'end': 8.0}], 6.0), [{'start': 1.0, 'end': 3.0}, {'start': 4.0, 'end': 6.0}])
+check('no end known: as they are', closed_captions.within([{'start': 4.0, 'end': 8.0}], None), [{'start': 4.0, 'end': 8.0}])
 check('a file name as a filtergraph takes it', closed_captions._filter_path("C:\\it's [a], b; c.mov"),
       "C\\\\:\\\\\\\\it\\\\\\'s \\[a\\]\\, b\\; c.mov")
 

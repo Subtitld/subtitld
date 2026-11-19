@@ -365,9 +365,10 @@ check('c608: two captions, the edit list kept', (track, [plain(s['text']) for s 
 check('c608: at 1, 3 and 4 s, within half a frame',
       [near(segments[0]['start'], 1.0, 0.017), near(segments[0]['end'], 3.0, 0.017),
        near(segments[1]['start'], 4.0, 0.017)], [True, True, True])
-# Subtitle Edit ends the last at the end of the track's last sample (6 s);
-# Subtitld gives a caption that is never erased its default length.
-known('c608: the last caption ends with the track', near(segments[1]['end'], 6.0, 0.017), True)
+# Subtitle Edit ends the last, never erased, at the end of the track's last
+# sample (6 s: ffprobe's last packet, 4 s for 2 s), not after its default
+# length (8 s).
+check('c608: the last caption ends with the track', near(segments[1]['end'], 6.0, 0.017), True)
 
 segments, track = captions(MOV_C608_CHANGE)
 # Subtitle Edit, MovC608TrackTest: "AB" from pair 5 to pair 12 of a sample
