@@ -1262,8 +1262,9 @@ def save(path, fmt, content, segments, options=None, fps=None, title='', texts=N
         csv_export.save(path, segments, csv_export.AUDITION_MARKERS)
         return path
     if fmt == 'CSV':
-        # A table alone, its header in English: for other programs to read.
-        options, texts = dict(options or {}, title=False), None
+        # A table alone, its header in English: for other programs to read;
+        # every row in it, in time order (a sheet sorts them by speaker).
+        options, texts = dict(options or {}, title=False, by_speaker=False), None
     document = build(content, segments, options, fps, title, texts, speakers)
     if fmt == 'TXT':
         with open(path, 'w', encoding='utf-8') as handle:

@@ -1078,7 +1078,7 @@ class _DocumentsPanel(QWidget):
             timed and self.times_combo.combobox.currentData() != 'none'))
         self.languages_combo.setVisible(content == documents.TRANSLATION and self.languages_combo.combobox.count() > 2)
         self.speakers_check.setVisible(content in (documents.TRANSCRIPT, documents.NUMBERED, documents.SCRIPT))
-        self.by_speaker_check.setVisible(content == documents.DUBBING)
+        self.by_speaker_check.setVisible(content == documents.DUBBING and fmt != 'CSV')
         self.pauses_check.setVisible(content == documents.NUMBERED)
         # A column for notes: on paper, to be written in, or in a sheet.
         self.notes_check.setVisible(content in (documents.SCRIPT, documents.TRANSLATION, documents.DUBBING)

@@ -124,6 +124,9 @@ check('CSV: with a byte order mark, the header in English, a row each', (
 documents.save(str(folder / 'dubbing.csv'), 'CSV', 'dubbing', segments)
 check('CSV: a dubbing script, its table alone', next(csv.reader(io.StringIO(
     (folder / 'dubbing.csv').read_text('utf-8-sig')))), ['#', 'Character', 'Start', 'End', 'Duration', 'Text', 'Characters'])
+documents.save(str(folder / 'grouped.csv'), 'CSV', 'dubbing', segments, {'by_speaker': True})
+check('CSV: a dubbing script grouped by speaker, every line still, in time order', [row[0] for row in csv.reader(
+    io.StringIO((folder / 'grouped.csv').read_text('utf-8-sig')))][1:], ['1', '2', '3', '4'])
 
 from docx import Document as Word
 documents.save(str(folder / 'script.docx'), 'DOCX', 'script', segments, title='Film',
@@ -247,6 +250,9 @@ panel._refresh_content()
 check('no times: no format for them', panel.time_format_combo.isHidden(), True)
 panel.choose('CSV', 'script')
 check('CSV: no title', panel.title_check.isHidden(), True)
+panel.choose('CSV', 'dubbing')
+check('CSV: a dubbing script in time order, not by speaker', panel.by_speaker_check.isHidden(), True)
+panel.choose('CSV', 'script')
 panel.choose('PDF')
 check('back to PDF: the dubbing script chosen for it', panel.export_choices()[1]['content'], 'dubbing')
 config = panel.get_config()
