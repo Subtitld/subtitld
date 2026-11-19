@@ -148,6 +148,19 @@ fade = [picture_subtitles.Picture(1, 2, 0, 400, 1, 1, b'', [], screen_height=480
         picture_subtitles.Picture(2, 3, 0, 400, 1, 1, b'', [], screen_height=480)]
 check('a subtitle drawn twice in a row is one', picture_subtitles.segments(fade, ['Hi', 'Hi']),
       [{'start': 1, 'end': 3, 'text': 'Hi'}])
+# A PGS composition's windows (pgs.read: a picture each, at one time): a
+# sign at the top and two windows side by side over two lines at the bottom.
+windows = [picture_subtitles.Picture(1, 2, 300, 40, 200, 30, b'', [], screen_height=480),
+           picture_subtitles.Picture(1, 2, 40, 400, 30, 30, b'', [], screen_height=480),
+           picture_subtitles.Picture(1, 2, 100, 398, 300, 34, b'', [], screen_height=480),
+           picture_subtitles.Picture(1, 2, 100, 436, 300, 34, b'', [], screen_height=480)]
+check('windows shown together: the sign at the top its own, those at the bottom one subtitle in rows',
+      [s['text'] for s in picture_subtitles.segments(windows, ['SIGN', '♪', 'first line', 'second line'])],
+      ['{\\an8}SIGN', '♪ first line\nsecond line'])
+check('a window drawn again in the next composition, the other gone: joined',
+      picture_subtitles.segments(windows[:2] + [picture_subtitles.Picture(2, 3, 40, 400, 30, 30, b'', [],
+                                                                          screen_height=480)], ['SIGN', 'Hi', 'Hi']),
+      [{'start': 1, 'end': 2, 'text': '{\\an8}SIGN'}, {'start': 1, 'end': 3, 'text': 'Hi'}])
 
 print('opening one')
 for name, kind in (('film.idx', 'vobsub'), ('film.sub', 'vobsub'), ('film.sup', 'pgs')):

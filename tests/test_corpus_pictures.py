@@ -205,14 +205,21 @@ check('the reference: two compositions', compositions, [6072, 36102])
 error = opened_as(PGS_SUP)
 check('opened: pictures, for the OCR dialog', error.kind if error else None, 'pgs')
 shown = pgs.read(str(PGS_SUP))
-check('a picture from each composition, until the next', [(round(p.start * 90000), round(p.end * 90000)) for p in shown],
-      [(6072, 36102), (36102, 36102 + 5 * 90000)])
-# Its two objects ("♪～" and the line, ffprobe: 2 rects) are drawn into one
-# picture, as big as the two windows of its WDS: 383,956 1156x67 and
-# 100,958 123x63.
-check('two objects, one picture over both windows', [(p.x, p.y, p.width, p.height) for p in shown],
-      [(100, 956, 1439, 67)] * 2)
-check('the second the first again (an acquisition point, the other object kept)', same_pixels(shown[:1], shown[1:]), True)
+# Its two objects ("♪～" and the line, ffprobe: 2 rects) are each in a
+# window of their own (its WDS: 383,956 1156x67 and 100,958 123x63): a
+# picture each, at the composition's time, in the order they read (the
+# note left of the line).
+check('a picture per window of each composition, until the next',
+      [(round(p.start * 90000), round(p.end * 90000)) for p in shown],
+      [(6072, 36102)] * 2 + [(36102, 36102 + 5 * 90000)] * 2)
+check('each where its window is', [(p.x, p.y, p.width, p.height) for p in shown],
+      [(100, 958, 123, 63), (383, 956, 1156, 67)] * 2)
+check('the second the first again (an acquisition point, the other object kept)', same_pixels(shown[:2], shown[2:]), True)
+engine, segments, info = ocr(PGS_SUP)
+# The fake engine reads each picture's number: 0 and 1 the first
+# composition's, 2 and 3 the second's. Side by side, they are one line.
+check('read by OCR: one subtitle a composition, its windows side by side on one line',
+      [(s['start'], s['text']) for s in segments], [(0.067, 'text 0 text 1'), (0.401, 'text 2 text 3')])
 check('on a 1920x1080 frame (its PCS)', {(p.screen_width, p.screen_height) for p in shown}, {(1920, 1080)})
 check('white letters (BT.709), outlined black', (shown[0].colours[0], shown[0].colours[1], max(shown[0].colours)[:3]),
       ((0, 0, 0, 0), (0, 0, 0, 255), (255, 255, 255)))
@@ -225,15 +232,18 @@ print("Subtitle Edit's Blu-ray .sup of two objects (sample_BDSUP_multi_image.sup
 error = opened_as(BDSUP)
 check('opened: pictures, for the OCR dialog', error.kind if error else None, 'pgs')
 multi = pgs.read(str(BDSUP))
-check('two pictures, the first until the second', [(round(p.start, 3), round(p.end, 3)) for p in multi],
-      [(679.846, 682.724), (682.724, 687.724)])
-check('the first both objects, the second the bottom one',
-      [(p.x, p.y, p.width, p.height) for p in multi], [(568, 81, 784, 911), (568, 740, 784, 252)])
-check('the bottom object drawn the same in both', numpy.array_equal(
-    rgba(multi[0]).reshape(911, 784, 4)[740 - 81:], rgba(multi[1]).reshape(252, 784, 4)), True)
+check('three pictures: the first composition\'s two windows, until the second', [(round(p.start, 3), round(p.end, 3)) for p in multi],
+      [(679.846, 682.724)] * 2 + [(682.724, 687.724)])
+check('the sign at the top and the line at the bottom, each in its place; then the line alone',
+      [(p.x, p.y, p.width, p.height) for p in multi], [(571, 81, 777, 45), (568, 740, 784, 252), (568, 740, 784, 252)])
+check('the bottom object drawn the same in both', multi[1].indices == multi[2].indices, True)
 check('white letters', multi[0].colours[1], (255, 255, 255, 255))
 engine, segments, info = ocr(BDSUP)
-check('read by OCR: two pictures', [s['start'] for s in segments], [679.846, 682.724])
+# The sign is read where it is: at the top, so {\an8}; the line at the
+# bottom a subtitle of its own, at the same time.
+check('read by OCR: the sign at the top, the line below it, then the line again',
+      [(s['start'], s['end'], s['text']) for s in segments],
+      [(679.846, 682.724, '{\\an8}text 0'), (679.846, 682.724, 'text 1'), (682.724, 687.724, 'text 2')])
 
 print("Subtitle Edit's XSUB (sample_XSUB.avi)")
 if FFPROBE:
@@ -306,13 +316,30 @@ vobsub.save(str(folder / 'hd.idx'), as_drawn(hd), (1920, 1080), 'ja')
 again, _track = vobsub.read(str(folder / 'hd.idx'))
 check('a .sub alone, on its HD frame: the same pixels', same_pixels(hd, again), True)
 check('and times', [round(p.start, 3) for p in again], [round(p.start, 3) for p in hd])
+
+
+def on_frame(pictures, when, size=(1920, 1080)):
+    """What `pictures` show on the frame at `when`, as RGBA."""
+    frame = numpy.zeros((size[1], size[0], 4), int)
+    for p in pictures:
+        if p.start <= when < p.end:
+            pixels = rgba(p).reshape(p.height, p.width, 4).astype(int)
+            area = frame[p.y:p.y + p.height, p.x:p.x + p.width]
+            area[pixels[..., 3] > 0] = pixels[pixels[..., 3] > 0]
+    return frame
+
+
 for name, source in (('pgs_sub', shown), ('multi_image', multi)):
     pgs.save(str(folder / f'{name}.sup'), as_drawn(source), (1920, 1080), 23.976)
     again = pgs.read(str(folder / f'{name}.sup'))
+    # Subtitld writes a composition of one window: the windows shown at
+    # once come back as one picture over them all.
     check(f'PGS {name}: the same times', [(round(p.start, 3), round(p.end, 3)) for p in again],
-          [(round(p.start, 3), round(p.end, 3)) for p in source])
+          sorted({(round(p.start, 3), round(p.end, 3)) for p in source}))
     # Through YCbCr and back: a colour may come back a step or two off.
-    check(f'PGS {name}: the same pixels, colours within 2', same_pixels(source, again, tolerance=2), True)
+    frames = [(on_frame(source, p.start), on_frame(again, p.start)) for p in again]
+    check(f'PGS {name}: the same frames, colours within 2',
+          all((a[..., 3] == b[..., 3]).all() and abs(a[..., :3] - b[..., :3]).max() <= 2 for a, b in frames), True)
 
 print()
 if fails:
