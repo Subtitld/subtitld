@@ -1208,9 +1208,22 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 kept['timecode'] = 'drop' if marker_settings['drop'] else 'non-drop'
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
 
-        elif subtitle_file.lower().endswith('.csv'):
-            # Any other table has no times Subtitld knows where to find.
-            raise CorruptedProjectFileError("Not a marker list: neither EDIUS's nor Premiere's header is there")
+        elif subtitle_file.lower().endswith(('.csv', '.tsv')):
+            # Any other table of times and text (modules.generic_text):
+            # Subtitle Edit's Csv to Csv5 and Tsv, Audition's markers as
+            # Subtitld exports them, a spreadsheet's. Read only.
+            detected = generic_text.detect(_text_of(subtitle_file), session.VIDEO.get('framerate'),
+                                           extension=subtitle_file.lower().rsplit('.', 1)[1])
+            if detected is None:
+                raise CorruptedProjectFileError("Not a marker list (neither EDIUS's nor Premiere's header is there), "
+                                                'nor columns of times and text Subtitld can read')
+            subtitle_format = 'TABLE'
+            segments_list = [dict(segment) for segment in detected.segments]
+            # A speaker column (Audition's description, Nuendo's character)
+            # names speakers the project lists.
+            for segment in segments_list:
+                if segment.get('speaker'):
+                    session.SPEAKERS.setdefault(segment['speaker'], {'image': None})
 
         elif subtitle_file.lower().endswith('.xml') and picture_indexes.kind(subtitle_file):
             # spumux's, Timed Images', Final Cut Pro's and Rhozet's lists of

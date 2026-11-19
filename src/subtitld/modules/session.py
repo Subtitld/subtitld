@@ -307,6 +307,9 @@ LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS = {
     'ULTECH': {'description': 'Ultech 1.30 Caption format', 'extensions': ['ult', 'uld']},
     'RAC': {'description': 'Screen PAC recovery file', 'extensions': ['rac']},
     'DVBTTX': {'description': 'Manzanita DVB teletext dump', 'extensions': ['dvbttx']},
+    # Times and text in columns (modules.generic_text); a .csv that is
+    # EDIUS's or Premiere's markers is theirs.
+    'TABLE': {'description': 'Timed text table (CSV, TSV)', 'extensions': ['csv', 'tsv']},
 }
 
 # Formats Subtitld writes but does not open as subtitles: a Blu-ray's

@@ -18,7 +18,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, generic_text, session, srt
+from subtitld.modules import csv_export, file_io, generic_text, session, srt
 
 fails = []
 
@@ -164,6 +164,31 @@ check('Audition markers (Subtitld\'s own CSV export): start and duration',
       cues('Name\tStart\tDuration\tTime Format\tType\tDescription\r\nHello there\t0:03.550\t0:01.200\tdecimal\tCue\tALICE\r\n'
            'Again\t1:05.000\t0:01.000\tdecimal\tCue\tBOB\r\n'),
       ('table', [(3.55, 4.75, 'Hello there'), (65.0, 66.0, 'Again')]))
+# Subtitle Edit's writers (src/libse/SubtitleFormats/Csv.cs ... Csv5.cs):
+# Csv quotes the text, doubles its quotes and keeps its line break inside
+# the quotes; Csv2 quotes it but writes its quotes as they are, and its
+# reader takes the rest of the line (unquoted commas and all); Csv5 is
+# Csv4 with "hh:mm:ss.ff", frames after the dot, in a .csv.
+check('Csv: semicolons, a line break and doubled quotes inside the quotes',
+      cues('Number;Start time in milliseconds;End time in milliseconds;"Text"\n1;1000;3000;"Hello\nthere"\n'
+           '2;4000;6000;"Say ""hi""; then go"\n'),
+      ('table', [(1.0, 3.0, 'Hello\nthere'), (4.0, 6.0, 'Say "hi"; then go')]))
+check('Csv2: its quotes as written, a line break inside the quotes',
+      cues('Number,Start time (hh:mm:ss:ff),End time (hh:mm:ss:ff),"Text"\n1,00:00:01:00,00:00:03:00,"He said "hi" there"\n'
+           '2,00:00:04:00,00:00:06:00,"Two\nlines"\n'),
+      ('table', [(1.0, 3.0, 'He said "hi" there'), (4.0, 6.0, 'Two\nlines')]))
+check('Csv2: unquoted text with commas is the rest of the line',
+      cues('1,00:00:01:00,00:00:03:00,I thought I should let her know.\n2,00:00:04:00,00:00:06:00,Yes, and then, more\n'
+           '3,00:00:07:00,00:00:08:00,Plain\n'),
+      ('table', [(1.0, 3.0, 'I thought I should let her know.'), (4.0, 6.0, 'Yes, and then, more'), (7.0, 8.0, 'Plain')]))
+check('Csv5: frames after the dot in a .csv',
+      [(s['start'], s['end'], s['text']) for s in generic_text.detect(
+          '00:00:01.12,00:00:03.00,"Hello, you///there"\n00:00:04.00,00:00:06.24,World\n', extension='csv').segments],
+      [(1.48, 3.0, 'Hello, you\nthere'), (4.0, 6.96, 'World')])
+check('...hundredths anywhere else', cues('00:00:01.12,00:00:03.00,Hello\n00:00:04.00,00:00:06.24,World\n'),
+      ('table', [(1.12, 3.0, 'Hello'), (4.0, 6.24, 'World')]))
+check('a quote never closed is the text', cues('00:00:01:00,00:00:03:00,"Hello\n00:00:04:00,00:00:06:00,World\n'),
+      ('table', [(1.0, 3.0, '"Hello'), (4.0, 6.0, 'World')]))
 check('seconds under a header that says so', cues('start (s)|end (s)|text\n1.0|3.0|Hello\n4.0|6.0|World\n'), ('table', TWO))
 
 # --------------------------------------------------------------------------
@@ -271,6 +296,35 @@ check('a log is plain text', opened('server.txt', NOT_SUBTITLES['a log with leve
 check('a CSV of other things is plain text', opened('prices.txt', NOT_SUBTITLES['a CSV of other things'])[0], 'TXT')
 check('JSON with no times is plain text', opened('people.txt', NOT_SUBTITLES['JSON with no times'])[0], 'TXT')
 check('an empty file has nothing in it', opened('empty.txt', ''), ('TXT', []))
+
+print('.csv and .tsv: tables of times and text, read only')
+check('Csv in a .csv', opened('se.csv', 'Number;Start time in milliseconds;End time in milliseconds;"Text"\n'
+                                     '1;1000;3000;"Hello"\n2;4000;6000;"World"\n'), ('TABLE', TWO))
+check('Csv5 in a .csv: frames', opened('csv5.csv', '00:00:01.12,00:00:03.00,Hello\n00:00:04.00,00:00:06.00,World\n'),
+      ('TABLE', [(1.48, 3.0, 'Hello'), (4.0, 6.0, 'World')]))
+check('Tsv in a .tsv', opened('se.tsv', 'Number\tStart time in milliseconds\tEnd time in milliseconds\tText\n'
+                                     '1\t1000\t3000\tHello\n2\t4000\t6000\tWorld\n'), ('TABLE', TWO))
+check('a .tsv with no header, clocks', opened('plain.tsv', '00:00:01,000\t00:00:03,000\tHello\n00:00:04,000\t00:00:06,000\tWorld\n'),
+      ('TABLE', TWO))
+# Subtitld's own CSV export (modules.csv_export, Audition's markers) read
+# back exactly: times to the millisecond, the text on one line, the
+# speaker from the description it is written to.
+written = [{'start': 3.55, 'end': 4.75, 'text': 'Hello there', 'speaker': 'ALICE'},
+           {'start': 65.0, 'end': 66.001, 'text': '"Quoted", with commas', 'speaker': 'BOB'},
+           {'start': 3725.5, 'end': 3727.25, 'text': 'An hour in', 'speaker': ''}]
+csv_export.save(str(folder / 'audition.csv'), written)
+session.FORMAT, session.VIDEO, session.SPEAKERS = {}, {}, {}
+read_back, fmt = file_io.process_subtitles_file(str(folder / 'audition.csv'))
+check("Subtitld's CSV export read back", (fmt, [(s['start'], s['end'], s['text'], s.get('speaker')) for s in read_back]),
+      ('TABLE', [(3.55, 4.75, 'Hello there', 'ALICE'), (65.0, 66.001, '"Quoted", with commas', 'BOB'),
+                 (3725.5, 3727.25, 'An hour in', None)]))
+check('...its speakers listed', sorted(session.SPEAKERS), ['ALICE', 'BOB'])
+try:
+    opened('other.tsv', 'id\tname\tprice\n1\tWidget\t9.99\n2\tGadget\t19.50\n')
+    check('a .tsv of other things says so', 'opened', 'CorruptedProjectFileError')
+except file_io.CorruptedProjectFileError:
+    check('a .tsv of other things says so', 'CorruptedProjectFileError', 'CorruptedProjectFileError')
+check('registered', session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS['TABLE']['extensions'], ['csv', 'tsv'])
 
 print('.json: timed objects no tool claims')
 check('opened', opened('unknown.json', '{"subs": [{"startTime": "00:00:01.000", "endTime": "00:00:03.000", "text": "Hello"},'
