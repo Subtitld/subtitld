@@ -6,6 +6,7 @@ from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
 from subtitld.interface import subtitle_text_editor
+from subtitld.interface import timed_text_strip
 from subtitld.interface.translation import _
 
 from subtitld.modules import collab_service
@@ -273,9 +274,15 @@ def load(self):
     # Italic, bold, underline, strikeout, colour and position, under the text
     # they format (subtitle_text_editor).
     self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(
-        self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.selected)
+        self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.selected,
+        language=lambda: session.SUBTITLE.get('language'))
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
+
+    # A subtitle timed piece by piece: its pieces, to cut, join and time.
+    self.left_panel_subtitleslist_timed_text = timed_text_strip.TimedTextStrip(lambda: session.SUBTITLE.selected)
+    self.left_panel_subtitleslist_timed_text.changed.connect(lambda: timed_text_changed(self))
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_timed_text)
 
     self.left_panel_subtitleslist_translation_textedit = QTextEdit()
     self.left_panel_subtitleslist_translation_textedit.setObjectName('left_panel_subtitleslist_translation_textedit')
@@ -486,9 +493,17 @@ def subtitles_panel_empty_state_button_clicked(self):
     session.set_unsaved()
 
 
+def timed_text_changed(self):
+    """The selected subtitle's pieces were cut, joined or timed."""
+    session.set_unsaved(True)
+    self.left_panel_subtitleslist_formatting_bar.refresh()
+    self.timeline_widget.update()
+
+
 def left_panel_subtitleslist_textedit_changed(self):
     if session.SUBTITLE.selected:
         set_text(session.SUBTITLE.selected, subtitle_text_editor.text(self.left_panel_subtitleslist_textedit))
+        self.left_panel_subtitleslist_timed_text.refresh()
         # In a shared project, the others leave this text be while it is typed in.
         collab_service.typing(session.SUBTITLE.selected.get('id'))
         session.set_unsaved(True)
@@ -556,6 +571,7 @@ def update(self):
         subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE.selected.text())
         self.left_panel_subtitleslist_textedit.blockSignals(False)
         self.left_panel_subtitleslist_formatting_bar.refresh()
+        self.left_panel_subtitleslist_timed_text.refresh()
 
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(True)
@@ -843,6 +859,7 @@ def translate(self):
     self.subtitles_panel_simplelist_properties_ending_timing_label.setText(_('left_panel_subtitleslist.end'))
     self.left_panel_subtitleslist_speaker_selector.label.setText(_('left_panel_subtitleslist.speaker'))
     self.left_panel_subtitleslist_formatting_bar.retranslate()
+    self.left_panel_subtitleslist_timed_text.retranslate()
     self.left_panel_subtitleslist_regenerate_dub_button.setToolTip(_('left_panel_subtitleslist.regenerate_dub_tooltip'))
     self.subtitles_panel_empty_state_label.setText(_('left_panel_subtitleslist.empty_state_label'))
     self.subtitles_panel_empty_state_button.setToolTip(_('left_panel_subtitleslist.empty_state_button'))

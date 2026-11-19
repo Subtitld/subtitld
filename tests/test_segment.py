@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import collab_client, export_options, file_io, history, karaoke, plaintext, quality_check, session, subtitles, subtitldcc_service
-from subtitld.modules.segment import Segment, SegmentList, Subtitle, cut, hyphenator, joined, set_text, text_of, timed_pieces
+from subtitld.modules.segment import (Segment, SegmentList, Subtitle, cut, hyphenator, join_pieces, joined, letters_of,
+                                      set_effect, set_text, split_piece, text_of, time_piece, timed_pieces)
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
 fails = []
@@ -304,6 +305,26 @@ check('a region without a dictionary of its own: its language\'s', hyphenator('d
 check('a language without one: none (split gives words)', (hyphenator('ja-jp'), hyphenator(''), hyphenator(None)),
       (None, None, None))
 check('a one-letter syllable at a word\'s start, not at its end', hyphenator('en-us')('along'), [1])
+
+print('a piece cut, joined, timed')
+segment = Segment({'start': 0.0, 'end': 3.0, 'text': [{'text': '<i>Hello</i> ', 'start': 0.0, 'end': 1.0, 'level': 'word'},
+                                                      {'text': 'world', 'start': 1.5, 'end': 2.5}]})
+check('its letters, where each is in the text', letters_of(segment.pieces()[0]['text'])[:2], [(3, 'H'), (4, 'e')])
+check('cut before a letter', split_piece(segment, 0, 6), True)
+check('its time shared by letters, the tag kept with each half', spans(segment)[:2],
+      [('<i>Hel', 0.0, 0.6), ('lo</i> ', 0.6, 1.0)])
+check('not at its very start or end', (split_piece(segment, 2, 0), split_piece(segment, 2, 5), split_piece(segment, 9, 1)),
+      (False, False, False))
+check('joined again', (join_pieces(segment, 0), spans(segment)[0]), (True, ('<i>Hello</i> ', 0.0, 1.0)))
+check('the last has no next to join', join_pieces(segment, 1), False)
+check('a start kept after the piece before', time_piece(segment, 1, start=0.2), (1.0, 2.5))
+check('an end kept within the subtitle', time_piece(segment, 1, end=9.0), (1.0, 3.0))
+check('an end kept before the next piece', time_piece(segment, 0, end=5.0), (0.0, 1.0))
+check('a start past its end takes its end', time_piece(segment, 1, start=2.0), (2.0, 3.0))
+set_effect(segment, 0, 'wipe')
+check('an effect', segment.pieces()[0].get('effect'), 'wipe')
+set_effect(segment, 0, None)
+check('and the style\'s again', 'effect' in segment.pieces()[0], False)
 
 print('set_text')
 segment = Segment({'start': 0.0, 'end': 3.0, 'text': [dict(piece) for piece in TIMED]})

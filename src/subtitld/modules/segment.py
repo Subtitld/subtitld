@@ -180,6 +180,76 @@ def _recut(pieces, level, hyphenate=None, cuts=None):
     return out
 
 
+def letters_of(text):
+    """The characters of a piece's text as they read, its markup left out,
+    each with its index in the text: [(index, character)]."""
+    return _visible(text)
+
+
+def split_piece(segment, number, at):
+    """Cut piece `number` of `segment` in two before index `at` of its text,
+    its times shared by letters. False if `at` is not inside its words."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces):
+        return False
+    piece = pieces[number]
+    halves = _recut([piece], piece.get('level'), cuts=[at])
+    if len(halves) != 2 or not halves[0]['text'].strip() or not halves[1]['text'].strip():
+        return False
+    for half in halves:
+        if not piece.get('level'):
+            half.pop('level', None)
+    segment['text'] = pieces[:number] + halves + pieces[number + 1:]
+    return True
+
+
+def join_pieces(segment, number):
+    """Piece `number` of `segment` and the next one made one, from the
+    first's start to the second's end, with the first's effect. False if
+    there is no next one."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces) - 1:
+        return False
+    first, second = pieces[number], pieces[number + 1]
+    joined_piece = dict(first, text=first['text'] + second['text'], end=max(first['end'], second['end']))
+    segment['text'] = pieces[:number] + [joined_piece] + pieces[number + 2:]
+    return True
+
+
+def time_piece(segment, number, start=None, end=None):
+    """Piece `number` of `segment` given a new start or end, in seconds from
+    the subtitle's start: kept after the piece before it, before the next,
+    within the subtitle, and never ending before it starts. Gives the times
+    it took, or None for no such piece."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces):
+        return None
+    piece = pieces[number]
+    floor = pieces[number - 1]['end'] if number else 0.0
+    length = max(0.0, float(segment.get('end', 0) or 0) - float(segment.get('start', 0) or 0))
+    ceiling = pieces[number + 1]['start'] if number + 1 < len(pieces) else max(length, piece['end'])
+    new_start = piece['start'] if start is None else start
+    new_end = piece['end'] if end is None else end
+    new_start = round(min(max(floor, new_start), ceiling), 3)
+    new_end = round(min(max(new_start, new_end), ceiling), 3)
+    if start is not None and end is None:
+        new_start = min(new_start, new_end)
+    piece['start'], piece['end'] = new_start, new_end
+    return new_start, new_end
+
+
+def set_effect(segment, number, effect):
+    """How piece `number` of `segment` lights up (EFFECTS); None for the
+    style's way."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces):
+        return
+    if effect in EFFECTS:
+        pieces[number]['effect'] = effect
+    else:
+        pieces[number].pop('effect', None)
+
+
 def hyphenator(language):
     """`hyphenate(word)` for split(): where the syllables of a word start, by
     the hyphenation dictionary (pyphen's, LibreOffice's) of `language`, a

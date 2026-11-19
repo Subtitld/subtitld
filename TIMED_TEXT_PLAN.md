@@ -181,7 +181,13 @@ Subtitld attribute for it, as it already does for its own looks.
 *Done when:* round trips keep pieces and their effects (USFX → USFX, ASS → USFX → ASS, LRC
 word stamps → USFX → LRC), `set_text` rules have unit tests.
 
-**M5. Editing in the subtitles list.** A selected subtitle gets "Split into
+**M5. Editing in the subtitles list.** *(Done on branch `timed-text`: a
+timing button in the formatting bar (word, syllable, letter, not timed),
+lit while timed; under it the pieces strip (interface/timed_text_strip.py):
+a chip a piece, a click choosing one, cutting the chosen one between two
+letters, joining two at the gap; the chosen one's start, end and effect.
+Strings in en_US and pt_BR, as the project adds them. Tested in a real
+session: an ASS karaoke cut, given a wipe, saved to USFX.)* A selected subtitle gets "Split into
 words / syllables / letters" and "Join". Its pieces show as a row (chips
 or a small table) under the text box: each piece's text, start and end,
 editable; click between two letters to split a piece there, click a split
