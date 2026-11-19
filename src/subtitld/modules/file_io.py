@@ -1,9 +1,11 @@
 import os
 import codecs
 import copy
+import math
 import re
 import hashlib
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -21,41 +23,65 @@ from PySide6.QtGui import QImage, QPixmap
 
 from subtitld.modules import ass
 from subtitld.modules import avid_subcap
+from subtitld.modules import ayato
 from subtitld.modules import bdn
+from subtitld.modules import caption_vendors
 from subtitld.modules import cavena890
 from subtitld.modules import cheetahcap
 from subtitld.modules import collab_state
 from subtitld.modules import documents
 from subtitld.modules import cue_ids
 from subtitld.modules import dcp
+from subtitld.modules import detx
 from subtitld.modules import dvd_scripts
+from subtitld.modules import dvdsup
 from subtitld.modules import ebustl
+from subtitld.modules import eztitles
+from subtitld.modules import edl
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import fcpxml
+from subtitld.modules import generic_text
 from subtitld.modules import timecode
 from subtitld.modules import export_options
 from subtitld.modules import json_subtitles
+from subtitld.modules import json_dialects
+from subtitld.modules import cdg
 from subtitld.modules import kar
+from subtitld.modules import kbp
+from subtitld.modules import kate
 from subtitld.modules import lambdacap
+from subtitld.modules import aeneas
+from subtitld.modules import annotation
+from subtitld.modules import audacity
 from subtitld.modules import legacy
 from subtitld.modules import lrc
+from subtitld.modules import markers
 from subtitld.modules import mcc
 from subtitld.modules import microdvd
+from subtitld.modules import mxf
 from subtitld.modules import pac
 from subtitld.modules import pgs
+from subtitld.modules import picture_indexes
 from subtitld.modules import plaintext
 from subtitld.modules import project_export
 from subtitld.modules import sami
 from subtitld.modules import sbv
+from subtitld.modules import softni
+from subtitld.modules import spot
 from subtitld.modules import scc
 from subtitld.modules import srt
 from subtitld.modules import subtitle_styles
+from subtitld.modules import swift
+from subtitld.modules import tsb4
 from subtitld.modules import session
 from subtitld.modules import ttml
+from subtitld.modules import tmx
+from subtitld.modules import transcripts
 from subtitld.modules import ttxt
 from subtitld.modules import waveform
 from subtitld.modules import webvtt
+from subtitld.modules import xml_dialects
 from subtitld.modules import youtube_timedtext
 from subtitld.modules import usf
 from subtitld.modules import ultrastar
@@ -72,11 +98,14 @@ class CorruptedProjectFileError(Exception):
 
 class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
-    pictures (a VobSub's .idx or .sub, a PGS .sup, a BDN's PNGs, a TTML
-    file in IMSC's Image Profile with pictures it gives no words for, DCP
-    subtitles with <Image>s), not text: nothing is wrong with it, but only
-    an OCR add-on can make text of it (picture_ocr). `path` is the file,
-    `kind` 'vobsub', 'pgs', 'bdn', 'imsc' or 'dcp'."""
+    pictures (a VobSub's .idx or .sub, a PGS .sup, a DVD's bare .sup, a CD+G .cdg, a BDN's
+    PNGs, a picture index's images, a TTML file in IMSC's Image Profile with pictures it gives no
+    words for, DCP subtitles with <Image>s), not text: nothing is wrong
+    with it, but only an OCR add-on can make text of it (picture_ocr).
+    `path` is the file,
+    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp', 'cdg', or a key
+    of picture_indexes.FORMATS in lower case ('scenaristbmp', 'son', 'dost',
+    'spumux', 'timedimages', 'fcpimage', 'rhozet')."""
 
     def __init__(self, path, kind='vobsub'):
         super().__init__(path)
@@ -614,6 +643,15 @@ def _known_language(tag):
     return next((code for code in known if code.split('-')[0] == primary), '')
 
 
+def _is_kate(path):
+    """Whether the Ogg file at `path` holds a Kate stream, by its bytes."""
+    try:
+        with open(path, 'rb') as ogg_file:
+            return kate.is_kate(ogg_file.read(65536))
+    except OSError:
+        return False
+
+
 def _youtube_xml(path):
     """Whether the XML file at `path` is YouTube's timed text, by its root."""
     try:
@@ -633,6 +671,14 @@ def _is_ebu_stl(path):
         return False
 
 
+def _xml_dialect(path):
+    """Which of modules.xml_dialects' dialects the XML file at `path` is, or ''."""
+    try:
+        return xml_dialects.looks_like(_text_of(path))
+    except (OSError, ValueError):
+        return ''
+
+
 def _is_lambda_cap(path):
     """Whether the .cap at `path` is Lambda's text and not Cheetah's binary."""
     try:
@@ -640,6 +686,21 @@ def _is_lambda_cap(path):
             return lambdacap.is_lambda(cap_file.read(256))
     except OSError:
         return False
+
+
+def _cap_vendor(path):
+    """'NCI' or 'CAPMAKER' for a .cap of either house's, by its bytes, else
+    None (Cheetah's, Lambda's)."""
+    try:
+        with open(path, 'rb') as cap_file:
+            return caption_vendors.looks_like_cap(cap_file.read(4096))
+    except OSError:
+        return None
+
+
+def _vendor_fps():
+    """The rate to count a vendor format's frames at: the video's, else 25."""
+    return float(session.VIDEO.get('framerate') or 0) or 25.0
 
 
 def _text_of(path):
@@ -706,6 +767,133 @@ def _usf_language(code, name=''):
     return _known_language(code) or (code or '').strip()
 
 
+def _plain_text_segments(text):
+    """The Import panel's reading of plain text: a subtitle a sentence,
+    five seconds each, one after the other."""
+    segments = []
+    pos = 0.0
+    for phrase in text.split('. '):
+        segments.append({
+            'start': pos,
+            'end': pos + 5.0,
+            'text': phrase + '.'
+        })
+        pos += 5.0
+    return segments
+
+
+def _open_txt(path):
+    """The subtitles in a .txt and the format they were in, asked in order:
+
+    1. the named formats that write .txt, each sure of its own: UltraStar,
+       Avid SubCap, Softel Swift, the DVD authoring scripts (Encore, DVD
+       Architect, Scenarist, DVD Producer, Avid DVD), Audacity's labels,
+       then the player era's (VPlayer, TMPlayer, MPL2, Captions 32, Oresme,
+       DVDSS, QTtext ...);
+    2. the shapes of the nameless ones (modules.generic_text): times and
+       text on a line, times over text, frames, a table, JSON; an SRT,
+       WebVTT or MicroDVD saved as .txt is read by its own reader there;
+    3. plain text, read as the Import panel reads it.
+
+    The order matters: a later step would read an earlier step's file,
+    worse (Avid SubCap's lines as DVDSS, any of them as generic times).
+    """
+    text = _text_of(path)
+    fps = session.VIDEO.get('framerate')
+    if ultrastar.kind(text):
+        # An UltraStar song: its syllables as karaoke codes, its notes'
+        # pitches on the subtitles, its title and artist as metadata and
+        # the rest of its headers (BPM, GAP, the audio...) beside them,
+        # so it is written back as it was; its language the project's.
+        try:
+            segments_list, song, headers = ultrastar.parse(text)
+        except ValueError as error:
+            raise CorruptedProjectFileError(str(error)) from error
+        session.SUBTITLE['metadata'] = dict(song, ultrastar=headers)
+        code = _language_like_project(dict(headers).get('LANGUAGE'))
+        if code:
+            session.SUBTITLE['language'] = code
+        return segments_list, 'ULTRASTAR'
+    if avid_subcap.is_subcap(text):
+        # Avid SubCap, which Media Composer writes as .txt: its times in
+        # frames, at the video's rate (drop-frame when the file is); the
+        # rate, the drop-frame and the hour it counts from kept to save
+        # it again as it was. Its timecode lines would read as DVDSS.
+        segments_list, subcap_settings = avid_subcap.read(path, fps)
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
+                                         timecode='drop' if subcap_settings['drop'] else 'non-drop',
+                                         timeline_start=subcap_settings['start'])
+        return segments_list, 'AVID'
+    if swift.looks_like(text):
+        # Softel Swift's text export, in one of its three layouts.
+        segments_list, swift_settings = swift.parse_text(text, fps)
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=swift_settings['fps'])
+        return segments_list, {'duration': 'SWIFTTEXT', 'number': 'SWIFTNUMBERS',
+                               'number-duration': 'SWIFTNUMBERSDURATION'}[swift_settings['layout']]
+    found = dvd_scripts.kind(text, 'txt')
+    if found:
+        # The DVD authoring tools' scripts, told apart (and from DVDSS,
+        # whose lines Encore's look like) by their layouts.
+        return _open_script(path, found), dvd_scripts.SESSION_IDS[found]
+    if audacity.looks_like(text):
+        # Audacity's labels: tab-parted seconds and a text, nothing else.
+        try:
+            return audacity.read(path), 'AUDACITY'
+        except ValueError as error:
+            raise CorruptedProjectFileError(str(error)) from error
+    found = legacy.kind(text)
+    if found:
+        # VPlayer, TMPlayer and their kin wrote .txt.
+        return legacy.parse(text, found, fps), legacy.SESSION_IDS[found]
+    detected = generic_text.detect(text, fps)
+    if detected:
+        # Nobody's format, in a shape it can be read in. Read only, so it
+        # is saved as SRT; an SRT or a WebVTT found here as itself.
+        return [dict(segment) for segment in detected.segments], \
+            'VTT' if detected.shape == generic_text.WEBVTT else 'SRT'
+    # Plain text: a transcript, a script, notes.
+    return (_plain_text_segments(text) if text.strip() else []), 'TXT'
+
+
+def _word_limits():
+    """The length the quality check asks of a subtitle, for files of words
+    grouped into subtitles (modules.json_subtitles.from_words)."""
+    quality = session.CONFIG.get('quality_check') or {}
+    return {'characters': int(quality.get('maximum_characters_per_line') or 42),
+            'lines': int(quality.get('maximum_lines') or 2),
+            'seconds': float(quality.get('maximum_duration') or 7)}
+
+
+def _transcript_opened(segments_list, language=None):
+    """A transcript's speakers listed for the project and kept as its
+    speakers when saved again ('voice'), translations by Subtitld's
+    language codes, its language the project's."""
+    named = False
+    for segment in segments_list:
+        if segment.get('translations'):
+            segment['translations'] = {_language_like_project(tag) or tag.lower(): text
+                                       for tag, text in segment['translations'].items()}
+        if segment.get('speaker'):
+            named = True
+            session.SPEAKERS.setdefault(segment['speaker'], {'image': None})
+        segment.setdefault('speaker', 'A')
+    if named:
+        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, speakers='voice')
+    code = _language_like_project(language)
+    if code:
+        session.SUBTITLE['language'] = code
+
+
+def _edit_rate(fps):
+    """(numerator, denominator) of a frame rate: 24000/1001 for 23.976,
+    30000/1001 for 29.97 and 60000/1001 for 59.94, as video has them."""
+    fps = float(fps or 24)
+    for nominal in (24, 30, 48, 60):
+        if abs(fps - nominal * 1000 / 1001) < 0.01:
+            return (nominal * 1000, 1001)
+    return (int(round(fps)), 1)
+
+
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
@@ -757,6 +945,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, mp4_text=carriage,
                                              segment_duration=mp4_settings['segment_duration'] or isobmff_text.SEGMENT_DURATION)
 
+        elif subtitle_file.lower().endswith('.ismt'):
+            # Smooth Streaming's text track: TTML in PIFF fragments; its
+            # language and fragments' length kept to save it again.
+            subtitle_format = 'ISMT'
+            try:
+                segments_list, mp4_settings = isobmff_text.read(subtitle_file, language=session.SUBTITLE.get('language'))
+            except (ValueError, OSError) as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(mp4_settings['language']):
+                session.SUBTITLE['language'] = _known_language(mp4_settings['language'])
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                             segment_duration=mp4_settings['segment_duration'] or isobmff_text.SEGMENT_DURATION)
+
         elif subtitle_file.lower().endswith('.lrc'):
             # Lyrics: word stamps as karaoke codes, the ID tags (title,
             # artist, album ...) as metadata to write back.
@@ -767,19 +968,54 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(str(error)) from error
             if lrc_metadata:
                 session.SUBTITLE['metadata'] = lrc_metadata
+            # Thousandths, or no ending moments, and Walaoke's parts: saved
+            # again the same way.
+            with open(subtitle_file, 'rb') as lrc_file:
+                lrc_options = {'lrc_times': lrc.dialect(srt.decode(lrc_file.read()))}
+            if any(segment.get('speaker') for segment in segments_list):
+                lrc_options['speakers'] = 'voice'
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **lrc_options)
 
         elif subtitle_file.lower().endswith(('.kar', '.mid', '.midi')):
             # Karaoke MIDI: a line a subtitle, its syllables as karaoke codes,
             # the title and artist (and the other @ headers) as metadata; the
-            # file's path kept, so saving it again keeps its music.
+            # file's path kept, so saving it again keeps its music. A .mid
+            # whose words are lyric events (XF's among them) is saved as one.
             subtitle_format = 'KAR'
             try:
                 segments_list, kar_metadata = kar.read(subtitle_file)
+                with open(subtitle_file, 'rb') as midi_file:
+                    if not subtitle_file.lower().endswith('.kar') and kar.words_kind(midi_file.read()) != 'kar':
+                        subtitle_format = 'MIDI'
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
             if kar_metadata:
                 session.SUBTITLE['metadata'] = kar_metadata
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kar_source=os.path.abspath(subtitle_file))
+
+        elif subtitle_file.lower().endswith('.kbp'):
+            # Karaoke Builder Studio: a line a subtitle, its syllables as
+            # karaoke codes, a page's first line marked; the title, the
+            # artist and the template kept to be written back.
+            subtitle_format = 'KBP'
+            try:
+                segments_list, kbp_metadata = kbp.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.SUBTITLE['metadata'] = kbp_metadata
+
+        elif subtitle_file.lower().endswith(('.ogg', '.oga', '.ogv')) and _is_kate(subtitle_file):
+            # Ogg Kate: the first Kate stream of the file, its language for
+            # the project's and its category kept for a save as Kate.
+            subtitle_format = 'KATE'
+            try:
+                segments_list, kate_info = kate.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(kate_info['language']):
+                session.SUBTITLE['language'] = _known_language(kate_info['language'])
+            if kate_info['category']:
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kate_category=kate_info['category'])
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
@@ -870,6 +1106,62 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if graphics:
                 raise PictureSubtitlesError(subtitle_file, 'bdn')
 
+        elif subtitle_file.lower().endswith(('.xml', '.csv')) and markers.kind(_text_of(subtitle_file)):
+            # An editor's markers as subtitles: EDIUS's list (CSV, or the XML
+            # of its version 4) and Premiere's CSV; the rate, EDIUS's
+            # version and units kept to save it again as it was.
+            found = markers.kind(_text_of(subtitle_file))
+            subtitle_format = 'PREMIERE' if found == 'premiere' else 'EDIUS'
+            try:
+                segments_list, marker_settings = markers.parse(_text_of(subtitle_file), session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            kept = {'fps': marker_settings['fps'], 'marker_units': marker_settings['units']}
+            if marker_settings['version']:
+                kept['marker_version'] = marker_settings['version']
+            if found == 'premiere':
+                kept['timecode'] = 'drop' if marker_settings['drop'] else 'non-drop'
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+
+        elif subtitle_file.lower().endswith('.csv'):
+            # Any other table has no times Subtitld knows where to find.
+            raise CorruptedProjectFileError("Not a marker list: neither EDIUS's nor Premiere's header is there")
+
+        elif subtitle_file.lower().endswith('.xml') and picture_indexes.kind(subtitle_file):
+            # spumux's, Timed Images', Final Cut Pro's and Rhozet's lists of
+            # pictures: for an OCR add-on, as a BDN's are.
+            raise PictureSubtitlesError(subtitle_file, picture_indexes.kind(subtitle_file).lower())
+
+        elif subtitle_file.lower().endswith('.eztxml') or (
+                subtitle_file.lower().endswith('.xml') and eztitles.looks_like(_text_of(subtitle_file)[:4096])):
+            # EZTitles' XML project: its times in its time code standard,
+            # kept to save it again at the same rate.
+            subtitle_format = 'EZTXML'
+            try:
+                segments_list, ezt_settings = eztitles.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=ezt_settings['fps'])
+
+        elif subtitle_file.lower().endswith(('.xml', '.dfxp', '.ttml')) and _xml_dialect(subtitle_file):
+            # The smaller XML dialects (Flash, the 2006 Timed Text draft,
+            # Rhozet, Ninsight, ...): which one kept, to save it again so;
+            # frames at the video's rate, else 25.
+            subtitle_format = 'XMLDIALECT'
+            try:
+                segments_list, xml_language, xml_metadata, dialect = xml_dialects.read(
+                    subtitle_file, fps=session.VIDEO.get('framerate'))
+            except ET.ParseError as error:
+                line, column = error.position
+                raise CorruptedProjectFileError(f'Line {line}, column {column + 1}: {error}') from error
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            if _known_language(xml_language):
+                session.SUBTITLE['language'] = _known_language(xml_language)
+            if xml_metadata:
+                session.SUBTITLE['metadata'] = xml_metadata
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, xml_dialect=dialect)
+
         elif subtitle_file.lower().endswith(('.ttml', '.dfxp', '.xml', '.itt')):
             # TTML in any of its profiles; a .dfxp is saved as DFXP again.
             subtitle_format = 'DFXP' if subtitle_file.lower().endswith('.dfxp') else 'TTML'
@@ -951,7 +1243,21 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             sub_kind = microdvd.kind(data)
             if sub_kind == 'vobsub':
                 raise PictureSubtitlesError(subtitle_file, 'vobsub')
-            if sub_kind == 'subviewer':
+            if tsb4.looks_like(data):
+                # SubtitleNext's binary TSB4, read only: frames at the
+                # video's rate, else 25.
+                subtitle_format = 'TSB4'
+                try:
+                    segments_list, _settings = tsb4.parse(data, _vendor_fps())
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
+            elif softni.looks_like(data):
+                # SoftNi's text, its times with a period or a colon before
+                # the frames; the rate its *TIMING* says kept.
+                subtitle_format = 'SOFTNICOLON' if softni.looks_like(data) == softni.COLON else 'SOFTNI'
+                segments_list, softni_settings = softni.parse(srt.decode(data), session.VIDEO.get('framerate'))
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=softni_settings['fps'])
+            elif sub_kind == 'subviewer':
                 subtitle_format = 'SBV'
                 segments_list = sbv.parse(srt.decode(data))
             elif legacy.kind(data) in ('mpsub', 'subviewer1', 'subsonic'):
@@ -973,7 +1279,19 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
 
         elif subtitle_file.lower().endswith(('.idx', '.sup')):
             # DVD's VobSub index and Blu-ray's PGS: pictures, for an OCR add-on.
-            raise PictureSubtitlesError(subtitle_file, 'pgs' if subtitle_file.lower().endswith('.sup') else 'vobsub')
+            # A .sup of bare DVD subpicture units ("SP", not PGS's "PG") is
+            # a DVD's, told by its bytes.
+            if subtitle_file.lower().endswith('.sup'):
+                with open(subtitle_file, 'rb') as sup_file:
+                    raise PictureSubtitlesError(subtitle_file, 'dvdsup' if dvdsup.is_dvdsup(sup_file.read(16)) else 'pgs')
+            raise PictureSubtitlesError(subtitle_file, 'vobsub')
+
+        elif subtitle_file.lower().endswith('.cdg'):
+            # CD+G karaoke graphics: pictures too, when the bytes are packs.
+            with open(subtitle_file, 'rb') as cdg_file:
+                if not cdg.is_cdg(cdg_file.read(cdg.PACK * 300)):
+                    raise CorruptedProjectFileError('Not a CD+G file: its packs are not graphics packs')
+            raise PictureSubtitlesError(subtitle_file, 'cdg')
 
         elif subtitle_file.lower().endswith('.stl') and _spruce_stl(subtitle_file):
             # Spruce's script is .stl too, and is text where EBU STL is
@@ -987,6 +1305,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 subtitle_format = 'SPRUCE'
                 segments_list = legacy.parse(_text_of(subtitle_file), 'spruce', session.VIDEO.get('framerate'))
 
+        elif subtitle_file.lower().endswith(('.sst', '.son', '.dost')) and picture_indexes.kind(subtitle_file):
+            # Scenarist's and SON's scripts of BMPs or TIFFs, DOST's of PNGs:
+            # pictures, for an OCR add-on.
+            raise PictureSubtitlesError(subtitle_file, picture_indexes.kind(subtitle_file).lower())
+
         elif subtitle_file.lower().endswith('.sst') and dvd_scripts.is_picture_script(_text_of(subtitle_file)):
             raise CorruptedProjectFileError('A Scenarist subtitle script of pictures: its subtitles are '
                                             'image files, not text')
@@ -996,48 +1319,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             subtitle_format = 'SCENARIST'
             segments_list = _open_script(subtitle_file, 'scenarist')
 
-        elif subtitle_file.lower().endswith('.txt') and ultrastar.kind(_text_of(subtitle_file)):
-            # An UltraStar song: its syllables as karaoke codes, its notes'
-            # pitches on the subtitles, its title and artist as metadata and
-            # the rest of its headers (BPM, GAP, the audio...) beside them,
-            # so it is written back as it was; its language the project's.
-            subtitle_format = 'ULTRASTAR'
-            try:
-                segments_list, song, headers = ultrastar.parse(_text_of(subtitle_file))
-            except ValueError as error:
-                raise CorruptedProjectFileError(str(error)) from error
-            session.SUBTITLE['metadata'] = dict(song, ultrastar=headers)
-            code = _language_like_project(dict(headers).get('LANGUAGE'))
-            if code:
-                session.SUBTITLE['language'] = code
-
-        elif subtitle_file.lower().endswith('.txt') and avid_subcap.is_subcap(_text_of(subtitle_file)):
-            # Avid SubCap, which Media Composer writes as .txt: its times in
-            # frames, at the video's rate (drop-frame when the file is); the
-            # rate, the drop-frame and the hour it counts from kept to save
-            # it again as it was. Its timecode lines would read as DVDSS.
-            subtitle_format = 'AVID'
-            segments_list, subcap_settings = avid_subcap.read(subtitle_file, session.VIDEO.get('framerate'))
-            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=subcap_settings['fps'],
-                                             timecode='drop' if subcap_settings['drop'] else 'non-drop',
-                                             timeline_start=subcap_settings['start'])
-
-        elif subtitle_file.lower().endswith('.txt') and dvd_scripts.kind(_text_of(subtitle_file), 'txt'):
-            # The DVD authoring tools' scripts: Encore, DVD Architect,
-            # Scenarist, DVD Producer and Avid DVD, told apart (and from
-            # DVDSS, whose lines Encore's look like) by their layouts.
-            found = dvd_scripts.kind(_text_of(subtitle_file), 'txt')
-            subtitle_format = dvd_scripts.SESSION_IDS[found]
-            segments_list = _open_script(subtitle_file, found)
-
-        elif subtitle_file.lower().endswith('.txt') and legacy.kind(_text_of(subtitle_file)):
-            # VPlayer, TMPlayer and their kin wrote .txt, which is also what
-            # a plain transcript is: only a file that reads as one of them
-            # is opened as subtitles, and anything else stays plain text.
-            text = _text_of(subtitle_file)
-            found = legacy.kind(text)
-            subtitle_format = legacy.SESSION_IDS[found]
-            segments_list = legacy.parse(text, found, session.VIDEO.get('framerate'))
+        elif subtitle_file.lower().endswith('.txt'):
+            # .txt is everybody's: the cascade in `_open_txt` asks the
+            # named formats, then the shapes of the nameless ones, then
+            # reads what is left as plain text.
+            segments_list, subtitle_format = _open_txt(subtitle_file)
 
         elif subtitle_file.lower().endswith(('.mpl', '.mpl2', '.pjs', '.aqt', '.rt', '.tts', '.zeg',
                                              '.vsf', '.sbt', '.jss', '.js', '.s2k', '.xss',
@@ -1082,6 +1368,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                                              timecode='drop' if lambda_settings['drop'] else 'non-drop',
                                              lambda_encoding=lambda_settings['encoding'])
 
+        elif subtitle_file.lower().endswith('.cap') and _cap_vendor(subtitle_file):
+            # NCI's captions (read only) and CapMaker Plus: frames at the
+            # video's rate, else 25, kept to save it again.
+            try:
+                segments_list, vendor_settings, subtitle_format = caption_vendors.read(subtitle_file, _vendor_fps())
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=vendor_settings['fps'])
+
         elif subtitle_file.lower().endswith('.cap'):
             # Cheetah CAP: frames that do not say their rate, counted at the
             # video's, else 25; the rate kept to save it again as it was.
@@ -1101,6 +1396,134 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             except ValueError as error:
                 raise CorruptedProjectFileError(str(error)) from error
 
+        elif subtitle_file.lower().endswith(('.textgrid', '.eaf', '.trs', '.exb', '.cha', '.ctm', '.tmx')):
+            # Transcripts of speech research and recognition: Praat's
+            # TextGrid, CHAT and CTM (modules.transcripts), ELAN, Transcriber
+            # and EXMARaLDA (modules.annotation), and Subtitle Edit's TMX.
+            # Their speakers and translations become the project's.
+            extension = subtitle_file.lower().rsplit('.', 1)[-1]
+            subtitle_format = {'textgrid': 'TEXTGRID', 'eaf': 'EAF', 'trs': 'TRS', 'exb': 'EXB', 'cha': 'CHAT',
+                               'ctm': 'CTM', 'tmx': 'TMX'}[extension]
+            language = None
+            try:
+                if extension == 'textgrid':
+                    segments_list = transcripts.read_textgrid(subtitle_file, limits=_word_limits())
+                elif extension == 'cha':
+                    segments_list, language = transcripts.read_chat(subtitle_file)
+                elif extension == 'ctm':
+                    segments_list = transcripts.read_ctm(subtitle_file, _word_limits())
+                elif extension == 'eaf':
+                    segments_list, language = annotation.read_eaf(subtitle_file)
+                elif extension == 'trs':
+                    segments_list, language = annotation.read_trs(subtitle_file)
+                elif extension == 'exb':
+                    segments_list = annotation.read_exb(subtitle_file, _word_limits())
+                else:
+                    segments_list, language = tmx.read(subtitle_file)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            _transcript_opened(segments_list, language)
+
+        elif subtitle_file.lower().endswith('.mxf'):
+            # MXF with subtitles in it: a timed text track file (SMPTE ST
+            # 429-5), a DCP's SMPTE subtitles or IMF's IMSC, or EBU STL in
+            # MXF (SMPTE ST 2075), told by the essence its header names.
+            with open(subtitle_file, 'rb') as mxf_file:
+                found = mxf.kind(mxf_file.read(4096))
+            try:
+                if found == 'stl':
+                    carried = mxf.read_stl(subtitle_file)
+                    subtitle_format = 'STLMXF'
+                    segments_list, stl_settings = ebustl.parse(carried['stl'])
+                    language = _known_language(stl_settings['language']) or _language_like_project(carried['language'])
+                    if language:
+                        session.SUBTITLE['language'] = language
+                    session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, stl_fps=stl_settings['fps'],
+                                                     display=stl_settings['display'], start=stl_settings['start'])
+                    gsi = ebustl.gsi_values(carried['stl'][:ebustl.GSI_SIZE])
+                    if gsi:
+                        session.SUBTITLE['metadata'] = dict({'title': gsi['OPT']} if gsi.get('OPT') else {}, stl=gsi)
+                elif found == 'timed-text':
+                    carried = mxf.read_timed_text(subtitle_file)
+                    if carried['namespace'].startswith('http://www.smpte-ra.org/schemas/428-7/'):
+                        subtitle_format = 'DCPMXF'
+                        segments_list, dcp_settings = dcp.parse(carried['document'])
+                        kept = {}
+                        if dcp_settings['fps'] in dcp.RATES:
+                            kept['dcp_fps'] = dcp_settings['fps']
+                        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, **kept)
+                        language = _language_like_project(dcp_settings['language'])
+                        if language:
+                            session.SUBTITLE['language'] = language
+                        if dcp_settings['metadata']:
+                            session.SUBTITLE['metadata'] = dcp_settings['metadata']
+                        # Pictures are for an OCR add-on, as a loose reel's
+                        # are: the reel and its PNGs taken out beside each
+                        # other, as a mastering tool's input would be.
+                        if b'Image' in carried['document']:
+                            folder = tempfile.mkdtemp(prefix='subtitld-dcp-mxf-')
+                            reel = os.path.join(folder, os.path.splitext(os.path.basename(subtitle_file))[0] + '.xml')
+                            with open(reel, 'wb') as reel_file:
+                                reel_file.write(carried['document'])
+                            for resource in carried['resources']:
+                                if resource['id'] and resource['data'] is not None and resource['type'] == 'image/png':
+                                    with open(os.path.join(folder, f'{resource["id"]}.png'), 'wb') as png_file:
+                                        png_file.write(resource['data'])
+                            if dcp.has_images(reel):
+                                raise PictureSubtitlesError(reel, 'dcp')
+                    else:
+                        subtitle_format = 'IMSCMXF'
+                        segments_list, ttml_language, ttml_metadata = ttml.read_text(ttml._text_of(carried['document']))
+                        language = _known_language(ttml_language)
+                        if language:
+                            session.SUBTITLE['language'] = language
+                        if ttml_metadata:
+                            session.SUBTITLE['metadata'] = ttml_metadata
+                        rate = carried['rate']
+                        if rate and rate[1]:
+                            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                                             fps=round(rate[0] / rate[1], 3))
+                else:
+                    raise CorruptedProjectFileError('This MXF carries no subtitles Subtitld reads: no timed text '
+                                                    '(SMPTE ST 429-5) and no EBU STL (SMPTE ST 2075)')
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+
+        elif subtitle_file.lower().endswith('.edl'):
+            # A CMX 3600 EDL: its locators or markers, else its events' clip
+            # names; the rate, the drop-frame, the hour it counts from and
+            # the way it held the subtitles kept to save it again so.
+            subtitle_format = 'EDL'
+            segments_list, edl_settings = edl.read(subtitle_file, session.VIDEO.get('framerate'))
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=edl_settings['fps'],
+                                             timecode='drop' if edl_settings['drop'] else 'non-drop',
+                                             timeline_start=edl_settings['start'], edl_style=edl_settings['style'])
+            if edl_settings['title']:
+                session.SUBTITLE['metadata'] = {'title': edl_settings['title']}
+
+        elif subtitle_file.lower().endswith('.detx'):
+            # A Cappella DetX into a dubbing session: each line a subtitle,
+            # its role the speaker, in the project's list with the role's
+            # colour and picture; what the file says of itself kept to write
+            # it back.
+            subtitle_format = 'DETX'
+            try:
+                segments_list, detx_settings = detx.read(subtitle_file, session.VIDEO.get('framerate'))
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=detx_settings['fps'])
+            session.SUBTITLE['metadata'] = dict({'title': detx_settings['title']} if detx_settings['title'] else {},
+                                                detx=detx_settings['metadata'])
+            image_jobs = []
+            for speaker_name, speaker_data in detx_settings['speakers'].items():
+                existing = session.SPEAKERS.setdefault(speaker_name, {'image': None})
+                if speaker_data.get('color'):
+                    existing['color'] = speaker_data['color']
+                if speaker_data.get('image_bytes'):
+                    image_jobs.append((speaker_name, bytes(speaker_data['image_bytes']), None))
+            if image_jobs:
+                _start_speaker_image_loader(image_jobs)
+
         elif subtitle_file.lower().endswith('.890'):
             # Cavena 890: frames counted at the video's rate, else 25; its
             # language for the project's, its title the project's, its rate
@@ -1116,6 +1539,47 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['metadata'] = {'title': cavena_settings['title']}
             session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=cavena_settings['fps'],
                                              start=cavena_settings['start'])
+
+        elif subtitle_file.lower().endswith(('.ezt', '.aya', '.spt', '.sptx', '.xif', '.sif', '.asc', '.cin',
+                                             '.ult', '.uld')):
+            # Subtitling houses' own formats, each by its bytes: the rate a
+            # file says, else the video's, else 25, kept to save it again.
+            lowered = subtitle_file.lower()
+            try:
+                if lowered.endswith('.ezt'):
+                    subtitle_format = 'EZT'
+                    segments_list, vendor_settings = eztitles.read_binary(subtitle_file, session.VIDEO.get('framerate'))
+                elif lowered.endswith('.aya'):
+                    subtitle_format = 'AYATO'
+                    segments_list, vendor_settings = ayato.read(subtitle_file, _vendor_fps())
+                elif lowered.endswith(('.spt', '.sptx')):
+                    subtitle_format = 'SPOT'
+                    segments_list, vendor_settings = spot.read(subtitle_file, _vendor_fps())
+                elif lowered.endswith(('.xif', '.sif')):
+                    subtitle_format = 'XIF' if lowered.endswith('.xif') else 'SIF'
+                    segments_list, vendor_settings = swift.read(subtitle_file, session.VIDEO.get('framerate'))
+                elif lowered.endswith('.asc'):
+                    if not cheetahcap.looks_like_asc(_text_of(subtitle_file)):
+                        raise ValueError('Not a Cheetah ASCII file: it has no "** Caption Number" line')
+                    subtitle_format = 'CHEETAHASC'
+                    segments_list, vendor_settings = cheetahcap.read_asc(subtitle_file, session.VIDEO.get('framerate'))
+                else:
+                    segments_list, vendor_settings, subtitle_format = caption_vendors.read(subtitle_file, _vendor_fps())
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=vendor_settings['fps'])
+
+        elif subtitle_file.lower().endswith('.rac'):
+            # Screen's PAC recovery file: PAC's records without its header,
+            # read only, opened as PAC to be saved as one.
+            subtitle_format = 'PAC'
+            rate = _vendor_fps()
+            try:
+                segments_list, pac_settings = pac.read(subtitle_file, fps=rate)
+            except ValueError as error:
+                raise CorruptedProjectFileError(str(error)) from error
+            session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=rate,
+                                             pac_code_page=pac_settings['code_page'])
 
         elif subtitle_file.lower().endswith(('.pac', '.fpc')):
             # Screen's PAC and UniPac. Neither says its frame rate, so the
@@ -1421,7 +1885,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             session.FORMAT['format'] = 'USFX'
             session.FORMAT['options'] = {}
 
-        elif subtitle_file.lower().endswith(('.json', '.json3', '.bcc')):
+        elif subtitle_file.lower().endswith(('.json', '.json3', '.bcc', '.atpj', '.clqtt', '.gst')):
             # Subtitld's own JSON (Whisper's shape) is read as the plain-text
             # editor reads it, every field kept and every mistake placed; what
             # other tools write (whisper.cpp, WhisperX, YouTube, Bilibili,
@@ -1435,7 +1899,25 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 raise CorruptedProjectFileError(f"Line {getattr(error, 'lineno', '?')}, column {getattr(error, 'colno', '?')}: "
                                                 f"{getattr(error, 'msg', error)}") from error
             language = None
-            if json_subtitles.kind(data) is None and json_subtitles.is_subtitlds(data):
+            if aeneas.looks_like(data):
+                # An aeneas sync map: "fragments" of lines.
+                subtitle_format = 'AENEAS'
+                segments_list, language = aeneas.parse(data)
+                for segment in segments_list:
+                    segment.setdefault('speaker', 'A')
+            # The platforms' own shapes (modules.json_dialects), which neither
+            # Subtitld's JSON nor json_subtitles' tools are.
+            elif json_dialects.kind(data):
+                dialect = json_dialects.kind(data)
+                subtitle_format = 'JSONDIALECT'
+                try:
+                    segments_list, language, _dialect = json_dialects.read(data, dialect, fps=session.VIDEO.get('framerate'))
+                except ValueError as error:
+                    raise CorruptedProjectFileError(str(error)) from error
+                for segment in segments_list:
+                    segment.setdefault('speaker', 'A')
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, json_dialect=dialect)
+            elif json_subtitles.kind(data) is None and json_subtitles.is_subtitlds(data):
                 result = plaintext.parse(text, plaintext.JSON, session.LANGUAGE_DICT_LIST.values())
                 if not result.ok:
                     problem = result.errors[0]
@@ -1454,7 +1936,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 try:
                     segments_list, language, _tool = json_subtitles.read(data, limits)
                 except ValueError as error:
-                    raise CorruptedProjectFileError(str(error)) from error
+                    # No tool it knows: an array of timed objects all the
+                    # same (modules.generic_text), else nothing to read.
+                    detected = generic_text.from_json(data, session.VIDEO.get('framerate'))
+                    if detected is None or detected.confidence < generic_text.THRESHOLD:
+                        raise CorruptedProjectFileError(str(error)) from error
+                    segments_list = [dict(segment) for segment in detected.segments]
                 for segment in segments_list:
                     segment.setdefault('speaker', 'A')
             # The language: the file's, else its name's ("video.en.json3").
@@ -1533,14 +2020,7 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
 
                 # txt_content = clean(txt_file.read())
                 txt_content = txt_file.read()
-                pos = 0.0
-                for phrase in txt_content.split('. '):
-                    session.SUBTITLE['segments'].append({
-                        'start': pos,
-                        'end': pos + 5.0, 
-                        'text': phrase + '.'
-                    })
-                    pos += 5.0
+                session.SUBTITLE['segments'] += _plain_text_segments(txt_content)
 
         elif filename.lower().endswith(('.srt')):
             subtitle_format = 'SRT'
@@ -1748,12 +2228,23 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     else language,
                     profile=options['profile'], metadata=SUBTITLE.get('metadata')))
 
-        elif subtitle_format in ('VOBSUB', 'PGS'):
-            # A DVD's VobSub and a Blu-ray's PGS: each subtitle drawn as the
-            # preview draws it, then cut to the colours the disc's pictures
-            # hold. PGS on the video's frame, else a 1920x1080 one; VobSub
-            # on DVD's PAL or NTSC frame as the export asks, else the
-            # video's, else the DVD frame of its rate. The drawings go once
+        elif subtitle_format == 'CDG':
+            # CD+G karaoke graphics, a page a subtitle wiped as it is sung,
+            # as long as the video; MP3+G: the video's sound beside it as an
+            # MP3 by the same name, when the export asks.
+            cdg.save(final_file, segments, duration=float(VIDEO.get('duration') or 0))
+            if options.get('cdg_mp3') and VIDEO.get('filepath') and os.path.isfile(VIDEO['filepath']):
+                subprocess.run([str(session.FFMPEG_EXECUTABLE), '-hide_banner', '-loglevel', 'error', '-y',
+                                '-i', VIDEO['filepath'], '-vn', '-codec:a', 'libmp3lame', '-q:a', '2',
+                                os.path.splitext(final_file)[0] + '.mp3'],
+                               check=True, capture_output=True, startupinfo=session.STARTUPINFO)
+
+        elif subtitle_format in ('VOBSUB', 'PGS', 'DVDSUP'):
+            # A DVD's VobSub or SUP and a Blu-ray's PGS: each subtitle drawn
+            # as the preview draws it, then cut to the colours the disc's
+            # pictures hold. PGS on the video's frame, else a 1920x1080 one;
+            # VobSub and SUP on DVD's PAL or NTSC frame as the export asks,
+            # else the video's, else the DVD frame of its rate. The drawings go once
             # they are encoded.
             from subtitld.interface import subtitle_pictures
             width, height = int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)
@@ -1766,6 +2257,11 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 pictures = (dict(picture, rgba=subtitle_pictures.rgba(picture['path'])) for picture in drawn)
                 if subtitle_format == 'PGS':
                     pgs.save(final_file, pictures, size, fps=VIDEO.get('framerate'))
+                elif subtitle_format == 'DVDSUP':
+                    # A DVD's .sup, its palette in an .ifo beside it.
+                    dvdsup.save(final_file, pictures, size,
+                                language=options.get('language') if options.get('text') == 'translation'
+                                and options.get('language') else language)
                 else:
                     vobsub.save(final_file, pictures, size,
                                 language=options.get('language') if options.get('text') == 'translation'
@@ -1938,6 +2434,24 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 picture['href'] = os.path.basename(picture['path'])
             bdn.save(final_file, pictures, size, **bdn_options(options, language, final_file, SUBTITLE, VIDEO))
 
+        elif subtitle_format in picture_indexes.FORMATS:
+            # Scenarist's and SON's BMPs, DOST's, spumux's, Timed Images',
+            # Final Cut Pro's and Rhozet's PNGs: each subtitle drawn as the
+            # preview draws it, the images beside the index, named after it.
+            # The DVD tools' on DVD's PAL or NTSC frame as the export asks
+            # (else the video's, else the DVD frame of its rate), the others
+            # on the video's, else a 1920x1080 one.
+            from subtitld.interface import subtitle_pictures
+            width, height = int(VIDEO.get('width') or 0), int(VIDEO.get('height') or 0)
+            if subtitle_format in picture_indexes.DVD_FORMATS:
+                size = vobsub.frame_size(options.get('vobsub_size'), width, height, VIDEO.get('framerate'))
+            else:
+                size = (width or picture_indexes.DEFAULT_SIZE[0], height or picture_indexes.DEFAULT_SIZE[1])
+            with tempfile.TemporaryDirectory(prefix='subtitld-pictures-') as folder:
+                drawn = subtitle_pictures.draw(segments, size, folder)
+                pictures = [dict(picture, rgba=subtitle_pictures.rgba(picture['path'])) for picture in drawn]
+                picture_indexes.save(final_file, subtitle_format, pictures, size, fps=VIDEO.get('framerate'))
+
         elif subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
             # A cinema's subtitles as pictures: each drawn as the preview
             # draws it, on a picture the video's size, else 1920x1080, a
@@ -2005,9 +2519,186 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                            drop=options.get('timecode') != 'non-drop',
                            encoding=options.get('lambda_encoding') or 'utf-8-sig')
 
+        elif subtitle_format == 'EZTXML':
+            # Cued in the time code standard of the export's rate (the
+            # video's, else 25): 30drop at 29.97, 60drop at 59.94.
+            eztitles.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'AYATO':
+            # Frames from the start at the export's rate (the video's, else 25).
+            ayato.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format in ('SOFTNI', 'SOFTNICOLON'):
+            # Frames of a second at the export's rate, in *TIMING* too.
+            softni.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                        separator=softni.COLON if subtitle_format == 'SOFTNICOLON' else softni.PERIOD)
+
+        elif subtitle_format in ('SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF'):
+            # Softel Swift: frames of a second at the export's rate; XIF and
+            # SIF name the project (its title, else the video's name).
+            kind = {'SWIFTTEXT': 'duration', 'SWIFTNUMBERS': 'number', 'SWIFTNUMBERSDURATION': 'number-duration',
+                    'XIF': 'xif', 'SIF': 'sif'}[subtitle_format]
+            swift.save(final_file, segments, kind, fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                       title=(SUBTITLE.get('metadata') or {}).get('title')
+                       or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'CHEETAHASC':
+            # Drop-frame at 29.97 and 59.94, else frames of a second.
+            cheetahcap.save_asc(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'CAPMAKER':
+            # Frames of a second at the export's rate (the video's, else 25).
+            caption_vendors.save_capmaker(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or 25))
+
+        elif subtitle_format == 'DCPMXF':
+            # A SMPTE DCP's subtitle track file (ST 429-5): the reel, text or
+            # pictures, wrapped with its PNGs, at the reel's rate; the
+            # track file's duration to the last subtitle's end.
+            fps = options.get('dcp_fps') if options.get('dcp_fps') in dcp.RATES else dcp.rate_for(VIDEO.get('framerate'))
+            reel_language = options.get('language') if options.get('text') == 'translation' and options.get('language') \
+                else language
+            title = (SUBTITLE.get('metadata') or {}).get('title') or \
+                os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0]
+            identifier = uuid.uuid4()
+            resources = []
+            if options.get('dcp_content') == 'pictures':
+                from subtitld.interface import subtitle_pictures
+                size = (int(VIDEO.get('width') or 0) or 1920, int(VIDEO.get('height') or 0) or 1080)
+                folder = tempfile.mkdtemp(prefix='subtitld-dcp-mxf-')
+                try:
+                    pictures = subtitle_pictures.draw(segments, size, folder, stem='picture_')
+                    for picture in pictures:
+                        picture_id = uuid.uuid4()
+                        with open(picture['path'], 'rb') as png_file:
+                            resources.append((picture_id, 'image/png', png_file.read()))
+                        picture['href'] = f'urn:uuid:{picture_id}'
+                finally:
+                    shutil.rmtree(folder, ignore_errors=True)
+                reel = dcp.write_images(pictures, size, standard=dcp.SMPTE, fps=fps, language=reel_language, title=title,
+                                        identifier=identifier)
+            else:
+                reel = dcp.write(segments, standard=dcp.SMPTE, fps=fps, language=reel_language, title=title,
+                                 identifier=identifier)
+            last = max([float(segment.get('end', 0)) for segment in segments] or [0])
+            with open(final_file, 'wb') as mxf_file:
+                mxf_file.write(mxf.write_timed_text(reel.encode('utf-8'), resources, (fps, 1), int(math.ceil(last * fps)),
+                                                    dcp.SMPTE_NAMESPACE, identifier, mxf.DCP))
+
+        elif subtitle_format == 'IMSCMXF':
+            # IMF's timed text track file: an IMSC 1.1 document in an ST
+            # 429-5 track file laid out as IMF's are, at the video's rate
+            # (else 24), to the last subtitle's end.
+            rate = _edit_rate(VIDEO.get('framerate') or options.get('fps') or 24)
+            document = ttml.write(segments, language=options.get('language') if options.get('text') == 'translation'
+                                  and options.get('language') else language,
+                                  agents=options.get('speakers') == 'voice',
+                                  look=options.get('look') if options.get('look') in ttml.LOOKS else 'clean',
+                                  preview=subtitle_styles.preview_look(), profile='imsc1.1',
+                                  metadata=SUBTITLE.get('metadata'))
+            last = max([float(segment.get('end', 0)) for segment in segments] or [0])
+            with open(final_file, 'wb') as mxf_file:
+                mxf_file.write(mxf.write_timed_text(document.encode('utf-8'), [], rate,
+                                                    int(math.ceil(last * rate[0] / rate[1])),
+                                                    'http://www.w3.org/ns/ttml', None, mxf.IMF))
+
+        elif subtitle_format == 'STLMXF':
+            # EBU STL in MXF (SMPTE ST 2075): the STL written as a .stl is,
+            # in a Generic Stream, its language and programme start in the
+            # descriptor.
+            video_rate = float(VIDEO.get('framerate') or 25)
+            stl_language = options.get('language') if options.get('text') == 'translation' and options.get('language') \
+                else language
+            stl_start = options.get('start') if options.get('start') in ebustl.STARTS else ebustl.STARTS[0]
+            stl_fps = int(options.get('stl_fps') or (30 if abs(video_rate - 30) < 0.1 or abs(video_rate - 60) < 0.1 else 25))
+            stl = ebustl.write(segments, fps=stl_fps,
+                               display=options.get('display') if options.get('display') in ebustl.DISPLAYS else 'teletext',
+                               start=stl_start, language=stl_language,
+                               title=(SUBTITLE.get('metadata') or {}).get('title')
+                               or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0],
+                               gsi=(SUBTITLE.get('metadata') or {}).get('stl'))
+            hours = int(stl_start[:2])
+            reference = hours * 3600 * stl_fps
+            last = max([float(segment.get('end', 0)) for segment in segments] or [0])
+            with open(final_file, 'wb') as mxf_file:
+                mxf_file.write(mxf.write_stl(stl, language=export_options.language_tag(stl_language), reference=reference,
+                                             duration=int(math.ceil(last * (stl_fps if stl_fps == 25 else 30000 / 1001)))))
+
+        elif subtitle_format == 'EDL':
+            # A CMX 3600 EDL: frames at the export's rate (the video's, else
+            # 25), drop-frame at 29.97 and 59.94 unless asked otherwise,
+            # from the timeline start asked, the subtitles as events,
+            # locators or markers.
+            edl.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or edl.DEFAULT_FPS),
+                     drop=options.get('timecode') != 'non-drop',
+                     start=options.get('timeline_start') if options.get('timeline_start') in avid_subcap.STARTS
+                     else avid_subcap.STARTS[0],
+                     style=options.get('edl_style') if options.get('edl_style') in edl.STYLES else 'events',
+                     title=(SUBTITLE.get('metadata') or {}).get('title')
+                     or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'EDIUS':
+            # EDIUS's marker list: the XML of version 4 for a .xml, else the
+            # CSV in the version it was opened in (3 for a new one); frames
+            # at the export's rate, or milliseconds as the file had them.
+            version = 4 if final_file.lower().endswith('.xml') else (
+                options.get('marker_version') if options.get('marker_version') in (2, 3) else 3)
+            markers.save(final_file, segments, kind='edius', fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                         version=version, units='ms' if options.get('marker_units') == 'ms' else 'frames')
+
+        elif subtitle_format == 'PREMIERE':
+            # Premiere's marker CSV: frames at the export's rate, drop-frame
+            # where asked at 29.97 and 59.94.
+            markers.save(final_file, segments, kind='premiere', fps=float(options.get('fps') or VIDEO.get('framerate') or 25),
+                         drop=options.get('timecode') == 'drop')
+
+        elif subtitle_format == 'DETX':
+            # A Cappella DetX: a line each subtitle, a role each speaker in
+            # the speaker's colour, the header, loops and shots of the file
+            # opened, frames at its rate (the export's, the video's, else 25).
+            detx.save(final_file, segments, fps=float(options.get('fps') or VIDEO.get('framerate') or detx.DEFAULT_FPS),
+                      metadata=(SUBTITLE.get('metadata') or {}).get('detx'), speakers=SPEAKERS,
+                      title=(SUBTITLE.get('metadata') or {}).get('title')
+                      or os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
         elif subtitle_format == 'TTXT':
             # An MP4 text track's samples, the stream the video's size.
             ttxt.save(final_file, segments, width=VIDEO.get('width'), height=VIDEO.get('height'))
+
+        elif subtitle_format in ('TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT'):
+            # Transcripts: plain text; the speakers as the format keeps
+            # them (tiers, participants) when the export asks for them, the
+            # video as the media they are linked to.
+            by_speaker = options.get('speakers') == 'voice'
+            media = VIDEO.get('filepath') or ''
+            stem = os.path.splitext(os.path.basename(media or final_file))[0]
+            if subtitle_format == 'TEXTGRID':
+                transcripts.save_textgrid(final_file, segments, by_speaker)
+            elif subtitle_format == 'CHAT':
+                transcripts.save_chat(final_file, segments, language, by_speaker, stem if media else None,
+                                      video=bool(VIDEO.get('width')))
+            elif subtitle_format == 'EAF':
+                annotation.save_eaf(final_file, segments, language, by_speaker, media or None)
+            elif subtitle_format == 'TRS':
+                annotation.save_trs(final_file, segments, language, by_speaker, media or None)
+            else:
+                annotation.save_exb(final_file, segments, by_speaker, media or None, stem)
+
+        elif subtitle_format == 'CTM':
+            # A word a line: the recording the video's name.
+            transcripts.save_ctm(final_file, segments, os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
+
+        elif subtitle_format == 'AUDACITY':
+            audacity.save(final_file, segments)
+
+        elif subtitle_format == 'AENEAS':
+            aeneas.save(final_file, segments, language)
+
+        elif subtitle_format == 'TMX':
+            # The original and every translation, side by side: the text
+            # option does not apply.
+            from subtitld import __version__
+            tmx.save(final_file, export_options.prepare(SUBTITLE['segments'], dict(options, text='original')),
+                     language, __version__)
 
         elif subtitle_format == 'CAVENA890':
             # In the character table of the text's language; frames at the
@@ -2049,10 +2740,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
 
         elif subtitle_format == 'LRC':
             # Lyrics, with the ID tags the file opened had, in the export's
-            # encoding and line ends.
+            # encoding and line ends, its moments as it had them; the
+            # speakers as Walaoke's parts when the export asks for their way.
             lrc.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
                      encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
-                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+                     line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'),
+                     walaoke=options.get('speakers') == 'voice',
+                     dialect=options.get('lrc_times') if options.get('lrc_times') in lrc.DIALECTS else 'hundredths')
 
         elif subtitle_format == 'ULTRASTAR':
             # A song: the headers it was opened with (its BPM and GAP, so no
@@ -2064,10 +2758,25 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             ultrastar.save(final_file, segments, metadata=metadata, headers=metadata.get('ultrastar'),
                            audio=video_name)
 
-        elif subtitle_format == 'KAR':
+        elif subtitle_format == 'KBP':
+            # A Karaoke Builder Studio project: the template it was opened
+            # with, else kbputils' default, the video as its song.
+            kbp.save(final_file, segments, metadata=SUBTITLE.get('metadata'),
+                     audio=os.path.basename(VIDEO.get('filepath') or ''))
+
+        elif subtitle_format == 'KATE':
+            # Ogg Kate, alone in its file: the category it was opened with
+            # (subtitles, SUB, without one), the canvas the video's size.
+            kate.save(final_file, segments,
+                      language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                      else language, category=options.get('kate_category') or 'SUB',
+                      width=int(VIDEO.get('width') or 0), height=int(VIDEO.get('height') or 0))
+
+        elif subtitle_format in ('KAR', 'MIDI'):
             # The words of a karaoke song, with the music of the MIDI file it
             # was opened from when that is still there; else words alone, the
-            # video's name as the title when it has none.
+            # video's name as the title when it has none. MIDI: as lyric
+            # events, not KAR's text events.
             source = None
             if options.get('kar_source') and os.path.isfile(options['kar_source']):
                 with open(options['kar_source'], 'rb') as source_file:
@@ -2076,7 +2785,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     source = None
             metadata = dict(SUBTITLE.get('metadata') or {})
             metadata.setdefault('title', os.path.splitext(os.path.basename(VIDEO.get('filepath') or final_file))[0])
-            kar.save(final_file, segments, metadata=metadata, source=source)
+            kar.save(final_file, segments, metadata=metadata, source=source, lyrics=subtitle_format == 'MIDI')
 
         elif subtitle_format in legacy.SESSION_FORMATS:
             # The player era. The ones counted in frames (AQTitle, Spruce)
@@ -2086,6 +2795,32 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                         fps=float(options.get('fps') or VIDEO.get('framerate') or legacy.DEFAULT_FPS),
                         encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
                         line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
+
+        elif subtitle_format == 'ISMT':
+            # Smooth Streaming's text track: TTML in PIFF fragments, in the
+            # language of the text written, for as long as the video lasts.
+            isobmff_text.save_ismt(
+                final_file, segments, duration=float(options.get('segment_duration') or isobmff_text.SEGMENT_DURATION),
+                language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                else language,
+                voices=options.get('speakers') == 'voice', metadata=SUBTITLE.get('metadata'),
+                total=float(VIDEO.get('duration') or 0) if VIDEO.get('filepath') else 0.0)
+
+        elif subtitle_format == 'XMLDIALECT':
+            # One of the smaller XML dialects, the one asked for (Flash's
+            # by default); frames at the export's rate, the video's, else 25.
+            xml_dialects.save(final_file, segments,
+                              options.get('xml_dialect') if options.get('xml_dialect') in xml_dialects.WRITABLE else 'flash',
+                              fps=float(options.get('fps') or VIDEO.get('framerate') or xml_dialects.DEFAULT_FPS))
+
+        elif subtitle_format == 'JSONDIALECT':
+            # One of the platforms' JSON shapes, the one asked for (Wistia's
+            # by default), in the language of the text written.
+            json_dialects.save(final_file, segments,
+                               options.get('json_dialect') if options.get('json_dialect') in json_dialects.WRITABLE else 'wistia',
+                               language=options.get('language') if options.get('text') == 'translation' and options.get('language')
+                               else language,
+                               fps=float(options.get('fps') or VIDEO.get('framerate') or json_dialects.DEFAULT_FPS))
 
         elif subtitle_format in ['XML']:
             # YouTube's timed text, srv3: pens for the formatting, window
@@ -2620,11 +3355,15 @@ def picture_frame(subtitle_format, options=None, video=None):
         return width or 1920, height or 1080
     if subtitle_format == 'PGS':
         return width or 1920, height or 1080
-    if subtitle_format == 'VOBSUB':
+    if subtitle_format in ('VOBSUB', 'DVDSUP'):
         return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
     if subtitle_format == 'BDN':
         return width or bdn.DEFAULT_SIZE[0], height or bdn.DEFAULT_SIZE[1]
-    if subtitle_format == 'DCP' and options.get('dcp_content') == 'pictures':
+    if subtitle_format in picture_indexes.DVD_FORMATS:
+        return vobsub.frame_size(options.get('vobsub_size'), width, height, video.get('framerate'))
+    if subtitle_format in picture_indexes.FORMATS:
+        return width or picture_indexes.DEFAULT_SIZE[0], height or picture_indexes.DEFAULT_SIZE[1]
+    if subtitle_format in ('DCP', 'DCPMXF') and options.get('dcp_content') == 'pictures':
         return width or 1920, height or 1080
     return None
 

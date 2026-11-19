@@ -24,7 +24,8 @@ from subtitld import __version__
 list_of_supported_extensions = []
 list_of_supported_subtitle_extensions = []
 list_of_supported_video_extensions = []
-for extensions in (session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, session.LIST_OF_PICTURE_SUBTITLE_EXTENSIONS):
+for extensions in (session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, session.LIST_OF_PICTURE_SUBTITLE_EXTENSIONS,
+                   session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS):
     for exttype in extensions:
         for ext in extensions[exttype]['extensions']:
             list_of_supported_extensions.append(ext)

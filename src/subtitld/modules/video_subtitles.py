@@ -7,12 +7,18 @@ opens a video (file_io.process_video_file), so listing them runs nothing.
 Each has its stream index, codec, language, title, whether it is the
 default or a forced one, and its kind:
 
-- 'text': subtitles FFmpeg decodes as text, which Subtitld can read;
+- 'text': subtitles FFmpeg decodes as text, which Subtitld can read, and
+  a Blu-ray's TextST, which Subtitld decodes itself (textst);
 - 'pictures': subtitles drawn as pictures (Blu-ray's PGS, DVD's VobSub,
   DVB's, DivX's XSUB), which only OCR would make text. A DVB subtitle
   stream may carry a service for each language (a composition page each),
   so `with_dvb_pages` makes a track of each, from the stream's subtitling
-  descriptor in the file's PMT;
+  descriptor in the file's PMT. SCTE 27's bitmaps (stream_type 0x82),
+  which FFmpeg lists as a stream it does not know, are pictures too
+  (codec 'scte_27'), which the scte27 module reads;
+- 'text' too: Japan's and Brazil's ISDB captions (ARIB STD-B24,
+  FFmpeg's arib_caption), which FFmpeg here has no decoder for: the
+  aribb24 module reads them (`read_arib`);
 - 'captions': closed captions in a track of their own (QuickTime's
   CEA-608), which the closed_captions module reads;
 - 'teletext': a DVB teletext stream, whose subtitle pages the teletext
@@ -37,10 +43,16 @@ import subprocess
 import tempfile
 
 TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'microdvd', 'subviewer',
-                         'subviewer1', 'mpl2', 'pjs', 'realtext', 'sami', 'stl', 'jacosub', 'vplayer'})
-PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'})
+                         'subviewer1', 'mpl2', 'pjs', 'realtext', 'sami', 'stl', 'jacosub', 'vplayer',
+                         'hdmv_text_subtitle'})
+# Text tracks FFmpeg has no decoder for, which Subtitld decodes itself:
+# a Blu-ray's TextST (textst).
+TEXTST_CODECS = frozenset({'hdmv_text_subtitle'})
+PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub', 'scte_27'})
 CAPTION_CODECS = frozenset({'eia_608'})
 TELETEXT_CODECS = frozenset({'dvb_teletext'})
+# Text Subtitld decodes itself rather than FFmpeg (modules.aribb24).
+ARIB_CODECS = frozenset({'arib_caption'})
 
 
 def tracks(metadata, language_of=None):
@@ -51,10 +63,12 @@ def tracks(metadata, language_of=None):
     Subtitld's code for it, `language_of(tag)`, or ''."""
     found = []
     for stream in metadata.get('streams', []):
-        if stream.get('codec_type') != 'subtitle':
+        # SCTE 27's stream type, which FFmpeg does not know.
+        scte27 = stream.get('codec_type') in (None, 'unknown', 'data') and str(stream.get('codec_tag')) == '0x0082'
+        if stream.get('codec_type') != 'subtitle' and not scte27:
             continue
-        codec = str(stream.get('codec_name') or '')
-        kind = 'text' if codec in TEXT_CODECS else 'pictures' if codec in PICTURE_CODECS else \
+        codec = 'scte_27' if scte27 else str(stream.get('codec_name') or '')
+        kind = 'text' if codec in TEXT_CODECS | ARIB_CODECS else 'pictures' if codec in PICTURE_CODECS else \
             'captions' if codec in CAPTION_CODECS else 'teletext' if codec in TELETEXT_CODECS else None
         if kind is None:
             continue
@@ -65,6 +79,11 @@ def tracks(metadata, language_of=None):
         if kind == 'teletext' or codec == 'dvb_subtitle':
             # A stream of several pages names all their languages ("eng,ger").
             tag = tag.split(',')[0].strip()
+        divx = re.fullmatch(r'Subtitle - ([a-z]{2,3})-xx;\d+', str(tags.get('title') or '').strip())
+        if codec == 'xsub' and not tag and divx:
+            # An AVI keeps an XSUB stream's language in its name, as DivX
+            # writes it and FFmpeg's AVI muxer does: "Subtitle - pt-xx;02".
+            tag = divx.group(1)
         found.append({
             'index': int(stream.get('index', 0)),
             'codec': codec,
@@ -75,7 +94,7 @@ def tracks(metadata, language_of=None):
             'default': bool(disposition.get('default')),
             'forced': bool(disposition.get('forced')),
         })
-        if kind == 'teletext' or codec == 'dvb_subtitle':
+        if kind == 'teletext' or codec in ('dvb_subtitle', 'arib_caption', 'scte_27'):
             # Its PID, in a transport stream ("0x102"), to find it there.
             try:
                 found[-1]['pid'] = int(str(stream.get('id') or ''), 0)
@@ -195,6 +214,39 @@ def read_teletext(path, index, page=None, pid=None, ffprobe='ffprobe', startupin
     return teletext.decode(packets, page, origin=round(offset * 90000))
 
 
+def read_arib(path, index, pid=None, ffprobe='ffprobe', startupinfo=None, progress=None, stopped=None,
+              started=None):
+    """The subtitles of the ARIB caption stream at `index` of the video at
+    `path` (its first language), timed as FFmpeg counts from the video's
+    start. A transport stream is read as it is (aribb24.read, the stream
+    `pid`); another container's stream packet by packet through ffprobe."""
+    from subtitld.modules import aribb24, teletext
+    if teletext.is_transport_stream(path):
+        return aribb24.read(path, pid=pid, progress=progress, stopped=stopped)[0]
+    import json
+    command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_packets', '-show_format',
+               '-show_data', '-of', 'json', str(path)]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               startupinfo=startupinfo)
+    if started:
+        started(process)
+    out, errors = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
+    probe = json.loads(out.decode('utf-8', 'replace') or '{}')
+    try:
+        offset = float((probe.get('format') or {}).get('start_time') or 0)
+    except ValueError:
+        offset = 0.0
+    packets = []
+    for packet in probe.get('packets') or []:
+        try:
+            packets.append((round(float(packet.get('pts_time')) * 90000), _hexdump(packet.get('data'))))
+        except (TypeError, ValueError):
+            continue
+    return aribb24.decode(packets, origin=round(offset * 90000))[0]
+
+
 def output_of(codec):
     """(extension, FFmpeg encoder) a text track of `codec` is written with;
     'copy' when the track is already in that file's format."""
@@ -206,13 +258,17 @@ def output_of(codec):
 
 
 def extract(path, index, codec, ffmpeg='ffmpeg', folder=None, duration=0.0, startupinfo=None, progress=None,
-            started=None):
+            started=None, ffprobe='ffprobe'):
     """Write the text track at stream `index` of the video at `path`, of
     `codec`, to a new file in `folder` (the system's temporary folder by
     default) and return its path; the caller removes it. `progress(share)`
     hears how far FFmpeg has got through the `duration` seconds, from 0 to
     1; `started(process)` gets the FFmpeg process, to stop it. Raises
-    RuntimeError, the file removed, when FFmpeg fails or is stopped."""
+    RuntimeError, the file removed, when FFmpeg fails or is stopped. A
+    TextST track is read through `ffprobe` packet by packet and written
+    as SRT."""
+    if codec in TEXTST_CODECS:
+        return _extract_textst(path, index, ffprobe, folder, startupinfo, started)
     extension, encoder = output_of(codec)
     handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix=extension, dir=folder)
     os.close(handle)
@@ -247,6 +303,32 @@ def extract(path, index, codec, ffmpeg='ffmpeg', folder=None, duration=0.0, star
     return target
 
 
+def _extract_textst(path, index, ffprobe, folder, startupinfo, started):
+    """A TextST track's subtitles (textst.decode), as an SRT in `folder`."""
+    import json
+    from subtitld.modules import srt, textst
+    command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_packets', '-show_format',
+               '-show_data', '-of', 'json', str(path)]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               startupinfo=startupinfo)
+    if started:
+        started(process)
+    out, errors = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
+    probe = json.loads(out.decode('utf-8', 'replace') or '{}')
+    try:
+        offset = float((probe.get('format') or {}).get('start_time') or 0)
+    except ValueError:
+        offset = 0.0
+    segments = textst.decode([_hexdump(packet.get('data')) for packet in probe.get('packets') or []],
+                             origin=round(offset * 90000))
+    handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix='.srt', dir=folder)
+    os.close(handle)
+    srt.save(target, segments)
+    return target
+
+
 _BARE_SIZE = re.compile(r'<font\s+size="?\d+"?\s*>', re.IGNORECASE)
 
 
@@ -268,7 +350,7 @@ def _without_sizes(path):
 
 
 # Picture tracks Subtitld can read through an OCR add-on (picture_ocr).
-READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle'})
+READABLE_PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub', 'scte_27'})
 
 
 def _hexdump(text):
@@ -283,17 +365,22 @@ def _hexdump(text):
 
 def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', folder=None, startupinfo=None,
                      started=None, pid=None, page=None):
-    """The pictures of the picture track at stream `index` (PGS, VobSub or
-    DVB) of the video at `path`, timed as FFmpeg counts from the video's
-    start: [picture_subtitles.Picture]. A PGS track is written out by
-    FFmpeg as a .sup; a VobSub track is read packet by packet through
+    """The pictures of the picture track at stream `index` (PGS, VobSub,
+    DVB or XSUB) of the video at `path`, timed as FFmpeg counts from the
+    video's start: [picture_subtitles.Picture]. A PGS track is written out
+    by FFmpeg as a .sup; a VobSub track is read packet by packet through
     ffprobe, with the palette and frame size its extradata (an .idx header)
-    gives. A DVB track of a transport stream is read as it is (dvbsub.read:
+    gives; an XSUB track packet by packet too, each packet its own times
+    and colours (xsub). A DVB track of a transport stream is read as it is (dvbsub.read:
     the stream `pid`, its composition page `page`); in another container,
     packet by packet through ffprobe, the pages its extradata names."""
     from subtitld.modules import dvbsub, pgs, teletext, vobsub
     if codec == 'dvb_subtitle' and teletext.is_transport_stream(path):
         return dvbsub.read(path, pid=pid, page=page)[0]
+    if codec == 'scte_27':
+        # Sections only a transport stream carries: read as it is.
+        from subtitld.modules import scte27
+        return scte27.read(path, pid=pid)[0]
     if codec == 'hdmv_pgs_subtitle':
         handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix='.sup', dir=folder)
         os.close(handle)
@@ -310,7 +397,7 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
             return pgs.read(target)
         finally:
             os.remove(target)
-    if codec in ('dvd_subtitle', 'dvb_subtitle'):
+    if codec in ('dvd_subtitle', 'dvb_subtitle', 'xsub'):
         import json
         command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_streams',
                    '-show_packets', '-show_format', '-show_data', '-of', 'json', str(path)]
@@ -323,6 +410,16 @@ def extract_pictures(path, index, codec, ffmpeg='ffmpeg', ffprobe='ffprobe', fol
             raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
         probe = json.loads(out.decode('utf-8', 'replace') or '{}')
         stream = (probe.get('streams') or [{}])[0]
+        if codec == 'xsub':
+            from subtitld.modules import xsub
+            try:
+                offset = float((probe.get('format') or {}).get('start_time') or 0)
+            except ValueError:
+                offset = 0.0
+            screen = (int(stream.get('width') or 0), int(stream.get('height') or 0))
+            return xsub.pictures([_hexdump(packet.get('data')) for packet in probe.get('packets') or []],
+                                 has_alpha=str(stream.get('codec_tag_string') or '').upper() == 'DXSA',
+                                 screen=screen if all(screen) else xsub.DEFAULT_SIZE, offset=offset)
         if codec == 'dvb_subtitle':
             # The extradata: the composition and ancillary pages.
             extradata = _hexdump(stream.get('extradata'))

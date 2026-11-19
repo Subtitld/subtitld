@@ -110,6 +110,15 @@ a service that checks what it is given accepts it (PROFILES):
                 ttm:copyright in <head>, and the GSI fields EBU Tech 3360
                 carries over from an STL file (metadata['stl'], by their STL
                 names) as Part M's ebuttm elements
+    'arib-ttml' ARIB-TTML (ARIB STD-B62 Volume 1 Part 3, chapter 3), the
+                closed captions of Japan's 4K and 8K broadcasts: TTML 1 and
+                SMPTE-TT (its 2013 namespace) declared in ttp:profile by
+                ARIB's designator, in UTF-8; a ruby as ARIB writes one,
+                the reading a span with arib-tt:ruby naming the xml:id of
+                the span it reads (read back into Subtitld's ruby); the
+                rest of the arib-tt vocabulary (font-face, keyframes,
+                audio, animation, border, letter-spacing, marquee,
+                text-shadow) is checked but neither read nor written
     'dapt'      DAPT, W3C's Dubbing and Audio description Profiles of TTML2
                 (a Candidate Recommendation), declared in
                 ttp:contentProfiles: a script, not subtitles to show. Each
@@ -170,9 +179,9 @@ _TTML2_ANNOTATIONS = ('textEmphasis', 'rubyAlign', 'rubyPosition', 'rubyReserve'
 # IMSC 1.1's minimal sets (#textEmphasis-minimal, #rubyAlign-minimal), or
 # all of it in TTML itself.
 _ANNOTATIONS = {'ttml1': 'full', 'imsc1.1': 'minimal', 'imsc1': 'none', 'ebu-tt-d': 'none', 'smpte-tt': 'none',
-                'ebu-tt': 'flat', 'dapt': 'full'}
+                'ebu-tt': 'flat', 'dapt': 'full', 'arib-ttml': 'arib'}
 # The profiles built on TTML 1, which has none of TTML2's styling.
-_TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt')
+_TTML1_PROFILES = ('imsc1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'arib-ttml')
 # The EBU's two, which leave out what EBU-TT does not use: an outline, a
 # region's opacity, tts:display.
 _EBU_PROFILES = ('ebu-tt-d', 'ebu-tt')
@@ -199,7 +208,7 @@ _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
 
-PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'dapt')
+PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'arib-ttml', 'dapt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
 IMAGE_PROFILES = ('imsc1-image', 'imsc1.1-image')
 
@@ -222,6 +231,18 @@ _SMPTE_NS = 'http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt'
 _SMPTE_NAMESPACES = (_SMPTE_NS, 'http://www.smpte-ra.org/schemas/2052-1/2013/smpte-tt')
 _SMPTE_PROFILE = 'http://www.smpte-ra.org/schemas/2052-1/2010/profiles/smpte-tt-full'
 _SMPTE_PROFILES = (_SMPTE_PROFILE, 'http://www.smpte-ra.org/schemas/2052-1/2013/profiles/smpte-tt-full')
+# ARIB-TTML (ARIB STD-B62 Volume 1 Part 3, 3.2 and 3.3.1): its own
+# namespace, the profile's designator and the SMPTE-TT namespace it names,
+# the 2013 edition's.
+ARIB_NS = 'http://www.arib.or.jp/ns/arib-tt'
+ARIB_PROFILE = 'http://www.arib.or.jp/ns/profiles/arib-ttml-full/v1_0'
+_SMPTE_2013_NS = 'http://www.smpte-ra.org/schemas/2052-1/2013/smpte-tt'
+# Its extensions (3.3.2 and 3.3.3): the elements, which go in <styling>
+# (font-face, keyframes) or the document (audio), and the attributes.
+_ARIB_ELEMENTS = ('font-face', 'src', 'keyframes', 'keyframe', 'audio')
+_ARIB_ATTRIBUTES = ('animation', 'border', 'border-top', 'border-bottom', 'border-left', 'border-right',
+                    'letter-spacing', 'marquee', 'ruby', 'text-shadow')
+_ARIB_BORDER_STYLES = ('none', 'hidden', 'solid', 'double', 'groove', 'ridge', 'inset', 'outset', 'dashed', 'dotted')
 _M608_NS = _SMPTE_NS + '#cea608'
 _CEA608_DATA = _SMPTE_NS + '#cea608'
 # CEA-608's pairs come at NTSC's rate, whatever the document's (RP 2052-10).
@@ -1133,6 +1154,39 @@ def _runs(element, styles, props, preserve, out, agent):
         text(child.tail)
 
 
+def _arib_rubies(root):
+    """ARIB-TTML's rubies made TTML2's, in place: a span with
+    arib-tt:ruby is the reading of the span whose xml:id it names (ARIB
+    STD-B62 3.3.3.5), so the two go into a container, the base first, as
+    a ruby is read everywhere else. A reading whose base is not a span
+    beside it under the same parent stays the text it is."""
+    key = '{' + ARIB_NS + '}ruby'
+    readings = [element for element in root.iter() if element.get(key) is not None]
+    if not readings:
+        return
+    parents = {child: parent for parent in root.iter() for child in parent}
+    named = {_xml_id(element): element for element in root.iter() if _xml_id(element)}
+    tts = '{' + _TTS_NS + '}ruby'
+    for reading in readings:
+        base = named.get(reading.attrib.pop(key).strip())
+        parent = parents.get(reading)
+        if base is None or base is reading or parents.get(base) is not parent or _local(base.tag) != 'span':
+            continue
+        children = list(parent)
+        first, second = sorted((children.index(base), children.index(reading)))
+        between = children[first].tail or ''
+        after = children[second].tail or ''
+        for element in (base, reading):
+            parent.remove(element)
+            element.tail = None
+        base.set(tts, 'base')
+        reading.set(tts, 'text')
+        container = ET.Element(base.tag, {tts: 'container'})
+        container.extend([base, reading])
+        container.tail = (between if between.strip() else '') + after
+        parent.insert(first, container)
+
+
 def _embedded_images(root):
     """{xml:id: PNG bytes} for the pictures a SMPTE-TT file holds itself,
     as smpte:image elements in Base64."""
@@ -1814,6 +1868,7 @@ def _document(text, images=None, folder=None):
     root = ET.fromstring(text)
     if _local(root.tag) != 'tt':
         raise ValueError(f'Not a TTML document: it is <{_local(root.tag)}>, not <tt>')
+    _arib_rubies(root)
     clock = _Clock(root)
     frame = _Frame(root)
     styles = _Styles(root)
@@ -2102,9 +2157,117 @@ def read_images(path):
     return images['pictures'], language, images['size']
 
 
-def check(text, profile='imsc1.1'):
+# Services whose delivery rules `check` knows, on top of a profile's.
+DELIVERIES = {'netflix': 'Netflix'}
+# Netflix's IMSC 1.1 Text Profile: right-to-left languages may say a
+# direction; others may not.
+_RIGHT_TO_LEFT_LANGUAGES = ('ar', 'he', 'iw', 'fa', 'ur', 'yi', 'ps', 'dv', 'sd', 'ug', 'ckb')
+_NCNAME_ID = re.compile(r'^[A-Za-z_][\w.-]*$')
+
+
+def _netflix_problems(root, profile):
+    """What Netflix would reject, by the rules its Partner Help Center
+    publishes and nothing else:
+
+    - Timed Text Style Guide: General Requirements (article 215758617):
+      5/6 of a second to 7 seconds a subtitle (1), two lines at most (4),
+      centred (5; Japanese may be vertical), lengths in percent and never
+      pixels, tts:fontSize 100% (13; also "What does a properly formatted
+      TTML file look like?", 360000456768);
+    - Additional TTML Schema Inspections (115001869828): xml:lang written
+      with a hyphen (pt-BR, not pt_BR), xml:id and not the old id, an
+      xml:id that starts with a letter and is not used twice;
+    - Netflix IMSC 1.1 Text Profile (360053755033), for 'imsc1.1': IMSC
+      1.1 is taken for Japanese only, its font sizes are 50%, 100%, 150%
+      and 200%, and the features it marks "Prohibited": animation and
+      <set>, timed regions, timeContainer, zIndex, activeArea, altText,
+      aspectRatio, forcedDisplay, progressivelyDecodable, a direction
+      outside right-to-left languages, and ruby, shear, textCombine,
+      textEmphasis and vertical writing outside Japanese. What it says
+      "should not be used" is accepted, and is not listed.
+    """
+    problems = []
+    language = (root.get(_XML_NS + 'lang') or '').strip()
+    primary = language.replace('_', '-').split('-')[0].lower()
+    japanese = primary == 'ja'
+    if '_' in language:
+        problems.append(f'Netflix: xml:lang="{language}" is not a language tag: it is written with a hyphen '
+                        f'({language.replace("_", "-")})')
+    plain_ids = sorted({element.get('id') for element in root.iter() if element.get('id') is not None})
+    if plain_ids:
+        problems.append(f'Netflix: id="..." where TTML has xml:id ({", ".join(plain_ids[:5])})')
+    ids = [element.get(_XML_NS + 'id') for element in root.iter() if element.get(_XML_NS + 'id') is not None]
+    twice = sorted({value for value in ids if ids.count(value) > 1})
+    if twice:
+        problems.append(f'Netflix: xml:id used more than once: {", ".join(twice[:5])}')
+    malformed = sorted({value for value in ids if not _NCNAME_ID.match(value)})
+    if malformed:
+        problems.append(f'Netflix: xml:id that does not start with a letter: {", ".join(malformed[:5])}')
+    pixels = sorted({f'{_local(key)}="{value}"' for element in root.iter() for key, value in element.attrib.items()
+                     if any(length and length.group(2) == 'px'
+                            for length in (_LENGTH.match(part) for part in str(value).split()))})
+    if pixels:
+        problems.append(f'Netflix: lengths in pixels ({", ".join(pixels[:3])}): only percentages are taken')
+    sizes = sorted({value.strip() for element in root.iter() for value in [_attr(element, 'fontSize')]
+                    if value is not None and value.strip() != '100%'})
+    if profile == 'imsc1.1':
+        sizes = [value for value in sizes if value not in ('50%', '150%', '200%')]
+        if sizes:
+            problems.append(f'Netflix: tts:fontSize {", ".join(sizes)}: its IMSC 1.1 profile takes 50%, 100%, '
+                            '150% and 200%')
+    elif sizes:
+        problems.append(f'Netflix: tts:fontSize {", ".join(sizes)}: it is to be 100%')
+    vertical = any((_attr(element, 'writingMode') or '').startswith('tb') for element in root.iter())
+    aligned = sorted({value for element in root.iter() for value in [_attr(element, 'textAlign')]
+                      if value and value != 'center'})
+    if aligned and not (japanese and vertical):
+        problems.append(f'Netflix: tts:textAlign {", ".join(aligned)}: subtitles are to be centred')
+    try:
+        segments = _document(ET.tostring(root, encoding='unicode'))[0]
+    except (ValueError, ET.ParseError):
+        segments = []
+    short = sum(1 for segment in segments if segment['end'] - segment['start'] < 5 / 6 - 0.0005)
+    long = sum(1 for segment in segments if segment['end'] - segment['start'] > 7 + 0.0005)
+    if short:
+        problems.append(f'Netflix: {short} subtitle(s) last less than 5/6 of a second')
+    if long:
+        problems.append(f'Netflix: {long} subtitle(s) last more than 7 seconds')
+    from subtitld.modules import markup
+    crowded = sum(1 for segment in segments
+                  if len([line for line in markup.plain(markup.split_lead(segment['text'])[1]).split('\n')
+                          if line.strip()]) > 2)
+    if crowded:
+        problems.append(f'Netflix: {crowded} subtitle(s) of more than two lines')
+    if profile != 'imsc1.1':
+        return problems
+    if not japanese:
+        problems.append('Netflix: IMSC 1.1 is taken for Japanese only')
+    prohibited = []
+    if any(_local(element.tag) in ('set', 'animate') for element in root.iter()):
+        prohibited.append('animation (<set>)')
+    if any(_local(element.tag) == 'region' and (element.get('begin') or element.get('end') or element.get('dur'))
+           for element in root.iter()):
+        prohibited.append('timed regions')
+    for name in ('timeContainer', 'zIndex', 'activeArea', 'altText', 'aspectRatio', 'forcedDisplay',
+                 'progressivelyDecodable'):
+        if any(_attr(element, name) is not None or _local(element.tag) == name for element in root.iter()):
+            prohibited.append(name)
+    if primary not in _RIGHT_TO_LEFT_LANGUAGES and any(_attr(element, 'direction') for element in root.iter()):
+        prohibited.append('tts:direction outside a right-to-left language')
+    if not japanese:
+        prohibited += [f'tts:{name} outside Japanese' for name in ('ruby', 'shear', 'textCombine', 'textEmphasis')
+                       if any(_attr(element, name) is not None for element in root.iter())]
+        if vertical:
+            prohibited.append('vertical writing outside Japanese')
+    if prohibited:
+        problems.append(f'Netflix: its IMSC 1.1 profile prohibits {", ".join(prohibited)}')
+    return problems
+
+
+def check(text, profile='imsc1.1', delivery=None):
     """What breaks `profile`'s rules in TTML text: ["what is wrong", ...],
-    empty when this finds nothing.
+    empty when this finds nothing. With `delivery` (a key of DELIVERIES),
+    what that service's published delivery rules reject too.
 
     A useful set of checks, not a conformance certificate: it holds the
     rules that are written down plainly and that a file Subtitld wrote or
@@ -2152,6 +2315,8 @@ def check(text, profile='imsc1.1'):
         problems += _ebu_tt_problems(root, standards)
     if profile == 'dapt':
         problems += _dapt_problems(root, declared_profile, content_profiles)
+    if profile == 'arib-ttml':
+        problems += _arib_problems(root, declared_profile, text)
 
     cells = (_attr(root, 'cellResolution') or '').split()
     if cells:
@@ -2203,8 +2368,10 @@ def check(text, profile='imsc1.1'):
     # picture is, without which the length cannot be resolved at all — this
     # module drops such a length, so the file loses what it said.
     if profile != 'ttml1':
+        # ARIB-TTML's own attributes are in pixels by definition (ARIB
+        # STD-B62 3.3.3), whatever the picture.
         pixels = any(length and length.group(2) == 'px'
-                     for element in root.iter() for value in element.attrib.values()
+                     for element in root.iter() for key, value in element.attrib.items() if _namespace(key) != ARIB_NS
                      for length in (_LENGTH.match(part) for part in str(value).split()))
         if pixels and not (_attr(root, 'extent') or '').strip():
             problems.append('Lengths in px, but <tt> has no tts:extent: a file that measures in pixels '
@@ -2263,11 +2430,71 @@ def check(text, profile='imsc1.1'):
                       if element.get('region') and element.get('region') not in regions})
     if missing:
         problems.append(f'Subtitles name regions the file does not have: {", ".join(missing)}')
+    if delivery == 'netflix':
+        problems += _netflix_problems(root, profile)
     return problems
 
 
 def _namespace(name):
     return name[1:].split('}', 1)[0] if isinstance(name, str) and name.startswith('{') else ''
+
+
+def _arib_problems(root, declared_profile, text):
+    """What breaks ARIB-TTML (ARIB STD-B62 Volume 1 Part 3, chapter 3) in a
+    document: the profile it declares, the control codes it may hold
+    (3.1.2), the namespaces of 3.2, where its elements go, a ruby naming
+    an element the file has (3.3.3.5) and the words its attributes take
+    (3.3.3.2, 3.3.3.4, 3.3.3.6)."""
+    problems = []
+    if declared_profile != ARIB_PROFILE:
+        problems.append(f'ttp:profile does not name ARIB-TTML\'s profile ({ARIB_PROFILE})')
+    # XML 1.0 holds no other C0 code; the C1 codes and DEL it does.
+    controls = sorted({f'U+{ord(char):04X}' for char in text
+                       if (ord(char) < 0x20 and char not in '\t\n\r') or 0x7F <= ord(char) <= 0x9F})
+    if controls:
+        problems.append(f'Control codes {", ".join(controls)}: an ARIB-TTML document holds TAB, LF and CR only')
+    stray = sorted({_namespace(name) for element in root.iter() for name in [element.tag, *element.attrib]
+                    if 'smpte-ra.org' in _namespace(name) and _namespace(name) != _SMPTE_2013_NS})
+    if stray:
+        problems.append(f'SMPTE vocabulary in {", ".join(stray)}: ARIB-TTML names SMPTE-TT\'s 2013 namespace '
+                        f'({_SMPTE_2013_NS})')
+    parents = {child: parent for parent in root.iter() for child in parent}
+    for element in root.iter():
+        if _namespace(element.tag) != ARIB_NS:
+            continue
+        name = _local(element.tag)
+        parent = parents.get(element)
+        if name not in _ARIB_ELEMENTS:
+            problems.append(f'arib-tt:{name}: not an element ARIB-TTML defines')
+        elif name in ('font-face', 'keyframes') and (parent is None or _local(parent.tag) != 'styling'):
+            problems.append(f'arib-tt:{name} outside <styling>, where ARIB-TTML puts it')
+    ids = {_xml_id(element) for element in root.iter() if _xml_id(element)}
+    for element in root.iter():
+        for key, value in element.attrib.items():
+            if _namespace(key) != ARIB_NS:
+                continue
+            name, value = _local(key), value.strip()
+            parts = value.split()
+            if name not in _ARIB_ATTRIBUTES:
+                problems.append(f'arib-tt:{name}: not an attribute ARIB-TTML defines')
+            elif name == 'ruby' and value not in ids:
+                problems.append(f'arib-tt:ruby="{value}" names no element of the file')
+            elif name.startswith('border') and (len(parts) != 3 or parts[0] not in _ARIB_BORDER_STYLES
+                                                or not _ARIB_PIXELS.match(parts[1])):
+                problems.append(f'arib-tt:{name}="{value}": a border is a style, a width in px and a colour')
+            elif name == 'letter-spacing' and not _ARIB_PIXELS.match(value):
+                problems.append(f'arib-tt:letter-spacing="{value}": a length in px')
+            elif name == 'text-shadow' and (len(parts) != 4 or not all(_ARIB_PIXELS.match(part) for part in parts[:3])):
+                problems.append(f'arib-tt:text-shadow="{value}": two offsets and a blur in px, then a colour')
+            elif name == 'marquee' and (len(parts) != 4 or parts[0] not in ('scroll', 'slide', 'alternate')
+                                        or parts[1] not in ('forward', 'reverse')
+                                        or parts[2] not in ('slow', 'normal', 'fast')
+                                        or not (parts[3] == 'infinite' or parts[3].isdigit())):
+                problems.append(f'arib-tt:marquee="{value}": a style, a direction, a speed and a count')
+    return problems
+
+
+_ARIB_PIXELS = re.compile(r'^-?\d+(?:\.\d+)?px$')
 
 
 def _smpte_problems(root, declared_profile):
@@ -2510,6 +2737,14 @@ def _open_span(tags, style, shear=False, annotations='full'):
     return f'<span {" ".join(attrs)}>'
 
 
+def _arib_ruby(base, reading, ruby_ids):
+    """A ruby as ARIB-TTML writes one (ARIB STD-B62 3.3.3.5): the base a
+    span with an xml:id, its reading a span after it naming that id in
+    arib-tt:ruby."""
+    name = f'ruby{next(ruby_ids)}'
+    return f'<span xml:id="{name}">{base}</span><span arib-tt:ruby="{name}">{reading}</span>'
+
+
 def _nested_content(runs, shear=False, annotations='full'):
     """Runs of one stretch as TTML: spans for their formatting, nested as
     the tags are, <br/> between lines."""
@@ -2533,7 +2768,7 @@ def _nested_content(runs, shear=False, annotations='full'):
     return ''.join(out)
 
 
-def _content(text, shear=False, annotations='full'):
+def _content(text, shear=False, annotations='full', ruby_ids=None):
     """A subtitle's text as TTML. A ruby is a container span holding the
     base and its text, which is how IMSC 1.1 writes one: how its reading is
     spread on the container, where it sits on the reading, which is where
@@ -2548,6 +2783,9 @@ def _content(text, shear=False, annotations='full'):
         reading = _nested_content(group[2], shear, annotations)
         if not (base and reading):
             out.append(base + reading)
+            continue
+        if annotations == 'arib':
+            out.append(_arib_ruby(base, reading, ruby_ids if ruby_ids is not None else iter(range(1, 1 << 30))))
             continue
         if annotations == 'flat':
             # A profile with no ruby at all: the reading after its base, in
@@ -2720,6 +2958,8 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, f
         namespaces.append(f'xmlns:ebutts="{_EBUTTS_NS}"')
     if profile == 'smpte-tt' and tunnel:
         namespaces += [f'xmlns:smpte="{_SMPTE_NS}"', f'xmlns:m608="{_M608_NS}"']
+    if profile == 'arib-ttml':
+        namespaces += [f'xmlns:smpte="{_SMPTE_2013_NS}"', f'xmlns:arib-tt="{ARIB_NS}"']
     attrs = ['ttp:timeBase="media"']
     if smpte:
         nominal, multiplier, drop = smpte[:3]
@@ -2740,6 +2980,8 @@ def _root_attributes(profile, language, imsc_styling=False, ebu_styling=False, f
     elif profile == 'smpte-tt':
         # SMPTE-TT names its profile the way TTML 1 does, in ttp:profile.
         attrs.append(f'ttp:profile="{_SMPTE_PROFILE}"')
+    elif profile == 'arib-ttml':
+        attrs.append(f'ttp:profile="{ARIB_PROFILE}"')
     if profile != 'ttml1':
         # What the percentages in this file are measured against. It is
         # TTML's default, but EBU-TT-D asks for it in writing and a file
@@ -2895,6 +3137,8 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     tunnel = bool(tunnel) and profile == 'smpte-tt'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     annotations = _ANNOTATIONS[profile]
+    # ARIB-TTML's rubies name their bases by xml:id, numbered through the file.
+    ruby_ids = iter(range(1, 1 << 30))
     cues = []
     places = {}
     speakers = {}
@@ -2955,7 +3199,7 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         looking = _look_attributes(styling, profile)
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
-        content = _content(rest, shear, annotations)
+        content = _content(rest, shear, annotations, ruby_ids)
         # A box the file brought stands in for the style's own, and goes on
         # a span: on the paragraph TTML paints a band the width of the
         # region instead of a box around the words.

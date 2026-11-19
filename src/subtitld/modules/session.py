@@ -140,6 +140,8 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # which is a video's; the bytes of a .cmft say which it carries.
     'CMFT': {'description': 'CMAF text track (WebVTT or TTML in MP4)', 'extensions': ['cmft']},
     'DASH': {'description': 'DASH manifest of a WebVTT or TTML track', 'extensions': ['mpd']},
+    # Smooth Streaming's text track: TTML in PIFF fragments (modules.isobmff_text).
+    'ISMT': {'description': 'Smooth Streaming text track (TTML in PIFF)', 'extensions': ['ismt']},
     'ASS': {'description': 'SubStation Alpha Subtitle format', 'extensions': ['ass', 'ssa']},
     'SBV': {'description': 'SBV Subtitle format', 'extensions': ['sbv']},
     'SUB': {'description': 'MicroDVD Subtitle format', 'extensions': ['sub']},
@@ -154,6 +156,10 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'ULTRASTAR': {'description': 'UltraStar Karaoke format', 'extensions': ['txt']},
     # Karaoke MIDI: the words of a .kar, or the lyrics of any MIDI file.
     'KAR': {'description': 'KAR MIDI Karaoke format', 'extensions': ['kar', 'mid', 'midi']},
+    # The same words as a MIDI file's lyric events (RP-026), which XF's
+    # and most players read; KAR above keeps the extensions for opening.
+    'MIDI': {'description': 'MIDI file with lyrics', 'extensions': ['mid', 'midi']},
+    'KBP': {'description': 'Karaoke Builder Studio project', 'extensions': ['kbp']},
     # Video editors' own: Avid SubCap's .txt is told from the player-era
     # .txt formats below by its bytes, in file_io.
     'AVID': {'description': 'Avid SubCap Subtitle format', 'extensions': ['txt']},
@@ -163,6 +169,21 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # (file_io), and Cheetah's, first here, keeps the extension.
     'LAMBDACAP': {'description': 'Lambda CAP Japanese Subtitle format', 'extensions': ['cap']},
     'CAVENA890': {'description': 'Cavena 890 Subtitle format', 'extensions': ['890']},
+    # Subtitling houses' formats (modules eztitles, ayato, softni, swift,
+    # cheetahcap's ASCII, caption_vendors). Those sharing
+    # .sub, .txt and .cap come after the formats that already claim them;
+    # file_io tells them apart by their bytes.
+    'EZTXML': {'description': 'EZTitles XML project', 'extensions': ['eztxml']},
+    'AYATO': {'description': 'Ayato Subtitle format', 'extensions': ['aya']},
+    'SOFTNI': {'description': 'SoftNi Subtitle format', 'extensions': ['sub']},
+    'SOFTNICOLON': {'description': 'SoftNi Subtitle format (colon timecodes)', 'extensions': ['sub']},
+    'SWIFTTEXT': {'description': 'Softel Swift text (TIMEIN, DURATION)', 'extensions': ['txt']},
+    'SWIFTNUMBERS': {'description': 'Softel Swift text (SUBTITLE, TIMEIN)', 'extensions': ['txt']},
+    'SWIFTNUMBERSDURATION': {'description': 'Softel Swift text (SUBTITLE, TIMEIN, DURATION)', 'extensions': ['txt']},
+    'XIF': {'description': 'Softel Swift XIF', 'extensions': ['xif']},
+    'SIF': {'description': 'Softel Swift Interchange File', 'extensions': ['sif']},
+    'CHEETAHASC': {'description': 'Cheetah ASCII Caption format', 'extensions': ['asc']},
+    'CAPMAKER': {'description': 'CapMaker Plus Caption format', 'extensions': ['cap']},
     # The DVD authoring tools' scripts (modules.dvd_scripts). DVD Studio
     # Pro's .stl is EBU STL's extension and Spruce's; the rest share .txt,
     # .sub and .sst with formats above and below. The bytes decide, in
@@ -176,6 +197,41 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     # MP4Box's text tracks as XML; CCExtractor's transcripts share .ttxt and
     # are told apart by their bytes (file_io).
     'TTXT': {'description': 'GPAC TTXT (MP4 Timed Text) format', 'extensions': ['ttxt']},
+    # Transcripts of speech research and recognition (modules.transcripts,
+    # modules.annotation, modules.audacity, modules.aeneas, modules.tmx).
+    # Audacity's .txt and aeneas's .json are told from the formats above
+    # that share them by their bytes (file_io).
+    'TEXTGRID': {'description': 'Praat TextGrid', 'extensions': ['TextGrid', 'textgrid']},
+    'EAF': {'description': 'ELAN Annotation Format', 'extensions': ['eaf']},
+    'TRS': {'description': 'Transcriber transcription', 'extensions': ['trs']},
+    'EXB': {'description': 'EXMARaLDA basic transcription', 'extensions': ['exb']},
+    'CHAT': {'description': 'CHAT transcript (CLAN, TalkBank)', 'extensions': ['cha']},
+    'CTM': {'description': 'CTM word timings (NIST, Kaldi)', 'extensions': ['ctm']},
+    'AUDACITY': {'description': 'Audacity labels', 'extensions': ['txt']},
+    'AENEAS': {'description': 'Aeneas sync map (JSON)', 'extensions': ['json']},
+    'TMX': {'description': 'TMX translation memory with times', 'extensions': ['tmx']},
+    # Dialects Subtitle Edit reads (modules.xml_dialects, json_dialects):
+    # .xml is DCP's and .json Subtitld's own, which keep them; the bytes
+    # tell a dialect apart (file_io), and which one is an export option.
+    'XMLDIALECT': {'description': 'XML subtitle dialects (Flash, Timed Text 2006, Rhozet, ...)',
+                   'extensions': ['xml']},
+    'JSONDIALECT': {'description': 'Platform JSON subtitles (Wistia, TED, TwentyThree, ...)',
+                    'extensions': ['json', 'atpj', 'clqtt', 'gst']},
+    # Xiph's Kate in an Ogg file of its own; an .ogg with no Kate stream in
+    # it is no subtitle file (file_io looks at its bytes).
+    'KATE': {'description': 'Ogg Kate Subtitle format', 'extensions': ['ogg']},
+    # Mastering: subtitles in MXF (modules.mxf), told apart by the essence
+    # the file's header names; the first keeps the extension for new files.
+    'DCPMXF': {'description': 'SMPTE DCP subtitle track file (MXF)', 'extensions': ['mxf']},
+    'IMSCMXF': {'description': 'IMF timed text track file (IMSC 1.1 in MXF)', 'extensions': ['mxf']},
+    'STLMXF': {'description': 'EBU STL in MXF (SMPTE ST 2075)', 'extensions': ['mxf']},
+    # Editors' lists (modules.edl, modules.markers): EDIUS's and Premiere's
+    # markers share .csv, and EDIUS's XML .xml, told apart by their bytes.
+    'EDL': {'description': 'CMX 3600 EDL with subtitles', 'extensions': ['edl']},
+    'EDIUS': {'description': 'EDIUS marker list', 'extensions': ['csv', 'xml']},
+    'PREMIERE': {'description': 'Adobe Premiere Pro markers', 'extensions': ['csv']},
+    # A dubbing detection (modules.detx).
+    'DETX': {'description': 'Cappella DetX dubbing detection', 'extensions': ['detx']},
     # The player era (modules.legacy). These come after the formats above
     # on purpose: three of them share .sub, .stl and .txt with a format
     # already here, and the first entry to claim an extension keeps it.
@@ -221,6 +277,35 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
 LIST_OF_PICTURE_SUBTITLE_EXTENSIONS = {
     'VOBSUB': {'description': 'DVD VobSub subtitles (pictures)', 'extensions': ['idx']},
     'PGS': {'description': 'Blu-ray PGS subtitles (pictures)', 'extensions': ['sup']},
+    # Karaoke graphics, a .cdg alone or beside an .mp3 (MP3+G); drawn with
+    # QPainter and wiped as the karaoke codes say (modules.cdg).
+    'CDG': {'description': 'CD+G karaoke graphics (MP3+G)', 'extensions': ['cdg']},
+    # A DVD's bare subpicture units, which share .sup with PGS; the bytes
+    # tell them apart (modules.dvdsup).
+    'DVDSUP': {'description': 'DVD SUP subtitles (pictures)', 'extensions': ['sup']},
+    # Image files and an index timing them (modules.picture_indexes). .sst
+    # is Scenarist's text script's too, and .xml many formats'; the bytes
+    # tell them apart, in file_io.
+    'SCENARISTBMP': {'description': 'Sonic Scenarist bitmap script (pictures)', 'extensions': ['sst']},
+    'SON': {'description': 'DVD Maestro SON script (pictures)', 'extensions': ['son']},
+    'DOST': {'description': 'DOST script with PNG pictures', 'extensions': ['dost']},
+    'SPUMUX': {'description': 'dvdauthor spumux XML with PNG pictures', 'extensions': ['xml']},
+    'TIMEDIMAGES': {'description': 'Timed Images XML with PNG pictures', 'extensions': ['xml']},
+    'FCPIMAGE': {'description': 'Final Cut Pro XML with PNG pictures', 'extensions': ['xml']},
+    'RHOZET': {'description': 'Rhozet Harmonic XML with PNG pictures', 'extensions': ['xml']},
+}
+
+# Formats Subtitld opens but does not write, as no source says how (or the
+# one there is disagrees with its own reader). They are offered when
+# opening a file and nowhere else; file_io reads them by their bytes.
+LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS = {
+    'EZT': {'description': 'EZTitles binary project', 'extensions': ['ezt']},
+    'TSB4': {'description': 'TSB4 SubtitleNext Subtitle format', 'extensions': ['sub']},
+    'SPOT': {'description': 'Spot Subtitle format', 'extensions': ['spt', 'sptx']},
+    'NCI': {'description': 'NCI Caption format', 'extensions': ['cap']},
+    'CAPTIONSINC': {'description': 'Captions Inc. Caption format', 'extensions': ['cin']},
+    'ULTECH': {'description': 'Ultech 1.30 Caption format', 'extensions': ['ult', 'uld']},
+    'RAC': {'description': 'Screen PAC recovery file', 'extensions': ['rac']},
 }
 
 LIST_OF_SUPPORTED_IMPORT_EXTENSIONS = {
@@ -250,6 +335,9 @@ LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS = {
     'ALPHA MOV': {'description': 'QuickTime video of the subtitles alone, transparent', 'extensions': ['mov']},
     'ALPHA MKV': {'description': 'Matroska video of the subtitles alone, transparent', 'extensions': ['mkv']},
     'ALPHA WEBM': {'description': 'WebM video of the subtitles alone, transparent', 'extensions': ['webm']},
+    'AVI XSUB': {'description': 'AVI video with DivX (XSUB) subtitles', 'extensions': ['avi']},
+    'TS ARIB': {'description': 'MPEG transport stream with ARIB captions', 'extensions': ['ts']},
+    'TS SCTE27': {'description': 'MPEG transport stream with SCTE 27 subtitles', 'extensions': ['ts']},
 }
 
 # Documents to read (modules.documents).

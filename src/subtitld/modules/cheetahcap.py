@@ -50,11 +50,16 @@ Writing gives a record with its end for every caption (the kind with an
 end, so no caption depends on the next), in order of start; italics for
 lines that are italic all through; the nine places; a caption's text cut
 where the record's one-byte length would overflow.
+
+Cheetah's ASCII export (.asc), read and written, is at the end of this
+module (CheetahCaptionAsc.cs is its source).
 """
 
+import re
 import unicodedata
 
-from subtitld.modules import markup
+from subtitld.modules import markup, srt
+from subtitld.modules.avid_subcap import drop_rate, frame_of, timecode as asc_timecode
 
 HEADER_SIZE = 128
 OLD_RECORD_SIZE = 178
@@ -292,3 +297,135 @@ def save(path, segments, **options):
     them."""
     with open(path, 'wb') as cap_file:
         cap_file.write(write(segments, **options))
+
+
+# -- Cheetah ASCII (.asc) -----------------------------------------------------
+#
+# The text Cheetah's CAPtioning systems export beside the binary, as Subtitle
+# Edit reads and writes it (CheetahCaptionAsc.cs and its tests):
+#
+#     *DropFrame
+#     *WIDTH 32
+#
+#     ** Caption Number 1
+#     *PopOn
+#     *T 01:00:14:13
+#     *E 01:00:16:13
+#     *BottomUp
+#     *Cf16
+#     [SCREAM]\E
+#
+# Lines starting "*" are commands: *T the start, *E the end (HH:MM:SS:FF,
+# or ";" before the frames), the rest (*PopOn, *BottomUp, *Cf16, *Lf07 ...)
+# styles and places whose meaning no source gives, read past. The text
+# follows, its last line ending "\E". A caption without *E lasts until the
+# next one starts, the last until it can be read. "*DropFrame" at the top
+# says the times are drop-frame at 29.97 (59.94 for a video near 60), which
+# Subtitld counts as drop-frame (Subtitle Edit reads the frames as of a
+# second, a frame or two apart over an hour); otherwise the frames count
+# within the second at the video's rate, else 25. Writing gives what
+# Subtitle Edit writes, *DropFrame at 29.97 and 59.94, the plain text.
+
+_ASC_CAPTION = re.compile(r'^\*\* ?Caption Number \d+\s*$', re.IGNORECASE)
+_ASC_TIME = re.compile(r'^\*([TE]) +(\d\d?):(\d\d):(\d\d)[:;](\d\d)\s*$')
+_ASC_END = '\\E'
+
+
+def looks_like_asc(head):
+    """True when `head` (decoded text or first bytes) is Cheetah's ASCII
+    export: it has a "** Caption Number" line."""
+    if isinstance(head, (bytes, bytearray)):
+        head = bytes(head[:16384]).decode('latin-1')
+    return any(_ASC_CAPTION.match(line.strip()) for line in str(head or '')[:16384].splitlines())
+
+
+def parse_asc(text, fps=None):
+    """(subtitles, {'fps', 'drop'}) in Cheetah ASCII text."""
+    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    drop = any(line.strip().lower() == '*dropframe' for line in lines)
+    fps = drop_rate(fps) if drop else float(fps or DEFAULT_FPS)
+    nominal = int(round(fps))
+
+    def seconds(match):
+        hours, minutes, second, frames = (int(match.group(group)) for group in (2, 3, 4, 5))
+        if drop:
+            return round(frame_of(hours, minutes, second, frames, nominal, True) * 1001 / (nominal * 1000), 3)
+        return _seconds(hours, minutes, second, frames, fps)
+
+    segments, ends_open, current = [], [], None
+
+    def close():
+        if current is None or current['start'] is None:
+            return
+        body = '\n'.join(current['lines']).rstrip()
+        if body.endswith(_ASC_END):
+            body = body[:-len(_ASC_END)].rstrip()
+        if not body.strip():
+            return
+        segments.append({'start': current['start'], 'end': current['end'], 'text': body})
+        if current['end'] is None:
+            ends_open.append(len(segments) - 1)
+
+    for line in lines:
+        stripped = line.strip()
+        if _ASC_CAPTION.match(stripped):
+            close()
+            current = {'start': None, 'end': None, 'lines': []}
+            continue
+        if current is None or not stripped:
+            continue
+        match = _ASC_TIME.match(stripped)
+        if match:
+            current['start' if match.group(1) == 'T' else 'end'] = seconds(match)
+        elif not stripped.startswith('*'):
+            current['lines'].append(stripped)
+    close()
+    for index in ends_open:
+        segment = segments[index]
+        following = segments[index + 1]['start'] if index + 1 < len(segments) else 0
+        segment['end'] = following if following > segment['start'] else _reading_time(segment)
+    for segment in segments:
+        segment['end'] = max(segment['start'], segment['end'])
+    return segments, {'fps': fps, 'drop': drop}
+
+
+def read_asc(path, fps=None):
+    """(subtitles, its settings) in the Cheetah ASCII file at `path`, as
+    parse_asc() gives them."""
+    with open(path, 'rb') as asc_file:
+        return parse_asc(srt.decode(asc_file.read()), fps)
+
+
+def write_asc(segments, fps=DEFAULT_FPS):
+    """Cheetah ASCII text for `segments`, frames at `fps`; drop-frame at
+    29.97 and 59.94."""
+    fps = float(fps or DEFAULT_FPS)
+    nominal = int(round(fps))
+    drop = abs(fps - 29.97) < 0.01 or abs(fps - 59.94) < 0.01
+
+    def stamp(seconds):
+        if drop:
+            frame = int(round(max(0.0, seconds) * nominal * 1000 / 1001))
+            return asc_timecode(frame, nominal, True).replace(';', ':')
+        return '%02d:%02d:%02d:%02d' % _timecode(seconds, fps)
+
+    out = (['*DropFrame'] if drop else []) + ['*WIDTH 32', '']
+    number = 0
+    for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
+        _lead, rest = markup.split_lead(str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n'))
+        lines = [line.strip() for line in markup.plain(rest).split('\n') if line.strip()]
+        if not lines:
+            continue
+        number += 1
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', 0)))
+        out += [f'** Caption Number {number}', '*PopOn', f'*T {stamp(start)}', f'*E {stamp(end)}', '*BottomUp',
+                '*Cf16'] + lines[:-1] + [lines[-1] + _ASC_END, '']
+    return '\r\n'.join(out) + '\r\n'
+
+
+def save_asc(path, segments, fps=DEFAULT_FPS):
+    """Write `segments` to `path` as Cheetah ASCII, in UTF-8 with a byte
+    order mark, as Subtitle Edit saves it."""
+    with open(path, 'w', encoding='utf-8-sig', newline='') as asc_file:
+        asc_file.write(write_asc(segments, fps))

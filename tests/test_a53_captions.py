@@ -165,7 +165,7 @@ from subtitld.interface.export_dialog import _VideoPanel
 panel = _VideoPanel()
 combo = panel.format_combo.combobox
 check('the formats alone, no groups', [combo.itemData(index) for index in range(combo.count())],
-      ['MP4', 'MOV', 'MKV', 'MXF', 'TS', 'WEBM'])
+      ['MP4', 'MOV', 'MKV', 'MXF', 'TS', 'WEBM', 'AVI'])
 ways = panel.way_combo.combobox
 panel.choose('MP4')
 check('MP4: in its frames, as a track, or burned in', [ways.itemData(index) for index in range(ways.count())],

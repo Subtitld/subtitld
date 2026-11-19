@@ -24,11 +24,14 @@ from subtitld.modules import csv_export
 from subtitld.modules import dcp
 from subtitld.modules import documents
 from subtitld.modules import dvd_scripts
+from subtitld.modules import edl
 from subtitld.modules import export_options
 from subtitld.modules import file_io
 from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import markup
+from subtitld.modules import json_dialects
+from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import pac
 from subtitld.modules import project_export
@@ -37,15 +40,29 @@ from subtitld.modules import soft_subtitles
 from subtitld.modules import subtitle_styles
 from subtitld.modules import ttml
 from subtitld.modules import vobsub
+from subtitld.modules import xml_dialects
 
 
-SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
-                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
-                    'XML', 'LRC', 'TTXT', 'USF', 'JSON', 'BCC']
+SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
+                    'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
+                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
+                    'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
+                    'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
+# The dialects of these two, one written at a time: which, an option.
+DIALECTS = {'XMLDIALECT': (xml_dialects, 'xml_dialect'), 'JSONDIALECT': (json_dialects, 'json_dialect')}
+# The formats an editor's timeline reads, frames counted at a rate.
+EDITOR_LISTS = ('EDL', 'EDIUS', 'PREMIERE', 'DETX')
 # The DVD authoring tools' scripts: frames, an encoding and line ends each;
 # drop-frame for the two whose tools write it.
 DVD_SCRIPTS = tuple(dvd_scripts.SESSION_FORMATS)
 DVD_DROP_FRAME = ('DVDSTUDIOPRO', 'ENCORE')
+# The subtitling houses' formats: frames each, at the rate chosen.
+VENDOR_FORMATS = ('EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER')
+# A DVD's pictures, placed on DVD's PAL or NTSC frame or the video's.
+DVD_PICTURES = ('VOBSUB', 'DVDSUP', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX')
+# Pictures and an index of them (modules.picture_indexes).
+PICTURE_INDEXES = ('SCENARISTBMP', 'SON', 'DOST', 'SPUMUX', 'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET')
 AUDIO_FORMATS = ['WAV', 'FLAC', 'MP3']
 VIDEO_FORMATS = ['MP4']
 
@@ -186,6 +203,12 @@ class _SubtitlesPanel(QWidget):
         self.timeline_start_combo.combobox.addItem('00:00:00:00', '00:00:00:00')
         self.timeline_start_combo.combobox.addItem(_('export_dialog.timeline_start_hour'), '01:00:00:00')
         row.addWidget(self.timeline_start_combo, 1)
+        # EDL: the subtitles as events, Avid's locators or Resolve's markers.
+        self.edl_style_combo = utils.LabeledComboBox()
+        self.edl_style_combo.setLabel(_('export_dialog.edl_style'))
+        for style in edl.STYLES:
+            self.edl_style_combo.combobox.addItem(_(f'export_dialog.edl_style_{style}'), style)
+        row.addWidget(self.edl_style_combo, 1)
         self.layout().addWidget(self.timeline_options)
 
         # MacCaption: its frame rate, the video's; CEA-708 beside CEA-608, or not.
@@ -314,6 +337,22 @@ class _SubtitlesPanel(QWidget):
         row.addStretch()
         self.layout().addWidget(self.cavena_options)
 
+        # LRC: its moments in hundredths, thousandths, or with no ending ones.
+        self.lrc_options = QWidget()
+        row = QHBoxLayout(self.lrc_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.lrc_times_combo = utils.LabeledComboBox()
+        self.lrc_times_combo.setLabel(_('export_dialog.lrc_times'))
+        for dialect in lrc.DIALECTS:
+            self.lrc_times_combo.combobox.addItem(_(f'export_dialog.lrc_times_{dialect}'), dialect)
+        row.addWidget(self.lrc_times_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.lrc_options)
+
+        # CD+G: the song beside it as an MP3 by the same name (MP3+G).
+        self.cdg_mp3_check = QCheckBox(_('export_dialog.cdg_mp3'))
+        self.layout().addWidget(self.cdg_mp3_check)
+
         # HLS, CMAF and DASH: how long each segment is; HLS's timestamp its
         # cue times map to; what a CMAF track carries, WebVTT or TTML.
         self.stream_options = QWidget()
@@ -370,11 +409,27 @@ class _SubtitlesPanel(QWidget):
         self.profile_combo = utils.LabeledComboBox()
         self.profile_combo.setLabel(_('export_dialog.ttml_profile'))
         for profile, name in (('ttml1', 'ttml1'), ('imsc1', 'imsc1'), ('imsc1.1', 'imsc11'), ('ebu-tt-d', 'ebuttd'),
-                              ('smpte-tt', 'smptett'), ('ebu-tt', 'ebutt'), ('dapt', 'dapt'),
+                              ('smpte-tt', 'smptett'), ('ebu-tt', 'ebutt'), ('arib-ttml', 'aribttml'), ('dapt', 'dapt'),
                               ('imsc1-image', 'imsc1_image'), ('imsc1.1-image', 'imsc11_image')):
             self.profile_combo.combobox.addItem(_(f'export_dialog.ttml_profile_{name}'), profile)
         row.addWidget(self.profile_combo, 1)
+        # TTML and DFXP: a service's published delivery rules, checked too.
+        self.delivery_combo = utils.LabeledComboBox()
+        self.delivery_combo.setLabel(_('export_dialog.ttml_delivery'))
+        self.delivery_combo.combobox.addItem(_('export_dialog.ttml_delivery_none'), '')
+        for delivery, name in ttml.DELIVERIES.items():
+            self.delivery_combo.combobox.addItem(name, delivery)
+        row.addWidget(self.delivery_combo, 1)
         self.layout().addWidget(self.ass_options)
+        # XMLDIALECT and JSONDIALECT: which dialect to write.
+        self.dialect_options = QWidget()
+        row = QHBoxLayout(self.dialect_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.dialect_combo = utils.LabeledComboBox()
+        self.dialect_combo.setLabel(_('export_dialog.dialect'))
+        row.addWidget(self.dialect_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.dialect_options)
         # SMPTE-TT: the subtitles as CEA-608 captions too, tunnelled in the
         # file for what takes the captions and not the text (RP 2052-10).
         self.tunnel_608_check = QCheckBox(_('export_dialog.ttml_tunnel_608'))
@@ -391,6 +446,7 @@ class _SubtitlesPanel(QWidget):
         self.check_label.setContentsMargins(6, 4, 6, 4)
         self.layout().addWidget(self.check_label)
         self.profile_combo.combobox.currentIndexChanged.connect(self._run_check)
+        self.delivery_combo.combobox.currentIndexChanged.connect(self._run_check)
 
         self.usf_options = QWidget()
         self.usf_options.setLayout(QVBoxLayout())
@@ -436,6 +492,7 @@ class _SubtitlesPanel(QWidget):
         _select(self.caption_mode_combo, remembered.get('caption_mode', 'pop'))
         _select(self.stl_start_combo, remembered.get('start', '00:00:00:00'))
         _select(self.timeline_start_combo, remembered.get('timeline_start', '00:00:00:00'))
+        _select(self.edl_style_combo, remembered.get('edl_style', 'events'))
         _select(self.dcp_standard_combo, remembered.get('dcp_standard', dcp.SMPTE))
         _select(self.dcp_content_combo, remembered.get('dcp_content', 'text'))
         # The video's rate, as near as a DCP plays; else the last used, else 24.
@@ -446,9 +503,16 @@ class _SubtitlesPanel(QWidget):
         _select(self.bdn_rate_combo, bdn.rate_for(video_fps) if video_fps
                 else remembered.get('bdn_fps', bdn.DEFAULT_RATE))
         _select(self.cavena_start_combo, remembered.get('cavena_start', '00:00:00:00'))
+        # The way the LRC opened writes its moments; else the last used.
+        opened_options = session.FORMAT.get('options') if isinstance(session.FORMAT, dict) else None
+        if not _select(self.lrc_times_combo, (opened_options or {}).get('lrc_times')):
+            _select(self.lrc_times_combo, remembered.get('lrc_times', 'hundredths'))
+        self.cdg_mp3_check.setChecked(bool(remembered.get('cdg_mp3', True)))
         _select(self.segment_combo, remembered.get('segment_duration', hls.SEGMENT_DURATION))
         _select(self.mpegts_combo, remembered.get('mpegts', hls.MPEGTS))
         _select(self.carriage_combo, remembered.get('mp4_text', 'wvtt'))
+        _select(self.delivery_combo, remembered.get('delivery', ''))
+        self._dialects_wanted = {key: remembered.get(key) for _module, key in DIALECTS.values()}
         # The video's frame when there is a video; else the last used, else
         # the DVD frame of the video's rate.
         if not _select(self.vobsub_size_combo, 'video') and not _select(self.vobsub_size_combo, remembered.get('vobsub_size')):
@@ -482,7 +546,7 @@ class _SubtitlesPanel(QWidget):
         wvtt = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() == 'wvtt'
         if fmt in ('VTT', 'HLS') or wvtt:
             combo.addItem(_('export_dialog.speaker_names_voice'), 'voice')
-        elif fmt in ('DFXP', 'TTML', 'CMFT', 'DASH'):
+        elif fmt in ('DFXP', 'TTML', 'CMFT', 'DASH', 'IMSCMXF'):
             combo.addItem(_('export_dialog.speaker_names_agent'), 'voice')
         elif fmt == 'SAMI':
             combo.addItem(_('export_dialog.speaker_names_source'), 'voice')
@@ -490,6 +554,12 @@ class _SubtitlesPanel(QWidget):
             combo.addItem(_('export_dialog.speaker_names_chevrons'), 'voice')
         elif fmt == 'SBV':
             combo.addItem(_('export_dialog.speaker_names_youtube'), 'voice')
+        elif fmt in ('TEXTGRID', 'EAF', 'EXB'):
+            combo.addItem(_('export_dialog.speaker_names_tiers'), 'voice')
+        elif fmt in ('TRS', 'CHAT'):
+            combo.addItem(_('export_dialog.speaker_names_participants'), 'voice')
+        elif fmt == 'LRC':
+            combo.addItem(_('export_dialog.speaker_names_walaoke'), 'voice')
         if not _select(self.speakers_combo, self._speakers_wanted):
             _select(self.speakers_combo, 'prefix' if self._speakers_wanted == 'voice' else 'none')
         combo.blockSignals(False)
@@ -507,20 +577,29 @@ class _SubtitlesPanel(QWidget):
             if text == 'both':
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
-        self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS)
+        self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS
+                                    + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS)
+        self._show_dialects(fmt)
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
-        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP') + DVD_DROP_FRAME and _has_drop_frame(rate)))
-        self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML'))
+        self.scc_options.setVisible(fmt == 'SCC' or (fmt in ('AVID', 'FCPXML', 'LAMBDACAP', 'EDL', 'PREMIERE') + DVD_DROP_FRAME
+                                                     and _has_drop_frame(rate)))
+        self.timeline_options.setVisible(fmt in ('AVID', 'FCPXML', 'EDL'))
+        self.edl_style_combo.setVisible(fmt == 'EDL')
         self.cavena_options.setVisible(fmt == 'CAVENA890')
-        self.vobsub_options.setVisible(fmt == 'VOBSUB')
+        self.lrc_options.setVisible(fmt == 'LRC')
+        self.cdg_mp3_check.setVisible(fmt == 'CDG' and bool(session.VIDEO.get('filepath')))
+        self.vobsub_options.setVisible(fmt in DVD_PICTURES)
         self.pac_options.setVisible(fmt == 'PAC')
-        self.stl_options.setVisible(fmt == 'STL')
-        self.stream_options.setVisible(fmt in ('HLS', 'CMFT', 'DASH'))
+        self.stl_options.setVisible(fmt in ('STL', 'STLMXF'))
+        self.stream_options.setVisible(fmt in ('HLS', 'CMFT', 'DASH', 'ISMT'))
         self.mpegts_combo.setVisible(fmt == 'HLS')
         self.carriage_combo.setVisible(fmt in ('CMFT', 'DASH'))
         stpp = fmt in ('CMFT', 'DASH') and self.carriage_combo.combobox.currentData() != 'wvtt'
-        self.dcp_options.setVisible(fmt == 'DCP')
+        self.dcp_options.setVisible(fmt in ('DCP', 'DCPMXF'))
+        # A track file is SMPTE's alone (ST 429-5).
+        self.dcp_standard_combo.setVisible(fmt == 'DCP')
+        self.dcp_rate_combo.setVisible(fmt == 'DCPMXF' or self.dcp_standard_combo.combobox.currentData() == dcp.SMPTE)
         self.bdn_options.setVisible(fmt == 'BDN')
         self.mcc_options.setVisible(fmt == 'MCC')
         # A file holds one field, so SCC has CC1 and CC2; MacCaption carries
@@ -541,16 +620,35 @@ class _SubtitlesPanel(QWidget):
         # Avid DVD's (italics, and DVD Studio Pro's places) have no
         # formatting to keep.
         self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
-                                                     'DVDPRODUCER'))
-        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML') or stpp)
+                                                     'DVDPRODUCER', 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM',
+                                                     'AUDACITY', 'AENEAS', 'TMX'))
+        self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML', 'IMSCMXF') or stpp)
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
                                              else _('export_dialog.ttml_look_preview'))
         # Only TTML and DFXP have a profile to declare.
         self.profile_combo.setVisible(fmt in ('DFXP', 'TTML'))
+        self.delivery_combo.setVisible(fmt in ('DFXP', 'TTML'))
         self._show_tunnel()
         self.usf_options.setVisible(fmt == 'USF')
         self._run_check()
+
+    def _show_dialects(self, fmt):
+        """The dialects `fmt` writes: the one the file opened was in, else
+        the last chosen, else the first."""
+        self.dialect_options.setVisible(fmt in DIALECTS)
+        if fmt not in DIALECTS:
+            return
+        module, key = DIALECTS[fmt]
+        combo = self.dialect_combo.combobox
+        if [combo.itemData(index) for index in range(combo.count())] != list(module.WRITABLE):
+            combo.clear()
+            for name in module.WRITABLE:
+                combo.addItem(module.DIALECTS[name], name)
+        opened = (session.FORMAT.get('options') or {}).get(key) if isinstance(session.FORMAT, dict) else None
+        for wanted in (opened, getattr(self, '_dialects_wanted', {}).get(key)):
+            if _select(self.dialect_combo, wanted):
+                break
 
     def _show_tunnel(self, *_args):
         """The CEA-608 tunnel is SMPTE-TT's alone."""
@@ -562,14 +660,20 @@ class _SubtitlesPanel(QWidget):
         the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
         segments = session.SUBTITLE.get('segments') or []
-        if fmt in ('BDN', 'VOBSUB', 'PGS') or (fmt == 'DCP' and self.dcp_content_combo.combobox.currentData() == 'pictures'):
+        if fmt == 'CDG':
+            # Drawn with QPainter, which every build has.
+            self.check_label.setText(_('export_dialog.cdg_note'))
+            self.check_label.setVisible(True)
+            return
+        if fmt in ('BDN', 'PGS') + DVD_PICTURES + PICTURE_INDEXES or (fmt in ('DCP', 'DCPMXF') and self.dcp_content_combo.combobox.currentData() == 'pictures'):
             # Pictures: the preview shows one, nothing to say here.
             self.check_label.setVisible(False)
             return
-        if fmt not in ('DFXP', 'TTML') or not segments:
+        if fmt not in ('DFXP', 'TTML', 'IMSCMXF') or not segments:
             self.check_label.setVisible(False)
             return
-        profile = self.profile_combo.combobox.currentData() or 'ttml1'
+        # IMF's track file holds IMSC 1.1, whatever the TTML profile chosen.
+        profile = 'imsc1.1' if fmt == 'IMSCMXF' else self.profile_combo.combobox.currentData() or 'ttml1'
         if profile in ttml.IMAGE_PROFILES:
             # Pictures are drawn when the file is written, not to check it
             # here; the preview shows one.
@@ -577,8 +681,11 @@ class _SubtitlesPanel(QWidget):
             return
         written = ttml.write(segments, session.SUBTITLE.get('language') or 'en', profile=profile,
                              metadata=session.SUBTITLE.get('metadata'))
-        problems = ttml.check(written, profile)
-        name = self.profile_combo.combobox.currentText()
+        delivery = self.delivery_combo.combobox.currentData() or None
+        problems = ttml.check(written, profile, delivery=delivery)
+        name = _('export_dialog.ttml_profile_imsc11') if fmt == 'IMSCMXF' else self.profile_combo.combobox.currentText()
+        if delivery:
+            name = f'{name}, {ttml.DELIVERIES[delivery]}'
         if problems:
             self.check_label.setText('\n'.join([_('export_dialog.ttml_check_found').format(profile=name)]
                                                + [f'\u2022 {problem}' for problem in problems]))
@@ -590,7 +697,10 @@ class _SubtitlesPanel(QWidget):
         fmt, choices, options = self.export_choices()
         # The speaker choice as last made: voice tags stay wanted for WebVTT
         # even when another format wrote names before the text.
-        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted)
+        if fmt in DIALECTS:
+            self._dialects_wanted[DIALECTS[fmt][1]] = self.dialect_combo.combobox.currentData()
+        session.CONFIG['export_subtitles'] = dict(choices, format=fmt, speakers=self._speakers_wanted,
+                                                  **{key: value for key, value in self._dialects_wanted.items() if value})
         return {'category': 'subtitles', 'format': fmt, 'options': options}
 
     def export_choices(self):
@@ -619,14 +729,18 @@ class _SubtitlesPanel(QWidget):
             'display': self.stl_display_combo.combobox.currentData(),
             'start': self.stl_start_combo.combobox.currentData(),
             'timeline_start': self.timeline_start_combo.combobox.currentData(),
+            'edl_style': self.edl_style_combo.combobox.currentData(),
             'dcp_standard': self.dcp_standard_combo.combobox.currentData(),
             'dcp_fps': self.dcp_rate_combo.combobox.currentData(),
             'dcp_content': self.dcp_content_combo.combobox.currentData(),
             'bdn_fps': self.bdn_rate_combo.combobox.currentData(),
             'cavena_start': self.cavena_start_combo.combobox.currentData(),
+            'lrc_times': self.lrc_times_combo.combobox.currentData(),
+            'cdg_mp3': self.cdg_mp3_check.isChecked(),
             'segment_duration': self.segment_combo.combobox.currentData(),
             'mpegts': self.mpegts_combo.combobox.currentData(),
             'mp4_text': self.carriage_combo.combobox.currentData(),
+            'delivery': self.delivery_combo.combobox.currentData() or '',
             'vobsub_size': self.vobsub_size_combo.combobox.currentData(),
             'pac_code_page': self.pac_code_page_combo.combobox.currentData(),
             'embed_speaker_images': self.usf_embed_images.isChecked(),
@@ -640,19 +754,32 @@ class _SubtitlesPanel(QWidget):
             options['offset'] = self.offset_spin.value()
         if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS:
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS:
+        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS:
             options['fps'] = choices['fps']
+        if fmt in DIALECTS:
+            options[DIALECTS[fmt][1]] = self.dialect_combo.combobox.currentData()
+        if fmt == 'ISMT':
+            options['segment_duration'] = choices['segment_duration']
+        if fmt == 'EDL':
+            options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'],
+                           edl_style=choices['edl_style'])
+        if fmt == 'PREMIERE':
+            options['timecode'] = choices['timecode']
         if fmt in DVD_DROP_FRAME:
             options['timecode'] = choices['timecode']
         if fmt in ('AVID', 'FCPXML'):
             options.update(timecode=choices['timecode'], timeline_start=choices['timeline_start'])
         if fmt == 'CAVENA890':
             options['start'] = choices['cavena_start']
-        if fmt == 'VOBSUB':
+        if fmt == 'LRC':
+            options['lrc_times'] = choices['lrc_times']
+        if fmt == 'CDG':
+            options['cdg_mp3'] = choices['cdg_mp3'] and bool(session.VIDEO.get('filepath'))
+        if fmt in DVD_PICTURES:
             options['vobsub_size'] = choices['vobsub_size']
         if fmt == 'PAC':
             options['pac_code_page'] = choices['pac_code_page']
-        if fmt in ('ASS', 'DFXP', 'TTML'):
+        if fmt in ('ASS', 'DFXP', 'TTML', 'IMSCMXF'):
             options['look'] = choices['look']
         if fmt in ('DFXP', 'TTML'):
             options['profile'] = choices['profile']
@@ -663,7 +790,7 @@ class _SubtitlesPanel(QWidget):
         if fmt in ('SCC', 'MCC'):
             options.update(caption_mode=choices['caption_mode'],
                            caption_channel=self.caption_channel_combo.combobox.currentData() or 1)
-        if fmt == 'STL':
+        if fmt in ('STL', 'STLMXF'):
             options.update(stl_fps=choices['stl_fps'], display=choices['display'], start=choices['start'])
         if fmt == 'HLS':
             options.update(segment_duration=choices['segment_duration'], mpegts=choices['mpegts'])
@@ -674,6 +801,8 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'DCP':
             options.update(dcp_standard=choices['dcp_standard'], dcp_fps=choices['dcp_fps'],
                            dcp_content=choices['dcp_content'])
+        if fmt == 'DCPMXF':
+            options.update(dcp_fps=choices['dcp_fps'], dcp_content=choices['dcp_content'])
         if fmt == 'BDN':
             options['bdn_fps'] = choices['bdn_fps']
         if fmt == 'MCC':
@@ -1023,7 +1152,9 @@ class _ProjectPanel(QWidget):
 
 # The video page's formats, as its header lists them: the ways the subtitles
 # can go in each, and the export each way makes (a transport stream's track
-# is teletext, 'TS', or DVB subtitles, 'TS DVB', as its track format says).
+# is teletext, 'TS', DVB subtitles, 'TS DVB', ARIB captions, 'TS ARIB', or
+# SCTE 27 subtitles, 'TS SCTE27', as its track format says).
+TS_TRACKS = ('TS', 'TS DVB', 'TS ARIB', 'TS SCTE27')
 VIDEO_FILES = {
     'MP4': {'label': 'video_mp4_track', 'ways': {'cc': 'MP4 A53', 'track': 'MP4', 'burn': 'BURN MP4'}},
     'MOV': {'label': 'video_mov', 'ways': {'cc': 'MOV', 'track': 'MOV TEXT', 'burn': 'BURN MOV', 'alpha': 'ALPHA MOV'}},
@@ -1031,12 +1162,13 @@ VIDEO_FILES = {
     'MXF': {'label': 'video_mxf', 'ways': {'cc': 'MXF'}},
     'TS': {'label': 'video_ts_track', 'ways': {'cc': 'TS A53', 'track': 'TS', 'burn': 'BURN TS'}},
     'WEBM': {'label': 'video_webm', 'ways': {'burn': 'BURN WEBM', 'alpha': 'ALPHA WEBM'}},
+    'AVI': {'label': 'video_avi_xsub', 'ways': {'track': 'AVI XSUB'}},
 }
 
 
 def _video_file_of(export):
     """(format, way) of the video page that make `export`; None for none."""
-    export = 'TS' if export == 'TS DVB' else export
+    export = 'TS' if export in TS_TRACKS else export
     for video_file, spec in VIDEO_FILES.items():
         for way, key in spec['ways'].items():
             if key == export:
@@ -1130,8 +1262,8 @@ class _VideoPanel(QWidget):
         # Subtitle track sub-tab -------------------------------------------
         # The subtitles as a track of their own, which a player lists and
         # turns on and off: MP4's timed text, Matroska's SRT or ASS, or a
-        # transport stream's teletext or DVB subtitles (soft_subtitles,
-        # teletext, dvbsub).
+        # transport stream's teletext or DVB subtitles, or an AVI's XSUB
+        # (soft_subtitles, teletext, dvbsub, xsub).
         self.tracks_panel = QWidget()
         self.tracks_panel.setLayout(QVBoxLayout())
         self.tracks_panel.layout().setContentsMargins(0, 0, 0, 0)
@@ -1148,6 +1280,8 @@ class _VideoPanel(QWidget):
         self.tracks_ts_combo.setLabel(_('export_dialog.subtitle_codec'))
         self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_teletext'), 'TS')
         self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_dvb'), 'TS DVB')
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_arib'), 'TS ARIB')
+        self.tracks_ts_combo.combobox.addItem(_('export_dialog.subtitle_codec_scte27'), 'TS SCTE27')
         self.tracks_ts_combo.activated.connect(self._refresh_tracks)
         self.tracks_panel.layout().addWidget(self.tracks_ts_combo)
 
@@ -1252,7 +1386,7 @@ class _VideoPanel(QWidget):
         if found is None:
             return False
         video_file, way = found
-        if export in ('TS', 'TS DVB'):
+        if export in TS_TRACKS:
             _select(self.tracks_ts_combo, export)
         _select(self.format_combo, video_file)
         self._ways[video_file] = way
@@ -1333,9 +1467,9 @@ class _VideoPanel(QWidget):
         stream, teletext pages or DVB subtitles, pictures."""
         container = self._container()
         self.tracks_codec_combo.setVisible(container == 'MKV')
-        self.tracks_ts_combo.setVisible(container in ('TS', 'TS DVB'))
-        # Teletext and DVB subtitles have no forced pages: a viewer chooses
-        # one or none.
+        self.tracks_ts_combo.setVisible(container in TS_TRACKS)
+        # Teletext, DVB subtitles, ARIB captions, SCTE 27 and XSUB have no
+        # forced streams: a viewer chooses one or none.
         self.tracks_forced.setVisible(container not in soft_subtitles.UNFORCED)
 
     def get_config(self):
