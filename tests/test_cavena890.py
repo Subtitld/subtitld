@@ -189,13 +189,13 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.890').write_bytes(DANISH)
 session.FORMAT = {}
 session.VIDEO = {}
-session.SUBTITLE['language'] = 'en'
+session.SUBTITLE.language = 'en'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.890'))
 check("opens; its language the project's, its title too; its rate and start kept", (
-    fmt, len(opened), session.SUBTITLE['language'], session.SUBTITLE.get('metadata'),
+    fmt, len(opened), session.SUBTITLE.language, session.SUBTITLE.metadata,
     {key: session.FORMAT['options'].get(key) for key in ('fps', 'start')}),
       ('CAVENA890', 5, 'da-dk', {'title': 'Tears of Steel'}, {'fps': 25.0, 'start': '10:00:00:00'}))
-session.SUBTITLE['segments'] = trips['da']
+session.SUBTITLE.segments = trips['da']
 session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/tears.mov'}
 session.FORMAT['options'] = dict(session.FORMAT['options'])
 file_io.save_file(str(folder / 'out.890'), 'CAVENA890')
@@ -203,8 +203,8 @@ saved = (folder / 'out.890').read_bytes()
 back, info = cavena890.parse(saved)
 check('saved as it was opened: Danish, the title, from 10:00:00:00', (back, info),
       (trips['da'], {'language': 'da', 'fps': 25.0, 'start': '10:00:00:00', 'title': 'Tears of Steel'}))
-session.SUBTITLE.pop('metadata', None)
-session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE.metadata = None
+session.SUBTITLE.language = 'pt-br'
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'plain.890'), 'CAVENA890')
 check("no title of its own: the video's name; Portuguese", (cavena890.read(str(folder / 'plain.890'))[1]['title'],

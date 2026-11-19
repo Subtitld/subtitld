@@ -53,7 +53,7 @@ except ValueError:
 
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 session.FORMAT['options'] = {'fps': 25.0, 'csv_type': 'audition_markers'}
 file_io.save_file(str(folder / 'markers.csv'), 'CSV')
 written = (folder / 'markers.csv').read_bytes()

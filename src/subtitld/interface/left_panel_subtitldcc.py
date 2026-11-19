@@ -547,7 +547,7 @@ class SubtitldccPanel(QWidget):
         def done(_answer=None):
             self.delete_button.setEnabled(True)
             if (service.origin() or {}).get('share_id') == share_id:
-                session.SUBTITLE.pop('origin', None)
+                session.SUBTITLE.origin = None
                 session.set_unsaved(True)  # saving the project forgets the link too
             self._origin_info = None
             self._render_origin()
@@ -787,7 +787,7 @@ class SubtitldccPanel(QWidget):
 
     def open_subtitle(self, row):
         """Open: straight away into an empty editor, after asking in the row when it has subtitles."""
-        if session.SUBTITLE.get('segments'):
+        if session.SUBTITLE.segments:
             key = 'subtitldcc.replace_unsaved' if session.UNSAVED else 'subtitldcc.replace_text'
             row.confirm.ask(_(key).format(title=row.result.get('title', '')), _('subtitldcc.replace'),
                             lambda: self._download(row))
@@ -836,7 +836,7 @@ class SubtitldccPanel(QWidget):
                 self._render_publish()
                 self.show_message(_('subtitldcc.opened').format(title=title))
 
-            if session.SUBTITLE.get('segments'):
+            if session.SUBTITLE.segments:
                 key = 'subtitldcc.replace_unsaved' if session.UNSAVED else 'subtitldcc.replace_text'
                 self.link_confirm.ask(_(key).format(title=title), _('subtitldcc.replace'), replace)
             else:
@@ -881,7 +881,7 @@ class SubtitldccPanel(QWidget):
         if publishing:
             return
         connected = service.is_connected()
-        has_text = bool(session.SUBTITLE.get('segments'))
+        has_text = bool(session.SUBTITLE.segments)
         as_version = connected and self._can_publish_version()
         self.publish_version_button.setVisible(as_version)
         self.publish_new_button.setProperty('class', '' if as_version else 'primary')

@@ -90,7 +90,7 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.sbv').write_text(YOUTUBE, encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.sbv'))
 check('opens', (fmt, len(opened), opened[0]['speaker']), ('SBV', 3, 'ALICE'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 for options, want in (({'speakers': 'voice'}, '>> ALICE: Hi, my name'), ({'speakers': 'prefix'}, 'ALICE: Hi, my name is'),
                       ({'speakers': 'none', 'offset': 1.0}, 'Hi, my name is Alice ')):
     session.FORMAT['options'] = options
@@ -111,7 +111,7 @@ session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.sub'))
 check('opens as SubViewer 2', (fmt, [(s['start'], s['end'], s['text']) for s in opened]),
       ('SUBVIEWER2', [(60.1, 120.2, 'Hello.\nWorld!'), (120.3, 180.4, 'foo\nbar')]))
-session.SUBTITLE['segments'] = opened + [{'start': 3725.456, 'end': 3726.0, 'text': '<i>Late</i>'}]
+session.SUBTITLE.segments = opened + [{'start': 3725.456, 'end': 3726.0, 'text': '<i>Late</i>'}]
 file_io.save_file(str(folder / 'out.sub'), fmt)
 written = (folder / 'out.sub').read_text(encoding='utf-8')
 check('saved under its own header, hundredths, "[br]" between lines', written,

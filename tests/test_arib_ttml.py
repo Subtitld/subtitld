@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session, ttml
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -109,7 +110,7 @@ check('another profile does not ask for ARIB\'s rules', ttml.check(written, 'ttm
 print('the export dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [dict(s) for s in SEGMENTS], 'language': 'ja-jp'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SEGMENTS], 'language': 'ja-jp'})
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('TTML')
 panel._refresh_options()
@@ -127,7 +128,7 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'arib.ttml').write_text(RUBIES, encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'arib.ttml'))
 check('opens as TTML with its rubies', (fmt, opened[1]['text']), ('TTML', '<ruby>東京<rt>とうきょう</rt></ruby>へ'))
-session.SUBTITLE = {'segments': [dict(s) for s in SEGMENTS], 'language': 'ja-jp'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SEGMENTS], 'language': 'ja-jp'})
 session.VIDEO = {}
 session.FORMAT = {'format': 'TTML', 'options': {'profile': 'arib-ttml'}}
 file_io.save_file(str(folder / 'out.ttml'), 'TTML')

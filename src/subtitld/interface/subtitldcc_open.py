@@ -383,7 +383,7 @@ class OpenCard(QWidget):
         self._state = None
         self.hide()
         session.VIDEO = {'filepath': path}
-        session.SUBTITLE['filepath'] = ''
+        session.SUBTITLE.filepath = ''
         # Opening the editor starts the project anew: it is still this shared project.
         startscreen.load_productionscreen(self.window_, collab=copy.deepcopy(collab_state.STATE))
         QTimer.singleShot(0, lambda: left_panel.show_panel(self.window_, TAB))
@@ -399,13 +399,13 @@ class OpenCard(QWidget):
         self._opening = True
         self.hide()
         session.VIDEO = {'filepath': path}
-        session.SUBTITLE['filepath'] = temporary
+        session.SUBTITLE.filepath = temporary
         try:
             startscreen.load_productionscreen(self.window_)
         finally:
             os.unlink(temporary)
         if not editor_shown(self.window_):  # it couldn't be read (the start screen said why)
-            session.SUBTITLE['filepath'] = ''
+            session.SUBTITLE.filepath = ''
             self._opening = False
             self._state, self._problem = 'problem', _('open_link.subtitle_not_opened')
             self.show()
@@ -413,7 +413,7 @@ class OpenCard(QWidget):
             return
         self._state = None
         # Not a file yet, as when opened from the subtitld.cc panel: saving asks where to put it.
-        session.SUBTITLE['filepath'] = ''
+        session.SUBTITLE.filepath = ''
         session.CONFIG['format_to_save'] = 'USFX'
         if not service.origin():
             service.set_origin(link['subtitle'], link['version'] or info.get('version'))
@@ -489,7 +489,7 @@ class OpenCard(QWidget):
         owner = (project.get('owner') or {}).get('handle', '')
         connection_state = collab_service.state()
         if connection_state == 'live':
-            subtitles = _('open_link.subtitles').format(count=len(session.SUBTITLE.get('segments') or []))
+            subtitles = _('open_link.subtitles').format(count=len(session.SUBTITLE.segments))
         elif connection_state == 'joining':
             subtitles = _('open_link.subtitles_coming')
         else:

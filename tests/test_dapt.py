@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, file_io, session, ttml
+from subtitld.modules.segment import Subtitle
 from subtitld.interface.export_dialog import _SubtitlesPanel
 
 fails = []
@@ -383,10 +384,10 @@ session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'example10.xml'))
 english = file_io._language_like_project('en')
 check('a DAPT .xml opens as TTML; its language the original\'s, the translation by Subtitld\'s code, the character '
-      'a speaker, kept to be saved as DAPT', (fmt, session.SUBTITLE['language'], list(opened[0]['translations']),
+      'a speaker, kept to be saved as DAPT', (fmt, session.SUBTITLE.language, list(opened[0]['translations']),
                                               'ASSANE' in session.SPEAKERS, session.FORMAT['options'].get('profile')),
       ('TTML', file_io._known_language('fr'), [english], True, 'dapt'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.FORMAT = {'format': 'TTML', 'options': {'profile': 'dapt', 'text': 'translation', 'language': english}}
 file_io.save_file(str(folder / 'saved.ttml'), 'TTML')
 saved = (folder / 'saved.ttml').read_text(encoding='utf-8')
@@ -409,7 +410,7 @@ MIXED = [dict(SESSION[0]), dict(SESSION[1]),
 def exported(choice, segments):
     """The DAPT script file_io saves of `segments` with the recordings
     option `choice` (None: the option not given), and what it reads back."""
-    session.SUBTITLE = {'segments': [dict(s) for s in segments], 'language': 'en'}
+    session.SUBTITLE = Subtitle({'segments': [dict(s) for s in segments], 'language': 'en'})
     session.FORMAT = {'format': 'TTML', 'options': dict({'profile': 'dapt'}, **({'dapt_audio': choice} if choice else {}))}
     out = folder / f'exported_{choice}.ttml'
     file_io.save_file(str(out), 'TTML')
@@ -444,7 +445,7 @@ for choice, want in ((None, (1, 1)), ('kept', (1, 1)), ('link', (0, 2)), ('embed
 
 print('the export dialog')
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [dict(s) for s in SESSION], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SESSION], 'language': 'en'})
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('TTML')
 panel._refresh_options()

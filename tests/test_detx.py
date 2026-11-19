@@ -165,9 +165,9 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'film.detx'))
 file_io.stop_background_loaders()
 check('opens as DETX: the speakers listed with their colours, the rate and metadata kept',
       (fmt, [s['speaker'] for s in opened], {name: data.get('color') for name, data in session.SPEAKERS.items()},
-       session.FORMAT['options']['fps'], session.SUBTITLE['metadata']['title'], 'detx' in session.SUBTITLE['metadata']),
+       session.FORMAT['options']['fps'], session.SUBTITLE.metadata['title'], 'detx' in session.SUBTITLE.metadata),
       ('DETX', ['Jeanne', 'Paul', 'Paul'], {'Jeanne': '#00bb00', 'Paul': '#0000bb'}, 24.0, 'Le film', True))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'out.detx'), 'DETX')
 check('saved and read back as it was', [(s['start'], s['end'], s['text'], s['speaker']) for s in detx.read(str(folder / 'out.detx'))[0]],
       [(s['start'], s['end'], s['text'], s['speaker']) for s in segments])

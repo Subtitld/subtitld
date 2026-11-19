@@ -239,18 +239,18 @@ check('IMSC in fMP4 segments an HLS playlist lists', (len(back), back[1]['end'],
 
 print('through file_io')
 session.FORMAT = {}
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'w.cmft'))
 check('a CMAF track opened: its language the project\'s, what it carries kept',
-      (fmt, len(opened), session.SUBTITLE['language'],
+      (fmt, len(opened), session.SUBTITLE.language,
        {key: session.FORMAT['options'].get(key) for key in ('mp4_text', 'segment_duration')}),
       ('CMFT', 3, 'pt-br', {'mp4_text': 'wvtt', 'segment_duration': 6.0}))
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(dash / 'show.mpd'))
 check('a DASH manifest opened', (fmt, len(opened), session.FORMAT['options'].get('mp4_text'),
                                  session.FORMAT['options'].get('segment_duration')), ('DASH', 3, 'ebu-tt-d', 10.0))
-session.SUBTITLE['segments'] = [dict(segment) for segment in SUBTITLES]
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.segments = [dict(segment) for segment in SUBTITLES]
+session.SUBTITLE.language = 'en-us'
 session.VIDEO = {'filepath': '/videos/show.mp4', 'duration': 30.0}
 session.FORMAT = {'options': {'mp4_text': 'imsc1', 'segment_duration': 10.0}}
 file_io.save_file(str(folder / 'saved.cmft'), 'CMFT')

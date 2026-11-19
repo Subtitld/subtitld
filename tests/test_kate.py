@@ -473,11 +473,11 @@ print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'in.ogg').write_bytes(stream(3, 'pt_BR'))
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.ogg'))
-check('opens as KATE, the stream\'s language the project\'s', (fmt, len(opened), session.SUBTITLE.get('language')),
+check('opens as KATE, the stream\'s language the project\'s', (fmt, len(opened), session.SUBTITLE.language),
       ('KATE', 3, 'pt-br'))
 (folder / 'vorbis.ogg').write_bytes(kate.page(1, 0, 0, [b'\x01vorbis' + b'\0' * 23], 2))
 check('an .ogg with no Kate in it is not opened as Kate', file_io._is_kate(str(folder / 'vorbis.ogg')), False)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'width': 1280, 'height': 720, 'filepath': '/videos/clip.ogv'}
 session.FORMAT = {'options': {'kate_category': 'CC'}}
 file_io.save_file(str(folder / 'out.ogg'), 'KATE')

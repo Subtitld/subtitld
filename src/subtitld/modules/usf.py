@@ -26,14 +26,17 @@ overrides the player's own default look.
 
 import base64
 import bisect
+import copy
 import json
 import os
 
 from bs4 import BeautifulSoup, NavigableString
 
+from subtitld.modules import karaoke
 from subtitld.modules import look as subtitld_look
 from subtitld.modules import markup
 from subtitld.modules import position as subtitld_position
+from subtitld.modules.segment import EFFECTS, LEVELS, text_of, timed_pieces
 
 
 # subtitld.cc names where a file came from in its own namespace:
@@ -67,6 +70,15 @@ SUBTITLDCC_BIDI = 'subtitldcc:bidi'
 # Written down the picture, in columns (modules.position). USF has no word
 # for it either.
 SUBTITLDCC_WRITING = 'subtitldcc:writing'
+# A subtitle timed word by word (modules.segment) is a <karaoke>, each piece
+# after a <k t="…"/> giving its length in milliseconds, a <k> with no text
+# after it a pause, as USF has it. How a piece lights up and the level it
+# was cut at are Subtitld's: <k subtitldcc:effect="wipe"
+# subtitldcc:level="syllable">.
+SUBTITLDCC_EFFECT = 'subtitldcc:effect'
+SUBTITLDCC_LEVEL = 'subtitldcc:level'
+# Where a <k> goes, in the text as it is written into elements and read back.
+_K_MARK = karaoke.MARK
 # What the file says about itself. USF's <metadata> has a title, an author
 # and a date, and a <comment> that holds a description; it has no word for
 # a copyright, so that one is Subtitld's.
@@ -196,6 +208,66 @@ def _inline_text(tag):
         else:
             parts.append(_inline_text(child))
     return ''.join(parts)
+
+
+def _karaoke_marked(pieces, length):
+    """A timed subtitle's text with a mark where each <k> goes, and the
+    <k>s' attributes in order: a piece's length in milliseconds, a pause's,
+    and what is left of the subtitle after its last piece. What the first
+    piece starts with that places the subtitle stays first."""
+    lead, first = markup.split_lead(pieces[0]['text'])
+    out, marks, at = [lead], [], 0
+    for number, piece in enumerate(pieces):
+        start = max(at, round(float(piece['start']) * 1000))
+        if start > at:
+            out.append(_K_MARK)
+            marks.append({'t': str(start - at)})
+        end = max(start, round(float(piece['end']) * 1000))
+        mark = {'t': str(end - start)}
+        if piece.get('effect') in EFFECTS:
+            mark[SUBTITLDCC_EFFECT] = piece['effect']
+        if piece.get('level') in LEVELS:
+            mark[SUBTITLDCC_LEVEL] = piece['level']
+        out.append(_K_MARK + (first if number == 0 else piece['text']))
+        marks.append(mark)
+        at = end
+    if round(length * 1000) > at:
+        out.append(_K_MARK)
+        marks.append({'t': str(round(length * 1000) - at)})
+    return ''.join(out), marks
+
+
+def _place_marks(usf, element, marks):
+    """Each mark in the text of `element` a <k> with the next of `marks`."""
+    marks = iter(marks)
+    for string in [child for child in element.descendants if isinstance(child, NavigableString)]:
+        if _K_MARK not in string:
+            continue
+        nodes = []
+        for number, part in enumerate(str(string).split(_K_MARK)):
+            if number:
+                nodes.append(usf.new_tag('k', attrs=next(marks, {'t': '0'})))
+            if part:
+                nodes.append(NavigableString(part))
+        string.replace_with(*nodes)
+
+
+def _karaoke_pieces(text, marks):
+    """A subtitle's timed pieces from its karaoke's text, a mark where each
+    <k> was, and the <k>s' attributes (karaoke.marked_pieces)."""
+    lengths = []
+    for mark in marks:
+        try:
+            length = max(0, round(float(mark.get('t') or 0))) / 1000
+        except ValueError:
+            length = 0.0
+        extras = {}
+        if mark.get(SUBTITLDCC_EFFECT) in EFFECTS:
+            extras['effect'] = mark[SUBTITLDCC_EFFECT]
+        if mark.get(SUBTITLDCC_LEVEL) in LEVELS:
+            extras['level'] = mark[SUBTITLDCC_LEVEL]
+        lengths.append((length, extras))
+    return karaoke.marked_pieces(text, lengths)
 
 
 def _yes(value):
@@ -436,8 +508,8 @@ class USFReader():
                         best = None
                 if best is not None:
                     translations = best.setdefault('translations', {})
-                    translations[lang] = (translations[lang] + '\n' + translated['text']) if translations.get(lang) \
-                        else translated['text']
+                    translations[lang] = (translations[lang] + '\n' + text_of(translated)) if translations.get(lang) \
+                        else text_of(translated)
 
         return subtitles_list
 
@@ -480,11 +552,18 @@ class USFReader():
         # Its texts, each formatted by the named style it uses unless that
         # style is its speaker's, as Subtitld names them (that one gives the
         # speaker's colour, not the text's).
-        texts, speaker, places = [], None, []
+        texts, speaker, places, marks = [], None, [], []
         for text_tag in element.find_all(['text', 'karaoke'], recursive=False):
             speaker = speaker or text_tag.attrs.get('speaker')
             style_name = text_tag.attrs.get('style')
             style = self._styles.get(style_name) if style_name and style_name != text_tag.attrs.get('speaker') else None
+            if text_tag.name == 'karaoke' and text_tag.find('k'):
+                # Each <k> a mark in its text, its length and Subtitld's
+                # words on it kept in order.
+                text_tag = copy.copy(text_tag)
+                for k_tag in text_tag.find_all('k'):
+                    marks.append(dict(k_tag.attrs))
+                    k_tag.replace_with(NavigableString(_K_MARK))
             texts.append(_extract_inline_text(text_tag, style))
             # The text's own margins and rotations, else those of the style
             # it uses, as its alignment is taken.
@@ -496,6 +575,10 @@ class USFReader():
         if placed:
             subtitld_position.store(subtitle, placed)
         subtitle['text'] = lead + '\n'.join(markup.split_lead(text)[1] for text in texts if text)
+        if marks:
+            # Timed, the one karaoke of a subtitle; among other texts, its words.
+            timed = _karaoke_pieces(subtitle['text'], marks) if len(texts) == 1 else None
+            subtitle['text'] = timed or subtitle['text'].replace(_K_MARK, '')
         subtitle['speaker'] = speaker or 'A'
         if not dubs:
             return subtitle
@@ -563,7 +646,7 @@ class USFWriter():
         """Serialize subtitles to USF XML.
 
         Parameters:
-          subtitles: list of subtitle dicts (from session.SUBTITLE['segments']).
+          subtitles: list of subtitle dicts (from session.SUBTITLE.segments).
           speakers:  dict name -> {'color': '#RRGGBB', 'image_bytes': bytes, ...}.
                      Emits one <style> per speaker; writes `speaker` + `style` on
                      <text>. If a speaker has `image_bytes`, embeds it inside the
@@ -736,9 +819,18 @@ class USFWriter():
             if speaker in speakers:
                 text_tag['style'] = speaker
 
-        text_value = subtitle.get('text', '') if text_override is None else text_override
+        text_value = text_of(subtitle) if text_override is None else text_override
+        pieces = timed_pieces(subtitle) if text_override is None else None
+        if pieces:
+            length = float(subtitle.get('end', 0) or 0) - float(subtitle.get('start', 0) or 0)
+            text_value, marks = _karaoke_marked(pieces, length)
         # A translation sits where the subtitle it translates does.
         self._append_text_with_breaks(usf, text_tag, text_value, subtitld_position.of(subtitle))
+        if pieces:
+            if any(len(mark) > 1 for mark in marks):
+                usf.find('USFSubtitles')['xmlns:subtitldcc'] = SUBTITLDCC_NAMESPACE
+            _place_marks(usf, text_tag, marks)
+            text_tag.name = 'karaoke'
         new_sub.append(text_tag)
 
         if include_dubs:

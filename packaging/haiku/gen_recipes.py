@@ -36,6 +36,17 @@ PKGS = [
          copyright=["2010-202x The platformdirs developers"],
          license=["MIT"],
          requires=[]),
+    # The LICENSE names no holder; the package's metadata names its author
+    # and maintainer. Its hyphenation dictionaries are LibreOffice's, under
+    # the same licences.
+    dict(port="pyphen", pypi="pyphen", version="0.18.1",
+         summary="Hyphenate text with Hunspell's dictionaries",
+         description="A pure Python module that finds where words can be hyphenated, in "
+                     "dozens of languages, with the hyphenation dictionaries of LibreOffice.",
+         homepage="https://github.com/Kozea/Pyphen",
+         copyright=["2013-2026 Guillaume Ayoub, CourtBouillon"],
+         license=["GNU GPL v2", "GNU LGPL v2.1", "MPL v1.1"],
+         requires=[]),
     dict(port="pysubs2", pypi="pysubs2", version="1.8.1", commands=["pysubs2"],
          summary="Load, edit and save subtitle files in several formats",
          description="A library and command line tool for loading, editing and saving subtitle "

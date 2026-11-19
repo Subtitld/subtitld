@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtMultimedia import QMediaPlayer
 app = QApplication([])
 from subtitld.modules import audioengine, session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import preview_panel, left_panel_videoproperties as vp
 
 fails = []
@@ -41,7 +42,7 @@ def no_device(**_kwargs):
 
 
 audioengine.sd.OutputStream = no_device
-session.SUBTITLE = {'segments': [], 'selected': None, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [], 'selected': None, 'position': 0.0})
 
 video = Path(tempfile.mkdtemp()) / 'clip.mkv'
 video.write_bytes(b'not really a video')
@@ -72,10 +73,10 @@ player._media_player = stand
 
 print('the end, without a frame shown')
 player.loadfile(str(video))
-session.SUBTITLE['position'] = 2454.921
+session.SUBTITLE.position = 2454.921
 player._on_media_status_changed(QMediaPlayer.EndOfMedia)
 check('said once', emitted, [True])
-check('the playhead back at the start', session.SUBTITLE['position'], 0.0)
+check('the playhead back at the start', session.SUBTITLE.position, 0.0)
 check('the sound engine there too', seeks[-1:], [0.0])
 check('the player not stepped back from the end', positions, [])
 player._on_media_status_changed(QMediaPlayer.EndOfMedia)

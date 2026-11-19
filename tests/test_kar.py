@@ -225,10 +225,10 @@ folder = Path(tempfile.mkdtemp())
 session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'song.kar'))
-check('opens as KAR: its title, the source kept', (fmt, len(opened), session.SUBTITLE['metadata'].get('title'),
+check('opens as KAR: its title, the source kept', (fmt, len(opened), session.SUBTITLE.metadata.get('title'),
                                                    session.FORMAT['options'].get('kar_source')),
       ('KAR', 3, 'My Song', str(folder / 'song.kar')))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.kar'), 'KAR')
 again = read_smf((folder / 'again.kar').read_bytes())
 check('saved with its music', (len(again[2]), [t for t, k, raw in again[2][1] if k[0] == 'midi'][:3]), (3, [96, 144, 144]))

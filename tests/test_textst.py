@@ -22,6 +22,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, export_options, file_io, session, teletext, textst, video_subtitles
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -156,7 +157,7 @@ check('overlapping subtitles: a dialog for each stretch, the shared one of two r
        for d in (textst.parse_dialog(segment[3:]) for segment in overlapping[1:])],
       [(1.0, 2.0, [2]), (2.0, 3.0, [8, 2]), (3.0, 4.0, [8])])
 
-session.SUBTITLE = {'segments': CUES, 'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'segments': CUES, 'language': 'pt-br'})
 session.VIDEO = {}
 session.FORMAT = {'format': 'TEXTST', 'options': {}}
 file_io.save_file(str(folder / 'out.m2ts'), 'TEXTST')

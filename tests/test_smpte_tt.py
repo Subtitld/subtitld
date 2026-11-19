@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import cea708, config, file_io, markup, picture_ocr, scc, session, ttml
+from subtitld.modules.segment import Subtitle
 from subtitld.interface.export_dialog import _SubtitlesPanel
 
 fails = []
@@ -281,7 +282,7 @@ check('no profile declared, and two smpte:information, one of them in the body',
 
 print('the export dialog')
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [dict(s) for s in SEGMENTS], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SEGMENTS], 'language': 'en'})
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('TTML')
 panel._refresh_options()
@@ -305,7 +306,7 @@ check('a .xml that is TTML by its root opens as TTML, not as YouTube\'s, DCP\'s 
 opened, fmt = file_io.process_subtitles_file(str(folder / 'tunnel.xml'))
 check('a SMPTE-TT holding only the CEA-608 it was converted from opens with its captions',
       [markup.plain(s['text']) for s in opened], [markup.plain(s['text']) for s in SEGMENTS])
-session.SUBTITLE = {'segments': [dict(s) for s in SEGMENTS], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SEGMENTS], 'language': 'en'})
 session.VIDEO = {'framerate': 25}
 session.FORMAT = {'format': 'TTML', 'options': {'profile': 'smpte-tt', 'tunnel_608': True}}
 file_io.save_file(str(folder / 'out.xml'), 'TTML')

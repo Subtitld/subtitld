@@ -14,6 +14,10 @@
         {"key": "backgroundbox_enabled", "type": "bool", "label": "Background box", "default": true},
         {"key": "backgroundbox_padding", "type": "int", "label": "Padding", "default": 10, "min": -500, "max": 500, "unit": "px", "visible_if": "backgroundbox_enabled"},
         {"key": "backgroundbox_border_radius", "type": "int", "label": "Border radius", "default": 5, "min": 0, "max": 500, "unit": "px", "visible_if": "backgroundbox_enabled"},
-        {"key": "backgroundbox_color", "type": "color", "label": "Box colour", "default": "#55000000", "visible_if": "backgroundbox_enabled"}
+        {"key": "backgroundbox_color", "type": "color", "label": "Box colour", "default": "#55000000", "visible_if": "backgroundbox_enabled"},
+        {"key": "karaoke_color", "type": "color", "label": "Karaoke colour", "default": "#ffffd700"},
+        {"key": "karaoke_effect", "type": "select", "label": "Karaoke lights up", "default": "fill",
+         "options": [{"value": "fill", "label": "All at once"}, {"value": "wipe", "label": "Wiping across"},
+                     {"value": "outline", "label": "Its outline"}, {"value": "pop", "label": "Popping in"}]}
     ]
 }

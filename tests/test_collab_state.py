@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import collab_state, docops, file_io, history, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -33,14 +34,14 @@ folder = tempfile.mkdtemp()
 
 
 def new_project(*texts):
-    session.SUBTITLE = {'segments': [{'start': float(i * 2), 'end': i * 2 + 1.0, 'text': text, 'speaker': 'A'}
-                                     for i, text in enumerate(texts)], 'language': 'en', 'filepath': ''}
+    session.SUBTITLE = Subtitle({'segments': [{'start': float(i * 2), 'end': i * 2 + 1.0, 'text': text, 'speaker': 'A'}
+                                     for i, text in enumerate(texts)], 'language': 'en', 'filepath': ''})
     session.SPEAKERS.clear()
     session.SPEAKERS['A'] = {'color': '#ff0000'}
     session.FORMAT = {}
     session.VIDEO = {}
     history.history_clear()
-    return session.SUBTITLE['segments']
+    return session.SUBTITLE.segments
 
 
 def edit(fn):
@@ -52,7 +53,7 @@ def edit(fn):
 def open_project(path):
     """As the open flows do it."""
     history.history_clear()
-    session.SUBTITLE['segments'] = file_io.process_subtitles_file(path)[0]
+    session.SUBTITLE.segments = file_io.process_subtitles_file(path)[0]
     session.document_loaded()
 
 
@@ -72,7 +73,7 @@ check('nothing saved', members(plain_path), [])
 print('shared')
 one, two = new_project('one', 'two')
 collab_state.start('doc123', 'https://draft.subtitld.cc', seq=7,
-                   base=docops.snapshot(session.SUBTITLE['segments'], session.SPEAKERS, session.SUBTITLE))
+                   base=docops.snapshot(session.SUBTITLE.segments, session.SPEAKERS, session.SUBTITLE))
 edit(lambda: one.update(text='ONE'))
 edit(lambda: two.update(text='TWO'))
 history.history_undo()
@@ -99,7 +100,7 @@ check('opening it shares it again, queue and all', collab_state.STATE, saved)
 
 print('a save made from a snapshot')
 snapshot = file_io._snapshot_for_save()
-edit(lambda: session.SUBTITLE['segments'][0].update(text='after the snapshot'))
+edit(lambda: session.SUBTITLE.segments[0].update(text='after the snapshot'))
 thread_path = os.path.join(folder, 'thread.usfx')
 file_io.SaveFileThread(thread_path, 'USFX', 'en', snapshot=snapshot).run()
 open_project(thread_path)

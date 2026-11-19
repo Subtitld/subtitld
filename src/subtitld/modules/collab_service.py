@@ -199,7 +199,7 @@ def _transfer_tick():
 
 def _dub_hashes_here():
     from subtitld.modules import collab_media
-    return collab_media.dub_files(session.SUBTITLE.get('segments'))
+    return collab_media.dub_files(session.SUBTITLE.segments)
 
 
 def sync_dubs():
@@ -235,7 +235,7 @@ def sync_dubs():
         _dub_registering = service.call(work, done, lambda error: log.warning('collab: dub files not listed: %s', error))
     _announce()
     # The missing ones, from whoever has them.
-    missing = collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
+    missing = collab_media.resolve_dubs(session.SUBTITLE.segments)
     coming = sum(1 for d in _transfers.downloads.values() if d.kind == 'dub' and d.state in ('waiting', 'downloading', 'checking'))
     for file_hash in dict.fromkeys(missing):
         if coming >= DUB_DOWNLOADS:
@@ -252,7 +252,7 @@ def sync_dubs():
 def dubs_status():
     """{'missing', 'coming'}: dub files of the project not here yet, and how many of those are coming in."""
     from subtitld.modules import collab_media
-    missing = set(collab_media.resolve_dubs(session.SUBTITLE.get('segments'))) if collab_state.shared() else set()
+    missing = set(collab_media.resolve_dubs(session.SUBTITLE.segments)) if collab_state.shared() else set()
     coming = {h for h, d in (_transfers.downloads.items() if _transfers is not None else [])
               if d.kind == 'dub' and d.state in ('waiting', 'downloading', 'checking')}
     return {'missing': len(missing), 'coming': len(missing & coming)}
@@ -308,7 +308,7 @@ def _received(file_hash, path):
                 dict(description, kind=entry.get('kind'), name=entry.get('name'), path=path, fingerprint='')]
         if entry.get('kind') == 'dub' or download.kind == 'dub':
             # A dub file came: the subtitles that name it play it now.
-            collab_media.resolve_dubs(session.SUBTITLE.get('segments'))
+            collab_media.resolve_dubs(session.SUBTITLE.segments)
             _tell('dubs')
         if entry.get('kind') == 'stem':
             # Separated audio for the video open here: the player takes it once all of it is here.
@@ -453,11 +453,11 @@ def _presence_tick():
     global _last_presence
     if _connection is None:
         return
-    selected = session.SUBTITLE.get('selected')
+    selected = session.SUBTITLE.selected
     selected_id = selected.get('id') if isinstance(selected, dict) else None
     if _editing and (selected_id != _editing or time.monotonic() - _last_typed > TYPING_IDLE_SECONDS):
         stopped_typing()
-    position = session.SUBTITLE.get('position')
+    position = session.SUBTITLE.position
     state = {'selected': selected_id, 'playhead': round(float(position), 2) if position is not None else None,
              'editing': _editing, 'voice': in_call()}
     if state != _last_presence:
@@ -531,7 +531,7 @@ def resolve(conflict, keep):
     if conflict in engine.conflicts:
         engine.conflicts.remove(conflict)
     if keep == 'theirs' and conflict.get('cue_id'):
-        segment = cue_ids.find(session.SUBTITLE.get('segments'), conflict['cue_id'])
+        segment = cue_ids.find(session.SUBTITLE.segments, conflict['cue_id'])
         if segment is not None:
             history.history_append()
             head, _dot, key = conflict['field'].partition('.')
@@ -547,7 +547,7 @@ def resolve(conflict, keep):
 
 
 def _live():
-    return session.SUBTITLE.get('segments') or [], session.SPEAKERS, session.SUBTITLE
+    return session.SUBTITLE.segments, session.SPEAKERS, session.SUBTITLE
 
 
 def _document():
@@ -583,10 +583,9 @@ def take(project):
     video later: interface/subtitldcc_open.py). Main thread only."""
     _stop()
     history.history_clear()
-    session.SUBTITLE['segments'] = []
-    session.SUBTITLE['selected'] = None
-    session.SUBTITLE['filepath'] = ''
-    session.SUBTITLE.pop('origin', None)
+    session.SUBTITLE.reset()
+    session.SUBTITLE.filepath = ''
+    session.SUBTITLE.origin = None
     session.SPEAKERS.clear()
     session.CONFIG['format_to_save'] = 'USFX'
     session.document_loaded()
@@ -601,8 +600,7 @@ def drop():
     opened with its video (interface/subtitldcc_open.py). Disconnected, and nothing is open any more."""
     _stop()
     history.history_clear()
-    session.SUBTITLE['segments'] = []
-    session.SUBTITLE['selected'] = None
+    session.SUBTITLE.reset()
     session.SPEAKERS.clear()
     session.document_loaded()  # nothing is shared: the open project is no project
     session.set_unsaved(False)

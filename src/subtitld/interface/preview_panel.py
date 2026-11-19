@@ -18,6 +18,7 @@ from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import subtitle_styles
 from subtitld.modules import audioengine #AudaspaceAudioDevice
+from subtitld.modules.segment import text_of
     
 
 class PlayerWidget(QWidget):
@@ -129,7 +130,7 @@ class PlayerWidget(QWidget):
                     ratio = widget.devicePixelRatioF() if widget is not None else 1.0
                     renderer.set_size(video_rect.width() * ratio, video_rect.height() * ratio)
                     at = outer._picture_time()
-                    showing = next((item for item in session.SUBTITLE.get('segments') or []
+                    showing = next((item for item in session.SUBTITLE.segments
                                     if item['start'] <= at < item['end']), None)
                     painter.setRenderHint(QPainter.SmoothPixmapTransform)
                     outer._subtitle_hit = None
@@ -248,7 +249,7 @@ class PlayerWidget(QWidget):
         QTimer.singleShot(0, widget._force_resize_update)
     
     def position_changed(widget, position):
-        session.SUBTITLE['position'] = position / 1000.0
+        session.SUBTITLE.position = position / 1000.0
         widget.update_subtitle_layer()
         widget.position_changed_signal.emit()
 
@@ -319,7 +320,7 @@ class PlayerWidget(QWidget):
             # here, and stepping back from the end would only leave the cursor
             # there. Back to the start, and say so (the proxy is offered).
             widget._audio_device.seek(0.0)
-            session.SUBTITLE['position'] = 0.0
+            session.SUBTITLE.position = 0.0
             widget.update_subtitle_layer()
             widget.position_changed_signal.emit()
             window = widget.window()
@@ -344,10 +345,10 @@ class PlayerWidget(QWidget):
             playercontrols.update_playercontrols_playpause_button(window)
 
     def update_subtitle_layer(widget):
-        session.SUBTITLE['current'] = subtitles.subtitle_under_current_position()
+        session.SUBTITLE.current = subtitles.subtitle_under_current_position()
         if widget._subtitle_renderer is not None:
-            widget._subtitle_renderer.prefetch(session.SUBTITLE.get('segments') or [],
-                                               session.SUBTITLE.get('position', 0.0))
+            widget._subtitle_renderer.prefetch(session.SUBTITLE.segments,
+                                               (session.SUBTITLE.position or 0.0))
         widget.update()
 
     def _picture_time(widget):
@@ -356,7 +357,7 @@ class PlayerWidget(QWidget):
         frame = widget._last_video_frame
         if frame is not None and frame.isValid() and frame.startTime() >= 0:
             return frame.startTime() / 1_000_000
-        return session.SUBTITLE.get('position', 0.0)
+        return (session.SUBTITLE.position or 0.0)
 
     def resizeEvent(widget, event):
         widget._graphics_view.setSceneRect(QRect(0, 0, event.size().width(), event.size().height()))
@@ -408,7 +409,7 @@ class PlayerWidget(QWidget):
         project open — silently no-ops because setPosition runs into
         an empty pipeline.
 
-        We also update `session.SUBTITLE['position']` here regardless
+        We also update `session.SUBTITLE.position` here regardless
         of media readiness. The timeline cursor draws from that field;
         without an immediate write, the queued-seek case would leave
         the cursor at 0 until the player's positionChanged signal
@@ -418,7 +419,7 @@ class PlayerWidget(QWidget):
         repeat starts again from where it lands. Only the repeat's own
         seeks back (`keep_repeat`) leave it be."""
         pos_f = float(pos)
-        session.SUBTITLE['position'] = pos_f
+        session.SUBTITLE.position = pos_f
         if not keep_repeat:
             session.REPEAT_DURATION_BUFFER = []
         status = widget._media_player.mediaStatus()
@@ -445,7 +446,7 @@ class PlayerWidget(QWidget):
     def play(widget):
         """Play: the sound first, the picture once the sound comes out of
         the device, so they start together rather than the picture leading."""
-        widget._audio_device.play(session.SUBTITLE.get('position', 0))
+        widget._audio_device.play(session.SUBTITLE.position or 0)
         widget._picture_at = None
         widget._picture_polls = 0
         widget._start_picture()
@@ -567,12 +568,12 @@ class PlayerWidget(QWidget):
         from subtitld.interface import project_thumbnail
         frame = widget._last_video_frame
         image = frame.toImage() if frame is not None and frame.isValid() else None
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         if (image is None or image.isNull()) and not segments:
             return None
         manager = getattr(getattr(widget.window(), 'timeline_widget', None), 'waveform_manager', None)
         card = project_thumbnail.render(
-            image, segments, session.SUBTITLE.get('position', 0.0), speakers=session.SPEAKERS,
+            image, segments, (session.SUBTITLE.position or 0.0), speakers=session.SPEAKERS,
             duration=session.VIDEO.get('duration'), samples=getattr(manager, 'samples', None))
         data = QByteArray()
         buffer = QBuffer(data)
@@ -662,7 +663,7 @@ class PlayerWidget(QWidget):
         hit = widget._subtitle_hit
         if hit is None or widget._media_player.playbackState() == QMediaPlayer.PlayingState:
             return None
-        if not hit['rect'].contains(point) or hit['segment'] not in (session.SUBTITLE.get('segments') or []):
+        if not hit['rect'].contains(point) or hit['segment'] not in (session.SUBTITLE.segments):
             return None
         from subtitld.modules import collab_service
         if collab_service.locked_by(hit['segment'].get('id')):
@@ -709,12 +710,12 @@ class PlayerWidget(QWidget):
             delta, video = drag['delta'], drag['video']
             segment = drag['segment']
             if abs(delta.x()) + abs(delta.y()) < 3 or video.width() <= 0 or video.height() <= 0 \
-                    or segment not in (session.SUBTITLE.get('segments') or []):
+                    or segment not in (session.SUBTITLE.segments):
                 widget._graphics_video_item.update()
                 return True
             player = session.CONFIG.get('videoplayer', {})
             safe = (player.get('safe_margin_title_x', 10) / 100, player.get('safe_margin_title_y', 10) / 100)
-            place = subtitle_position.dragged(subtitle_position.of(segment), markup.alignment(segment.get('text') or ''),
+            place = subtitle_position.dragged(subtitle_position.of(segment), markup.alignment(text_of(segment)),
                                               delta.x() / video.width(), delta.y() / video.height(), safe)
             widget._subtitle_moved = {'segment': segment, 'image': drag['image'], 'delta': delta}
             # Should it never be drawn at its new place, it goes back to being drawn as it is.

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout
 from PySide6.QtCore import QDir, QSize
 app = QApplication([])
 from subtitld.modules import session, proxy, file_io, waveform
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', session.PATH_SUBTITLD_GRAPHICS)
 from subtitld.interface import left_panel_videoproperties as vp
 
@@ -33,7 +34,7 @@ session.PATH_SUBTITLD_DATA_PROXY.mkdir()
 source = tmp / 'movie.mp4'
 source.write_bytes(b'x' * 1000)
 session.CONFIG = {'proxy': {'scale': 50}}
-session.SUBTITLE = {'segments': [], 'position': 12.5}
+session.SUBTITLE = Subtitle({'segments': [], 'position': 12.5})
 
 
 class Player:

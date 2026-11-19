@@ -63,7 +63,7 @@ def load(self):
         # is dirty, so this is a no-op for read-only browsing).
         QTimer.singleShot(30000, lambda: file_io.autosave_backup_timer_timeout())
 
-    if session.CONFIG.get('autosave', {}).get('original_enabled', True) and session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'):
+    if session.CONFIG.get('autosave', {}).get('original_enabled', True) and (session.SUBTITLE.filepath or '').lower().endswith('.usfx'):
         self.autosave_original_timer.start()
 
 

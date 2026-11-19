@@ -42,6 +42,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from subtitld.modules import session
 from subtitld.modules import markup
+from subtitld.modules.segment import text_of
 from subtitld.modules.addons.provider import TTSProvider
 
 
@@ -201,7 +202,7 @@ class _GTTSSpeechThread(QThread):
         lang, tld = _parse_voice_id(voice)
         # Negative rate flags slow speech; gTTS has no continuous rate.
         slow = int(subtitle.get('rate', 0) or 0) < 0
-        tts = gTTS(text=markup.plain(subtitle['text']), lang=lang, tld=tld, slow=slow)
+        tts = gTTS(text=markup.plain(text_of(subtitle)), lang=lang, tld=tld, slow=slow)
         # gTTS emits MP3 only — same problem as edge-tts. Save MP3 to a
         # temp file then transcode to PCM WAV; libsndfile can't decode
         # MP3, so playback would be silent without this step.
@@ -342,7 +343,7 @@ class GTTSProvider(TTSProvider):
         if size <= 0:
             self._on_speech_error(uid, original_subtitle, 'gTTS produced an empty audio file')
             return
-        for subtitle in session.SUBTITLE['segments']:
+        for subtitle in session.SUBTITLE.segments:
             if subtitle.get('start') == original_subtitle['start']:
                 dubs = subtitle.setdefault('dubbing', [])
                 inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
@@ -369,7 +370,7 @@ class GTTSProvider(TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 timeline_widget.update()
             session.set_unsaved()
@@ -379,7 +380,7 @@ class GTTSProvider(TTSProvider):
         from PySide6.QtWidgets import QApplication
         log.error('gtts: uid=%s %s', uid, message)
         target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if target_start is not None and subtitle.get('start') == target_start:
                 subtitle['locked'] = False
                 break

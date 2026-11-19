@@ -368,7 +368,7 @@ class EffectChain:
 def _project_key() -> str:
     from subtitld.modules import session
     from subtitld.modules.utils import get_cache_key
-    path = session.VIDEO.get('filepath') or session.SUBTITLE.get('filepath') or ''
+    path = session.VIDEO.get('filepath') or session.SUBTITLE.filepath or ''
     return get_cache_key(path) if path else '_no_project'
 
 

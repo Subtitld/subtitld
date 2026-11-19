@@ -1825,6 +1825,18 @@ QPushButton[class="subtitle_formatting_button"]::menu-indicator {
     text-decoration: line-through;
 }
 
+/* A subtitle timed piece by piece (interface/timed_text_strip.py): its pieces
+   are chips the widget draws; under them the chosen one's times and how it
+   lights up, in the fields' and combo boxes' own look. */
+#timed_text_strip {
+    background: transparent;
+}
+
+#timed_text_strip QLabel {
+    color: #b8cee0;
+    font-size: 10px;
+}
+
 QPushButton[class="subtitle_formatting_swatch"] {
     background: transparent;
     border: 1px solid transparent;

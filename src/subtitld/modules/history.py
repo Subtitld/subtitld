@@ -65,12 +65,12 @@ journal.add_listener(_on_changes)
 
 
 def _selected_id():
-    selected = session.SUBTITLE.get('selected')
+    selected = session.SUBTITLE.selected
     return selected.get('id') if isinstance(selected, dict) else None
 
 
 def _select(sid):
-    session.SUBTITLE['selected'] = cue_ids.find(session.SUBTITLE.get('segments'), sid) or False
+    session.SUBTITLE.selected = cue_ids.find(session.SUBTITLE.segments, sid) or False
 
 
 def _show_pictures(step):
@@ -105,7 +105,7 @@ def _replay(step):
     """Undo `step` live, newest batch first; returns the step that undoes
     that."""
     global _replaying
-    document = {'segments': session.SUBTITLE.setdefault('segments', []),
+    document = {'segments': session.SUBTITLE.segments,
                 'speakers': session.SPEAKERS, 'meta': session.SUBTITLE}
     reverse = Step(_selected_id())
     _replaying = True
@@ -125,7 +125,7 @@ def history_append(_segments=None):
     """Start a new undo step: the changes the edit about to be made records
     go into it. The optional `_segments` argument is ignored — kept for
     backward compatibility with the dozens of
-    `history_append(session.SUBTITLE['segments'])` call sites scattered
+    `history_append(session.SUBTITLE.segments)` call sites scattered
     through `subtitles.py` and the interface modules."""
     # What came before this edit is the step before's.
     session.capture_changes()

@@ -201,10 +201,10 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.pac').write_bytes(GREEK)
 session.FORMAT = {}
 session.VIDEO = {}
-session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE.language = 'pt-br'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.pac'))
 check("opens; its language the project's; the rate and the page kept to save it again", (
-    fmt, len(opened), session.SUBTITLE['language'],
+    fmt, len(opened), session.SUBTITLE.language,
     {key: session.FORMAT['options'].get(key) for key in ('fps', 'pac_code_page')}),
       ('PAC', 1, 'el-gr', {'fps': 25.0, 'pac_code_page': 'greek'}))
 session.FORMAT = {}
@@ -213,9 +213,9 @@ session.VIDEO = {'framerate': 30.0}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.fpc'))
 check("a .fpc opens as UniPac, at the video's rate", (fmt, opened[0]['text'][:4], session.FORMAT['options']['fps']),
       ('FPC', 'Ação', 30.0))
-session.SUBTITLE['segments'] = [{'start': 1.5, 'end': 2.5, 'text': 'Γεια σου, <i>κόσμε</i>'},
+session.SUBTITLE.segments = [{'start': 1.5, 'end': 2.5, 'text': 'Γεια σου, <i>κόσμε</i>'},
                                 {'start': 3.0, 'end': 4.0, 'text': '{\\an8}Δεύτερο'}]
-session.SUBTITLE['language'] = 'el-gr'
+session.SUBTITLE.language = 'el-gr'
 session.VIDEO = {'framerate': 25.0}
 session.FORMAT = {'options': {'pac_code_page': 'auto'}}
 file_io.save_file(str(folder / 'out.pac'), 'PAC')

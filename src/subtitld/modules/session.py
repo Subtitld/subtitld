@@ -8,6 +8,7 @@ import datetime
 import subtitld
 import platformdirs
 from subtitld.modules import collab_state, cue_ids, journal
+from subtitld.modules.segment import Subtitle
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
@@ -504,9 +505,7 @@ LANGUAGE_DICT_LIST = {
 
 CONFIG = {}
 
-SUBTITLE = {
-    'segments': [],
-}
+SUBTITLE = Subtitle(segments=[])
 
 SPEAKERS = {}
 
@@ -549,7 +548,7 @@ def persist_current_playback_position():
     don't need to gate on those."""
     if not isinstance(CONFIG, dict):
         return
-    filepath = SUBTITLE.get('filepath')
+    filepath = SUBTITLE.filepath
     if not filepath:
         return
     recent = CONFIG.get('recent_files')
@@ -559,7 +558,7 @@ def persist_current_playback_position():
     if not isinstance(entry, dict):
         return
     try:
-        entry['last_position'] = float(SUBTITLE.get('position', 0) or 0)
+        entry['last_position'] = float(SUBTITLE.position or 0)
     except (TypeError, ValueError):
         entry['last_position'] = 0
 
@@ -582,9 +581,9 @@ _before_capture_callbacks = []
 def capture_changes():
     """Record what the document's last edit changed (modules.journal)."""
     # Whatever the edit made, every subtitle leaves it with its own ID.
-    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    cue_ids.ensure_ids(SUBTITLE.segments)
     _before_capture()
-    return journal.capture(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+    return journal.capture(SUBTITLE.segments, SPEAKERS, SUBTITLE)
 
 
 def _before_capture():
@@ -600,9 +599,9 @@ def document_loaded():
     """A project was opened or started: the journal starts from it, so that
     opening it is not recorded as an edit, and it is shared for co-editing
     if its file says so (modules.collab_state)."""
-    cue_ids.ensure_ids(SUBTITLE.get('segments'))
+    cue_ids.ensure_ids(SUBTITLE.segments)
     _before_capture()
-    journal.reset(SUBTITLE.get('segments'), SPEAKERS, SUBTITLE)
+    journal.reset(SUBTITLE.segments, SPEAKERS, SUBTITLE)
     collab_state.opened()
     for callback in list(_document_loaded_callbacks):
         callback()

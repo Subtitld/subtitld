@@ -20,6 +20,7 @@ from PySide6.QtCore import Qt, QPoint
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session, history, shot_changes
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 
 fails = []
@@ -61,11 +62,11 @@ LANE_Y = 80     # inside the subtitles lane (subtitle_y 55, 50 tall)
 
 
 def reset_document():
-    session.SUBTITLE = {'segments': [
+    session.SUBTITLE = Subtitle({'segments': [
         {'start': 1.0, 'end': 3.0, 'text': 'One', 'speaker': 'A'},
         {'start': 3.001, 'end': 4.5, 'text': 'Two', 'speaker': 'A'},
         {'start': 6.0, 'end': 8.0, 'text': 'Three', 'speaker': 'A'},
-    ], 'selected': None, 'position': 0.0}
+    ], 'selected': None, 'position': 0.0})
     history.history_clear()
     session.UNSAVED = False
 
@@ -98,7 +99,7 @@ def drag(start_x, end_x, steps=6):
 
 
 def segment(index):
-    return session.SUBTITLE['segments'][index]
+    return session.SUBTITLE.segments[index]
 
 
 def timing(index):

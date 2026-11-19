@@ -19,6 +19,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.interface import subtitle_renderer
 from subtitld.modules import markup
+from subtitld.modules.segment import text_of
 
 BATCH = 8                    # subtitles sent to the helper at once
 WAIT = 60.0                  # seconds one batch may take before it is given up on
@@ -48,7 +49,7 @@ def draw(segments, size, folder, stem='', wait=WAIT, style_id=None):
     pictures = []
     try:
         style = renderer._style()
-        drawable = [segment for segment in segments if markup.plain(str(segment.get('text') or '')).strip()]
+        drawable = [segment for segment in segments if markup.plain(text_of(segment)).strip()]
         for first in range(0, len(drawable), BATCH):
             batch = drawable[first:first + BATCH]
             keys = [renderer._job(segment, float(segment['start']), *style)[0] for segment in batch]
@@ -75,7 +76,7 @@ def draw(segments, size, folder, stem='', wait=WAIT, style_id=None):
                            'width': image.width(), 'height': image.height(),
                            # The words it shows, which a player may speak or
                            # show in place of the picture.
-                           'alt': markup.plain(markup.split_lead(str(segment.get('text') or ''))[1]).strip()}
+                           'alt': markup.plain(markup.split_lead(text_of(segment))[1]).strip()}
                 if segment.get('forced'):
                     picture['forced'] = True
                 pictures.append(picture)

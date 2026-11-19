@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget
 from PySide6.QtCore import QDir
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', str(session.PATH_SUBTITLD_GRAPHICS))
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import left_panel_import as lpi
@@ -48,13 +49,14 @@ partial = lpi._GenericASRPanel._on_partial
 
 print('the selected subtitle is what a selection run targets')
 picked = cue(5.0, 8.0, 'old text')
-session.SUBTITLE = {'segments': [cue(1.0, 2.0, 'before'), picked], 'selected': picked}
+session.SUBTITLE = Subtitle({'segments': [cue(1.0, 2.0, 'before'), picked], 'selected': picked})
+picked = session.SUBTITLE.segments[1]
 check('selected cue is the target', scope_selector.selected_segment() is picked, True)
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 check('nothing selected', scope_selector.selected_segment(), None)
-session.SUBTITLE['selected'] = cue(5.0, 8.0, 'a copy, not on the timeline')
+session.SUBTITLE.selected = cue(5.0, 8.0, 'a copy, not on the timeline')
 check('a cue that is not on the timeline', scope_selector.selected_segment(), None)
-session.SUBTITLE['selected'] = picked
+session.SUBTITLE.selected = picked
 picked['end'] = picked['start']
 check('an empty range', scope_selector.selected_segment(), None)
 picked['end'] = 8.0
@@ -63,39 +65,43 @@ print('a selection run writes the transcript into that subtitle')
 picked = cue(5.0, 8.0, 'old text', speaker='B')
 outside = cue(1.0, 2.0, 'before')
 live = cue(5.2, 6.0, 'live partial')  # appended during the run, inside the range
-session.SUBTITLE = {'segments': [outside, picked, live], 'selected': picked}
+session.SUBTITLE = Subtitle({'segments': [outside, picked, live], 'selected': picked})
+outside = session.SUBTITLE.segments[0]
+picked = session.SUBTITLE.segments[1]
+live = session.SUBTITLE.segments[2]
 session.SPEAKERS = {'A': {}, 'B': {}}
 finished(fake_panel(target=picked, scope_range=(5.0, 8.0), offset=5.0),
          [{'start': 0.0, 'end': 1.2, 'text': 'Hello there'}, {'start': 1.2, 'end': 2.5, 'text': 'second part'}])
 check('the transcript lands in the selected subtitle', picked['text'], 'Hello there second part')
 check('its timing and speaker are untouched', (picked['start'], picked['end'], picked['speaker']), (5.0, 8.0, 'B'))
 check('no cues are added; the live partial is gone',
-      [s['text'] for s in session.SUBTITLE['segments']], ['before', 'Hello there second part'])
+      [s['text'] for s in session.SUBTITLE.segments], ['before', 'Hello there second part'])
 
 print('partials fill the subtitle in as they arrive')
 picked = cue(5.0, 8.0, '')
-session.SUBTITLE = {'segments': [picked], 'selected': picked}
+session.SUBTITLE = Subtitle({'segments': [picked], 'selected': picked})
+picked = session.SUBTITLE.segments[0]
 panel = fake_panel(target=picked, scope_range=(5.0, 8.0), offset=5.0)
 partial(panel, {'start': 0.0, 'end': 1.0, 'text': 'Hello'})
 partial(panel, {'start': 1.0, 'end': 2.0, 'text': 'there'})
 check('text accumulates in place', picked['text'], 'Hello there')
-check('still one cue', len(session.SUBTITLE['segments']), 1)
+check('still one cue', len(session.SUBTITLE.segments), 1)
 
 print('a subtitle deleted mid-run falls back to a scoped merge')
 picked = cue(5.0, 8.0, 'old text')
-session.SUBTITLE = {'segments': [cue(1.0, 2.0, 'before')], 'selected': picked}
+session.SUBTITLE = Subtitle({'segments': [cue(1.0, 2.0, 'before')], 'selected': picked})
 finished(fake_panel(target=picked, scope_range=(5.0, 8.0), offset=5.0),
          [{'start': 0.0, 'end': 1.0, 'text': 'spliced'}])
 check('the result is spliced into the range instead',
-      [(s['start'], s['text']) for s in session.SUBTITLE['segments']], [(1.0, 'before'), (5.0, 'spliced')])
+      [(s['start'], s['text']) for s in session.SUBTITLE.segments], [(1.0, 'before'), (5.0, 'spliced')])
 
 print('a range run still replaces what is inside the range')
-session.SUBTITLE = {'segments': [cue(1.0, 2.0, 'before'), cue(6.0, 7.0, 'inside'), cue(9.0, 10.0, 'after')],
-                    'selected': None}
+session.SUBTITLE = Subtitle({'segments': [cue(1.0, 2.0, 'before'), cue(6.0, 7.0, 'inside'), cue(9.0, 10.0, 'after')],
+                    'selected': None})
 finished(fake_panel(target=None, scope_range=(5.0, 8.0), offset=5.0),
          [{'start': 0.0, 'end': 1.0, 'text': 'new'}])
 check('inside replaced, outside kept',
-      [(s['start'], s['text']) for s in session.SUBTITLE['segments']],
+      [(s['start'], s['text']) for s in session.SUBTITLE.segments],
       [(1.0, 'before'), (5.0, 'new'), (9.0, 'after')])
 
 print('the scope bar shows labels for selection, inputs for range')
@@ -117,7 +123,8 @@ class Host(QWidget):
 
 
 picked = cue(5.0, 8.0, 'old text')
-session.SUBTITLE = {'segments': [picked], 'selected': picked, 'language': 'en-us', 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [picked], 'selected': picked, 'language': 'en-us', 'position': 0.0})
+picked = session.SUBTITLE.segments[0]
 session.CONFIG = {'transcription': {'scope': 'range', 'scope_from': 0.0, 'scope_to': 30.0, 'scope_expanded': True}}
 host = Host()
 host.resize(520, 560)
@@ -148,7 +155,7 @@ check('the value labels share one style',
       {'transcription_scope_value'})
 check('a usable selection leaves Start enabled',
       host.global_panel_import_start_transcription_button.isEnabled(), True)
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 sc.refresh()
 check('no selection shows dashes', (sc.from_value.text(), sc.to_value.text()), ('—', '—'))
 check('and there is nothing to transcribe', sc.current_range(), None)
@@ -158,15 +165,15 @@ lpi._reconcile_start_button(host)
 check('Start is disabled', host.global_panel_import_start_transcription_button.isEnabled(), False)
 check('the hint explains why', sc.hint_label.isVisible(), True)
 check('it is the selection hint', sc.hint_label.text(), _('panel_scope.selection_empty'))
-session.SUBTITLE['selected'] = picked
-session.SUBTITLE['segments'] = [picked]
+session.SUBTITLE.selected = picked
+session.SUBTITLE.segments = [picked]
 sc.refresh()
 lpi._reconcile_start_button(host)
 check('selecting a subtitle re-enables Start',
       host.global_panel_import_start_transcription_button.isEnabled(), True)
 check('and the hint goes away', sc.hint_label.isVisible(), False)
 session.CONFIG['transcription']['scope'] = 'all'
-session.SUBTITLE['selected'] = None
+session.SUBTITLE.selected = None
 sc.refresh()
 lpi._reconcile_start_button(host)
 check('scope "all" never needs a selection',
@@ -202,14 +209,14 @@ check('out-of-bounds input is clamped into the media',
 print('the capture buttons stamp the playhead')
 session.CONFIG['transcription'].update({'scope': 'range', 'scope_from': 0.0, 'scope_to': 30.0})
 sc.refresh()
-session.SUBTITLE['position'] = 12.5
+session.SUBTITLE.position = 12.5
 sc.from_capture_button.click()
 check('From takes the playback position', sc.from_input.text(), '00:00:12.500')
-session.SUBTITLE['position'] = 25.0
+session.SUBTITLE.position = 25.0
 sc.to_capture_button.click()
 check('To takes the playback position', sc.to_input.text(), '00:00:25.000')
 check('the range is what was captured', sc.current_range(), (12.5, 25.0))
-session.SUBTITLE['position'] = 5.0
+session.SUBTITLE.position = 5.0
 sc.to_capture_button.click()                   # capture To BEFORE From
 check('capturing To before From self-corrects rather than inverting',
       sc.current_range()[1] > sc.current_range()[0], True)
@@ -219,7 +226,7 @@ session.CONFIG['transcription']['scope'] = 'selection'
 sc.refresh()
 
 print('selection with nothing selected never falls through to a whole-media run')
-session.SUBTITLE = {'segments': [cue(1.0, 2.0, 'keep me')], 'selected': None, 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [cue(1.0, 2.0, 'keep me')], 'selected': None, 'language': 'en-us'})
 session.CONFIG['transcription']['scope'] = 'selection'
 warned = []
 
@@ -247,7 +254,7 @@ try:
 finally:
     lpi.utils.SimpleDialog = real_dialog
 check('it warns instead of starting', warned, [_('transcription_panel.error')])
-check('the subtitles are untouched', [s['text'] for s in session.SUBTITLE['segments']], ['keep me'])
+check('the subtitles are untouched', [s['text'] for s in session.SUBTITLE.segments], ['keep me'])
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

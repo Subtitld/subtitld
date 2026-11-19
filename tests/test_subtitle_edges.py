@@ -27,6 +27,7 @@ from PySide6.QtCore import Qt, QPointF, QEvent
 from PySide6.QtGui import QMouseEvent
 app = QApplication([])
 from subtitld.modules import session, subtitles, history
+from subtitld.modules.segment import Subtitle
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import playercontrols, timeline
 from subtitld.interface import left_panel_vtimeline as lpv
@@ -49,10 +50,10 @@ FRAME = 1 / 25
 
 
 def document(*timings):
-    session.SUBTITLE = {'segments': [{'start': start, 'end': end, 'text': f'Cue {i}'} for i, (start, end) in enumerate(timings)],
-                        'selected': None, 'position': 0.0}
+    session.SUBTITLE = Subtitle({'segments': [{'start': start, 'end': end, 'text': f'Cue {i}'} for i, (start, end) in enumerate(timings)],
+                        'selected': None, 'position': 0.0})
     history.history_clear()
-    return session.SUBTITLE['segments']
+    return session.SUBTITLE.segments
 
 
 def glued(previous, following):
@@ -163,7 +164,7 @@ host = Host()
 
 print('the nudge keys, 1 and 7, with "snap moving to nearest" on')
 a, b = document((1.0, 3.0), (3.001, 5.0))
-session.SUBTITLE['selected'] = b
+session.SUBTITLE.selected = b
 for _ in range(3):
     playercontrols.move_start_forward_subtitle_clicked(host)
 check('7 three times: the start goes 3 frames later', near(b['start']), near(3.001 + 3 * FRAME))
@@ -189,7 +190,7 @@ def drag(edge, *xs):
     tl.subtitle_is_clicked = edge == 'whole'
     tl.is_cursor_pressing = True
     positions = []
-    selected = session.SUBTITLE['selected']
+    selected = session.SUBTITLE.selected
     try:
         for x in xs:
             tl.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, QPointF(x, 5), QPointF(x, 5), Qt.NoButton, Qt.LeftButton, Qt.NoModifier))
@@ -204,47 +205,47 @@ session.CONFIG['timeline'].update({'snap_grid': True, 'grid_type': 'frames', 'sn
 
 print('dragging a start on the frames grid')
 a, b = document((1.0, 2.0), (4.0, 8.0))
-session.SUBTITLE['selected'] = b
+session.SUBTITLE.selected = b
 check('it goes to the frame nearest the cursor, and stays while the cursor does',
       drag('start', 313, 313, 313), [3.12, 3.12, 3.12])
 check('back to the right, then to the left', drag('start', 451, 449, 363), [4.52, 4.48, 3.64])
 
 print('dragging an end on the frames grid')
 a, b = document((1.0, 2.0), (4.0, 8.0))
-session.SUBTITLE['selected'] = b
+session.SUBTITLE.selected = b
 check('it goes to the frame nearest the cursor', drag('end', 613, 613, 687, 701), [6.12, 6.12, 6.88, 7.0])
 
 print('dragging a whole subtitle on the frames grid')
 a, b = document((1.0, 2.0), (4.0, 8.0))
-session.SUBTITLE['selected'] = b
+session.SUBTITLE.selected = b
 check('it goes to the frame nearest the cursor', drag('whole', 313, 313, 451), [3.12, 3.12, 4.52])
 check('and keeps its length', near(b['end'] - b['start']), 4.0)
 
 print('dragging a glued start on the frames grid, with "snap moving to nearest"')
 session.CONFIG['timeline']['snap_move_nereast'] = True
 a, b = document((1.0, 3.0), (3.001, 5.0))
-session.SUBTITLE['selected'] = b
+session.SUBTITLE.selected = b
 check('the start follows the cursor, on frames', drag('start', 361, 352, 337), [3.6, 3.52, 3.36])
 check('and the previous end follows it, 1 ms behind', near(a['end']), 3.359)
 
 print('dragging to the very start, with no limit to snap to')
 session.CONFIG['timeline'].update({'snap_limits': False, 'snap_moving': False, 'snap_move_nereast': False})
 a, b = document((1.0, 3.0), (4.0, 8.0))
-session.SUBTITLE['selected'] = a
+session.SUBTITLE.selected = a
 check('a start goes to frame 0', drag('start', 33, 1), [0.32, 0.0])
 a, b = document((1.0, 3.0), (4.0, 8.0))
-session.SUBTITLE['selected'] = a
+session.SUBTITLE.selected = a
 check('a whole subtitle goes to frame 0', drag('whole', 33, 1), [0.32, 0.0])
 check('keeping its length', near(a['end']), 2.0)
 session.CONFIG['timeline']['grid_type'] = 'seconds'
 a, b = document((1.0, 3.0), (4.0, 8.0))
-session.SUBTITLE['selected'] = a
+session.SUBTITLE.selected = a
 check('on the seconds grid, a start goes to second 0', drag('start', 33, 5), [0.33, 0.0])
 
 print('dragging the last end, with "snap moving to nearest"')
 session.CONFIG['timeline'].update({'snap_limits': True, 'grid_type': 'frames', 'snap_move_nereast': True})
 a, b = document((1.0, 3.0), (4.0, 6.0))
-session.SUBTITLE['selected'] = b
+session.SUBTITLE.selected = b
 check('on the timeline: no error', raises(lambda: drag('end', 613, 687)), None)
 check('the end follows the cursor', near(b['end']), 6.88)
 a, b = document((1.0, 3.0), (4.0, 6.0))

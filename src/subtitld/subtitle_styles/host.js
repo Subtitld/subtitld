@@ -38,6 +38,38 @@
        flash is on or off for certain and never half drawn. */
     @keyframes subtitld-flash { 0%, 49% { visibility: visible; } 50%, 100% { visibility: hidden; } }
     .subtitld-flash { animation: subtitld-flash 1s step-end infinite; }
+    /* A subtitle timed word by word (modules.segment): each piece a span
+       that lights up from --k-start for --k-length, as its effect says, in
+       the style's --karaoke-color (gold where a style has none). Here too
+       every style gets the rules, and the capture holds them at its moment:
+       before a piece starts it is as the style draws it, after it ends it
+       stays lit. All at once: the colour, from its start. Wiping across: the
+       colour sweeping over it, left to right, through its length. Its
+       outline: an outline in the colour, from its start. Popping in: the
+       piece is not there until its start, then fades in. */
+    .subtitld-k {
+      --k-sung: var(--karaoke-color, #ffd700);
+      animation-delay: var(--k-start);
+      animation-duration: var(--k-length);
+      animation-fill-mode: both;
+    }
+    @keyframes subtitld-k-fill { to { color: var(--k-sung); } }
+    .subtitld-k-fill { animation-name: subtitld-k-fill; animation-timing-function: step-start; }
+    @keyframes subtitld-k-wipe { from { background-position: 100% 0; } to { background-position: 0 0; } }
+    .subtitld-k-wipe {
+      animation-name: subtitld-k-wipe;
+      animation-timing-function: linear;
+      background-image: linear-gradient(90deg, var(--k-sung) 50%, currentColor 50%);
+      background-size: 200% 100%;
+      background-repeat: no-repeat;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    @keyframes subtitld-k-outline { to { -webkit-text-stroke: 0.06em var(--k-sung); } }
+    .subtitld-k-outline { animation-name: subtitld-k-outline; animation-timing-function: step-start; paint-order: stroke fill; }
+    @keyframes subtitld-k-pop { from { opacity: 0; } to { opacity: 1; } }
+    .subtitld-k-pop { animation-name: subtitld-k-pop; animation-timing-function: ease-out; }
   `;
   document.head.prepend(css);
 
@@ -137,6 +169,16 @@
         cue.style.transform = `perspective(1000px) rotateX(${-turnX}deg) rotateY(${turnY}deg) rotateZ(${-turnZ}deg)`;
       }
       safe.append(cue);
+      // A piece wiping across is its text clipped out of a background, and
+      // Chromium draws a text-shadow over that background: the style's
+      // shadow is drawn under it instead, as a filter.
+      for (const piece of cue.querySelectorAll('.subtitld-k-wipe')) {
+        const shadow = getComputedStyle(piece).textShadow;
+        if (shadow && shadow !== 'none') {
+          piece.style.textShadow = 'none';
+          piece.style.filter = shadow.split(/,(?![^(]*\))/).map(one => `drop-shadow(${one.trim()})`).join(' ');
+        }
+      }
     }
 
     // The fonts this cue asks for. A face loads when something first uses

@@ -191,8 +191,8 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'in.mcc'))
 check('opens; its rate, and what it carries, kept to save it again', (
     fmt, len(opened), session.FORMAT['options'].get('mcc_rate'), session.FORMAT['options'].get('mcc_captions')),
       ('MCC', 3, '25', '608'))
-session.SUBTITLE['segments'] = segments
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.segments = segments
+session.SUBTITLE.language = 'en-us'
 session.VIDEO = {'framerate': 25.0}
 for name, options, framerate, want in (
         ('saved at the rate asked; >> marks; Windows line ends', {'mcc_rate': '23.976', 'speakers': 'voice'}, 25.0,

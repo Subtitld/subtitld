@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session
+from subtitld.modules.segment import Subtitle
 from corpus_common import need
 
 fails = []
@@ -38,12 +39,12 @@ SCRATCH = Path(tempfile.mkdtemp())
 def opened(path):
     """(subtitles, format) of a file opened as the app opens one, from a
     fresh project."""
-    session.SUBTITLE = {'segments': []}
+    session.SUBTITLE = Subtitle({'segments': []})
     session.FORMAT = {}
     session.VIDEO = {}
     session.SPEAKERS.clear()
     segments, fmt = file_io.process_subtitles_file(str(path))
-    session.SUBTITLE['segments'] = segments
+    session.SUBTITLE.segments = segments
     return segments, fmt
 
 
@@ -171,7 +172,7 @@ for name in EAFS:
     else:
         check(f'{name}: the same as sample_2.7.eaf', cues(elan), first)
 opened(found['pympi/sample_3.0.eaf'])
-check('3.0: its tiers\' language (eng), English, the project\'s', session.SUBTITLE.get('language', '').split('-')[0], 'en')
+check('3.0: its tiers\' language (eng), English, the project\'s', (session.SUBTITLE.language or '').split('-')[0], 'en')
 saved, _fmt = again('sample.eaf', 'EAF')
 check('saved as EAF and opened again', cues(saved), first)
 

@@ -88,7 +88,7 @@ def use_video(window, path):
 
 def default_title():
     """The project's file name, else its video's, without the extension."""
-    for path in (session.SUBTITLE.get('filepath'), (session.VIDEO or {}).get('filepath')):
+    for path in (session.SUBTITLE.filepath, (session.VIDEO or {}).get('filepath')):
         if path:
             return os.path.splitext(os.path.basename(path))[0]
     return ''
@@ -457,7 +457,7 @@ class LiveCard(QWidget):
         player = getattr(window, 'preview_panel_player', None)
         if player is not None and hasattr(player, '_audio_device'):
             # Dubs that changed, or whose files just came, play as they are now.
-            player._audio_device.sync_subtitle_dubs(session.SUBTITLE.get('segments') or [])
+            player._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
         if not self.isHidden():
             self.refresh(load=False)
 
@@ -663,7 +663,7 @@ class LiveCard(QWidget):
         waveform and separated audio where Subtitld keeps them for the video open here."""
         from subtitld.modules import collab_media
         if row['kind'] == 'video':
-            start = os.path.dirname(session.SUBTITLE.get('filepath') or (session.VIDEO or {}).get('filepath') or '') or os.path.expanduser('~')
+            start = os.path.dirname(session.SUBTITLE.filepath or (session.VIDEO or {}).get('filepath') or '') or os.path.expanduser('~')
             folder = QFileDialog.getExistingDirectory(self, _('collab.media_where'), start)
             if not folder:
                 return

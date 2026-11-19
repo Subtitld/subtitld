@@ -18,6 +18,7 @@ from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QImage, QLinear
 
 from subtitld.modules import markup
 from subtitld.modules import session
+from subtitld.modules.segment import text_of
 
 WIDTH, HEIGHT = 512, 384
 PAD = 14
@@ -140,7 +141,7 @@ def render(frame, segments, position, speakers=None, duration=None, samples=None
         font.setPixelSize(17)
         font.setWeight(QFont.DemiBold)
         metrics = QFontMetricsF(font)
-        lines = _caption_lines(current.get('text'), metrics, area.width() - 56)
+        lines = _caption_lines(text_of(current), metrics, area.width() - 56)
         if lines:
             line_h = metrics.height()
             text_w = max(metrics.horizontalAdvance(line) for line in lines)

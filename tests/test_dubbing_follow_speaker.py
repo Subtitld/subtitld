@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QDir, QObject, Signal
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', str(session.PATH_SUBTITLD_GRAPHICS))
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import left_panel_dubbing as lpd
@@ -76,7 +77,11 @@ session.CONFIG = {'dubbing': {'scope': 'all'}}
 session.VIDEO = {'duration': 60.0}
 session.SPEAKERS = {'A': {'dubbing': {}}, 'B': {'dubbing': {'voice': 'mike'}}}
 one, two, own, other = cue(1, 'one'), cue(3, 'two'), cue(5, 'own'), cue(7, 'other', speaker='B')
-session.SUBTITLE = {'segments': [one, two, own, other], 'selected': None, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [one, two, own, other], 'selected': None, 'position': 0.0})
+one = session.SUBTITLE.segments[0]
+two = session.SUBTITLE.segments[1]
+own = session.SUBTITLE.segments[2]
+other = session.SUBTITLE.segments[3]
 provider = FakeProvider()
 panel = lpd._GenericTTSSpeakerPanel(provider)
 panel.setProperty('speaker', 'A')

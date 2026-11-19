@@ -69,6 +69,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.shortcuts import shortcut
+from subtitld.modules.segment import set_text, text_of
 
 
 # How far the cursor may drift from where a find left it and still count as
@@ -445,8 +446,8 @@ class FindReplaceDialog(utils.SimpleDialog):
         )
         found: list[tuple[tuple[float, int, int], tuple[dict, int, int]]] = []
         if pattern is not None:
-            for index, segment in enumerate(session.SUBTITLE.get('segments', []) or []):
-                text = segment.get('text') or ''
+            for index, segment in enumerate(session.SUBTITLE.segments):
+                text = text_of(segment)
                 start_time = _cue_start(segment)
                 for m in pattern.finditer(text):
                     # ``re`` can yield zero-width matches (e.g. user-typed
@@ -496,7 +497,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         """The timeline cursor. ``set_position`` writes it immediately and the
         player echoes its real position back into the same field."""
         try:
-            return float(session.SUBTITLE.get('position', 0.0) or 0.0)
+            return float(session.SUBTITLE.position or 0.0)
         except (TypeError, ValueError):
             return 0.0
 
@@ -583,8 +584,8 @@ class FindReplaceDialog(utils.SimpleDialog):
         segment, start, end = self._matches[index]
         cue_time, cue_index, _offset = self._keys[index]
         replacement = self._replace_field.lineedit.text()
-        old_text = segment.get('text') or ''
-        segment['text'] = old_text[:start] + replacement + old_text[end:]
+        old_text = text_of(segment)
+        set_text(segment, old_text[:start] + replacement + old_text[end:])
         session.set_unsaved(True)
 
         # Offsets after the edit have shifted, so re-derive everything, then
@@ -621,11 +622,11 @@ class FindReplaceDialog(utils.SimpleDialog):
         # Mutate each segment in place — the cue list and timeline read
         # from these dicts, so the next host refresh shows the new text.
         affected_segments = set()
-        for segment in session.SUBTITLE.get('segments', []) or []:
-            text = segment.get('text') or ''
+        for segment in session.SUBTITLE.segments:
+            text = text_of(segment)
             new_text, n = pattern.subn(replacement, text)
             if n > 0:
-                segment['text'] = new_text
+                set_text(segment, new_text)
                 affected_segments.add(id(segment))
         if affected_segments:
             session.set_unsaved(True)
@@ -643,7 +644,7 @@ class FindReplaceDialog(utils.SimpleDialog):
 
         Concretely:
 
-        * Stash the dict in ``session.SUBTITLE['selected']`` (what the
+        * Stash the dict in ``session.SUBTITLE.selected`` (what the
           cue list's own click handler does first).
         * Seek the video preview to the cue's start. ``set_position`` is
           unconditional — we deliberately don't gate on ``is_paused()``
@@ -659,7 +660,7 @@ class FindReplaceDialog(utils.SimpleDialog):
           across cue boundaries during playback — for a find-jump to
           an off-screen row we need ``EnsureVisible`` ourselves.
         """
-        session.SUBTITLE['selected'] = segment
+        session.SUBTITLE.selected = segment
         self._refresh_host(seek_to=segment)
 
     def _refresh_host(self, seek_to: dict | None = None) -> None:

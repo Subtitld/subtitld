@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, json_dialects as jd, plaintext, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -180,7 +181,7 @@ for name, data, want in (('wistia.json', SAMPLES['wistia'][0], ('JSONDIALECT', 2
                          ('show.clqtt', SAMPLES['clqtt'][0], ('JSONDIALECT', 1, 'clqtt')),
                          ('song.gst', SAMPLES['gremots'][0], ('JSONDIALECT', 1, 'gremots'))):
     (folder / name).write_text(json.dumps(data), encoding='utf-8')
-    session.SUBTITLE = {'language': 'en'}
+    session.SUBTITLE = Subtitle({'language': 'en'})
     session.FORMAT = {}
     opened, fmt = file_io.process_subtitles_file(str(folder / name))
     check(f'{name} opens as its dialect, which is kept', (fmt, len(opened), session.FORMAT['options'].get('json_dialect')), want)
@@ -190,7 +191,7 @@ check("Subtitld's own JSON is JSON still", file_io.process_subtitles_file(str(fo
 (folder / 'yt.json3').write_text(json.dumps(OTHERS["YouTube's json3 (and Google Play's)"]), encoding='utf-8')
 session.FORMAT = {}
 check("YouTube's json3 is JSON still", file_io.process_subtitles_file(str(folder / 'yt.json3'))[1], 'JSON')
-session.SUBTITLE = {'segments': trip, 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': trip, 'language': 'en'})
 session.FORMAT = {'options': {'json_dialect': 'podcastindex'}}
 file_io.save_file(str(folder / 'out.json'), 'JSONDIALECT')
 saved = json.loads((folder / 'out.json').read_text(encoding='utf-8'))

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget
 from PySide6.QtCore import QObject, Signal
 app = QApplication([])
 from subtitld.modules import session, addons
+from subtitld.modules.segment import Subtitle
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import left_panel_translation as lpt
 
@@ -72,7 +73,7 @@ class Host(QWidget):
         self.layout().addWidget(self.left_panel_stackedwidgets)
 
 
-session.SUBTITLE = {'segments': [], 'selected': None, 'language': 'en-us', 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [], 'selected': None, 'language': 'en-us', 'position': 0.0})
 session.CONFIG = {'translation': {'engine': 'translate-offline', 'scope': 'all',
                                   'engine_options': {'target_language': 'pt-br'}}}
 host = Host()
@@ -158,14 +159,14 @@ app.processEvents()
 started = []
 host.global_panel_translation_addon_widgets['translate-offline'].translate_process_callback = \
     lambda segments: started.append(len(segments))
-session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 2.0, 'text': 'Hello', 'speaker': 'A'}]
+session.SUBTITLE.segments = [{'start': 1.0, 'end': 2.0, 'text': 'Hello', 'speaker': 'A'}]
 
 
 def start(engine, source, target, answer=1):
     shown.clear()
     started.clear()
     FakeDialog.answer = answer
-    session.SUBTITLE['language'] = source
+    session.SUBTITLE.language = source
     session.CONFIG['translation']['engine_options']['target_language'] = target
     host.global_panel_translation_engine_combobox.setCurrentText(engine)
     lpt.global_panel_translation_engine_combobox_activated(host)

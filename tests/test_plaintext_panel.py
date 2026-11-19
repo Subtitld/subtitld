@@ -21,6 +21,7 @@ from PySide6.QtGui import QTextCursor
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session, history
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import left_panel
 from subtitld.interface import left_panel_plaintext as ptp
 
@@ -63,7 +64,7 @@ def segments():
     ]
 
 
-session.SUBTITLE = {'segments': segments(), 'selected': None, 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': segments(), 'selected': None, 'language': 'en-us'})
 session.CONFIG = {'plaintext_panel': {'format': 'srt'}}
 session.UNSAVED = False
 host = Host()
@@ -114,14 +115,14 @@ check('text', editor.toPlainText().split('\n')[:4], ['# speaker: A', '1', '00:00
 check('status', host.plaintext_panel.status.property('state'), 'ok')
 
 print('a valid edit reaches the subtitles after a pause, as one undo step')
-first = session.SUBTITLE['segments'][0]
+first = session.SUBTITLE.segments[0]
 reset_calls()
 replace_line(4, 'First, edited')
 check('not yet: the text is still being typed', first['text'], 'First')
 check('status says checking', panel.status.property('state'), 'checking')
 settle()
 check('applied', first['text'], 'First, edited')
-check('to the same subtitle object', session.SUBTITLE['segments'][0] is first, True)
+check('to the same subtitle object', session.SUBTITLE.segments[0] is first, True)
 check('one undo step', calls['history'], 1)
 check('the timeline and list were refreshed', (calls['timeline'] > 0, calls['list'] > 0), (True, True))
 check('the dub engine resynced', calls['dubs'], 1)
@@ -132,7 +133,7 @@ print('an invalid edit is not applied, and says where the problem is')
 reset_calls()
 replace_line(8, '00:00:03.000 --> 00:00:04,500')
 settle()
-second = session.SUBTITLE['segments'][1]
+second = session.SUBTITLE.segments[1]
 check('the subtitle kept its last valid timing', second['start'], 3.0)
 check('nothing applied', calls['history'], 0)
 check('status error', panel.status.property('state'), 'error')
@@ -153,7 +154,7 @@ check('cursor', (editor.textCursor().blockNumber() + 1, editor.textCursor().posi
 
 print('a change elsewhere does not overwrite edits that are not applied')
 typed = editor.toPlainText()
-session.SUBTITLE['segments'][2]['text'] = 'Third, from the timeline'
+session.SUBTITLE.segments[2]['text'] = 'Third, from the timeline'
 session.set_unsaved(True)
 settle(250)
 check('the text is kept', editor.toPlainText(), typed)
@@ -162,7 +163,7 @@ check('the panel says so', (panel.stale_bar.isVisible(), panel.status.property('
 print('fixing the text does not overwrite the other change on its own')
 replace_line(8, '00:00:03,000 --> 00:00:04,500')
 settle()
-check('not applied while the subtitles changed under it', session.SUBTITLE['segments'][2]['text'], 'Third, from the timeline')
+check('not applied while the subtitles changed under it', session.SUBTITLE.segments[2]['text'], 'Third, from the timeline')
 
 print('Reload shows the subtitles as they are now')
 panel.reload_button.click()
@@ -175,7 +176,7 @@ print('Keep mine applies the text over the other change')
 replace_line(10, 'line two, mine')
 replace_line(8, '00:00:03,000 -> 00:00:04,500')   # broken: no apply yet
 settle()
-session.SUBTITLE['segments'][0]['text'] = 'Elsewhere'
+session.SUBTITLE.segments[0]['text'] = 'Elsewhere'
 session.set_unsaved(True)
 settle(250)
 replace_line(8, '00:00:03,000 --> 00:00:04,500')
@@ -183,13 +184,13 @@ settle()
 check('waiting for a decision', second['text'], 'Second\nline two')
 panel.keep_button.click()
 app.processEvents()
-check('applied', (second['text'], session.SUBTITLE['segments'][0]['text']), ('Second\nline two, mine', 'First, edited'))
+check('applied', (second['text'], session.SUBTITLE.segments[0]['text']), ('Second\nline two, mine', 'First, edited'))
 check('notice gone', panel.stale_bar.isVisible(), False)
 
 print('with no edits pending, changes elsewhere come straight in')
 cursor = editor.cursor_at(10, 3)
 editor.setTextCursor(cursor)
-session.SUBTITLE['segments'][1]['end'] = 4.75
+session.SUBTITLE.segments[1]['end'] = 4.75
 session.set_unsaved(True)
 settle(250)
 check('the new end time is in the text', '00:00:03,000 --> 00:00:04,750' in editor.toPlainText(), True)
@@ -207,18 +208,18 @@ print('selecting a subtitle elsewhere marks it, and takes the cursor and view to
 editor.setTextCursor(editor.cursor_at(1, 1))
 editor.verticalScrollBar().setValue(0)
 settle(300)     # a cursor put in the first subtitle selects it; then the timeline picks the second
-session.SUBTITLE['selected'] = second
+session.SUBTITLE.selected = second
 settle(300)
 check('lines of the second block', editor.selected_lines, (6, 10))
 check('cursor at the start of its text', (editor.textCursor().blockNumber() + 1, editor.textCursor().positionInBlock() + 1), (9, 1))
 check('the line is in view', editor.viewport().rect().contains(editor.cursorRect()), True)
-check('the subtitle is not re-selected from here', session.SUBTITLE['selected'] is second, True)
+check('the subtitle is not re-selected from here', session.SUBTITLE.selected is second, True)
 
 print('putting the cursor in a subtitle selects it, and leaves the cursor there')
 editor.setTextCursor(editor.cursor_at(14, 5))
 panel._select_under_cursor()
 settle(300)
-check('third selected', session.SUBTITLE['selected'] is session.SUBTITLE['segments'][2], True)
+check('third selected', session.SUBTITLE.selected is session.SUBTITLE.segments[2], True)
 check('marked', editor.selected_lines, (12, 15))
 check('the cursor did not jump', (editor.textCursor().blockNumber() + 1, editor.textCursor().positionInBlock() + 1), (14, 5))
 
@@ -231,8 +232,8 @@ cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
 editor.setTextCursor(cursor)
 editor.insertPlainText('\n')
 settle()
-check('two left', [s['text'] for s in session.SUBTITLE['segments']], ['First, edited', 'Second\nline two, mine'])
-check('selection cleared', session.SUBTITLE['selected'], None)
+check('two left', [s['text'] for s in session.SUBTITLE.segments], ['First, edited', 'Second\nline two, mine'])
+check('selection cleared', session.SUBTITLE.selected, None)
 
 print('Markdown')
 panel.format_buttons['md'].click()
@@ -240,12 +241,12 @@ app.processEvents()
 check('remembered', session.CONFIG['plaintext_panel']['format'], 'md')
 check('text, with the speaker after the timing', editor.toPlainText(),
       '[00:00:01.000 - 00:00:02.000] A\nFirst, edited\n\n[00:00:03.000 - 00:00:04.750] B\nSecond\nline two, mine\n')
-session.SUBTITLE['segments'][0]['dubbing'] = [{'path': 'a.wav', 'uid': 'd1'}]
+session.SUBTITLE.segments[0]['dubbing'] = [{'path': 'a.wav', 'uid': 'd1'}]
 replace_line(1, '[00:00:00.500 - 00:00:02.000] C')
 editor.moveCursor(QTextCursor.End)
 editor.insertPlainText('> pt-br: Segunda\n\n[00:00:08.000 - 00:00:09.000] A {style=italic}\nAdded in Markdown\n')
 settle()
-segments_now = session.SUBTITLE['segments']
+segments_now = session.SUBTITLE.segments
 check('applied', [(s['start'], s['text'], s.get('speaker')) for s in segments_now],
       [(0.5, 'First, edited', 'C'), (3.0, 'Second\nline two, mine', 'B'), (8.0, 'Added in Markdown', 'A')])
 check('the translation and the field', (segments_now[1].get('translations'), segments_now[2].get('style')),
@@ -264,13 +265,13 @@ check('asked, and declining keeps Markdown', (asked, panel.fmt, panel.format_but
 
 print('opening another project drops edits made for the last one')
 check('broken edits pending', panel.pending, True)
-session.SUBTITLE['segments'] = [{'start': 0.0, 'end': 1.0, 'text': 'Another project'}]
+session.SUBTITLE.segments = [{'start': 0.0, 'end': 1.0, 'text': 'Another project'}]
 ptp.reset(host)
 app.processEvents()
 check('the new project is shown', editor.toPlainText(), '[00:00:00.000 - 00:00:01.000]\nAnother project\n')
 check('nothing pending, no notice', (panel.pending, panel.stale_bar.isVisible(), panel.issue_list.isVisible()), (False, False, False))
 settle()
-check('and nothing from the old text reached it', [s['text'] for s in session.SUBTITLE['segments']], ['Another project'])
+check('and nothing from the old text reached it', [s['text'] for s in session.SUBTITLE.segments], ['Another project'])
 
 print('JSON, in Whisper\'s layout')
 panel.format_buttons['json'].click()
@@ -281,20 +282,20 @@ check('text', editor.toPlainText(), '{\n  "language": "en-us",\n  "segments": [\
                                      '      "end": 1.0,\n      "text": "Another project"\n    }\n  ],\n  "text": "Another project"\n}\n')
 replace_line(8, '      "text": "Edited as JSON", "speaker": "A"')
 settle()
-check('applied', (session.SUBTITLE['segments'][0]['text'], session.SUBTITLE['segments'][0].get('speaker')), ('Edited as JSON', 'A'))
+check('applied', (session.SUBTITLE.segments[0]['text'], session.SUBTITLE.segments[0].get('speaker')), ('Edited as JSON', 'A'))
 check('the whole text follows the edit', editor.document().findBlockByNumber(10).text(), '  "text": "Edited as JSON"')
 editor.undo()
 settle()
 check('undo takes back the edit and the whole text together',
-      (session.SUBTITLE['segments'][0]['text'], editor.document().findBlockByNumber(10).text()),
+      (session.SUBTITLE.segments[0]['text'], editor.document().findBlockByNumber(10).text()),
       ('Another project', '  "text": "Another project"'))
 editor.redo()
 settle()
-check('and redo still works', (session.SUBTITLE['segments'][0]['text'], editor.document().findBlockByNumber(10).text()),
+check('and redo still works', (session.SUBTITLE.segments[0]['text'], editor.document().findBlockByNumber(10).text()),
       ('Edited as JSON', '  "text": "Edited as JSON"'))
 replace_line(7, '      "end": "soon",')
 settle()
-check('a wrong value is not applied', session.SUBTITLE['segments'][0]['end'], 1.0)
+check('a wrong value is not applied', session.SUBTITLE.segments[0]['end'], 1.0)
 check('and is pointed at', [panel.issue_list.item(i).text() for i in range(panel.issue_list.count())],
       ["Ln 7, Col 14   'end' must be a number of seconds"])
 replace_line(7, '      "end": 1.0,')
@@ -302,7 +303,7 @@ settle()
 check('fixed', panel.status.property('state'), 'ok')
 replace_line(2, '  "language": "pt-br",')
 settle()
-check('editing the language changes the project\'s', session.SUBTITLE['language'], 'pt-br')
+check('editing the language changes the project\'s', session.SUBTITLE.language, 'pt-br')
 panel.format_buttons['md'].click()
 app.processEvents()
 
@@ -350,7 +351,7 @@ session.CONFIG['plaintext_panel']['format'] = panel.fmt
 
 print('while another tab is shown, the text catches up when it comes back')
 show_tab(other_tab)
-session.SUBTITLE['segments'][0]['text'] = 'Changed in the list'
+session.SUBTITLE.segments[0]['text'] = 'Changed in the list'
 session.set_unsaved(True)
 settle(250)
 check('not rewritten while hidden', 'Changed in the list' in editor.toPlainText(), False)
@@ -358,7 +359,7 @@ show_tab(tab)
 check('rewritten on coming back', 'Changed in the list' in editor.toPlainText(), True)
 
 print('the left panel refresh reaches the tab while it is shown')
-session.SUBTITLE['segments'][0]['end'] = 1.5
+session.SUBTITLE.segments[0]['end'] = 1.5
 ptp.update(host)
 settle(250)
 check('new end time', '00:00:01.500' in editor.toPlainText(), True)

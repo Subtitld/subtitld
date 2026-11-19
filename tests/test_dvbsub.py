@@ -32,6 +32,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, session
+from subtitld.modules.segment import Subtitle
 session.set_unsaved = lambda *a, **k: None
 session.CONFIG = config.Config(Path(tempfile.mkdtemp()) / 'subtitld.config')
 from subtitld.modules import dvbsub, picture_ocr, picture_subtitles, teletext, video_subtitles
@@ -481,8 +482,8 @@ else:
     print('the export path')
     from subtitld.modules import bounce
     session.VIDEO = {'filepath': str(source), 'framerate': 25.0, 'duration': 6.0, 'width': 720, 'height': 576}
-    session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Um', 'translations': {'en-us': 'One'}}],
-                        'language': 'pt-br'}
+    session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Um', 'translations': {'en-us': 'One'}}],
+                        'language': 'pt-br'})
     said = []
     worker = bounce.CaptionsThread(str(folder / 'wired.ts'), 'TS DVB', {'translations': True, 'forced': True})
     worker.captions_finished.connect(lambda path, ok, error: said.append((ok, error)))
@@ -496,7 +497,7 @@ from subtitld.interface.export_dialog import _VideoPanel
 from subtitld.modules import soft_subtitles
 session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
-session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'})
 panel = _VideoPanel()
 panel.choose('TS DVB')
 check('a transport stream with DVB subtitles: no codec, nor forced, to choose',

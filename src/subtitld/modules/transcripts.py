@@ -92,6 +92,7 @@ times come from the karaoke codes of a subtitle that has them
 import re
 
 from subtitld.modules import json_subtitles, karaoke, markup
+from subtitld.modules.segment import text_of
 
 # A point label, or the last moment of a file, with nothing after it.
 TAIL = 3.0
@@ -99,7 +100,7 @@ TAIL = 3.0
 
 def plain_text(segment):
     """A subtitle's text as it reads: no place codes, no formatting."""
-    return markup.plain(markup.split_lead(str(segment.get('text') or ''))[1]).strip()
+    return markup.plain(markup.split_lead(text_of(segment))[1]).strip()
 
 
 def iso639_3(code):
@@ -119,7 +120,7 @@ def words_of(segment):
     shared out by the words' length."""
     start, end = float(segment.get('start', 0)), float(segment.get('end', 0))
     # The whole text: its lead may hold the first karaoke code.
-    text = str(segment.get('text') or '')
+    text = text_of(segment)
     pieces = karaoke.timed(text, start)
     out = []
     if pieces:

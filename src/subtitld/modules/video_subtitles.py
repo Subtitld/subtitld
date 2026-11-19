@@ -49,6 +49,7 @@ import os
 import re
 import subprocess
 import tempfile
+from subtitld.modules.segment import text_of
 
 TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'microdvd', 'subviewer',
                          'subviewer1', 'mpl2', 'pjs', 'realtext', 'sami', 'stl', 'jacosub', 'vplayer',
@@ -453,7 +454,7 @@ def _without_sizes(path):
         if not _SIZED.search(track.read()):
             return
     segments = srt.read(path)
-    parts = [markup.split_lead(segment['text']) for segment in segments]
+    parts = [markup.split_lead(text_of(segment)) for segment in segments]
     faces = {match.group(1) if match else None for match in (_TRACK_FONT.match(rest) for _lead, rest in parts)}
     track_font = faces.pop() if len(faces) == 1 else None
     for segment, (lead, rest) in zip(segments, parts):

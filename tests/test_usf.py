@@ -96,12 +96,12 @@ check('ISO 639-2 for Subtitld\'s languages', [usf.iso639_2(code) for code in ('p
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'other.usf').write_bytes(OTHER)
-session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE.language = 'pt-br'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'other.usf'))
-check('ISO 639-2 codes become Subtitld\'s', (fmt, session.SUBTITLE['language'], opened[0]['translations']),
+check('ISO 639-2 codes become Subtitld\'s', (fmt, session.SUBTITLE.language, opened[0]['translations']),
       ('USF', 'en-us', {'fr-fr': 'Il était une fois'}))
-session.SUBTITLE['segments'] = segments_pt
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.segments = segments_pt
+session.SUBTITLE.language = 'en-us'
 session.FORMAT = {}
 file_io.save_file(str(folder / 'export.usf'), 'USF')
 exported = (folder / 'export.usf').read_text(encoding='utf-8')
@@ -110,28 +110,28 @@ check('a saved USF: the codes and names the specification asks for, and the titl
     '<title>Tears of Steel</title>' in exported), (True, True))
 # The filename only stands in for a title: a document that has one of its
 # own keeps it, and other.usf was opened above saying "Tears of Steel".
-session.SUBTITLE.pop('metadata', None)
+session.SUBTITLE.metadata = None
 file_io.save_file(str(folder / 'untitled.usf'), 'USF')
 check('and the filename where the document has no title of its own',
       '<title>untitled</title>' in (folder / 'untitled.usf').read_text(encoding='utf-8'), True)
 reopened, _fmt = file_io.process_subtitles_file(str(folder / 'export.usf'))
-check("reopened: the names tell Brazil's Portuguese from Portugal's", (session.SUBTITLE['language'], reopened[0]['translations']),
+check("reopened: the names tell Brazil's Portuguese from Portugal's", (session.SUBTITLE.language, reopened[0]['translations']),
       ('en-us', {'pt-br': 'Olá', 'pt-pt': 'Olá!'}))
-check('none spoken said, none read', session.SUBTITLE.get('source_language'), None)
+check('none spoken said, none read', session.SUBTITLE.source_language, None)
 
 print('what the media speaks survives a save, once a translation is inverted')
-session.SUBTITLE['segments'] = [{'start': 0, 'end': 1, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]
-session.SUBTITLE['language'] = 'pt-br'
-session.SUBTITLE['source_language'] = 'en-us'
+session.SUBTITLE.segments = [{'start': 0, 'end': 1, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]
+session.SUBTITLE.language = 'pt-br'
+session.SUBTITLE.source_language = 'en-us'
 for name, kind in (('inverted.usf', 'USF'), ('inverted.usfx', 'USFX')):
     file_io.save_file(str(folder / name), kind)
-    session.SUBTITLE.pop('source_language')
+    session.SUBTITLE.source_language = None
     _segments, _fmt = file_io.process_subtitles_file(str(folder / name))
-    check(f'{kind}: read back', (session.SUBTITLE['language'], session.SUBTITLE.get('source_language')), ('pt-br', 'en-us'))
+    check(f'{kind}: read back', (session.SUBTITLE.language, session.SUBTITLE.source_language), ('pt-br', 'en-us'))
 check('in our namespace, as a language', '<subtitldcc:source-language code="eng">English (United States)</subtitldcc:source-language>'
       in (folder / 'inverted.usf').read_text(encoding='utf-8'), True)
 file_io.process_subtitles_file(str(folder / 'other.usf'))
-check('the next file opened does not say it', session.SUBTITLE.get('source_language'), None)
+check('the next file opened does not say it', session.SUBTITLE.source_language, None)
 (folder / 'not.usf').write_text('<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml"/>', encoding='utf-8')
 try:
     file_io.process_subtitles_file(str(folder / 'not.usf'))

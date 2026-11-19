@@ -656,7 +656,7 @@ class SpeakerHeader(QWidget):
             player = getattr(window, 'preview_panel_player', None)
             if player is not None:
                 try:
-                    # seek() writes session.SUBTITLE['position'] synchronously,
+                    # seek() writes session.SUBTITLE.position synchronously,
                     # so the scroll below reads the new position.
                     player.seek(target)
                     # timeline.update() only scrolls while playing, so a click
@@ -1154,7 +1154,7 @@ class speakers_list_item(QWidget):
         widget.header.set_color(color)
         widget.header.set_avatar(widget.speaker_data.get('image', None), color)
 
-        mine = [s for s in session.SUBTITLE['segments']
+        mine = [s for s in session.SUBTITLE.segments
                 if s.get('speaker', 'A') == widget.speaker_name]
         widget.unused_fade.setEnabled(not mine)
         widget.setProperty('unused', not mine)
@@ -1164,7 +1164,7 @@ class speakers_list_item(QWidget):
         )
 
         speaker_time = round(sum(s['end'] - s['start'] for s in mine), 3)
-        total_speaking_time = sum(s['end'] - s['start'] for s in session.SUBTITLE['segments'])
+        total_speaking_time = sum(s['end'] - s['start'] for s in session.SUBTITLE.segments)
         # `total_speaking_time` is 0 when the cue list is empty or every
         # cue is zero-duration (some providers' placeholder finish callback
         # emits a single ``start=end=0.0`` segment until real per-utterance
@@ -1484,7 +1484,7 @@ def highlight_speaker_for_selection(window):
     speakers_list = getattr(window, 'left_panel_speakers_list', None)
     if speakers_list is None:
         return
-    selected_speaker = (session.SUBTITLE.get('selected') or {}).get('speaker', '') or ''
+    selected_speaker = (session.SUBTITLE.selected or {}).get('speaker', '') or ''
     layout = speakers_list.layout()
     for i in range(layout.count()):
         item = layout.itemAt(i)
@@ -1499,7 +1499,7 @@ def highlight_speaker_for_selection(window):
 
 def remove_button_clicked(widget):
     speaker_name = widget.speaker_name
-    used_segments = [s for s in session.SUBTITLE['segments'] if s.get('speaker', 'A') == speaker_name]
+    used_segments = [s for s in session.SUBTITLE.segments if s.get('speaker', 'A') == speaker_name]
     other_speakers = [name for name in session.SPEAKERS.keys() if name != speaker_name]
 
     if len(session.SPEAKERS) < 2:
@@ -1534,9 +1534,9 @@ def remove_button_clicked(widget):
     action, target = result
     if action == dialog.DELETE:
         for segment in list(used_segments):
-            session.SUBTITLE['segments'].remove(segment)
-        if session.SUBTITLE.get('selected') in used_segments:
-            session.SUBTITLE['selected'] = None
+            session.SUBTITLE.segments.remove(segment)
+        if session.SUBTITLE.selected in used_segments:
+            session.SUBTITLE.selected = None
     elif action == dialog.REASSIGN and target:
         for segment in used_segments:
             segment['speaker'] = target
@@ -1568,7 +1568,7 @@ def rename_button_clicked(widget):
     old_speaker = session.SPEAKERS[widget.speaker_name]
     session.SPEAKERS[new_name] = old_speaker
 
-    for segment in session.SUBTITLE['segments']:
+    for segment in session.SUBTITLE.segments:
         if segment.get('speaker') == widget.speaker_name:
             segment['speaker'] = new_name
 
@@ -1667,7 +1667,7 @@ def left_panel_speakers_remove_speaker_button_clicked(self):
         return
     for item in selected_items:
         speaker_name = item.text()
-        if any(subtitle.get('speaker', 'A') == speaker_name for subtitle in session.SUBTITLE['segments']):
+        if any(subtitle.get('speaker', 'A') == speaker_name for subtitle in session.SUBTITLE.segments):
             continue
 
 
@@ -1679,7 +1679,7 @@ def left_panel_speakers_add_speaker_button_clicked(self):
         new_name = value.strip()
     else:
         pass
-    subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
+    subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE.segments]
 
     if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
         session.SPEAKERS[new_name] = {}

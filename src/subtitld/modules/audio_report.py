@@ -13,6 +13,7 @@ import os
 import numpy as np
 
 from subtitld.modules import session
+from subtitld.modules.segment import text_of
 
 # The loudness programs aim at, in LUFS, the quietest first: the points on
 # the dashboard's scale.
@@ -101,7 +102,7 @@ def problems(mode, segments):
     if mode not in ('mixdown', 'stems', 'clips'):
         return {}
     from subtitld.modules import markup
-    worded = [s for s in segments or [] if isinstance(s, dict) and markup.plain(str(s.get('text') or '')).strip()]
+    worded = [s for s in segments or [] if isinstance(s, dict) and markup.plain(text_of(s)).strip()]
     no_speech = sum(1 for s in worded if not _playing(s.get('dubbing')))
     gone = 0
     for segment in segments or []:

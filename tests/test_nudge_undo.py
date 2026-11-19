@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session, history, shortcuts
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import playercontrols
 
 fails = []
@@ -65,11 +66,11 @@ FRAME = 1 / 25
 
 
 def reset_document():
-    session.SUBTITLE = {'segments': [
+    session.SUBTITLE = Subtitle({'segments': [
         {'start': 2.0, 'end': 4.0, 'text': 'One', 'speaker': 'A'},
         {'start': 6.0, 'end': 8.0, 'text': 'Two', 'speaker': 'A'},
-    ], 'selected': None, 'position': 0.0}
-    session.SUBTITLE['selected'] = session.SUBTITLE['segments'][1]
+    ], 'selected': None, 'position': 0.0})
+    session.SUBTITLE.selected = session.SUBTITLE.segments[1]
     history.history_clear()
 
 
@@ -107,7 +108,7 @@ def hold(text, repeats):
 
 
 def timing():
-    selected = session.SUBTITLE['selected']
+    selected = session.SUBTITLE.selected
     return (near(selected['start']), near(selected['end']))
 
 

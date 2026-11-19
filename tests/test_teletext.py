@@ -28,6 +28,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 session.set_unsaved = lambda *a, **k: None
 from subtitld.modules import teletext as tt
 
@@ -268,7 +269,7 @@ for name in ('dvb.dvbttx', 'none.dvbttx'):
         check(f'{name}: an error', True, True)
 from subtitld.modules import file_io
 check('opened as Subtitld opens files: read only, its language the project\'s',
-      (file_io.process_subtitles_file(str(folder / 'fr.dvbttx'))[1], session.SUBTITLE.get('language'),
+      (file_io.process_subtitles_file(str(folder / 'fr.dvbttx'))[1], session.SUBTITLE.language,
        session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS['DVBTTX']['extensions'],
        'DVBTTX' in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS), ('DVBTTX', 'fr-fr', ['dvbttx'], False))
 
@@ -406,8 +407,8 @@ else:
     print('the export path')
     from subtitld.modules import bounce
     session.VIDEO = {'filepath': str(source), 'framerate': 25.0, 'duration': 6.0, 'width': 320, 'height': 240}
-    session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Um', 'translations': {'en-us': 'One'}}],
-                        'language': 'pt-br'}
+    session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Um', 'translations': {'en-us': 'One'}}],
+                        'language': 'pt-br'})
     said = []
     worker = bounce.CaptionsThread(str(folder / 'wired.ts'), 'TS', {'translations': True, 'forced': True})
     worker.captions_finished.connect(lambda path, ok, error: said.append((ok, error)))
@@ -423,7 +424,7 @@ print('the dialog')
 from subtitld.interface.export_dialog import _VideoPanel
 session.CONFIG.pop('export_video', None)
 session.VIDEO = {'framerate': 25.0, 'duration': 10.0, 'filepath': 'video.mp4'}
-session.SUBTITLE = {'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 0, 'end': 1, 'text': 'a'}], 'language': 'en-us'})
 panel = _VideoPanel()
 panel.choose('TS')
 check('a transport stream with teletext: teletext or DVB, but no codec, nor forced, to choose',

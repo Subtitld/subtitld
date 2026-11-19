@@ -808,7 +808,7 @@ class _DeviceCard(QFrame):
         self._set_range([low, high])
 
     def _range_from_selection(self):
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if not selected:
             return
         self._set_range([float(selected.get('start', 0.0)), float(selected.get('end', 0.0))])
@@ -833,7 +833,7 @@ class _DeviceCard(QFrame):
         self.range_some.setChecked(bool(rng))
         for widget in (self.range_from, self.range_to):
             widget.setEnabled(bool(rng))
-        self.range_selected.setEnabled(bool(session.SUBTITLE.get('selected')))
+        self.range_selected.setEnabled(bool(session.SUBTITLE.selected))
 
 
 def _fx_tick_meters(self):

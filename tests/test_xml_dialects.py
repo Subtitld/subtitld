@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session, xml_dialects as xd
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -170,7 +171,7 @@ for name, text, want in (('flash.xml', FLASH, ('XMLDIALECT', 3, 'flash')), ('ooy
 (folder / 'plain.xml').write_text(ttml_doc('00:00:01.000', '00:00:02.000', 'x'), encoding='utf-8')
 session.FORMAT = {}
 check('TTML in an .xml is TTML still', file_io.process_subtitles_file(str(folder / 'plain.xml'))[1], 'TTML')
-session.SUBTITLE = {'segments': trip, 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': trip, 'language': 'en'})
 session.FORMAT = {'options': {'xml_dialect': 'rhozet', 'fps': 30}}
 file_io.save_file(str(folder / 'out.xml'), 'XMLDIALECT')
 check('saved in the dialect kept, at the rate given', cues((folder / 'out.xml').read_text(encoding='utf-8'), fps=30),

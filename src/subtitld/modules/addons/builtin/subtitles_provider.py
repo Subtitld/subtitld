@@ -120,7 +120,7 @@ def read(path):
     if not isinstance(session.FORMAT, dict):
         session.FORMAT = {}
     project_format, kept = session.FORMAT, dict(session.FORMAT)
-    origin = session.SUBTITLE.get('origin')
+    origin = session.SUBTITLE.origin
     try:
         return file_io.process_subtitles_file(path)[0]
     finally:
@@ -128,7 +128,7 @@ def read(path):
         project_format.update(kept)
         session.FORMAT = project_format
         if origin is not None:
-            session.SUBTITLE['origin'] = origin
+            session.SUBTITLE.origin = origin
 
 
 class SubtitlesProvider(ASRProvider):

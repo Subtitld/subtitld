@@ -32,6 +32,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules.addons import languages as _languages
+from subtitld.modules.segment import text_of
 from subtitld.modules.addons.provider import TTSProvider
 
 
@@ -140,7 +141,7 @@ class _EdgeTTSSpeechThread(QThread):
         # to a real PCM WAV at the requested filename.
         mp3_temp = final_file + '.mp3'
         communicate = edge_tts.Communicate(
-            text=markup.plain(subtitle['text']),
+            text=markup.plain(text_of(subtitle)),
             voice=voice,
             rate=f'{subtitle.get("rate", 0):+d}%',
             pitch=f'{subtitle.get("pitch", 0):+d}Hz',
@@ -325,7 +326,7 @@ class EdgeTTSProvider(TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 timeline_widget.dub_stretching = None
                 timeline_widget.update()
@@ -335,7 +336,7 @@ class EdgeTTSProvider(TTSProvider):
 
     # ---- Host-side post-process callbacks --------------------------------
     # These mirror the old `EdgeTTSEngine._on_speech_ready` / `_on_speech_error`
-    # behaviour: they mutate `session.SUBTITLE['segments']` to attach the
+    # behaviour: they mutate `session.SUBTITLE.segments` to attach the
     # generated dub at index 0 and refresh the timeline / preview audio.
     def _on_speech_ready(self, uid: str, original_subtitle: dict, file_path: str) -> None:
         # Imports deferred to avoid a hard dep on QApplication being up at
@@ -345,7 +346,7 @@ class EdgeTTSProvider(TTSProvider):
         if size <= 0:
             self._on_speech_error(uid, original_subtitle, 'edge-tts produced an empty audio file')
             return
-        for subtitle in session.SUBTITLE['segments']:
+        for subtitle in session.SUBTITLE.segments:
             if subtitle.get('start') == original_subtitle['start']:
                 dubs = subtitle.setdefault('dubbing', [])
                 inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
@@ -372,11 +373,11 @@ class EdgeTTSProvider(TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 pending = getattr(timeline_widget, 'dub_stretching', None)
                 if pending is not None and pending.get('subtitle', None) is not None:
-                    for subtitle in session.SUBTITLE['segments']:
+                    for subtitle in session.SUBTITLE.segments:
                         if subtitle.get('start') == original_subtitle['start'] and pending['subtitle'] is subtitle:
                             timeline_widget.dub_stretching = None
                             break
@@ -388,7 +389,7 @@ class EdgeTTSProvider(TTSProvider):
         from PySide6.QtWidgets import QApplication
         log.error('edge-tts: uid=%s %s', uid, message)
         target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if target_start is not None and subtitle.get('start') == target_start:
                 subtitle['locked'] = False
                 break

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, markup, session
+from subtitld.modules.segment import text_of
 from corpus_common import need
 
 NAMES = ['1ededcbd7b.ass', 'AQTitle_capability_tester.aqt', 'JACOsub_capability_tester.jss',
@@ -112,7 +113,7 @@ def opened(name, folder=SUB):
 
 
 def cues(segments, digits=2):
-    return [(round(float(s['start']), digits), round(float(s['end']), digits), lines_of(markup.plain(s['text'])))
+    return [(round(float(s['start']), digits), round(float(s['end']), digits), lines_of(markup.plain(text_of(s))))
             for s in segments]
 
 
@@ -140,10 +141,10 @@ def round_trip(name, segments, fmt, extension, tolerance=0.011, digits=2):
     The options opening the file set (its frame rate, its LRC times) stay,
     as they do when a file is opened and saved in Subtitld."""
     path = SCRATCH / f'{Path(name).stem}.{extension}'
-    session.SUBTITLE['segments'] = [dict(segment) for segment in segments]
+    session.SUBTITLE.segments = [dict(segment) for segment in segments]
     session.VIDEO = {}
     file_io.save_file(str(path), fmt)
-    session.SUBTITLE['segments'] = []
+    session.SUBTITLE.segments = []
     again, found = opened(path.name, SCRATCH)
     check(f'{name}: saved as {fmt}, opened as {fmt}', found, fmt)
     same(f'{name}: saved and opened again', sorted(cues(again, digits)), sorted(cues(segments, digits)),
@@ -305,7 +306,7 @@ same('times, and the speaker and text', [(start, end, f"{s['speaker']}\n{text}")
                                          for (start, end, text), s in zip(cues(segments), segments)][:-1], want[1:-1])
 check('the last one', cues(segments)[-1], (73.0, 77.0, 'President John F. Kennedy Speech'))
 path = SCRATCH / 'sami.smi'
-session.SUBTITLE['segments'] = [dict(segment) for segment in segments]
+session.SUBTITLE.segments = [dict(segment) for segment in segments]
 session.FORMAT = {'options': {'speakers': 'source'}}
 file_io.save_file(str(path), 'SAMI')
 again, found = opened('sami.smi', SCRATCH)
@@ -359,7 +360,7 @@ want = srt_ref('sub-srt-empty-events')
 check('the empty ones kept', [cue[2] for cue in cues(segments)].count(''), 3)
 same('the others', [cue for cue in cues(segments, 3) if cue[2]], want, tolerance=0.0011)
 path = SCRATCH / 'empty.srt'
-session.SUBTITLE['segments'] = [dict(segment) for segment in segments]
+session.SUBTITLE.segments = [dict(segment) for segment in segments]
 file_io.save_file(str(path), 'SRT')
 same('saved: as FFmpeg writes it', cues(opened('empty.srt', SCRATCH)[0], 3), want, tolerance=0.0011)
 

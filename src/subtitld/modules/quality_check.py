@@ -4,6 +4,7 @@
 
 from subtitld.modules import markup
 from subtitld.modules import session
+from subtitld.modules.segment import text_of
 
 
 def check_subtitle(subtitle=[]):
@@ -16,7 +17,7 @@ def check_subtitle(subtitle=[]):
 
     if subtitle and (subtitle['end'] - subtitle['start']):
         # Counted as the text reads: formatting tags are not characters.
-        text = markup.plain(subtitle['text'])
+        text = markup.plain(text_of(subtitle))
         if len(text.replace('\n', '')) / (subtitle['end'] - subtitle['start']) > settings.get('reading_speed_cps', 21):
             approved = False
             reasons.append('Reading speed: {ars} characters per second. It should be {rs} per second.'.format(rs=settings.get('reading_speed_cps', 21), ars=round(len(text.replace('\n', '')) / (subtitle['end'] - subtitle['start']), 2)))

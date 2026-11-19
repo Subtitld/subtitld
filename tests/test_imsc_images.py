@@ -19,6 +19,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, file_io, picture_ocr, session, ttml
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import subtitle_pictures
 
 fails = []
@@ -52,7 +53,7 @@ check('where the preview puts them: the sign at the top, the line at the bottom'
       (True, True, True))
 
 print('written')
-session.SUBTITLE = {'segments': SEGMENTS, 'language': 'en', 'metadata': {'title': 'Pictures'}}
+session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'en', 'metadata': {'title': 'Pictures'}})
 session.VIDEO = {'width': 1280, 'height': 720}
 for profile in ttml.IMAGE_PROFILES:
     session.FORMAT = {'format': 'TTML', 'options': {'profile': profile}}

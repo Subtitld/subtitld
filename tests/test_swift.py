@@ -88,7 +88,7 @@ for name, text, fmt in (('a.txt', DURATION, 'SWIFTTEXT'), ('b.txt', NUMBER, 'SWI
     session.VIDEO = {}
     session.FORMAT = {}
     check(name, file_io.process_subtitles_file(str(folder / name))[1], fmt)
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25, 'filepath': '/videos/clip.mp4'}
 for fmt, name in (('SWIFTTEXT', 'o1.txt'), ('SWIFTNUMBERS', 'o2.txt'), ('SWIFTNUMBERSDURATION', 'o3.txt'), ('XIF', 'o.xif'), ('SIF', 'o.sif')):
     session.FORMAT = {'options': {}}

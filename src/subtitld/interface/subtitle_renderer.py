@@ -14,6 +14,12 @@ its template, its settings, the text, the size, the title-safe area and, for
 an animated style, the subtitle's duration and the moment. Change any of them
 and it is another layer; change one back and the old one is still there.
 
+A subtitle timed word by word (modules.segment) lights up piece by piece:
+each piece a span whose effect is a CSS animation (subtitle_styles/host.js),
+from the piece's start, held at the moment like an animated style's. Its
+layer is keyed by how many pieces have started, and a frame at a time only
+while a piece wipes or pops in, so a song is a handful of layers a line.
+
 Layers are kept on disk too (subtitle_disk_cache), so a project opened
 again, or a setting set back days later, reads them instead of rendering.
 
@@ -45,6 +51,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.interface.subtitle_render_worker import SCALING_VARIABLES
 from subtitld.modules import look as subtitld_look, markup, position, session, subtitle_styles
+from subtitld.modules.segment import EFFECTS, text_of, timed_pieces
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +66,7 @@ AHEAD = 30.0                 # seconds of subtitles rendered ahead of the playhe
 AHEAD_ANIMATED = 2.0         # an animated subtitle: a layer a frame, this far ahead
 SIZE_SETTLE_MS = 200         # a size has to hold this long before layers are rendered at it
 RESTARTS = 3                 # times the helper is started again after it stops
+POP = 0.15                   # seconds a piece popping in takes to appear
 NO_SANDBOX_EXIT = 75         # subtitle_render_worker: Chromium's sandbox cannot start here
 
 
@@ -68,6 +76,64 @@ def available():
         return importlib.util.find_spec('PySide6.QtWebEngineWidgets') is not None
     except (ImportError, ValueError):
         return False
+
+
+def _effects(pieces, default):
+    """How each piece lights up: its own effect, else the style's."""
+    default = default if default in EFFECTS else 'fill'
+    return [piece.get('effect') if piece.get('effect') in EFFECTS else default for piece in pieces]
+
+
+def _lengths(pieces, effects):
+    """How long each piece's effect runs, in seconds: a pop is quick."""
+    return [min(POP, piece['end'] - piece['start']) if effect == 'pop' else piece['end'] - piece['start']
+            for piece, effect in zip(pieces, effects)]
+
+
+def karaoke_html(pieces, default_effect='fill'):
+    """A timed subtitle as the cue's HTML: each piece a span lit up from
+    its start by its effect's animation (subtitle_styles/host.js), its
+    formatting closed at its end and opened again in the next. Words before
+    the first piece that takes time are there from the start, unlit."""
+    effects = _effects(pieces, default_effect)
+    texts = [piece['text'] for piece in pieces]
+    texts[0] = markup.split_lead(texts[0])[1]
+    for number in range(len(texts) - 1):
+        texts[number], texts[number + 1] = markup.rebalance(texts[number], texts[number + 1])
+    out = []
+    for piece, text, effect, length in zip(pieces, texts, effects, _lengths(pieces, effects)):
+        html = markup.to_html(text)
+        if piece['end'] > piece['start']:
+            html = (f'<span class="subtitld-k subtitld-k-{effect}" style="--k-start:{round(piece["start"] * 1000)}ms;'
+                    f'--k-length:{max(1, round(length * 1000))}ms">{html}</span>')
+        out.append(html)
+    return ''.join(out)
+
+
+def karaoke_moment(pieces, at, fps, default_effect='fill'):
+    """(what sets this moment's picture apart, the moment in milliseconds)
+    for a timed subtitle `at` seconds from its start: the pieces started,
+    the moment the last of them did; while one wipes or pops in, the frame."""
+    effects = _effects(pieces, default_effect)
+    lengths = _lengths(pieces, effects)
+    timed = [(piece, length) for piece, length in zip(pieces, lengths) if piece['end'] > piece['start']]
+    started = [(piece, length) for piece, length in timed if piece['start'] <= at]
+    for piece, effect, length in zip(pieces, effects, lengths):
+        if effect in ('wipe', 'pop') and piece['start'] <= at < piece['start'] + length:
+            frame = int(math.floor(at * fps + 1e-6))
+            return ('frame', frame), int(round(frame / fps * 1000))
+    if not started:
+        # A moment before the first piece, which may start at 0.
+        return ('started', 0), -1
+    # Held where every piece started has finished lighting up, and before
+    # the next starts; at least a millisecond after the last start
+    # (Chromium holds an animation set exactly at its delay as not started).
+    last = max(round(piece['start'] * 1000) for piece, _length in started)
+    moment = max(round((piece['start'] + length) * 1000) for piece, length in started)
+    following = [round(piece['start'] * 1000) for piece, _length in timed if piece['start'] > at]
+    if following:
+        moment = min(moment, min(following) - 1)
+    return ('started', len(started)), max(moment, last + 1)
 
 
 def _digest(*parts):
@@ -353,12 +419,18 @@ class SubtitleRenderer(QObject):
     # --- layers ------------------------------------------------------------
     def _job(self, segment, at, style, variables, attributes):
         """What renders `segment` at `at` seconds, keyed."""
-        text = segment.get('text') or ''
+        text = text_of(segment)
         start, end = float(segment['start']), float(segment['end'])
-        offset = 0
+        fps = float(session.VIDEO.get('framerate') or 0) or 25.0
+        offset, moment = 0, None
+        pieces = timed_pieces(segment)
+        # The style's way for a piece that has none of its own.
+        default_effect = attributes.get('data-karaoke-effect')
         if style.animated:
-            fps = float(session.VIDEO.get('framerate') or 0) or 25.0
             offset = int(round(math.floor((at - start) * fps + 1e-6) / fps * 1000))
+            moment = offset
+        elif pieces:
+            moment, offset = karaoke_moment(pieces, at - start, fps, default_effect)
         safe = (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100,
                 session.CONFIG.get('videoplayer', {}).get('safe_margin_title_y', 10) / 100)
         width, height = self.size
@@ -381,9 +453,12 @@ class SubtitleRenderer(QObject):
         # the style's own rules (modules.look). What the file is silent
         # about the style still draws.
         styling = subtitld_look.css(subtitld_look.of(segment)) or None
-        key = _digest(self._style_key, text, self.size, (duration, offset) if style.animated else None,
+        html = (karaoke_html(pieces, default_effect) if pieces else markup.to_html(text)) if text.strip() else None
+        # The text, and for a timed one its pieces as drawn (their times and effects).
+        key = _digest(self._style_key, text, html if pieces else None, self.size,
+                      (duration, moment) if moment is not None else None,
                       place, direction, bidi, styling, writing)
-        page = {'html': markup.to_html(text) if text.strip() else None, 'align': markup.alignment(text),
+        page = {'html': html, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
                 'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': direction,
                 'bidi': bidi, 'look': styling, 'writing': writing}
@@ -439,6 +514,22 @@ class SubtitleRenderer(QObject):
                     key, job = self._job(segment, moment, style, variables, attributes)
                     self._enqueue(key, job)
                     moment += 1 / fps
+            elif timed_pieces(segment):
+                # A timed subtitle: a layer as each piece starts, and frames
+                # through a wipe or a pop close to the playhead.
+                fps = float(session.VIDEO.get('framerate') or 0) or 25.0
+                pieces = timed_pieces(segment)
+                effects = _effects(pieces, attributes.get('data-karaoke-effect'))
+                moments = [start] + [start + piece['start'] for piece in pieces]
+                for piece, effect, length in zip(pieces, effects, _lengths(pieces, effects)):
+                    moment = max(start + piece['start'], at)
+                    while effect in ('wipe', 'pop') and moment < min(start + piece['start'] + length, at + AHEAD_ANIMATED):
+                        moments.append(moment)
+                        moment += 1 / fps
+                for moment in sorted(set(moments)):
+                    if moment < end:
+                        key, job = self._job(segment, moment, style, variables, attributes)
+                        self._enqueue(key, job)
             else:
                 key, job = self._job(segment, start, style, variables, attributes)
                 self._enqueue(key, job)

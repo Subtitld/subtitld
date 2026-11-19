@@ -36,6 +36,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, 'src'))
 
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules import clone_ref
 
 
@@ -121,7 +122,7 @@ def case_extract():
         session.PATH_SUBTITLD_USER_CACHE = Path(workdir)
 
         session.VIDEO = {'filepath': src_wav}
-        session.SUBTITLE = {
+        session.SUBTITLE = Subtitle({
             'segments': [
                 # Speaker 'A' has both a too-short segment (0.5s) and a
                 # solid in-band segment (5s). The 5s one is what we expect
@@ -132,7 +133,7 @@ def case_extract():
                 # Speaker 'B' should never be picked when we extract for 'A'.
                 {'speaker': 'B', 'start': 11.5, 'end': 13.5, 'text': 'other'},
             ],
-        }
+        })
 
         out_path = clone_ref.extract_speaker_reference('A')
         assert out_path is not None, 'expected a path, got None'
@@ -164,7 +165,7 @@ def case_extract():
 
     finally:
         session.VIDEO = original_video
-        session.SUBTITLE = original_subtitle
+        session.SUBTITLE = Subtitle(original_subtitle)
         session.PATH_SUBTITLD_USER_CACHE = original_cache
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -197,7 +198,7 @@ def case_concat_short_speeches():
         # All speaker A subs are < 3s — must concatenate.
         # 1.5 + 1.5 + 2.0 = 5.0s of speaker A, with a speaker B in
         # between to verify we skip the wrong speaker.
-        session.SUBTITLE = {
+        session.SUBTITLE = Subtitle({
             'segments': [
                 {'speaker': 'A', 'start': 1.0,  'end': 2.5,  'text': 'first'},
                 {'speaker': 'B', 'start': 3.0,  'end': 5.0,  'text': 'other'},
@@ -208,7 +209,7 @@ def case_concat_short_speeches():
                 # exists but won't be picked.
                 {'speaker': 'A', 'start': 13.0, 'end': 14.5, 'text': 'too late'},
             ],
-        }
+        })
 
         out_path = clone_ref.extract_speaker_reference('A')
         assert out_path is not None, 'expected concat output, got None'
@@ -229,11 +230,11 @@ def case_concat_short_speeches():
         # segment exists, so concat should still produce that single
         # span (better than nothing — the addon's own validation will
         # error if it's still too short, which is the documented policy).
-        session.SUBTITLE = {
+        session.SUBTITLE = Subtitle({
             'segments': [
                 {'speaker': 'B', 'start': 3.0, 'end': 5.0, 'text': 'only'},
             ],
-        }
+        })
         out_b = clone_ref.extract_speaker_reference('B')
         assert out_b is not None, 'expected single-span fallback, got None'
         with wave.open(out_b, 'rb') as wf:
@@ -243,7 +244,7 @@ def case_concat_short_speeches():
 
     finally:
         session.VIDEO = original_video
-        session.SUBTITLE = original_subtitle
+        session.SUBTITLE = Subtitle(original_subtitle)
         session.PATH_SUBTITLD_USER_CACHE = original_cache
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -288,14 +289,14 @@ def case_extract_with_text():
         session.VIDEO = {'filepath': src_wav}
         # In-band case: 5 s 'good ref' wins. Note the embedded newline
         # and double-space — the function must collapse them.
-        session.SUBTITLE = {
+        session.SUBTITLE = Subtitle({
             'language': 'en',
             'segments': [
                 {'speaker': 'A', 'start': 0.0,  'end': 0.5,  'text': 'short'},
                 {'speaker': 'A', 'start': 6.0,  'end': 11.0, 'text': 'this is\na  good ref'},
                 {'speaker': 'A', 'start': 14.0, 'end': 14.4, 'text': 'short again'},
             ],
-        }
+        })
         path, text = clone_ref.extract_speaker_reference_with_text('A')
         assert path is not None, 'expected a path'
         assert text == 'this is a good ref', f'expected collapsed text, got {text!r}'
@@ -306,7 +307,7 @@ def case_extract_with_text():
 
         # No project language: the audio's language is unknown, so no
         # transcript is sent with it rather than one that may be wrong.
-        session.SUBTITLE = {'segments': session.SUBTITLE['segments']}
+        session.SUBTITLE = Subtitle({'segments': session.SUBTITLE.segments})
         path_nolang, text_nolang = clone_ref.extract_speaker_reference_with_text('A')
         assert path_nolang == path, 'no language should still give the reference audio'
         assert text_nolang is None, f'expected no ref_text without a language, got {text_nolang!r}'
@@ -314,14 +315,14 @@ def case_extract_with_text():
 
         # Inverted translation: the displayed text is Portuguese, the audio
         # (and its transcript in `translations`) English.
-        session.SUBTITLE = {
+        session.SUBTITLE = Subtitle({
             'language': 'pt-BR',
             'source_language': 'en',
             'segments': [
                 {'speaker': 'A', 'start': 6.0, 'end': 11.0, 'text': 'esta é uma boa referência',
                  'translations': {'en': 'this is a good ref'}},
             ],
-        }
+        })
         _path_inv, text_inv = clone_ref.extract_speaker_reference_with_text('A')
         assert text_inv == 'this is a good ref', f'inverted ref_text wrong: {text_inv!r}'
         print(f'  PASS — inverted project ref_text={text_inv!r}')
@@ -329,7 +330,7 @@ def case_extract_with_text():
         # The same project saved before USF kept `source_language`: it has
         # translations, so the displayed language may not be the audio's,
         # and no transcript is sent rather than the Portuguese one.
-        del session.SUBTITLE['source_language']
+        session.SUBTITLE.source_language = None
         _path_old, text_old = clone_ref.extract_speaker_reference_with_text('A')
         assert text_old is None, f'expected no ref_text for an unsaid source, got {text_old!r}'
         print('  PASS — translations, no source_language → ref_text None')
@@ -342,13 +343,13 @@ def case_extract_with_text():
         workdir2 = tempfile.mkdtemp(prefix='clone-ref-text-2-')
         try:
             session.PATH_SUBTITLD_USER_CACHE = Path(workdir2)
-            session.SUBTITLE = {
+            session.SUBTITLE = Subtitle({
                 'language': 'en',
                 'segments': [
                     {'speaker': 'A', 'start': 1.0, 'end': 2.5,  'text': 'first line'},
                     {'speaker': 'A', 'start': 6.0, 'end': 7.5,  'text': 'second line'},
                 ],
-            }
+            })
             _path2, text2 = clone_ref.extract_speaker_reference_with_text('A')
             assert text2 == 'first line second line', f'concat text wrong: {text2!r}'
             print(f'  PASS — concat ref_text={text2!r}')
@@ -364,7 +365,7 @@ def case_extract_with_text():
 
     finally:
         session.VIDEO = original_video
-        session.SUBTITLE = original_subtitle
+        session.SUBTITLE = Subtitle(original_subtitle)
         session.PATH_SUBTITLD_USER_CACHE = original_cache
         shutil.rmtree(workdir, ignore_errors=True)
 

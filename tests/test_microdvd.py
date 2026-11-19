@@ -124,7 +124,7 @@ try:
     check('VobSub: says its subtitles are pictures', None, 'PictureSubtitlesError')
 except file_io.PictureSubtitlesError:
     check('VobSub: says its subtitles are pictures', True, True)
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 session.FORMAT = {'options': {'fps': 25.0, 'encoding': 'cp1250', 'line_ends': 'crlf'}}
 file_io.save_file(str(folder / 'out.sub'), 'SUB')
 saved = (folder / 'out.sub').read_bytes()

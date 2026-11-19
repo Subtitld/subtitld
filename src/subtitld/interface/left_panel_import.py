@@ -1,7 +1,7 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QFileDialog
+from PySide6.QtWidgets import QCheckBox, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QFileDialog
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from subtitld.interface import left_panel
@@ -12,6 +12,7 @@ from subtitld.modules import closed_captions
 from subtitld.modules import session
 from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
+from subtitld.modules.segment import text_of, timed_by_words
 from subtitld.modules import addons
 from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
@@ -120,6 +121,14 @@ class _GenericASRPanel(QWidget):
         if widget.options_widget is not None:
             widget.layout().addWidget(widget.options_widget)
 
+        # Each word timed, where the engine says when it is said (its
+        # results' `words`): the subtitles come in timed word by word.
+        widget.word_timing_check = QCheckBox()
+        widget.word_timing_check.setChecked(bool(session.CONFIG.get('transcription', {}).get('word_timing', False)))
+        widget.word_timing_check.toggled.connect(
+            lambda on: session.CONFIG.setdefault('transcription', {}).__setitem__('word_timing', on))
+        widget.layout().addWidget(widget.word_timing_check)
+
         widget.layout().addStretch()
 
         # Wire provider signals through to the host's progress UI.
@@ -156,7 +165,7 @@ class _GenericASRPanel(QWidget):
         if target is not None:
             # Selection run: the text belongs to the selected subtitle, so
             # fill it in as it arrives instead of adding cues of our own.
-            if any(seg is target for seg in session.SUBTITLE.get('segments', []) or []):
+            if any(seg is target for seg in session.SUBTITLE.segments):
                 text = str(segment.get('text', '') or '').strip()
                 if text:
                     widget._scope_target_parts.append(text)
@@ -170,7 +179,7 @@ class _GenericASRPanel(QWidget):
         # Offset back onto the full timeline when a scope range was used
         # (the provider saw a slice starting at 0).
         offset = getattr(widget, '_scope_offset', 0.0)
-        session.SUBTITLE.setdefault('segments', []).append({
+        session.SUBTITLE.segments.append({
             'start': float(segment.get('start', 0.0)) + offset,
             'end': float(segment.get('end', 0.0)) + offset,
             'text': segment.get('text', ''),
@@ -192,6 +201,7 @@ class _GenericASRPanel(QWidget):
         session.set_unsaved()
 
     def _on_finished(widget, segments):
+        segments = timed_words(segments) if isinstance(segments, list) else segments
         if isinstance(segments, list) and segments:
             offset = getattr(widget, '_scope_offset', 0.0)
             scope_range = getattr(widget, '_scope_range', None)
@@ -203,7 +213,7 @@ class _GenericASRPanel(QWidget):
                         seg['end'] = float(seg.get('end', 0.0)) + offset
             target = getattr(widget, '_scope_target', None)
             if target is not None and not any(
-                    seg is target for seg in session.SUBTITLE.get('segments', []) or []):
+                    seg is target for seg in session.SUBTITLE.segments):
                 target = None  # deleted mid-run; fall back to a plain scoped merge
             if target is not None and scope_range is not None:
                 # Selection run: the whole transcript is this subtitle's text.
@@ -213,26 +223,26 @@ class _GenericASRPanel(QWidget):
                 if text:
                     target['text'] = text
                 f, t = scope_range
-                existing = session.SUBTITLE.get('segments', []) or []
+                existing = session.SUBTITLE.segments
                 kept = [s for s in existing
                         if s is target or not (f - 1e-6 <= float(s.get('start', 0.0)) < t)]
                 kept.sort(key=lambda s: float(s.get('start', 0.0)))
-                session.SUBTITLE['segments'] = kept
+                session.SUBTITLE.segments = kept
             elif scope_range is not None:
                 # Scoped run: replace only the subtitles inside the range
                 # (including any partials appended live during this run),
                 # keep everything outside it, then splice the results in.
                 f, t = scope_range
-                existing = session.SUBTITLE.get('segments', []) or []
+                existing = session.SUBTITLE.segments
                 merged = [s for s in existing
                           if not (f - 1e-6 <= float(s.get('start', 0.0)) < t)]
                 merged.extend(segments)
                 merged.sort(key=lambda s: float(s.get('start', 0.0)))
-                session.SUBTITLE['segments'] = merged
+                session.SUBTITLE.segments = merged
             else:
-                session.SUBTITLE['segments'] = list(segments)
+                session.SUBTITLE.segments = list(segments)
             any_added = False
-            for seg in session.SUBTITLE['segments']:
+            for seg in session.SUBTITLE.segments:
                 speaker = seg.get('speaker', 'A')
                 if speaker not in session.SPEAKERS:
                     session.SPEAKERS[speaker] = {'image': None}
@@ -280,12 +290,14 @@ class _GenericASRPanel(QWidget):
                 widget._scope_range = scope_range
                 widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None)
         widget.transcript_started.emit()
-        language = session.SUBTITLE.get('language', 'en-us')
+        language = session.SUBTITLE.language or 'en-us'
         opts = session.CONFIG.get('transcription', {}).get('engine_options', {}).get(widget.provider.id, {})
         widget.provider.transcribe(audio_file, language, dict(opts) if isinstance(opts, dict) else {})
 
     def translate(widget):
         widget.info_label.setText(widget.provider.display_name)
+        widget.word_timing_check.setText(_('import_panel.word_timing'))
+        widget.word_timing_check.setToolTip(_('import_panel.word_timing_tip'))
 
 
 class _ImportASRPanel(QWidget):
@@ -366,7 +378,7 @@ class _CaptionsPanel(_GenericASRPanel):
         widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None) if scope_range else None
         widget._scope_target_parts = []
         widget.transcript_started.emit()
-        widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'),
+        widget.provider.transcribe(video, (session.SUBTITLE.language or 'en-us'),
                                    {'track': widget.track_combo.combobox.currentData()})
 
     def _on_finished(widget, segments):
@@ -432,7 +444,7 @@ def _track_project_language(track):
     if not code or '-' in track.get('language_tag', '').replace('_', '-'):
         return code
     primary = code.split('-')[0]
-    for known in (session.SUBTITLE.get('language'), session.CONFIG.get('transcription', {}).get('language')):
+    for known in (session.SUBTITLE.language, session.CONFIG.get('transcription', {}).get('language')):
         if known and known.split('-')[0] == primary:
             return known
     return code
@@ -593,12 +605,12 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         widget._scope_target_parts = []
         widget._reading = track
         widget.transcript_started.emit()
-        widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'), {
+        widget.provider.transcribe(video, (session.SUBTITLE.language or 'en-us'), {
             'track': track['index'], 'codec': track['codec'], 'duration': float(session.VIDEO.get('duration') or 0),
             # A teletext stream's page, and its PID in a transport stream.
             'page': track.get('page'), 'pid': track.get('pid'),
             # What an OCR add-on reads a picture track as.
-            'language': _track_project_language(track) or session.SUBTITLE.get('language', 'en-us')})
+            'language': _track_project_language(track) or (session.SUBTITLE.language or 'en-us')})
 
     def _on_finished(widget, segments):
         scope_range = getattr(widget, '_scope_range', None)
@@ -620,11 +632,11 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         inverted leaves it. A range or selection leaves the language alone:
         the other subtitles are still in theirs."""
         language = _track_project_language(track)
-        if not language or language == session.SUBTITLE.get('language'):
+        if not language or language == session.SUBTITLE.language:
             return
-        if not session.SUBTITLE.get('source_language') and session.SUBTITLE.get('language'):
-            session.SUBTITLE['source_language'] = session.SUBTITLE['language']
-        session.SUBTITLE['language'] = language
+        if not session.SUBTITLE.source_language and session.SUBTITLE.language:
+            session.SUBTITLE.source_language = session.SUBTITLE.language
+        session.SUBTITLE.language = language
         if hasattr(widget.window(), 'global_panel_import_language_combobox'):
             _show_language(widget.window())
 
@@ -652,10 +664,28 @@ _BUILTIN_ASR_COUNT = 0
 
 
 
+def timed_words(segments):
+    """A transcription's segments, each timed word by word by the words its
+    engine gave (modules.segment.timed_by_words) when the panel asks for it;
+    the words themselves are left out either way."""
+    timed = bool(session.CONFIG.get('transcription', {}).get('word_timing', False))
+    out = []
+    for segment in segments:
+        if isinstance(segment, dict) and 'words' in segment:
+            segment = dict(segment)
+            words = segment.pop('words')
+            if timed and isinstance(segment.get('text'), str):
+                pieces = timed_by_words(segment['text'], words, float(segment.get('start', 0) or 0))
+                if pieces:
+                    segment['text'] = pieces
+        out.append(segment)
+    return out
+
+
 def _joined_text(segments):
     """Every returned segment's text as one line — what a selection-scoped
     run puts in the selected subtitle."""
-    parts = [str(seg.get('text', '') or '').strip() for seg in segments if isinstance(seg, dict)]
+    parts = [text_of(seg).strip() for seg in segments if isinstance(seg, dict)]
     return ' '.join(part for part in parts if part)
 
 
@@ -921,15 +951,15 @@ def _show_language(self):
     """The language combobox on the project's language."""
     selected_language_name = 'English (United States)'
     for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
-        if language_code == session.SUBTITLE['language']:
+        if language_code == session.SUBTITLE.language:
             selected_language_name = language_name
             break
     self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
 
 
 def update(self):
-    if not session.SUBTITLE.get('language', False):
-        session.SUBTITLE['language'] = session.CONFIG.get('transcription', {}).get('language', 'en-us')
+    if not session.SUBTITLE.language:
+        session.SUBTITLE.language = session.CONFIG.get('transcription', {}).get('language', 'en-us')
     # `source_language` mirrors `language` at transcription time, then is
     # frozen — translation/invert flips `language` but never touches
     # `source_language`. clone_ref uses it to pull the audio-matching
@@ -937,8 +967,8 @@ def update(self):
     # Not in a project whose subtitles carry translations: inverted before
     # `source_language` was kept, they are the translation, not what is
     # spoken, and clone voices would get a transcript in the wrong language.
-    if not session.SUBTITLE.get('source_language') and not clone_ref.has_translations():
-        session.SUBTITLE['source_language'] = session.SUBTITLE['language']
+    if not session.SUBTITLE.source_language and not clone_ref.has_translations():
+        session.SUBTITLE.source_language = session.SUBTITLE.language
     _show_language(self)
 
     # Restore the previously saved engine selection. There is no
@@ -964,7 +994,7 @@ def hide(self):
 
 def global_panel_import_language_combobox_activated(self):
     chosen = session.LANGUAGE_DICT_LIST[self.global_panel_import_language_combobox.currentText()]
-    session.SUBTITLE['language'] = chosen
+    session.SUBTITLE.language = chosen
     # The user is explicitly declaring what's spoken in the source media,
     # so source_language tracks language here — pre-translation, the two
     # are the same. Stamping unconditionally (vs. setdefault) so that
@@ -972,7 +1002,7 @@ def global_panel_import_language_combobox_activated(self):
     # source_language; post-translation editors who want to redirect the
     # synthesis language without changing what's on the audio should use
     # the invert-translation flow instead.
-    session.SUBTITLE['source_language'] = chosen
+    session.SUBTITLE.source_language = chosen
     if not isinstance(session.CONFIG.get('transcription'), dict):
         session.CONFIG['transcription'] = {}
     session.CONFIG['transcription']['language'] = chosen
@@ -1079,14 +1109,14 @@ def _start_transcription(self, scope_range):
     if scope_range is None:
         # Whole-media transcription REPLACES all subtitles → confirm when
         # some already exist, then clear.
-        if session.SUBTITLE['segments']:
+        if session.SUBTITLE.segments:
             confirm_dialog = utils.SimpleDialog(self, title=_('transcription_panel.start_transcription'))
             label = QLabel(_('transcription_panel.start_transcription_text'))
             confirm_dialog.content.layout().addWidget(label)
             confirm_dialog.exec()
             if confirm_dialog.result() != 1:
                 return
-        session.SUBTITLE['segments'] = []
+        session.SUBTITLE.segments = []
         self.timeline_widget.update()
     # A scoped (range/selection) run MERGES: it only replaces subtitles
     # inside the range (handled in _on_finished), so no clear / confirm.
@@ -1139,8 +1169,8 @@ def _import_subtitles_from_file(self):
     supported_import_files = 'Text files' + ' ({})'.format(' '.join('*.{}'.format(fo) for fo in _list_of_supported_import_extensions))
     file_to_open = QFileDialog.getOpenFileName(parent=self, caption='Select the file to import', dir=os.path.expanduser('~'), filter=supported_import_files)[0]
     if file_to_open:
-        session.SUBTITLE['segments'] += file_io.import_file(filename=file_to_open)[0]
-        session.SUBTITLE['segments'].sort(key=lambda s: s.get('start', 0))
+        session.SUBTITLE.segments += file_io.import_file(filename=file_to_open)[0]
+        session.SUBTITLE.segments.sort(key=lambda s: s.get('start', 0))
         timeline_widget = getattr(self, 'timeline_widget', None)
         if timeline_widget is not None:
             timeline_widget.update()

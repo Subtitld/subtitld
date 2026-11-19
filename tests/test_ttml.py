@@ -649,15 +649,15 @@ folder = Path(tempfile.mkdtemp())
 for name, text, encoding in (('in.ttml', AGENTS, 'utf-8'), ('in.dfxp', OLD, 'utf-8'), ('in.itt', ITT, 'utf-8'),
                              ('in.xml', EBU, 'utf-8')):
     (folder / name).write_text(text, encoding=encoding)
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.ttml'))
-check('opens, its language for the project', (len(opened), fmt, opened[0].get('speaker'), session.SUBTITLE['language']),
+check('opens, its language for the project', (len(opened), fmt, opened[0].get('speaker'), session.SUBTITLE.language),
       (4, 'TTML', 'Thom', 'pt-br'))
 (folder / 'said.ttml').write_text(said, encoding='utf-8')
-session.SUBTITLE.pop('metadata', None)
+session.SUBTITLE.metadata = None
 file_io.process_subtitles_file(str(folder / 'said.ttml'))
 check('what the file says about itself reaches the project, and is not dropped on the way',
-      session.SUBTITLE.get('metadata'), META)
+      session.SUBTITLE.metadata, META)
 check('.dfxp opens as DFXP, .itt and .xml as TTML', [file_io.process_subtitles_file(str(folder / name))[1]
                                                     for name in ('in.dfxp', 'in.itt', 'in.xml')], ['DFXP', 'TTML', 'TTML'])
 check('a language alone, as Subtitld names it', [file_io._known_language(tag) for tag in ('en', 'fr', 'pt_BR', 'xx', '')],
@@ -671,9 +671,9 @@ try:
     check('broken XML: a message, not a crash', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('broken XML: a message, not a crash', str(error).startswith('Line 1, column '), True)
-session.SUBTITLE['segments'] = segments
-session.SUBTITLE['language'] = 'pt-br'
-session.SUBTITLE['translations'] = {}
+session.SUBTITLE.segments = segments
+session.SUBTITLE.language = 'pt-br'
+session.SUBTITLE.translations = {}
 session.CONFIG['subtitle_style'] = {'settings': {'subtitld.classic': {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}}}
 for fmt, name in (('TTML', 'out.ttml'), ('DFXP', 'out.dfxp')):
     session.FORMAT['options'] = {'speakers': 'voice', 'look': 'preview'}
@@ -716,13 +716,13 @@ check('chosen', {key: panel.get_config()['options'].get(key) for key in ('speake
 check('and what the dialog chose is what the file declares',
       ttml._IMSC11_TEXT in ttml.write([{'start': 1, 'end': 2, 'text': 'Hi'}], 'en',
                                       profile=panel.get_config()['options']['profile']), True)
-kept_segments = session.SUBTITLE.get('segments')
-session.SUBTITLE['segments'] = [{'start': 1, 'end': 2, 'text': 'Hi'}]
+kept_segments = session.SUBTITLE.segments
+session.SUBTITLE.segments = [{'start': 1, 'end': 2, 'text': 'Hi'}]
 panel._run_check()
 check('the file it would write, checked against the profile it declares',
       (panel.check_label.isHidden(), panel.check_label.text()),
       (False, 'Nothing Subtitld checks for breaks IMSC 1.1 Text in this file.'))
-session.SUBTITLE['segments'] = [{'start': 1, 'end': 2, 'text': f'{{\\an{place}}}Line'} for place in (1, 2, 3, 7, 9)]
+session.SUBTITLE.segments = [{'start': 1, 'end': 2, 'text': f'{{\\an{place}}}Line'} for place in (1, 2, 3, 7, 9)]
 panel.profile_combo.combobox.setCurrentIndex(1)
 check('and what it would break, listed, as soon as the profile is chosen',
       panel.check_label.text().split('\n'),
@@ -738,7 +738,7 @@ panel.profile_combo.combobox.setCurrentIndex(2)
 panel.format_combo.setCurrentText('ASS')
 panel._refresh_options()
 check('a format with no profile has nothing checked', panel.check_label.isHidden(), True)
-session.SUBTITLE['segments'] = kept_segments
+session.SUBTITLE.segments = kept_segments
 check('ASS: its own words for the look, and no profile to declare',
       (panel.look_combo.combobox.itemText(1).endswith('(font, colour, shadow, box)'), panel.profile_combo.isHidden()),
       (True, True))

@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session, youtube_timedtext as ytt
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -91,7 +92,7 @@ session.FORMAT = {}
 check('.srv3 and an .xml of timed text: XML; a TTML .xml: TTML', [
     (file_io.process_subtitles_file(str(folder / name))[1], file_io.process_subtitles_file(str(folder / name))[0][0]['text'][-4:])
     for name in ('in.srv3', 'youtube.xml', 'ttml.xml')], [('XML', '</i>'), ('XML', '</i>'), ('TTML', 'TTML')])
-session.SUBTITLE = {'language': 'en-us', 'segments': segments}
+session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': segments})
 session.FORMAT = {'options': {'speakers': 'none', 'formatting': 'remove'}}
 file_io.save_file(str(folder / 'out.srv3'), 'XML')
 check('exported, with the export\'s options (formatting, and so the place, removed)', [s['text'] for s in ytt.read(folder / 'out.srv3')][:2],

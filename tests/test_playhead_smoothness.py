@@ -34,6 +34,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import playercontrols
 
 fails = []
@@ -130,7 +131,7 @@ session.CONFIG = {'timeline': {}, 'default_values': {'minimum_subtitle_width': 0
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
 session.VIDEO = {'duration': DURATION, 'shot_changes': []}
 session.SPEAKERS = {}
-session.SUBTITLE = {'segments': [], 'selected': None, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [], 'selected': None, 'position': 0.0})
 
 host = Host()
 playercontrols.load(host)
@@ -176,7 +177,7 @@ def tick(after):
     clock[0] += after
     with mock.patch.object(time, 'perf_counter', lambda: clock[0]):
         timer.timeout.emit()
-    return session.SUBTITLE['position']
+    return session.SUBTITLE.position
 
 
 def covers(strip, *positions):

@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 
 fails = []
@@ -35,7 +36,7 @@ def check(name, got, want):
 
 def _seek(pos, keep_repeat):
     """What the preview panel's seek does to the session."""
-    session.SUBTITLE['position'] = float(pos)
+    session.SUBTITLE.position = float(pos)
     if not keep_repeat:
         session.REPEAT_DURATION_BUFFER = []
 
@@ -55,9 +56,9 @@ def play(host, seconds, tick=1 / 30):
     the playhead repaint does; the playhead's path, in tenths."""
     path = []
     for _ in range(round(seconds / tick)):
-        session.SUBTITLE['position'] += tick
+        session.SUBTITLE.position += tick
         timeline.apply_repeat(host)
-        path.append(round(session.SUBTITLE['position'], 1))
+        path.append(round(session.SUBTITLE.position, 1))
     return path
 
 
@@ -67,7 +68,7 @@ def wraps(path):
 
 
 session.CONFIG = {'repeat_activated': True, 'playback_repeat_duration': 2.0, 'playback_repeat_times': 3}
-session.SUBTITLE = {'position': 10.0}
+session.SUBTITLE = Subtitle({'position': 10.0})
 session.REPEAT_DURATION_BUFFER = []
 host = Host()
 
@@ -79,7 +80,7 @@ check('three plays left of the third stretch', len(session.REPEAT_DURATION_BUFFE
 check('which starts where the second ended', [round(v, 1) for v in session.REPEAT_DURATION_BUFFER[0]], [14.0, 16.0])
 
 print('a seek elsewhere starts the repeat from there')
-session.SUBTITLE['position'] = 10.0
+session.SUBTITLE.position = 10.0
 session.REPEAT_DURATION_BUFFER = []
 play(host, 1.0)
 _seek(40.0, keep_repeat=False)
@@ -89,13 +90,13 @@ check('repeats the stretch from 40 s', wraps(path), [40.0])
 
 print('once, then on')
 session.CONFIG['playback_repeat_times'] = 1
-session.SUBTITLE['position'] = 0.0
+session.SUBTITLE.position = 0.0
 session.REPEAT_DURATION_BUFFER = []
 check('never goes back', wraps(play(host, 7.0)), [])
 
 print('off: nothing')
 session.CONFIG['repeat_activated'] = False
-session.SUBTITLE['position'] = 0.0
+session.SUBTITLE.position = 0.0
 session.REPEAT_DURATION_BUFFER = []
 check('no stretch', (wraps(play(host, 7.0)), session.REPEAT_DURATION_BUFFER), ([], []))
 

@@ -40,6 +40,7 @@ from subtitld.modules.addons.provider import (
     AudioSeparatorProvider,
     Provider,
     SOURCE_ENGINES,
+    TASK_ASR_ALIGN,
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
     TASK_OCR_RECOGNIZE,
@@ -65,6 +66,8 @@ _PLATFORM_KEYS = {
 ADDON_PROVIDER_CLASSES = {
     TASK_TTS_SYNTHESIZE: AddonTTSProvider,
     TASK_ASR_TRANSCRIBE: AddonASRProvider,
+    # An add-on that only aligns is an ASR provider that only aligns.
+    TASK_ASR_ALIGN: AddonASRProvider,
     TASK_TRANSLATE: AddonTranslationProvider,
     TASK_AUDIO_SEPARATE: AddonAudioSeparatorProvider,
     TASK_VIDEO_LIPSYNC: AddonVideoLipsyncProvider,

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, karaoke, markup, session
+from subtitld.modules.segment import Subtitle, text_of, timed_pieces
 from corpus_common import need
 
 fails = []
@@ -40,12 +41,12 @@ SCRATCH = Path(tempfile.mkdtemp())
 def opened(path):
     """(subtitles, format) of a file opened as the app opens one, from a
     fresh project."""
-    session.SUBTITLE = {'segments': []}
+    session.SUBTITLE = Subtitle({'segments': []})
     session.FORMAT = {}
     session.VIDEO = {}
     session.SPEAKERS.clear()
     segments, fmt = file_io.process_subtitles_file(str(path))
-    session.SUBTITLE['segments'] = segments
+    session.SUBTITLE.segments = segments
     return segments, fmt
 
 
@@ -58,7 +59,7 @@ def again(name, fmt):
 
 
 def plain(segment):
-    return markup.plain(segment['text']).strip()
+    return markup.plain(text_of(segment)).strip()
 
 
 def timed(segments, places=3):
@@ -151,7 +152,8 @@ spans = [[(19.764, 20.105, 'When'), (20.105, 20.326, 'you were'), (20.326, 20.60
           (20.841, 21.9, 'fore')],
          [(227.741, 228.24, 'I'), (228.24, 228.609, "don't"), (228.609, 228.859, 'be'), (228.859, 229.695, 'long'),
           (229.695, 230.693, 'here')]]
-words = [[(start, end, word.strip()) for start, end, word in karaoke.timed(s['text'], s['start'])] for s in (apple[0], apple[-1])]
+words = [[(round(s['start'] + p['start'], 3), round(s['start'] + p['end'], 3), p['text'].strip()) for p in timed_pieces(s)]
+         for s in (apple[0], apple[-1])]
 check('Apple lyrics: every word timed as its span, within the hundredth the codes keep',
       [[(word, abs(start - want[0]) <= 0.011 and abs(end - want[1]) <= 0.011) for (start, end, word), want in zip(line, wanted)]
        for line, wanted in zip(words, spans)],
@@ -186,7 +188,7 @@ print('pysubs2: the attached fonts and pictures kept')
 # -Italic.ttf (beside them in its test data, the same sizes), named with
 # Aegisub's "_0": decoded, byte for byte those files.
 fonts, _fmt = opened(found['pysubs2/subtitle_with_attached_fonts_aegisub.ass'])
-kept = session.SUBTITLE.get('attachments') or {}
+kept = session.SUBTITLE.attachments or {}
 check('the fonts decoded are the font files', {name: data == found['pysubs2/' + name.replace('_0', '')].read_bytes()
                                                for name, data in (kept.get('fonts') or {}).items()},
       {'EBGaramond08-Regular_0.ttf': True, 'EBGaramond08-Italic_0.ttf': True})
@@ -201,19 +203,19 @@ again('images.ass', 'ASS')
 check('saved: the [Graphics] section pysubs2\'s reference has', section(SCRATCH / 'images.ass', 'Graphics'),
       section(found['pysubs2/subtitle_with_attached_images_pysubs2_ref.ass'], 'Graphics'))
 check('a picture decoded: a PNG and a JPEG', sorted((name, data[:4]) for name, data in
-                                                   (session.SUBTITLE.get('attachments') or {})['graphics'].items()),
+                                                   (session.SUBTITLE.attachments or {})['graphics'].items()),
       [('github.jpg', b'\xff\xd8\xff\xe0'), ('github.png', b'\x89PNG')])
 # A USFX keeps them as members of its own, and an ASS saved from it has
 # them again.
 opened(found['pysubs2/subtitle_with_attached_fonts_aegisub.ass'])
 again('fonts.usfx', 'USFX')
-check('a USFX keeps the fonts', {name: len(data) for name, data in (session.SUBTITLE.get('attachments') or {})['fonts'].items()},
+check('a USFX keeps the fonts', {name: len(data) for name, data in (session.SUBTITLE.attachments or {})['fonts'].items()},
       {'EBGaramond08-Regular_0.ttf': 280540, 'EBGaramond08-Italic_0.ttf': 180220})
 again('from_usfx.ass', 'ASS')
 check('an ASS saved from the USFX: the same [Fonts]', section(SCRATCH / 'from_usfx.ass', 'Fonts'),
       section(found['pysubs2/subtitle_with_attached_fonts_pysubs2_ref.ass'], 'Fonts'))
 opened(found['pysubs2/ttml_example.ttml'])
-check('the next file opened has none of them', session.SUBTITLE.get('attachments'), None)
+check('the next file opened has none of them', session.SUBTITLE.attachments, None)
 
 print('Subtitle Edit: charset detection')
 # Subtitle Edit's LanguageAutoDetectTest: the Danish and Russian files

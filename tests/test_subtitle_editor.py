@@ -108,7 +108,7 @@ check('halves', ste.halves(editor, 8), ('{\\an8}<i>Hello <b>bi</b></i>', '{\\an8
 check('at the start', ste.halves(editor, 0), ('{\\an8}', '{\\an8}<i>Hello <b>big</b> world</i>'))
 
 print('the bar')
-session.SUBTITLE['segments'] = []
+session.SUBTITLE.segments = []
 history.history_clear() if hasattr(history, 'history_clear') else None
 editor = loaded('<i>Hello</i> world')
 bar = ste.FormattingBar(editor)

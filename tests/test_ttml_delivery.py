@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import session, ttml
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -91,7 +92,7 @@ check("Japanese's features outside Japanese", netflix(english, 'imsc1.1')[-1],
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [{'start': 0, 'end': 0.5, 'text': 'quick'}], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 0, 'end': 0.5, 'text': 'quick'}], 'language': 'en'})
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('TTML')
 panel._refresh_options()

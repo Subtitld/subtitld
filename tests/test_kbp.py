@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import export_options, file_io, kar, kbp, karaoke, markup, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -105,16 +106,18 @@ check('as KAR, a page is a paragraph', [bool(s.get('kar')) for s in kar.parse(ka
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'song.kbp').write_bytes(PROJECT.encode('utf-8'))
-session.SUBTITLE = {'segments': []}
+session.SUBTITLE = Subtitle({'segments': []})
 session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'song.kbp'))
-check('opens as KBP with its title', (fmt, len(opened), session.SUBTITLE['metadata']['title']), ('KBP', 3, 'A Test Song'))
-session.SUBTITLE['segments'] = opened
+check('opens as KBP with its title', (fmt, len(opened), session.SUBTITLE.metadata['title']), ('KBP', 3, 'A Test Song'))
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.kbp'), 'KBP')
 raw = (folder / 'again.kbp').read_bytes()
 check('saved with Windows line ends, the same subtitles', (b'\r\n' in raw and b'\n' not in raw.replace(b'\r\n', b''),
-                                                          kbp.parse(raw.decode('utf-8'))[0][0] == {k: v for k, v in opened[0].items() if k != 'id'}), (True, True))
+                                                          # as the app opens it, timed by its codes
+                                                          karaoke.timed_texts(kbp.parse(raw.decode('utf-8'))[0])[0]
+                                                          == {k: v for k, v in opened[0].items() if k != 'id'}), (True, True))
 check('registered: .kbp, a text format', (session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['KBP']['extensions'],
                                           'KBP' in export_options.TEXT_FORMATS), (['kbp'], True))
 

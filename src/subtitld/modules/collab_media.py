@@ -265,4 +265,4 @@ def _in_dub_cache(file_hash):
     return None
 
 
-session._before_capture_callbacks.append(lambda: stamp_dubs(session.SUBTITLE.get('segments')))
+session._before_capture_callbacks.append(lambda: stamp_dubs(session.SUBTITLE.segments))

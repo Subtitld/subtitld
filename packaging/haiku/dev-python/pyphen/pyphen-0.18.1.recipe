@@ -1,0 +1,55 @@
+SUMMARY="Hyphenate text with Hunspell's dictionaries"
+DESCRIPTION="A pure Python module that finds where words can be hyphenated, in dozens of \
+languages, with the hyphenation dictionaries of LibreOffice."
+HOMEPAGE="https://github.com/Kozea/Pyphen"
+COPYRIGHT="2013-2026 Guillaume Ayoub, CourtBouillon"
+LICENSE="GNU GPL v2
+	GNU LGPL v2.1
+	MPL v1.1"
+REVISION="1"
+SOURCE_URI="https://files.pythonhosted.org/packages/py3/${portName:0:1}/$portName/$portName-$portVersion-py3-none-any.whl#noarchive"
+CHECKSUM_SHA256="0aa9051e15928cecadd4c632cea0258ba57215b2a197a39baa46abcdb0f47e84"
+
+ARCHITECTURES="any"
+
+BUILD_REQUIRES="
+	haiku_devel
+	"
+
+PYTHON_VERSIONS=(3.14)
+
+for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+	pythonPackage=python${pythonVersion//.}
+
+	# Allows using dot in sub-package names (eg: "_python3.14" vs "_python314"):
+	eval "PACKAGE_NAME_$pythonPackage=${portName}_python$pythonVersion"
+
+	eval "PROVIDES_$pythonPackage=\"
+		${portName}_python$pythonVersion = $portVersion
+		${portName}_$pythonPackage = $portVersion
+		\""
+	eval "REQUIRES_$pythonPackage=\"
+		haiku
+		cmd:python$pythonVersion
+		\""
+	BUILD_REQUIRES+="
+		installer_$pythonPackage
+		"
+	BUILD_PREREQUIRES+="
+		cmd:python$pythonVersion
+		"
+done
+
+INSTALL()
+{
+	for pythonVersion in ${PYTHON_VERSIONS[@]}; do
+		pythonPackage=python${pythonVersion//.}
+
+		python=python$pythonVersion
+
+		$python -m installer -p $prefix $portName-$portVersion-py3-none-any.whl
+
+		packageEntries $pythonPackage \
+			$prefix/lib/python*
+	done
+}

@@ -62,7 +62,7 @@ session.VIDEO = {}
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.aya'))
 check('opens as AYATO', (fmt, len(opened)), ('AYATO', 3))
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 30}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.aya'), 'AYATO')

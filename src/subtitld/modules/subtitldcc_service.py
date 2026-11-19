@@ -25,6 +25,7 @@ from subtitld import __version__
 from subtitld.modules import file_io, net, session, usf
 from subtitld.modules import subtitldcc as api
 from subtitld.modules.subtitldcc import ApiError, SignInError
+from subtitld.modules.segment import text_of
 
 DEFAULT_BASE_URL = 'https://subtitld.cc'
 SCOPES = ('read', 'publish', 'rate', 'collab')
@@ -296,14 +297,14 @@ def open_in_editor(window, data):
         temporary.write(data)
     try:
         history.history_clear()
-        session.SUBTITLE['segments'] = []
-        session.SUBTITLE['selected'] = None
+        session.SUBTITLE.reset()
         session.SPEAKERS.clear()
         segments, _format = file_io.process_subtitles_file(path)
     finally:
         os.unlink(path)
-    session.SUBTITLE['segments'] = segments
-    session.SUBTITLE['filepath'] = ''
+    session.SUBTITLE.segments = segments
+    segments = session.SUBTITLE.segments  # the Segments it holds, not the dicts given
+    session.SUBTITLE.filepath = ''
     session.CONFIG['format_to_save'] = 'USFX'
     for name in {segment.get('speaker', 'A') for segment in segments}:
         session.SPEAKERS.setdefault(name, {})
@@ -322,12 +323,12 @@ def open_in_editor(window, data):
 
 def origin():
     """{'share_id', 'version'} of the subtitld.cc subtitle the editor holds, or None."""
-    value = session.SUBTITLE.get('origin')
+    value = session.SUBTITLE.origin
     return value if isinstance(value, dict) and value.get('share_id') else None
 
 
 def set_origin(share_id, version):
-    session.SUBTITLE['origin'] = {'share_id': share_id, 'version': version}
+    session.SUBTITLE.origin = {'share_id': share_id, 'version': version}
 
 
 # --- Publishing ------------------------------------------------------------------------------------------
@@ -335,9 +336,9 @@ def set_origin(share_id, version):
 
 def text_languages():
     """The texts the editor can publish: [(language or None, is_translation)], the original first."""
-    languages = [(session.SUBTITLE.get('language') or None, False)]
+    languages = [(session.SUBTITLE.language or None, False)]
     seen = set()
-    for segment in session.SUBTITLE.get('segments', []):
+    for segment in session.SUBTITLE.segments:
         for language in (segment.get('translations') or {}):
             if language and language not in seen:
                 seen.add(language)
@@ -349,8 +350,8 @@ def usf_for_publishing(translation=None, title=''):
     """The subtitles as USF to publish: one language (the original text, or the translation in
     ``translation``), speaker names and colors. Never dubbing, speaker images or file paths."""
     segments = []
-    for segment in session.SUBTITLE.get('segments', []):
-        text = segment.get('text', '')
+    for segment in session.SUBTITLE.segments:
+        text = text_of(segment)
         if translation:
             text = (segment.get('translations') or {}).get(translation, '')
         if not str(text).strip():
@@ -366,7 +367,7 @@ def usf_for_publishing(translation=None, title=''):
         for name, data in session.SPEAKERS.items()
         if isinstance(data, dict) and data.get('color')
     }
-    language = translation or session.SUBTITLE.get('language') or None
+    language = translation or session.SUBTITLE.language or None
     metadata = {'title': title} if title else None
     content = usf.USFWriter().write(segments, speakers=speakers, language=language, metadata=metadata,
                                     names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()})

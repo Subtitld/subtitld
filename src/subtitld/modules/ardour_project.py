@@ -24,6 +24,7 @@ from xml.sax.saxutils import quoteattr
 import soundfile
 
 from subtitld.modules import markup, project_export, session
+from subtitld.modules.segment import text_of
 
 RATE = 48000
 SUPERCLOCK = 282240000
@@ -156,7 +157,7 @@ def save(path, timeline):
     if timeline.subtitles:
         _name, _language, cues = timeline.subtitles[0]
         for cue in sorted(cues, key=lambda c: float(c['start'])):
-            text = ' '.join(markup.plain(str(cue.get('text') or '')).split())
+            text = ' '.join(markup.plain(text_of(cue)).split())
             if text:
                 locations.append(f'    <Location id="{next(ids)}" name={quoteattr(text)} start="a{_ticks(cue["start"])}" '
                                  f'end="a{_ticks(cue["end"])}" flags="IsRangeMarker" locked="0" timestamp="0" cue="0"/>')

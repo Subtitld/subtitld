@@ -32,6 +32,7 @@ from subtitld.modules import live_peaks
 from subtitld.modules import session
 from subtitld.modules import recorder as recorder_mod
 from subtitld.modules import live_transcribe
+from subtitld.modules.segment import set_text, text_of
 from subtitld.modules.addons.provider import SOURCE_ENGINES, TASK_ASR_TRANSCRIBE
 
 
@@ -241,7 +242,7 @@ class RecordController(QObject):
             self._status = 'no-input'
             log.warning('Record: no audio input available; not recording')
             return
-        base = float(session.SUBTITLE.get('position', 0) or 0)
+        base = float(session.SUBTITLE.position or 0)
         self._base_position = base
         self._take_token = secrets.token_hex(3)
         self._take_history = None     # each take is its own undo step
@@ -274,7 +275,7 @@ class RecordController(QObject):
                     return
                 self._live = live_transcribe.LiveTranscriber(
                     provider,
-                    language=session.SUBTITLE.get('language', 'en-us'),
+                    language=session.SUBTITLE.language or 'en-us',
                     options=self._asr_options(provider),
                     samplerate=recorder_mod.SAMPLE_RATE,
                     base_offset=base,
@@ -369,7 +370,7 @@ class RecordController(QObject):
                 wav = rec.stop()   # stop capture first, then flush the engine
             except Exception:
                 wav = None
-        stop_pos = float(session.SUBTITLE.get('position', 0) or 0)
+        stop_pos = float(session.SUBTITLE.position or 0)
 
         # AFTER rec.stop(): that joins the writer thread, so the preview VAD
         # can be flushed from here without racing an append.
@@ -494,7 +495,7 @@ class RecordController(QObject):
     def _find_by_key(key):
         if not key:
             return None
-        for s in session.SUBTITLE.get('segments', []) or []:
+        for s in session.SUBTITLE.segments:
             if isinstance(s, dict) and s.get('_rec') == key:
                 return s
         return None
@@ -514,25 +515,25 @@ class RecordController(QObject):
 
     @staticmethod
     def _insert_segment(seg):
-        segs = session.SUBTITLE.setdefault('segments', [])
+        segs = session.SUBTITLE.segments
         starts = [float(s.get('start', 0.0)) for s in segs]
         segs.insert(bisect.bisect_right(starts, float(seg['start'])), seg)
 
     @staticmethod
     def _remove_segment(seg):
-        segs = session.SUBTITLE.get('segments', [])
+        segs = session.SUBTITLE.segments
         for i, s in enumerate(segs):
             if s is seg:
                 del segs[i]
                 break
-        if session.SUBTITLE.get('selected') is seg:
-            session.SUBTITLE['selected'] = None
+        if session.SUBTITLE.selected is seg:
+            session.SUBTITLE.selected = None
 
     @staticmethod
     def _untouched(seg, rec):
         return (abs(float(seg.get('start', 0.0)) - rec['start']) < 1e-6
                 and abs(float(seg.get('end', 0.0)) - rec['end']) < 1e-6
-                and (seg.get('text') or '').strip() == (rec['written'] or rec['orig']))
+                and text_of(seg).strip() == (rec['written'] or rec['orig']))
 
     @staticmethod
     def _completing(rec):
@@ -587,7 +588,7 @@ class RecordController(QObject):
                 key = self._new_key(token)
                 target['_rec'] = key
                 rec = {'key': key, 'kind': 'retarget', 'take': token, 'id': target.setdefault('id', cue_ids.new_id()),
-                       'orig': (target.get('text') or '').strip(), 'written': None,
+                       'orig': text_of(target).strip(), 'written': None,
                        'start': float(target.get('start', 0.0)),
                        'end': float(target.get('end', 0.0)),
                        'outstanding': 0, 'claimed': False, 'born': None,
@@ -650,20 +651,20 @@ class RecordController(QObject):
         written, orig = rec['written'], rec['orig']
         new_text = None
         if seg is not None:
-            new_text = self._next_text(written, orig, (seg.get('text') or '').strip(), text)
+            new_text = self._next_text(written, orig, text_of(seg).strip(), text)
             if new_text is None:
                 log.info('Record: %s was edited; transcript %r not applied', key, text)
             else:
                 if rec['kind'] == 'retarget' and written is None:
                     self._history_step()   # replacing existing text is a real edit
                 with self._completing(rec):
-                    seg['text'] = new_text
+                    set_text(seg, new_text)
                 session.set_unsaved()
 
         def _apply(cue):
-            nt = self._next_text(written, orig, (cue.get('text') or '').strip(), text)
+            nt = self._next_text(written, orig, text_of(cue).strip(), text)
             if nt is not None:
-                cue['text'] = nt
+                set_text(cue, nt)
         self._amend(rec, _apply)
         if new_text is not None:
             rec['written'] = new_text
@@ -789,7 +790,7 @@ class RecordController(QObject):
         sid = None
         try:
             sid = provider.stream_start(
-                session.SUBTITLE.get('language', 'en-us'), self._asr_options(provider))
+                (session.SUBTITLE.language or 'en-us'), self._asr_options(provider))
         except Exception as exc:
             self._on_session_error(st, f'could not start stream: {exc}')
         if isinstance(sid, str) and sid and st['n'] in self._streams:
@@ -897,7 +898,7 @@ class RecordController(QObject):
         since after that the user may be anywhere."""
         if st['stop_pos'] is not None:
             return st['stop_pos']
-        return float(session.SUBTITLE.get('position', 0) or 0)
+        return float(session.SUBTITLE.position or 0)
 
     def _on_session_segment(self, st, seg, final):
         """A streaming segment arrived (main thread). Interim text is shown
@@ -1369,11 +1370,11 @@ class RecordController(QObject):
             end = min(natural_end if natural_end is not None else base + 3.0, cap)
             subtitles_mod.add_subtitle(position=base, duration=max(0.1, end - base), text='')
             subtitle = next(
-                (s for s in session.SUBTITLE.get('segments', [])
+                (s for s in session.SUBTITLE.segments
                  if abs(float(s.get('start', 0.0)) - base) < 0.05), None)
             if subtitle is None:
                 return
-            session.SUBTITLE['selected'] = subtitle
+            session.SUBTITLE.selected = subtitle
         elif natural_end is not None:
             # Grow the existing cue to cover the take, capped at the next
             # subtitle's start, but never shorten it.
@@ -1396,7 +1397,7 @@ class RecordController(QObject):
         subtitle['locked'] = False
         try:
             self._host.preview_panel_player._audio_device.sync_subtitle_dubs(
-                session.SUBTITLE['segments'])
+                session.SUBTITLE.segments)
         except Exception:
             pass
         self._refresh_ui()
@@ -1405,14 +1406,14 @@ class RecordController(QObject):
     def _next_subtitle_start(self, base):
         """Start time of the earliest subtitle beginning after ``base``, or None."""
         starts = [float(s.get('start', 0.0))
-                  for s in session.SUBTITLE.get('segments', [])
+                  for s in session.SUBTITLE.segments
                   if isinstance(s, dict) and float(s.get('start', 0.0)) > base]
         return min(starts) if starts else None
 
     # -- helpers -----------------------------------------------------------
     def _subtitle_at(self, position):
         """The subtitle whose time range contains ``position`` (seconds), if any."""
-        for s in session.SUBTITLE.get('segments', []):
+        for s in session.SUBTITLE.segments:
             if isinstance(s, dict) and \
                     float(s.get('start', 0.0)) <= position <= float(s.get('end', 0.0)):
                 return s
@@ -1422,7 +1423,7 @@ class RecordController(QObject):
         """Trim a new-subtitle range so it can't overlap existing subtitles:
         push the start past any subtitle it lands inside, and cap the end at the
         next subtitle's start."""
-        segs = session.SUBTITLE.get('segments', [])
+        segs = session.SUBTITLE.segments
         for s in segs:
             s_start = float(s.get('start', 0.0))
             s_end = float(s.get('end', 0.0))
@@ -1439,7 +1440,7 @@ class RecordController(QObject):
         under = self._subtitle_at(position)
         if under is not None:
             return under
-        sel = session.SUBTITLE.get('selected')
+        sel = session.SUBTITLE.selected
         return sel if isinstance(sel, dict) else None
 
     def _refresh_ui(self):

@@ -205,7 +205,7 @@ for name, call, start in (('a TTML as EAF: refused', lambda: annotation.parse_ea
 
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 for name, data, fmt, count in (('in.eaf', EAF.encode(), 'EAF', 3), ('in.trs', TRS, 'TRS', 4), ('in.exb', EXB.encode(), 'EXB', 2)):
     session.SPEAKERS.clear()
     session.FORMAT = {}
@@ -218,10 +218,10 @@ session.FORMAT = {}
 file_io.process_subtitles_file(str(folder / 'in.eaf'))
 opened, _fmt = file_io.process_subtitles_file(str(folder / 'in.eaf'))
 check("a translation by Subtitld's code for its language", opened[0].get('translations'), {'pt-pt': 'Olá'})
-check("TRS's language the project's", (file_io.process_subtitles_file(str(folder / 'in.trs'))[1], session.SUBTITLE['language']),
+check("TRS's language the project's", (file_io.process_subtitles_file(str(folder / 'in.trs'))[1], session.SUBTITLE.language),
       ('TRS', 'fr-fr'))
-session.SUBTITLE['segments'] = trip
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.segments = trip
+session.SUBTITLE.language = 'en-us'
 session.VIDEO = {'width': 1280, 'height': 720, 'filepath': '/videos/clip.mp4'}
 for fmt, name in (('EAF', 'out.eaf'), ('TRS', 'out.trs'), ('EXB', 'out.exb')):
     session.FORMAT = {'options': {'speakers': 'voice'}}

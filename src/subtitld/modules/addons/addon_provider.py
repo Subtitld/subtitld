@@ -34,6 +34,7 @@ from subtitld.modules.addons.provider import (
     AudioSeparatorProvider,
     OCRProvider,
     TASK_ASR_TRANSCRIBE,
+    TASK_ASR_ALIGN,
     TASK_ASR_STREAM,
     TASK_AUDIO_SEPARATE,
     TASK_OCR_RECOGNIZE,
@@ -46,6 +47,7 @@ from subtitld.modules.addons.provider import (
 )
 from subtitld.modules import audio_stretch
 from subtitld.modules.utils import get_cache_key
+from subtitld.modules.segment import text_of
 
 log = logging.getLogger(__name__)
 
@@ -360,7 +362,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             output_path = str(cache_dir / f'{uid}.wav')
 
             params = {
-                'text': markup.plain(subtitle.get('text', '')),
+                'text': markup.plain(text_of(subtitle)),
                 'voice': subtitle.get('voice', ''),
                 'language': subtitle.get('language', ''),
                 'rate': subtitle.get('rate', 0),
@@ -478,7 +480,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         # re-synthesizing) and the dub entry stores both paths.
         rate = int(original_subtitle.get('rate', 0) or 0)
         rendered_path = str(audio_stretch.stretch_by_rate(Path(file_path), rate))
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if subtitle.get('start') == original_subtitle.get('start'):
                 dubs = subtitle.setdefault('dubbing', [])
                 inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
@@ -515,12 +517,12 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 # Drain any pending dub-stretching state for this subtitle.
                 pending = getattr(timeline_widget, 'dub_stretching', None)
                 if pending is not None and pending.get('subtitle', None) is not None:
-                    for subtitle in session.SUBTITLE['segments']:
+                    for subtitle in session.SUBTITLE.segments:
                         if subtitle.get('start') == original_subtitle.get('start') and pending['subtitle'] is subtitle:
                             timeline_widget.dub_stretching = None
                             break
@@ -532,7 +534,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
         from PySide6.QtWidgets import QApplication
         log.error('%s: uid=%s %s', self._addon_id, uid, message)
         target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
-        for subtitle in session.SUBTITLE.get('segments', []) or []:
+        for subtitle in session.SUBTITLE.segments:
             if target_start is not None and subtitle.get('start') == target_start:
                 subtitle['locked'] = False
                 break
@@ -568,7 +570,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             if preview is None and timeline_widget is None:
                 continue
             if preview is not None:
-                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE['segments'])
+                preview._audio_device.sync_subtitle_dubs(session.SUBTITLE.segments)
             if timeline_widget is not None:
                 timeline_widget.dub_stretching = None
                 timeline_widget.update()
@@ -598,6 +600,38 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         its result frames must not reach the panel that owns the shared one.
         """
         return type(self)(self._addon_id, self._manifest, self._exe_path)
+
+    @property
+    def tasks(self) -> list[str]:
+        """What its manifest says it does of transcribing, streaming and
+        aligning: an add-on that only aligns is no transcription engine."""
+        declared = self._manifest.get('tasks') or []
+        return [task for task in (TASK_ASR_TRANSCRIBE, TASK_ASR_STREAM, TASK_ASR_ALIGN) if task in declared]
+
+    def align(self, audio_path: str, language: str, segments: list, options: dict | None = None) -> None:
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.align_error.emit(str(exc))
+            return
+        req = proc.request(TASK_ASR_ALIGN, {
+            'audio_path': str(audio_path),
+            'language': language,
+            'segments': [{'start': float(s.get('start', 0)), 'end': float(s.get('end', 0)), 'text': str(s.get('text') or '')}
+                         for s in segments],
+            'options': self._saved_options(options),
+        })
+
+        def on_result(data: dict) -> None:
+            found = data.get('segments') if isinstance(data, dict) else None
+            self.aligned.emit(found if isinstance(found, list) else [])
+
+        def on_error(code: str, message: str) -> None:
+            self.align_error.emit(f'[{code}] {message}')
+
+        req.progress.connect(lambda value, message: self.progress.emit(value, message), Qt.QueuedConnection)
+        req.result.connect(on_result, Qt.QueuedConnection)
+        req.error.connect(on_error, Qt.QueuedConnection)
 
     def transcribe(self, audio_path: str, language: str, options: dict | None = None) -> None:
         try:

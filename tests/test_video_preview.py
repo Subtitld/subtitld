@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import session, video_preview
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -57,7 +58,7 @@ else:
 
     print('the dialog')
     from subtitld.interface import export_dialog
-    session.SUBTITLE = {'segments': segments, 'language': 'en-us', 'position': 4.4}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': 'en-us', 'position': 4.4})
     session.CONFIG.pop('export_video', None)
     session.CONFIG.setdefault('selected_language', 'en')
     before = copy.deepcopy(session.SUBTITLE)

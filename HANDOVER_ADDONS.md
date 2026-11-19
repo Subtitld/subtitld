@@ -102,6 +102,31 @@ Result: `{"path": "...", "duration_sec": ..., "sample_rate": ..., "channels": ..
 
 Streams `partial` per segment, then `result` with full list.
 
+A segment may carry its words, from an engine that knows when each is said:
+`"words": [{"text": "Hello", "start": 1.0, "end": 1.4}, ...]`, in order, in
+seconds as the segment's own times are. Optional and backwards compatible
+(protocol 1). With "Time each word" ticked in the transcription panel the
+subtitle comes in timed word by word (`segment.timed_by_words` finds each
+word in the segment's text, so punctuation stays as the text has it);
+otherwise the words are dropped.
+
+**Alignment** (`asr.align`): time text already written against the audio.
+
+```json
+{
+  "audio_path": "/tmp/16k_mono.wav",
+  "language": "en",
+  "segments": [{"start": 0.0, "end": 2.0, "text": "Never drink, ever!"}],
+  "options": {}
+}
+```
+
+`result` `{segments: [...]}`, the same segments in order, each with its
+`words` as above, times from the start of the audio sent. An add-on may
+declare it beside `asr.transcribe` or alone (it is then no transcription
+engine). The timing menu's "Align to the audio" sends the selected
+subtitle's stretch of the audio and its words (`interface/word_alignment.py`).
+
 Provider abstraction is **the seam** for swapping local execution for a remote service: `AddonTTSProvider` could become `RemoteTTSProvider` and the rest of Subtitld doesn't care — the `TTSProvider` ABC (`provider.py`) defines the entire contract the UI consumes (`generate_speeches`, `stretch`, `list_voices`, signals `voices_updated`, `speech_ready`, `speech_error`).
 
 ## Recent finished work (last 2 sessions)

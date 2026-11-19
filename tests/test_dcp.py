@@ -20,6 +20,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import dcp, file_io, picture_ocr, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules.addons.provider import OCRProvider
 
 fails = []
@@ -243,14 +244,14 @@ check('the rate for a video', [dcp.rate_for(fps) for fps in (23.976, 25, 29.97, 
 
 print('through file_io')
 session.FORMAT = {}
-session.SUBTITLE = {'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'language': 'pt-br'})
 opened, fmt = file_io.process_subtitles_file(str(folder / 'interop.xml'))
 check('Interop opens: its language ("English") the project\'s, its generation kept', (
-    fmt, len(opened), session.SUBTITLE['language'], session.FORMAT['options'].get('dcp_standard'),
-    session.SUBTITLE.get('metadata')), ('DCP', 6, 'en-us', 'interop', {'title': 'Tears of Steel'}))
+    fmt, len(opened), session.SUBTITLE.language, session.FORMAT['options'].get('dcp_standard'),
+    session.SUBTITLE.metadata), ('DCP', 6, 'en-us', 'interop', {'title': 'Tears of Steel'}))
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'smpte.xml'))
-check('SMPTE opens: its rate kept too', (fmt, len(opened), session.SUBTITLE['language'][:2],
+check('SMPTE opens: its rate kept too', (fmt, len(opened), session.SUBTITLE.language[:2],
                                         {key: session.FORMAT['options'].get(key) for key in ('dcp_standard', 'dcp_fps')}),
       ('DCP', 3, 'fr', {'dcp_standard': 'smpte', 'dcp_fps': 25}))
 session.FORMAT = {}
@@ -264,7 +265,7 @@ session.FORMAT = {}
                                       '</captionate>', encoding='utf-8')
 check('and Captionate still Captionate', file_io.process_subtitles_file(str(folder / 'captionate.xml'))[1], 'CAPTIONATE')
 
-session.SUBTITLE = {'segments': WRITE, 'language': 'en-us', 'metadata': {'title': 'Tears of Steel'}}
+session.SUBTITLE = Subtitle({'segments': WRITE, 'language': 'en-us', 'metadata': {'title': 'Tears of Steel'}})
 session.VIDEO = {'framerate': 23.976, 'filepath': '/videos/tears.mov'}
 session.FORMAT = {'options': {'dcp_standard': 'interop'}}
 file_io.save_file(str(folder / 'out.xml'), 'DCP')
@@ -272,7 +273,7 @@ saved = (folder / 'out.xml').read_text(encoding='utf-8')
 check('saved as the generation it asks, with the file\'s title, in the project\'s language',
       ('<DCSubtitle' in saved, '<MovieTitle>Tears of Steel</MovieTitle>' in saved, '<Language>en-US</Language>' in saved),
       (True, True, True))
-session.SUBTITLE = {'segments': WRITE, 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': WRITE, 'language': 'en-us'})
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.xml'), 'DCP')
 saved = (folder / 'out.xml').read_text(encoding='utf-8')
@@ -368,7 +369,7 @@ check('offered, and a timed-text format', ('DCP' in SUBTITLE_FORMATS, 'DCP' in e
                                           session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['DCP']['extensions']),
       (True, True, ['xml']))
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': WRITE, 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': WRITE, 'language': 'en-us'})
 session.VIDEO = {'framerate': 23.976}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('DCP')

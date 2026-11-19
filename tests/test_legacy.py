@@ -545,11 +545,11 @@ WRITTEN = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
 
 for name, fmt in sorted(legacy.SESSION_FORMATS.items()):
     path = folder / f'sub.{legacy.EXTENSIONS[fmt]}'
-    session.SUBTITLE['segments'] = [dict(segment) for segment in WRITTEN]
+    session.SUBTITLE.segments = [dict(segment) for segment in WRITTEN]
     session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/tears.mov'}
     session.FORMAT = {}
     file_io.save_file(str(path), name)
-    session.SUBTITLE['segments'] = []
+    session.SUBTITLE.segments = []
     opened, found = file_io.process_subtitles_file(str(path))
     check(f'{name}: saved and opened again', (found, len(opened)), (name, 2))
 

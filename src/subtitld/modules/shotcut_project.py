@@ -24,6 +24,7 @@ from math import gcd
 from lxml import etree
 
 from subtitld.modules import markup, project_export
+from subtitld.modules.segment import text_of
 
 SHOTCUT_VERSION = '25.10.31'
 
@@ -49,7 +50,7 @@ def srt(cues):
         return f'{hours:02d}:{minutes:02d}:{rest // 1000:02d},{rest % 1000:03d}'
     blocks = []
     for number, cue in enumerate(sorted(cues, key=lambda c: float(c['start'])), start=1):
-        text = markup.plain(str(cue.get('text') or '')).strip()
+        text = markup.plain(text_of(cue)).strip()
         if text:
             blocks.append(f'{len(blocks) + 1}\n{stamp(cue["start"])} --> {stamp(cue["end"])}\n{text}\n')
     return '\n'.join(blocks)

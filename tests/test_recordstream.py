@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtCore import QObject, Signal
 app = QApplication(sys.argv)
 from subtitld.modules import session, recorder as recorder_mod
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import record_controls
 recorder_mod.sd=None
 recorder_mod.list_input_devices=lambda:[(0,'Mic')]; recorder_mod.default_input_device=lambda:0; recorder_mod.input_available=lambda:True
@@ -46,7 +47,7 @@ fails=[]
 
 # ===== Handlers: interim shown separately; finals placed as subtitles at advancing playhead =====
 session.CONFIG.setdefault('record',{}).update({'mode':'transcript','armed':True,'device':0})
-session.SPEAKERS={}; session.SUBTITLE={'segments':[],'language':'en-us','position':5.0}
+session.SPEAKERS={}; session.SUBTITLE=Subtitle({'segments':[],'language':'en-us','position':5.0})
 fake=FakeStream()
 ctrl=record_controls.RecordController(Host())
 ctrl._start_stream(fake, 5.0)
@@ -55,14 +56,14 @@ if fake.started is None: fails.append('stream_start_not_called')
 
 fake.stream_segment.emit({'start':0,'end':0,'text':'hel'}, False); app.processEvents()
 fake.stream_segment.emit({'start':0,'end':0,'text':'hello world'}, False); app.processEvents()
-print("interim_text:", repr(ctrl.interim_text), " segments so far:", len(session.SUBTITLE['segments']))
-if ctrl.interim_text!='hello world' or session.SUBTITLE['segments']: fails.append('interim_not_separated')
+print("interim_text:", repr(ctrl.interim_text), " segments so far:", len(session.SUBTITLE.segments))
+if ctrl.interim_text!='hello world' or session.SUBTITLE.segments: fails.append('interim_not_separated')
 
-session.SUBTITLE['position']=8.0
+session.SUBTITLE.position=8.0
 fake.stream_segment.emit({'start':0,'end':0,'text':'hello world'}, True); app.processEvents()
-session.SUBTITLE['position']=11.0
+session.SUBTITLE.position=11.0
 fake.stream_segment.emit({'start':0,'end':0,'text':'second phrase'}, True); app.processEvents()
-subs=session.SUBTITLE['segments']
+subs=session.SUBTITLE.segments
 print("after 2 finals:", [(round(s['start'],1),round(s['end'],1),s['text']) for s in subs], " interim:", repr(ctrl.interim_text))
 if not (len(subs)==2 and subs[0]['text']=='hello world' and subs[1]['text']=='second phrase'
         and abs(subs[0]['start']-5.0)<0.1 and abs(subs[1]['start']-8.0)<0.1):
@@ -73,7 +74,7 @@ fake.stream_finished.emit(list(subs)); app.processEvents()
 if ctrl._stream_provider is not None: fails.append('not_settled')
 
 # ===== on_play chooses streaming when supported; feeds chunks; on_pause stops =====
-session.SUBTITLE={'segments':[],'language':'en-us','position':0.0}; session.SPEAKERS={}
+session.SUBTITLE=Subtitle({'segments':[],'language':'en-us','position':0.0}); session.SPEAKERS={}
 fake2=FakeStream()
 ctrl2=record_controls.RecordController(Host())
 ctrl2._resolve_shared_asr_provider=lambda: fake2

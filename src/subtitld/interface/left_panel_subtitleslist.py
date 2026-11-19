@@ -6,6 +6,8 @@ from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
 from subtitld.interface import subtitle_text_editor
+from subtitld.interface import timed_text_strip
+from subtitld.interface import word_alignment
 from subtitld.interface.translation import _
 
 from subtitld.modules import collab_service
@@ -15,6 +17,7 @@ from subtitld.modules import subtitles
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import quality_check
+from subtitld.modules.segment import set_text, text_of
 
 
 class _TextEditHistoryFilter(QObject):
@@ -64,23 +67,23 @@ class subtitles_panel_qlistwidget(QListView):
 
             def data(self, index, role):
                 if role == Qt.DisplayRole:
-                    return session.SUBTITLE['segments'][index.row()] #['text']
+                    return session.SUBTITLE.segments[index.row()] #['text']
             
             # def translated_data(self, index, role):
             #     if role == Qt.DisplayRole:
-            #         return session.SUBTITLE['segments'][index.row()].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
+            #         return session.SUBTITLE.segments[index.row()].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), '')
 
                 # if role == Qt.DecorationRole:
-                #     status, _ = session.SUBTITLE['segments'][index.row()]
+                #     status, _ = session.SUBTITLE.segments[index.row()]
                 #     if status:
                 #         return tick
 
             def get_index(self, subtitle):
-                index = session.SUBTITLE['segments'].index(subtitle)
+                index = session.SUBTITLE.segments.index(subtitle)
                 return self.index(index)
 
             def rowCount(self, _):
-                return len(session.SUBTITLE['segments'])
+                return len(session.SUBTITLE.segments)
 
         class delegate(QStyledItemDelegate):
             def __init__(self, parent=None):
@@ -91,7 +94,7 @@ class subtitles_panel_qlistwidget(QListView):
                 return number_width
 
             def get_text_height(self, option, index):
-                row_text = markup.plain(index.data(Qt.DisplayRole)['text'])
+                row_text = markup.plain(text_of(index.data(Qt.DisplayRole)))
                 width = option.rect.width()
                 if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
                     translated_text = markup.plain(index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
@@ -104,7 +107,7 @@ class subtitles_panel_qlistwidget(QListView):
 
             def paint(self, painter, option, index):
                 segment = index.data(Qt.DisplayRole)
-                row_text = markup.plain(segment['text'])
+                row_text = markup.plain(text_of(segment))
                 number_width = self.get_number_width(index)
                 
 
@@ -117,7 +120,7 @@ class subtitles_panel_qlistwidget(QListView):
 
                 sub_is_ok = True
                 if session.CONFIG.get('quality_check', {}).get('enabled', False):
-                    sub_is_ok, _, _ = quality_check.check_subtitle(session.SUBTITLE['segments'][index.row()])
+                    sub_is_ok, _, _ = quality_check.check_subtitle(session.SUBTITLE.segments[index.row()])
 
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('number_background_color', '#aa2e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_background_warning_color', '#aa9e1a1a')))
@@ -186,19 +189,19 @@ class subtitles_panel_qlistwidget(QListView):
     
     def update_content(widget):
         current_sub = subtitles.subtitle_under_current_position()
-        index = session.SUBTITLE['segments'].index(current_sub) if current_sub else 0
+        index = session.SUBTITLE.segments.index(current_sub) if current_sub else 0
         if current_sub and not (widget.verticalScrollBar().value() + widget.verticalScrollBar().pageStep() > index > widget.verticalScrollBar().value()):
             widget.verticalScrollBar().setValue(index - 1)
 
         widget.model.layoutChanged.emit()
 
-        if session.SUBTITLE.get('selected', None) is not None:
-            widget.setCurrentIndex(widget.model.get_index(session.SUBTITLE['selected']))
+        if session.SUBTITLE.selected is not None:
+            widget.setCurrentIndex(widget.model.get_index(session.SUBTITLE.selected))
 
         # widget.update_properties_widget(widget.window())
     
     def item_selected(widget, index):
-        session.SUBTITLE['selected'] = session.SUBTITLE['segments'][index.row()]
+        session.SUBTITLE.selected = session.SUBTITLE.segments[index.row()]
         update(widget.window())
 
 def load(self):
@@ -272,9 +275,16 @@ def load(self):
     # Italic, bold, underline, strikeout, colour and position, under the text
     # they format (subtitle_text_editor).
     self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(
-        self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.get('selected') or None)
+        self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.selected,
+        language=lambda: session.SUBTITLE.language,
+        aligner=(word_alignment.available, lambda: align_selected(self)))
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
+
+    # A subtitle timed piece by piece: its pieces, to cut, join and time.
+    self.left_panel_subtitleslist_timed_text = timed_text_strip.TimedTextStrip(lambda: session.SUBTITLE.selected)
+    self.left_panel_subtitleslist_timed_text.changed.connect(lambda: timed_text_changed(self))
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_timed_text)
 
     self.left_panel_subtitleslist_translation_textedit = QTextEdit()
     self.left_panel_subtitleslist_translation_textedit.setObjectName('left_panel_subtitleslist_translation_textedit')
@@ -478,18 +488,38 @@ def subtitles_panel_empty_state_button_clicked(self):
     UI is replaced by the regular subtitle list."""
     duration = session.CONFIG['default_new_subtitle_duration']
     subtitles.add_subtitle(position=5.0, duration=duration)
-    if session.SUBTITLE.get('segments'):
-        session.SUBTITLE['selected'] = session.SUBTITLE['segments'][0]
+    if session.SUBTITLE.segments:
+        session.SUBTITLE.selected = session.SUBTITLE.segments[0]
     self.timeline_widget.update()
     update(self)
     session.set_unsaved()
 
 
+def align_selected(self):
+    """Time the selected subtitle's words against the audio; say so if it
+    cannot be done."""
+    def done(ok, message):
+        if not ok:
+            dialog = utils.SimpleDialog(self, title=_('timed_text.align_failed'))
+            dialog.content.layout().addWidget(QLabel(str(message)))
+            dialog.reject_button.setVisible(False)
+            dialog.exec()
+    word_alignment.align(self, session.SUBTITLE.selected, on_done=done)
+
+
+def timed_text_changed(self):
+    """The selected subtitle's pieces were cut, joined or timed."""
+    session.set_unsaved(True)
+    self.left_panel_subtitleslist_formatting_bar.refresh()
+    self.timeline_widget.update()
+
+
 def left_panel_subtitleslist_textedit_changed(self):
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
-        session.SUBTITLE['selected']['text'] = subtitle_text_editor.text(self.left_panel_subtitleslist_textedit)
+    if session.SUBTITLE.selected:
+        set_text(session.SUBTITLE.selected, subtitle_text_editor.text(self.left_panel_subtitleslist_textedit))
+        self.left_panel_subtitleslist_timed_text.refresh()
         # In a shared project, the others leave this text be while it is typed in.
-        collab_service.typing(session.SUBTITLE['selected'].get('id'))
+        collab_service.typing(session.SUBTITLE.selected.get('id'))
         session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
@@ -497,7 +527,7 @@ def left_panel_subtitleslist_textedit_changed(self):
 
 def refresh_lock(self):
     """In a shared project, a subtitle someone else is typing in can't be typed in here until they stop."""
-    selected = session.SUBTITLE.get('selected')
+    selected = session.SUBTITLE.selected
     holder = collab_service.locked_by(selected.get('id')) if isinstance(selected, dict) else None
     self.left_panel_subtitleslist_textedit.setReadOnly(bool(holder))
     self.left_panel_subtitleslist_formatting_bar.setEnabled(not holder)
@@ -507,10 +537,10 @@ def refresh_lock(self):
 
 
 def left_panel_subtitleslist_translation_textedit_changed(self):
-    if 'selected' in session.SUBTITLE and session.SUBTITLE['selected']:
-        if not 'translations' in session.SUBTITLE['selected']:
-            session.SUBTITLE['selected']['translations'] = {}
-        session.SUBTITLE['selected']['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
+    if session.SUBTITLE.selected:
+        if not 'translations' in session.SUBTITLE.selected:
+            session.SUBTITLE.selected['translations'] = {}
+        session.SUBTITLE.selected['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = self.left_panel_subtitleslist_translation_textedit.toPlainText()
         session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
@@ -530,8 +560,8 @@ def reconcile_visibility(self):
     corrected all four at once and the panel visibly reflowed. Deciding
     visibility up front means what slides in is already what settles.
     """
-    has_segments = bool(session.SUBTITLE.get('segments'))
-    has_selection = bool(session.SUBTITLE.get('selected', False))
+    has_segments = bool(session.SUBTITLE.segments)
+    has_selection = bool(session.SUBTITLE.selected)
     self.subtitles_panel_empty_state.setVisible(not has_segments)
     self.subtitles_panel_simplelist_qsplitter.setVisible(has_segments)
     self.left_panel_subtitleslist_bottom_panel.setVisible(has_selection)
@@ -544,7 +574,7 @@ def update(self):
 
     reconcile_visibility(self)
     
-    if session.SUBTITLE.get('selected', None) is None:
+    if session.SUBTITLE.selected is None:
         self.subtitles_panel_qlistwidget.clearSelection()
     else:
         # Block textChanged while we sync the editor to the model — otherwise
@@ -552,13 +582,14 @@ def update(self):
         # unsaved on a no-op refresh and (b) overwrite `selected['text']`
         # with the same value but at the wrong moment in flow.
         self.left_panel_subtitleslist_textedit.blockSignals(True)
-        subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE['selected']['text'])
+        subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE.selected.text())
         self.left_panel_subtitleslist_textedit.blockSignals(False)
         self.left_panel_subtitleslist_formatting_bar.refresh()
+        self.left_panel_subtitleslist_timed_text.refresh()
 
         self.left_panel_subtitleslist_translation_textedit.setVisible(session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(True)
-        self.left_panel_subtitleslist_translation_textedit.setPlainText(session.SUBTITLE['selected'].get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
+        self.left_panel_subtitleslist_translation_textedit.setPlainText(session.SUBTITLE.selected.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
         self.left_panel_subtitleslist_translation_textedit.blockSignals(False)
 
         # setAlignment edits the document, so it emits textChanged as well:
@@ -571,10 +602,10 @@ def update(self):
             textedit.blockSignals(False)
 
         if self.preview_panel_player.is_paused():
-            position = session.SUBTITLE.get('position', 0)
-            outside = position > session.SUBTITLE['selected']['end'] or position < session.SUBTITLE['selected']['start']
+            position = session.SUBTITLE.position or 0
+            outside = position > session.SUBTITLE.selected['end'] or position < session.SUBTITLE.selected['start']
             if outside:
-                position = session.SUBTITLE['selected']['start'] + ((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']) / 2)
+                position = session.SUBTITLE.selected['start'] + ((session.SUBTITLE.selected['end'] - session.SUBTITLE.selected['start']) / 2)
             # The seek starts the repeat over, so the new stretch comes after it.
             self.preview_panel_player.set_position(position, keep_repeat=not outside)
             if outside and session.CONFIG.get('repeat_activated', False):
@@ -582,24 +613,24 @@ def update(self):
                 times = session.CONFIG.get('playback_repeat_times', 1)
                 session.REPEAT_DURATION_BUFFER = [[position, position + duration] for _ in range(times)]
         
-        self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE['selected'].get('speaker', 'A'))
+        self.left_panel_subtitleslist_speaker_selector.set_current_speaker(session.SUBTITLE.selected.get('speaker', 'A'))
 
         dubbing_enabled = bool(session.CONFIG.get('dubbing', {}).get('enabled', False))
-        has_dub = bool(session.SUBTITLE['selected'].get('dubbing'))
+        has_dub = bool(session.SUBTITLE.selected.get('dubbing'))
         self.left_panel_subtitleslist_regenerate_dub_button.setVisible(dubbing_enabled and has_dub)
 
-        self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['start'], ms=True))
-        self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE['selected']['end'] - session.SUBTITLE['selected']['start']), ms=True))
-        self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE['selected']['end'], ms=True))
+        self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE.selected['start'], ms=True))
+        self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE.selected['end'] - session.SUBTITLE.selected['start']), ms=True))
+        self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE.selected['end'], ms=True))
                 
         show_statistics = session.CONFIG.get('quality_check', {}).get('show_statistics', False)
         quality_check_enabled = session.CONFIG.get('quality_check', {}).get('enabled', False)
 
         if show_statistics:
-            sel = session.SUBTITLE['selected']
+            sel = session.SUBTITLE.selected
             duration = sel['end'] - sel['start']
             # Counted as the text reads, without its formatting tags.
-            sel_text = markup.plain(sel['text'])
+            sel_text = markup.plain(text_of(sel))
             n_words = len(sel_text.replace('\n', ' ').split(' '))
             n_char = len(sel_text.replace('\n', '').replace(' ', ''))
 
@@ -655,12 +686,12 @@ def update(self):
     # def update_properties_widget(self):
     # """Function to update properties panel widgets"""
     #  update(self)
-    # self.subtitles_panel_simplelist_properties.setVisible(bool(session.SUBTITLE['selected']))
+    # self.subtitles_panel_simplelist_properties.setVisible(bool(session.SUBTITLE.selected))
     
 
     # if not self.left_panel_subtitleslist_textedit.hasFocus():
     #     self.left_panel_subtitleslist_textedit.setText(text)
-    # self.properties_information_stats.setVisible(bool(session.SUBTITLE['selected']) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
+    # self.properties_information_stats.setVisible(bool(session.SUBTITLE.selected) and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
 
     # Selection drives the per-subtitle dubbing controls; refresh the
     # dubbing panel so its voice/rate/pitch reflect the new selection.
@@ -687,9 +718,9 @@ def hide(self):
 
 
 def _changed(self, selection):
-    if session.SUBTITLE.get('selected', False):
+    if session.SUBTITLE.selected:
         history.history_append()
-        session.SUBTITLE['selected']['speaker'] = self.left_panel_subtitleslist_speaker_selector.currentText()
+        session.SUBTITLE.selected['speaker'] = self.left_panel_subtitleslist_speaker_selector.currentText()
         session.set_unsaved(True)
 
 
@@ -706,7 +737,7 @@ def regenerate_dub_for_selected(self):
     only when the clip is missing fields (legacy projects), or when the
     add-on that produced the clip is no longer installed."""
     import secrets
-    selected = session.SUBTITLE.get('selected')
+    selected = session.SUBTITLE.selected
     if not selected or not selected.get('dubbing'):
         return
 
@@ -779,7 +810,7 @@ def regenerate_dub_for_selected(self):
     selected['locked'] = True
     request = {
         'uid': secrets.token_hex(4),
-        'text': selected['text'],
+        'text': text_of(selected),
         'speaker': speaker_name,
         'start': selected['start'],
         'end': selected['end'],
@@ -829,7 +860,7 @@ def on_clicked(self):
     if self.left_panel_speakers_new_name_dialog.exec() == QDialog.Accepted:
         new_name = self.left_panel_speakers_new_name_dialog.name
         history.history_append()
-        session.SUBTITLE['selected']['speaker'] = new_name
+        session.SUBTITLE.selected['speaker'] = new_name
         session.SPEAKERS[new_name] = {}
         session.set_unsaved(True)
         self.left_panel_subtitleslist_speaker_selector.update_list(self)
@@ -842,6 +873,7 @@ def translate(self):
     self.subtitles_panel_simplelist_properties_ending_timing_label.setText(_('left_panel_subtitleslist.end'))
     self.left_panel_subtitleslist_speaker_selector.label.setText(_('left_panel_subtitleslist.speaker'))
     self.left_panel_subtitleslist_formatting_bar.retranslate()
+    self.left_panel_subtitleslist_timed_text.retranslate()
     self.left_panel_subtitleslist_regenerate_dub_button.setToolTip(_('left_panel_subtitleslist.regenerate_dub_tooltip'))
     self.subtitles_panel_empty_state_label.setText(_('left_panel_subtitleslist.empty_state_label'))
     self.subtitles_panel_empty_state_button.setToolTip(_('left_panel_subtitleslist.empty_state_button'))
@@ -1048,7 +1080,7 @@ class SpeakerSelector(QWidget):
     def speaker_selected(self, item):
         speaker = self.selector_list.list_widget.itemWidget(item).property('speaker_name')
         history.history_append()
-        session.SUBTITLE['selected']['speaker'] = speaker
+        session.SUBTITLE.selected['speaker'] = speaker
         session.set_unsaved(True)
         self.set_current_speaker(speaker)
         self.selector_list.hide()
@@ -1079,10 +1111,10 @@ class SpeakerSelector(QWidget):
         else:
             pass
         
-        subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE['segments']]
+        subtitles_names = [subtitle.get('speaker', 'A') for subtitle in session.SUBTITLE.segments]
         if new_name and new_name not in session.SPEAKERS and not new_name in subtitles_names:
             history.history_append()
-            session.SUBTITLE['selected']['speaker'] = new_name
+            session.SUBTITLE.selected['speaker'] = new_name
             session.SPEAKERS[new_name] = {}
             session.set_unsaved(True)
             self.set_current_speaker(new_name)

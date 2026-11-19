@@ -272,7 +272,7 @@ segments, fmt = opened('dsp.stl', DSP.encode('utf-16'))
 check('a UTF-16 .stl with a header opens as DVD Studio Pro, its layout, header and encoding kept',
       (fmt, len(segments), session.FORMAT['options']['script_layout'], session.FORMAT['options']['encoding'],
        session.FORMAT['options']['script_header'][0]), ('DVDSTUDIOPRO', 4, 'tab', 'utf-16', '$FontName       = Arial'))
-session.SUBTITLE['segments'] = segments
+session.SUBTITLE.segments = segments
 file_io.save_file(str(folder / 'dsp-again.stl'), 'DVDSTUDIOPRO')
 again = (folder / 'dsp-again.stl').read_bytes()
 check('saved again in UTF-16, under its header, in tabs', (again[:2], again.decode('utf-16').split('\n')[0],
@@ -283,7 +283,7 @@ check('a bare .stl stays Spruce', opened('spruce.stl', '00:00:01:00 , 00:00:03:0
 check('drop-frame .stl at a 29.97 video', (opened('ntsc.stl', NTSC, {'framerate': 29.97})[1],
                                            session.FORMAT['options']['timecode'], session.FORMAT['options']['fps']),
       ('DVDSTUDIOPRO', 'drop', 29.97))
-session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 3.0, 'text': 'EBU'}]
+session.SUBTITLE.segments = [{'start': 1.0, 'end': 3.0, 'text': 'EBU'}]
 session.FORMAT = {}
 file_io.save_file(str(folder / 'ebu.stl'), 'STL')
 check('EBU STL is still EBU STL', (ebustl.is_stl((folder / 'ebu.stl').read_bytes()[:1024]),
@@ -307,7 +307,7 @@ print('saved and opened again, through file_io, in every format')
 for name in dvd_scripts.SESSION_FORMATS:
     extension = session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[name]['extensions'][0]
     path = folder / f'out-{name}.{extension}'
-    session.SUBTITLE['segments'] = [dict(segment) for segment in SEGMENTS]
+    session.SUBTITLE.segments = [dict(segment) for segment in SEGMENTS]
     session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/tears.mov'}
     session.FORMAT = {}
     file_io.save_file(str(path), name)
@@ -316,12 +316,12 @@ for name in dvd_scripts.SESSION_FORMATS:
           (name, [(1.0, 3.48, 'First line\nsecond line'), (4.0, 6.0, 'Second cue')]))
 # A file opened keeps its layout for the next save.
 opened('encore-tabs.txt', ENCORE['linetabnewline'])
-session.SUBTITLE['segments'] = [dict(segment) for segment in SEGMENTS]
+session.SUBTITLE.segments = [dict(segment) for segment in SEGMENTS]
 file_io.save_file(str(folder / 'encore-again.txt'), 'ENCORE')
 check('Encore saved again in the layout it came in', (folder / 'encore-again.txt').read_text(encoding='utf-8'),
       ENCORE['linetabnewline'])
 opened('ntsc.txt', ENCORE_NTSC, {'framerate': 29.97})
-session.SUBTITLE['segments'] = [{'start': 1.001, 'end': 3.003, 'text': 'First'}]
+session.SUBTITLE.segments = [{'start': 1.001, 'end': 3.003, 'text': 'First'}]
 file_io.save_file(str(folder / 'ntsc-again.txt'), 'ENCORE')
 check('and drop-frame, as it came', (folder / 'ntsc-again.txt').read_text(encoding='utf-8'), ENCORE_NTSC.split('\n')[0] + '\n')
 
@@ -331,7 +331,7 @@ for name, fmt in sorted(legacy.SESSION_FORMATS.items()):
     if extension not in ('txt', 'sub', 'stl', 'sst'):
         continue
     path = folder / f'legacy-{fmt}.{extension}'
-    session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
+    session.SUBTITLE.segments = [{'start': 1.0, 'end': 3.5, 'text': 'First line\nsecond line'},
                                     {'start': 4.0, 'end': 6.25, 'text': 'Second cue'}]
     session.VIDEO = {'framerate': 25.0}
     session.FORMAT = {}
@@ -350,7 +350,7 @@ check('a transcript is no script', dvd_scripts.kind('Just some words.\nAnd more,
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE['segments'] = [dict(segment) for segment in SEGMENTS]
+session.SUBTITLE.segments = [dict(segment) for segment in SEGMENTS]
 session.VIDEO = {'framerate': 29.97}
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('DVDSTUDIOPRO')

@@ -83,10 +83,10 @@ def parse_tc(text):
 def selected_segment():
     """The selected subtitle, if it is still on the timeline and spans a
     usable range. A selection-scoped run acts on exactly this subtitle."""
-    sel = session.SUBTITLE.get('selected')
+    sel = session.SUBTITLE.selected
     if not isinstance(sel, dict):
         return None
-    if not any(seg is sel for seg in session.SUBTITLE.get('segments', []) or []):
+    if not any(seg is sel for seg in session.SUBTITLE.segments):
         return None
     try:
         if float(sel.get('end', 0.0)) <= float(sel.get('start', 0.0)):
@@ -392,7 +392,7 @@ class ScopeSelector(QWidget):
         normalise the pair so the capture can't leave an inverted range."""
         pos = 0.0
         try:
-            pos = float(session.SUBTITLE.get('position', 0) or 0)
+            pos = float(session.SUBTITLE.position or 0)
         except (TypeError, ValueError):
             pos = 0.0
         line_edit.setText(format_tc(pos))
@@ -473,7 +473,7 @@ class ScopeSelector(QWidget):
         which is what translation and dubbing have always done — a partly
         in-range line still needs translating."""
         if segments is None:
-            segments = session.SUBTITLE.get('segments', []) or []
+            segments = session.SUBTITLE.segments
         scope = self.scope
         if scope == SCOPE_SELECTION:
             sel = selected_segment()

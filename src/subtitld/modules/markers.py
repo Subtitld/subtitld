@@ -46,6 +46,7 @@ from xml.sax.saxutils import escape
 from subtitld.modules import markup
 from subtitld.modules.avid_subcap import drop_rate, frame_of, rate, timecode
 from subtitld.modules.srt import decode
+from subtitld.modules.segment import text_of
 
 DEFAULT_FPS = 25.0
 POINT_SECONDS = 3.0
@@ -219,7 +220,7 @@ def _ms_time(seconds, separator):
 
 def _texts(segments):
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
-        text = markup.plain(str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')).strip()
+        text = markup.plain(text_of(segment).replace('\r\n', '\n').replace('\r', '\n')).strip()
         if text:
             yield segment, text
 

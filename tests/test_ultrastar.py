@@ -137,18 +137,19 @@ print('through file_io')
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import export_options, file_io, session
+from subtitld.modules.segment import Subtitle
 
 folder = Path(tempfile.mkdtemp())
 (folder / 'Tears of Steel.txt').write_text(SONG, encoding='utf-8')
-session.SUBTITLE = {'segments': [], 'language': 'pt-br'}
+session.SUBTITLE = Subtitle({'segments': [], 'language': 'pt-br'})
 session.FORMAT = {}
 session.VIDEO = {}
 opened, found = file_io.process_subtitles_file(str(folder / 'Tears of Steel.txt'))
 check('a song in a .txt opens as UltraStar', (found, len(opened)), ('ULTRASTAR', 3))
-check('its #LANGUAGE the project\'s', session.SUBTITLE['language'].split('-')[0], 'en')
-check('its headers kept with its metadata', [key for key, _value in session.SUBTITLE['metadata']['ultrastar']][-2:],
+check('its #LANGUAGE the project\'s', session.SUBTITLE.language.split('-')[0], 'en')
+check('its headers kept with its metadata', [key for key, _value in session.SUBTITLE.metadata['ultrastar']][-2:],
       ['BPM', 'GAP'])
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.txt'), 'ULTRASTAR')
 check('saved note for note', (folder / 'again.txt').read_text(encoding='utf-8'), SONG.split('E\n')[0] + 'E\n')
 check('and opened again', file_io.process_subtitles_file(str(folder / 'again.txt'))[1], 'ULTRASTAR')
@@ -156,12 +157,12 @@ check('and opened again', file_io.process_subtitles_file(str(folder / 'again.txt
 # Another export in between sets its own options: the song's headers are
 # on the subtitles, not in them.
 session.FORMAT = {'format': 'SRT', 'options': {'formatting': 'keep'}}
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'lyrics.srt'), 'SRT')
 file_io.save_file(str(folder / 'third.txt'), 'ULTRASTAR')
 check('headers survive another format\'s export', '#BPM:300\n#GAP:1200\n' in (folder / 'third.txt').read_text(encoding='utf-8'), True)
 
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]})
 session.FORMAT = {}
 session.VIDEO = {'filepath': '/videos/tears.mov', 'framerate': 25.0}
 file_io.save_file(str(folder / 'new.txt'), 'ULTRASTAR')

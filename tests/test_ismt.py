@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, isobmff_text, session
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -130,13 +131,13 @@ check("a CMAF 'stpp' track still reads as stpp, its times as they are",
       (cmft_settings['codec'], [s['start'] for s in cmft_segments]), ('stpp', [0.5, 4.0, 13.0]))
 
 print('through file_io')
-session.SUBTITLE = {'language': 'en'}
+session.SUBTITLE = Subtitle({'language': 'en'})
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'relative.ismt'))
 check('opens as ISMT, its language and fragment length kept',
-      (fmt, len(opened), session.SUBTITLE.get('language').split('-')[0], session.FORMAT['options'].get('segment_duration')),
+      (fmt, len(opened), session.SUBTITLE.language.split('-')[0], session.FORMAT['options'].get('segment_duration')),
       ('ISMT', 3, 'de', 5.0))
-session.SUBTITLE = {'segments': trip, 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': trip, 'language': 'en'})
 session.VIDEO = {}
 session.FORMAT = {'options': {'segment_duration': 4}}
 file_io.save_file(str(folder / 'saved.ismt'), 'ISMT')

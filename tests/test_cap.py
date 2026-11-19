@@ -117,7 +117,7 @@ session.VIDEO = {'framerate': 29.97}
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.cap'))
 check("with a video, at the video's rate", (opened[0]['end'], session.FORMAT['options'].get('fps')), (round(2 + 12 / 29.97, 3), 29.97))
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/tears.mov'}
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.cap'), 'CAP')

@@ -113,12 +113,12 @@ print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'in.stl').write_bytes(TELETEXT)
 session.FORMAT = {}
-session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE.language = 'pt-br'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.stl'))
 check('opens; its language the project\'s; its settings kept to save it again', (
-    fmt, len(opened), session.SUBTITLE['language'], {key: session.FORMAT['options'].get(key) for key in ('stl_fps', 'display', 'start')}),
+    fmt, len(opened), session.SUBTITLE.language, {key: session.FORMAT['options'].get(key) for key in ('stl_fps', 'display', 'start')}),
       ('STL', 5, 'en-us', {'stl_fps': 25, 'display': 'teletext', 'start': '10:00:00:00'}))
-session.SUBTITLE['segments'] = written_segments
+session.SUBTITLE.segments = written_segments
 session.VIDEO = {'framerate': 29.97, 'filepath': '/videos/tears.mov'}
 session.FORMAT = {'options': {'display': 'open', 'start': '00:00:00:00'}}
 file_io.save_file(str(folder / 'out.stl'), 'STL')

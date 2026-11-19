@@ -52,9 +52,9 @@ def run(tool, *arguments):
 
 
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE['segments'] = [{'start': 1.0, 'end': 3.5, 'text': 'Hello there'},
+session.SUBTITLE.segments = [{'start': 1.0, 'end': 3.5, 'text': 'Hello there'},
                                 {'start': 4.0, 'end': 6.0, 'text': 'Second <i>line</i>\nand more'}]
-session.SUBTITLE['language'] = 'en'
+session.SUBTITLE.language = 'en'
 session.VIDEO = {'framerate': 24.0}
 session.FORMAT = {'options': {}}
 for key in ('DCPMXF', 'IMSCMXF', 'STLMXF'):

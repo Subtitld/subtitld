@@ -56,8 +56,8 @@ check('the project is not changed', project()[1]['text'], '<i>Hello</i> there')
 
 print('written by file_io with the options')
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE['segments'] = project()
-session.SUBTITLE['language'] = 'en'
+session.SUBTITLE.segments = project()
+session.SUBTITLE.language = 'en'
 session.VIDEO = {'width': 1920, 'height': 1080, 'framerate': 25.0}
 
 
@@ -78,7 +78,7 @@ check('SRT with a byte order mark', export('SRT', 'srt', {'encoding': 'utf-8-sig
 check('SRT: a character the encoding lacks becomes ?',
       (session.SUBTITLE.__setitem__('segments', [{'start': 0, 'end': 1, 'text': '日本'}]), export('SRT', 'srt', {'encoding': 'cp1252'}))[1],
       b'1\n00:00:00,000 --> 00:00:01,000\n??\n')
-session.SUBTITLE['segments'] = project()
+session.SUBTITLE.segments = project()
 check('SRT: options left from another export do not apply', export('SRT', 'srt', {}).decode().count('Thom:'), 0)
 sub = export('SUB', 'sub', {'fps': 25.0}).decode()
 check('SUB counts in the frame rate, and says which', sub.splitlines()[:2], ['{1}{1}25', '{5}{15}Sign'])
@@ -102,7 +102,7 @@ panel.speakers_combo.combobox.setCurrentIndex(1)
 panel.encoding_combo.combobox.setCurrentIndex(1)
 panel.offset_spin.setValue(-2.5)
 check('SRT config', panel.get_config(), {'category': 'subtitles', 'format': 'SRT', 'options': {
-    'text': 'both', 'language': 'pt-br', 'speakers': 'prefix', 'formatting': 'keep', 'offset': -2.5,
+    'text': 'both', 'language': 'pt-br', 'speakers': 'prefix', 'formatting': 'keep', 'timed': 'words', 'offset': -2.5,
     'encoding': 'utf-8-sig', 'line_ends': 'lf'}})
 panel.format_combo.setCurrentText('USF')
 panel._refresh_options()
@@ -115,7 +115,7 @@ check('remembered, but not the shift', (again.format_combo.currentText(), again.
                                        again.speakers_combo.combobox.currentData(), again.encoding_combo.combobox.currentData(),
                                        again.offset_spin.value()),
       ('JSON', ('both', 'pt-br'), 'prefix', 'utf-8-sig', 0.0))
-session.SUBTITLE['segments'] = [{'start': 1, 'end': 2, 'text': 'x'}]
+session.SUBTITLE.segments = [{'start': 1, 'end': 2, 'text': 'x'}]
 bare = _SubtitlesPanel()
 check('no translation, no text choice', bare.text_combo.isHidden(), True)
 

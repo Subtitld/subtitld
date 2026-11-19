@@ -606,7 +606,7 @@ def _delete_clicked(self):
 def _activate(self, proxy_path):
     # Proxy vs. original is a view preference, not saved project data, so we
     # deliberately do NOT mark the project unsaved here.
-    pos = float(session.SUBTITLE.get('position', 0) or 0)
+    pos = float(session.SUBTITLE.position or 0)
     session.VIDEO['proxy_filepath'] = proxy_path
     self.preview_panel_player.loadfile(proxy_path)
     self.preview_panel_player.seek(pos)
@@ -614,7 +614,7 @@ def _activate(self, proxy_path):
 
 
 def _revert(self):
-    pos = float(session.SUBTITLE.get('position', 0) or 0)
+    pos = float(session.SUBTITLE.position or 0)
     session.VIDEO.pop('proxy_filepath', None)
     self.preview_panel_player.loadfile(session.VIDEO.get('filepath'))
     self.preview_panel_player.seek(pos)

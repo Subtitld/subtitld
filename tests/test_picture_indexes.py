@@ -23,6 +23,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, export_options, file_io, picture_indexes, picture_ocr, picture_subtitles, session
+from subtitld.modules.segment import Subtitle
 from subtitld.modules.addons.provider import OCRProvider
 
 fails = []
@@ -214,7 +215,7 @@ for name, text in OTHERS.items():
     (folder / name).write_text(text, encoding='utf-8')
 check('none of the others is one', [picture_indexes.kind(folder / name) for name in OTHERS], ['', '', '', ''])
 session.FORMAT = {}
-session.SUBTITLE = {'language': 'en-us'}
+session.SUBTITLE = Subtitle({'language': 'en-us'})
 check('the Scenarist text script still opens as one', file_io.process_subtitles_file(str(folder / 'text.sst'))[1],
       'SCENARIST')
 kinds = []
@@ -237,7 +238,7 @@ SEGMENTS = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <i>there</i>'},
 out_folder = folder / 'out'
 out_folder.mkdir()
 for which, extension in picture_indexes.FORMATS.items():
-    session.SUBTITLE = {'segments': SEGMENTS, 'language': 'en'}
+    session.SUBTITLE = Subtitle({'segments': SEGMENTS, 'language': 'en'})
     session.VIDEO = {'width': 1280, 'height': 720, 'framerate': 25.0}
     session.FORMAT = {'format': which, 'options': {'vobsub_size': 'pal'}}
     target = out_folder / which.lower() / f'reel.{extension}'

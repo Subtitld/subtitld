@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, session
+from subtitld.modules.segment import Subtitle
 from subtitld.interface import export_dialog
 from subtitld.interface.translation import _
 
@@ -29,9 +30,9 @@ def check(name, got, want):
         fails.append(name)
 
 
-session.SUBTITLE = {'segments': [
+session.SUBTITLE = Subtitle({'segments': [
     {'start': 0.2 + index, 'end': 0.9 + index, 'text': f'<i>Line</i> {index}', 'speaker': 'Thom'}
-    for index in range(300)]}
+    for index in range(300)]})
 session.FORMAT = {'format': 'USFX', 'options': {'offset': 7}}
 session.CONFIG.setdefault('selected_language', 'en')
 before = (copy.deepcopy(session.SUBTITLE), copy.deepcopy(session.FORMAT))
@@ -130,21 +131,21 @@ check('SRT', file_io.picture_frame('SRT', {}), None)
 
 print('pictures: the subtitle under the cursor, else the next')
 saved_segments = session.SUBTITLE
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'one'}, {'start': 3.0, 'end': 4.0, 'text': ' '},
-                                 {'start': 5.0, 'end': 6.0, 'text': 'three'}], 'position': 1.5}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'one'}, {'start': 3.0, 'end': 4.0, 'text': ' '},
+                                 {'start': 5.0, 'end': 6.0, 'text': 'three'}], 'position': 1.5})
 cue = dialog._picture_cue('PGS', {})
 check('under the cursor', cue['text'], 'one')
-session.SUBTITLE['position'] = 2.5
+session.SUBTITLE.position = 2.5
 check('between: the next with words', dialog._picture_cue('PGS', {})['text'], 'three')
 check('shifted as written', dialog._picture_cue('PGS', {'offset': 1.0})['start'], 6.0)
-session.SUBTITLE['position'] = 9.0
+session.SUBTITLE.position = 9.0
 check('after the last: none', dialog._picture_cue('PGS', {}), None)
 
 print('pictures: one drawn')
 from subtitld.interface import subtitle_renderer
 if subtitle_renderer.available():
     import time
-    session.SUBTITLE['position'] = 0.0
+    session.SUBTITLE.position = 0.0
     panel.offset_spin.setValue(0)
     panel.format_combo.combobox.setCurrentText('PGS')
     dialog.refresh_preview()
@@ -158,7 +159,7 @@ if subtitle_renderer.available():
     check('no text under a PGS picture', preview.isVisibleTo(dialog.preview_panel), False)
 
     print('pictures: BDN, the picture and the start of its XML')
-    session.SUBTITLE['segments'] = [{'start': 1.0 + 2 * index, 'end': 2.0 + 2 * index, 'text': f'Line {index}'}
+    session.SUBTITLE.segments = [{'start': 1.0 + 2 * index, 'end': 2.0 + 2 * index, 'text': f'Line {index}'}
                                     for index in range(10)]
     panel.format_combo.combobox.setCurrentText('BDN')
     dialog.refresh_preview()
@@ -188,7 +189,7 @@ if subtitle_renderer.available():
     check('the renderer goes with the dialog', dialog._renderer, None)
 else:
     print('  (no QtWebEngine: not drawn)')
-session.SUBTITLE = saved_segments
+session.SUBTITLE = Subtitle(saved_segments)
 
 print('the session is as it was')
 check('SUBTITLE', session.SUBTITLE, before[0])

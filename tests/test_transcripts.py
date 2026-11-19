@@ -214,10 +214,10 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'in.TextGrid'))
 check('a TextGrid opens; its speakers the project\'s, kept to save again',
       (fmt, [s['speaker'] for s in opened], sorted(session.SPEAKERS), session.FORMAT['options'].get('speakers')),
       ('TEXTGRID', ['Mary', 'A'], ['A', 'Mary'], 'voice'))
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 (folder / 'in.cha').write_text(CHA, encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.cha'))
-check("CHAT opens, its language the project's", (fmt, len(opened), session.SUBTITLE['language']), ('CHAT', 3, 'pt-pt'))
+check("CHAT opens, its language the project's", (fmt, len(opened), session.SUBTITLE.language), ('CHAT', 3, 'pt-pt'))
 (folder / 'in.ctm').write_text(CTM, encoding='utf-8')
 check('CTM opens', file_io.process_subtitles_file(str(folder / 'in.ctm'))[1], 'CTM')
 (folder / 'bad.TextGrid').write_text('nothing', encoding='utf-8')
@@ -226,8 +226,8 @@ try:
     check('not a TextGrid: says so', None, 'CorruptedProjectFileError')
 except file_io.CorruptedProjectFileError as error:
     check('not a TextGrid: says so', str(error).startswith('Not a TextGrid'), True)
-session.SUBTITLE['segments'] = trip
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.segments = trip
+session.SUBTITLE.language = 'en-us'
 session.VIDEO = {'width': 1280, 'height': 720, 'filepath': '/videos/clip.mp4'}
 for fmt, name in (('TEXTGRID', 'out.TextGrid'), ('CHAT', 'out.cha'), ('CTM', 'out.ctm')):
     session.FORMAT = {'options': {'speakers': 'voice'}}

@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (QApplication, QLabel, QProgressBar, QPushButton, 
                                QWidget)
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', str(session.PATH_SUBTITLD_GRAPHICS))
 session.set_unsaved = lambda *a, **k: None
 from subtitld.modules import file_io, video_subtitles
@@ -204,12 +205,12 @@ try:
 except RuntimeError:
     check('a video that is not there: an error, and no file left behind', leftovers(scratch), [])
 session.FORMAT = {'format': 'USFX', 'options': {'embed_speaker_images': True}}
-session.SUBTITLE = {'segments': [], 'origin': {'site': 'subtitld.cc', 'id': '42'}}
+session.SUBTITLE = Subtitle({'segments': [], 'origin': {'site': 'subtitld.cc', 'id': '42'}})
 kept = video_subtitles.extract(folder / 'tracks.mkv', 3, 'ass', ffmpeg=ffmpeg, folder=scratch)
 read(kept)
 os.remove(kept)
 check("reading a track leaves the project's format and subtitld.cc origin as they were",
-      (session.FORMAT, session.SUBTITLE.get('origin')),
+      (session.FORMAT, session.SUBTITLE.origin),
       ({'format': 'USFX', 'options': {'embed_speaker_images': True}}, {'site': 'subtitld.cc', 'id': '42'}))
 
 print('the engine')
@@ -332,7 +333,7 @@ window.global_panel_import_language_combobox = utils.LabeledComboBox()
 window.global_panel_import_language_combobox.addItems(list(lpi.LANGUAGE_DESCRIPTIONS))
 session.CONFIG = {'transcription': {}}
 session.VIDEO = mkv
-session.SUBTITLE = {'segments': [], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [], 'language': 'en-us'})
 session.SPEAKERS = {}
 lpi._populate_asr_addons(window)
 combobox = window.global_panel_import_engine_combobox.combobox
@@ -389,11 +390,11 @@ check('pictures only: none chosen, the list open to say why, nothing to start',
 
 session.VIDEO = plain
 panel.update_callback()
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Mine'}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Mine'}], 'language': 'en-us'})
 shown.clear()
 lpi.global_panel_import_start_transcription_button_clicked(window)
 check('no subtitles in the video: Start says so, and clears nothing nor runs',
-      (track_combo.isEnabled(), [title for title, _texts in shown], [s['text'] for s in session.SUBTITLE['segments']],
+      (track_combo.isEnabled(), [title for title, _texts in shown], [s['text'] for s in session.SUBTITLE.segments],
        getattr(window, '_transcription_running', False)),
       (False, [_('import_panel.no_subtitles_title')], ['Mine'], False))
 
@@ -419,19 +420,19 @@ def start(range_=None):
 session.VIDEO = mkv
 session.CONFIG['transcription'].pop('subtitles_track')
 panel.update_callback()
-session.SUBTITLE = {'segments': [], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [], 'language': 'en-us'})
 check('Start reads the track chosen into the timeline, and the run ends',
-      (start(), [(s['start'], s['text']) for s in session.SUBTITLE['segments']],
+      (start(), [(s['start'], s['text']) for s in session.SUBTITLE.segments],
        window._transcription_running),
       (True, [(1.0, 'Hello <i>there</i>'), (20.0, '{\\an8}At the top'), (50.0, 'Last line')], False))
-session.SUBTITLE = {'segments': [{'start': 5.0, 'end': 6.0, 'text': 'Before'}, {'start': 21.0, 'end': 22.0, 'text': 'Old'},
-                                 {'start': 55.0, 'end': 56.0, 'text': 'After'}], 'language': 'en-us'}
+session.SUBTITLE = Subtitle({'segments': [{'start': 5.0, 'end': 6.0, 'text': 'Before'}, {'start': 21.0, 'end': 22.0, 'text': 'Old'},
+                                 {'start': 55.0, 'end': 56.0, 'text': 'After'}], 'language': 'en-us'})
 check('a range: only the subtitles in it replaced',
-      (start((10.0, 40.0)), [s['text'] for s in session.SUBTITLE['segments']]),
+      (start((10.0, 40.0)), [s['text'] for s in session.SUBTITLE.segments]),
       (True, ['Before', '{\\an8}At the top', 'After']))
 shown.clear()
 check('a range the track has nothing in: says so, and changes nothing',
-      (start((30.0, 45.0)), [s['text'] for s in session.SUBTITLE['segments']], shown),
+      (start((30.0, 45.0)), [s['text'] for s in session.SUBTITLE.segments], shown),
       (True, ['Before', '{\\an8}At the top', 'After'],
        [(_('import_panel.no_subtitles_title'), [_('import_panel.no_subtitles_in_track')])]))
 
@@ -444,12 +445,12 @@ def read_track(index, language, range_=None, source=None, segments=()):
     `source`): the project's language then, what is spoken, and the
     language the panel shows."""
     track_combo.setCurrentIndex(track_combo.findData(index))
-    session.SUBTITLE = {'segments': list(segments), 'language': language}
+    session.SUBTITLE = Subtitle({'segments': list(segments), 'language': language})
     if source:
-        session.SUBTITLE['source_language'] = source
+        session.SUBTITLE.source_language = source
     lpi._show_language(window)
     start(range_)
-    return session.SUBTITLE.get('language'), session.SUBTITLE.get('source_language'), language_combo.currentText()
+    return session.SUBTITLE.language, session.SUBTITLE.source_language, language_combo.currentText()
 
 
 check('the whole video from the Portuguese track: the subtitles are Portuguese, the audio still English, shown so',
@@ -465,7 +466,7 @@ session.CONFIG['transcription'].pop('language')
 check('a range: the other subtitles are still English, and so is the project',
       read_track(4, 'en-us', (0.0, 10.0), source='en-us', segments=[{'start': 40.0, 'end': 41.0, 'text': 'English'}]),
       ('en-us', 'en-us', 'English (United States)'))
-check('(the Spanish one did come in)', [s['text'] for s in session.SUBTITLE['segments']], ['{\\an8}Hola arriba', 'English'])
+check('(the Spanish one did come in)', [s['text'] for s in session.SUBTITLE.segments], ['{\\an8}Hola arriba', 'English'])
 session.VIDEO = dict(mkv, subtitle_tracks=[dict(t, language='', language_tag='') for t in mkv['subtitle_tracks']])
 panel.update_callback()
 check('a track that names no language: the project keeps its own', read_track(4, 'en-us', source='en-us'),
@@ -481,18 +482,18 @@ window.transcription_scope.is_ready = lambda: True
 
 
 def panel_update(language, segments):
-    session.SUBTITLE = {'segments': segments, 'language': language}
+    session.SUBTITLE = Subtitle({'segments': segments, 'language': language})
     lpi.update(window)
-    return session.SUBTITLE.get('source_language')
+    return session.SUBTITLE.source_language
 
 
 check('a project never translated: its language', panel_update('en-us', [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]),
       'en-us')
 check('one whose subtitles carry translations: left unknown (an inverted one shows the translation)',
       panel_update('pt-br', [{'start': 1.0, 'end': 2.0, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]), None)
-session.SUBTITLE['source_language'] = 'en-us'
+session.SUBTITLE.source_language = 'en-us'
 lpi.update(window)
-check('and what was declared is kept', session.SUBTITLE.get('source_language'), 'en-us')
+check('and what was declared is kept', session.SUBTITLE.source_language, 'en-us')
 
 check('an engine that brings subtitles in, never the default transcription engine',
       ('subtitles' in SOURCE_ENGINES, manager.default_for_task(TASK_ASR_TRANSCRIBE)), (True, None))

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import config, ebustl, file_io, look, session, ttml
+from subtitld.modules.segment import Subtitle
 from subtitld.interface.export_dialog import _SubtitlesPanel
 
 fails = []
@@ -206,9 +207,9 @@ session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.stl'))
 check('opened through file_io: the GSI kept with the subtitle, its title the title',
-      (fmt, session.SUBTITLE['metadata']['title'], session.SUBTITLE['metadata']['stl']['PUB']),
+      (fmt, session.SUBTITLE.metadata['title'], session.SUBTITLE.metadata['stl']['PUB']),
       ('STL', 'Tears of Steel', 'Blender Foundation'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.FORMAT = {'format': 'TTML', 'options': {'profile': 'ebu-tt'}}
 file_io.save_file(str(folder / 'out.ttml'), 'TTML')
 out = (folder / 'out.ttml').read_text(encoding='utf-8')
@@ -224,13 +225,13 @@ check('the GSI as Tech 3360 maps it', [re.search(f'<ebuttm:{name}>([^<]*)<', out
      '2026-03-15', '7', '10:00:00:00', 'BRA', 'Blender Foundation', 'Edu Editor', 'edu@example.org',
      'U3VidGl0bGQgd2FzIGhlcmU='])
 check('and is EBU-TT', ttml.check(out, 'ebu-tt'), [])
-session.SUBTITLE = {'segments': [], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [], 'language': 'en'})
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'out.ttml'))
 check('the EBU-TT opened: its subtitles from the programme start, the start kept for STL',
       ([(s['start'], s['text']) for s in opened], session.FORMAT['options'].get('start')),
       ([(1.0, 'First'), (3.0, '{\\an8}Second')], '10:00:00:00'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 session.FORMAT = {'format': 'STL', 'options': {'display': 'open', 'start': '10:00:00:00'}}
 file_io.save_file(str(folder / 'back.stl'), 'STL')
 back = ebustl.gsi_values((folder / 'back.stl').read_bytes())
@@ -239,7 +240,7 @@ check('and saved as EBU STL again: the GSI fields back where they were',
 
 print('the export dialog')
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [dict(s) for s in SEGMENTS], 'language': 'en'}
+session.SUBTITLE = Subtitle({'segments': [dict(s) for s in SEGMENTS], 'language': 'en'})
 panel = _SubtitlesPanel()
 panel.format_combo.setCurrentText('TTML')
 panel._refresh_options()

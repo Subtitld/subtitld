@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.modules import markup, quality_check, session, subtitles, utils
+from subtitld.modules.segment import text_of
 
 
 TOP = 10                # px above 0 s, so its label is not cut
@@ -71,13 +72,13 @@ def _duration():
     duration = float(session.VIDEO.get('duration') or 0.0)
     if duration > 0:
         return duration
-    segments = session.SUBTITLE.get('segments') or []
+    segments = session.SUBTITLE.segments
     return max([60.0] + [segment['end'] + 10.0 for segment in segments])
 
 
 def _neighbours(subtitle):
     """The subtitles before and after this one in the list, or None."""
-    segments = session.SUBTITLE.get('segments') or []
+    segments = session.SUBTITLE.segments
     try:
         index = segments.index(subtitle)
     except ValueError:
@@ -354,7 +355,7 @@ class VerticalTimeline(QWidget):
 
     def visible_segments(self, top_time, bottom_time):
         """The shown subtitles that reach into [top_time, bottom_time]."""
-        segments = session.SUBTITLE.get('segments') or []
+        segments = session.SUBTITLE.segments
         starts = [segment['start'] for segment in segments]
         # A subtitle long enough to start above the view still reaches in:
         # look back from the first that starts inside it.
@@ -388,7 +389,7 @@ class VerticalTimeline(QWidget):
         seconds = self.time_at(y)
         columns = self.speaker_columns()
         candidates = self.visible_segments(seconds - 0.5, seconds + 0.5)
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected in candidates:
             candidates.remove(selected)
             candidates.append(selected)
@@ -625,7 +626,7 @@ class VerticalTimeline(QWidget):
         segments = self.visible_segments(top_time, bottom_time)
         if not segments:
             return
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected in segments:          # drawn last, over its neighbours
             segments.remove(selected)
             segments.append(selected)
@@ -692,7 +693,7 @@ class VerticalTimeline(QWidget):
                 flags = alignment | Qt.AlignTop | Qt.TextWordWrap
                 if show_translations:
                     half = inner.height() / 2
-                    painter.drawText(QRectF(inner.left(), inner.top(), inner.width(), half), flags, markup.plain(subtitle.get('text', '')))
+                    painter.drawText(QRectF(inner.left(), inner.top(), inner.width(), half), flags, markup.plain(text_of(subtitle)))
                     lower = QRectF(inner.left(), inner.top() + half, inner.width(), half)
                     painter.setPen(separator)
                     painter.drawLine(QPointF(lower.left(), lower.top()), QPointF(lower.right(), lower.top()))
@@ -700,7 +701,7 @@ class VerticalTimeline(QWidget):
                     painter.drawText(lower - QMarginsF(0, 5, 0, 0), flags,
                                      markup.plain((subtitle.get('translations') or {}).get(target_language, '')))
                 else:
-                    painter.drawText(inner, flags, markup.plain(subtitle.get('text', '')))
+                    painter.drawText(inner, flags, markup.plain(text_of(subtitle)))
                 painter.restore()
 
             if not locked:
@@ -1019,7 +1020,7 @@ class VerticalTimeline(QWidget):
         painter.restore()
 
     def _paint_playhead(self, painter, cfg):
-        position = session.SUBTITLE.get('position')
+        position = session.SUBTITLE.position
         if position is None:
             return
         color = QColor(cfg.get('cursor_color', '#ccff0000'))
@@ -1059,8 +1060,8 @@ class VerticalTimeline(QWidget):
             subtitle, zone = self.hit(pos)
         self.tug = None
         if subtitle is not None:
-            selection_changed = session.SUBTITLE.get('selected') is not subtitle
-            session.SUBTITLE['selected'] = subtitle
+            selection_changed = session.SUBTITLE.selected is not subtitle
+            session.SUBTITLE.selected = subtitle
             self.grabbed = subtitle
             if subtitle.get('locked'):
                 self.mode = 'locked'    # selected, but held in place
@@ -1153,9 +1154,9 @@ class VerticalTimeline(QWidget):
         if self.moved:
             self.moved = False
             _subtitles_changed(self.window_ref)
-        elif mode == 'seek' and session.SUBTITLE.get('selected') is not None:
+        elif mode == 'seek' and session.SUBTITLE.selected is not None:
             # A click off the subtitles drops the selection, as on the timeline.
-            session.SUBTITLE['selected'] = None
+            session.SUBTITLE.selected = None
             _selection_changed(self.window_ref, refresh_list=True)
         self.hover_at(event.position())
         self.update()
@@ -1188,7 +1189,7 @@ class VerticalTimeline(QWidget):
         part = NUDGE_PARTS.get(event.modifiers() & ~Qt.KeypadModifier)
         if event.key() not in NUDGE_KEYS or part is None:
             return None
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if not selected or selected.get('locked') or self.mode is not None:
             return None
         return selected, part
@@ -1243,7 +1244,7 @@ class VerticalTimeline(QWidget):
 
     def seek_to(self, seconds):
         seconds = max(0.0, min(_duration(), seconds))
-        session.SUBTITLE['position'] = seconds
+        session.SUBTITLE.position = seconds
         if session.CONFIG.get('repeat_activated'):
             session.REPEAT_DURATION_BUFFER = []
         player = getattr(self.window_ref, 'preview_panel_player', None)
@@ -1312,7 +1313,7 @@ class VerticalTimelineScroll(QScrollArea):
         pps = max(ZOOM_RANGE[0], min(ZOOM_RANGE[1], float(pps)))
         bar = self.verticalScrollBar()
         if anchor is None:
-            playhead = self.canvas.y_at(float(session.SUBTITLE.get('position') or 0.0)) - bar.value()
+            playhead = self.canvas.y_at(float(session.SUBTITLE.position or 0.0)) - bar.value()
             anchor = playhead if 0 <= playhead <= self.viewport().height() else self.viewport().height() / 2
         seconds = self.canvas.time_at(bar.value() + anchor)
         _config()['zoom'] = pps
@@ -1329,7 +1330,7 @@ class VerticalTimelineScroll(QScrollArea):
 
     def note_position(self):
         """The playhead moved here: no need to bring it into view."""
-        self._last_position = session.SUBTITLE.get('position')
+        self._last_position = session.SUBTITLE.position
 
     def ensure_time_visible(self, start, end=None, center=False):
         bar = self.verticalScrollBar()
@@ -1355,7 +1356,7 @@ class VerticalTimelineScroll(QScrollArea):
         canvas = self.canvas
         if canvas.height() != canvas.full_height():
             self.fit_canvas()
-        position = session.SUBTITLE.get('position')
+        position = session.SUBTITLE.position
         if position != self._last_position:
             previous, self._last_position = self._last_position, position
             if previous is not None:
@@ -1374,14 +1375,14 @@ class VerticalTimelineScroll(QScrollArea):
         """What the canvas shows that can change without a word to it: the
         selected subtitle (dragged on the timeline), the timeline's options
         (its buttons), and the clip waveforms and onsets as they arrive."""
-        selected = session.SUBTITLE.get('selected') or None
-        segments = session.SUBTITLE.get('segments') or []
+        selected = session.SUBTITLE.selected
+        segments = session.SUBTITLE.segments
         timeline = self.canvas.timeline()
         options = tuple(sorted((key, value) for key, value in _timeline_config().items()
                                if isinstance(value, (str, int, float, bool, type(None)))))
         others = (session.CONFIG.get('dubbing') or {}).get('enabled'),             (session.CONFIG.get('quality_check') or {}).get('enabled'),             repr((session.CONFIG.get('translation') or {}).get('engine_options'))
         return (id(selected), selected and selected.get('start'), selected and selected.get('end'),
-                selected and selected.get('text'), selected and repr(selected.get('dubbing')),
+                selected and text_of(selected), selected and repr(selected.get('dubbing')),
                 len(segments), id(segments), options, others,
                 getattr(timeline, 'show_speaker_color', None), getattr(timeline, 'show_speaker_tracks', None),
                 len(getattr(timeline, 'dub_peaks', None) or ()), len(getattr(timeline, 'dub_onsets', None) or ()),
@@ -1414,7 +1415,7 @@ class VerticalTimelineScroll(QScrollArea):
     def sync_selection(self):
         """The selection changed: bring it into view, unless it was made
         here (it is in view already)."""
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         changed = id(selected) != self._selected_id
         self._selected_id = id(selected)
         if changed and selected and self.canvas.mode is None:
@@ -1517,9 +1518,9 @@ class VerticalTimelinePanel(QWidget):
         self.zoom_in_button.setEnabled(pps < ZOOM_RANGE[1] - 1e-6)
 
     def update_labels(self):
-        position = float(session.SUBTITLE.get('position') or 0.0)
+        position = float(session.SUBTITLE.position or 0.0)
         self.position_label.setText(_clock(position))
-        selected = session.SUBTITLE.get('selected')
+        selected = session.SUBTITLE.selected
         if selected:
             length = selected['end'] - selected['start']
             self.selected_label.setText(_('vtimeline_panel.selected_length').format(f'{length:.3f}'))
@@ -1586,7 +1587,7 @@ def _subtitles_changed(window):
         player.update()
         device = getattr(player, '_audio_device', None)
         if device is not None and hasattr(device, 'sync_subtitle_dubs'):
-            device.sync_subtitle_dubs(session.SUBTITLE.get('segments') or [])
+            device.sync_subtitle_dubs(session.SUBTITLE.segments)
 
 
 # ---------------------------------------------------------------------------

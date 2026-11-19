@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import pysubs2
 from subtitld.modules import ass, file_io, session
+from subtitld.modules.segment import text_of
 
 fails = []
 
@@ -72,7 +73,9 @@ check('every event as Subtitld keeps it', read(ASS), [
     (3.0, 4.0, '{\\an8}<font color="#ffff00"><b>ROBOTICS LAB</b></font>'),
     (4.1, 4.9, '<font color="#ffd700">Gold</font> and <b>bold</b>, <b>heavy</b> and <s>struck</s>, <u>under</u>'),
     (5.0, 6.0, 'Later line', 'Celia'),
-    (7.0, 8.0, 'Karaoke'),
+    # Its karaoke times it syllable by syllable.
+    (7.0, 8.0, [{'text': 'Ka', 'start': 0.0, 'end': 0.2}, {'text': 'ra', 'start': 0.2, 'end': 0.5},
+                {'text': 'o', 'start': 0.5, 'end': 0.9}, {'text': 'ke', 'start': 0.9, 'end': 1.4}]),
     (9.5, 10.0, 'Text after a drawing'),
     (11.0, 12.0, 'Soft break and hard space'),
     (13.0, 14.0, '{\\an7}Top left'),
@@ -141,8 +144,8 @@ sub = folder / 'in.sub'
 sub.write_text('{1}{1}25\n{25}{50}{y:i}Italic line|second\n{75}{100}Plain\n', encoding='utf-8')
 check('MicroDVD keeps its italics, {y:i} to the end of its line', [(s['start'], s['text']) for s in file_io.process_subtitles_file(str(sub))[0]],
       [(1.0, '<i>Italic line</i>\nsecond'), (3.0, 'Plain')])
-session.SUBTITLE['segments'] = segments
-session.SUBTITLE['language'] = 'en'
+session.SUBTITLE.segments = segments
+session.SUBTITLE.language = 'en'
 session.VIDEO = {'width': 1280, 'height': 720}
 session.CONFIG['subtitle_style'] = {'settings': {'subtitld.classic': {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}}}
 for look, font in (('clean', 'Arial'), ('preview', 'Ubuntu')):
@@ -217,7 +220,7 @@ check('its events read, text and speaker in place',
 check('the two vertical margins become the one', '20,20,30,0' in ass._from_v4plusplus(V4PP), True)
 
 print('the look a line brings with it')
-looks = {s['text']: s.get('look') for s in ass.segments_of(pysubs2.SSAFile.from_string(ASS))}
+looks = {text_of(s): s.get('look') for s in ass.segments_of(pysubs2.SSAFile.from_string(ASS))}
 check("a Sign line, and one that opens by switching to Sign, look as Sign does beyond Default",
       (looks['{\\an8}<font color="#ffff00"><b>ROBOTICS LAB</b></font>'],
        looks['{\\an8}<font color="#ffff00"><b>Restyled as a sign</b></font>']),

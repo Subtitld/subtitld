@@ -68,14 +68,14 @@ check('and the recognisers\' reader does not take it', json_subtitles.kind(json.
 
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 (folder / 'map.json').write_text(MAP, encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'map.json'))
-check("a sync map opens as Aeneas, its language the project's", (fmt, len(opened), session.SUBTITLE['language']),
+check("a sync map opens as Aeneas, its language the project's", (fmt, len(opened), session.SUBTITLE.language),
       ('AENEAS', 2, 'pt-pt'))
 (folder / 'whisperx.json').write_text(json.dumps(OTHERS['WhisperX']), encoding='utf-8')
 check('a WhisperX .json still opens as JSON', file_io.process_subtitles_file(str(folder / 'whisperx.json'))[1], 'JSON')
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.json'), 'AENEAS')
 check('saved, and opened again', file_io.process_subtitles_file(str(folder / 'out.json'))[1], 'AENEAS')

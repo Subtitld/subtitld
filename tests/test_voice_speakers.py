@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QDir, QObject, Signal
 app = QApplication([])
 from subtitld.modules import session
+from subtitld.modules.segment import Subtitle
 QDir.addSearchPath('graphics', str(session.PATH_SUBTITLD_GRAPHICS))
 session.set_unsaved = lambda *a, **k: None
 from subtitld.interface import left_panel_dubbing as lpd
@@ -73,7 +74,9 @@ session.CONFIG = {'dubbing': {'scope': 'all'}}
 session.VIDEO = {'duration': 60.0}
 session.SPEAKERS = {'A': {'dubbing': {'voice': 'en_US-mike-medium'}}}
 line_one, line_two = cue(1.0, 2.0, 'one'), cue(3.0, 4.0, 'two')
-session.SUBTITLE = {'segments': [line_one, line_two], 'selected': None, 'position': 0.0}
+session.SUBTITLE = Subtitle({'segments': [line_one, line_two], 'selected': None, 'position': 0.0})
+line_one = session.SUBTITLE.segments[0]
+line_two = session.SUBTITLE.segments[1]
 
 provider = FakeProvider()
 
@@ -128,7 +131,7 @@ check('a single-speaker voice hides it again', panel.voice_speaker_combobox.isVi
 print('the per-subtitle panel overrides it for one line')
 session.SPEAKERS['A']['dubbing'] = {'voice': 'en_GB-vctk-medium', 'voice_speaker': 'p236'}
 line_one['dubbing_options'] = {}
-session.SUBTITLE['selected'] = line_one
+session.SUBTITLE.selected = line_one
 line_panel = lpd._GenericTTSDubbingPanel(provider)
 line_panel.translate()
 line_panel.show()

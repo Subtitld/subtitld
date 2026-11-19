@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import export_options, file_io, kar, markup, session
+from subtitld.modules.segment import Subtitle, text_of
 
 fails = []
 
@@ -66,7 +67,7 @@ def lyric_events(data, kind=0x05):
 
 
 def plain(segments):
-    return [(s['start'], s['end'], markup.plain(s['text'])) for s in segments]
+    return [(s['start'], s['end'], markup.plain(text_of(s))) for s in segments]
 
 
 print('Tune 1000 in a type 0 file')
@@ -159,13 +160,13 @@ check('a type 0 file: the words go back in its one track', (
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'xf.mid').write_bytes(XF)
-session.SUBTITLE = {'segments': []}
+session.SUBTITLE = Subtitle({'segments': []})
 session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'xf.mid'))
-check('an XF .mid opens as MIDI lyrics, its title kept', (fmt, len(opened), session.SUBTITLE['metadata']['title']),
+check('an XF .mid opens as MIDI lyrics, its title kept', (fmt, len(opened), session.SUBTITLE.metadata['title']),
       ('MIDI', 3, '待宵草'))
-session.SUBTITLE['segments'] = opened
+session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.mid'), 'MIDI')
 written = (folder / 'again.mid').read_bytes()
 check('saved as lyric events with its music', (len(kar.parse_smf(written)[2]), kar.words_kind(written),

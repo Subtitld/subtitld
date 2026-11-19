@@ -25,6 +25,7 @@ pkgbase = subtitld
 	depends = python-opencv
 	depends = python-platformdirs
 	depends = python-pysidesix-frameless-window
+	depends = python-pyphen
 	depends = python-pysubs2
 	depends = python-scipy
 	depends = python-sounddevice

@@ -14,7 +14,8 @@ Reading:
   override codes in the text change them as it goes ({\\i1}, {\\b1},
   {\\u1}, {\\s1}, {\\c&H...&}, {\\r} back to the style), and {\\anN} (or
   SSA's {\\aN}) places it. What Subtitld has no place for ({\\pos},
-  {\\fad}, karaoke ...) goes;
+  {\\fad} ...) goes; karaoke codes time it syllable by syllable
+  (modules.karaoke);
 - the look a line's style gives it beyond the file's own baseline — the
   style named Default, else the one most lines use — is the subtitle's
   look (modules.look): its font, size, outline, shadow, or the opaque box
@@ -57,13 +58,13 @@ import re
 
 import pysubs2
 
-from subtitld.modules import look as subtitld_look, markup, position
+from subtitld.modules import karaoke, look as subtitld_look, markup, position
 from subtitld.modules.srt import decode
 
 _BLOCK = re.compile(r'\{([^{}]*)\}')
 _CODE = re.compile(r'\\(?:(?P<flag>[ibus])(?P<value>\d+)|(?P<cn>1?c)(?:&H(?P<bgr>[0-9a-fA-F]{1,8})&?)?(?![\w])|'
                    r'(?P<reset>r)(?P<style>[^\\]*)|an(?P<an>\d)|a(?P<a>\d{1,2})(?!\w)|p(?P<p>\d+)|'
-                   r'fr(?P<axis>[xyz])(?P<turn>-?\d+(?:\.\d+)?))')
+                   r'fr(?P<axis>[xyz])(?P<turn>-?\d+(?:\.\d+)?)|(?P<karaoke>kf|ko|k|K)(?P<length>\d+))')
 # The codes a line's look comes from, in the block it starts with.
 _LOOK_CODE = re.compile(r'\\(?:fn(?P<fn>[^\\]+)|fs(?P<fs>\d+(?:\.\d+)?)|bord(?P<bord>\d+(?:\.\d+)?)|'
                         r'shad(?P<shad>\d+(?:\.\d+)?)|(?P<which>[34])c&H(?P<bgr>[0-9a-fA-F]{1,8})&?)')
@@ -89,13 +90,16 @@ def _style_look(style):
 
 def _text(event, styles, wrap):
     """((text with tags, its place as a code), the rotations the line is
-    turned by) for an event, or None for a drawing."""
+    turned by, its karaoke codes) for an event, or None for a drawing. The
+    text has karaoke.MARK where each karaoke code stood, the codes their
+    lengths and effects (karaoke.marked_pieces)."""
     base, keypad = _style_look(styles.get(event.style) or styles.get('Default'))
     style = base
     keypad_set = None
     drawing = False
     runs = []
     turns = {}
+    marks = []
     position = 0
 
     def add(text):
@@ -131,6 +135,10 @@ def _text(event, styles, wrap):
                 keypad_set = _LEGACY_ALIGN[int(code.group('a'))]
             elif code.group('p') is not None:
                 drawing = int(code.group('p')) > 0
+            elif code.group('karaoke') and not drawing:
+                runs.append((karaoke.MARK, style))
+                effect = karaoke.effect_of(code.group('karaoke'))
+                marks.append((int(code.group('length')) / 100, {'effect': effect} if effect else {}))
             elif code.group('axis'):
                 # A rotation the whole line is turned by; one inside the
                 # text turns the rest of it, which Subtitld cannot keep,
@@ -155,7 +163,7 @@ def _text(event, styles, wrap):
     if not markup.plain(text).strip():
         return None
     keypad = keypad_set or keypad
-    return (markup.with_alignment('', keypad) if keypad != 2 else '') + text, turns
+    return (markup.with_alignment('', keypad) if keypad != 2 else '') + text, turns, marks
 
 
 def _hex(color):
@@ -276,7 +284,7 @@ def segments_of(subfile):
         read_text = _text(event, subfile.styles, wrap)
         if read_text is None:
             continue
-        text, turns = read_text
+        text, turns, marks = read_text
         start = round(event.start / 1000, 3)
         segment = {'start': start, 'end': max(start, round(event.end / 1000, 3)), 'text': text}
         if (event.name or '').strip():
@@ -297,6 +305,9 @@ def segments_of(subfile):
         styled = _with_codes(_look_of_style(subfile.styles.get(style_name) or subfile.styles.get(baseline),
                                             height), event.text, height)
         subtitld_look.store(segment, {key: value for key, value in styled.items() if base_look.get(key) != value})
+        if karaoke.MARK in text:
+            # Its karaoke: the subtitle timed syllable by syllable.
+            segment['text'] = karaoke.marked_pieces(text, marks) or text.replace(karaoke.MARK, '')
         segments.append(segment)
     segments.sort(key=lambda segment: segment['start'])
     return segments

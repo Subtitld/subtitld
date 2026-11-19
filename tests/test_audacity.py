@@ -70,7 +70,7 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'labels.txt'))
 check('a labels .txt opens as Audacity', (fmt, len(opened)), ('AUDACITY', 4))
 (folder / 'vplayer.txt').write_text(OTHERS['VPlayer'], encoding='utf-8')
 check('a VPlayer .txt still opens as VPlayer', file_io.process_subtitles_file(str(folder / 'vplayer.txt'))[1], 'VPLAYER')
-session.SUBTITLE['segments'] = trip
+session.SUBTITLE.segments = trip
 session.FORMAT = {'options': {}}
 file_io.save_file(str(folder / 'out.txt'), 'AUDACITY')
 check('saved, and opened again', file_io.process_subtitles_file(str(folder / 'out.txt'))[1], 'AUDACITY')
