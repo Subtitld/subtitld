@@ -1450,7 +1450,17 @@ _BCP47 = re.compile(r'^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$')
 _DESCRIPTOR = re.compile(r'^[^\s.]+(?:\.[^\s.]+)*$')
 _AUDIO_TYPES = {'.wav': 'audio/wave', '.wave': 'audio/wave', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
                 '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.flac': 'audio/flac', '.m4a': 'audio/mp4',
-                '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff'}
+                '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.webm': 'audio/webm',
+                '.weba': 'audio/webm', '.mka': 'audio/x-matroska', '.caf': 'audio/x-caf', '.au': 'audio/basic'}
+# How a recording's file begins, for one whose name says nothing of its
+# kind: RIFF/WAVE, an ID3 tag or an MPEG audio frame, Ogg, FLAC, an MP4's
+# ftyp box, AIFF, EBML (WebM, Matroska), Core Audio, Sun audio.
+_AUDIO_MAGIC = ((b'ID3', 'audio/mpeg'), (b'OggS', 'audio/ogg'), (b'fLaC', 'audio/flac'),
+                (b'\x1aE\xdf\xa3', 'audio/webm'), (b'caff', 'audio/x-caf'), (b'.snd', 'audio/basic'))
+# What a DAPT script does with the dubs' recordings (write(..., audio=)):
+# 'kept' embeds those that came embedded and links the rest, 'embed'
+# embeds every one, 'link' links every one.
+DAPT_AUDIO = ('kept', 'embed', 'link')
 
 
 def is_dapt(root_or_text):
@@ -1928,6 +1938,29 @@ def _dapt_problems(root, declared_profile, content_profiles):
     return problems
 
 
+def _audio_type(path):
+    """The MIME type of a recording's file: by its extension, else by how
+    it begins (_AUDIO_MAGIC), else a WAV, which is what Subtitld's dubs are."""
+    import os
+    kind = _AUDIO_TYPES.get(os.path.splitext(str(path))[1].lower())
+    if kind:
+        return kind
+    try:
+        with open(path, 'rb') as audio_file:
+            head = audio_file.read(12)
+    except OSError:
+        return 'audio/wave'
+    if head[:4] == b'RIFF' and head[8:12] == b'WAVE':
+        return 'audio/wave'
+    if head[:4] == b'FORM' and head[8:12] in (b'AIFF', b'AIFC'):
+        return 'audio/aiff'
+    if head[4:8] == b'ftyp':
+        return 'audio/mp4'
+    if head[:2] in (b'\xff\xfb', b'\xff\xf3', b'\xff\xf2', b'\xff\xfa'):
+        return 'audio/mpeg'
+    return next((kind for magic, kind in _AUDIO_MAGIC if head.startswith(magic)), 'audio/wave')
+
+
 def _dapt_text(text):
     """A subtitle's text as a DAPT <p> holds it: its formatting as TTML's
     spans, without the place a subtitle sits in, which a script has not."""
@@ -1957,7 +1990,7 @@ def _dapt_audio(segment, start, audio_base, embedded=None, prefix='recording'):
     out = []
     for clip in clips:
         path = str(clip['path'])
-        kind = _AUDIO_TYPES.get(os.path.splitext(path)[1].lower(), 'audio/wave')
+        kind = _audio_type(path)
         inside = None
         if embedded is not None and os.path.isfile(path):
             inside = embedded.setdefault(path, f'{prefix}{len(embedded) + 1}')
@@ -1984,11 +2017,11 @@ def _dapt_audio(segment, start, audio_base, embedded=None, prefix='recording'):
     return out
 
 
-def _write_dapt(segments, language, metadata=None, audio_base=None):
+def _write_dapt(segments, language, metadata=None, audio_base=None, audio='kept'):
     """A DAPT script of `segments`: each subtitle a Script Event, its
     speaker its character, its text the original <p> in `language` and its
     translations a <p> each, translated from it; the dub heard for it, an
-    <audio> for each clip. What the script said of itself when it was read
+    <audio> for each clip, linked or embedded as `audio` says (DAPT_AUDIO). What the script said of itself when it was read
     (metadata['dapt']) and what each event said (its 'dapt') is written
     again; a new script is a dubbing script of dialogue, as recorded where
     there are dubs, translated where there are translations."""
@@ -2062,7 +2095,8 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                 said = ' '.join(f'{"tta:" if key in ("gain", "pan") else ""}{key}={quoteattr(str(value))}'
                                 for key, value in mix.items() if key in ('begin', 'end', 'dur', 'fill', 'gain', 'pan'))
                 inner.append(f'<animate {said}/>')
-        recordings = _dapt_audio(segment, start, audio_base, embedded if kept.get('audio_embedded') else None, prefix)
+        embedding = audio == 'embed' or (audio not in ('embed', 'link') and kept.get('audio_embedded'))
+        recordings = _dapt_audio(segment, start, audio_base, embedded if embedding else None, prefix)
         audio_used = audio_used or bool(recordings or inner or kept.get('speak'))
         speak = f' tta:speak={quoteattr(str(kept["speak"]))}' if kept.get('speak') else ''
         own_source = kept.get('lang_src') if kept.get('lang_src') is not None else source
@@ -2094,7 +2128,7 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
         import os
         with open(clip_path, 'rb') as clip_file:
             payload = base64.b64encode(clip_file.read()).decode('ascii')
-        kind = _AUDIO_TYPES.get(os.path.splitext(clip_path)[1].lower(), 'audio/wave')
+        kind = _audio_type(clip_path)
         resources.append(f'      <data type="{kind}" xml:id="{data_id}">{payload}</data>')
     if resources:
         resources = ['    <resources>', *resources, '    </resources>']
@@ -3369,7 +3403,7 @@ def _tunnel_608(segments):
 
 
 def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None,
-          *, fps=None, tunnel=False, start=None, drop_frame=False, audio_base=None):
+          *, fps=None, tunnel=False, start=None, drop_frame=False, audio_base=None, audio='kept'):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
@@ -3378,14 +3412,15 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     EBU-TT with a frame rate is timed in SMPTE timecode, from a programme
     start of `start` ("HH:MM:SS:FF", 00:00:00:00 without one), drop-frame
     at 29.97 with `drop_frame`. A DAPT script links its recordings relative
-    to `audio_base`, the folder it is written in.
+    to `audio_base`, the folder it is written in, or holds them itself, as
+    `audio` says (DAPT_AUDIO: by default, embedded those that came so).
 
     A Japanese file in an IMSC profile writes its italics as tts:shear:
     that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
     if profile == 'dapt':
-        return _write_dapt(segments, language, metadata, audio_base)
+        return _write_dapt(segments, language, metadata, audio_base, audio)
     tunnel = bool(tunnel) and profile == 'smpte-tt'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     annotations = _ANNOTATIONS[profile]

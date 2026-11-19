@@ -395,6 +395,53 @@ check('saved as DAPT: the original and its translation both, whatever the export
        "And thanks to that, we're gonna get rich." in saved, 'daptm:scriptType="translatedTranscript"' in saved),
       ([], 2, True, True))
 
+print('the recordings embedded or linked, as the export asks')
+# Dubs of any kind: a WAV, an Ogg and a recording whose name says nothing,
+# an MP3 by its ID3 tag; each embedded with its own MIME type (DAPT asks
+# for one; TTML2's <data> in Base64).
+(dubs / 'take3.ogg').write_bytes(b'OggS' + bytes(range(60)))
+(dubs / 'take4').write_bytes(b'ID3\x04' + bytes(range(90)))
+MIXED = [dict(SESSION[0]), dict(SESSION[1]),
+         {'start': 9.0, 'end': 10.0, 'text': 'Ogg.', 'dubbing': [{'path': str(dubs / 'take3.ogg'), 'start': 9.0}]},
+         {'start': 11.0, 'end': 12.0, 'text': 'Bare.', 'dubbing': [{'path': str(dubs / 'take4'), 'start': 11.0}]}]
+
+
+def exported(choice, segments):
+    """The DAPT script file_io saves of `segments` with the recordings
+    option `choice` (None: the option not given), and what it reads back."""
+    session.SUBTITLE = {'segments': [dict(s) for s in segments], 'language': 'en'}
+    session.FORMAT = {'format': 'TTML', 'options': dict({'profile': 'dapt'}, **({'dapt_audio': choice} if choice else {}))}
+    out = folder / f'exported_{choice}.ttml'
+    file_io.save_file(str(out), 'TTML')
+    return out.read_text(encoding='utf-8'), ttml.read(str(out))[0]
+
+
+text, back = exported('embed', MIXED)
+check('embed: every recording in the resources, each file once, its own MIME type; nothing linked',
+      (re.findall(r'<data type="([^"]+)" xml:id="recording\d+">', text), 'src="dubs/' in text,
+       ttml.check(text, 'dapt')),
+      (['audio/wave', 'audio/wave', 'audio/ogg', 'audio/mpeg'], False, []))
+check('embed, read back: each dub the very bytes it was, at its place',
+      [[(Path(dub['path']).read_bytes() == (dubs / name).read_bytes(), dub['start']) for dub in s['dubbing']]
+       for s, name in zip(back, ('take1.wav', 'take2 long.wav', 'take3.ogg', 'take4'))],
+      [[(True, 1.2)], [(True, 3.5)], [(True, 9.0)], [(True, 11.0)]])
+check('embed, read back: the clips of a take still its parts', [(c['start'], c['end'], c['offset'])
+                                                               for c in back[1]['dubbing'][0]['segments']],
+      [(0.5, 1.5, 0.0), (2.0, 3.0, 1.2)])
+text, back = exported('link', MIXED)
+check('link: every recording linked beside the script, none held in it',
+      ('<resources>' in text, sorted(set(re.findall(r'<audio src="([^"]+)" type="([^"]+)"', text)))),
+      (False, [('dubs/take1.wav', 'audio/wave'), ('dubs/take2%20long.wav', 'audio/wave'),
+               ('dubs/take3.ogg', 'audio/ogg'), ('dubs/take4', 'audio/mpeg')]))
+# A dub that came embedded (read from the inline example above) and one
+# linked: by default as they came, linked when asked.
+came = ttml.read_text(INLINE)[0][0]
+both = [dict(came, start=1.0, end=3.0, dubbing=[dict(came['dubbing'][0], start=1.3)]), dict(MIXED[2])]
+for choice, want in ((None, (1, 1)), ('kept', (1, 1)), ('link', (0, 2)), ('embed', (2, 0))):
+    text, back = exported(choice, both)
+    check(f'{choice or "the option not given"}: (embedded, linked) recordings',
+          (len(re.findall(r'<source src="#', text)), len(re.findall(r'<audio src="', text))), want)
+
 print('the export dialog')
 session.CONFIG.pop('export_subtitles', None)
 session.SUBTITLE = {'segments': [dict(s) for s in SESSION], 'language': 'en'}
@@ -406,6 +453,23 @@ check('DAPT offered, and the script it would write checked',
       (panel.profile_combo.combobox.currentText(), panel.check_label.text()),
       ('DAPT (dubbing and audio description script)',
        'Nothing Subtitld checks for breaks DAPT (dubbing and audio description script) in this file.'))
+check('the recordings\' choice shown for DAPT, as it came by default, and reaching the options',
+      (panel.dapt_audio_options.isVisibleTo(panel), panel.dapt_audio_combo.combobox.currentData(),
+       [panel.dapt_audio_combo.combobox.itemData(i) for i in range(panel.dapt_audio_combo.combobox.count())]),
+      (True, 'kept', ['kept', 'embed', 'link']))
+panel.dapt_audio_combo.combobox.setCurrentIndex(1)
+check('chosen: in the export\'s options', panel.export_choices()[2].get('dapt_audio'), 'embed')
+shown = []
+for profile in ('ttml1', 'imsc1', 'smpte-tt'):
+    panel.profile_combo.combobox.setCurrentIndex(panel.profile_combo.combobox.findData(profile))
+    shown.append((profile, panel.dapt_audio_options.isVisibleTo(panel), 'dapt_audio' in panel.export_choices()[2]))
+for fmt in ('SRT', 'ASS'):
+    panel.format_combo.setCurrentText(fmt)
+    panel._refresh_options()
+    shown.append((fmt, panel.dapt_audio_options.isVisibleTo(panel), 'dapt_audio' in panel.export_choices()[2]))
+check('not shown, nor given, for another profile or format', shown,
+      [('ttml1', False, False), ('imsc1', False, False), ('smpte-tt', False, False), ('SRT', False, False),
+       ('ASS', False, False)])
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

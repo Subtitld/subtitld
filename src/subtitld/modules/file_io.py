@@ -2410,6 +2410,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             if profile == 'dapt':
                 segments = export_options.prepare(SUBTITLE['segments'], dict(options, text='original', speakers='none'))
                 options = dict(options, text='original')
+                # The recordings linked or held in the script itself.
+                if options.get('dapt_audio') in ttml.DAPT_AUDIO:
+                    extra['audio'] = options['dapt_audio']
             # EBU-TT is timed in timecode where there is a frame rate (the
             # video's, else the STL's it came from), from the programme
             # start the file was opened with; in media time without one.
