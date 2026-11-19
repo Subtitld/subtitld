@@ -57,13 +57,15 @@ print('the built-in style')
 session.CONFIG = config.Config(Path(tempfile.mkdtemp()) / 'subtitld.config')
 classic = styles.get()
 check('the default is Classic', (classic.id, classic.name, classic.builtin), ('subtitld.classic', 'Classic', True))
-check('its fields: the preview settings before styles', [f['key'] for f in classic.fields],
+check('its fields: the preview settings before styles, then karaoke\'s', [f['key'] for f in classic.fields],
       ['font_family', 'font_size', 'color', 'shadow_enabled', 'shadow_x', 'shadow_y', 'shadow_color',
-       'backgroundbox_enabled', 'backgroundbox_padding', 'backgroundbox_border_radius', 'backgroundbox_color'])
-check('its defaults: the old ones', styles.values(),
+       'backgroundbox_enabled', 'backgroundbox_padding', 'backgroundbox_border_radius', 'backgroundbox_color',
+       'karaoke_color', 'karaoke_effect'])
+check('its defaults: the old ones, a gold lit at once', styles.values(),
       {'font_family': 'Montserrat', 'font_size': 40, 'color': '#ffffffff', 'shadow_enabled': True,
        'shadow_x': 2, 'shadow_y': 2, 'shadow_color': '#ff000000', 'backgroundbox_enabled': True,
-       'backgroundbox_padding': 10, 'backgroundbox_border_radius': 5, 'backgroundbox_color': '#55000000'})
+       'backgroundbox_padding': 10, 'backgroundbox_border_radius': 5, 'backgroundbox_color': '#55000000',
+       'karaoke_color': '#ffffd700', 'karaoke_effect': 'fill'})
 check('nothing refused', styles.problems, {})
 
 print('manifests')
@@ -133,7 +135,7 @@ check('Classic', styles.css_variables('subtitld.classic'),
       {'--font-family': '"Montserrat"', '--font-size': '40px', '--color': '#00ff00', '--shadow-enabled': '1',
        '--shadow-x': '2px', '--shadow-y': '2px', '--shadow-color': '#000000', '--backgroundbox-enabled': '1',
        '--backgroundbox-padding': '10px', '--backgroundbox-border-radius': '5px',
-       '--backgroundbox-color': 'rgba(0, 0, 0, 0.333)'})
+       '--backgroundbox-color': 'rgba(0, 0, 0, 0.333)', '--karaoke-color': '#ffd700', '--karaoke-effect': 'fill'})
 check('every type', styles.css_variables('test.box'),
       {'--size': '4em', '--boxed': '1', '--edge': '#00ff00', '--motion': 'fade', '--family': '"Inter"',
        '--title': '"Hi \\"you\\""'})

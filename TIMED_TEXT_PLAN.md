@@ -209,7 +209,14 @@ HLS, CMFT, DASH and IMSC in MXF write the words.)* WebVTT inline timestamps, TTM
 enhanced LRC; for formats with no timing inside a line, an export option
 "reveal word by word" (one cue per piece, text up to it).
 
-**M7. Preview.** The HTML renderer highlights the current piece with its
+**M7. Preview.** *(Done on branch `timed-text`. Each piece a span whose
+effect is a CSS animation in subtitle_styles/host.js (every style gets
+it), held at the moment as an animated style's are; layers keyed by how
+many pieces have started, a frame at a time only through a wipe or a
+pop. Classic has a karaoke colour (gold) and a default effect (all at
+once). A wipe's text shadow is drawn under it as a filter. The preview
+was checked through the renderer's helper, not by playing in the app:
+the compositor kept the test window from focus.)* The HTML renderer highlights the current piece with its
 effect (fill, wipe, outline or pop-in), the style's when it has none; the
 style setting for the default effect is added here.
 
