@@ -230,10 +230,17 @@ def _lines_of(text):
     return '\n'.join(line.strip() for line in body.split('\n') if line.strip())
 
 
-def _packed(segment, separator='|'):
-    """A subtitle's text on one line, as the one-line formats write it."""
+def _packed(segment, separator='|', blank_lines=False):
+    """A subtitle's text on one line, as the one-line formats write it;
+    with `blank_lines`, its empty lines before and between the others kept
+    (JACOsub's way of moving a subtitle down)."""
     text = markup.plain(str(segment.get('text') or '')).replace('\r\n', '\n').replace('\r', '\n')
-    return separator.join(line.strip() for line in text.split('\n') if line.strip())
+    lines = [line.strip() for line in text.split('\n')]
+    if blank_lines:
+        while lines and not lines[-1]:
+            lines.pop()
+        return separator.join(lines) if any(lines) else ''
+    return separator.join(line for line in lines if line)
 
 
 def _ordered(segments):
@@ -1603,7 +1610,8 @@ def _jss_time(value, timeres):
 
 
 def _jss_text(text):
-    """JACOsub's text as Subtitld's: "\\n" a line break, "\\B", "\\I" and
+    """JACOsub's text as Subtitld's: "\\n" a line break (an empty line kept,
+    unless it ends the text), "\\B", "\\I" and
     "\\U" bold, italic and underline until "\\N" (normal) or the end,
     "~" a hard space, {comments} left out, the codes it has no place for
     (the date, the time, a colour) dropped."""
@@ -1632,7 +1640,13 @@ def _jss_text(text):
         index += 1
     out.extend(f'</{tag}>' for tag in reversed(open_tags))
     body = re.sub(r'<([biu])></\1>', '', ''.join(out))
-    return '\n'.join(line.strip() for line in body.split('\n') if line.strip())
+    # Empty lines before the text and between its lines are kept: JACOsub
+    # moves a subtitle down a line for each, as FFmpeg keeps them
+    # ("\N\NAt that time"); after it they show nothing.
+    lines = [line.strip() for line in body.split('\n')]
+    while lines and not lines[-1]:
+        lines.pop()
+    return '\n'.join(lines)
 
 
 def _jss_keypad(directive):
@@ -1709,10 +1723,15 @@ def _write_jacosub(segments, fps=DEFAULT_FPS):
 
     lines = ['#TIMERES 100', '']
     for segment in _ordered(segments):
-        body = _packed(segment, separator='\\n')
+        body = _packed(segment, separator='\\n', blank_lines=True)
         if not body:
             continue
-        lines.append(f'{stamp(segment.get("start", 0))} {stamp(segment.get("end", 0))} D {body}')
+        # Its place as JACOsub's directives (the bottom centre is "D", the
+        # default), so a subtitle moved up or down stays there.
+        keypad = markup.alignment(str(segment.get('text') or ''))
+        directive = 'D' if keypad in (None, 2) else \
+            {7: 'VT', 4: 'VM', 1: 'VB'}[(keypad - 1) // 3 * 3 + 1] + ('JL', '', 'JR')[(keypad - 1) % 3]
+        lines.append(f'{stamp(segment.get("start", 0))} {stamp(segment.get("end", 0))} {directive} {body}')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
 
 

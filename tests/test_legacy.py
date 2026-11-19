@@ -239,6 +239,15 @@ check('#TIMERES 100', cues('#TIMERES 100\n0:00:01.50 0:00:03.25 D First cue\n', 
       [(1.5, 3.25, 'First cue')])
 check('#SHIFT moves them all', cues('#TIMERES 100\n#SHIFT 100\n0:00:01.00 0:00:03.00 D Cue\n', 'jacosub'),
       [(2.0, 4.0, 'Cue')])
+# FFmpeg keeps JACOsub's empty lines ("\\N\\NAt that time" in its FATE
+# reference): before the text they move it down, and they stay; at the end
+# they show nothing.
+check('empty lines before and between kept, after it not',
+      cues('#TIMERES 100\n0:00:01.00 0:00:03.00 VM \\n\\nDown\\n\\ntwo\\n\\n\n', 'jacosub'),
+      [(1.0, 3.0, '{\\an5}\n\nDown\n\ntwo')])
+check('written back with them, and its place', legacy.write([{'start': 1, 'end': 3, 'text': '{\\an7}\n\nDown\n\ntwo'},
+                                                              {'start': 4, 'end': 5, 'text': 'Bottom'}], 'jacosub'),
+      '#TIMERES 100\n\n0:00:01.00 0:00:03.00 VTJL \\n\\nDown\\n\\ntwo\n0:00:04.00 0:00:05.00 D Bottom\n')
 check('\\n breaks the line', cues('#TIMERES 100\n0:00:01.00 0:00:03.00 D First\\nsecond\n', 'jacosub'),
       [(1.0, 3.0, 'First\nsecond')])
 

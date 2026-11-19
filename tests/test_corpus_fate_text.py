@@ -179,7 +179,16 @@ check('places as FFmpeg gives them', [markup.alignment(segment['text']) for segm
 # FFmpeg: "(Normal, {\b1}Bold{\r}, {\i1}Italic{\r})": \B, \I and \N (normal).
 check('\\B bold, \\I italic, \\N back to normal', segments[8]['text'],
       'Text may appear in different styles\n(Normal, <b>Bold</b>, <i>Italic</i>)')
-round_trip('JACOsub', segments, 'JACOSUB', 'jss')
+# Empty lines before and between the lines are kept, as FFmpeg keeps them:
+# "\N\NAt that time" two lines down from the middle, "JACOsub\N\NThis".
+check('empty lines kept, before the text and inside it',
+      [markup.split_lead(segments[index]['text'])[1].split('\n')[:3] for index in (0, 9)],
+      [['JACOsub', '', 'This script demonstrates some of the capabilities of JACOsub.'],
+       ['', '', 'At that time, you may press any key to return to the Editor.']])
+again = round_trip('JACOsub', segments, 'JACOSUB', 'jss')
+check('JACOsub: saved with its empty lines and places', [(markup.split_lead(s['text'])[1], markup.alignment(s['text']))
+                                                          for s in again][9],
+      ('\n\nAt that time, you may press any key to return to the Editor.', 5))
 
 # --------------------------------------------------------------------------
 print('MPL2 (sub-mpl2)')
