@@ -289,6 +289,9 @@ class SubtitleRenderer(QObject):
         if self.process is not None:
             process, self.process = self.process, None
             process.finished.disconnect(self._finished)
+            # What it still says while it quits is for no one: waiting for
+            # it delivers that output, and _read has no process to read it.
+            process.readyReadStandardOutput.disconnect(self._read)
             process.write(b'{"cmd": "quit"}\n')
             process.closeWriteChannel()
             if not process.waitForFinished(2000):
