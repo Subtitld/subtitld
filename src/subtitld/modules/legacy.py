@@ -128,7 +128,8 @@ SESSION_FORMATS = {
 }
 SESSION_IDS = dict({fmt: name for name, fmt in SESSION_FORMATS.items()}, tmplayer='VPLAYER')
 
-_MPL2 = re.compile(r'^\s*\[(\d+)\]\[(\d+)\](.*)$')
+_MPL2 = re.compile(r'^\s*\[(\d+)\]\[(\d*)\](.*)$')
+_MPL2_STYLES = {'/': 'i', '\\': 'b', '_': 'u'}
 _PJS = re.compile(r'^\s*(\d+)\s*,\s*(\d+)\s*,\s*"(.*)"\s*$')
 _AQT = re.compile(r'^\s*-->>\s*(\d+)\s*$')
 _SUBVIEWER1 = re.compile(r'^\s*\[(\d{1,3}):(\d{1,2}):(\d{1,2})(?:[.,](\d+))?\]\s*$')
@@ -137,7 +138,11 @@ _SPRUCE = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})[:;.](\d{1,3})\s*,\s*'
                      r'(\d{1,3}):(\d{2}):(\d{2})[:;.](\d{1,3})\s*,\s*(.*)$')
 # VPlayer and TMPlayer are the same shape: a clock, a separator, the text.
 # The separator is what the players differed on, so all of them are taken.
-_CLOCK = re.compile(r'^\s*(\d{1,3}):(\d{1,2})[:,.](\d{1,2})(?:[:,.](\d{1,3}))?\s*[:=;]\s?(.*)$')
+# VPlayer also has a space alone after a clock in hundredths ("0:00:00.12
+# Hello", FFmpeg's sample). Only there: a clock in seconds and a space is
+# a log's line, and one followed by a figure another format's times.
+_CLOCK = re.compile(r'^\s*(\d{1,3}):(\d{1,2})[:,.](\d{1,2})(?:[:,.](\d{1,3}))?'
+                    r'(?:\s*[:=;]\s?|(?<=\.\d\d)[ \t](?![\s\d-]))(.*)$')
 _TTS = re.compile(r'^\s*(\d):(\d{2}):(\d{2})\.(\d{2})\s*,\s*(\d):(\d{2}):(\d{2})\.(\d{2})\s*,\s*(\S+)(?:[ \t](.*))?$')
 _ZEG = re.compile(r'^\s*E\s+\d+\s+(\d):(\d{2}):(\d{2})\.(\d{2})\s+(\d):(\d{2}):(\d{2})\.(\d{2})\s+'
                   r'(\S+)(?:\s+(\S+))?(?:[ \t](.*))?$')
@@ -155,6 +160,8 @@ _SUBSONIC_END = re.compile(r'^\s*\S+\s+(\d+(?:\.\d+)?)\s*$')
 _ORESME = re.compile(r'^(\d{2}):(\d{2}):(\d{2}):(\d{2})((?:\{[^}]*\})*)(.*)$')
 _TAG = re.compile(r'\{([^}]*)\}')
 _JSS = re.compile(r'^\s*(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3})\s+(\d{1,3}):(\d{2}):(\d{2})\.(\d{1,3})\s+(\S+)\s+(.*)$')
+_JSS_TIME = r'(\d{1,3}:\d{2}:\d{2}(?:\.\d{1,3})?|@\d+)'
+_JSS_LINE = re.compile(r'^\s*' + _JSS_TIME + r'\s+' + _JSS_TIME + r'\s+(\S+)(?:\s+(.*))?$')
 _JSS_DIRECTIVE = re.compile(r'^\s*#\s*(\w+)\s*(.*)$')
 _S2K_TIME = re.compile(r'^\s*;\s*Set\.Time\.Start\s*=\s*(\d+)\s*$', re.I)
 _S2K_WIDTH = re.compile(r'^\s*;\s*Env\.Movie\.Width\s*=', re.I)
@@ -181,7 +188,8 @@ _QT_MARK = re.compile(r'\{\s*qttext\s*\}', re.I)
 _QT_TIME = re.compile(r'^\s*\[(\d{1,3}):(\d{1,2}):(\d{1,2})(?:\.(\d+))?\]\s*(.*)$')
 _QT_DESC = re.compile(r'\{\s*([A-Za-z\-]+)\s*(?::\s*([^}]*))?\}')
 _CAPTION_BYTES = re.compile(r'^\d{2}\s')
-_MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*(\S+)\s*$', re.I)
+# "FORMAT=25 #fps" is a rate too: what follows the value is a comment.
+_MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*([^\s#]+)\s*(?:#.*)?$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
 _RT_TIME = re.compile(r'<time\b[^>]*\bbegin\s*=\s*["\']?([^"\'>\s]+)', re.I)
 _RT_END = re.compile(r'<time\b[^>]*\bend\s*=\s*["\']?([^"\'>\s]+)', re.I)
@@ -249,24 +257,67 @@ def _ends_at_next(segments):
 # ---------------------------------------------------------------- MPL2
 
 
+def _mpl2_line(line):
+    """A line of MPL2 text with its style: "/" before it italic, "\\"
+    bold, "_" underline, in any order and together."""
+    tags = ''
+    while line and line[0] in _MPL2_STYLES:
+        if _MPL2_STYLES[line[0]] not in tags:
+            tags += _MPL2_STYLES[line[0]]
+        line = line[1:]
+    line = line.strip()
+    if not line:
+        return ''
+    for tag in tags:
+        line = f'<{tag}>{line}</{tag}>'
+    return line
+
+
 def _parse_mpl2(text, fps=DEFAULT_FPS):
     segments = []
     for line in text.split('\n'):
         match = _MPL2.match(line)
         if not match:
             continue
-        body = _lines_of(match.group(3))
+        # Split on "|" alone: a bold line's "\" before an N is no "\N".
+        body = '\n'.join(filter(None, (_mpl2_line(part.strip()) for part in match.group(3).split('|'))))
         if not body:
             continue
-        start, end = int(match.group(1)) / 10.0, int(match.group(2)) / 10.0
-        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
-    return segments
+        start = int(match.group(1)) / 10.0
+        # "[41][]" has no end: it lasts until the next subtitle.
+        end = int(match.group(2)) / 10.0 if match.group(2) else None
+        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)) if end is not None else None,
+                         'text': body})
+    return _ends_at_next(_ordered(segments))
+
+
+def _mpl2_text(segment):
+    """A subtitle's text as MPL2's: "|" between its lines, and "/", "\\"
+    and "_" before a line that is italic, bold or underlined throughout,
+    the only places MPL2 has for them."""
+    _lead, rest = markup.split_lead(str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n'))
+    lines = [[]]
+    for run, style in markup.without_readings(markup.spans(rest)):
+        for index, part in enumerate(run.replace('|', '¦').split('\n')):
+            if index:
+                lines.append([])
+            lines[-1].append((part, style))
+    out = []
+    for line in lines:
+        text = ''.join(part for part, _style in line).strip()
+        if not text:
+            continue
+        shown = [style for part, style in line if part.strip()]
+        marks = ''.join(mark for mark, field in (('/', 'italic'), ('\\', 'bold'), ('_', 'underline'))
+                        if all(getattr(style, field) for style in shown))
+        out.append(marks + text)
+    return '|'.join(out)
 
 
 def _write_mpl2(segments, fps=DEFAULT_FPS):
     lines = []
     for segment in _ordered(segments):
-        body = _packed(segment)
+        body = _mpl2_text(segment)
         if not body:
             continue
         start = int(round(float(segment.get('start', 0)) * 10))
@@ -412,20 +463,31 @@ def _parse_aqtitle(text, fps=DEFAULT_FPS):
                 body.append(lines[index].strip())
             index += 1
         text_of = _lines_of('\n'.join(body))
-        if text_of:
-            segments.append({'start': _rounded(int(match.group(1)) / rate), 'end': None, 'text': text_of})
-    return _ends_at_next(_ordered(segments))
+        # A marker with no text under it is where the subtitle before it
+        # leaves the screen, as AQTitle itself writes every end: kept
+        # until the ends are given, then dropped.
+        segments.append({'start': _rounded(int(match.group(1)) / rate), 'end': None, 'text': text_of})
+    segments = _ends_at_next(_ordered(segments))
+    return [segment for segment in segments if segment['text']]
 
 
 def _write_aqtitle(segments, fps=DEFAULT_FPS):
     rate = float(fps or DEFAULT_FPS)
-    blocks = []
+    cues = []
     for segment in _ordered(segments):
         text = markup.plain(str(segment.get('text') or '')).strip()
         if not text:
             continue
         frame = int(round(float(segment.get('start', 0)) * rate))
-        blocks.append(f'-->> {frame}\n' + '\n'.join(line.strip() for line in text.split('\n') if line.strip()))
+        end = max(frame, int(round(float(segment.get('end', segment.get('start', 0))) * rate)))
+        cues.append((frame, end, '\n'.join(line.strip() for line in text.split('\n') if line.strip())))
+    blocks = []
+    for index, (frame, end, text) in enumerate(cues):
+        blocks.append(f'-->> {frame}\n{text}')
+        # Its end is an empty marker, as AQTitle writes it, unless the next
+        # subtitle begins by then and its marker ends this one.
+        if index + 1 == len(cues) or cues[index + 1][0] > end:
+            blocks.append(f'-->> {end}\n')
     return '\n\n'.join(blocks) + '\n' if blocks else ''
 
 
@@ -435,17 +497,32 @@ def _write_aqtitle(segments, fps=DEFAULT_FPS):
 def _parse_subviewer1(text, fps=DEFAULT_FPS):
     lines = text.split('\n')
     marks = [(index, match) for index, line in enumerate(lines) if (match := _SUBVIEWER1.match(line))]
+    # The header's [DELAY], on the line after it, moves every subtitle by
+    # that many seconds, as FFmpeg reads it.
+    delay = 0.0
+    for index, line in enumerate(lines[:-1]):
+        if line.strip().upper() == '[DELAY]':
+            try:
+                delay = float(lines[index + 1].strip() or 0)
+            except ValueError:
+                pass
+            break
+    # The script ends at "[END]": what follows it is no subtitle's.
+    stop = next((index for index, line in enumerate(lines) if line.strip().upper() == '[END]'), len(lines))
     segments = []
     for position, (index, match) in enumerate(marks):
-        if position + 1 >= len(marks):
+        if index >= stop:
             break
-        following, next_match = marks[position + 1]
+        last = position + 1 >= len(marks) or marks[position + 1][0] > stop
+        following = stop if last else marks[position + 1][0]
         body = _lines_of('\n'.join(lines[index + 1:following]))
         if not body:
             continue                # the closing mark of the subtitle before
-        start = _clock_seconds(*match.groups())
-        end = _clock_seconds(*next_match.groups())
-        segments.append({'start': start, 'end': _rounded(max(start, end)), 'text': body})
+        start = _clock_seconds(*match.groups()) + delay
+        # The last one, with no mark after it, runs as long as a subtitle
+        # with no end does in the other formats here.
+        end = start + TAIL if last else _clock_seconds(*marks[position + 1][1].groups()) + delay
+        segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
     return segments
 
 
@@ -512,7 +589,11 @@ def _parse_realtext(text, fps=DEFAULT_FPS):
     """Each <time> begins a subtitle; the next one, or a <clear/>, ends it."""
     pieces = re.split(r'(<time\b[^>]*>|<clear\s*/?>)', text, flags=re.I)
     segments = []
-    pending = None
+    # Text in the window before any <time> shows from the start.
+    pending = {'start': 0.0, 'end': None, 'text': ''}
+    segments.append(pending)
+    if pieces:
+        pieces[0] = re.sub(r'^.*?<window\b[^>]*>', '', pieces[0], flags=re.I | re.S)
     for piece in pieces:
         if not piece:
             continue
@@ -537,10 +618,12 @@ def _parse_realtext(text, fps=DEFAULT_FPS):
 def _write_realtext(segments, fps=DEFAULT_FPS):
     """A <window> of <time> tags, each subtitle cleared before the next."""
     def stamp(seconds):
-        total = max(0.0, float(seconds))
-        hours, rest = divmod(int(total), 3600)
+        # Rounded to the tenth first: 6.99 is 00:00:07.0, not "06.10".
+        tenths = int(round(max(0.0, float(seconds)) * 10))
+        total, tenth = divmod(tenths, 10)
+        hours, rest = divmod(total, 3600)
         minutes, secs = divmod(rest, 60)
-        return f'{hours:02d}:{minutes:02d}:{secs:02d}.{int(round((total - int(total)) * 10))}'
+        return f'{hours:02d}:{minutes:02d}:{secs:02d}.{tenth}'
 
     lines = ['<window type="generic">']
     for segment in _ordered(segments):
@@ -551,8 +634,10 @@ def _write_realtext(segments, fps=DEFAULT_FPS):
         # as they are; a bare & would not, and becomes an entity.
         body = re.sub(r'&(?![A-Za-z#][A-Za-z0-9]*;)', '&amp;', text)
         body = '<br/>'.join(line.strip() for line in body.split('\n') if line.strip())
-        lines.append(f'<time begin="{stamp(segment.get("start", 0))}"/>{body}'
-                     f'<time end="{stamp(segment.get("end", 0))}"/><clear/>')
+        # Begin and end in the one tag, as RealText has them, so that a
+        # reader takes the end from it, not from the next subtitle.
+        lines.append(f'<time begin="{stamp(segment.get("start", 0))}" end="{stamp(segment.get("end", 0))}"/>'
+                     f'{body}<clear/>')
     lines.append('</window>')
     return '\n'.join(lines) + '\n' if len(lines) > 2 else ''
 
@@ -1479,31 +1564,124 @@ def _write_ssts(segments, fps=DEFAULT_FPS):
 # -------------------------------------------------------------- JACOSub
 
 
+def _jss_shift(value, timeres):
+    """Seconds for a #SHIFT value: "[+-][[H:]M:]S.FF" or a bare count of
+    TIMERES units, as JACOsub (and FFmpeg) read it."""
+    value = value.strip()
+    sign = -1 if value.startswith('-') else 1
+    value = value.lstrip('+-')
+    clock, dot, units = value.rpartition('.')
+    if not dot:
+        clock, units = '', value
+    try:
+        seconds = 0
+        for part in filter(None, clock.split(':')):
+            seconds = seconds * 60 + int(part)
+        return sign * (seconds + int(units or 0) / timeres)
+    except ValueError:
+        return 0.0
+
+
+def _jss_time(value, timeres):
+    """Seconds for a JACOsub time: "H:MM:SS.FF", or "@N" units from the start."""
+    if value.startswith('@'):
+        return int(value[1:]) / timeres
+    hours, minutes, rest = value.split(':')
+    seconds, _dot, units = rest.partition('.')
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(units or 0) / timeres
+
+
+def _jss_text(text):
+    """JACOsub's text as Subtitld's: "\\n" a line break, "\\B", "\\I" and
+    "\\U" bold, italic and underline until "\\N" (normal) or the end,
+    "~" a hard space, {comments} left out, the codes it has no place for
+    (the date, the time, a colour) dropped."""
+    text = re.sub(r'(?<!\\) ?\{[^{}]*\}', '', text)
+    out, open_tags = [], []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == '\\' and index + 1 < len(text):
+            code = text[index + 1]
+            index += 2
+            if code == 'n':
+                out.append('\n')
+            elif code in 'BIU':
+                tag = code.lower()
+                if tag not in open_tags:
+                    open_tags.append(tag)
+                    out.append(f'<{tag}>')
+            elif code == 'N':
+                out.extend(f'</{tag}>' for tag in reversed(open_tags))
+                open_tags = []
+            elif code in '\\{}~':
+                out.append(code)
+            continue
+        out.append('\u00a0' if char == '~' else char)
+        index += 1
+    out.extend(f'</{tag}>' for tag in reversed(open_tags))
+    body = re.sub(r'<([biu])></\1>', '', ''.join(out))
+    return '\n'.join(line.strip() for line in body.split('\n') if line.strip())
+
+
+def _jss_keypad(directive):
+    """The place a JACOsub directive gives (VT top, VM middle, VB bottom;
+    JL, JC, JR its justification) on a keypad, None where it gives none."""
+    directive = directive.upper()
+    rows = {'VT': 7, 'VM': 4, 'VB': 1}
+    columns = {'JL': 0, 'JC': 1, 'JR': 2}
+    row = next((value for code, value in rows.items() if code in directive), None)
+    column = next((value for code, value in columns.items() if code in directive), None)
+    if row is None and column is None:
+        return None
+    return (1 if row is None else row) + (1 if column is None else column)
+
+
 def _parse_jacosub(text, fps=DEFAULT_FPS):
-    """Times are H:MM:SS.FF, the FF in units of the script's own TIMERES
-    (thirtieths unless it says otherwise), and #SHIFT moves them all."""
-    timeres, shift = 30.0, 0.0
-    segments = []
+    """Times are H:MM:SS.FF or @N, the FF and N in units of the script's
+    own TIMERES (thirtieths unless it says otherwise), and #SHIFT moves
+    them. Both are taken for the whole script wherever they stand, as
+    FFmpeg takes them; directives may be shortened to their first letter
+    ("#S 0.12"). A line ending in "\\" goes on on the next."""
+    timeres, shift = 30.0, '0'
+    entries = []
+    pending = ''
     for line in text.split('\n'):
+        line = line.rstrip('\r')
+        if pending:
+            line, pending = pending + line.lstrip(), ''
+        if line.endswith('\\') and not line.endswith('\\\\'):
+            pending = line[:-1]
+            continue
         directive = _JSS_DIRECTIVE.match(line)
         if directive:
-            name, value = directive.group(1).upper(), directive.group(2).strip().split()
-            try:
-                if name == 'TIMERES' and value:
-                    timeres = float(value[0]) or 30.0
-                elif name == 'SHIFT' and value:
-                    shift = float(value[0])
-            except ValueError:
-                pass
+            name, value = directive.group(1).upper(), directive.group(2).strip()
+            if value and (name == 'T' or name.startswith('TIM')):
+                try:
+                    timeres = float(value.split()[0]) or 30.0
+                except ValueError:
+                    pass
+            elif value and 'SHIFT'.startswith(name):
+                shift = value.split()[0]
             continue
-        match = _JSS.match(line)
-        if not match:
+        match = _JSS_LINE.match(line)
+        if match:
+            entries.append(match.groups())
+    if pending:
+        match = _JSS_LINE.match(pending)
+        if match:
+            entries.append(match.groups())
+    offset = _jss_shift(shift, timeres)
+    segments = []
+    for start_text, end_text, directive, body_text in entries:
+        body = _jss_text(body_text or "")
+        if not markup.plain(body).strip():
             continue
-        body = _lines_of(match.group(10).replace('\\n', '\n').replace('\\N', '\n'))
-        if not body:
-            continue
-        start = _clock_seconds(*match.groups()[0:3]) + (int(match.group(4)) + shift) / timeres
-        end = _clock_seconds(*match.groups()[4:7]) + (int(match.group(8)) + shift) / timeres
+        start = _jss_time(start_text, timeres) + offset
+        end = _jss_time(end_text, timeres) + offset
+        keypad = _jss_keypad(directive)
+        if keypad:
+            body = markup.with_alignment('', keypad) + body
         segments.append({'start': _rounded(start), 'end': _rounded(max(start, end)), 'text': body})
     return _ordered(segments)
 
