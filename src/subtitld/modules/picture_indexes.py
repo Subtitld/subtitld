@@ -228,11 +228,12 @@ def _parse_script(text, fps, which):
                 'forced': False}
     entries = []
     display = None
+    shown = {}
     for line in text.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
         event = _SCRIPT_LINE.match(line)
         if event:
             entries.append({'start': event.group(2), 'end': event.group(3), 'href': event.group(4).strip(),
-                            'display': display})
+                            'display': display, 'color': shown.get('color'), 'contrast': shown.get('contrast')})
             continue
         setting = _SETTING.match(line)
         if not setting:
@@ -255,6 +256,10 @@ def _parse_script(text, fps, which):
             found = _numbers(value)
             if len(found) == 2:
                 settings['pixel'] = found
+        elif lowered in ('color', 'contrast'):
+            found = _numbers(value)
+            if len(found) == 4:
+                shown[lowered] = found
         elif name in KEYS:
             found = _numbers(value)
             if len(found) >= 3:
@@ -278,8 +283,20 @@ def _parse_script(text, fps, which):
         area = entry['display']
         found.append({'start': round(start, 3), 'end': round(max(start, end), 3), 'href': entry['href'],
                       'x': area[0] if area else None, 'y': area[1] if area else None,
-                      'forced': settings['forced']})
+                      'forced': settings['forced'], 'shown': _shown_kinds(settings['keys'], entry)})
     return found, settings
+
+
+def _shown_kinds(keys, entry):
+    """{key colour: (r, g, b, a)}: what a DVD player shows for each of the
+    image's four key colours, from the Color (palette entries) and Contrast
+    (opacities, 0 to 15) the script gives them in the order E2, E1, PA, BG;
+    None where it gives neither or a key is missing."""
+    from subtitld.modules import dvdsup
+    if not entry.get('color') or not entry.get('contrast') or any(name not in keys for name in ('E2', 'E1', 'PA', 'BG')):
+        return None
+    return {keys[name]: tuple(dvdsup.DEFAULT_PALETTE[colour % 16][:3]) + (min(15, max(0, contrast)) * 17,)
+            for name, colour, contrast in zip(('E2', 'E1', 'PA', 'BG'), entry['color'], entry['contrast'])}
 
 
 def _parse_dost(text, fps):
@@ -476,11 +493,12 @@ def _image_path(folder, href, directory='', name=''):
     return next((path for path in candidates if os.path.isfile(path)), None)
 
 
-def image_picture(path, key=None):
+def image_picture(path, key=None, shown=None):
     """(width, height, indices, colours) of an image file, as
     picture_ocr.png_picture gives a PNG's, or None. An image without
     alpha has `key` (else the colour most of its border is) taken as
-    transparent."""
+    transparent; `shown` ({colour: (r, g, b, a)}) gives a Scenarist or
+    SON image's key colours as the player shows them instead."""
     import numpy
     from PySide6.QtGui import QImage
     image = QImage(str(path))
@@ -491,7 +509,12 @@ def image_picture(path, key=None):
     width, height = image.width(), image.height()
     rows = numpy.frombuffer(image.constBits(), numpy.uint8, count=image.sizeInBytes())
     rgba = rows.reshape(height, image.bytesPerLine())[:, :width * 4].reshape(height, width, 4).copy()
-    if not has_alpha:
+    if not has_alpha and shown:
+        keyed = rgba.copy()
+        for colour, replacement in shown.items():
+            keyed[(rgba[..., :3] == numpy.array(colour[:3], numpy.uint8)).all(axis=2)] = replacement
+        rgba = keyed
+    elif not has_alpha:
         if key is None:
             border = numpy.concatenate([rgba[0, :, :3], rgba[-1, :, :3], rgba[:, 0, :3], rgba[:, -1, :3]])
             colours, counts = numpy.unique(border, axis=0, return_counts=True)
@@ -525,7 +548,7 @@ def read(path, fps=None):
     decoded = []
     for entry in entries:
         found = _image_path(folder, entry['href'], settings.get('directory', ''), entry.get('name', ''))
-        image = image_picture(found, _colour(entry.get('transparent')) or key) if found else None
+        image = image_picture(found, _colour(entry.get('transparent')) or key, entry.get('shown')) if found else None
         if image is not None:
             decoded.append((entry, image))
     sized = [dict(entry, width=image[0], height=image[1]) for entry, image in decoded]
