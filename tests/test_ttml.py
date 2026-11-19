@@ -879,6 +879,21 @@ check('a mode other than none and all is named in IMSC 1.1',
       ttml.check(_written.replace('tts:textCombine="all"', 'tts:textCombine="digits 2"'), 'imsc1.1')[-1],
       'tts:textCombine="digits 2": IMSC 1.1 allows none and all')
 
+# Apple Music's lyrics: seconds with no unit, minutes and seconds with no
+# hours, and every time counted from the start of the song (itunes:timing),
+# not from the <div> that holds it.
+_apple = ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" '
+                    'itunes:timing="Word"><body dur="3:58.640"><div begin="19.764" end="1:05.5">'
+                    '<p begin="19.764" end="21.900"><span begin="19.764" end="20.105">When</span> '
+                    '<span begin="20.105" end="21.900">here</span></p>'
+                    '<p begin="1:01" end="1:02.79">But</p></div></body></tt>')
+check('Apple Music lyrics: times from the start of the song, in seconds or minutes and seconds',
+      [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in _apple],
+      [(19.764, 21.9, 'When here'), (61.0, 62.79, 'But')])
+check('elsewhere a time still counts from what holds it',
+      [round(s['start'], 3) for s in ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml"><body><div begin="10s">'
+                                                 '<p begin="2s" end="3s">x</p></div></body></tt>')], [12.0])
+
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

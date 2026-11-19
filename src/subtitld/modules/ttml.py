@@ -17,7 +17,10 @@ Reading:
   document's ttp:frameRate, ttp:frameRateMultiplier, ttp:subFrameRate and
   ttp:tickRate; a paragraph's times count from its <div>'s and <body>'s
   begin (from the end of the one before it, in a timeContainer="seq");
-  it ends at its end, after its dur, or with what holds it;
+  it ends at its end, after its dur, or with what holds it; Apple Music's
+  lyrics write seconds with no unit ("19.764") and minutes and seconds
+  ("3:58.640"), and time everything from the start of the song (its
+  itunes:timing), not from what holds it;
 - styles as TTML applies them: the region's, then inherited down body,
   div, p and span, each element's being the styles its style="..." names
   (and the ones they name) and then its own tts:* attributes. Italic (or
@@ -154,6 +157,9 @@ from subtitld.modules.srt import decode
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
 _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
+# Apple Music's lyrics (itunes:timing="Word") write seconds with no unit,
+# "19.764", and clock times without their hours, "3:58.640".
+_LOOSE = re.compile(r'^(?:(\d+):)?(\d+(?:\.\d+)?)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
@@ -371,6 +377,9 @@ class _Clock:
         # frame it names comes at the real rate.
         self.smpte = (_attr(root, 'timeBase') or '').strip() == 'smpte'
         self.drop = (_attr(root, 'dropMode') or '').strip() if self.smpte else ''
+        # Apple Music's lyrics (itunes:timing on <tt>) time every element
+        # from the start of the song, not from the begin of what holds it.
+        self.absolute = any(_local(key) == 'timing' and 'music.apple.com' in key for key in root.attrib)
 
     def seconds(self, text):
         """Seconds for a time expression, or None for none."""
@@ -396,6 +405,9 @@ class _Clock:
             if unit in _SECONDS:
                 return amount * _SECONDS[unit]
             return amount / (self.fps if unit == 'f' else self.tick_rate)
+        loose = _LOOSE.match(text)
+        if loose:
+            return int(loose.group(1) or 0) * 60 + float(loose.group(2))
         return None
 
 
@@ -424,6 +436,8 @@ def _span_of(element, base, limit, clock):
     begin = clock.seconds(element.get('begin'))
     end = clock.seconds(element.get('end'))
     duration = clock.seconds(element.get('dur'))
+    if getattr(clock, 'absolute', False):
+        base, begin = 0.0, begin if begin is not None else base
     start = base + (begin or 0)
     stop = base + end if end is not None else start + duration if duration is not None else limit
     if limit is not None and stop is not None:
