@@ -911,6 +911,16 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     if subtitle_file and (os.path.isfile(subtitle_file) or (os.path.isdir(subtitle_file) and subtitle_file.lower().endswith('.fcpxmld'))):
         if subtitle_file.lower().endswith(('.srt')):
             segments_list = srt.read(subtitle_file)
+            if not segments_list:
+                # MicroDVD saved as .srt, as players and FFmpeg read it by
+                # its lines: no SRT timing in it, "{start}{end}" lines.
+                with open(subtitle_file, 'rb') as srt_file:
+                    data = srt_file.read()
+                if microdvd.kind(data) == 'microdvd' and microdvd.parse(srt.decode(data))[0]:
+                    subtitle_format = 'SUB'
+                    segments_list, declared = microdvd.parse(srt.decode(data), session.VIDEO.get('framerate'))
+                    if declared:
+                        session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=declared)
 
         elif subtitle_file.lower().endswith(('.vtt', '.webvtt')):
             subtitle_format = 'VTT'

@@ -12,7 +12,7 @@ Reading forgives:
 
 - the bytes are decoded as SRT's are (files from the DivX years are often
   in their language's Windows code page, Windows-1250 in Central Europe);
-- the frame rate a "{1}{1}25" or "{0}{0}25" line declares, else the
+- the frame rate a "{1}{1}25", "{0}{0}25" or "{0}{}25.000 FPS" line declares, else the
   video's, else 25; the declaring line is no subtitle;
 - an empty end ("{100}{}") lasts until the next subtitle;
 - a line that begins "/" is italic, as MPL2 writes it;
@@ -57,11 +57,12 @@ def kind(data):
 
 
 def _rate(text):
-    """The frame rate a subtitle's text declares, or None."""
-    try:
-        rate = float(text.strip().replace(',', '.'))
-    except ValueError:
+    """The frame rate a subtitle's text declares, or None: "23.976", and
+    "25.000 FPS" as FFmpeg's own sample writes it."""
+    found = re.fullmatch(r'\s*(\d+(?:[.,]\d+)?)\s*(?:fps)?\s*', text, re.I)
+    if not found:
         return None
+    rate = float(found.group(1).replace(',', '.'))
     return rate if 1 < rate < 200 else None
 
 
@@ -104,7 +105,9 @@ def _text(body):
             if letter.isupper():
                 whole = _styled(whole, letter, value)
         runs.append((line[position:], style))
-    return markup.tidy(runs)
+    # Spaces are the text's own here, not markup's: "Т И Г Ъ Р   И" keeps
+    # its wide gaps, as players show them.
+    return markup.tidy(runs, spaces='\t\r')
 
 
 def parse(text, fps=None):
@@ -117,7 +120,7 @@ def parse(text, fps=None):
         if not match:
             continue
         start, end, body = int(match.group(1)), match.group(2), match.group(3)
-        if declared is None and not entries and start <= 1 and (end or '0') in ('0', '1') and _rate(body):
+        if declared is None and not entries and start <= 1 and (end or '0') in ('0', '1', '') and _rate(body):
             declared = _rate(body)
             continue
         entries.append((start, int(end) if end else None, body))

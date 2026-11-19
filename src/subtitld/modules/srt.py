@@ -10,6 +10,7 @@ Reading forgives, because SRT files come from everywhere:
 - subtitles are found by their timing lines, not by blank lines, so a
   missing blank line, a blank line inside the text, missing numbers and
   leading or extra blank lines all read right;
+- an end before its start, which lasts until the next subtitle;
 - timings with a dot for the comma, one-digit hours, fewer or more than
   three decimals (",5" is half a second), a short arrow ("->"), and the
   coordinates some tools write after the end time.
@@ -107,11 +108,17 @@ def parse(text):
         end = _seconds(*match.groups()[4:8])
         segments.append({
             'start': start,
-            'end': max(start, end),
+            'end': end if end >= start else None,
             'text': '\n'.join(line for line in body if line),
         })
         number = next_number
     segments.sort(key=lambda segment: segment['start'])
+    # An end before its start is a typo the subtitle should not vanish
+    # for: it lasts until the next one, as FFmpeg shows it.
+    for index, segment in enumerate(segments):
+        if segment['end'] is None:
+            following = segments[index + 1]['start'] if index + 1 < len(segments) else segment['start']
+            segment['end'] = max(segment['start'], following)
     return segments
 
 

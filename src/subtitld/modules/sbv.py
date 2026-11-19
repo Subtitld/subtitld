@@ -11,7 +11,8 @@ Reading forgives:
   line reads right; hours of any number of digits, a comma or none for
   the milliseconds' dot, fewer or more than three decimals, spaces
   around the comma between the times;
-- SubViewer 2's "[br]" breaks a line;
+- SubViewer 2's "[br]" breaks a line, and a line of its style codes
+  alone ("[SIZE]20") is left out;
 - a subtitle that begins ">> NAME: ", as YouTube asks speakers to be
   written, has NAME as its speaker and the rest as its text, and so do
   the ones after it until the next ">>" (one with no name ends it, and
@@ -32,6 +33,7 @@ from subtitld.modules.srt import decode
 
 _STAMP = r'(\d+):(\d{1,2}):(\d{1,2})(?:[.,](\d+))?'
 _TIMING = re.compile(r'^\s*' + _STAMP + r'\s*,\s*' + _STAMP + r'\s*$')
+_STYLE_LINE = re.compile(r'^\s*(?:\[(?:COLF|SIZE|FONT|STYLE)\][^\[\]]*?,?\s*)+$', re.I)
 _SPEAKER = re.compile(r'^>>\s*([^:<>]{1,40}?)\s*:\s+(\S.*)$', re.S)
 
 
@@ -49,7 +51,10 @@ def parse(text):
     segments = []
     for position, (index, match) in enumerate(timings):
         stop = timings[position + 1][0] if position + 1 < len(timings) else len(lines)
-        body = '\n'.join(line.strip() for line in lines[index + 1:stop]).replace('[br]', '\n')
+        # SubViewer 2's style codes ("[COLF]&HFFFFFF,[SIZE]12") on a line
+        # of their own are its look, not its text.
+        body = '\n'.join(line.strip() for line in lines[index + 1:stop]
+                         if not _STYLE_LINE.match(line)).replace('[br]', '\n')
         body = '\n'.join(line.strip() for line in body.split('\n') if line.strip())
         if not markup.plain(body).strip():
             continue
