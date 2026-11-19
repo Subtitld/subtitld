@@ -136,6 +136,42 @@ OTHERS = {
 for other, text in OTHERS.items():
     check(f'{other} is left to its own reader', legacy.kind(text), '')
 check('plain text is none of them', legacy.kind('Just some notes\nabout nothing\n'), '')
+# The nameless shapes (modules.generic_text) that look like these, laid
+# out as Subtitle Edit's UnknownSubtitleNN and Csv readers write them: each
+# sniffer takes only its own, and its own files still.
+NAMELESS = {
+    # JACOsub counts TIMERES units (two digits) and a directive comes
+    # first; milliseconds, or the text first, are Unknown 48's.
+    'times in milliseconds, then the text': '00:00:01.000 00:00:03.500 Hello there\n00:00:04.000 00:00:06.000 General Kenobi\n',
+    'a dash before the text': '00:00:01.000 00:00:03.000 - Hi.\n00:00:04.000 00:00:06.000 - Bye.\n',
+    'two digits, but no directive': '0:00:01.00 0:00:03.00 Hello there\n0:00:04.00 0:00:06.00 Fine words\n',
+    # SBT writes whole seconds, nothing between its subtitles (Unknown 54,
+    # 17, 64, 31).
+    'start and end on lines of their own, in frames': '00:00:01:00\n00:00:03:00\nHello\n\n00:00:04:00\n00:00:06:00\nWorld\n\n',
+    '"[n]" numbers and section marks': '[HEADER]\n[BODY]\n[1]\n00:00:01\n00:00:03\nHello\n[2]\n00:00:04\n00:00:06\nWorld\n[/BODY]\n',
+    'a count line over the times': '1\n0:00:01\n0:00:03\nHello\n2\n0:00:04\n0:00:06\nWorld\n',
+    '"n." numbers': '1.\n00:00:01:00\n00:00:03:00\nHello\n2.\n00:00:04:00\n00:00:06:00\nWorld\n',
+    # DKS has one time to a line.
+    'two bracketed times on a line': '[00:00:01] [00:00:03] Hello\n[00:00:04] [00:00:06] World\n',
+    # Spruce has no header, no "///" and no quotes around every text.
+    'Csv3: a header naming the columns': 'Start time (hh:mm:ss:ff),End time (hh:mm:ss:ff),Line 1,Line 2\n'
+                                         '00:00:01:00,00:00:03:00,"Hello","there"\n00:00:04:00,00:00:06:00,"World",""\n',
+    'Csv4: quoted, "///" between lines': '00:00:01:00,00:00:03:00,"Hello///there"\n00:00:04:00,00:00:06:00,"World"\n',
+    # MPSub's "gap length" pairs, not a start and an end going forward with
+    # tabs between (Unknown 12).
+    'seconds, two tabs between': '1.00\t\t3.00\t\t\nHello\n\n4.00\t\t6.00\t\t\nWorld\n',
+    'seconds going forward': '1.0 3.0\nHello\n\n4.0 6.0\nWorld\n\n7.5 9.0\nAgain\n',
+}
+for shape, text in NAMELESS.items():
+    check(f'nameless, {shape}: none of these', legacy.kind(text), '')
+check('JACOsub: a directive first', legacy.kind('0:00:01.00 0:00:03.00 VB Hello\n'), 'jacosub')
+check('JACOsub: "#" lines say so', legacy.kind('#TIMERES 1000\n0:00:01.000 0:00:03.000 Hello there\n'), 'jacosub')
+check('SBT: whole seconds over the text', legacy.kind('00:00:55\n00:01:02\n\nO PADRINHO II\n'
+                                                      '00:01:26\n00:01:29\nO padrinho\nde Vito,\n'), 'sbt')
+check('DKS: a time, then the text', legacy.kind('[00:00:07]THERE IS A PLACE[br]ON EARTH\n[00:00:12]\n'), 'dks')
+check('Spruce: its commas, its "|"', legacy.kind('00:00:01:00 , 00:00:03:00 , First|second\n'), 'spruce')
+check('MPSub without a header: gaps and lengths', legacy.kind('0 3\nHello\n\n1 2\nWorld\n'), 'mpsub')
+check('VPlayer: a clock, a colon, the text', legacy.kind('00:00:01:Hello\n00:00:05:There\n'), 'vplayer')
 
 print('.stl is three formats: the bytes say which')
 check('Spruce is not EBU', ebustl.is_stl(b'00:00:01:00 , 00:00:03:00 , Hello'), False)

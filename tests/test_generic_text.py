@@ -289,6 +289,33 @@ check('JSON in a .txt', opened('json.txt', '[{"start": 1, "end": 3, "text": "Hel
 check('UTF-16 with a byte order mark', opened('utf16.txt', '0:01\t0:03\tOlá\n0:04\t0:06\tMundo\n'.encode('utf-16')),
       ('SRT', [(1.0, 3.0, 'Olá'), (4.0, 6.0, 'Mundo')]))
 
+print('the shapes the older sniffers took, now read as the shapes')
+# Each read before by a named format, wrongly: JACOsub took the first word
+# for a directive, SBT and VPlayer the numbers between subtitles or the
+# frames for text, DKS the end time for text, DVD Producer the length,
+# Spruce the CSV quotes and the header, MPSub the times for gaps.
+TAKEN = {
+    'Unknown 48 (was JACOsub)': ('00:00:01.000 00:00:03.500 Hello there\n00:00:04.000 00:00:06.000 General Kenobi\n',
+                                 [(1.0, 3.5, 'Hello there'), (4.0, 6.0, 'General Kenobi')]),
+    'a dash first (was JACOsub)': ('00:00:01.000 00:00:03.000 - Hi.\n00:00:04.000 00:00:06.000 - Bye.\n',
+                                   [(1.0, 3.0, '- Hi.'), (4.0, 6.0, '- Bye.')]),
+    'Unknown 54 (was SBT)': ('00:00:01:00\n00:00:03:00\nHello\n\n00:00:04:00\n00:00:06:00\nWorld\n\n', TWO),
+    'Unknown 17 (was SBT)': ('[HEADER]\n[BODY]\n[1]\n00:00:01:00\n00:00:03:12\nHello\n[2]\n00:00:04:00\n00:00:06:00\nWorld\n[/BODY]\n',
+                             [(1.0, 3.48, 'Hello'), (4.0, 6.0, 'World')]),
+    'Unknown 64 (was SBT)': ('1\n0:00:01:00\n0:00:03:00\nHello\n2\n0:00:04:00\n0:00:06:00\nWorld\n', TWO),
+    'Unknown 31 (was SBT)': ('1.\n00:00:01:00\n00:00:03:00\nHello\n2.\n00:00:04:00\n00:00:06:00\nWorld\n', TWO),
+    'two bracketed times (was DKS)': ('[00:00:01] [00:00:03] Hello\n[00:00:04] [00:00:06] World\n', TWO),
+    'Unknown 66 (was DVD Producer)': ('1  00:00:01:00  00:00:03:00  00:02\nHello\n2  00:00:04:00  00:00:06:00  00:02\nWorld\n', TWO),
+    'Csv3 (was Spruce)': ('Start time (hh:mm:ss:ff),End time (hh:mm:ss:ff),Line 1,Line 2\n'
+                          '00:00:01:00,00:00:03:00,"Hello","there"\n00:00:04:00,00:00:06:00,"World",""\n',
+                          [(1.0, 3.0, 'Hello\nthere'), (4.0, 6.0, 'World')]),
+    'Csv4 (was Spruce)': ('00:00:01:00,00:00:03:00,"Hello///there"\n00:00:04:00,00:00:06:00,"World"\n',
+                          [(1.0, 3.0, 'Hello\nthere'), (4.0, 6.0, 'World')]),
+    'Unknown 12 (was MPSub)': ('1.00\t\t3.00\t\t\nHello\n\n4.00\t\t6.00\t\t\nWorld\n', TWO),
+}
+for name, (text, want) in TAKEN.items():
+    check(name, opened('taken.txt', text), ('SRT', want))
+
 print('plain text last, as the Import panel reads it')
 check('prose', opened('prose.txt', 'First sentence. Second sentence.'),
       ('TXT', [(0.0, 5.0, 'First sentence.'), (5.0, 10.0, 'Second sentence..')]))

@@ -765,6 +765,11 @@ def kind(data, extension=''):
     if any(_SONY_NUMBERED.match(line) for line in filled):
         return 'dvdarchitect'
     numbered = [match for line in filled if (match := _PRODUCER.match(line))]
+    # A length after the times on every line, and the text under them, is
+    # nobody's script (Subtitle Edit's Unknown 66, modules.generic_text).
+    if numbered and all(re.fullmatch(r'\d{1,2}:\d{2}(?::\d{2})?(?:[:;.,]\d{1,3})?', match.group(17).strip())
+                        for match in numbered):
+        numbered = []
     if numbered:
         # DVD Producer pads its columns; Encore writes one space.
         if any(len(match.group(2)) > 1 or len(match.group(9)) > 1 or len(match.group(16)) > 1

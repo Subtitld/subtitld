@@ -188,6 +188,9 @@ _QT_MARK = re.compile(r'\{\s*qttext\s*\}', re.I)
 _QT_TIME = re.compile(r'^\s*\[(\d{1,3}):(\d{1,2}):(\d{1,2})(?:\.(\d+))?\]\s*(.*)$')
 _QT_DESC = re.compile(r'\{\s*([A-Za-z\-]+)\s*(?::\s*([^}]*))?\}')
 _CAPTION_BYTES = re.compile(r'^\d{2}\s')
+_FRAMES_TEXT = re.compile(r'^\d{1,3}\s*(?:$|[,;|\t]\s*\d)')
+# Text that begins with a time, bracketed or not: a second time on the line.
+_TIME_FIRST = re.compile(r'^\s*[\[{(]?\s*\d{1,3}:\d{2}(?::\d{2})?')
 # "FORMAT=25 #fps" is a rate too: what follows the value is a comment.
 _MPSUB_HEADER = re.compile(r'^\s*FORMAT\s*=\s*([^\s#]+)\s*(?:#.*)?$', re.I)
 _MPSUB_TIMES = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$')
@@ -2181,6 +2184,45 @@ _WRITERS = {
 }
 
 
+def _jacosub_line(match, head):
+    """Whether a line of two clocks and text is JACOsub's: the clocks
+    count TIMERES units, thirtieths unless a #TIMERES says otherwise, so
+    two digits after the dot (three are milliseconds, a nameless shape);
+    and the first word is a directive (FFmpeg takes one that begins with a
+    capital or "[": "VB", "JL", "VL3", "D", or "vm" as it is written in
+    small letters), not the text ("- Hi.", "Hello," ...). A file with
+    JACOsub's "#" lines is JACOsub whatever its lines are."""
+    if re.search(r'^\s*#\s*[A-Za-z]|^\s*@\d+\s+@\d+\s', head, re.M):
+        return True
+    if len(match.group(4)) > 2 or len(match.group(8)) > 2:
+        return False
+    return bool(re.fullmatch(r'\[[^\]]*\]|[A-Z][A-Z0-9]*|[vjVJ][a-zA-Z]\d*', match.group(9)))
+
+
+def _spruce_lines(lines):
+    """Whether lines of "time , time , text" are Spruce's, not a CSV
+    table's: no header naming the columns above them (Subtitle Edit's
+    Csv3), no "///" between lines and the text not CSV-quoted on every
+    line (Csv3, Csv4)."""
+    timed = [match for line in lines if (match := _SPRUCE.match(line))]
+    first = next(index for index, line in enumerate(lines) if _SPRUCE.match(line))
+    if any(',' in line and re.search(r'(?i)\b(?:start|end|time|text|line)\b', line) for line in lines[:first]):
+        return False
+    if any('///' in match.group(9) for match in timed):
+        return False                # Csv4's line break; Spruce's is "|"
+    return not all(re.fullmatch(r'\s*".*"\s*', match.group(9)) for match in timed)
+
+
+def _sbt_lines(lines):
+    """Whether times on lines of their own are SBT's: every one to the
+    whole second, no number on a line of its own ("1", "1.", "[1]") and no
+    "[HEADER]"-like marks."""
+    times = [line for line in lines if _SBT_TIME.match(line)]
+    if any(_SBT_TIME.match(line).group(4) is not None for line in times):
+        return False
+    return not any(re.fullmatch(r'\s*(?:#?\d{1,6}\.?|\[/?[A-Za-z]*\d*\])\s*', line) for line in lines)
+
+
 def kind(data):
     """Which of these formats `data` is, '' when it is none of them.
 
@@ -2227,13 +2269,15 @@ def kind(data):
             return 'powerdivx'
         if _DVDSS.match(line):
             return 'dvdss'
-        if _DKS.match(line) and _DKS.match(line).group(4).strip():
+        if _DKS.match(line) and _DKS.match(line).group(4).strip() and not _TIME_FIRST.match(_DKS.match(line).group(4)):
+            # One time to a line: "[00:00:01] [00:00:03] text" is a
+            # start and an end, nobody's format (modules.generic_text).
             return 'dks'
         if _MACSUB.match(line):
             return 'macsub'
         if _XSS.match(line):
             return 'xombie'
-        if _JSS.match(line):
+        if _JSS.match(line) and _jacosub_line(_JSS.match(line), head):
             return 'jacosub'
         if _S2K_TIME.match(line):
             return 'sasami'
@@ -2241,7 +2285,7 @@ def kind(data):
             return 'turbotitle'
         if _ZEG.match(line):
             return 'zerog'
-        if _SPRUCE.match(line):
+        if _SPRUCE.match(line) and _spruce_lines(lines):
             return 'spruce'
         if _MPL2.match(line):
             return 'mpl2'
@@ -2254,24 +2298,38 @@ def kind(data):
     # SubViewer 1 is marks alone on their lines, around their text.
     if sum(1 for line in lines if _SUBVIEWER1.match(line)) >= 2:
         return 'subviewer1'
-    # SBT is times on their own lines, two of them, over the text.
+    # SBT is times on their own lines, two of them, over the text: whole
+    # seconds, as it writes them, no numbers between its subtitles and no
+    # section marks (the nameless block shapes, modules.generic_text).
     for position, line in enumerate(lines[:-2]):
         if _SBT_TIME.match(line) and _SBT_TIME.match(lines[position + 1]) \
                 and not _SBT_TIME.match(lines[position + 2]):
-            return 'sbt'
+            if _sbt_lines(lines):
+                return 'sbt'
+            break
     if head.lstrip().lower().startswith('scenarist_scc'):
         return ''                   # CEA-608 captions, read by modules.scc
     # A clock and a separator is TMPlayer or VPlayer — and is also every
     # line of an SCC file, whose drop-frame timecode ends in ";FF" and
     # whose text is caption bytes. A line whose text begins with two
-    # digits and a space is that, not a subtitle.
+    # digits and a space is that, not a subtitle; and so is a timecode's
+    # frames, alone or before a comma and the next time ("00:00:01:00",
+    # "00:00:01:00,00:00:03:00,text": the nameless shapes).
     clocks = sum(1 for line in lines
-                 if (clock := _CLOCK.match(line)) and not _CAPTION_BYTES.match(clock.group(5)))
+                 if (clock := _CLOCK.match(line)) and not _CAPTION_BYTES.match(clock.group(5))
+                 and not _FRAMES_TEXT.match(clock.group(5)))
     if clocks and clocks >= max(1, len(lines) // 2):
         return 'vplayer'
-    # MPSub without a header: "<gap> <duration>" over the text, twice.
-    if sum(1 for line in lines if _MPSUB_TIMES.match(line)) >= 2 and len(lines) > 3:
-        return 'mpsub'
+    # MPSub without a header: "<gap> <duration>" over the text, twice;
+    # not times that only go forward, each pair a start and a later end,
+    # nor tabs between them (Subtitle Edit's Unknown 12, nobody's format).
+    pairs = [_MPSUB_TIMES.match(line) for line in lines if _MPSUB_TIMES.match(line)]
+    if len(pairs) >= 2 and len(lines) > 3 and not any('\t' in pair.group(0) for pair in pairs):
+        numbers = [(float(pair.group(1)), float(pair.group(2))) for pair in pairs]
+        absolute = all(end > start for start, end in numbers) and \
+            all(later[0] >= earlier[1] for earlier, later in zip(numbers, numbers[1:]))
+        if not absolute:
+            return 'mpsub'
     return ''
 
 
