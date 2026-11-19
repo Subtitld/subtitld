@@ -214,6 +214,7 @@ def _normalize_lang_list(raw: list | None) -> list[str]:
 _TASK_TRANSLATION_KEYS: dict[str, str] = {
     'tts.synthesize': 'addons_dialog.task_name.tts.synthesize',
     'asr.transcribe': 'addons_dialog.task_name.asr.transcribe',
+    'asr.align': 'addons_dialog.task_name.asr.align',
     'translate.text': 'addons_dialog.task_name.translate.text',
     'audio.separate': 'addons_dialog.task_name.audio.separate',
     'ocr.recognize': 'addons_dialog.task_name.ocr.recognize',
@@ -449,6 +450,7 @@ def _build_rows(installed_manifests: list[dict], catalog: dict | None,
 _TASK_LABELS: dict[str, tuple[str, str]] = {
     'tts.synthesize': ('addons_dialog.filter.task.tts', 'addon_task_tts.svg'),
     'asr.transcribe': ('addons_dialog.filter.task.asr', 'addon_task_asr.svg'),
+    'asr.align': ('addons_dialog.filter.task.asr', 'addon_task_asr.svg'),
     'translate.text': ('addons_dialog.filter.task.translate', 'addon_task_translate.svg'),
     'audio.separate': ('addons_dialog.filter.task.separation', 'addon_task_separation.svg'),
     'ocr.recognize': ('addons_dialog.filter.task.ocr', 'addon_task_ocr.svg'),

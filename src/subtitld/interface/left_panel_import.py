@@ -1,7 +1,7 @@
 import os
 import json
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QFileDialog
+from PySide6.QtWidgets import QCheckBox, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QStackedWidget, QFileDialog
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from subtitld.interface import left_panel
@@ -12,6 +12,7 @@ from subtitld.modules import closed_captions
 from subtitld.modules import session
 from subtitld.modules import file_io
 from subtitld.modules import utils as modules_utils
+from subtitld.modules.segment import text_of, timed_by_words
 from subtitld.modules import addons
 from subtitld.modules.addons.provider import TASK_ASR_TRANSCRIBE
 from subtitld.modules.session import LIST_OF_SUPPORTED_IMPORT_EXTENSIONS
@@ -120,6 +121,14 @@ class _GenericASRPanel(QWidget):
         if widget.options_widget is not None:
             widget.layout().addWidget(widget.options_widget)
 
+        # Each word timed, where the engine says when it is said (its
+        # results' `words`): the subtitles come in timed word by word.
+        widget.word_timing_check = QCheckBox()
+        widget.word_timing_check.setChecked(bool(session.CONFIG.get('transcription', {}).get('word_timing', False)))
+        widget.word_timing_check.toggled.connect(
+            lambda on: session.CONFIG.setdefault('transcription', {}).__setitem__('word_timing', on))
+        widget.layout().addWidget(widget.word_timing_check)
+
         widget.layout().addStretch()
 
         # Wire provider signals through to the host's progress UI.
@@ -192,6 +201,7 @@ class _GenericASRPanel(QWidget):
         session.set_unsaved()
 
     def _on_finished(widget, segments):
+        segments = timed_words(segments) if isinstance(segments, list) else segments
         if isinstance(segments, list) and segments:
             offset = getattr(widget, '_scope_offset', 0.0)
             scope_range = getattr(widget, '_scope_range', None)
@@ -286,6 +296,8 @@ class _GenericASRPanel(QWidget):
 
     def translate(widget):
         widget.info_label.setText(widget.provider.display_name)
+        widget.word_timing_check.setText(_('import_panel.word_timing'))
+        widget.word_timing_check.setToolTip(_('import_panel.word_timing_tip'))
 
 
 class _ImportASRPanel(QWidget):
@@ -651,10 +663,28 @@ _BUILTIN_ASR_COUNT = 0
 
 
 
+def timed_words(segments):
+    """A transcription's segments, each timed word by word by the words its
+    engine gave (modules.segment.timed_by_words) when the panel asks for it;
+    the words themselves are left out either way."""
+    timed = bool(session.CONFIG.get('transcription', {}).get('word_timing', False))
+    out = []
+    for segment in segments:
+        if isinstance(segment, dict) and 'words' in segment:
+            segment = dict(segment)
+            words = segment.pop('words')
+            if timed and isinstance(segment.get('text'), str):
+                pieces = timed_by_words(segment['text'], words, float(segment.get('start', 0) or 0))
+                if pieces:
+                    segment['text'] = pieces
+        out.append(segment)
+    return out
+
+
 def _joined_text(segments):
     """Every returned segment's text as one line — what a selection-scoped
     run puts in the selected subtitle."""
-    parts = [str(seg.get('text', '') or '').strip() for seg in segments if isinstance(seg, dict)]
+    parts = [text_of(seg).strip() for seg in segments if isinstance(seg, dict)]
     return ' '.join(part for part in parts if part)
 
 

@@ -230,7 +230,13 @@ subtitle; drag a line between pieces to move both, Alt-drag for a gap;
 double-click to go a level down; snapping to waveform onsets; tap mode
 (each key press ends a piece during playback).
 
-**M9. Sources.** ASR add-ons may return `words` in their results (protocol
+**M9. Sources.** *(Done on branch `timed-text`. `asr.transcribe` segments
+may carry `words` (protocol 1, optional); "Time each word" in the
+transcription panel (off by default) times the subtitles by them. New
+task `asr.align` (the subtitle's audio and words in, the words timed out),
+offered as "Align to the audio" in the timing menu when an add-on has it.
+Documented in HANDOVER_ADDONS.md; tested with a mock add-on. No released
+add-on sends words or aligns yet: each needs it at its next release.)* ASR add-ons may return `words` in their results (protocol
 addition, optional); a forced-alignment add-on task timing text the user
 already has.
 

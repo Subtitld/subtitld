@@ -23,6 +23,7 @@ from PySide6.QtCore import QObject, Signal
 TASK_TTS_SYNTHESIZE = 'tts.synthesize'
 TASK_ASR_TRANSCRIBE = 'asr.transcribe'
 TASK_ASR_STREAM = 'asr.stream'
+TASK_ASR_ALIGN = 'asr.align'
 TASK_TRANSLATE = 'translate.text'
 TASK_AUDIO_SEPARATE = 'audio.separate'
 TASK_OCR_RECOGNIZE = 'ocr.recognize'
@@ -216,7 +217,11 @@ class ASRProvider(Provider):
     partial(segment: dict)
         Emitted per-segment as soon as one is finalized. Useful for streaming
         the timeline as transcription progresses on long files. Shape:
-        `{'start': float, 'end': float, 'text': str}`.
+        `{'start': float, 'end': float, 'text': str}`, and, from an engine
+        that knows them, `'words': [{'text', 'start', 'end'}]`: each word
+        of the text in order, its times in seconds as the segment's are.
+        The host may time the subtitle word by word with them
+        (segment.timed_by_words).
     transcript_finished(segments: list)
         Emitted exactly once after the last `partial`. `segments` is the full
         ordered list (caller can ignore individual `partial`s and just use
@@ -225,9 +230,15 @@ class ASRProvider(Provider):
         Emitted on terminal failure. No `transcript_finished` follows.
     progress(value: float, message: str)
         0..1 progress; multiple emits permitted. `message` is freeform.
+    aligned(segments: list)
+        For `asr.align`: the segments asked about, in order, each with its
+        `words` as above (times from the start of the audio sent). Emitted
+        once; `align_error(message)` instead on failure.
     """
 
     transcript_started = Signal()
+    aligned = Signal(list)
+    align_error = Signal(str)
     partial = Signal(dict)
     transcript_finished = Signal(list)
     error = Signal(str)
@@ -249,6 +260,12 @@ class ASRProvider(Provider):
     @property
     def tasks(self) -> list[str]:
         return [TASK_ASR_TRANSCRIBE]
+
+    def align(self, audio_path: str, language: str, segments: list, options: dict | None = None) -> None:
+        """Time the words of text already written against `audio_path`
+        (16 kHz mono WAV): `segments` are `{'start', 'end', 'text'}` in
+        seconds from its start. Answers with `aligned` or `align_error`."""
+        raise NotImplementedError
 
     def transcribe(self, audio_path: str, language: str, options: dict | None = None) -> None:
         """Start transcription. `audio_path` is host-allocated 16kHz mono WAV

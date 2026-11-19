@@ -7,6 +7,7 @@ from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
 from subtitld.interface import subtitle_text_editor
 from subtitld.interface import timed_text_strip
+from subtitld.interface import word_alignment
 from subtitld.interface.translation import _
 
 from subtitld.modules import collab_service
@@ -275,7 +276,8 @@ def load(self):
     # they format (subtitle_text_editor).
     self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(
         self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.selected,
-        language=lambda: session.SUBTITLE.get('language'))
+        language=lambda: session.SUBTITLE.get('language'),
+        aligner=(word_alignment.available, lambda: align_selected(self)))
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
 
@@ -491,6 +493,18 @@ def subtitles_panel_empty_state_button_clicked(self):
     self.timeline_widget.update()
     update(self)
     session.set_unsaved()
+
+
+def align_selected(self):
+    """Time the selected subtitle's words against the audio; say so if it
+    cannot be done."""
+    def done(ok, message):
+        if not ok:
+            dialog = utils.SimpleDialog(self, title=_('timed_text.align_failed'))
+            dialog.content.layout().addWidget(QLabel(str(message)))
+            dialog.reject_button.setVisible(False)
+            dialog.exec()
+    word_alignment.align(self, session.SUBTITLE.selected, on_done=done)
 
 
 def timed_text_changed(self):

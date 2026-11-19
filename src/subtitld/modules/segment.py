@@ -216,6 +216,44 @@ def join_pieces(segment, number):
     return True
 
 
+def timed_by_words(text, words, offset=0.0):
+    """A text's pieces timed by `words` ([{'text', 'start', 'end'}], as a
+    speech recognition add-on gives them, in seconds; `offset` taken off
+    each, to count from the subtitle's start): each word found in the text,
+    in order, by its letters and digits (case, punctuation and markup
+    aside), and the text cut where each starts, so the pieces are the text
+    as it is. Words not found are left out. None if none is found."""
+    letters = [(index, character.lower()) for index, character in _visible(text) if character.isalnum()]
+    flat = ''.join(character for _index, character in letters)
+    found, at = [], 0
+    for word in words or []:
+        if not isinstance(word, dict):
+            continue
+        wanted = ''.join(character for character in str(word.get('text') or word.get('word') or '').lower()
+                         if character.isalnum())
+        place = flat.find(wanted, at) if wanted else -1
+        if place < 0:
+            continue
+        try:
+            start, end = float(word.get('start')) - offset, float(word.get('end')) - offset
+        except (TypeError, ValueError):
+            continue
+        found.append((letters[place][0], start, end))
+        at = place + len(wanted)
+    if not found:
+        return None
+    texts = _cut_at(text, [index for index, _start, _end in found[1:]])
+    if len(texts) != len(found):
+        return None
+    pieces, last = [], 0.0
+    for piece_text, (_index, start, end) in zip(texts, found):
+        start = round(max(start, last, 0.0), 3)
+        end = round(max(start, end), 3)
+        pieces.append({'text': piece_text, 'start': start, 'end': end, 'level': 'word'})
+        last = end
+    return pieces
+
+
 def refine_piece(segment, number, hyphenate=None):
     """Piece `number` of `segment` cut a level finer than it was cut at (a
     word into syllables, else letters; syllables into letters), its times

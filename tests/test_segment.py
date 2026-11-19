@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import collab_client, export_options, file_io, history, karaoke, plaintext, quality_check, session, subtitles, subtitldcc_service
 from subtitld.modules.segment import (Segment, SegmentList, Subtitle, cut, hyphenator, join_pieces, joined, letters_of,
-                                      set_effect, set_text, split_piece, text_of, time_piece, timed_pieces)
+                                      set_effect, set_text, split_piece, text_of, time_piece, timed_by_words, timed_pieces)
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
 fails = []
@@ -325,6 +325,19 @@ set_effect(segment, 0, 'wipe')
 check('an effect', segment.pieces()[0].get('effect'), 'wipe')
 set_effect(segment, 0, None)
 check('and the style\'s again', 'effect' in segment.pieces()[0], False)
+
+print('timed by an engine\'s words')
+WORDS = [{'text': 'hello', 'start': 10.0, 'end': 10.4}, {'text': 'big', 'start': 10.5, 'end': 10.7},
+         {'text': 'World', 'start': 11.0, 'end': 11.6}]
+check('each word found in the text, punctuation and markup kept with it',
+      spans({'text': timed_by_words('"Hello, <i>big</i> world!"', WORDS, 10.0)}),
+      [('"Hello, ', 0.0, 0.4), ('<i>big</i> ', 0.5, 0.7), ('world!"', 1.0, 1.6)])
+check('a word the engine left out stays with the one before',
+      [p['text'] for p in timed_by_words('Hello there big world', WORDS, 10.0)], ['Hello there ', 'big ', 'world'])
+check('none found: none', timed_by_words('nothing alike', WORDS, 10.0), None)
+check('overlapping times kept in order', spans({'text': timed_by_words('a b', [{'text': 'a', 'start': 0, 'end': 1},
+                                                                                {'text': 'b', 'start': 0.5, 'end': 2}])}),
+      [('a ', 0.0, 1.0), ('b', 1.0, 2.0)])
 
 print('set_text')
 segment = Segment({'start': 0.0, 'end': 3.0, 'text': [dict(piece) for piece in TIMED]})

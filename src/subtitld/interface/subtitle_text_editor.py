@@ -339,17 +339,20 @@ class FormattingBar(QWidget):
     that brought a look of its own from its file back to the chosen
     style, and another times its text word by word, syllable by syllable
     or letter by letter (modules.segment), or takes its timing away.
-    `language`, a callable, gives the language its syllables are found in."""
+    `language`, a callable, gives the language its syllables are found in;
+    `aligner`, when given, a pair of callables (whether it can, align): the
+    timing menu then offers to time the words against the audio."""
 
     changed = Signal()
 
-    def __init__(self, textedit, parent=None, segment=None, language=None):
+    def __init__(self, textedit, parent=None, segment=None, language=None, aligner=None):
         super().__init__(parent)
         self.setObjectName('subtitle_formatting_bar')
         self.setAttribute(Qt.WA_StyledBackground)
         self.textedit = textedit
         self.segment = segment or (lambda: None)
         self.language = language or (lambda: '')
+        self.aligner = aligner
         self._place_step = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 6, 4)
@@ -508,6 +511,7 @@ class FormattingBar(QWidget):
             action.triggered.connect(lambda _checked=False, value=level: self._set_timing(value))
             self.timing_actions[level] = action
         self.timing_menu.addSeparator()
+        self.align_action = self.timing_menu.addAction(_('formatting.timing_align'), self._align)
         self.untimed_action = self.timing_menu.addAction(_('formatting.timing_none'), lambda: self._set_timing(None))
         self.timing_menu.aboutToShow.connect(self._show_timing)
         self.timing_button.setMenu(self.timing_menu)
@@ -567,6 +571,7 @@ class FormattingBar(QWidget):
         for level, action in self.timing_actions.items():
             action.setText(_(f'formatting.timing_{level}'))
         self.untimed_action.setText(_('formatting.timing_none'))
+        self.align_action.setText(_('formatting.timing_align'))
         self.clear_button.setToolTip(_('formatting.clear'))
 
     def refresh(self):
@@ -708,6 +713,12 @@ class FormattingBar(QWidget):
         for value, action in self.timing_actions.items():
             action.setChecked(value == level)
         self.untimed_action.setEnabled(bool(pieces))
+        self.align_action.setVisible(self.aligner is not None and bool(self.aligner[0]()))
+
+    def _align(self):
+        """Time the words against the audio, as the aligner does."""
+        if self.segment() is not None and self.aligner is not None:
+            self.aligner[1]()
 
     def _set_timing(self, level):
         """Time the text at `level` (segment.LEVELS), its syllables found in

@@ -34,6 +34,7 @@ from subtitld.modules.addons.provider import (
     AudioSeparatorProvider,
     OCRProvider,
     TASK_ASR_TRANSCRIBE,
+    TASK_ASR_ALIGN,
     TASK_ASR_STREAM,
     TASK_AUDIO_SEPARATE,
     TASK_OCR_RECOGNIZE,
@@ -599,6 +600,38 @@ class AddonASRProvider(_AddonProviderMixin, ASRProvider):
         its result frames must not reach the panel that owns the shared one.
         """
         return type(self)(self._addon_id, self._manifest, self._exe_path)
+
+    @property
+    def tasks(self) -> list[str]:
+        """What its manifest says it does of transcribing, streaming and
+        aligning: an add-on that only aligns is no transcription engine."""
+        declared = self._manifest.get('tasks') or []
+        return [task for task in (TASK_ASR_TRANSCRIBE, TASK_ASR_STREAM, TASK_ASR_ALIGN) if task in declared]
+
+    def align(self, audio_path: str, language: str, segments: list, options: dict | None = None) -> None:
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.align_error.emit(str(exc))
+            return
+        req = proc.request(TASK_ASR_ALIGN, {
+            'audio_path': str(audio_path),
+            'language': language,
+            'segments': [{'start': float(s.get('start', 0)), 'end': float(s.get('end', 0)), 'text': str(s.get('text') or '')}
+                         for s in segments],
+            'options': self._saved_options(options),
+        })
+
+        def on_result(data: dict) -> None:
+            found = data.get('segments') if isinstance(data, dict) else None
+            self.aligned.emit(found if isinstance(found, list) else [])
+
+        def on_error(code: str, message: str) -> None:
+            self.align_error.emit(f'[{code}] {message}')
+
+        req.progress.connect(lambda value, message: self.progress.emit(value, message), Qt.QueuedConnection)
+        req.result.connect(on_result, Qt.QueuedConnection)
+        req.error.connect(on_error, Qt.QueuedConnection)
 
     def transcribe(self, audio_path: str, language: str, options: dict | None = None) -> None:
         try:
