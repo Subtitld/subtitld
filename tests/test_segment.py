@@ -19,7 +19,8 @@ from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import collab_client, export_options, file_io, history, karaoke, plaintext, quality_check, session, subtitles, subtitldcc_service
 from subtitld.modules.segment import (Segment, SegmentList, Subtitle, cut, hyphenator, join_pieces, joined, letters_of,
-                                      set_effect, set_text, split_piece, text_of, time_piece, timed_by_words, timed_pieces)
+                                      piece_words, set_effect, set_piece_text, set_text, split_piece, text_of, time_piece,
+                                      timed_by_words, timed_pieces)
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
 fails = []
@@ -353,6 +354,34 @@ set_effect(segment, 0, 'wipe')
 check('an effect', segment.pieces()[0].get('effect'), 'wipe')
 set_effect(segment, 0, None)
 check('and the style\'s again', 'effect' in segment.pieces()[0], False)
+
+print('a piece typed in')
+segment = Segment({'start': 0.0, 'end': 3.0, 'text': [
+    {'text': '{\\an8}<i>Hello ', 'start': 0.0, 'end': 0.5, 'level': 'word'},
+    {'text': 'big ', 'start': 0.5, 'end': 1.0, 'level': 'word'},
+    {'text': 'world</i>\n', 'start': 1.0, 'end': 1.6, 'level': 'word'},
+    {'text': 'again', 'start': 2.0, 'end': 2.5, 'level': 'word'}]})
+check('its words as they read: no markup, nor the space or line break after',
+      [piece_words(piece['text']) for piece in segment.pieces()], ['Hello', 'big', 'world', 'again'])
+check('the same words: nothing done', (set_piece_text(segment, 1, 'big'), spans(segment)[1]), (1, ('big ', 0.5, 1.0)))
+check('new words: its codes, tags and space kept, its times too', (set_piece_text(segment, 0, 'Hi'), spans(segment)[0]),
+      (1, ('{\\an8}<i>Hi ', 0.0, 0.5)))
+check('typed after its last letter: before the closing tag and line break',
+      (set_piece_text(segment, 2, 'worlds'), spans(segment)[2]), (1, ('worlds</i>\n', 1.0, 1.6)))
+check('a space typed into a word: cut in two, its time shared by letters',
+      (set_piece_text(segment, 1, 'big old'), spans(segment)[1:3]), (2, [('big ', 0.5, 0.75), ('old ', 0.75, 1.0)]))
+check('emptied: gone, its time to the one before, no space doubled',
+      (set_piece_text(segment, 2, ''), spans(segment)[1]), (0, ('big ', 0.5, 1.0)))
+check('the first emptied: its time and markup to the next',
+      (set_piece_text(segment, 0, ''), spans(segment)[0]), (0, ('{\\an8}<i>big ', 0.0, 1.0)))
+check('a syllable emptied keeps the space that parted two words',
+      (lambda s: (set_piece_text(s, 1, ''), [p['text'] for p in s.pieces()]))(Segment({'text': [
+          {'text': 'Hel', 'start': 0.0, 'end': 0.5}, {'text': 'lo ', 'start': 0.5, 'end': 0.8},
+          {'text': 'world', 'start': 1.0, 'end': 1.6}]})), (0, ['Hel ', 'world']))
+check('the only one emptied: not timed any more',
+      (lambda s: (set_piece_text(s, 0, ''), s.is_timed()))(Segment({'text': [{'text': 'Hi', 'start': 0.0, 'end': 1.0}]})),
+      (0, False))
+check('no such piece', set_piece_text(segment, 9, 'x'), None)
 
 print('timed by an engine\'s words')
 WORDS = [{'text': 'hello', 'start': 10.0, 'end': 10.4}, {'text': 'big', 'start': 10.5, 'end': 10.7},

@@ -1247,7 +1247,7 @@
     "formatting.timing_letter": "Letra por letra",
     "formatting.timing_none": "Sem temporização",
     "formatting.timing_align": "Alinhar ao áudio",
-    "timed_text.choose_tip": "Escolher este trecho",
+    "timed_text.type_tip": "Clique para digitar as palavras; segure Ctrl para cortar em dois",
     "timed_text.cut_tip": "Cortar em dois aqui",
     "timed_text.join_tip": "Juntar estes dois trechos",
     "timed_text.start": "Início",

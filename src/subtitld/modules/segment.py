@@ -215,6 +215,69 @@ def join_pieces(segment, number):
     return True
 
 
+def piece_words(text):
+    """A piece's words as they read and are typed: its markup left out, and
+    the spaces and line break it ends with, which stay after them."""
+    letters = [character for _index, character in _visible(text)]
+    while letters and letters[-1].isspace():
+        letters.pop()
+    return ''.join(letters)
+
+
+def set_piece_text(segment, number, new):
+    """Give piece `number` of `segment` the words `new`, as they read
+    (piece_words): its markup stays where its letters still are, what is
+    typed after its last letter goes right after it. A piece left with no
+    words goes into the one before it (the next, for the first) with its
+    time; a word-level piece typed a space into is cut in two, as
+    set_text() does. Gives the number of pieces it became, 0 for none;
+    None for no such piece."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces):
+        return None
+    piece = pieces[number]
+    text, new = piece['text'], str(new or '')
+    old = piece_words(text)
+    if new == old:
+        return 1
+    visible = _visible(text)[:len(old)]
+    before, keep = [''] * (len(old) + 1), list(old)
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if tag == 'insert':
+            before[i1] += new[j1:j2]
+        elif tag != 'equal':
+            keep[i1:i2] = [new[j1:j2]] + [''] * (i2 - i1 - 1)
+    shown = {index: place for place, (index, _character) in enumerate(visible)}
+    end = visible[-1][0] + 1 if visible else 0
+    out = []
+    for index in range(len(text) + 1):
+        if index == end:
+            out.append(before[len(old)])
+        if index < len(text):
+            out.append(text[index] if index not in shown else before[shown[index]] + keep[shown[index]])
+    rebuilt = ''.join(out)
+    if not piece_words(rebuilt).strip():
+        # Its spaces go with its words, unless they are all that parts the
+        # piece before it from the one after.
+        before_ends = _visible(pieces[number - 1]['text'])[-1:] if number else []
+        if not (before_ends and not before_ends[0][1].isspace()):
+            gaps = {index for index, character in _visible(rebuilt) if character.isspace()}
+            rebuilt = ''.join(character for index, character in enumerate(rebuilt) if index not in gaps)
+        if len(pieces) == 1:
+            segment['text'] = rebuilt
+        elif number:
+            gone = pieces[number - 1]
+            segment['text'] = pieces[:number - 1] + [
+                dict(gone, text=gone['text'] + rebuilt, end=max(gone['end'], piece['end']))] + pieces[number + 1:]
+        else:
+            segment['text'] = [dict(pieces[1], text=rebuilt + pieces[1]['text'], start=piece['start'])] + pieces[2:]
+        return 0
+    piece = dict(piece, text=rebuilt)
+    parts = _recut([piece], 'word') if piece.get('level') == 'word' and _cuts(rebuilt, 'word') else [piece]
+    segment['text'] = pieces[:number] + parts + pieces[number + 1:]
+    return len(parts)
+
+
 def timed_by_words(text, words, offset=0.0):
     """A text's pieces timed by `words` ([{'text', 'start', 'end'}], as a
     speech recognition add-on gives them, in seconds; `offset` taken off
