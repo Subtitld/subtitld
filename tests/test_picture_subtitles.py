@@ -81,6 +81,21 @@ if FFPROBE:
 else:
     print('  (no ffprobe: the sample is not checked against FFmpeg)')
 
+# An SPU over two packs whose second carries a PTS too, as MPlayer wrote
+# FFmpeg's sample: one picture, timed by its first pack. A packet with a
+# PTS that holds more than the unit lacks starts the next.
+width, height, indices = picture_samples.draw('Hi')
+unit = picture_samples.spu(width, height, indices, 100, 300, 1.0)
+half = len(unit) // 2
+other = picture_samples.spu(width, height, indices, 100, 100, 1.0)
+stream = (picture_samples._pack(1.0, picture_samples._pes(unit[:half], 1.0)) +
+          picture_samples._pack(1.0, picture_samples._pes(unit[half:], 0.9)) +
+          picture_samples._pack(2.0, picture_samples._pes(unit[:half], 2.0)) +
+          picture_samples._pack(3.0, picture_samples._pes(other, 3.0)))
+units = vobsub.parse_program_stream(stream)[0]
+check('an SPU continued by a packet with a PTS: whole, at its first; one cut short: lost',
+      [(offset, pts / 90000, spu == unit or spu == other) for offset, pts, spu in units], [(0, 1.0, True), (6144, 3.0, True)])
+
 print('PGS')
 shown = pgs.read(str(folder / 'film.sup'))
 check('times: each until the composition that clears it', [(p.start, p.end) for p in shown],

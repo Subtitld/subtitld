@@ -160,8 +160,13 @@ def parse_program_stream(data):
         track = substream - 0x20
         payload = body[header + 1:]
         current = building.get(track)
-        if pts is not None:
-            current = None          # only a unit's first packet has a PTS: an unfinished one is lost
+        if pts is not None and current is not None and len(payload) > current[3] - len(current[2]):
+            # Only a unit's first packet has a PTS: an unfinished one is
+            # lost. But a muxer may put a PTS on the rest of one too
+            # (MPlayer's, FFmpeg's vobsub sample); a packet that holds no
+            # more than the unit still lacks finishes it, as FFmpeg's
+            # decoder takes it, the unit timed by its first.
+            current = None
         if current is None:
             if len(payload) < 2:
                 continue
