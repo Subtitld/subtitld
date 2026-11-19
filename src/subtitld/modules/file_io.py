@@ -894,6 +894,31 @@ def _edit_rate(fps):
     return (int(round(fps)), 1)
 
 
+def _not_read_message(path):
+    """Why a file of a kind Subtitld does not read cannot be opened. Praat
+    saves many kinds of object as the same "ooTextFile" text (a PitchTier,
+    a PointProcess, a KlattGrid...), and only a TextGrid holds labels to
+    read as subtitles."""
+    try:
+        with open(path, 'rb') as unknown_file:
+            head = srt.decode(unknown_file.read(256))
+    except (OSError, ValueError):
+        head = ''
+    praat = re.match(r'File type = "ooTextFile[^"]*"\s+Object class = "([^"\s]+)', head)
+    if praat and praat.group(1) != 'TextGrid':
+        return (f'This is a Praat {praat.group(1)}, which holds no text. Subtitld reads Praat\'s TextGrid: '
+                'make one in Praat (Annotate, To TextGrid...) and save it with "Save as text file".')
+    extension = os.path.splitext(path)[1]
+    # An extension some readers take only by what the file holds (an Ogg
+    # with Kate in it, a .son index of pictures).
+    known = {ext.lower() for listed in (session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS, session.LIST_OF_PICTURE_SUBTITLE_EXTENSIONS,
+                                        session.LIST_OF_READ_ONLY_SUBTITLE_EXTENSIONS)
+             for kind in listed.values() for ext in kind['extensions']}
+    if extension[1:].lower() in known:
+        return f'This {extension} file holds no subtitles Subtitld can read.'
+    return f'Subtitld does not read {extension} files.' if extension else 'Subtitld does not read this file.'
+
+
 def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     """Definition to process subtitle file. It returns a dict with the subtitles."""
     segments_list = []
@@ -1962,6 +1987,11 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
             if code:
                 session.SUBTITLE['language'] = code
 
+        else:
+            # A file of a kind no reader here takes: said so, rather than
+            # opened as an empty SRT.
+            raise CorruptedProjectFileError(_not_read_message(subtitle_file))
+
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
 
@@ -2052,8 +2082,6 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
                     'text': phrase + '.'
                 })
                 pos += 5.0
-
-            session.SUBTITLE['segments'] += process_subtitles_file(subtitle_file=filename, subtitle_format=subtitle_format)[0]
 
     return session.SUBTITLE['segments'], subtitle_format
 
