@@ -1,7 +1,7 @@
 import html
 import re
 
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QListWidgetItem, QSizePolicy, QAbstractButton, QStyledItemDelegate
 from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath, QColor, QFont
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent, QPropertyAnimation, QTimer
 
@@ -653,6 +653,31 @@ class SlantLabeledField(QWidget):
         painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
 
 
+class _SeparatorDelegate(QStyledItemDelegate):
+    """A combo box's list items, and its separators as a line between them.
+    The stylesheet styles the list's items, and Qt then draws them with a
+    plain item delegate, which gives a separator no height at all."""
+    HEIGHT = 9
+    MARGIN = 6
+    COLOR = QColor(184, 206, 224, 60)       # the list's text, faint
+
+    @staticmethod
+    def _is_separator(index):
+        return index.data(Qt.AccessibleDescriptionRole) == 'separator'
+
+    def sizeHint(self, option, index):
+        if self._is_separator(index):
+            return QSize(0, self.HEIGHT)
+        return super().sizeHint(option, index)
+
+    def paint(self, painter, option, index):
+        if not self._is_separator(index):
+            super().paint(painter, option, index)
+            return
+        middle = option.rect.center().y()
+        painter.fillRect(QRect(option.rect.left() + self.MARGIN, middle, option.rect.width() - 2 * self.MARGIN, 1), self.COLOR)
+
+
 class LabeledComboBox(SlantLabeledField):
     """A combo box with its label in front of it (see SlantLabeledField)."""
     activated = Signal()
@@ -683,6 +708,12 @@ class LabeledComboBox(SlantLabeledField):
     
     def addItem(widget, item):
         widget.combobox.addItem(item)
+
+    def addSeparator(widget):
+        """A line after the items so far, before the ones added next."""
+        if not isinstance(widget.combobox.itemDelegate(), _SeparatorDelegate):
+            widget.combobox.setItemDelegate(_SeparatorDelegate(widget.combobox))
+        widget.combobox.insertSeparator(widget.combobox.count())
 
     def setCurrentText(widget, text):
         widget.combobox.setCurrentText(text)
