@@ -249,7 +249,10 @@ def decode_spu(spu, palette):
             if command in (0x00, 0x01):
                 start = date
                 forced = forced or command == 0x00
-            elif command == 0x02:
+            elif command == 0x02 and date < 0xFFFF * SPU_TICK:
+                # The largest date (745.6 s) is no time: FFmpeg dates a
+                # subtitle with no duration of its own so, and it shows
+                # until the next one, as one without a stop does.
                 stop = date
             elif command == 0x03 and i + 2 <= len(spu):
                 colours = [spu[i] >> 4, spu[i] & 15, spu[i + 1] >> 4, spu[i + 1] & 15]
