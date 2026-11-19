@@ -16,7 +16,8 @@ _xdg = tempfile.mkdtemp()
 for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
     os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QTextEdit
 app = QApplication([])
@@ -32,6 +33,13 @@ def check(name, got, want):
     print(('  ok   ' if ok else '  FAIL ') + name + ('' if ok else f'  (got {got!r}, want {want!r})'))
     if not ok:
         fails.append(name)
+
+
+def hover(point):
+    """The pointer moved over the chips, no button down: sent to them
+    directly, as a display with no pointer of its own may not."""
+    at = QPointF(point)
+    strip.chips.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, at, at, Qt.NoButton, Qt.NoButton, Qt.NoModifier))
 
 
 def texts():
@@ -87,7 +95,7 @@ check('its times shown', (strip.start_spin.value(), strip.end_spin.value()),
 rect, edges = strip.chips._chips[1]
 index, x = edges[2]                       # before the third letter of "junto"
 point = QPoint(int(x), int(rect.center().y()))
-QTest.mouseMove(strip.chips, point)
+hover(point)
 check('between two letters of the chosen one: a cut', strip.chips.hover[:3], ('cut', 1, index))
 QTest.mouseClick(strip.chips, Qt.LeftButton, pos=point)
 check('cut there', texts(), ['Cantando ', 'ju', 'nto ', 'a ', 'palavra'])
@@ -98,7 +106,7 @@ strip.refresh()
 check('one undo step', texts(), ['Cantando ', 'junto ', 'a ', 'palavra'])
 rect = strip.chips._chips[0][0]
 gap = QPoint(int(rect.right() + 3), int(rect.center().y()))
-QTest.mouseMove(strip.chips, gap)
+hover(gap)
 check('the gap after a chip: a join', strip.chips.hover, ('gap', 0))
 QTest.mouseClick(strip.chips, Qt.LeftButton, pos=gap)
 check('joined', texts(), ['Cantando junto ', 'a ', 'palavra'])
