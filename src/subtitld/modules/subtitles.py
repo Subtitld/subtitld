@@ -6,6 +6,7 @@ import os
 import secrets
 from bisect import bisect
 from subtitld.modules import cue_ids, history, markup, session
+from subtitld.modules.segment import text_of
 
 
 def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
@@ -156,7 +157,7 @@ def merge_back_subtitle(selected_subtitle=False):
         nearest_subttile = [subtitle for subtitle in session.SUBTITLE.segments if subtitle['end'] == subt[-1]][0]
 
         nearest_subttile['end'] = selected_subtitle['end']
-        nearest_subttile['text'] += ' ' + selected_subtitle['text']
+        nearest_subttile['text'] += ' ' + text_of(selected_subtitle)
 
         # Reading order: nearest (earlier) then selected (later).
         if 'translations' in nearest_subttile or 'translations' in selected_subtitle:
@@ -180,7 +181,7 @@ def merge_next_subtitle(selected_subtitle=False):
         nearest_subttile = [subtitle for subtitle in session.SUBTITLE.segments if subtitle['start'] == subt[0]][0]
 
         selected_subtitle['end'] = nearest_subttile['end']
-        selected_subtitle['text'] += ' ' + nearest_subttile['text']
+        selected_subtitle['text'] += ' ' + text_of(nearest_subttile)
 
         # Reading order: selected (earlier) then nearest (later).
         if 'translations' in selected_subtitle or 'translations' in nearest_subttile:
@@ -395,7 +396,7 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
         last_text, next_text = markup.rebalance(last_text, next_text)
         session.SUBTITLE.segments[index]['text'] = last_text
 
-        next_text = next_text.strip() + ' ' + session.SUBTITLE.segments[index + 1]['text']
+        next_text = next_text.strip() + ' ' + session.SUBTITLE.segments[index + 1].text()
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in next_text:
             next_text = next_text.replace('\n', ' ')
             mid = len(next_text) // 2
@@ -444,7 +445,7 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
         last_text, next_text = markup.rebalance(last_text, next_text)
         session.SUBTITLE.segments[index]['text'] = next_text
 
-        last_text = session.SUBTITLE.segments[index - 1]['text'] + ' ' + last_text
+        last_text = session.SUBTITLE.segments[index - 1].text() + ' ' + last_text
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in last_text:
             last_text = last_text.replace('\n', ' ')
             mid = len(last_text) // 2

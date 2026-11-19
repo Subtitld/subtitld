@@ -15,6 +15,7 @@ from subtitld.modules import subtitles
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import quality_check
+from subtitld.modules.segment import text_of
 
 
 class _TextEditHistoryFilter(QObject):
@@ -91,7 +92,7 @@ class subtitles_panel_qlistwidget(QListView):
                 return number_width
 
             def get_text_height(self, option, index):
-                row_text = markup.plain(index.data(Qt.DisplayRole)['text'])
+                row_text = markup.plain(text_of(index.data(Qt.DisplayRole)))
                 width = option.rect.width()
                 if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
                     translated_text = markup.plain(index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
@@ -104,7 +105,7 @@ class subtitles_panel_qlistwidget(QListView):
 
             def paint(self, painter, option, index):
                 segment = index.data(Qt.DisplayRole)
-                row_text = markup.plain(segment['text'])
+                row_text = markup.plain(text_of(segment))
                 number_width = self.get_number_width(index)
                 
 
@@ -552,7 +553,7 @@ def update(self):
         # unsaved on a no-op refresh and (b) overwrite `selected['text']`
         # with the same value but at the wrong moment in flow.
         self.left_panel_subtitleslist_textedit.blockSignals(True)
-        subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE.selected['text'])
+        subtitle_text_editor.set_text(self.left_panel_subtitleslist_textedit, session.SUBTITLE.selected.text())
         self.left_panel_subtitleslist_textedit.blockSignals(False)
         self.left_panel_subtitleslist_formatting_bar.refresh()
 
@@ -599,7 +600,7 @@ def update(self):
             sel = session.SUBTITLE.selected
             duration = sel['end'] - sel['start']
             # Counted as the text reads, without its formatting tags.
-            sel_text = markup.plain(sel['text'])
+            sel_text = markup.plain(text_of(sel))
             n_words = len(sel_text.replace('\n', ' ').split(' '))
             n_char = len(sel_text.replace('\n', '').replace(' ', ''))
 
@@ -779,7 +780,7 @@ def regenerate_dub_for_selected(self):
     selected['locked'] = True
     request = {
         'uid': secrets.token_hex(4),
-        'text': selected['text'],
+        'text': text_of(selected),
         'speaker': speaker_name,
         'start': selected['start'],
         'end': selected['end'],

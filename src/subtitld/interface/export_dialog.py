@@ -41,6 +41,7 @@ from subtitld.modules import subtitle_styles
 from subtitld.modules import ttml
 from subtitld.modules import vobsub
 from subtitld.modules import xml_dialects
+from subtitld.modules.segment import text_of
 
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
@@ -2509,7 +2510,7 @@ class ExportDialog(utils.SimpleDialog):
             # Its XML too, which says where each picture is and how large:
             # the first ones drawn for it, numbered as the export numbers them.
             drawable = [segment for segment in export_options.prepare(session.SUBTITLE.segments, options)
-                        if markup.plain(str(segment.get('text') or '')).strip()]
+                        if markup.plain(text_of(segment)).strip()]
             wanted += [(self._renderer._job(segment, float(segment['start']), *style)[0], segment)
                        for segment in drawable[:self.BDN_EVENTS]]
         self._picture = {'keys': [key for key, _segment in wanted], 'frame': frame, 'fmt': fmt,

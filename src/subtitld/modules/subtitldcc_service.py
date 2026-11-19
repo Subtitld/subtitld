@@ -25,6 +25,7 @@ from subtitld import __version__
 from subtitld.modules import file_io, net, session, usf
 from subtitld.modules import subtitldcc as api
 from subtitld.modules.subtitldcc import ApiError, SignInError
+from subtitld.modules.segment import text_of
 
 DEFAULT_BASE_URL = 'https://subtitld.cc'
 SCOPES = ('read', 'publish', 'rate', 'collab')
@@ -350,7 +351,7 @@ def usf_for_publishing(translation=None, title=''):
     ``translation``), speaker names and colors. Never dubbing, speaker images or file paths."""
     segments = []
     for segment in session.SUBTITLE.segments:
-        text = segment.get('text', '')
+        text = text_of(segment)
         if translation:
             text = (segment.get('translations') or {}).get(translation, '')
         if not str(text).strip():

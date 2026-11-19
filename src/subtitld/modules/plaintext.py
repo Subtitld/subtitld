@@ -61,6 +61,7 @@ import re
 from dataclasses import dataclass, field
 
 from subtitld.modules import markup
+from subtitld.modules.segment import text_of
 
 SRT = 'srt'
 MD = 'md'
@@ -292,8 +293,8 @@ def ordered(segments):
 
 def full_text(segments):
     """All the subtitles' text in one line, as Whisper's top-level "text"."""
-    return ' '.join(' '.join(str(segment.get('text', '') or '').split())
-                    for segment in ordered(segments) if str(segment.get('text', '') or '').strip())
+    return ' '.join(' '.join(text_of(segment).split())
+                    for segment in ordered(segments) if text_of(segment).strip())
 
 
 def json_text_line(segments):
@@ -309,7 +310,7 @@ def _json_text(segments, language):
         fields = {'id': index,
                   'start': round(float(segment.get('start', 0.0) or 0.0), 3),
                   'end': round(float(segment.get('end', 0.0) or 0.0), 3),
-                  'text': str(segment.get('text', '') or '')}
+                  'text': text_of(segment)}
         fields.update(shown_meta(segment, JSON))
         lines = [f'      {json.dumps(key)}: {json.dumps(value, ensure_ascii=False)}' for key, value in fields.items()]
         items.append('    {\n' + ',\n'.join(lines) + '\n    }')
@@ -328,7 +329,7 @@ def serialize(segments, fmt, languages=None, language=None):
     for number, segment in enumerate(ordered(segments), 1):
         start = format_time(segment.get('start', 0.0), fmt)
         end = format_time(segment.get('end', 0.0), fmt)
-        text = str(segment.get('text', '') or '')
+        text = text_of(segment)
         if fmt == SRT:
             # A blank line ends an SRT subtitle, so one inside the text
             # cannot be written; it is dropped.
@@ -1009,7 +1010,7 @@ def _same_field(key, a, b):
 
 
 def _differs(segment, cue):
-    if _key(segment.get('start'), segment.get('end'), segment.get('text')) != _key(cue.start, cue.end, cue.text):
+    if _key(segment.get('start'), segment.get('end'), text_of(segment)) != _key(cue.start, cue.end, cue.text):
         return True
     current = shown_meta(segment, cue.fmt)
     return set(current) != set(cue.meta) or any(not _same_field(k, current[k], cue.meta[k]) for k in current)
@@ -1020,7 +1021,7 @@ def _pair(segments, cues):
     for a new one), in cue order, and the subtitles no cue matched."""
     current = ordered(segments)
     matcher = difflib.SequenceMatcher(
-        None, [_key(s.get('start'), s.get('end'), s.get('text')) for s in current],
+        None, [_key(s.get('start'), s.get('end'), text_of(s)) for s in current],
         [_key(c.start, c.end, c.text) for c in cues], autojunk=False)
     pairs, removed = [], []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -1070,7 +1071,7 @@ def apply_cues(segments, cues, dry_run=False):
                 segment['start'] = cue.start
             if _ms(segment.get('end')) != _ms(cue.end):
                 segment['end'] = cue.end
-            if markup.key(segment.get('text')) != markup.key(cue.text):
+            if markup.key(text_of(segment)) != markup.key(cue.text):
                 segment['text'] = cue.text
             for key in list(shown_meta(segment, cue.fmt)):
                 if key not in meta:

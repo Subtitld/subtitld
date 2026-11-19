@@ -34,6 +34,7 @@ import zipfile
 from xml.sax.saxutils import escape
 
 from subtitld.modules import csv_export, markup
+from subtitld.modules.segment import text_of
 
 TRANSCRIPT = 'transcript'
 SCRIPT = 'script'
@@ -170,7 +171,7 @@ def _build(content, segments, options, fps, title, columns):
     title = title if options['title'] else ''
     when = lambda seconds: timestamp(seconds, options['time_format'], fps)
     times = options['times']
-    ordered = sorted((s for s in segments or [] if _text(s.get('text'))),
+    ordered = sorted((s for s in segments or [] if _text(text_of(s))),
                      key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0))))
 
     def time_cells(segment):
@@ -192,7 +193,7 @@ def _build(content, segments, options, fps, title, columns):
             if new:
                 turn = {'speaker': speaker, 'start': segment['start'], 'words': []}
                 paragraphs.append(turn)
-            turn['words'].append(_line(segment.get('text')))
+            turn['words'].append(_line(text_of(segment)))
             last = segment
         out = []
         for turn in paragraphs:
@@ -203,7 +204,7 @@ def _build(content, segments, options, fps, title, columns):
 
     if content == SCRIPT:
         header = time_header + ([names['speaker']] if options['speakers'] else []) + [names['text']]
-        rows = [time_cells(s) + ([str(s.get('speaker') or '')] if options['speakers'] else []) + [_text(s['text'])]
+        rows = [time_cells(s) + ([str(s.get('speaker') or '')] if options['speakers'] else []) + [_text(text_of(s))]
                 for s in ordered]
         return Document(title, header=header, rows=rows,
                         kinds=time_kinds + (['speaker'] if options['speakers'] else []) + ['text'])
@@ -212,7 +213,7 @@ def _build(content, segments, options, fps, title, columns):
         languages = options['languages'] or languages_of(ordered)
         languages = [language for language in languages if language]
         header = time_header + [names['text']] + list(languages)
-        rows = [time_cells(s) + [_text(s['text'])] +
+        rows = [time_cells(s) + [_text(text_of(s))] +
                 [_text((s.get('translations') or {}).get(language, '')) for language in languages] for s in ordered]
         return Document(title, header=header, rows=rows, kinds=time_kinds + ['text'] * (1 + len(languages)))
 
@@ -221,7 +222,7 @@ def _build(content, segments, options, fps, title, columns):
                   names['characters']]
         rows = []
         for number, segment in enumerate(ordered, start=1):
-            text = _text(segment['text'])
+            text = _text(text_of(segment))
             rows.append([str(number), str(segment.get('speaker') or ''), when(segment['start']),
                          f'{max(0.0, float(segment["end"]) - float(segment["start"])):.1f}s', text,
                          str(len(text.replace('\n', ' ')))])

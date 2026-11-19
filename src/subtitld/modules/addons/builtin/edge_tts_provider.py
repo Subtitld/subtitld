@@ -32,6 +32,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules.addons import languages as _languages
+from subtitld.modules.segment import text_of
 from subtitld.modules.addons.provider import TTSProvider
 
 
@@ -140,7 +141,7 @@ class _EdgeTTSSpeechThread(QThread):
         # to a real PCM WAV at the requested filename.
         mp3_temp = final_file + '.mp3'
         communicate = edge_tts.Communicate(
-            text=markup.plain(subtitle['text']),
+            text=markup.plain(text_of(subtitle)),
             voice=voice,
             rate=f'{subtitle.get("rate", 0):+d}%',
             pitch=f'{subtitle.get("pitch", 0):+d}Hz',

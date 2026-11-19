@@ -16,6 +16,7 @@ from subtitld.modules import utils
 from subtitld.modules import waveform_cache
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
+from subtitld.modules.segment import text_of
 
 from subtitld.interface import left_panel
 from subtitld.interface import playercontrols
@@ -1832,7 +1833,7 @@ class Timeline(QWidget):
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
                         # painter.drawText(original_subtitle_rect, Qt.AlignLeft | Qt.TextWordWrap, subtitle['text'])
-                        painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, markup.plain(subtitle['text']))
+                        painter.drawText(original_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, markup.plain(text_of(subtitle)))
 
                     translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
 
@@ -1862,7 +1863,7 @@ class Timeline(QWidget):
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
                         painter.drawText(original_subtitle_rect, widget.subtitle_alignment | Qt.TextWordWrap,
-                                         markup.plain(subtitle['text']) or ('…' if rec_pending else ''))
+                                         markup.plain(text_of(subtitle)) or ('…' if rec_pending else ''))
 
                 if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters and ((subtitle['end'] - subtitle['start']) * widget.width_proportion) > 40:
                     track_height = widget.subtitle_height / subtitle_track[1]
@@ -2796,17 +2797,17 @@ class Timeline(QWidget):
                     cursor_position_in_subtitle = (event.pos().x() - (widget.subtitle_under_the_cursor['start'] * widget.width_proportion))
                     subtitle_width = ((widget.subtitle_under_the_cursor['end'] - widget.subtitle_under_the_cursor['start']) * widget.width_proportion)
                     
-                    number_of_characters = len(markup.plain(widget.subtitle_under_the_cursor['text']).replace(' ', '')) or 1
+                    number_of_characters = len(markup.plain(text_of(widget.subtitle_under_the_cursor)).replace(' ', '')) or 1
                     if isinstance(widget.is_smart_splicing, dict) and widget.is_smart_splicing['mode'] == 'words':
                         character_width = subtitle_width / number_of_characters
                         left_words = ''
                         right_words = ''
-                        for word in widget.subtitle_under_the_cursor['text'].split():
+                        for word in text_of(widget.subtitle_under_the_cursor).split():
                             if len(markup.plain(left_words + word).replace(' ', '')) * character_width > cursor_position_in_subtitle:
                                 break
                             left_words += ' ' + word
                 
-                        right_words = widget.subtitle_under_the_cursor['text'][len(left_words):]
+                        right_words = text_of(widget.subtitle_under_the_cursor)[len(left_words):]
                         proportion = cursor_position_in_subtitle / subtitle_width
                         widget.is_smart_splicing = {
                             'mode': 'words',

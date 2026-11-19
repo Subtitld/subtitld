@@ -148,6 +148,7 @@ And for a format of its own:
 """
 
 from subtitld.modules import markup
+from subtitld.modules.segment import text_of
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
@@ -212,7 +213,7 @@ def prepare(segments, options=None):
     offset = float(settings['offset'] or 0)
     prepared = []
     for segment in sorted(segments or [], key=lambda s: float(s.get('start', 0))):
-        original = str(segment.get('text') or '')
+        original = text_of(segment)
         translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else {}
         translated = str(translations.get(language) or '').strip() if language else ''
         if settings['text'] == 'translation' and translated:

@@ -19,6 +19,7 @@ import subprocess
 from fractions import Fraction
 
 from subtitld.modules import markup, project_export, session
+from subtitld.modules.segment import text_of
 
 OPENSHOT_VERSION = '3.5.1'
 LIBOPENSHOT_VERSION = '0.5.0'
@@ -136,7 +137,7 @@ def caption_text(cues):
         return f'{hours:02d}:{minutes:02d}:{rest // 1000:02d}:{rest % 1000:03d}'
     blocks = []
     for cue in sorted(cues, key=lambda c: float(c['start'])):
-        text = markup.plain(str(cue.get('text') or '')).strip()
+        text = markup.plain(text_of(cue)).strip()
         if text:
             blocks.append(f'{stamp(cue["start"])} --> {stamp(cue["end"])}\n{text}')
     return '\n\n'.join(blocks)

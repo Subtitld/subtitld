@@ -45,6 +45,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.interface.subtitle_render_worker import SCALING_VARIABLES
 from subtitld.modules import look as subtitld_look, markup, position, session, subtitle_styles
+from subtitld.modules.segment import text_of
 
 log = logging.getLogger(__name__)
 
@@ -350,7 +351,7 @@ class SubtitleRenderer(QObject):
     # --- layers ------------------------------------------------------------
     def _job(self, segment, at, style, variables, attributes):
         """What renders `segment` at `at` seconds, keyed."""
-        text = segment.get('text') or ''
+        text = text_of(segment)
         start, end = float(segment['start']), float(segment['end'])
         offset = 0
         if style.animated:

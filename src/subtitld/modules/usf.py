@@ -34,6 +34,7 @@ from bs4 import BeautifulSoup, NavigableString
 from subtitld.modules import look as subtitld_look
 from subtitld.modules import markup
 from subtitld.modules import position as subtitld_position
+from subtitld.modules.segment import text_of
 
 
 # subtitld.cc names where a file came from in its own namespace:
@@ -736,7 +737,7 @@ class USFWriter():
             if speaker in speakers:
                 text_tag['style'] = speaker
 
-        text_value = subtitle.get('text', '') if text_override is None else text_override
+        text_value = text_of(subtitle) if text_override is None else text_override
         # A translation sits where the subtitle it translates does.
         self._append_text_with_breaks(usf, text_tag, text_value, subtitld_position.of(subtitle))
         new_sub.append(text_tag)

@@ -18,6 +18,7 @@ from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import subtitle_styles
 from subtitld.modules import audioengine #AudaspaceAudioDevice
+from subtitld.modules.segment import text_of
     
 
 class PlayerWidget(QWidget):
@@ -714,7 +715,7 @@ class PlayerWidget(QWidget):
                 return True
             player = session.CONFIG.get('videoplayer', {})
             safe = (player.get('safe_margin_title_x', 10) / 100, player.get('safe_margin_title_y', 10) / 100)
-            place = subtitle_position.dragged(subtitle_position.of(segment), markup.alignment(segment.get('text') or ''),
+            place = subtitle_position.dragged(subtitle_position.of(segment), markup.alignment(text_of(segment)),
                                               delta.x() / video.width(), delta.y() / video.height(), safe)
             widget._subtitle_moved = {'segment': segment, 'image': drag['image'], 'delta': delta}
             # Should it never be drawn at its new place, it goes back to being drawn as it is.

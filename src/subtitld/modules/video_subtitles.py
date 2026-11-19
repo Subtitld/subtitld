@@ -41,6 +41,7 @@ import os
 import re
 import subprocess
 import tempfile
+from subtitld.modules.segment import text_of
 
 TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'microdvd', 'subviewer',
                          'subviewer1', 'mpl2', 'pjs', 'realtext', 'sami', 'stl', 'jacosub', 'vplayer',
@@ -344,7 +345,7 @@ def _without_sizes(path):
             return
     segments = srt.read(path)
     for segment in segments:
-        lead, rest = markup.split_lead(segment['text'])
+        lead, rest = markup.split_lead(text_of(segment))
         segment['text'] = lead + markup.from_spans(markup.spans(rest))
     srt.save(path, segments)
 

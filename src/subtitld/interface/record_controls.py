@@ -32,6 +32,7 @@ from subtitld.modules import live_peaks
 from subtitld.modules import session
 from subtitld.modules import recorder as recorder_mod
 from subtitld.modules import live_transcribe
+from subtitld.modules.segment import text_of
 from subtitld.modules.addons.provider import SOURCE_ENGINES, TASK_ASR_TRANSCRIBE
 
 
@@ -532,7 +533,7 @@ class RecordController(QObject):
     def _untouched(seg, rec):
         return (abs(float(seg.get('start', 0.0)) - rec['start']) < 1e-6
                 and abs(float(seg.get('end', 0.0)) - rec['end']) < 1e-6
-                and (seg.get('text') or '').strip() == (rec['written'] or rec['orig']))
+                and text_of(seg).strip() == (rec['written'] or rec['orig']))
 
     @staticmethod
     def _completing(rec):
@@ -587,7 +588,7 @@ class RecordController(QObject):
                 key = self._new_key(token)
                 target['_rec'] = key
                 rec = {'key': key, 'kind': 'retarget', 'take': token, 'id': target.setdefault('id', cue_ids.new_id()),
-                       'orig': (target.get('text') or '').strip(), 'written': None,
+                       'orig': text_of(target).strip(), 'written': None,
                        'start': float(target.get('start', 0.0)),
                        'end': float(target.get('end', 0.0)),
                        'outstanding': 0, 'claimed': False, 'born': None,
@@ -650,7 +651,7 @@ class RecordController(QObject):
         written, orig = rec['written'], rec['orig']
         new_text = None
         if seg is not None:
-            new_text = self._next_text(written, orig, (seg.get('text') or '').strip(), text)
+            new_text = self._next_text(written, orig, text_of(seg).strip(), text)
             if new_text is None:
                 log.info('Record: %s was edited; transcript %r not applied', key, text)
             else:
@@ -661,7 +662,7 @@ class RecordController(QObject):
                 session.set_unsaved()
 
         def _apply(cue):
-            nt = self._next_text(written, orig, (cue.get('text') or '').strip(), text)
+            nt = self._next_text(written, orig, text_of(cue).strip(), text)
             if nt is not None:
                 cue['text'] = nt
         self._amend(rec, _apply)

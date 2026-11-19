@@ -8,7 +8,7 @@ Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import copy, json, os, pickle, sys, tempfile, types
+import ast, copy, json, os, pickle, sys, tempfile, types
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 _xdg = tempfile.mkdtemp()
@@ -17,7 +17,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import collab_client, file_io, history, plaintext, session, subtitles, subtitldcc_service
+from subtitld.modules import collab_client, export_options, file_io, history, plaintext, quality_check, session, subtitles, subtitldcc_service
 from subtitld.modules.segment import Segment, SegmentList, Subtitle, text_of
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
@@ -201,6 +201,68 @@ collab_client.SessionLive.apply(None, [{'op': 'cue.insert', 'cue': {'id': 'remot
                                                                      'end': 5.5, 'text': 'From afar'}}])
 check('inserted', (all_segments(), len(session.SUBTITLE.segments)), (True, 3))
 check('the snapshot is plain', type(collab_client.SessionLive.snapshot(None)['segments'][0]) is dict, True)
+
+print('timed text read as words')
+timed = Segment({'start': 0.0, 'end': 2.0, 'text': TIMED, 'speaker': 'A'})
+check('an export\'s copies', [s['text'] for s in export_options.prepare([timed])], ['Hello world'])
+check('the plain-text panel', 'Hello world' in plaintext.serialize([timed], plaintext.SRT), True)
+check('quality check', quality_check.check_subtitle(timed) is not None, True)
+
+# The subtitles that reach these files and functions may be timed: they read
+# a subtitle's words with text_of() or Segment.text(), never its 'text' key.
+# Readers of a format, and writers fed by export_options.prepare (which gives
+# them the words), may read the key: what they read is always a string.
+SUBTITLE_READERS = {
+    'interface/left_panel_subtitleslist.py': None, 'interface/subtitle_pictures.py': None,
+    'interface/project_thumbnail.py': None, 'interface/subtitle_renderer.py': None,
+    'interface/preview_panel.py': None, 'interface/left_panel_translation.py': None,
+    'interface/find_replace_dialog.py': None, 'interface/left_panel_vtimeline.py': None,
+    'interface/left_panel_dubbing.py': None, 'interface/timeline.py': None, 'modules/subtitles.py': None,
+    'modules/quality_check.py': None, 'modules/clone_ref.py': None, 'modules/audio_report.py': None,
+    'modules/csv_export.py': None, 'modules/markers.py': None, 'modules/shotcut_project.py': None,
+    'modules/openshot_project.py': None, 'modules/ardour_project.py': None, 'modules/video_subtitles.py': None,
+    'modules/documents.py': None,
+    'interface/export_dialog.py': {'ExportDialog._preview_picture'},
+    'modules/plaintext.py': {'serialize', '_json_text', 'full_text', '_differs', '_pair', 'apply_cues'},
+    'modules/usf.py': {'USFWriter._build_subtitle'},
+    'modules/subtitldcc_service.py': {'usf_for_publishing'},
+    'modules/transcripts.py': {'words_of', 'plain_text'},
+    'modules/export_options.py': {'prepare'},
+    'modules/addons/addon_provider.py': {'AddonTTSProvider.generate_speeches'},
+    'modules/addons/builtin/gtts_provider.py': {'_GTTSSpeechThread._generate'},
+    'modules/addons/builtin/edge_tts_provider.py': {'_EdgeTTSSpeechThread._generate'},
+    'interface/record_controls.py': {'RecordController._untouched', 'RecordController._fill',
+                                     'RecordController._fill._apply', 'RecordController._create_placeholder'},
+}
+# A 'text' key that is not a subtitle's: an export's choice, a theme's colour...
+NOT_SUBTITLES = {'names', 'theme', 'self.formats', 'options', 'settings', 'message', 'problem', 'remembered'}
+source = Path(__file__).resolve().parents[1] / 'src' / 'subtitld'
+direct = []
+for rel, functions in SUBTITLE_READERS.items():
+    code = (source / rel).read_text(encoding='utf-8')
+    tree = ast.parse(code)
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) \
+                and isinstance(node.slice, ast.Constant) and node.slice.value == 'text':
+            receiver = node.value
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'get' \
+                and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == 'text':
+            receiver = node.func.value
+        else:
+            continue
+        if ast.get_source_segment(code, receiver) in NOT_SUBTITLES:
+            continue
+        if functions is not None:
+            names, up = [], node
+            while up in parents:
+                up = parents[up]
+                if isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    names.append(up.name)
+            if '.'.join(reversed(names)) not in functions:
+                continue
+        direct.append(f'{rel}:{node.lineno}')
+check('no subtitle\'s text read by its key where it may be timed', direct, [])
 
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL PASS')

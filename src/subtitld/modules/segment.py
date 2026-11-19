@@ -39,7 +39,7 @@ def text_of(value):
         value = value.get('text')
     if isinstance(value, list):
         return ''.join(str(piece.get('text') or '') for piece in value if isinstance(piece, dict))
-    return value or ''
+    return str(value or '')
 
 
 class Segment(dict):

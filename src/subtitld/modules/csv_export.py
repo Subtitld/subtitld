@@ -16,6 +16,7 @@ Audition markers (``audition_markers``)
 """
 
 from subtitld.modules import markup
+from subtitld.modules.segment import text_of
 
 AUDITION_MARKERS = 'audition_markers'
 TYPES = (AUDITION_MARKERS,)
@@ -44,7 +45,7 @@ def audition_markers(segments):
     """Audition's marker list for `segments`, as text (line ends '\\r\\n')."""
     rows = [_AUDITION_HEADER]
     for segment in sorted(segments or [], key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
-        name = _cell(segment.get('text'))
+        name = _cell(text_of(segment))
         if not name:
             continue
         start = float(segment.get('start', 0))

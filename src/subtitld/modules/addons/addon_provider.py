@@ -46,6 +46,7 @@ from subtitld.modules.addons.provider import (
 )
 from subtitld.modules import audio_stretch
 from subtitld.modules.utils import get_cache_key
+from subtitld.modules.segment import text_of
 
 log = logging.getLogger(__name__)
 
@@ -360,7 +361,7 @@ class AddonTTSProvider(_AddonProviderMixin, TTSProvider):
             output_path = str(cache_dir / f'{uid}.wav')
 
             params = {
-                'text': markup.plain(subtitle.get('text', '')),
+                'text': markup.plain(text_of(subtitle)),
                 'voice': subtitle.get('voice', ''),
                 'language': subtitle.get('language', ''),
                 'rate': subtitle.get('rate', 0),

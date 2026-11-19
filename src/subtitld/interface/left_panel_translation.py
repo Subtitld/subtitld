@@ -14,6 +14,7 @@ from subtitld.modules import markup
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import addons
+from subtitld.modules.segment import text_of
 from subtitld.modules.addons.provider import TASK_TRANSLATE
 
 LANGUAGE_DESCRIPTIONS = session.LANGUAGE_DICT_LIST.keys()
@@ -90,7 +91,7 @@ class AddonTranslatorPanel(QWidget):
 
     def translate_process(widget, segments_list=None):
         segments = segments_list if segments_list is not None else session.SUBTITLE.segments
-        widget._queue = [s for s in segments if isinstance(s, dict) and s.get('text', '').strip()]
+        widget._queue = [s for s in segments if isinstance(s, dict) and text_of(s).strip()]
         widget._index = 0
         widget._reqmap = {}
         widget._run_id += 1
@@ -117,7 +118,7 @@ class AddonTranslatorPanel(QWidget):
         widget._reqmap[request_id] = seg
         source = session.SUBTITLE.get('language', 'en-us')
         try:
-            widget.provider.translate(request_id, markup.plain(seg['text']), source, widget._target_language)
+            widget.provider.translate(request_id, markup.plain(text_of(seg)), source, widget._target_language)
         except Exception as exc:
             widget._reqmap.pop(request_id, None)
             widget._stopped = True
@@ -128,10 +129,10 @@ class AddonTranslatorPanel(QWidget):
         seg = widget._reqmap.pop(request_id, None)
         if seg is None:
             return  # stale result / from a different run
-        original = seg.get('text', '')
+        original = text_of(seg)
         if isinstance(text, str) and text.strip():
             for s in session.SUBTITLE.segments:
-                if s.get('text') == original:
+                if text_of(s) == original:
                     s.setdefault('translations', {})[widget._target_language] = text.strip()
             try:
                 widget.window().timeline_widget.update()
@@ -418,7 +419,7 @@ def global_panel_translation_invert_translation_button_clicked(self):
             translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else None
             if not translations or not translations.get(target_language):
                 continue
-            original_text = str(segment['text'])
+            original_text = text_of(segment)
             translated_text = str(translations[target_language])
             segment['text'] = translated_text
             segment.setdefault('translations', {})[original_language] = original_text

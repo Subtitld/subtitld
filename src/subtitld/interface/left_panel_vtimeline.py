@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.modules import markup, quality_check, session, subtitles, utils
+from subtitld.modules.segment import text_of
 
 
 TOP = 10                # px above 0 s, so its label is not cut
@@ -692,7 +693,7 @@ class VerticalTimeline(QWidget):
                 flags = alignment | Qt.AlignTop | Qt.TextWordWrap
                 if show_translations:
                     half = inner.height() / 2
-                    painter.drawText(QRectF(inner.left(), inner.top(), inner.width(), half), flags, markup.plain(subtitle.get('text', '')))
+                    painter.drawText(QRectF(inner.left(), inner.top(), inner.width(), half), flags, markup.plain(text_of(subtitle)))
                     lower = QRectF(inner.left(), inner.top() + half, inner.width(), half)
                     painter.setPen(separator)
                     painter.drawLine(QPointF(lower.left(), lower.top()), QPointF(lower.right(), lower.top()))
@@ -700,7 +701,7 @@ class VerticalTimeline(QWidget):
                     painter.drawText(lower - QMarginsF(0, 5, 0, 0), flags,
                                      markup.plain((subtitle.get('translations') or {}).get(target_language, '')))
                 else:
-                    painter.drawText(inner, flags, markup.plain(subtitle.get('text', '')))
+                    painter.drawText(inner, flags, markup.plain(text_of(subtitle)))
                 painter.restore()
 
             if not locked:
@@ -1381,7 +1382,7 @@ class VerticalTimelineScroll(QScrollArea):
                                if isinstance(value, (str, int, float, bool, type(None)))))
         others = (session.CONFIG.get('dubbing') or {}).get('enabled'),             (session.CONFIG.get('quality_check') or {}).get('enabled'),             repr((session.CONFIG.get('translation') or {}).get('engine_options'))
         return (id(selected), selected and selected.get('start'), selected and selected.get('end'),
-                selected and selected.get('text'), selected and repr(selected.get('dubbing')),
+                selected and text_of(selected), selected and repr(selected.get('dubbing')),
                 len(segments), id(segments), options, others,
                 getattr(timeline, 'show_speaker_color', None), getattr(timeline, 'show_speaker_tracks', None),
                 len(getattr(timeline, 'dub_peaks', None) or ()), len(getattr(timeline, 'dub_onsets', None) or ()),

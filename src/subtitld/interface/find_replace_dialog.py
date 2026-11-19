@@ -69,6 +69,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.shortcuts import shortcut
+from subtitld.modules.segment import text_of
 
 
 # How far the cursor may drift from where a find left it and still count as
@@ -446,7 +447,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         found: list[tuple[tuple[float, int, int], tuple[dict, int, int]]] = []
         if pattern is not None:
             for index, segment in enumerate(session.SUBTITLE.segments):
-                text = segment.get('text') or ''
+                text = text_of(segment)
                 start_time = _cue_start(segment)
                 for m in pattern.finditer(text):
                     # ``re`` can yield zero-width matches (e.g. user-typed
@@ -583,7 +584,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         segment, start, end = self._matches[index]
         cue_time, cue_index, _offset = self._keys[index]
         replacement = self._replace_field.lineedit.text()
-        old_text = segment.get('text') or ''
+        old_text = text_of(segment)
         segment['text'] = old_text[:start] + replacement + old_text[end:]
         session.set_unsaved(True)
 
@@ -622,7 +623,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         # from these dicts, so the next host refresh shows the new text.
         affected_segments = set()
         for segment in session.SUBTITLE.segments:
-            text = segment.get('text') or ''
+            text = text_of(segment)
             new_text, n = pattern.subn(replacement, text)
             if n > 0:
                 segment['text'] = new_text

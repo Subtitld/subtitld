@@ -16,6 +16,7 @@ from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import addons
 from subtitld.modules import clone_ref
+from subtitld.modules.segment import text_of
 from subtitld.modules.addons.provider import TASK_TTS_SYNTHESIZE
 # Engine logic (signals, threads, generate_speeches, stretch, ...) lives in
 # the addons module now. We import the legacy alias `EdgeTTSEngine` so the
@@ -467,7 +468,7 @@ class _EdgeTTSSpeakerPanel(QWidget):
             overrides['pitch'] = speaker_pitch
             speeches_to_generate.append({
                 'uid': secrets.token_hex(4),
-                'text': subtitle['text'],
+                'text': text_of(subtitle),
                 'speaker': speaker_name,
                 'start': subtitle['start'],
                 'end': subtitle['end'],
@@ -594,7 +595,7 @@ class _EdgeTTSDubbingPanel(QWidget):
         selected['locked'] = True
         EdgeTTSEngine.generate_speeches([{
             'uid': secrets.token_hex(4),
-            'text': selected['text'],
+            'text': text_of(selected),
             'speaker': speaker_name,
             'start': selected['start'],
             'end': selected['end'],
@@ -798,7 +799,7 @@ class _GenericTTSDubbingPanel(QWidget):
         selected['locked'] = True
         request = {
             'uid': secrets.token_hex(4),
-            'text': selected['text'],
+            'text': text_of(selected),
             'speaker': speaker_name,
             'start': selected['start'],
             'end': selected['end'],
@@ -1120,7 +1121,7 @@ class _GenericTTSSpeakerPanel(QWidget):
             session.set_unsaved(True)
             entry = {
                 'uid': secrets.token_hex(4),
-                'text': subtitle['text'],
+                'text': text_of(subtitle),
                 'speaker': speaker_name,
                 'start': subtitle['start'],
                 'end': subtitle['end'],

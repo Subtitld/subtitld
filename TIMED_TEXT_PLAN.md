@@ -152,7 +152,13 @@ in 37 app files, 288 in the tests, 144 test assignments wrapped in
 with it, since the two go together. Mechanical, file by file.
 *Done when:* no `SUBTITLE['segments']`/`['selected']` left; tests pass.
 
-**M3. Reads of text switched over.** The ~300 `seg['text']` /
+**M3. Reads of text switched over.** *(Done on branch `timed-text`: 68
+reads where session subtitles arrive (interface, editing, documents,
+quality check, plain-text panel, USF writer, publishing, TTS, translation,
+project exports, recording) and `export_options.prepare`, which gives
+every writer in `TEXT_FORMATS` the words, so the ~100 reads in those
+writers stay. Format readers read their own strings and stay too. Writes
+are M4's, with `set_text()`. The guard is in `tests/test_segment.py`.)* The ~300 `seg['text']` /
 `seg.get('text')` → `seg.text()` (session segments) or `text_of()` (anything
 else). Writes go through `set_text()`. Still no timed subtitles exist, so
 behaviour must not change.
