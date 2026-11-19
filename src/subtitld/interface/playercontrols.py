@@ -1045,7 +1045,11 @@ def load(self):
             widget.setObjectName('playercontrols_timecode_label')
         
         def update_time(widget):
-            widget.setText(str(timecode.Timecode('1000', start_seconds=session.SUBTITLE.get('position', 0), fractional=True)))
+            # In milliseconds, as frames at 1000: PyTimeCode counts frames
+            # from 1 (frame 1 is 00:00:00.000), so its start_seconds came
+            # out a millisecond early and 0 as 23:59:59.999.
+            milliseconds = round(session.SUBTITLE.get('position', 0) * 1000)
+            widget.setText(str(timecode.Timecode('1000', frames=milliseconds + 1, fractional=True)))
 
     self.playercontrols_timecode_label = playercontrols_timecode_label()
     self.playercontrols_widget_center_bottom_line.layout().addWidget(self.playercontrols_timecode_label)
