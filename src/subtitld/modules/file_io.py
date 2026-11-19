@@ -1358,8 +1358,12 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 segments_list, softni_settings = softni.parse(srt.decode(data), session.VIDEO.get('framerate'))
                 session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, fps=softni_settings['fps'])
             elif sub_kind == 'subviewer':
-                subtitle_format = 'SBV'
+                # SubViewer 2 (SBV is YouTube's take on it), saved as
+                # itself under the header it came with.
+                subtitle_format = 'SUBVIEWER2'
                 segments_list = sbv.parse(srt.decode(data))
+                session.FORMAT['options'] = dict(session.FORMAT.get('options') or {},
+                                                 subviewer_header=sbv.subviewer2_header(srt.decode(data)))
             elif legacy.kind(data) in ('mpsub', 'subviewer1', 'subsonic'):
                 # MPSub and SubViewer 1 are .sub as well, and neither is
                 # MicroDVD: counted in frames, the text would come out at
@@ -2852,6 +2856,13 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             # Plain text, as SBV has no formatting; speakers as YouTube asks
             # them written when the export asks.
             sbv.save(final_file, segments, speakers=options.get('speakers') == 'voice')
+
+        elif subtitle_format == 'SUBVIEWER2':
+            # Hundredths and "[br]", under the header the file opened had,
+            # in the export's encoding and line ends.
+            sbv.save_subviewer2(final_file, segments, options.get('subviewer_header') or '',
+                                encoding=options.get('encoding') if options.get('encoding') in export_options.ENCODINGS else 'utf-8',
+                                line_end=export_options.LINE_ENDS.get(options.get('line_ends'), '\n'))
 
         elif subtitle_format == 'SUB':
             # MicroDVD counts in frames: the export's frame rate, or the

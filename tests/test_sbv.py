@@ -99,6 +99,35 @@ for options, want in (({'speakers': 'voice'}, '>> ALICE: Hi, my name'), ({'speak
     check(f'exported, {options}', written.split('\n')[1][:21], want)
 check('shifted', written.split('\n')[0], '0:00:01.599,0:00:05.160')
 
+print('SubViewer 2 (.sub): opened and saved as itself')
+# Laid out as FFmpeg's sample (fate/sub/SubViewer_capability_tester.sub)
+# and Subtitle Edit's SubViewer20 write it: the [INFORMATION] header,
+# [SUBTITLE] and a style line, "HH:MM:SS.cc" hundredths, "[br]" in the text.
+SUBVIEWER2 = ('[INFORMATION]\n[TITLE] Title of film.\n[AUTHOR] Author of film.\n[END INFORMATION]\n[SUBTITLE]\n'
+              '[COLF]&HFFFFFF,[SIZE]12,[FONT]Times New Roman\n'
+              '00:01:00.10,00:02:00.20\nHello.\nWorld!\n\n00:02:00.30,00:03:00.40\nfoo[br]bar\n\n')
+(folder / 'in.sub').write_text(SUBVIEWER2, encoding='utf-8')
+session.FORMAT = {}
+opened, fmt = file_io.process_subtitles_file(str(folder / 'in.sub'))
+check('opens as SubViewer 2', (fmt, [(s['start'], s['end'], s['text']) for s in opened]),
+      ('SUBVIEWER2', [(60.1, 120.2, 'Hello.\nWorld!'), (120.3, 180.4, 'foo\nbar')]))
+session.SUBTITLE['segments'] = opened + [{'start': 3725.456, 'end': 3726.0, 'text': '<i>Late</i>'}]
+file_io.save_file(str(folder / 'out.sub'), fmt)
+written = (folder / 'out.sub').read_text(encoding='utf-8')
+check('saved under its own header, hundredths, "[br]" between lines', written,
+      '[INFORMATION]\n[TITLE] Title of film.\n[AUTHOR] Author of film.\n[END INFORMATION]\n[SUBTITLE]\n'
+      '[COLF]&HFFFFFF,[SIZE]12,[FONT]Times New Roman\n'
+      '00:01:00.10,00:02:00.20\nHello.[br]World!\n\n00:02:00.30,00:03:00.40\nfoo[br]bar\n\n'
+      '01:02:05.46,01:02:06.00\nLate\n')
+session.FORMAT = {}
+again, fmt = file_io.process_subtitles_file(str(folder / 'out.sub'))
+check('and opened again as itself', (fmt, [(s['start'], s['end'], s['text']) for s in again]),
+      ('SUBVIEWER2', [(60.1, 120.2, 'Hello.\nWorld!'), (120.3, 180.4, 'foo\nbar'), (3725.46, 3726.0, 'Late')]))
+check('a new one gets an empty header', sbv.write_subviewer2([{'start': 1, 'end': 2, 'text': 'Hi'}]).split('\n')[:2],
+      ['[INFORMATION]', '[TITLE]'])
+check('...and is SubViewer 2 to the sniffer', file_io.microdvd.kind(sbv.write_subviewer2([{'start': 1, 'end': 2, 'text': 'Hi'}]).encode()),
+      'subviewer')
+
 print('the dialog')
 from subtitld.interface.export_dialog import _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)

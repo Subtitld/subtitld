@@ -104,8 +104,8 @@ check('opens a Windows-1250 file at the rate it declares, and keeps the rate to 
                                       encoding='utf-8')
 session.FORMAT = {}
 viewer, viewer_format = file_io.process_subtitles_file(str(folder / 'subviewer.sub'))
-check('a SubViewer .sub opens, as SBV', (viewer_format, viewer[0]['start'], viewer[0]['end'], viewer[0]['text']),
-      ('SBV', 1.0, 2.5, 'One\ntwo'))
+check('a SubViewer .sub opens, as SubViewer 2', (viewer_format, viewer[0]['start'], viewer[0]['end'], viewer[0]['text']),
+      ('SUBVIEWER2', 1.0, 2.5, 'One\ntwo'))
 (folder / 'vobsub.sub').write_bytes(b'\x00\x00\x01\xba' + bytes(2044))
 try:
     file_io.process_subtitles_file(str(folder / 'vobsub.sub'))

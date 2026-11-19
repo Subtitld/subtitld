@@ -242,6 +242,7 @@ LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {
     'VPLAYER': {'description': 'VPlayer and TMPlayer format', 'extensions': ['txt']},
     'AQTITLE': {'description': 'AQTitle Subtitle format', 'extensions': ['aqt']},
     'SUBVIEWER1': {'description': 'SubViewer 1.0 Subtitle format', 'extensions': ['sub']},
+    'SUBVIEWER2': {'description': 'SubViewer 2.0 Subtitle format', 'extensions': ['sub']},
     'SPRUCE': {'description': 'Spruce Subtitle File format', 'extensions': ['stl']},
     'REALTEXT': {'description': 'RealText Subtitle format', 'extensions': ['rt']},
     'TURBOTITLE': {'description': 'TurboTitle Subtitle format', 'extensions': ['tts']},

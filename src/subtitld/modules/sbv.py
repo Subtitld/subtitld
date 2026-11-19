@@ -24,6 +24,12 @@ Writing gives YouTube's own layout: times as "H:MM:SS.mmm", the plain
 text (SBV has no formatting), no empty subtitles and no blank line inside
 one, and, when asked, ">> NAME: " where a new speaker begins, as YouTube
 recommends.
+
+SubViewer 2 itself (.sub) is written as Subtitle Edit's SubViewer20 and
+FFmpeg's subviewer reader have it: the [INFORMATION] header (the one the
+file opened had, else an empty one), [SUBTITLE], then each subtitle's
+times as "HH:MM:SS.cc,HH:MM:SS.cc" in hundredths and its plain text, its
+lines joined by "[br]", a blank line after it.
 """
 
 import re
@@ -110,6 +116,49 @@ def write(segments, speakers=False):
         end = max(start, float(segment.get('end', start)))
         blocks.append(f'{format_time(start)},{format_time(end)}\n' + '\n'.join(lines))
     return '\n\n'.join(blocks) + '\n' if blocks else ''
+
+
+_SUBVIEWER2_HEADER = ('[INFORMATION]\n[TITLE]\n[AUTHOR]\n[SOURCE]\n[PRG]\n[FILEPATH]\n[DELAY]0\n[CD TRACK]0\n'
+                      '[COMMENT]\n[END INFORMATION]\n[SUBTITLE]\n')
+
+
+def subviewer2_header(text):
+    """The header a SubViewer 2 file has before its first subtitle (the
+    [INFORMATION] block, [SUBTITLE] and its style line), or ''."""
+    lines = text.split('\n')
+    first = next((index for index, line in enumerate(lines) if _TIMING.match(line)), len(lines))
+    head = '\n'.join(line.rstrip() for line in lines[:first]).strip('\n\ufeff ')
+    return head + '\n' if '[INFORMATION]' in head.upper() else ''
+
+
+def subviewer2_time(seconds):
+    """SubViewer 2's time for `seconds`: "HH:MM:SS.cc", to the hundredth."""
+    total = max(0, int(round(float(seconds) * 100)))
+    hours, rest = divmod(total, 360000)
+    minutes, rest = divmod(rest, 6000)
+    secs, cents = divmod(rest, 100)
+    return f'{hours:02d}:{minutes:02d}:{secs:02d}.{cents:02d}'
+
+
+def write_subviewer2(segments, header=''):
+    """SubViewer 2 text for `segments`, under `header` (a file's own, from
+    `subviewer2_header`) or an empty one."""
+    blocks = []
+    for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
+        text = markup.plain(str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n'))
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        if not lines:
+            continue
+        start = float(segment.get('start', 0))
+        end = max(start, float(segment.get('end', start)))
+        blocks.append(f'{subviewer2_time(start)},{subviewer2_time(end)}\n' + '[br]'.join(lines) + '\n')
+    return (header or _SUBVIEWER2_HEADER) + '\n'.join(blocks)
+
+
+def save_subviewer2(path, segments, header='', encoding='utf-8', line_end='\n'):
+    """Write `segments` to `path` as SubViewer 2."""
+    with open(path, 'w', encoding=encoding, errors='replace', newline='') as sub_file:
+        sub_file.write(write_subviewer2(segments, header).replace('\n', line_end))
 
 
 def save(path, segments, speakers=False):

@@ -242,12 +242,11 @@ round_trip('SubViewer 1', segments, 'SUBVIEWER1', 'sub')
 # --------------------------------------------------------------------------
 print('SubViewer 2 (sub-subviewer)')
 segments, fmt = opened('SubViewer_capability_tester.sub')
-# Subtitld reads SubViewer 2 as SBV, which is YouTube's SubViewer.
-check('opened as SBV', fmt, 'SBV')
+check('opened as SubViewer 2', fmt, 'SUBVIEWER2')
 # "[SIZE]20" alone on a line is a style code, not text (FFmpeg drops it);
 # the leading "[br]" is an empty first line, which Subtitld leaves out.
 same('times and text', cues(segments), ffmpeg('sub-subviewer'))
-round_trip('SubViewer 2', segments, 'SBV', 'sub')
+round_trip('SubViewer 2', segments, 'SUBVIEWER2', 'sub')
 
 # --------------------------------------------------------------------------
 print('RealText (sub-realtext)')
