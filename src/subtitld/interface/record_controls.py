@@ -32,7 +32,7 @@ from subtitld.modules import live_peaks
 from subtitld.modules import session
 from subtitld.modules import recorder as recorder_mod
 from subtitld.modules import live_transcribe
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import set_text, text_of
 from subtitld.modules.addons.provider import SOURCE_ENGINES, TASK_ASR_TRANSCRIBE
 
 
@@ -658,13 +658,13 @@ class RecordController(QObject):
                 if rec['kind'] == 'retarget' and written is None:
                     self._history_step()   # replacing existing text is a real edit
                 with self._completing(rec):
-                    seg['text'] = new_text
+                    set_text(seg, new_text)
                 session.set_unsaved()
 
         def _apply(cue):
             nt = self._next_text(written, orig, text_of(cue).strip(), text)
             if nt is not None:
-                cue['text'] = nt
+                set_text(cue, nt)
         self._amend(rec, _apply)
         if new_text is not None:
             rec['written'] = new_text

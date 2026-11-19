@@ -147,8 +147,10 @@ And for a format of its own:
                  modules.vobsub.SIZES (modules.vobsub.frame_size)
 """
 
-from subtitld.modules import markup
-from subtitld.modules.segment import text_of
+import re
+
+from subtitld.modules import karaoke, markup
+from subtitld.modules.segment import text_of, timed_pieces
 
 TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                 'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
@@ -160,6 +162,11 @@ TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAM
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
                 'VOBSUB', 'PGS', 'DVDSUP', 'CDG',
                 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX', 'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET')
+_KARAOKE_CODE = re.compile(r'\{[^{}]*\\(?:kf|ko|k|K)\d')
+
+# The formats that read a subtitle's timing word by word as karaoke codes in
+# its text (modules.karaoke): their copies of a timed subtitle carry them.
+KARAOKE_FORMATS = ('ASS', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'CDG', 'TTXT', 'CTM')
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
@@ -195,27 +202,40 @@ def translation_languages(segments):
 
 def _with_speaker(text, name):
     """`text` with "Name: " before it, after any override codes it starts
-    with (so a {\\an8} still leads)."""
+    with (so a {\\an8} still leads), and before karaoke codes (the name
+    takes no time)."""
     lead = ''
     rest = text
-    while rest.startswith('{\\') and '}' in rest:
+    while rest.startswith('{\\') and '}' in rest and not _KARAOKE_CODE.match(rest):
         end = rest.index('}') + 1
         lead, rest = lead + rest[:end], rest[end:]
     return f'{lead}{name}: {rest}'
 
 
-def prepare(segments, options=None):
+def prepare(segments, options=None, karaoke_codes=False):
     """Copies of `segments` with the text and times the options ask for,
-    in order of start."""
+    in order of start: a timed subtitle's words, or with `karaoke_codes`
+    (a format of KARAOKE_FORMATS) its words with their timing as karaoke
+    codes."""
     settings = dict(DEFAULTS)
     settings.update({key: value for key, value in (options or {}).items() if value is not None})
     language = settings['language']
     offset = float(settings['offset'] or 0)
     prepared = []
     for segment in sorted(segments or [], key=lambda s: float(s.get('start', 0))):
-        original = text_of(segment)
+        remove = settings['formatting'] == 'remove'
+        # Karaoke codes are formatting too: without it, each piece is made
+        # plain and the codes stay.
+        pieces = timed_pieces(segment) if karaoke_codes else None
+        if pieces:
+            original = karaoke.codes_of([dict(piece, text=markup.plain(piece['text'])) for piece in pieces]
+                                        if remove else pieces)
+        else:
+            original = text_of(segment)
         translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else {}
         translated = str(translations.get(language) or '').strip() if language else ''
+        if remove and pieces:
+            translated = markup.plain(translated)
         if settings['text'] == 'translation' and translated:
             text = translated
         elif settings['text'] == 'both' and translated:
@@ -225,7 +245,7 @@ def prepare(segments, options=None):
         speaker = str(segment.get('speaker') or '').strip()
         if settings['speakers'] == 'prefix' and speaker and markup.plain(text).strip():
             text = _with_speaker(text, speaker)
-        if settings['formatting'] == 'remove':
+        if remove and not pieces:
             text = markup.plain(text)
         start = float(segment.get('start', 0)) + offset
         end = float(segment.get('end', 0)) + offset

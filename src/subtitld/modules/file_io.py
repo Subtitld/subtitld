@@ -48,6 +48,7 @@ from subtitld.modules import json_subtitles
 from subtitld.modules import json_dialects
 from subtitld.modules import cdg
 from subtitld.modules import kar
+from subtitld.modules import karaoke
 from subtitld.modules import kbp
 from subtitld.modules import kate
 from subtitld.modules import lambdacap
@@ -1956,6 +1957,8 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     if not 'format' in session.FORMAT:
         session.FORMAT['format'] = subtitle_format
 
+    # Karaoke codes in the text are its timing: the subtitle is timed by them.
+    karaoke.timed_texts(segments_list)
     cue_ids.ensure_ids(segments_list)
     return segments_list, subtitle_format
 
@@ -2175,7 +2178,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         # speakers' names, without formatting, shifted.
         options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
         if subtitle_format in export_options.TEXT_FORMATS:
-            segments = export_options.prepare(SUBTITLE.segments, options)
+            segments = export_options.prepare(SUBTITLE.segments, options,
+                                              karaoke_codes=subtitle_format in export_options.KARAOKE_FORMATS)
 
         if subtitle_format == 'SRT':
             srt.save(final_file, segments,

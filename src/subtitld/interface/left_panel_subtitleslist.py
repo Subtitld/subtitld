@@ -15,7 +15,7 @@ from subtitld.modules import subtitles
 from subtitld.modules import history
 from subtitld.modules import utils as modules_utils
 from subtitld.modules import quality_check
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import set_text, text_of
 
 
 class _TextEditHistoryFilter(QObject):
@@ -488,7 +488,7 @@ def subtitles_panel_empty_state_button_clicked(self):
 
 def left_panel_subtitleslist_textedit_changed(self):
     if session.SUBTITLE.selected:
-        session.SUBTITLE.selected['text'] = subtitle_text_editor.text(self.left_panel_subtitleslist_textedit)
+        set_text(session.SUBTITLE.selected, subtitle_text_editor.text(self.left_panel_subtitleslist_textedit))
         # In a shared project, the others leave this text be while it is typed in.
         collab_service.typing(session.SUBTITLE.selected.get('id'))
         session.set_unsaved(True)

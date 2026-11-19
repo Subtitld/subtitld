@@ -61,7 +61,7 @@ import re
 from dataclasses import dataclass, field
 
 from subtitld.modules import markup
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import set_text, text_of
 
 SRT = 'srt'
 MD = 'md'
@@ -1072,7 +1072,7 @@ def apply_cues(segments, cues, dry_run=False):
             if _ms(segment.get('end')) != _ms(cue.end):
                 segment['end'] = cue.end
             if markup.key(text_of(segment)) != markup.key(cue.text):
-                segment['text'] = cue.text
+                set_text(segment, cue.text)
             for key in list(shown_meta(segment, cue.fmt)):
                 if key not in meta:
                     del segment[key]

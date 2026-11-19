@@ -166,7 +166,14 @@ behaviour must not change.
 segment outside `segment.py`, the readers and the writers that handle
 pieces.
 
-**M4. Timed text stored.** `split`/`unsplit`/`set_text` with their rules
+**M4. Timed text stored.** *(Done on branch `timed-text`. USF's karaoke is
+`<k t="ms"/>`, the length of the text after it, the lengths adding up to
+the subtitle's; effect and level are `subtitldcc:` attributes on `<k>`.
+The ASS reader now keeps its karaoke (it dropped it before). Every writer
+of karaoke codes gets them from export_options.prepare(karaoke_codes=True).
+Merging keeps both timings (`joined`), cutting shares the pieces by time
+(`cut`). Syllables need a `hyphenate` function: pyphen is not a dependency
+yet, a decision for M5.)* `split`/`unsplit`/`set_text` with their rules
 (below), USFX `<karaoke>` read and write, `{\k}` opening into pieces, and
 the `{\k}` writers (ASS, LRC, UltraStar, KAR, KBP, CDG) writing from pieces.
 If USF's `<karaoke>` has no place for a piece's effect, USFX adds a

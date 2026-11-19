@@ -6,7 +6,8 @@ import os
 import secrets
 from bisect import bisect
 from subtitld.modules import cue_ids, history, markup, session
-from subtitld.modules.segment import text_of
+from subtitld.modules import segment as segment_text
+from subtitld.modules.segment import set_text, text_of, timed_pieces
 
 
 def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
@@ -60,13 +61,25 @@ def slice_subtitle(selected_subtitle=False, position=0.0, last_text='', next_tex
 
         session.SUBTITLE.segments[index]['end'] = position_to_cut - 0.001
 
+        # A subtitle timed word by word is cut where the time is: each
+        # half takes the pieces that start in it.
+        halves = segment_text.cut(session.SUBTITLE.segments[index], position_to_cut - session.SUBTITLE.segments[index]['start'])
+        if halves:
+            last_text, next_text = text_of(halves[0]), text_of(halves[1])
         if strip_text:
             last_text = last_text.strip()
             next_text = next_text.strip()
         # Formatting tags open where the text was cut close on this side and
         # open again on the other.
         last_text, next_text = markup.rebalance(last_text, next_text)
-        session.SUBTITLE.segments[index]['text'] = last_text
+        if halves:
+            later = {'text': halves[1]}
+            set_text(later, next_text)
+            session.SUBTITLE.segments[index]['text'] = halves[0]
+            set_text(session.SUBTITLE.segments[index], last_text)
+            next_text = timed_pieces(later) or text_of(later)
+        else:
+            session.SUBTITLE.segments[index]['text'] = last_text
 
         add_subtitle(position=position_to_cut, duration=new_duration, text=next_text)
 
@@ -157,7 +170,7 @@ def merge_back_subtitle(selected_subtitle=False):
         nearest_subttile = [subtitle for subtitle in session.SUBTITLE.segments if subtitle['end'] == subt[-1]][0]
 
         nearest_subttile['end'] = selected_subtitle['end']
-        nearest_subttile['text'] += ' ' + text_of(selected_subtitle)
+        nearest_subttile['text'] = segment_text.joined(nearest_subttile, selected_subtitle)
 
         # Reading order: nearest (earlier) then selected (later).
         if 'translations' in nearest_subttile or 'translations' in selected_subtitle:
@@ -181,7 +194,7 @@ def merge_next_subtitle(selected_subtitle=False):
         nearest_subttile = [subtitle for subtitle in session.SUBTITLE.segments if subtitle['start'] == subt[0]][0]
 
         selected_subtitle['end'] = nearest_subttile['end']
-        selected_subtitle['text'] += ' ' + text_of(nearest_subttile)
+        selected_subtitle['text'] = segment_text.joined(selected_subtitle, nearest_subttile)
 
         # Reading order: selected (earlier) then nearest (later).
         if 'translations' in selected_subtitle or 'translations' in nearest_subttile:
@@ -394,7 +407,7 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
         history.history_append(session.SUBTITLE.segments)
         index = session.SUBTITLE.segments.index(selected_subtitle)
         last_text, next_text = markup.rebalance(last_text, next_text)
-        session.SUBTITLE.segments[index]['text'] = last_text
+        set_text(session.SUBTITLE.segments[index], last_text)
 
         next_text = next_text.strip() + ' ' + session.SUBTITLE.segments[index + 1].text()
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in next_text:
@@ -410,7 +423,7 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
                 split = left if (mid - left) < (right - mid) else right
             next_text = next_text[:split] + '\n' + next_text[split+1:]
 
-        session.SUBTITLE.segments[index + 1]['text'] = next_text
+        set_text(session.SUBTITLE.segments[index + 1], next_text)
 
 def send_translated_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
@@ -443,7 +456,7 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
         history.history_append(session.SUBTITLE.segments)
         index = session.SUBTITLE.segments.index(selected_subtitle)
         last_text, next_text = markup.rebalance(last_text, next_text)
-        session.SUBTITLE.segments[index]['text'] = next_text
+        set_text(session.SUBTITLE.segments[index], next_text)
 
         last_text = session.SUBTITLE.segments[index - 1].text() + ' ' + last_text
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in last_text:
@@ -460,7 +473,7 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
             last_text = last_text[:split] + '\n' + last_text[split+1:]
 
 
-        session.SUBTITLE.segments[index - 1]['text'] = last_text
+        set_text(session.SUBTITLE.segments[index - 1], last_text)
 
 
 def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
@@ -501,7 +514,7 @@ def change_subtitle_text(selected_subtitle=False, text=''):
     """Function to change text of selected subtitle"""
     if selected_subtitle:
         history.history_append(session.SUBTITLE.segments)
-        session.SUBTITLE.segments[session.SUBTITLE.segments.index(selected_subtitle)]['text'] = text
+        set_text(session.SUBTITLE.segments[session.SUBTITLE.segments.index(selected_subtitle)], text)
 
 
 def is_current_position_above_subtitle(position=0.0):

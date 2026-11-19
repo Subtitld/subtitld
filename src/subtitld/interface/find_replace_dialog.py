@@ -69,7 +69,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
 from subtitld.modules.shortcuts import shortcut
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import set_text, text_of
 
 
 # How far the cursor may drift from where a find left it and still count as
@@ -585,7 +585,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         cue_time, cue_index, _offset = self._keys[index]
         replacement = self._replace_field.lineedit.text()
         old_text = text_of(segment)
-        segment['text'] = old_text[:start] + replacement + old_text[end:]
+        set_text(segment, old_text[:start] + replacement + old_text[end:])
         session.set_unsaved(True)
 
         # Offsets after the edit have shifted, so re-derive everything, then
@@ -626,7 +626,7 @@ class FindReplaceDialog(utils.SimpleDialog):
             text = text_of(segment)
             new_text, n = pattern.subn(replacement, text)
             if n > 0:
-                segment['text'] = new_text
+                set_text(segment, new_text)
                 affected_segments.add(id(segment))
         if affected_segments:
             session.set_unsaved(True)

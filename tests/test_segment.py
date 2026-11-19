@@ -8,7 +8,7 @@ Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
-import ast, copy, json, os, pickle, sys, tempfile, types
+import ast, copy, json, os, pickle, re, sys, tempfile, types, zipfile
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 _xdg = tempfile.mkdtemp()
@@ -17,8 +17,8 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import collab_client, export_options, file_io, history, plaintext, quality_check, session, subtitles, subtitldcc_service
-from subtitld.modules.segment import Segment, SegmentList, Subtitle, text_of
+from subtitld.modules import collab_client, export_options, file_io, history, karaoke, plaintext, quality_check, session, subtitles, subtitldcc_service
+from subtitld.modules.segment import Segment, SegmentList, Subtitle, cut, joined, set_text, text_of, timed_pieces
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
 fails = []
@@ -235,7 +235,7 @@ SUBTITLE_READERS = {
                                      'RecordController._fill._apply', 'RecordController._create_placeholder'},
 }
 # A 'text' key that is not a subtitle's: an export's choice, a theme's colour...
-NOT_SUBTITLES = {'names', 'theme', 'self.formats', 'options', 'settings', 'message', 'problem', 'remembered'}
+NOT_SUBTITLES = {'names', 'theme', 'self.formats', 'options', 'settings', 'message', 'problem', 'remembered', 'piece'}
 source = Path(__file__).resolve().parents[1] / 'src' / 'subtitld'
 direct = []
 for rel, functions in SUBTITLE_READERS.items():
@@ -263,6 +263,166 @@ for rel, functions in SUBTITLE_READERS.items():
                 continue
         direct.append(f'{rel}:{node.lineno}')
 check('no subtitle\'s text read by its key where it may be timed', direct, [])
+
+
+def spans(value):
+    return [(piece['text'], piece['start'], piece['end']) for piece in timed_pieces(value)]
+
+
+print('split')
+segment = Segment({'start': 10.0, 'end': 12.0, 'text': 'Hello <i>big</i> world'})
+segment.split('word')
+check('words, spaces with the word before, a tag with its word', [p['text'] for p in segment.pieces()],
+      ['Hello ', '<i>big</i> ', 'world'])
+check('the whole subtitle, shared by letters', spans(segment),
+      [('Hello ', 0.0, 0.769), ('<i>big</i> ', 0.769, 1.231), ('world', 1.231, 2.0)])
+check('its level', {p['level'] for p in segment.pieces()}, {'word'})
+check('the words unchanged', segment.text(), 'Hello <i>big</i> world')
+segment.split('letter')
+check('letters inside the words\' times', (len(segment.pieces()), spans(segment)[5], spans(segment)[-1][2]),
+      (13, ('<i>b', 0.769, 0.923), 2.0))
+segment.split('word')
+check('and words again from them', spans(segment),
+      [('Hello ', 0.0, 0.769), ('<i>big</i> ', 0.769, 1.231), ('world', 1.231, 2.0)])
+segment = Segment({'start': 0.0, 'end': 2.0, 'text': 'karaoke time'})
+segment.split('syllable', hyphenate=lambda word: list(range(2, len(word), 2)))
+check('syllables where hyphenate says', [p['text'] for p in segment.pieces()], ['ka', 'ra', 'ok', 'e ', 'ti', 'me'])
+segment = Segment({'start': 0.0, 'end': 2.0, 'text': 'karaoke time'})
+segment.split('syllable')
+check('without it, words', [p['text'] for p in segment.pieces()], ['karaoke ', 'time'])
+segment.unsplit()
+check('unsplit', segment['text'], 'karaoke time')
+segment = Segment({'start': 0.0, 'end': 1.0, 'text': [dict(TIMED[0], effect='wipe'), *TIMED[1:]]})
+segment.split('letter')
+check('a piece cut keeps its effect', [p.get('effect') for p in segment.pieces()][:4], ['wipe', 'wipe', 'wipe', None])
+
+print('set_text')
+segment = Segment({'start': 0.0, 'end': 3.0, 'text': [dict(piece) for piece in TIMED]})
+segment.set_text('Hello, world!')
+check('typed inside and at the end of pieces', spans(segment),
+      [('Hel', 0.0, 0.5), ('lo, ', 0.5, 0.8), ('world!', 1.0, 1.6)])
+segment.set_text('ello, world!')
+check('a letter deleted', spans(segment)[0], ('el', 0.0, 0.5))
+segment.set_text('Oh, ello, world!')
+check('typed at the very start: the first piece', spans(segment)[0], ('Oh, el', 0.0, 0.5))
+segment = Segment({'start': 0.0, 'end': 3.0, 'text': [dict(piece) for piece in TIMED]})
+segment.set_text('Hel world')
+check('a piece deleted whole: its time to the one before', spans(segment), [('Hel ', 0.0, 0.8), ('world', 1.0, 1.6)])
+segment.set_text('world')
+check('the first deleted: its time to the next', spans(segment), [('world', 0.0, 1.6)])
+segment = Segment({'start': 0.0, 'end': 2.0, 'text': 'Hello big world'})
+segment.split('word')
+segment.set_text('Hello big wide world')
+check('a word typed inside a word piece is cut into its own', [p['text'] for p in segment.pieces()],
+      ['Hello ', 'big ', 'wide ', 'world'])
+segment.set_text('Totally different text here')
+check('mostly new words: timed again over the old span', (spans(segment)[0][1], spans(segment)[-1][2],
+                                                          len(segment.pieces())), (0.0, 2.0, 4))
+segment.set_text('')
+check('no words: a string', segment['text'], '')
+plain = {'text': 'old'}
+set_text(plain, 'new')
+check('a text not timed is just set', plain['text'], 'new')
+
+print('merged and cut')
+first = Segment({'start': 1.0, 'end': 2.0, 'text': [{'text': 'one', 'start': 0.0, 'end': 0.5}]})
+second = Segment({'start': 3.0, 'end': 4.0, 'text': 'two'})
+check('merged: the later one moved, not timed one piece over its subtitle', spans({'text': joined(first, second)}),
+      [('one ', 0.0, 0.5), ('two', 2.0, 3.0)])
+check('neither timed: a string', joined({'text': 'a'}, {'text': 'b'}), 'a b')
+whole = Segment({'start': 0.0, 'end': 3.0, 'text': [dict(piece) for piece in TIMED]})
+before, after = cut(whole, 0.9)
+check('cut: the pieces that start before', spans({'text': before}), [('Hel', 0.0, 0.5), ('lo', 0.5, 0.8)])
+check('and after, from where it is cut', spans({'text': after}), [('world', 0.1, 0.7)])
+check('nothing on one side: not cut', cut(whole, 5.0), None)
+
+print('karaoke codes')
+check('read as pieces', karaoke.pieces_of(r'{\k50}Hel{\k30}lo {\k20}{\k60}world'),
+      [{'text': 'Hel', 'start': 0.0, 'end': 0.5}, {'text': 'lo ', 'start': 0.5, 'end': 0.8},
+       {'text': 'world', 'start': 1.0, 'end': 1.6}])
+check('effects and the placing code', karaoke.pieces_of(r'{\an8}{\kf50}Hi {\ko30}<i>there</i>'),
+      [{'text': r'{\an8}Hi ', 'start': 0.0, 'end': 0.5, 'effect': 'wipe'},
+       {'text': '<i>there</i>', 'start': 0.5, 'end': 0.8, 'effect': 'outline'}])
+check('karaoke mixed with another code in a block: left as written', karaoke.pieces_of(r'{\k50\i1}x'), None)
+for written in (r'{\k50}Hel{\k30}lo {\k20}{\k60}world', r'{\an8}{\kf50}Hi {\ko30}<i>there</i>'):
+    check(f'written back: {written}', karaoke.codes_of(karaoke.pieces_of(written)), written)
+timed = Segment({'start': 1.0, 'end': 3.0, 'speaker': 'Ann', 'text': [dict(TIMED[0], effect='wipe'), *TIMED[1:]]})
+check('an export to a karaoke format: codes', export_options.prepare([timed], {}, karaoke_codes=True)[0]['text'],
+      r'{\kf50}Hel{\k30}lo {\k20}{\k60}world')
+check('the speaker\'s name before them', export_options.prepare([timed], {'speakers': 'prefix'}, karaoke_codes=True)[0]['text'],
+      r'Ann: {\kf50}Hel{\k30}lo {\k20}{\k60}world')
+check('to another format: the words', export_options.prepare([timed], {})[0]['text'], 'Hello world')
+
+
+def saved_and_opened(fmt, extension):
+    path = os.path.join(folder, f'timed.{extension}')
+    file_io.save_file(path, fmt)
+    return file_io.process_subtitles_file(path, fmt)[0], path
+
+
+KARAOKE = [{'id': 'aaaa0000aaaa0001', 'start': 1.0, 'end': 3.0, 'speaker': 'A',
+            'text': [{'text': '{\\an8}<i>Hel', 'start': 0.0, 'end': 0.5, 'effect': 'wipe', 'level': 'syllable'},
+                     {'text': 'lo</i> ', 'start': 0.5, 'end': 0.8, 'level': 'syllable'},
+                     {'text': 'world', 'start': 1.0, 'end': 1.6, 'level': 'syllable'}]},
+           {'id': 'aaaa0000aaaa0002', 'start': 4.0, 'end': 5.0, 'speaker': 'A', 'text': 'Not timed'}]
+print('kept in a .usfx')
+session.FORMAT = {}
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+opened, path = saved_and_opened('USFX', 'usfx')
+check('timed as it was, effect and level', [s['text'] for s in opened], [s['text'] for s in KARAOKE])
+check('a <karaoke> with a <k> a piece and a pause', '<k subtitldcc:effect="wipe"' in Path(path).read_bytes().decode('latin-1')
+      or b'<k' in zipfile.ZipFile(path).read('subtitles.usf'), True)
+usf_text = zipfile.ZipFile(path).read('subtitles.usf').decode('utf-8')
+check('lengths in milliseconds adding up to the subtitle\'s', [int(t) for t in re.findall(r' t="(\d+)"', usf_text)],
+      [500, 300, 200, 600, 400])
+
+print('ASS, LRC and UltraStar')
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+opened, path = saved_and_opened('ASS', 'ass')
+check('ASS: written as codes', r'{\an8}{\kf50}{\i1}Hel{\k30}lo{\i0} {\k20}{\k60}world' in Path(path).read_text(encoding='utf-8-sig'),
+      True)
+check('ASS: opened as pieces', spans(opened[0]), spans(KARAOKE[0]))
+check('ASS: their effect', opened[0]['text'][0].get('effect'), 'wipe')
+session.SUBTITLE.segments = opened
+again, path = saved_and_opened('USFX', 'usfx')
+session.SUBTITLE.segments = again
+again, path = saved_and_opened('ASS', 'ass')
+check('ASS to USFX to ASS', spans(again[0]), spans(KARAOKE[0]))
+session.SUBTITLE.segments = [dict(KARAOKE[0], text='Hello world', id='x1')]
+session.SUBTITLE.segments[0].split('word')
+words = spans(session.SUBTITLE.segments[0])
+opened, path = saved_and_opened('LRC', 'lrc')
+check('LRC: word stamps opened as pieces', [(t, round(a, 2)) for t, a, _b in spans(opened[0])], [(t, round(a, 2)) for t, a, _b in words])
+session.SUBTITLE.segments = opened
+again, path = saved_and_opened('USFX', 'usfx')
+session.SUBTITLE.segments = again
+again, path = saved_and_opened('LRC', 'lrc')
+check('LRC to USFX to LRC', [(t, round(a, 2)) for t, a, _b in spans(again[0])], [(t, round(a, 2)) for t, a, _b in words])
+session.SUBTITLE.segments = [dict(KARAOKE[0], text='Hello world', id='x1')]
+session.SUBTITLE.segments[0].split('word')
+opened, path = saved_and_opened('ULTRASTAR', 'txt')
+check('UltraStar: its notes opened as pieces', [p['text'].strip() for p in timed_pieces(opened[0])], ['Hello', 'world'])
+
+print('merging and cutting in the editor')
+history.history_clear()
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+subtitles.merge_next_subtitle(selected_subtitle=session.SUBTITLE.segments[0])
+merged = session.SUBTITLE.segments[0]
+check('merged: one subtitle, both timed', (len(session.SUBTITLE.segments), spans(merged)[-1]),
+      (1, ('Not timed', 3.0, 4.0)))
+check('its words', merged.text(), '{\\an8}<i>Hello</i> world Not timed')
+history.history_clear()
+session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
+subtitles.slice_subtitle(selected_subtitle=session.SUBTITLE.segments[0], position=1.9, last_text='x', next_text='y')
+check('cut where the time is', [spans(s) for s in session.SUBTITLE.segments[:2]],
+      [[('{\\an8}<i>Hel', 0.0, 0.5), ('lo</i>', 0.5, 0.8)], [('{\\an8}world', 0.1, 0.7)]])
+session.SUBTITLE.segments = [dict(KARAOKE[0], text='Hello world')]
+session.SUBTITLE.segments[0].split('word')
+plaintext.apply_cues(session.SUBTITLE.segments,
+                     plaintext.parse(plaintext.serialize(session.SUBTITLE.segments, plaintext.SRT).replace('world', 'wide world'),
+                                     plaintext.SRT).cues)
+check('edited in the plain-text panel: still timed', [p['text'] for p in timed_pieces(session.SUBTITLE.segments[0])][-2:],
+      ['wide ', 'world'])
 
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL PASS')

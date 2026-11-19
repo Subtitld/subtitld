@@ -115,7 +115,9 @@ session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.kbp'), 'KBP')
 raw = (folder / 'again.kbp').read_bytes()
 check('saved with Windows line ends, the same subtitles', (b'\r\n' in raw and b'\n' not in raw.replace(b'\r\n', b''),
-                                                          kbp.parse(raw.decode('utf-8'))[0][0] == {k: v for k, v in opened[0].items() if k != 'id'}), (True, True))
+                                                          # as the app opens it, timed by its codes
+                                                          karaoke.timed_texts(kbp.parse(raw.decode('utf-8'))[0])[0]
+                                                          == {k: v for k, v in opened[0].items() if k != 'id'}), (True, True))
 check('registered: .kbp, a text format', (session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['KBP']['extensions'],
                                           'KBP' in export_options.TEXT_FORMATS), (['kbp'], True))
 
