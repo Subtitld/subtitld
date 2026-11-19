@@ -67,6 +67,7 @@ from subtitld.modules import plaintext
 from subtitld.modules import project_export
 from subtitld.modules import sami
 from subtitld.modules import sbv
+from subtitld.modules import segment
 from subtitld.modules import softni
 from subtitld.modules import spot
 from subtitld.modules import scc
@@ -3227,7 +3228,7 @@ def _detached(value):
     thread edits the original. Pictures (a speaker's QImage) cannot be
     deep-copied, which made every snapshot fail; Qt's own copy of one is
     shared until either side writes to it, so it is taken instead."""
-    if isinstance(value, dict):
+    if isinstance(value, (dict, segment.Subtitle)):
         return {key: _detached(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_detached(item) for item in value]

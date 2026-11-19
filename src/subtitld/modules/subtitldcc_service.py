@@ -303,6 +303,7 @@ def open_in_editor(window, data):
     finally:
         os.unlink(path)
     session.SUBTITLE['segments'] = segments
+    segments = session.SUBTITLE['segments']  # the Segments it holds, not the dicts given
     session.SUBTITLE['filepath'] = ''
     session.CONFIG['format_to_save'] = 'USFX'
     for name in {segment.get('speaker', 'A') for segment in segments}:

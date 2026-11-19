@@ -199,7 +199,7 @@ check('opens: the language for the project, the translation as Subtitld names it
       ('SAMI', 'ko-kr', 2, {'en-us': 'You\'re a <font color="#ffff00">jerk</font>, Thom.'}))
 session.SUBTITLE['segments'] = opened
 session.SUBTITLE['language'] = 'ko-kr'
-for opened_segment, speaker in zip(opened, ('Celia', 'Thom')):
+for opened_segment, speaker in zip(session.SUBTITLE['segments'], ('Celia', 'Thom')):
     opened_segment['speaker'] = speaker
 
 

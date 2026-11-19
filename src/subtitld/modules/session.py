@@ -8,6 +8,7 @@ import datetime
 import subtitld
 import platformdirs
 from subtitld.modules import collab_state, cue_ids, journal
+from subtitld.modules.segment import Subtitle
 
 PATH_SUBTITLD = pathlib.Path(subtitld.__file__).parent
 PATH_HOME = pathlib.Path.home()
@@ -492,9 +493,7 @@ LANGUAGE_DICT_LIST = {
 
 CONFIG = {}
 
-SUBTITLE = {
-    'segments': [],
-}
+SUBTITLE = Subtitle(segments=[])
 
 SPEAKERS = {}
 
