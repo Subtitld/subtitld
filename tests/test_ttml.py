@@ -638,15 +638,15 @@ folder = Path(tempfile.mkdtemp())
 for name, text, encoding in (('in.ttml', AGENTS, 'utf-8'), ('in.dfxp', OLD, 'utf-8'), ('in.itt', ITT, 'utf-8'),
                              ('in.xml', EBU, 'utf-8')):
     (folder / name).write_text(text, encoding=encoding)
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.ttml'))
-check('opens, its language for the project', (len(opened), fmt, opened[0].get('speaker'), session.SUBTITLE['language']),
+check('opens, its language for the project', (len(opened), fmt, opened[0].get('speaker'), session.SUBTITLE.language),
       (4, 'TTML', 'Thom', 'pt-br'))
 (folder / 'said.ttml').write_text(said, encoding='utf-8')
-session.SUBTITLE.pop('metadata', None)
+session.SUBTITLE.metadata = None
 file_io.process_subtitles_file(str(folder / 'said.ttml'))
 check('what the file says about itself reaches the project, and is not dropped on the way',
-      session.SUBTITLE.get('metadata'), META)
+      session.SUBTITLE.metadata, META)
 check('.dfxp opens as DFXP, .itt and .xml as TTML', [file_io.process_subtitles_file(str(folder / name))[1]
                                                     for name in ('in.dfxp', 'in.itt', 'in.xml')], ['DFXP', 'TTML', 'TTML'])
 check('a language alone, as Subtitld names it', [file_io._known_language(tag) for tag in ('en', 'fr', 'pt_BR', 'xx', '')],
@@ -661,8 +661,8 @@ try:
 except file_io.CorruptedProjectFileError as error:
     check('broken XML: a message, not a crash', str(error).startswith('Line 1, column '), True)
 session.SUBTITLE.segments = segments
-session.SUBTITLE['language'] = 'pt-br'
-session.SUBTITLE['translations'] = {}
+session.SUBTITLE.language = 'pt-br'
+session.SUBTITLE.translations = {}
 session.CONFIG['subtitle_style'] = {'settings': {'subtitld.classic': {'font_family': 'Ubuntu', 'backgroundbox_enabled': False}}}
 for fmt, name in (('TTML', 'out.ttml'), ('DFXP', 'out.dfxp')):
     session.FORMAT['options'] = {'speakers': 'voice', 'look': 'preview'}

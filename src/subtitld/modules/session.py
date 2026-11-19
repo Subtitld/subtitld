@@ -536,7 +536,7 @@ def persist_current_playback_position():
     don't need to gate on those."""
     if not isinstance(CONFIG, dict):
         return
-    filepath = SUBTITLE.get('filepath')
+    filepath = SUBTITLE.filepath
     if not filepath:
         return
     recent = CONFIG.get('recent_files')
@@ -546,7 +546,7 @@ def persist_current_playback_position():
     if not isinstance(entry, dict):
         return
     try:
-        entry['last_position'] = float(SUBTITLE.get('position', 0) or 0)
+        entry['last_position'] = float(SUBTITLE.position or 0)
     except (TypeError, ValueError):
         entry['last_position'] = 0
 

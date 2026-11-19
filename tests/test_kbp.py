@@ -110,7 +110,7 @@ session.SUBTITLE = Subtitle({'segments': []})
 session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'song.kbp'))
-check('opens as KBP with its title', (fmt, len(opened), session.SUBTITLE['metadata']['title']), ('KBP', 3, 'A Test Song'))
+check('opens as KBP with its title', (fmt, len(opened), session.SUBTITLE.metadata['title']), ('KBP', 3, 'A Test Song'))
 session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.kbp'), 'KBP')
 raw = (folder / 'again.kbp').read_bytes()

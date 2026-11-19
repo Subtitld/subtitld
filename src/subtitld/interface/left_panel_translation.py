@@ -116,7 +116,7 @@ class AddonTranslatorPanel(QWidget):
         seg = widget._queue[widget._index]
         request_id = 'run{}_{}'.format(widget._run_id, widget._index)
         widget._reqmap[request_id] = seg
-        source = session.SUBTITLE.get('language', 'en-us')
+        source = session.SUBTITLE.language or 'en-us'
         try:
             widget.provider.translate(request_id, markup.plain(text_of(seg)), source, widget._target_language)
         except Exception as exc:
@@ -405,16 +405,16 @@ def global_panel_translation_invert_translation_button_clicked(self):
     if confirm_translation:
         history.history_append()
         target_language = session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')
-        original_language = session.SUBTITLE.get('language', 'en-us')
+        original_language = session.SUBTITLE.language or 'en-us'
         # Lock `source_language` to the pre-invert language *before* we
-        # flip `SUBTITLE['language']`. Legacy projects (transcribed under
+        # flip `SUBTITLE.language`. Legacy projects (transcribed under
         # a Subtitld version that didn't write `source_language`) would
         # otherwise lose the audio-language reference forever once
         # `language` swaps to the translation target. clone_ref reads
         # this field to pick the audio-matching ref_text for clone-
         # capable TTS addons (qwen3-clone, xtts-clone, f5-clone).
-        if not session.SUBTITLE.get('source_language'):
-            session.SUBTITLE['source_language'] = original_language
+        if not session.SUBTITLE.source_language:
+            session.SUBTITLE.source_language = original_language
         for segment in session.SUBTITLE.segments:
             translations = segment.get('translations') if isinstance(segment.get('translations'), dict) else None
             if not translations or not translations.get(target_language):
@@ -424,9 +424,9 @@ def global_panel_translation_invert_translation_button_clicked(self):
             segment['text'] = translated_text
             segment.setdefault('translations', {})[original_language] = original_text
 
-        session.SUBTITLE['language'] = target_language
-        if not 'translations' in session.SUBTITLE:
-            session.SUBTITLE['translations'] = {}
+        session.SUBTITLE.language = target_language
+        if session.SUBTITLE.translations is None:
+            session.SUBTITLE.translations = {}
         session.CONFIG['translation']['engine_options']['target_language'] = original_language
 
         session.set_unsaved(True)
@@ -496,7 +496,7 @@ def _source_differs_from_target(self):
     panel = _current_engine_panel(self)
     if not getattr(panel, 'uses_subtitle_language', False):
         return True
-    source = (session.SUBTITLE.get('language') or 'en-us').lower()
+    source = (session.SUBTITLE.language or 'en-us').lower()
     target = (session.CONFIG['translation'].get('engine_options', {}).get('target_language') or 'en-us').lower()
     if source.split('-')[0] != target.split('-')[0]:
         return True

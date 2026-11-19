@@ -124,7 +124,7 @@ check('opens as EDL, the locators, the style and the hour kept', (fmt, len(opene
 session.SUBTITLE.segments = trip
 session.VIDEO = {'framerate': 25.0, 'filepath': '/videos/show.mov'}
 session.FORMAT = {'options': {'edl_style': 'events', 'timeline_start': '01:00:00:00', 'timecode': 'non-drop'}}
-session.SUBTITLE.pop('metadata', None)
+session.SUBTITLE.metadata = None
 file_io.save_file(str(folder / 'out.edl'), 'EDL')
 saved = (folder / 'out.edl').read_bytes()
 check('saved with CRLF, titled after the video, read back', (saved.count(b'\r\n') > 3, saved.startswith(b'TITLE: show\r\n'),

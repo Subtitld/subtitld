@@ -93,13 +93,13 @@ check('looks like TMX, and a TTML does not', (tmx.looks_like(SE.encode()), tmx.l
 
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 (folder / 'in.tmx').write_text(MULTI, encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.tmx'))
 check("opens: the original's language the project's, translations by Subtitld's codes",
-      (fmt, session.SUBTITLE['language'], opened[0].get('translations')), ('TMX', 'pt-br', {'en-us': 'Hi there', 'fr-fr': 'Salut'}))
+      (fmt, session.SUBTITLE.language, opened[0].get('translations')), ('TMX', 'pt-br', {'en-us': 'Hi there', 'fr-fr': 'Salut'}))
 session.SUBTITLE.segments = trip
-session.SUBTITLE['language'] = 'en-us'
+session.SUBTITLE.language = 'en-us'
 # The text option asks for the translation alone: TMX keeps both anyway.
 session.FORMAT = {'options': {'text': 'translation', 'language': 'pt-br', 'offset': 1.0}}
 file_io.save_file(str(folder / 'out.tmx'), 'TMX')

@@ -297,7 +297,7 @@ def stream_take(eng, segments=None, pos=0.0):
     return ctrl
 
 def at(t):
-    session.SUBTITLE['position'] = t
+    session.SUBTITLE.position = t
 
 # S1: cues become pending subtitles while recording; finals fill them in order.
 eng = FakeStream(); ctrl = stream_take(eng)
@@ -576,7 +576,7 @@ ctrl.on_pause(); eng.stream_finished.emit([]); pump(); ctrl.shutdown()
 # R8 (U7): the JSON save strips runtime keys from `current` as well.
 ctrl, eng = batch_take()
 feed(ctrl, UTT)
-session.SUBTITLE['current'] = subs()[0]
+session.SUBTITLE.current = subs()[0]
 session.SUBTITLE.selected = subs()[0]
 session.FORMAT = {'format': 'JSON', 'options': {'standard': 'Whisper'}}
 file_io.save_file(os.path.join(tmp, 'y.json'), 'JSON')
@@ -587,7 +587,7 @@ check('R8 _rec not saved through current/selected', '_rec' not in open(os.path.j
 eng.answer(segs=[])
 check('R9 selection cleared to None', subs() == [] and session.SUBTITLE.selected is None,
       session.SUBTITLE.selected)
-session.SUBTITLE.pop('current', None)
+session.SUBTITLE.current = None
 ctrl.on_pause(); pump(); ctrl.shutdown()
 
 # R10 (U6): the drain backstop counts from the last answer, not from Stop.
@@ -826,7 +826,7 @@ class PoolASR(HeldASR):
     def shutdown(s): s.shut += 1
 
 def pool_take(ctrl, base, pos):
-    session.SUBTITLE['position'] = pos
+    session.SUBTITLE.position = pos
     ctrl._resolve_shared_asr_provider = lambda: base
     ctrl.on_play()
     return ctrl._live_clone[id(ctrl._live)]

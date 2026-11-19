@@ -276,7 +276,7 @@ def load(self):
     # they format (subtitle_text_editor).
     self.left_panel_subtitleslist_formatting_bar = subtitle_text_editor.FormattingBar(
         self.left_panel_subtitleslist_textedit, segment=lambda: session.SUBTITLE.selected,
-        language=lambda: session.SUBTITLE.get('language'),
+        language=lambda: session.SUBTITLE.language,
         aligner=(word_alignment.available, lambda: align_selected(self)))
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
@@ -602,7 +602,7 @@ def update(self):
             textedit.blockSignals(False)
 
         if self.preview_panel_player.is_paused():
-            position = session.SUBTITLE.get('position', 0)
+            position = session.SUBTITLE.position or 0
             outside = position > session.SUBTITLE.selected['end'] or position < session.SUBTITLE.selected['start']
             if outside:
                 position = session.SUBTITLE.selected['start'] + ((session.SUBTITLE.selected['end'] - session.SUBTITLE.selected['start']) / 2)

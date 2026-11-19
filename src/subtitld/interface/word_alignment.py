@@ -78,7 +78,7 @@ def align(window, subtitle, on_done=None):
     _busy['provider'] = aligner
     aligner.aligned.connect(done)
     aligner.align_error.connect(failed)
-    aligner.align(audio, session.SUBTITLE.get('language') or 'en-us',
+    aligner.align(audio, session.SUBTITLE.language or 'en-us',
                   [{'start': 0.0, 'end': round(end - start, 3), 'text': markup.plain(text_of(subtitle))}])
     return True
 

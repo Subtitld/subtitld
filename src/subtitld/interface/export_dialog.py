@@ -693,8 +693,8 @@ class _SubtitlesPanel(QWidget):
             # here; the preview shows one.
             self.check_label.setVisible(False)
             return
-        written = ttml.write(segments, session.SUBTITLE.get('language') or 'en', profile=profile,
-                             metadata=session.SUBTITLE.get('metadata'))
+        written = ttml.write(segments, session.SUBTITLE.language or 'en', profile=profile,
+                             metadata=session.SUBTITLE.metadata)
         delivery = self.delivery_combo.combobox.currentData() or None
         problems = ttml.check(written, profile, delivery=delivery)
         name = _('export_dialog.ttml_profile_imsc11') if fmt == 'IMSCMXF' else self.profile_combo.combobox.currentText()
@@ -2338,7 +2338,7 @@ class ExportDialog(utils.SimpleDialog):
         from subtitld.modules import bounce
         fmt, mode, include_background = self.audio_panel.export_choices()
         segments = session.SUBTITLE.segments
-        base = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
+        base = os.path.splitext(os.path.basename(session.SUBTITLE.filepath or session.VIDEO.get('filepath')
                                                  or 'subtitle'))[0]
         engine = self._audio_engine
         facts = audio_report.facts(mode, fmt, include_background, segments, session.VIDEO,
@@ -2379,7 +2379,7 @@ class ExportDialog(utils.SimpleDialog):
         except Exception:
             self.preview_panel.show_note(_('export_dialog.preview_failed'))
             return
-        stem = os.path.splitext(os.path.basename(session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath')
+        stem = os.path.splitext(os.path.basename(session.SUBTITLE.filepath or session.VIDEO.get('filepath')
                                                  or 'subtitle'))[0]
         video = session.VIDEO.get('filepath')
         sounds = [path for path in timeline.media() if path != video]
@@ -2457,8 +2457,8 @@ class ExportDialog(utils.SimpleDialog):
         self._still = (self._still_count, path)
         self.preview_panel.show_note(_('export_dialog.preview_drawing'))
         video_preview.still_async(container, captions, copy.deepcopy(session.SUBTITLE.segments), cue,
-                                  float(session.SUBTITLE.get('position') or 0), path, self._still_done,
-                                  language=session.SUBTITLE.get('language') or '')
+                                  float(session.SUBTITLE.position or 0), path, self._still_done,
+                                  language=session.SUBTITLE.language or '')
 
     def _still_done(self, path, error):
         if self._still is None or self._still[1] != path:
@@ -2489,7 +2489,7 @@ class ExportDialog(utils.SimpleDialog):
     def _picture_cue(self, fmt, options):
         """The subtitle under the timeline's cursor, else the next after it,
         as the export writes it; None when there is none to draw."""
-        position = float(session.SUBTITLE.get('position') or 0)
+        position = float(session.SUBTITLE.position or 0)
         segments = sorted(session.SUBTITLE.segments, key=lambda segment: float(segment.get('start', 0)))
         under = [segment for segment in segments if float(segment['start']) <= position < float(segment['end'])]
         after = [segment for segment in segments if float(segment['start']) > position]
@@ -2556,7 +2556,7 @@ class ExportDialog(utils.SimpleDialog):
     def _bdn_start(drawable, layers, frame, options):
         """The start of the BDN XML the export writes: its description, for
         every subtitle, and the events of the first, whose `layers` are drawn."""
-        source = session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath') or ''
+        source = session.SUBTITLE.filepath or session.VIDEO.get('filepath') or ''
         stem = os.path.splitext(os.path.basename(source))[0] or 'subtitle'
         unknown = '\0'                                        # a picture not drawn: where the start stops
         pictures = []
@@ -2572,7 +2572,7 @@ class ExportDialog(utils.SimpleDialog):
                              'width': image.width() if image is not None else 0,
                              'height': image.height() if image is not None else 0,
                              'forced': bool(segment.get('forced'))})
-        language = (session.SUBTITLE.get('language') or '').strip() or session.CONFIG.get('selected_language') or 'en'
+        language = (session.SUBTITLE.language or '').strip() or session.CONFIG.get('selected_language') or 'en'
         lines = bdn.write(pictures, frame, **file_io.bdn_options(options, language, stem + '.xml')).split('\n')
         cut = next((index for index, line in enumerate(lines) if unknown in line), None)
         if cut is not None:

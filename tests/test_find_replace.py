@@ -27,7 +27,7 @@ class Player:
     def set_position(self, pos):
         # Mimic the real player: writes immediately, then the echo comes back
         # ms-quantised (truncated).
-        session.SUBTITLE['position'] = int(float(pos) * 1000) / 1000.0
+        session.SUBTITLE.position = int(float(pos) * 1000) / 1000.0
 
 host = types.SimpleNamespace(preview_panel_player=Player())
 fails = []
@@ -77,9 +77,9 @@ d._on_find_next();     check('> from exactly 9.5 includes the cue at the cursor'
 print('moving the cursor breaks continuation')
 d = fresh(segs, 0.0)
 d._on_find_next(); check('> from 0 lands on 1.0', landed(d), (1.0, 0))
-session.SUBTITLE['position'] = 15.0            # user clicks the timeline
+session.SUBTITLE.position = 15.0            # user clicks the timeline
 d._on_find_next(); check('> after moving to 15 lands on 20.25', landed(d), (20.25, 4))
-session.SUBTITLE['position'] = 15.0
+session.SUBTITLE.position = 15.0
 d._on_find_previous(); check('< after moving to 15 lands on 9.5', landed(d), (9.5, 0))
 
 print('changing the search resets continuation')

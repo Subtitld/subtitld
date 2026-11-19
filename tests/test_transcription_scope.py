@@ -209,14 +209,14 @@ check('out-of-bounds input is clamped into the media',
 print('the capture buttons stamp the playhead')
 session.CONFIG['transcription'].update({'scope': 'range', 'scope_from': 0.0, 'scope_to': 30.0})
 sc.refresh()
-session.SUBTITLE['position'] = 12.5
+session.SUBTITLE.position = 12.5
 sc.from_capture_button.click()
 check('From takes the playback position', sc.from_input.text(), '00:00:12.500')
-session.SUBTITLE['position'] = 25.0
+session.SUBTITLE.position = 25.0
 sc.to_capture_button.click()
 check('To takes the playback position', sc.to_input.text(), '00:00:25.000')
 check('the range is what was captured', sc.current_range(), (12.5, 25.0))
-session.SUBTITLE['position'] = 5.0
+session.SUBTITLE.position = 5.0
 sc.to_capture_button.click()                   # capture To BEFORE From
 check('capturing To before From self-corrects rather than inverting',
       sc.current_range()[1] > sc.current_range()[0], True)

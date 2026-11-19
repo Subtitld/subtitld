@@ -61,16 +61,16 @@ def _resolve_source_language() -> str | None:
     """Return the BCP-47 language tag of the *source audio* — the language
     actually spoken in the project's source media.
 
-    This is distinct from `session.SUBTITLE['language']`, which tracks the
+    This is distinct from `session.SUBTITLE.language`, which tracks the
     current *display* / synthesis language. When the user translates and
     inverts (`left_panel_translation.global_panel_translation_invert_translation_button_clicked`),
-    `SUBTITLE['language']` flips to the target language and `seg['text']`
+    `SUBTITLE.language` flips to the target language and `seg['text']`
     is overwritten with the translation — but the audio doesn't change.
 
     Resolution order:
-      1. Explicit `SUBTITLE['source_language']` — preferred, set at
+      1. Explicit `SUBTITLE.source_language` — preferred, set at
          transcription time and preserved through invert.
-      2. Fallback to `SUBTITLE['language']` — correct for projects that
+      2. Fallback to `SUBTITLE.language` — correct for projects that
          have not been translated (the common case), and the only
          reasonable guess for legacy projects that predate the
          `source_language` field.
@@ -83,12 +83,12 @@ def _resolve_source_language() -> str | None:
     skip `voice_ref_text` entirely rather than feed the model a
     wrong-language transcript.
     """
-    explicit = (session.SUBTITLE.get('source_language') or '').strip()
+    explicit = (session.SUBTITLE.source_language or '').strip()
     if explicit:
         return explicit
     if has_translations():
         return None
-    current = (session.SUBTITLE.get('language') or '').strip()
+    current = (session.SUBTITLE.language or '').strip()
     return current or None
 
 
@@ -96,7 +96,7 @@ def has_translations() -> bool:
     """Whether the project's subtitles carry translations. Then the language
     they are in may not be the one spoken (a translation inverted shows the
     translation), and only an explicit `source_language` says which is: it
-    must not be taken from `SUBTITLE['language']`."""
+    must not be taken from `SUBTITLE.language`."""
     return any(isinstance(seg, dict) and seg.get('translations')
                for seg in session.SUBTITLE.segments)
 
@@ -110,7 +110,7 @@ def _segment_text_for_source_language(seg: dict, source_lang: str | None) -> str
     anchor pronunciation against.
 
     Where the right text lives:
-      * If `source_lang == SUBTITLE['language']` → no invert has
+      * If `source_lang == SUBTITLE.language` → no invert has
         happened, `seg['text']` matches the audio. Use it.
       * Otherwise → invert happened, `seg['text']` is the *translated*
         string and the original (audio-matching) text was stashed in
@@ -124,7 +124,7 @@ def _segment_text_for_source_language(seg: dict, source_lang: str | None) -> str
         (audible English bleed on Portuguese, Spanish, Italian — see
         the qwen3 docs and the bug this function exists to fix).
     """
-    current = (session.SUBTITLE.get('language') or '').strip()
+    current = (session.SUBTITLE.language or '').strip()
     if source_lang and current and source_lang == current:
         return markup.plain(text_of(seg)).strip()
     translations = seg.get('translations') if isinstance(seg.get('translations'), dict) else None

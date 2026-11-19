@@ -207,7 +207,7 @@ session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.stl'))
 check('opened through file_io: the GSI kept with the subtitle, its title the title',
-      (fmt, session.SUBTITLE['metadata']['title'], session.SUBTITLE['metadata']['stl']['PUB']),
+      (fmt, session.SUBTITLE.metadata['title'], session.SUBTITLE.metadata['stl']['PUB']),
       ('STL', 'Tears of Steel', 'Blender Foundation'))
 session.SUBTITLE.segments = opened
 session.FORMAT = {'format': 'TTML', 'options': {'profile': 'ebu-tt'}}

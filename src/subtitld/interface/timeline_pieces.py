@@ -114,7 +114,7 @@ def _snapped(widget, subtitle, time):
         return time
     start = float(subtitle['start'])
     targets = []
-    position = session.SUBTITLE.get('position')
+    position = session.SUBTITLE.position
     if position is not None:
         targets.append(float(position) - start)
     onsets = getattr(widget, 'background_onsets', None)
@@ -142,7 +142,7 @@ def press(widget, event):
         player = getattr(widget.window(), 'preview_panel_player', None)
         if player is not None:
             player.set_position(float(subtitle['start']) + piece['start'])
-        session.SUBTITLE['position'] = float(subtitle['start']) + piece['start']
+        session.SUBTITLE.position = float(subtitle['start']) + piece['start']
     widget.update()
     event.accept()
     return True
@@ -203,7 +203,7 @@ def double_click(widget, event):
     if found is None or found[0] != 'piece':
         return False
     history.history_append()
-    if segments.refine_piece(_selected(), found[1], segments.hyphenator(session.SUBTITLE.get('language'))) > 1:
+    if segments.refine_piece(_selected(), found[1], segments.hyphenator(session.SUBTITLE.language)) > 1:
         session.set_unsaved()
     _changed(widget)
     event.accept()
@@ -230,7 +230,7 @@ def tap(window):
     the first; a tap after the last ends it. Tapping another subtitle, one
     finished, or the same one again before where the taps got to, starts
     over from its first piece. Whether there was a subtitle to tap."""
-    position = session.SUBTITLE.get('position')
+    position = session.SUBTITLE.position
     if position is None:
         return False
     position = float(position)

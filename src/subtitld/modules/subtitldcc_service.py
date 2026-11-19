@@ -304,7 +304,7 @@ def open_in_editor(window, data):
         os.unlink(path)
     session.SUBTITLE.segments = segments
     segments = session.SUBTITLE.segments  # the Segments it holds, not the dicts given
-    session.SUBTITLE['filepath'] = ''
+    session.SUBTITLE.filepath = ''
     session.CONFIG['format_to_save'] = 'USFX'
     for name in {segment.get('speaker', 'A') for segment in segments}:
         session.SPEAKERS.setdefault(name, {})
@@ -323,12 +323,12 @@ def open_in_editor(window, data):
 
 def origin():
     """{'share_id', 'version'} of the subtitld.cc subtitle the editor holds, or None."""
-    value = session.SUBTITLE.get('origin')
+    value = session.SUBTITLE.origin
     return value if isinstance(value, dict) and value.get('share_id') else None
 
 
 def set_origin(share_id, version):
-    session.SUBTITLE['origin'] = {'share_id': share_id, 'version': version}
+    session.SUBTITLE.origin = {'share_id': share_id, 'version': version}
 
 
 # --- Publishing ------------------------------------------------------------------------------------------
@@ -336,7 +336,7 @@ def set_origin(share_id, version):
 
 def text_languages():
     """The texts the editor can publish: [(language or None, is_translation)], the original first."""
-    languages = [(session.SUBTITLE.get('language') or None, False)]
+    languages = [(session.SUBTITLE.language or None, False)]
     seen = set()
     for segment in session.SUBTITLE.segments:
         for language in (segment.get('translations') or {}):
@@ -367,7 +367,7 @@ def usf_for_publishing(translation=None, title=''):
         for name, data in session.SPEAKERS.items()
         if isinstance(data, dict) and data.get('color')
     }
-    language = translation or session.SUBTITLE.get('language') or None
+    language = translation or session.SUBTITLE.language or None
     metadata = {'title': title} if title else None
     content = usf.USFWriter().write(segments, speakers=speakers, language=language, metadata=metadata,
                                     names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()})

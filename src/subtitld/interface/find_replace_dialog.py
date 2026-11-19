@@ -497,7 +497,7 @@ class FindReplaceDialog(utils.SimpleDialog):
         """The timeline cursor. ``set_position`` writes it immediately and the
         player echoes its real position back into the same field."""
         try:
-            return float(session.SUBTITLE.get('position', 0.0) or 0.0)
+            return float(session.SUBTITLE.position or 0.0)
         except (TypeError, ValueError):
             return 0.0
 

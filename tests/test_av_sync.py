@@ -113,7 +113,7 @@ device.play = lambda position=0.0: (started.append(position), setattr(device, 'p
 device.pause = lambda: setattr(device, 'playing', False)
 widget._media_player.play = lambda: pictures.append(time.perf_counter())
 device.output_latency = 0.3
-session.SUBTITLE['position'] = 4.0
+session.SUBTITLE.position = 4.0
 widget.play()
 check('the sound started where the cursor is', started, [4.0])
 check('no callback yet: it looks again in 10 ms', (widget._video_start_timer.isActive(),

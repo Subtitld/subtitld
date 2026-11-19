@@ -1969,7 +1969,7 @@ class Timeline(QWidget):
         # Collaborators in a shared project: their selection, the text they type in and their playhead.
         widget._paint_collaborators(painter)
 
-        if session.SUBTITLE.get('position', 0) is not None:
+        if (session.SUBTITLE.position or 0) is not None:
             painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000')), 2, Qt.SolidLine))
             # Sub-pixel cursor position. Truncating to int (the old code
             # did `int(position * width_proportion)`) snaps the cursor
@@ -1979,11 +1979,11 @@ class Timeline(QWidget):
             # by distributing coverage across adjacent columns — so a
             # cursor at x=200.3 vs x=200.7 looks subtly different and
             # the eye reads the motion as continuous.
-            cursor_pos_f = float(session.SUBTITLE.get('position', 0)) * widget.width_proportion
+            cursor_pos_f = float(session.SUBTITLE.position or 0) * widget.width_proportion
             cursor_pos = int(cursor_pos_f)  # kept for the badge geometry below
             painter.drawLine(QLineF(cursor_pos_f, 0.0, cursor_pos_f, float(widget.height())))
 
-            if (session.REPEAT_DURATION_BUFFER and session.SUBTITLE.get('position', 0) > session.REPEAT_DURATION_BUFFER[0][0]) or (not session.CONFIG['playback_speed'] == 1.0):
+            if (session.REPEAT_DURATION_BUFFER and (session.SUBTITLE.position or 0) > session.REPEAT_DURATION_BUFFER[0][0]) or (not session.CONFIG['playback_speed'] == 1.0):
                 cfont = QFont('Ubuntu Mono', 10)
                 cfont.setBold(True)
 
@@ -2015,8 +2015,8 @@ class Timeline(QWidget):
                 painter.drawText(text_rect, Qt.AlignCenter | Qt.TextWordWrap, text)
 
         # Off-screen cursor indicators (only when auto-scroll is disabled).
-        if session.CONFIG.get('timeline', {}).get('scrolling', 'page') == 'none' and session.SUBTITLE.get('position', 0) is not None:
-            cursor_pos = session.SUBTITLE.get('position', 0) * widget.width_proportion
+        if session.CONFIG.get('timeline', {}).get('scrolling', 'page') == 'none' and (session.SUBTITLE.position or 0) is not None:
+            cursor_pos = (session.SUBTITLE.position or 0) * widget.width_proportion
             arrow_color = QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000'))
             arrow_color.setAlpha(220)
             arrow_size = 6.0
@@ -2322,7 +2322,7 @@ class Timeline(QWidget):
         scroll_position = widget.parent().parent().horizontalScrollBar().value()
         scroll_width = widget.parent().parent().width()
 
-        cursor_is_out_of_view = bool(session.SUBTITLE.get('position', 0) * widget.width_proportion < widget.parent().parent().horizontalScrollBar().value() or session.SUBTITLE.get('position', 0) * widget.width_proportion > widget.parent().parent().width() + widget.parent().parent().horizontalScrollBar().value())
+        cursor_is_out_of_view = bool((session.SUBTITLE.position or 0) * widget.width_proportion < widget.parent().parent().horizontalScrollBar().value() or (session.SUBTITLE.position or 0) * widget.width_proportion > widget.parent().parent().width() + widget.parent().parent().horizontalScrollBar().value())
         
         cursor_time_position = event.pos().x() / widget.width_proportion
         widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
@@ -2372,10 +2372,10 @@ class Timeline(QWidget):
         if (widget.subtitle_is_clicked or widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked):
             widget.subtitle_clicked.emit()
         else:
-            session.SUBTITLE['position'] = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
+            session.SUBTITLE.position = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
             if session.CONFIG['repeat_activated']:
                 session.REPEAT_DURATION_BUFFER = []
-            widget.seek.emit(session.SUBTITLE.get('position', 0))
+            widget.seek.emit(session.SUBTITLE.position or 0)
             left_panel.update(widget.window())
 
         widget.update()
@@ -2706,10 +2706,10 @@ class Timeline(QWidget):
                 now_t = time.perf_counter()
                 if is_paused or now_t - widget._drag_throttle_last_t >= 0.033:
                     widget._drag_throttle_last_t = now_t
-                    session.SUBTITLE['position'] = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
+                    session.SUBTITLE.position = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
                     if session.CONFIG['repeat_activated']:
                         session.REPEAT_DURATION_BUFFER = []
-                    widget.seek.emit(session.SUBTITLE.get('position', 0))
+                    widget.seek.emit(session.SUBTITLE.position or 0)
                     widget.update()
                 return
             waveform_center_y = widget.waveform_y + (widget.waveform_height * 0.5)
@@ -2954,8 +2954,8 @@ class Timeline(QWidget):
 
         if (widget.is_cursor_pressing and emit_drag_work
                 and not (widget.subtitle_start_is_clicked or widget.subtitle_end_is_clicked or widget.subtitle_is_clicked)):
-            session.SUBTITLE['position'] = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
-            widget.seek.emit(session.SUBTITLE.get('position', 0))
+            session.SUBTITLE.position = (event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
+            widget.seek.emit(session.SUBTITLE.position or 0)
 
         # Repaint on every move when the user is actively dragging
         # (edges, body, playhead — anything that sets is_cursor_pressing),
@@ -3877,7 +3877,7 @@ def live_take_tick(widget, live):
     # If our growth edge falls inside that, we schedule nothing at all.
     # The window is ASYMMETRIC because that invalidation is: 96px of pad to
     # the LEFT of the head, only 8px to the right.
-    head_x = float(session.SUBTITLE.get('position', 0) or 0) * wpp
+    head_x = float(session.SUBTITLE.position or 0) * wpp
     strip = getattr(widget.window(), '_timeline_repaint_timer', None)
     if strip is not None and strip.isActive():
         delta = edge_x - head_x
@@ -4015,7 +4015,7 @@ def load(self):
 
 def update_scrollbar(self, position=0):
     """Function to update scrollbar of timeline"""
-    current_position_in_timeline_widget = (session.SUBTITLE.get('position', 0) / session.VIDEO.get('duration', 0.01)) * self.timeline_widget.width()
+    current_position_in_timeline_widget = ((session.SUBTITLE.position or 0) / session.VIDEO.get('duration', 0.01)) * self.timeline_widget.width()
     offset = 0
 
     if position == 'middle':
@@ -4037,7 +4037,7 @@ def apply_repeat(self):
     buffer changed, so the timeline shows the stretch anew."""
     if not session.CONFIG.get('repeat_activated'):
         return False
-    position = session.SUBTITLE.get('position', 0)
+    position = session.SUBTITLE.position or 0
     duration = session.CONFIG['playback_repeat_duration']
     times = session.CONFIG['playback_repeat_times']
     buffer = session.REPEAT_DURATION_BUFFER
@@ -4060,7 +4060,7 @@ def update(self):
     apply_repeat(self)
 
     if not self.preview_panel_player.is_paused():
-        current_position_in_timeline_widget = (session.SUBTITLE.get('position', 0) * (self.timeline_widget.width() / session.VIDEO.get('duration', 0.01)))
+        current_position_in_timeline_widget = ((session.SUBTITLE.position or 0) * (self.timeline_widget.width() / session.VIDEO.get('duration', 0.01)))
         if session.CONFIG.get('timeline', {}).get('scrolling', 'page') == 'follow':
             update_scrollbar(self, position='middle')
         elif session.CONFIG.get('timeline', {}).get('scrolling', 'page') == 'page' and current_position_in_timeline_widget > self.timeline_scroll.width() + self.timeline_scroll.horizontalScrollBar().value():

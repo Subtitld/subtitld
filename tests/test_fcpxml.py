@@ -246,10 +246,10 @@ folder = Path(tempfile.mkdtemp())
 (folder / 'in.fcpxml').write_text(PROJECT, encoding='utf-8')
 session.FORMAT = {}
 session.VIDEO = {}
-session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE.language = 'pt-br'
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.fcpxml'))
 check("opens; its language the project's, French translations; its settings kept", (
-    fmt, len(opened), session.SUBTITLE['language'], opened[0].get('translations'),
+    fmt, len(opened), session.SUBTITLE.language, opened[0].get('translations'),
     {key: session.FORMAT['options'].get(key) for key in ('fps', 'timecode', 'timeline_start')}),
       ('FCPXML', 3, 'en-us', {'fr-fr': '{\\an8}Bonjour'}, {'fps': 23.976, 'timecode': 'non-drop', 'timeline_start': '01:00:00:00'}))
 session.SUBTITLE.segments = opened

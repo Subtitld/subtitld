@@ -169,13 +169,13 @@ host.panel_autosave_backup_group.setChecked(True)
 host.panel_autosave_backup_group.clicked.emit()
 check('and back on', (session.CONFIG['autosave']['backup_enabled'], host.panel_autosave_backup_interval_spinbox.isEnabled(),
                       host.autosave_backup_timer.isActive()), (True, True, True))
-session.SUBTITLE['filepath'] = '/projects/talk.usfx'
+session.SUBTITLE.filepath = '/projects/talk.usfx'
 lpa.update(host)
 check('a USFX project can save in place', (host.panel_autosave_original_group.isEnabled(),
                                             host.autosave_original_timer.isActive()), (True, True))
 
 print('no backups')
-session.SUBTITLE['filepath'] = '/projects/brand new.usfx'
+session.SUBTITLE.filepath = '/projects/brand new.usfx'
 lpa.update(host)
 check('says so instead of an empty list', (listwidget.isHidden(), host.panel_autosave_empty_label.isHidden(),
                                            host.panel_autosave_empty_label.text()),

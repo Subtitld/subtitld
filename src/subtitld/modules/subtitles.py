@@ -320,7 +320,7 @@ def subtitle_end_to_current_position(position=0.0):
 def subtitle_under_current_position(position=False):
     """Function to return subtitle under position"""
     if not position:
-        position = session.SUBTITLE.get('position', 0.0)
+        position = session.SUBTITLE.position or 0.0
     # current_subtitle = False
 
     return next((item for item in session.SUBTITLE.segments if item['start'] <= position < item['end']), False)
@@ -338,7 +338,7 @@ def get_adjacent_subtitles(position=False, subtitle=False):
         position = subtitle['start']
 
     if not position:
-        position = session.SUBTITLE.get('position', 0.0)
+        position = session.SUBTITLE.position or 0.0
 
     # The most efficient way to get the adjacent subtitles is to use binary search
     subt = [item['start'] for item in session.SUBTITLE.segments]

@@ -247,11 +247,11 @@ session.FORMAT = {}
 session.SUBTITLE = Subtitle({'language': 'pt-br'})
 opened, fmt = file_io.process_subtitles_file(str(folder / 'interop.xml'))
 check('Interop opens: its language ("English") the project\'s, its generation kept', (
-    fmt, len(opened), session.SUBTITLE['language'], session.FORMAT['options'].get('dcp_standard'),
-    session.SUBTITLE.get('metadata')), ('DCP', 6, 'en-us', 'interop', {'title': 'Tears of Steel'}))
+    fmt, len(opened), session.SUBTITLE.language, session.FORMAT['options'].get('dcp_standard'),
+    session.SUBTITLE.metadata), ('DCP', 6, 'en-us', 'interop', {'title': 'Tears of Steel'}))
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'smpte.xml'))
-check('SMPTE opens: its rate kept too', (fmt, len(opened), session.SUBTITLE['language'][:2],
+check('SMPTE opens: its rate kept too', (fmt, len(opened), session.SUBTITLE.language[:2],
                                         {key: session.FORMAT['options'].get(key) for key in ('dcp_standard', 'dcp_fps')}),
       ('DCP', 3, 'fr', {'dcp_standard': 'smpte', 'dcp_fps': 25}))
 session.FORMAT = {}

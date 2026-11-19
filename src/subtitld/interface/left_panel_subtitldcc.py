@@ -547,7 +547,7 @@ class SubtitldccPanel(QWidget):
         def done(_answer=None):
             self.delete_button.setEnabled(True)
             if (service.origin() or {}).get('share_id') == share_id:
-                session.SUBTITLE.pop('origin', None)
+                session.SUBTITLE.origin = None
                 session.set_unsaved(True)  # saving the project forgets the link too
             self._origin_info = None
             self._render_origin()

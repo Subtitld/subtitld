@@ -848,18 +848,18 @@ class PlainTextPanel(QWidget):
 
     def _serialize(self):
         return plaintext.serialize(session.SUBTITLE.segments, self.fmt, _LANGUAGES,
-                                   session.SUBTITLE.get('language'))
+                                   session.SUBTITLE.language)
 
     def _apply(self, result):
         segments = session.SUBTITLE.segments
-        language = result.language if result.language not in (None, session.SUBTITLE.get('language')) else None
+        language = result.language if result.language not in (None, session.SUBTITLE.language) else None
         if not plaintext.apply_cues(segments, result.cues, dry_run=True) and language is None:
             self._refresh_full_text()
             return
         history.history_append()
         plaintext.apply_cues(segments, result.cues)
         if language is not None:
-            session.SUBTITLE['language'] = language
+            session.SUBTITLE.language = language
         selected = session.SUBTITLE.selected
         if selected is not None and not any(segment is selected for segment in segments):
             session.SUBTITLE.selected = None

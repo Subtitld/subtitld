@@ -43,7 +43,7 @@ file_io.save_file(str(usfx), 'USFX')
 
 loaded, asked = [], []
 startscreen.load_productionscreen = lambda window: loaded.append(
-    (session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath')))
+    (session.SUBTITLE.filepath, session.VIDEO.get('filepath')))
 startscreen.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (asked.append(k.get('dir')) or str(video), ''))
 
 

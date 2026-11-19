@@ -281,7 +281,7 @@ class PublishFlow(QWidget):
     def _file_name(self):
         """Named after the project or the video, so subtitld.cc can guess the title. Only the person
         publishing sees this name on subtitld.cc."""
-        source = session.SUBTITLE.get('filepath') or session.VIDEO.get('filepath') or 'subtitles'
+        source = session.SUBTITLE.filepath or session.VIDEO.get('filepath') or 'subtitles'
         return pathlib.Path(source).stem + '.usf'
 
     def check(self):
@@ -516,7 +516,7 @@ class PublishFlow(QWidget):
         for code in meta.get('languages') or []:
             self.language.addItem(names.get(code, code), code)
         detected = self.upload.get('language') or ''
-        wanted = service.bcp47(self.translation or session.SUBTITLE.get('language'), meta.get('languages') or ())
+        wanted = service.bcp47(self.translation or session.SUBTITLE.language, meta.get('languages') or ())
         index = self.language.findData(wanted or detected)
         self.language.setCurrentIndex(max(index, 0))
 

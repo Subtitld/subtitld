@@ -186,7 +186,7 @@ kept = video_subtitles.extract(folder / 'tracks.mkv', 3, 'ass', ffmpeg=ffmpeg, f
 read(kept)
 os.remove(kept)
 check("reading a track leaves the project's format and subtitld.cc origin as they were",
-      (session.FORMAT, session.SUBTITLE.get('origin')),
+      (session.FORMAT, session.SUBTITLE.origin),
       ({'format': 'USFX', 'options': {'embed_speaker_images': True}}, {'site': 'subtitld.cc', 'id': '42'}))
 
 print('the engine')
@@ -423,10 +423,10 @@ def read_track(index, language, range_=None, source=None, segments=()):
     track_combo.setCurrentIndex(track_combo.findData(index))
     session.SUBTITLE = Subtitle({'segments': list(segments), 'language': language})
     if source:
-        session.SUBTITLE['source_language'] = source
+        session.SUBTITLE.source_language = source
     lpi._show_language(window)
     start(range_)
-    return session.SUBTITLE.get('language'), session.SUBTITLE.get('source_language'), language_combo.currentText()
+    return session.SUBTITLE.language, session.SUBTITLE.source_language, language_combo.currentText()
 
 
 check('the whole video from the Portuguese track: the subtitles are Portuguese, the audio still English, shown so',
@@ -460,16 +460,16 @@ window.transcription_scope.is_ready = lambda: True
 def panel_update(language, segments):
     session.SUBTITLE = Subtitle({'segments': segments, 'language': language})
     lpi.update(window)
-    return session.SUBTITLE.get('source_language')
+    return session.SUBTITLE.source_language
 
 
 check('a project never translated: its language', panel_update('en-us', [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}]),
       'en-us')
 check('one whose subtitles carry translations: left unknown (an inverted one shows the translation)',
       panel_update('pt-br', [{'start': 1.0, 'end': 2.0, 'text': 'Olá', 'translations': {'en-us': 'Hello'}}]), None)
-session.SUBTITLE['source_language'] = 'en-us'
+session.SUBTITLE.source_language = 'en-us'
 lpi.update(window)
-check('and what was declared is kept', session.SUBTITLE.get('source_language'), 'en-us')
+check('and what was declared is kept', session.SUBTITLE.source_language, 'en-us')
 
 check('an engine that brings subtitles in, never the default transcription engine',
       ('subtitles' in SOURCE_ENGINES, manager.default_for_task(TASK_ASR_TRANSCRIBE)), (True, None))

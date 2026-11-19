@@ -71,7 +71,7 @@ def remember(window, look_ahead=False):
     preview draws it. With no subtitle under the playhead the frame alone
     is kept only if there is no picture yet; with `look_ahead` (on closing)
     the preview goes to the next subtitle for it instead, and back."""
-    filepath = session.SUBTITLE.get('filepath')
+    filepath = session.SUBTITLE.filepath
     recent = session.CONFIG.get('recent_files') if isinstance(session.CONFIG, dict) else None
     if not filepath or not isinstance(recent, dict) or not isinstance(recent.get(str(filepath)), dict):
         return
@@ -87,7 +87,7 @@ def remember(window, look_ahead=False):
     if player is None:
         return
     segments = [s for s in session.SUBTITLE.segments if isinstance(s, dict)]
-    position = float(session.SUBTITLE.get('position') or 0.0)
+    position = float(session.SUBTITLE.position or 0.0)
     showing = _showing(segments, position)
     if showing is None and look_ahead:
         following = sorted((s for s in segments if float(s.get('start', 0)) > position), key=lambda s: float(s['start']))
@@ -138,7 +138,7 @@ def _picture_at(player, segment, timeout=3.0):
     """The preview's picture in the middle of `segment`: it goes there, waits
     for the frame and the subtitle's layer (at most `timeout` s), and goes
     back where it was. None if either did not come."""
-    back = float(session.SUBTITLE.get('position') or 0.0)
+    back = float(session.SUBTITLE.position or 0.0)
     start, end = float(segment.get('start', 0)), float(segment.get('end', 0))
     target = start + (end - start) / 2
     renderer = getattr(player, '_subtitle_renderer', None)
@@ -156,7 +156,7 @@ def _picture_at(player, segment, timeout=3.0):
         image = _with_subtitle(player, _frame_image(player), segment, target)
         break
     player.seek(back)
-    session.SUBTITLE['position'] = back
+    session.SUBTITLE.position = back
     return image
 
 

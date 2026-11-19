@@ -124,12 +124,12 @@ check('an edge of its own moves alone, up to the next piece', spans()[1:], [(0.5
 
 print('snapping')
 document()
-session.SUBTITLE['position'] = 1.7
+session.SUBTITLE.position = 1.7
 drag(150, 168, 173)
 check('to the playhead, a few pixels off', spans()[0], (0.0, 0.7))
 session.CONFIG['timeline']['snap'] = False
 document()
-session.SUBTITLE['position'] = 1.7
+session.SUBTITLE.position = 1.7
 drag(150, 173)
 check('not with snapping off', spans()[0], (0.0, 0.73))
 session.CONFIG['timeline']['snap'] = True
@@ -143,7 +143,7 @@ print('a click, a double click')
 document()
 mouse(QEvent.MouseButtonPress, 220)
 mouse(QEvent.MouseButtonRelease, 220, buttons=Qt.NoButton)
-check('a chip: the playhead to where it starts', (host.preview_panel_player.at, session.SUBTITLE['position']), (2.0, 2.0))
+check('a chip: the playhead to where it starts', (host.preview_panel_player.at, session.SUBTITLE.position), (2.0, 2.0))
 mouse(QEvent.MouseButtonDblClick, 220)
 check('double: cut a level finer (a word into letters, with no dictionary)',
       [p['text'] for p in timed_pieces(session.SUBTITLE.selected)], ['Hel', 'lo ', 'w', 'o', 'r', 'l', 'd'])
@@ -151,14 +151,14 @@ check('double: cut a level finer (a word into letters, with no dictionary)',
 print('tapping')
 document()
 for at in (1.1, 1.4, 1.9, 2.5):
-    session.SUBTITLE['position'] = at
+    session.SUBTITLE.position = at
     timeline_pieces.tap(host)
 check('one piece after another from the first; the last tap ends the last',
       spans(), [(0.1, 0.4), (0.4, 0.9), (0.9, 1.5)])
-session.SUBTITLE['position'] = 1.2
+session.SUBTITLE.position = 1.2
 timeline_pieces.tap(host)
 check('tapped again from the start: over from the first', spans()[0], (0.2, 0.4))
-session.SUBTITLE['position'] = 5.0
+session.SUBTITLE.position = 5.0
 check('not in a timed subtitle: nothing', timeline_pieces.tap(host), False)
 
 print()

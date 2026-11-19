@@ -73,10 +73,10 @@ player._media_player = stand
 
 print('the end, without a frame shown')
 player.loadfile(str(video))
-session.SUBTITLE['position'] = 2454.921
+session.SUBTITLE.position = 2454.921
 player._on_media_status_changed(QMediaPlayer.EndOfMedia)
 check('said once', emitted, [True])
-check('the playhead back at the start', session.SUBTITLE['position'], 0.0)
+check('the playhead back at the start', session.SUBTITLE.position, 0.0)
 check('the sound engine there too', seeks[-1:], [0.0])
 check('the player not stepped back from the end', positions, [])
 player._on_media_status_changed(QMediaPlayer.EndOfMedia)

@@ -230,7 +230,7 @@ def opened(name, text, video=None):
     path.write_bytes(text.encode('utf-8') if isinstance(text, str) else text)
     session.FORMAT = {}
     session.VIDEO = dict(video or {})
-    session.SUBTITLE.pop('metadata', None)
+    session.SUBTITLE.metadata = None
     segments, fmt = file_io.process_subtitles_file(str(path))
     return fmt, [(s['start'], s['end'], s['text']) for s in segments]
 

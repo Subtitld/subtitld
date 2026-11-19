@@ -437,7 +437,7 @@ def show(self):
 def update(self):
     backup_enabled = session.CONFIG.get('autosave', {}).get('backup_enabled', True)
     original_enabled = session.CONFIG.get('autosave', {}).get('original_enabled', True)
-    project_is_usfx = bool(session.SUBTITLE.get('filepath', '').lower().endswith('.usfx'))
+    project_is_usfx = bool((session.SUBTITLE.filepath or '').lower().endswith('.usfx'))
 
     self.panel_autosave_backup_group.setChecked(backup_enabled)
     if backup_enabled and not self.autosave_backup_timer.isActive():
@@ -526,7 +526,7 @@ def _open_backup_into_session(self, backup_path):
     history.history_clear()
     session.SUBTITLE.reset()
     session.SPEAKERS.clear()
-    session.SUBTITLE['filepath'] = backup_path
+    session.SUBTITLE.filepath = backup_path
     session.set_unsaved(False)
 
     previous_video = session.VIDEO.get('filepath') if isinstance(session.VIDEO, dict) else None
@@ -624,7 +624,7 @@ def _request_open_backup(self, backup_path):
 
     # action == 'save': flush the current project first, then open the backup
     # only after the save thread reports success.
-    current_filepath = session.SUBTITLE.get('filepath') or ''
+    current_filepath = session.SUBTITLE.filepath or ''
     if not current_filepath.lower().endswith('.usfx'):
         from subtitld.interface import top_bar as _top_bar
         _top_bar.toppanel_save_button_clicked(self.window())

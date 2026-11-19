@@ -392,7 +392,7 @@ class ScopeSelector(QWidget):
         normalise the pair so the capture can't leave an inverted range."""
         pos = 0.0
         try:
-            pos = float(session.SUBTITLE.get('position', 0) or 0)
+            pos = float(session.SUBTITLE.position or 0)
         except (TypeError, ValueError):
             pos = 0.0
         line_edit.setText(format_tc(pos))

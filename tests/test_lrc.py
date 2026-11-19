@@ -175,7 +175,7 @@ session.FORMAT = {}
 session.VIDEO = {}
 opened, found = file_io.process_subtitles_file(str(folder / 'song.lrc'))
 check('opened as LRC', (found, len(opened)), ('LRC', 6))
-check('its tags kept on the subtitles', session.SUBTITLE['metadata']['title'], 'Tears of Steel')
+check('its tags kept on the subtitles', session.SUBTITLE.metadata['title'], 'Tears of Steel')
 session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.lrc'), 'LRC')
 again = (folder / 'again.lrc').read_text(encoding='utf-8')

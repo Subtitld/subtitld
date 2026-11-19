@@ -166,7 +166,7 @@ def start(engine, source, target, answer=1):
     shown.clear()
     started.clear()
     FakeDialog.answer = answer
-    session.SUBTITLE['language'] = source
+    session.SUBTITLE.language = source
     session.CONFIG['translation']['engine_options']['target_language'] = target
     host.global_panel_translation_engine_combobox.setCurrentText(engine)
     lpt.global_panel_translation_engine_combobox_activated(host)

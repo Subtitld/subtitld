@@ -240,7 +240,13 @@ add-on sends words or aligns yet: each needs it at its next release.)* ASR add-o
 addition, optional); a forced-alignment add-on task timing text the user
 already has.
 
-**M10. The other `SUBTITLE` fields** (`position`, `language`, `filepath`,
+**M10. The other `SUBTITLE` fields** *(Done on branch `timed-text`: eight
+attributes (position, language, source_language, filepath, metadata,
+origin, translations, current), None while not set; 273 reads in the app
+and 143 in the tests rewritten. Subtitle keeps a mapping of those names
+only, no other key, for docops (co-editing and undo edit its language and
+translations as a document) and functions given any subtitle file; a test
+keeps the app off it.)* (`position`, `language`, `filepath`,
 `metadata`, …) switched to attributes, at any pace; then the temporary dict
 layer is removed.
 

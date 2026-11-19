@@ -351,7 +351,7 @@ class CaptionsThread(QThread):
                 raise ValueError('No video loaded to write captions into')
             write_captioned_video(video, self._output_path, self._container, self._options,
                                   session.SUBTITLE.segments, session.VIDEO,
-                                  session.SUBTITLE.get('language') or '')
+                                  session.SUBTITLE.language or '')
             self.captions_finished.emit(self._output_path, True, '')
         except Exception as exc:
             self.captions_finished.emit(self._output_path, False, str(exc))

@@ -131,6 +131,34 @@ subtitle.selected = subtitle.segments[0]
 subtitle.reset()
 check('reset', (list(subtitle.segments), subtitle.selected), ([], None))
 
+print('the file\'s fields')
+subtitle = Subtitle(language='en', position=2.5)
+check('attributes, None while not set', (subtitle.language, subtitle.position, subtitle.metadata), ('en', 2.5, None))
+check('as a mapping, one not set is not there', ('metadata' in subtitle, subtitle.get('metadata', {}), 'language' in subtitle),
+      (False, {}, True))
+subtitle['translations'] = {'pt': 'x'}
+check('set by name, as docops does', subtitle.translations, {'pt': 'x'})
+check('popped by name: None again', (subtitle.pop('translations'), subtitle.translations), ({'pt': 'x'}, None))
+del subtitle.language
+check('deleted: unset, not gone', (subtitle.language, 'language' in subtitle), (None, False))
+try:
+    subtitle['anything'] = 1
+    check('no other name', False, True)
+except KeyError:
+    check('no other name', True, True)
+
+# The app reads and writes the file's fields as attributes; its mapping is for
+# what edits it as a document (modules.docops) and functions given any file.
+keyed = []
+for path in sorted((Path(__file__).resolve().parents[1] / 'src' / 'subtitld').rglob('*.py')):
+    if path.name == 'segment.py':
+        continue
+    for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+        if re.search(r"(?<![\w.])(?:session\.)?SUBTITLE(?:\[|\.get\(|\.pop\(|\.setdefault\()", line) \
+                and not line.lstrip().startswith('#'):
+            keyed.append(f'{path.name}:{number}')
+check('no session.SUBTITLE read by key in the app', keyed, [])
+
 print('session')
 check('session.SUBTITLE is a Subtitle', isinstance(session.SUBTITLE, Subtitle), True)
 

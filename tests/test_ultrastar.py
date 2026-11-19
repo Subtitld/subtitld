@@ -146,8 +146,8 @@ session.FORMAT = {}
 session.VIDEO = {}
 opened, found = file_io.process_subtitles_file(str(folder / 'Tears of Steel.txt'))
 check('a song in a .txt opens as UltraStar', (found, len(opened)), ('ULTRASTAR', 3))
-check('its #LANGUAGE the project\'s', session.SUBTITLE['language'].split('-')[0], 'en')
-check('its headers kept with its metadata', [key for key, _value in session.SUBTITLE['metadata']['ultrastar']][-2:],
+check('its #LANGUAGE the project\'s', session.SUBTITLE.language.split('-')[0], 'en')
+check('its headers kept with its metadata', [key for key, _value in session.SUBTITLE.metadata['ultrastar']][-2:],
       ['BPM', 'GAP'])
 session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.txt'), 'ULTRASTAR')

@@ -230,24 +230,24 @@ session.FORMAT, session.SUBTITLE = {}, Subtitle({'language': 'pt-br', 'segments'
 (folder / 'assembly.json').write_text(json.dumps(ASSEMBLYAI), encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'assembly.json'))
 check("a service's transcript opens; its en_us the project's language", (
-    fmt, [(s['text'], s['speaker']) for s in opened], session.SUBTITLE['language']),
+    fmt, [(s['text'], s['speaker']) for s in opened], session.SUBTITLE.language),
       ('JSON', [('Smoke from Canada.', 'A'), ('Yes.', 'B')], 'en-us'))
 session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': []})
 (folder / 'pt.json').write_text(json.dumps({**WHISPER_CPP, 'result': {'language': 'pt'}}), encoding='utf-8')
 file_io.process_subtitles_file(str(folder / 'pt.json'))
-check('"pt" in a pt-br project: pt-br kept', session.SUBTITLE['language'], 'pt-br')
+check('"pt" in a pt-br project: pt-br kept', session.SUBTITLE.language, 'pt-br')
 session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': []})
 (folder / 'video.en.json3').write_text(json.dumps(YOUTUBE), encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'video.en.json3'))
 check("YouTube's .json3: its language from its name; no speaker, Subtitld's A", (
-    fmt, len(opened), session.SUBTITLE['language'], opened[0]['speaker']), ('JSON', 4, 'en-us', 'A'))
+    fmt, len(opened), session.SUBTITLE.language, opened[0]['speaker']), ('JSON', 4, 'en-us', 'A'))
 session.SUBTITLE = Subtitle({'language': 'en-us', 'segments': []})
 (folder / 'whisper.json').write_text(json.dumps({'segments': [{'start': 0, 'end': 1, 'text': ' Hi'}], 'language': 'English'}),
                                      encoding='utf-8')
 file_io.process_subtitles_file(str(folder / 'whisper.json'))
-session.SUBTITLE['language'] = 'pt-br'
+session.SUBTITLE.language = 'pt-br'
 file_io.process_subtitles_file(str(folder / 'whisper.json'))
-check('Whisper\'s language by name ("English")', session.SUBTITLE['language'], 'en-us')
+check('Whisper\'s language by name ("English")', session.SUBTITLE.language, 'en-us')
 (folder / 'in.bcc').write_text(json.dumps(BILIBILI, ensure_ascii=False), encoding='utf-8')
 opened, fmt = file_io.process_subtitles_file(str(folder / 'in.bcc'))
 check('.bcc: BCC', (fmt, len(opened)), ('BCC', 2))

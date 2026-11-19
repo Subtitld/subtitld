@@ -142,7 +142,7 @@ check('nor moving it', (two['start'], two['end'], len(history.ALL_HISTORY)), (5.
 print('a click off the subtitles seeks, and drops the selection')
 QTest.mouseClick(canvas, Qt.LeftButton, Qt.NoModifier, point(4.0))
 check('the player seeks there', [near(p, 2) for p in player.seeks], [4.0])
-check('the position is there', near(session.SUBTITLE['position'], 2), 4.0)
+check('the position is there', near(session.SUBTITLE.position, 2), 4.0)
 check('nothing selected', session.SUBTITLE.selected, None)
 player.seeks.clear()
 QTest.mouseClick(canvas, Qt.LeftButton, Qt.NoModifier, point(10.0, x=10))
@@ -230,7 +230,7 @@ check('and back', canvas.lanes()[0][1], usual)
 
 print('the view follows')
 scroll.verticalScrollBar().setValue(0)
-session.SUBTITLE['position'] = 50.0
+session.SUBTITLE.position = 50.0
 scroll.tick()
 bar = scroll.verticalScrollBar()
 y = canvas.y_at(50.0)
@@ -242,7 +242,7 @@ check('so does a subtitle selected elsewhere',
       bar.value() <= canvas.y_at(far['start']) and canvas.y_at(far['end']) <= bar.value() + scroll.viewport().height(), True)
 player.paused = False
 session.CONFIG['timeline'] = {'scrolling': 'follow'}
-session.SUBTITLE['position'] = 20.0
+session.SUBTITLE.position = 20.0
 scroll.tick()
 check('playing, "follow" keeps the playhead in the middle',
       abs(bar.value() + scroll.viewport().height() / 2 - canvas.y_at(20.0)) <= 1, True)
@@ -334,17 +334,17 @@ bar = scroll.verticalScrollBar()
 player.paused = False
 session.CONFIG['timeline'] = {'scrolling': 'page'}
 bar.setValue(0)
-session.SUBTITLE['position'] = 30.0
+session.SUBTITLE.position = 30.0
 scroll.tick()
 check('"page": past the bottom, the next page starts at the playhead',
       bar.value(), min(bar.maximum(), int(canvas.y_at(30.0))))
 session.CONFIG['timeline'] = {'scrolling': 'none'}
 bar.setValue(0)
-session.SUBTITLE['position'] = 45.0
+session.SUBTITLE.position = 45.0
 scroll.tick()
 check('"none": the view stays, playing', bar.value(), 0)
 player.paused = True
-session.SUBTITLE['position'] = 50.0
+session.SUBTITLE.position = 50.0
 scroll.tick()
 check('and paused', bar.value(), 0)
 session.CONFIG['timeline'] = {}
@@ -404,7 +404,7 @@ session.CONFIG['dubbing'] = {'enabled': False}
 two.pop('dubbing')
 
 print('the bottom line')
-session.SUBTITLE['position'] = 61.5
+session.SUBTITLE.position = 61.5
 panel.update_labels()
 check('the position', panel.position_label.text(), '00:01:01.500')
 session.SUBTITLE.selected = one

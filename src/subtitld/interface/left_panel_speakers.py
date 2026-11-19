@@ -656,7 +656,7 @@ class SpeakerHeader(QWidget):
             player = getattr(window, 'preview_panel_player', None)
             if player is not None:
                 try:
-                    # seek() writes session.SUBTITLE['position'] synchronously,
+                    # seek() writes session.SUBTITLE.position synchronously,
                     # so the scroll below reads the new position.
                     player.seek(target)
                     # timeline.update() only scrolls while playing, so a click

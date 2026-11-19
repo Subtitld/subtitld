@@ -178,7 +178,7 @@ check('told apart by the containers its header names', [mxf.kind(data[:300]) for
 print('through file_io')
 session.VIDEO = {'framerate': 24.0, 'filepath': '/films/film.mov'}
 session.SUBTITLE.segments = segments
-session.SUBTITLE.pop('metadata', None)
+session.SUBTITLE.metadata = None
 session.FORMAT = {'options': {'dcp_fps': 24, 'dcp_content': 'text'}}
 file_io.save_file(str(folder / 'dcp.mxf'), 'DCPMXF')
 written = mxf.read_timed_text(str(folder / 'dcp.mxf'))
@@ -211,7 +211,7 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'imf.mxf'))
 check('opened again as IMSCMXF', (fmt, [(s['start'], s['end'], s['text']) for s in opened]),
       ('IMSCMXF', [(1.0, 2.5, 'Hello'), (3.0, 4.0, '<i>World</i>')]))
 session.VIDEO = {'framerate': 25.0}
-session.SUBTITLE['language'] = 'fr-fr'
+session.SUBTITLE.language = 'fr-fr'
 session.FORMAT = {'options': {'stl_fps': 25, 'start': '10:00:00:00', 'display': 'open'}}
 file_io.save_file(str(folder / 'stl.mxf'), 'STLMXF')
 carried = mxf.read_stl(str(folder / 'stl.mxf'))
@@ -223,7 +223,7 @@ opened, fmt = file_io.process_subtitles_file(str(folder / 'stl.mxf'))
 check('opened again as STLMXF, its rate, display and start kept', (fmt, [(s['start'], s['end']) for s in opened],
                                                                    session.FORMAT['options']),
       ('STLMXF', [(1.0, 2.48), (3.0, 4.0)], {'stl_fps': 25, 'display': 'open', 'start': '10:00:00:00'}))
-session.SUBTITLE.pop('language', None)
+session.SUBTITLE.language = None
 check('the extensions, a kind each', [session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[name]['extensions']
                                       for name in ('DCPMXF', 'IMSCMXF', 'STLMXF')], [['mxf']] * 3)
 

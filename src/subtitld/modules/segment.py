@@ -34,9 +34,8 @@ their 'id' anyway (modules.cue_ids): undo replaces them with copies too.
 of one, it is the one in the list with the same 'id'. None, or False, for no
 selection.
 
-The other fields of `Subtitle` ('position', 'language', ...) are still read
-and written as keys, `SUBTITLE['language']`; until they all become
-attributes, Subtitle answers as the dict it was, a missing key included.
+What else is known of the file is an attribute of the Subtitle each
+(`SUBTITLE.language`, `SUBTITLE.position`, ...), None while it is not set.
 """
 
 import difflib
@@ -454,14 +453,35 @@ class SegmentList(list):
 
 
 class Subtitle:
-    """The open subtitle file."""
+    """The open subtitle file: its subtitles (`segments`), the one selected,
+    and what is known of the file, each an attribute, None while it is not
+    set:
 
-    _ATTRIBUTES = ('segments', 'selected')
+        position         the playhead, in seconds
+        language         the subtitles' language, a code ('pt-br')
+        source_language  the language spoken in the media, where a
+                         translation was turned into the original
+        filepath         the file it was opened from or saved to
+        metadata         what the file says about itself (title, ...)
+        origin           where on subtitld.cc it came from
+        translations     the languages of its translations
+        current          the subtitle under the playhead
+
+    It is also a mapping of the same names, for what edits a project as a
+    document of plain values (modules.docops: co-editing and undo change
+    its language and translations by name) and the functions given any
+    subtitle file: `SUBTITLE.language`, `.get`, `in`, `.pop`, a field
+    that is None counting as not there. No other name can be set.
+    """
+
+    FIELDS = ('position', 'language', 'source_language', 'filepath', 'metadata', 'origin', 'translations', 'current')
+    _NAMES = ('segments', 'selected') + FIELDS
 
     def __init__(self, fields=None, **more):
         self._segments = SegmentList()
         self._selected = None
-        self._fields = {}
+        for name in self.FIELDS:
+            setattr(self, name, None)
         values = dict(fields or {}, **more)
         # The subtitles first: the selected one is found among them, the
         # copy of the very dict given if it is one of them.
@@ -475,6 +495,13 @@ class Subtitle:
                     break
         for key, value in values.items():
             self[key] = value
+
+    def __delattr__(self, name):
+        # `del SUBTITLE.metadata` unsets the field: it is still there, None.
+        if name in self.FIELDS:
+            setattr(self, name, None)
+        else:
+            super().__delattr__(name)
 
     @property
     def segments(self):
@@ -503,39 +530,38 @@ class Subtitle:
     def to_dict(self):
         """Itself as plain dicts and lists, for JSON."""
         selected = dict(self._selected) if isinstance(self._selected, dict) else self._selected
-        return {'segments': [dict(segment) for segment in self._segments], 'selected': selected, **self._fields}
+        return {'segments': [dict(segment) for segment in self._segments], 'selected': selected,
+                **{name: getattr(self, name) for name in self.FIELDS if getattr(self, name) is not None}}
 
     @classmethod
     def from_dict(cls, values):
         return cls(values)
 
-    # The dict it was, for the fields that are not attributes yet.
+    # --- as a mapping of its names --------------------------------------
 
     def __getitem__(self, key):
-        if key in self._ATTRIBUTES:
-            return getattr(self, key)
-        return self._fields[key]
+        if key not in self._NAMES or (key in self.FIELDS and getattr(self, key) is None):
+            raise KeyError(key)
+        return getattr(self, key)
 
     def __setitem__(self, key, value):
-        if key in self._ATTRIBUTES:
-            setattr(self, key, value)
-        else:
-            self._fields[key] = value
+        if key not in self._NAMES:
+            raise KeyError(f'a subtitle file has no {key!r}')
+        setattr(self, key, value)
 
     def __delitem__(self, key):
-        if key in self._ATTRIBUTES:
-            setattr(self, key, [] if key == 'segments' else None)
-        else:
-            del self._fields[key]
+        if key not in self:
+            raise KeyError(key)
+        setattr(self, key, [] if key == 'segments' else None)
 
     def __contains__(self, key):
-        return key in self._ATTRIBUTES or key in self._fields
+        return key in self._NAMES and (key not in self.FIELDS or getattr(self, key) is not None)
 
     def __iter__(self):
         return iter(self.keys())
 
     def __len__(self):
-        return len(self._ATTRIBUTES) + len(self._fields)
+        return len(self.keys())
 
     def __eq__(self, other):
         if isinstance(other, (Subtitle, dict)):
@@ -548,7 +574,7 @@ class Subtitle:
         return f'Subtitle({self.to_dict()!r})'
 
     def keys(self):
-        return [*self._ATTRIBUTES, *self._fields]
+        return [name for name in self._NAMES if name in self]
 
     def values(self):
         return [self[key] for key in self.keys()]
@@ -565,11 +591,13 @@ class Subtitle:
         return self[key]
 
     def pop(self, key, *default):
-        if key in self._ATTRIBUTES:
-            value = self[key]
-            del self[key]
-            return value
-        return self._fields.pop(key, *default)
+        if key not in self:
+            if default:
+                return default[0]
+            raise KeyError(key)
+        value = self[key]
+        del self[key]
+        return value
 
     def update(self, values=(), **more):
         for key, value in dict(values, **more).items():
@@ -577,7 +605,8 @@ class Subtitle:
 
     def clear(self):
         self.reset()
-        self._fields.clear()
+        for name in self.FIELDS:
+            setattr(self, name, None)
 
 
 def _as_pieces(segment, shift=0.0):

@@ -290,7 +290,7 @@ class _GenericASRPanel(QWidget):
                 widget._scope_range = scope_range
                 widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None)
         widget.transcript_started.emit()
-        language = session.SUBTITLE.get('language', 'en-us')
+        language = session.SUBTITLE.language or 'en-us'
         opts = session.CONFIG.get('transcription', {}).get('engine_options', {}).get(widget.provider.id, {})
         widget.provider.transcribe(audio_file, language, dict(opts) if isinstance(opts, dict) else {})
 
@@ -378,7 +378,7 @@ class _CaptionsPanel(_GenericASRPanel):
         widget._scope_target = getattr(widget.window(), '_transcription_scope_target', None) if scope_range else None
         widget._scope_target_parts = []
         widget.transcript_started.emit()
-        widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'),
+        widget.provider.transcribe(video, (session.SUBTITLE.language or 'en-us'),
                                    {'track': widget.track_combo.combobox.currentData()})
 
     def _on_finished(widget, segments):
@@ -443,7 +443,7 @@ def _track_project_language(track):
     if not code or '-' in track.get('language_tag', '').replace('_', '-'):
         return code
     primary = code.split('-')[0]
-    for known in (session.SUBTITLE.get('language'), session.CONFIG.get('transcription', {}).get('language')):
+    for known in (session.SUBTITLE.language, session.CONFIG.get('transcription', {}).get('language')):
         if known and known.split('-')[0] == primary:
             return known
     return code
@@ -604,12 +604,12 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         widget._scope_target_parts = []
         widget._reading = track
         widget.transcript_started.emit()
-        widget.provider.transcribe(video, session.SUBTITLE.get('language', 'en-us'), {
+        widget.provider.transcribe(video, (session.SUBTITLE.language or 'en-us'), {
             'track': track['index'], 'codec': track['codec'], 'duration': float(session.VIDEO.get('duration') or 0),
             # A teletext stream's page, and its PID in a transport stream.
             'page': track.get('page'), 'pid': track.get('pid'),
             # What an OCR add-on reads a picture track as.
-            'language': _track_project_language(track) or session.SUBTITLE.get('language', 'en-us')})
+            'language': _track_project_language(track) or (session.SUBTITLE.language or 'en-us')})
 
     def _on_finished(widget, segments):
         scope_range = getattr(widget, '_scope_range', None)
@@ -631,11 +631,11 @@ class _SubtitleTracksPanel(_GenericASRPanel):
         inverted leaves it. A range or selection leaves the language alone:
         the other subtitles are still in theirs."""
         language = _track_project_language(track)
-        if not language or language == session.SUBTITLE.get('language'):
+        if not language or language == session.SUBTITLE.language:
             return
-        if not session.SUBTITLE.get('source_language') and session.SUBTITLE.get('language'):
-            session.SUBTITLE['source_language'] = session.SUBTITLE['language']
-        session.SUBTITLE['language'] = language
+        if not session.SUBTITLE.source_language and session.SUBTITLE.language:
+            session.SUBTITLE.source_language = session.SUBTITLE.language
+        session.SUBTITLE.language = language
         if hasattr(widget.window(), 'global_panel_import_language_combobox'):
             _show_language(widget.window())
 
@@ -950,15 +950,15 @@ def _show_language(self):
     """The language combobox on the project's language."""
     selected_language_name = 'English (United States)'
     for language_name, language_code in session.LANGUAGE_DICT_LIST.items():
-        if language_code == session.SUBTITLE['language']:
+        if language_code == session.SUBTITLE.language:
             selected_language_name = language_name
             break
     self.global_panel_import_language_combobox.setCurrentText(selected_language_name)
 
 
 def update(self):
-    if not session.SUBTITLE.get('language', False):
-        session.SUBTITLE['language'] = session.CONFIG.get('transcription', {}).get('language', 'en-us')
+    if not session.SUBTITLE.language:
+        session.SUBTITLE.language = session.CONFIG.get('transcription', {}).get('language', 'en-us')
     # `source_language` mirrors `language` at transcription time, then is
     # frozen — translation/invert flips `language` but never touches
     # `source_language`. clone_ref uses it to pull the audio-matching
@@ -966,8 +966,8 @@ def update(self):
     # Not in a project whose subtitles carry translations: inverted before
     # `source_language` was kept, they are the translation, not what is
     # spoken, and clone voices would get a transcript in the wrong language.
-    if not session.SUBTITLE.get('source_language') and not clone_ref.has_translations():
-        session.SUBTITLE['source_language'] = session.SUBTITLE['language']
+    if not session.SUBTITLE.source_language and not clone_ref.has_translations():
+        session.SUBTITLE.source_language = session.SUBTITLE.language
     _show_language(self)
 
     # Restore the previously saved engine selection. There is no
@@ -993,7 +993,7 @@ def hide(self):
 
 def global_panel_import_language_combobox_activated(self):
     chosen = session.LANGUAGE_DICT_LIST[self.global_panel_import_language_combobox.currentText()]
-    session.SUBTITLE['language'] = chosen
+    session.SUBTITLE.language = chosen
     # The user is explicitly declaring what's spoken in the source media,
     # so source_language tracks language here — pre-translation, the two
     # are the same. Stamping unconditionally (vs. setdefault) so that
@@ -1001,7 +1001,7 @@ def global_panel_import_language_combobox_activated(self):
     # source_language; post-translation editors who want to redirect the
     # synthesis language without changing what's on the audio should use
     # the invert-translation flow instead.
-    session.SUBTITLE['source_language'] = chosen
+    session.SUBTITLE.source_language = chosen
     if not isinstance(session.CONFIG.get('transcription'), dict):
         session.CONFIG['transcription'] = {}
     session.CONFIG['transcription']['language'] = chosen

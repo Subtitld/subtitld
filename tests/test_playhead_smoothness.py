@@ -177,7 +177,7 @@ def tick(after):
     clock[0] += after
     with mock.patch.object(time, 'perf_counter', lambda: clock[0]):
         timer.timeout.emit()
-    return session.SUBTITLE['position']
+    return session.SUBTITLE.position
 
 
 def covers(strip, *positions):

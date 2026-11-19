@@ -303,7 +303,7 @@ settle()
 check('fixed', panel.status.property('state'), 'ok')
 replace_line(2, '  "language": "pt-br",')
 settle()
-check('editing the language changes the project\'s', session.SUBTITLE['language'], 'pt-br')
+check('editing the language changes the project\'s', session.SUBTITLE.language, 'pt-br')
 panel.format_buttons['md'].click()
 app.processEvents()
 

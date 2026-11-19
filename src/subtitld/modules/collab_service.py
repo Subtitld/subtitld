@@ -457,7 +457,7 @@ def _presence_tick():
     selected_id = selected.get('id') if isinstance(selected, dict) else None
     if _editing and (selected_id != _editing or time.monotonic() - _last_typed > TYPING_IDLE_SECONDS):
         stopped_typing()
-    position = session.SUBTITLE.get('position')
+    position = session.SUBTITLE.position
     state = {'selected': selected_id, 'playhead': round(float(position), 2) if position is not None else None,
              'editing': _editing, 'voice': in_call()}
     if state != _last_presence:
@@ -584,8 +584,8 @@ def take(project):
     _stop()
     history.history_clear()
     session.SUBTITLE.reset()
-    session.SUBTITLE['filepath'] = ''
-    session.SUBTITLE.pop('origin', None)
+    session.SUBTITLE.filepath = ''
+    session.SUBTITLE.origin = None
     session.SPEAKERS.clear()
     session.CONFIG['format_to_save'] = 'USFX'
     session.document_loaded()

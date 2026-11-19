@@ -58,7 +58,7 @@ def _project_tts_language() -> str:
     require a language will surface a `bad_params` error in that case,
     which is preferable to silently picking a wrong default.
     """
-    raw = (session.SUBTITLE.get('language') or '').strip().lower()
+    raw = (session.SUBTITLE.language or '').strip().lower()
     if not raw:
         return ''
     return raw.split('-', 1)[0]

@@ -267,7 +267,7 @@ class Host(QWidget):
 
 def load_productionscreen(window, collab=None):
     """What opening the editor does to the project: it is loaded anew (startscreen.load_productionscreen)."""
-    opened.append((session.VIDEO.get('filepath'), session.SUBTITLE.get('filepath')))
+    opened.append((session.VIDEO.get('filepath'), session.SUBTITLE.filepath))
     history.history_clear()
     if collab is not None:
         collab_state.opening(collab)
@@ -310,7 +310,7 @@ check('connected, the project comes', wait(lambda: collab_state.shared()), True)
 check('signed in once, then asked for the project', (signed_in, calls[0]), ([True], ('project', DOC)))
 check('it is the open project now, connected', (collab_state.STATE['doc'], calls[1]),
       (DOC, ('connect', f'wss://subtitld.cc/ws/collab/{DOC}')))
-check('saving asks where: no file yet', (session.SUBTITLE['filepath'], session.UNSAVED), ('', True))
+check('saving asks where: no file yet', (session.SUBTITLE.filepath, session.UNSAVED), ('', True))
 check('the card says whose it is', (card.title.text(), card.status.text()),
       ('Sintel', 'Shared by @marina<br>Getting the subtitles…'))
 
@@ -420,7 +420,7 @@ read = []
 
 def load_subtitle(window, collab=None):
     """Opening the editor with a subtitle file and a video: the file is read then (here, its bytes noted)."""
-    read.append((session.VIDEO.get('filepath'), Path(session.SUBTITLE['filepath']).read_bytes()))
+    read.append((session.VIDEO.get('filepath'), Path(session.SUBTITLE.filepath).read_bytes()))
     load_productionscreen(window, collab)
 
 
@@ -439,7 +439,7 @@ check('nothing open yet', host.central_widget.layout().currentWidget() is host.s
 subtitldcc_open.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (own, ''))
 card.primary.click()
 check('the editor opens with the video and the subtitle', read, [(own, f'<usf>{SHARE}</usf>'.encode())])
-check('not a file yet: saving asks where', (session.SUBTITLE['filepath'], session.UNSAVED), ('', False))
+check('not a file yet: saving asks where', (session.SUBTITLE.filepath, session.UNSAVED), ('', False))
 check('it knows where it came from', service.origin(), {'share_id': SHARE, 'version': 2})
 check('not shared, the card gone', (collab_state.shared(), card.isVisible()), (False, False))
 check('nothing left behind', [name for name in os.listdir(session.PATH_TEMP) if name.endswith('.usf')], [])

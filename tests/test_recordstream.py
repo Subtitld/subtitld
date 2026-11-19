@@ -59,9 +59,9 @@ fake.stream_segment.emit({'start':0,'end':0,'text':'hello world'}, False); app.p
 print("interim_text:", repr(ctrl.interim_text), " segments so far:", len(session.SUBTITLE.segments))
 if ctrl.interim_text!='hello world' or session.SUBTITLE.segments: fails.append('interim_not_separated')
 
-session.SUBTITLE['position']=8.0
+session.SUBTITLE.position=8.0
 fake.stream_segment.emit({'start':0,'end':0,'text':'hello world'}, True); app.processEvents()
-session.SUBTITLE['position']=11.0
+session.SUBTITLE.position=11.0
 fake.stream_segment.emit({'start':0,'end':0,'text':'second phrase'}, True); app.processEvents()
 subs=session.SUBTITLE.segments
 print("after 2 finals:", [(round(s['start'],1),round(s['end'],1),s['text']) for s in subs], " interim:", repr(ctrl.interim_text))

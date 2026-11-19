@@ -47,7 +47,7 @@ history.history_clear()
 textedit = QTextEdit()
 subtitle_text_editor.set_text(textedit, session.SUBTITLE.selected.text())
 bar = subtitle_text_editor.FormattingBar(textedit, segment=lambda: session.SUBTITLE.selected,
-                                         language=lambda: session.SUBTITLE.get('language'))
+                                         language=lambda: session.SUBTITLE.language)
 strip = timed_text_strip.TimedTextStrip(lambda: session.SUBTITLE.selected)
 strip.setFixedWidth(420)
 bar.changed.connect(strip.refresh)
@@ -122,7 +122,7 @@ bar.untimed_action.trigger()
 check('a string again', session.SUBTITLE.selected['text'], 'Cantando junto a palavra')
 strip.refresh()
 check('the strip hides', strip.isVisible(), False)
-session.SUBTITLE['language'] = 'ja-jp'
+session.SUBTITLE.language = 'ja-jp'
 bar.timing_actions['syllable'].trigger()
 check('syllables in a language without a dictionary: words', texts(), ['Cantando ', 'junto ', 'a ', 'palavra'])
 

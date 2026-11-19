@@ -194,7 +194,7 @@ card.share_button.click()
 check('subtitld.cc gets the document, every subtitle with its ID', wait(lambda: collab_state.shared()), True)
 check('as the group, with the subtitles', calls[0], ('share', 'Sintel', 'subbers', ['Hello', 'Bye'], True))
 check('and the subtitle they came from, for the project to publish to', SHARED_FROM, ['Sb7kQ2xZ9aT'])
-session.SUBTITLE.pop('origin')
+session.SUBTITLE.origin = None
 check('it connects', calls[1][0], 'connect')
 check('shared: the members part, not the form', wait(lambda: not card.share_box.isVisible() and card._project is not None), True)
 check('connected', card.status.text(), 'Connected. Changes reach everyone as you make them.')
@@ -512,7 +512,7 @@ opens()[0].click()
 check('asks first: it replaces the subtitles', card.confirm.isVisible(), True)
 card.confirm_yes.click()
 check('joined: shared, empty until the server sends it, not a file yet',
-      (collab_state.STATE['doc'], session.SUBTITLE.segments, session.SUBTITLE['filepath']), ('Other0000aa', [], ''))
+      (collab_state.STATE['doc'], session.SUBTITLE.segments, session.SUBTITLE.filepath), ('Other0000aa', [], ''))
 check('connects to it', calls[-1], ('connect', collab_client.websocket_url(service.base_url(), 'Other0000aa')))
 
 print('leaving it')

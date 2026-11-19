@@ -331,9 +331,9 @@ def load(self):
 def update(self):
     filename = _('top_bar.untitled_file')
     filepath = pathlib.Path(session.VIDEO.get('filepath', '')).parent
-    if session.SUBTITLE.get('filepath', ''):
-        filename = pathlib.Path(session.SUBTITLE.get('filepath', '')).name
-        filepath = pathlib.Path(session.SUBTITLE.get('filepath', '')).parent
+    if (session.SUBTITLE.filepath or ''):
+        filename = pathlib.Path(session.SUBTITLE.filepath or '').name
+        filepath = pathlib.Path(session.SUBTITLE.filepath or '').parent
             
     self.titleBar_left_information_label.setText(f'<small>{filepath}</small><br /><b>{filename}</b>')
 
@@ -384,7 +384,7 @@ def toppanel_save_button_clicked(self):
 
     usfx_filter = session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['USFX']['description'] + ' (*.usfx)'
 
-    current_filepath = session.SUBTITLE.get('filepath') or ''
+    current_filepath = session.SUBTITLE.filepath or ''
     needs_dialog = not current_filepath or not current_filepath.lower().endswith('.usfx')
 
     if needs_dialog:
@@ -399,7 +399,7 @@ def toppanel_save_button_clicked(self):
         filepath = filedialog[0]
         if not filepath.lower().endswith('.usfx'):
             filepath += '.usfx'
-        session.SUBTITLE['filepath'] = filepath
+        session.SUBTITLE.filepath = filepath
 
     session.FORMAT['format'] = 'USFX'
 
@@ -410,13 +410,13 @@ def toppanel_save_button_clicked(self):
     def _on_save_done(_path, success, _error):
         self.titleBar_left_save_button.setEnabled(True)
         if success:
-            session.add_to_recent_files(session.SUBTITLE.get('filepath'), session.VIDEO.get('filepath', ''))
+            session.add_to_recent_files(session.SUBTITLE.filepath, session.VIDEO.get('filepath', ''))
             session.persist_current_playback_position()
             from subtitld.interface import recent_cards
             recent_cards.remember(self)
             session.notify_save_success()
             # Re-render the title bar so the path/filename labels pick
-            # up `session.SUBTITLE['filepath']` (just set by the
+            # up `session.SUBTITLE.filepath` (just set by the
             # save-as dialog above). Without this, a first-time save
             # leaves the title showing the parent dir + "Untitled".
             update(self)
@@ -429,7 +429,7 @@ def toppanel_save_button_clicked(self):
             _show_save_error_dialog(self, _path, _error)
 
     file_io.save_file_async(
-        session.SUBTITLE['filepath'],
+        session.SUBTITLE.filepath,
         'USFX',
         session.CONFIG['selected_language'],
         on_done=_on_save_done,
@@ -493,8 +493,8 @@ def toppanel_export_button_clicked(self):
 
     file_filter = description + ' (' + ' '.join(f'*.{e}' for e in extensions) + ')'
 
-    suggested_dir = os.path.dirname(session.SUBTITLE.get('filepath', '') or session.VIDEO.get('filepath', ''))
-    base = os.path.basename(session.SUBTITLE.get('filepath', '') or session.VIDEO.get('filepath', '')) or 'subtitle'
+    suggested_dir = os.path.dirname((session.SUBTITLE.filepath or '') or session.VIDEO.get('filepath', ''))
+    base = os.path.basename((session.SUBTITLE.filepath or '') or session.VIDEO.get('filepath', '')) or 'subtitle'
     suggested = os.path.join(suggested_dir, os.path.splitext(base)[0] + '.' + extensions[0])
 
     # Force Qt's own dialog (not the native GTK/portal one): this save picker

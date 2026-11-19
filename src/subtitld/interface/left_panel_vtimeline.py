@@ -1020,7 +1020,7 @@ class VerticalTimeline(QWidget):
         painter.restore()
 
     def _paint_playhead(self, painter, cfg):
-        position = session.SUBTITLE.get('position')
+        position = session.SUBTITLE.position
         if position is None:
             return
         color = QColor(cfg.get('cursor_color', '#ccff0000'))
@@ -1244,7 +1244,7 @@ class VerticalTimeline(QWidget):
 
     def seek_to(self, seconds):
         seconds = max(0.0, min(_duration(), seconds))
-        session.SUBTITLE['position'] = seconds
+        session.SUBTITLE.position = seconds
         if session.CONFIG.get('repeat_activated'):
             session.REPEAT_DURATION_BUFFER = []
         player = getattr(self.window_ref, 'preview_panel_player', None)
@@ -1313,7 +1313,7 @@ class VerticalTimelineScroll(QScrollArea):
         pps = max(ZOOM_RANGE[0], min(ZOOM_RANGE[1], float(pps)))
         bar = self.verticalScrollBar()
         if anchor is None:
-            playhead = self.canvas.y_at(float(session.SUBTITLE.get('position') or 0.0)) - bar.value()
+            playhead = self.canvas.y_at(float(session.SUBTITLE.position or 0.0)) - bar.value()
             anchor = playhead if 0 <= playhead <= self.viewport().height() else self.viewport().height() / 2
         seconds = self.canvas.time_at(bar.value() + anchor)
         _config()['zoom'] = pps
@@ -1330,7 +1330,7 @@ class VerticalTimelineScroll(QScrollArea):
 
     def note_position(self):
         """The playhead moved here: no need to bring it into view."""
-        self._last_position = session.SUBTITLE.get('position')
+        self._last_position = session.SUBTITLE.position
 
     def ensure_time_visible(self, start, end=None, center=False):
         bar = self.verticalScrollBar()
@@ -1356,7 +1356,7 @@ class VerticalTimelineScroll(QScrollArea):
         canvas = self.canvas
         if canvas.height() != canvas.full_height():
             self.fit_canvas()
-        position = session.SUBTITLE.get('position')
+        position = session.SUBTITLE.position
         if position != self._last_position:
             previous, self._last_position = self._last_position, position
             if previous is not None:
@@ -1518,7 +1518,7 @@ class VerticalTimelinePanel(QWidget):
         self.zoom_in_button.setEnabled(pps < ZOOM_RANGE[1] - 1e-6)
 
     def update_labels(self):
-        position = float(session.SUBTITLE.get('position') or 0.0)
+        position = float(session.SUBTITLE.position or 0.0)
         self.position_label.setText(_clock(position))
         selected = session.SUBTITLE.selected
         if selected:

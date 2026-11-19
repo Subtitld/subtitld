@@ -67,7 +67,7 @@ check('segments', without_ids(segments), [
     {'start': 1.0, 'end': 2.5, 'text': 'Olá\nmundo', 'speaker': 'A',
      'translations': {'en-us': 'Hello world'}, 'dubbing': [{'path': 'a.wav', 'uid': 'd1'}]},
     {'start': 3.0, 'end': 4.0, 'text': 'Tchau', 'speaker': 'B', 'locked': True}])
-check('the project language comes with it', session.SUBTITLE['language'], 'pt-br')
+check('the project language comes with it', session.SUBTITLE.language, 'pt-br')
 
 print('Whisper\'s own output opens')
 whisper = folder / 'whisper.json'
@@ -79,7 +79,7 @@ session.SUBTITLE = Subtitle({'language': 'pt-br', 'segments': []})
 segments, fmt = file_io.process_subtitles_file(str(whisper))
 check('one subtitle, speaker A as for other formats, no decoder statistics', without_ids(segments),
       [{'start': 0.0, 'end': 2.0, 'text': 'Hello there.', 'speaker': 'A'}])
-check('"en" is English: the project takes it, as Subtitld writes it', session.SUBTITLE['language'], 'en-us')
+check('"en" is English: the project takes it, as Subtitld writes it', session.SUBTITLE.language, 'en-us')
 
 print('a broken file says where')
 broken = folder / 'broken.json'

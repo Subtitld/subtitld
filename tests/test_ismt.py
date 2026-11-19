@@ -135,7 +135,7 @@ session.SUBTITLE = Subtitle({'language': 'en'})
 session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'relative.ismt'))
 check('opens as ISMT, its language and fragment length kept',
-      (fmt, len(opened), session.SUBTITLE.get('language').split('-')[0], session.FORMAT['options'].get('segment_duration')),
+      (fmt, len(opened), session.SUBTITLE.language.split('-')[0], session.FORMAT['options'].get('segment_duration')),
       ('ISMT', 3, 'de', 5.0))
 session.SUBTITLE = Subtitle({'segments': trip, 'language': 'en'})
 session.VIDEO = {}

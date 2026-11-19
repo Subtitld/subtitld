@@ -164,7 +164,7 @@ session.SUBTITLE = Subtitle({'segments': []})
 session.FORMAT = {}
 session.VIDEO = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'xf.mid'))
-check('an XF .mid opens as MIDI lyrics, its title kept', (fmt, len(opened), session.SUBTITLE['metadata']['title']),
+check('an XF .mid opens as MIDI lyrics, its title kept', (fmt, len(opened), session.SUBTITLE.metadata['title']),
       ('MIDI', 3, '待宵草'))
 session.SUBTITLE.segments = opened
 file_io.save_file(str(folder / 'again.mid'), 'MIDI')

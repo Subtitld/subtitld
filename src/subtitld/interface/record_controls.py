@@ -242,7 +242,7 @@ class RecordController(QObject):
             self._status = 'no-input'
             log.warning('Record: no audio input available; not recording')
             return
-        base = float(session.SUBTITLE.get('position', 0) or 0)
+        base = float(session.SUBTITLE.position or 0)
         self._base_position = base
         self._take_token = secrets.token_hex(3)
         self._take_history = None     # each take is its own undo step
@@ -275,7 +275,7 @@ class RecordController(QObject):
                     return
                 self._live = live_transcribe.LiveTranscriber(
                     provider,
-                    language=session.SUBTITLE.get('language', 'en-us'),
+                    language=session.SUBTITLE.language or 'en-us',
                     options=self._asr_options(provider),
                     samplerate=recorder_mod.SAMPLE_RATE,
                     base_offset=base,
@@ -370,7 +370,7 @@ class RecordController(QObject):
                 wav = rec.stop()   # stop capture first, then flush the engine
             except Exception:
                 wav = None
-        stop_pos = float(session.SUBTITLE.get('position', 0) or 0)
+        stop_pos = float(session.SUBTITLE.position or 0)
 
         # AFTER rec.stop(): that joins the writer thread, so the preview VAD
         # can be flushed from here without racing an append.
@@ -790,7 +790,7 @@ class RecordController(QObject):
         sid = None
         try:
             sid = provider.stream_start(
-                session.SUBTITLE.get('language', 'en-us'), self._asr_options(provider))
+                (session.SUBTITLE.language or 'en-us'), self._asr_options(provider))
         except Exception as exc:
             self._on_session_error(st, f'could not start stream: {exc}')
         if isinstance(sid, str) and sid and st['n'] in self._streams:
@@ -898,7 +898,7 @@ class RecordController(QObject):
         since after that the user may be anywhere."""
         if st['stop_pos'] is not None:
             return st['stop_pos']
-        return float(session.SUBTITLE.get('position', 0) or 0)
+        return float(session.SUBTITLE.position or 0)
 
     def _on_session_segment(self, st, seg, final):
         """A streaming segment arrived (main thread). Interim text is shown

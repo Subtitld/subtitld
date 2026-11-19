@@ -135,17 +135,17 @@ session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'on
                                  {'start': 5.0, 'end': 6.0, 'text': 'three'}], 'position': 1.5})
 cue = dialog._picture_cue('PGS', {})
 check('under the cursor', cue['text'], 'one')
-session.SUBTITLE['position'] = 2.5
+session.SUBTITLE.position = 2.5
 check('between: the next with words', dialog._picture_cue('PGS', {})['text'], 'three')
 check('shifted as written', dialog._picture_cue('PGS', {'offset': 1.0})['start'], 6.0)
-session.SUBTITLE['position'] = 9.0
+session.SUBTITLE.position = 9.0
 check('after the last: none', dialog._picture_cue('PGS', {}), None)
 
 print('pictures: one drawn')
 from subtitld.interface import subtitle_renderer
 if subtitle_renderer.available():
     import time
-    session.SUBTITLE['position'] = 0.0
+    session.SUBTITLE.position = 0.0
     panel.offset_spin.setValue(0)
     panel.format_combo.combobox.setCurrentText('PGS')
     dialog.refresh_preview()

@@ -295,7 +295,7 @@ session.FORMAT = {}
 opened, fmt = file_io.process_subtitles_file(str(folder / 'example10.xml'))
 english = file_io._language_like_project('en')
 check('a DAPT .xml opens as TTML; its language the original\'s, the translation by Subtitld\'s code, the character '
-      'a speaker, kept to be saved as DAPT', (fmt, session.SUBTITLE['language'], list(opened[0]['translations']),
+      'a speaker, kept to be saved as DAPT', (fmt, session.SUBTITLE.language, list(opened[0]['translations']),
                                               'ASSANE' in session.SPEAKERS, session.FORMAT['options'].get('profile')),
       ('TTML', file_io._known_language('fr'), [english], True, 'dapt'))
 session.SUBTITLE.segments = opened

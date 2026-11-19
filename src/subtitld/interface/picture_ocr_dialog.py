@@ -58,7 +58,7 @@ def _language_guess(path):
                 return code
         except OSError:
             pass
-    return (session.SUBTITLE.get('language') or (session.CONFIG.get('transcription') or {}).get('language')
+    return (session.SUBTITLE.language or (session.CONFIG.get('transcription') or {}).get('language')
             or 'en-us')
 
 

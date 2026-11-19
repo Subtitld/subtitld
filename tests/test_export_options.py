@@ -57,7 +57,7 @@ check('the project is not changed', project()[1]['text'], '<i>Hello</i> there')
 print('written by file_io with the options')
 folder = Path(tempfile.mkdtemp())
 session.SUBTITLE.segments = project()
-session.SUBTITLE['language'] = 'en'
+session.SUBTITLE.language = 'en'
 session.VIDEO = {'width': 1920, 'height': 1080, 'framerate': 25.0}
 
 

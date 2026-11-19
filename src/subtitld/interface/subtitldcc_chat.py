@@ -532,7 +532,7 @@ class ChatCard(QWidget):
             if self.attach.isChecked():
                 selected = session.SUBTITLE.selected
                 cue_id = selected.get('id') if isinstance(selected, dict) else None
-                at_ms = int(float(session.SUBTITLE.get('position') or 0) * 1000)
+                at_ms = int(float(session.SUBTITLE.position or 0) * 1000)
             collab_service.chat_say(text, cue_id=cue_id, at_ms=at_ms)
         self.field.clear()
         self.refresh()

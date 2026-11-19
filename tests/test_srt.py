@@ -128,7 +128,7 @@ path.write_bytes(b'\xef\xbb\xbf\r\n1\r\n00:00:01.000 -> 00:00:02,000\r\n<i>First
 segments, _format = file_io.process_subtitles_file(str(path))
 check('opens', [(s['start'], s['end'], s['text']) for s in segments], [(1.0, 2.0, '<i>First</i>'), (3.0, 4.0, 'Second')])
 session.SUBTITLE.segments = segments
-session.SUBTITLE['language'] = 'en'
+session.SUBTITLE.language = 'en'
 out = folder / 'saved.srt'
 file_io.save_file(str(out), 'SRT')
 check('saves', out.read_bytes(), b'1\n00:00:01,000 --> 00:00:02,000\n<i>First</i>\n\n2\n00:00:03,000 --> 00:00:04,000\nSecond\n')
