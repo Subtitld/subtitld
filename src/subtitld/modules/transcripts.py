@@ -168,6 +168,10 @@ _LEFT_OUT = {'phone', 'phones', 'phoneme', 'phonemes', 'phon', 'mau', 'kan', 'sa
 _PAUSES = {'', 'sil', 'sp', 'spn', '<sil>', '<sp>', '<p:>', '<p>', '#', '_', '<eps>', 'pau', '<pau>'}
 _MFA = re.compile(r'(.+?)\s+-\s+(words|phones)$', re.IGNORECASE)
 _AGAIN = re.compile(r'\s\(\d+\)$')
+# Quote marks around a whole name: praatIO's own test file names a tier
+# """word""" (Praat's doubled quote, so "word" with its quotes), which
+# praatIO keeps as the name; they say nothing of what the tier holds.
+_QUOTED = re.compile(r'^(["\'\u201c\u2018\u00ab])(.*)(["\'\u201d\u2019\u00bb])$', re.DOTALL)
 
 
 def textgrid_looks_like(head):
@@ -266,6 +270,11 @@ def _tier_kind(name):
     """(level, speaker) a tier's name says: level 'utterances', 'words',
     'left out' or 'speaker'."""
     name = _AGAIN.sub('', name.strip())
+    while True:
+        quoted = _QUOTED.match(name)
+        if not quoted or len(name) < 3:
+            break
+        name = quoted.group(2).strip()
     match = _MFA.match(name)
     if match:
         return ('words' if match.group(2).lower() == 'words' else 'left out'), match.group(1)

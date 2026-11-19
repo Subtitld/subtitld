@@ -118,17 +118,23 @@ print('praatIO: bobby_words_with_newlines (quotes and line breaks in labels)')
 bobby, _fmt = opened(found['praatio/bobby_words_with_newlines.TextGrid'])
 # The file writes the label """""""BOBBY""""""<newline>Noun": a quote in
 # a Praat text is doubled, so it reads """BOBBY""", a line break, Noun; the
-# tier is named """word""", that is "word" in quotes.
-check('quotes undoubled, the line break kept', (len(bobby), bobby[0]['text'], bobby[-1]['text']),
-      (4, '"""BOBBY"""\nNoun', 'LEDGER\nNoun'))
-check('the first label\'s time', cues(bobby)[0][:2], (0.065, 0.412))
+# tier is named """word""", that is "word" in quotes (praatIO keeps the
+# quotes in the name). Quoted or not it is the word tier, not a person's:
+# its four labels are grouped into a subtitle as mary's words are, over
+# 0.065-1.117, the span the file's phrase tier gives "BOBBY RIPPED THE
+# LEDGER". Its speaker is the grouped words' first, 'A', as mary's is,
+# not one named '"word"'.
+check('the word tier, its words grouped, not a speaker', (len(bobby), cues(bobby)[0][:2], bobby[0].get('speaker')),
+      (1, (0.065, 1.117), 'A'))
+check('quotes undoubled, the words in order', bobby[0]['text'].split(),
+      ['"""BOBBY"""', 'Noun', 'RIPPED', 'Verb', 'THE', 'Determiner', 'LEDGER', 'Noun'])
 # praatIO's tests: the long form, and the long form as ELAN writes it,
 # are the same TextGrid.
 for name in ('bobby_words_with_newlines_longfile.TextGrid', 'bobby_words_with_newlines_longfile_elan.TextGrid'):
     check(f'{name}: the same', cues(opened(found['praatio/' + name])[0]), cues(bobby))
 opened(found['praatio/bobby_words_with_newlines.TextGrid'])
 saved, _fmt = again('bobby.TextGrid', 'TEXTGRID')
-check('saved and opened again: quotes and line breaks survive', cues(saved), cues(bobby))
+check('saved and opened again: the quotes survive', cues(saved), cues(bobby))
 
 print('Praat files that are not TextGrids')
 # A PitchTier, DurationTier, PointProcess and KlattGrid hold numbers, no
