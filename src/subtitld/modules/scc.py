@@ -226,6 +226,8 @@ class _Decoder:
         self.current = None                        # the pop-on or paint-on caption shown
         self.line = None                           # the roll-up line being written
         self.dirty = None                          # the frame paint-on first changed the screen
+        self.commanded = False                     # a control code of this channel seen yet
+        self.orphan = None                         # the frame of the first character before one
 
     def _seconds(self, frame):
         return round(frame / self.rate, 3)
@@ -290,6 +292,8 @@ class _Decoder:
     def _put(self, frame, char, attribute=False):
         if self.mode == 'text':
             return
+        if not self.commanded and self.orphan is None and char.strip():
+            self.orphan = frame
         if self.mode == 'roll' and self.line is not None and self.line['start'] is None and char.strip():
             self.line['start'] = self._seconds(frame)
             for subtitle in self.subtitles:
@@ -326,6 +330,12 @@ class _Decoder:
                 self._put(frame, _BASIC[byte])
 
     def _code(self, frame, first, second):
+        try:
+            self._codes(frame, first, second)
+        finally:
+            self.commanded = True
+
+    def _codes(self, frame, first, second):
         if first in (0x14, 0x15) and 0x20 <= second <= 0x2F:
             self._command(frame, second)
         elif first == 0x11 and 0x20 <= second <= 0x2F:
@@ -393,10 +403,17 @@ class _Decoder:
             self.mode = 'pop'
         elif second in (_RU2, _RU3, _RU4):
             if self.mode != 'roll':
+                # A recording that begins in the middle of a roll-up
+                # caption: what came before its first code was the line
+                # being written, on the base row.
+                kept = self.loading[_ROWS] if not self.commanded and self.orphan is not None else None
                 self._close(frame)
                 self.displayed, self.loading = _blank(), _blank()
                 self.row, self.column = _ROWS, 0
                 self.line = {'start': None, 'end': None}
+                if kept:
+                    self.displayed[_ROWS] = kept
+                    self.line['start'] = self._seconds(self.orphan)
             self.mode = 'roll'
             self.roll_rows = second - _RU2 + 2
         elif second == _RDC:
