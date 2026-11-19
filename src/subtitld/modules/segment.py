@@ -216,6 +216,38 @@ def join_pieces(segment, number):
     return True
 
 
+def refine_piece(segment, number, hyphenate=None):
+    """Piece `number` of `segment` cut a level finer than it was cut at (a
+    word into syllables, else letters; syllables into letters), its times
+    shared by letters. The number of pieces it became, 1 for none."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces):
+        return 1
+    piece = pieces[number]
+    level = piece.get('level') if piece.get('level') in LEVELS else 'word'
+    for finer in LEVELS[LEVELS.index(level) + 1:]:
+        parts = _recut([piece], finer, hyphenate)
+        if len(parts) > 1:
+            segment['text'] = pieces[:number] + parts + pieces[number + 1:]
+            return len(parts)
+    return 1
+
+
+def tap(segment, number, at):
+    """A tap `at` seconds from the subtitle's start: piece `number` starts
+    there and the one before ends there; a tap past the last piece ends it.
+    A tap before the piece before started counts from where it did."""
+    pieces = timed_pieces(segment)
+    if not pieces or not 0 <= number <= len(pieces):
+        return
+    at = round(max(at, pieces[number - 1]['start'] if number else 0.0), 3)
+    if number:
+        pieces[number - 1]['end'] = at
+    if number < len(pieces):
+        pieces[number]['start'] = at
+        pieces[number]['end'] = max(pieces[number]['end'], at)
+
+
 def time_piece(segment, number, start=None, end=None):
     """Piece `number` of `segment` given a new start or end, in seconds from
     the subtitle's start: kept after the piece before it, before the next,

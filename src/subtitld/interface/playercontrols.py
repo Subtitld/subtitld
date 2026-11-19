@@ -1811,6 +1811,16 @@ def split_dub_at_cursor(self):
         _refresh_dub_after_edit(self)
 
 
+@shortcut('tap_piece', 'shortcuts.tap_piece', ['K'])
+def tap_piece(self):
+    """Tapped while a subtitle timed word by word plays: its next piece
+    starts here (interface.timeline_pieces.tap)."""
+    if _focus_is_text_widget(self):
+        return
+    from subtitld.interface import timeline_pieces
+    timeline_pieces.tap(self)
+
+
 @shortcut('zoom_in', 'shortcuts.zoom_in', ['+'])
 def zoomin_button_clicked(self):
     """Function to call when zoonin button is clicked"""

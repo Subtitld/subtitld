@@ -220,7 +220,12 @@ the compositor kept the test window from focus.)* The HTML renderer highlights t
 effect (fill, wipe, outline or pop-in), the style's when it has none; the
 style setting for the default effect is added here.
 
-**M8. Timeline.** A strip of pieces along the bottom of the selected
+**M8. Timeline.** *(Done on branch `timed-text`, in
+interface/timeline_pieces.py: chips along the bottom of the selected
+subtitle's box; the edge two share drags both, Alt only the one dragged
+towards; snapping to the playhead and the onsets heard; a click seeks, a
+double-click cuts finer; K taps one piece after another while it plays.
+Tested off-screen with the real Timeline; not yet by hand in the app.)* A strip of pieces along the bottom of the selected
 subtitle; drag a line between pieces to move both, Alt-drag for a gap;
 double-click to go a level down; snapping to waveform onsets; tap mode
 (each key press ends a piece during playback).

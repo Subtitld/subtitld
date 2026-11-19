@@ -342,6 +342,7 @@
     "shortcuts.history_undo": "Undo last action",
     "shortcuts.history_redo": "Redo last undone action",
     "shortcuts.split_dub_at_cursor": "Split dub clip at cursor",
+    "shortcuts.tap_piece": "Tap where the next piece of a subtitle timed word by word starts",
     "shortcuts.zoom_in": "Zoom in",
     "shortcuts.zoom_out": "Zoom out",
     "shortcuts.add_new_subtitle_to_current_position": "Add new subtitle to current position",

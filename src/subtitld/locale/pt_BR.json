@@ -342,6 +342,7 @@
     "shortcuts.history_undo": "Desfazer a última ação",
     "shortcuts.history_redo": "Refazer a última ação desfeita",
     "shortcuts.split_dub_at_cursor": "Dividir o clipe de dublagem no cursor",
+    "shortcuts.tap_piece": "Marcar no toque onde começa o próximo trecho de uma legenda temporizada",
     "shortcuts.zoom_in": "Aumentar zoom",
     "shortcuts.zoom_out": "Diminuir zoom",
     "shortcuts.add_new_subtitle_to_current_position": "Adicionar nova legenda na posição atual",

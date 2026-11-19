@@ -20,6 +20,7 @@ from subtitld.modules.segment import text_of
 
 from subtitld.interface import left_panel
 from subtitld.interface import playercontrols
+from subtitld.interface import timeline_pieces
 from subtitld.interface.translation import _
 
 
@@ -1807,6 +1808,8 @@ class Timeline(QWidget):
 
                 if subtitle.get('dubbing'):
                     subtitle_rect.setHeight(subtitle_rect.height() * 0.75)
+                # Where its pieces go, if it is timed word by word: the box, above a dub's clips.
+                pieces_box = QRectF(subtitle_rect)
 
                 if _live_sub is not None and subtitle is _live_sub:
                     # Reuse the rect the loop already computed (speaker tracks,
@@ -1908,6 +1911,9 @@ class Timeline(QWidget):
                         painter.setPen(edge_pen)
                         painter.setBrush(Qt.NoBrush)
                         painter.drawPath(edge_path)
+
+                if subtitle_is_selected:
+                    timeline_pieces.paint(widget, painter, subtitle, pieces_box)
 
                 if subtitle_locked:
                     painter.restore()
@@ -2064,6 +2070,10 @@ class Timeline(QWidget):
         # after they dismiss the menu.
         if event.button() != Qt.LeftButton:
             event.ignore()
+            return
+
+        # The selected subtitle's pieces, when it is timed word by word.
+        if timeline_pieces.press(widget, event):
             return
 
         # Per-subclip stretch handle (the bars+ratio icon near each
@@ -2389,6 +2399,8 @@ class Timeline(QWidget):
         event.accept()
 
     def mouseReleaseEvent(widget, event):
+        if timeline_pieces.release(widget, event):
+            return
         if widget.dub_subclip_drag is not None:
             drag = widget.dub_subclip_drag
             widget.dub_subclip_drag = None
@@ -2517,6 +2529,9 @@ class Timeline(QWidget):
         event.accept()
 
     def mouseMoveEvent(widget, event):
+        # The selected subtitle's pieces: an edge dragged, or the pointer over them.
+        if timeline_pieces.move(widget, event):
+            return
         # Live subclip drag — convert mouse x to a timeline offset and
         # dispatch to the right dub_clip helper based on drag mode. The
         # helpers reject negative-duration / out-of-bounds states so we
@@ -2953,6 +2968,8 @@ class Timeline(QWidget):
             widget.update()
 
     def mouseDoubleClickEvent(widget, event):
+        if timeline_pieces.double_click(widget, event):
+            return
         widget.update()
         event.accept()
 
