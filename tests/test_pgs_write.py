@@ -88,6 +88,14 @@ check('the frame rate codes', [pgs.rate_code(r) for r in (23.976, 24, 25, 29.97,
 follows = pgs.display_sets(0, 0, 2, 1, b'\x01\x01', small[0].colours[:2], 1.0, None, (720, 480), 0x10, 0)
 check('followed at once by the next: no composition to clear it',
       [kind for _p, kind, _d in pgs.segments(follows)].count(pgs.PCS), 1)
+# A file cut short before its last END (Subtitle Edit's and FFmpeg's
+# samples are): that display set is shown when its object is whole, and
+# the one before ends there; one whose object is cut is left out.
+second = pgs.display_sets(0, 0, 2, 1, b'\x02\x02', small[0].colours[:3], 4.0, None, (720, 480), 0x10, 2)
+cut = pgs.display_sets(0, 0, 2, 1, b'\x01\x01', small[0].colours[:2], 1.0, 3.0, (720, 480), 0x10, 0) + second[:-13]
+check('a last display set without its END: shown, the one before ending at it',
+      [(p.start, p.end, p.indices) for p in pgs.parse(cut)], [(1.0, 3.0, b'\x01\x01'), (4.0, 9.0, b'\x02\x02')])
+check('its object cut short: left out', [(p.start, p.end) for p in pgs.parse(cut[:-15])], [(1.0, 3.0)])
 
 print('drawn, saved and read back')
 SEGMENTS = [{'start': 1.0, 'end': 2.5, 'text': 'Hello <i>there</i>'},

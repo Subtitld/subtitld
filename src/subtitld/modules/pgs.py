@@ -103,7 +103,7 @@ def segments(data):
 def parse(data):
     """The pictures in a PGS stream, in time order."""
     palettes = {}
-    objects = {}                        # id -> [width, height, bytearray]
+    objects = {}                        # id -> [width, height, bytearray, its whole length]
     pending = None                      # the display set's composition, drawn at END
     shown = []
     screen = (1920, 1080)
@@ -146,12 +146,28 @@ def parse(data):
             sequence = payload[3]
             if sequence & 0x80 and len(payload) >= 11:
                 width, height = payload[7] << 8 | payload[8], payload[9] << 8 | payload[10]
-                objects[object_id] = [width, height, bytearray(payload[11:])]
+                # The first fragment says how long the whole is (with the
+                # four bytes of the size), to tell a whole object from one
+                # a file was cut short in.
+                length = int.from_bytes(payload[4:7], 'big') - 4
+                objects[object_id] = [width, height, bytearray(payload[11:]), length]
             elif object_id in objects:
                 objects[object_id][2] += payload[4:]
         elif kind == END and pending is not None:
             when, palette_id, placed = pending
             pending = None
+            if shown and shown[-1].end is None:
+                shown[-1].end = when
+            picture = _compose(placed, objects, palettes.get(palette_id, {}), screen, when)
+            if picture is not None:
+                shown.append(picture)
+    if pending is not None:
+        # A last display set with no END, the file cut short after it (a
+        # sample, a clip): shown as well when all it places is whole, as
+        # Subtitle Edit reads one, ending the picture before it. FFmpeg
+        # leaves it out, and the picture before then holds on.
+        when, palette_id, placed = pending
+        if all(item[0] in objects and len(objects[item[0]][2]) >= objects[item[0]][3] for item in placed):
             if shown and shown[-1].end is None:
                 shown[-1].end = when
             picture = _compose(placed, objects, palettes.get(palette_id, {}), screen, when)
@@ -169,7 +185,7 @@ def _compose(placed, objects, palette, screen, when):
     for object_id, x, y, crop, _forced in placed:
         if object_id not in objects:
             continue
-        width, height, data = objects[object_id]
+        width, height, data, _length = objects[object_id]
         if not width or not height:
             continue
         indices = decode_rle(bytes(data), width, height)
