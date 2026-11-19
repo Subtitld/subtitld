@@ -191,6 +191,10 @@ check('a subtitle shown twice is one picture each time', same_pixels(odd[VOD_LEN
 check('their place: centred on a 1920-wide frame, low on a 1080-high one',
       [(p.x + p.width // 2, p.y + p.height <= 1080, p.y > 540) for p in odd[VOD_LENGTH] + odd[VOD_WINDOW]],
       [(959, True, True)] * 2 + [(974, True, True)] * 2)
+# Without an .idx to say so, the frame is the one they fit in (854x62 at
+# 532,941: beyond DVD PAL's 720x576), as Subtitle Edit has them.
+check('their frame, from where they are: 1920x1080', {(p.screen_width, p.screen_height) for path in odd
+                                                      for p in odd[path]}, {(1920, 1080)})
 check('white words, outlined black', sorted({tuple(c) for c in rgba(odd[VOD_WINDOW][0]).tolist()}),
       [(0, 0, 0, 0), (0, 0, 0, 255), (255, 255, 255, 255)])
 
@@ -308,12 +312,14 @@ check('VobSub: as many', len(again), len(vob))
 check('the same starts (an .idx counts milliseconds)', [round(p.start, 3) for p in again], [round(p.start, 3) for p in vob])
 check('the same ends, within an SPU tick', max(abs(a.end - b.end) for a, b in zip(again, vob)) <= 1024 / 90000, True)
 check('the same pixels in the same places, the same colours', same_pixels(vob, again), True)
-# The odd ones are on a 1920x1080 frame, though without an .idx they are
-# taken for DVD PAL's: written on that, they would be cut away.
+# The odd ones are on a 1920x1080 frame, which they are read on though
+# no .idx says so: on DVD PAL's, they would be cut away.
 hd = odd[VOD_LENGTH] + odd[VOD_WINDOW]
 hd.sort(key=lambda p: p.start)
-vobsub.save(str(folder / 'hd.idx'), as_drawn(hd), (1920, 1080), 'ja')
+vobsub.save(str(folder / 'hd.idx'), as_drawn(hd), (hd[0].screen_width, hd[0].screen_height), 'ja')
 again, _track = vobsub.read(str(folder / 'hd.idx'))
+check('a .sub alone, written on the frame it was read on: 1920x1080 in its .idx',
+      {(p.screen_width, p.screen_height) for p in again}, {(1920, 1080)})
 check('a .sub alone, on its HD frame: the same pixels', same_pixels(hd, again), True)
 check('and times', [round(p.start, 3) for p in again], [round(p.start, 3) for p in hd])
 

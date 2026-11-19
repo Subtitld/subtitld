@@ -70,6 +70,9 @@ idx = (folder / 'film.idx').read_text()
 (folder / 'film.idx').rename(folder / 'film.idx.bak')
 alone, _track = vobsub.read(str(folder / 'film.sub'))
 check('a .sub without its .idx: timed by its PTS', [p.start for p in alone], [1.0, 4.0, 65.25])
+# Its pictures fit in DVD PAL's frame (they are on NTSC's), so it is taken
+# for that, as without an .idx it always was.
+check('and on DVD PAL\'s frame, which they fit in', {(p.screen_width, p.screen_height) for p in alone}, {(720, 576)})
 (folder / 'film.idx.bak').rename(folder / 'film.idx')
 info = vobsub.parse_idx(idx + 'id: en, index: 1\ndelay: 00:00:01:500\ntimestamp: 00:00:02:000, filepos: 000000800\n')
 check('an .idx: tracks, delay', [(t['index'], t['language'], t['entries'][-1][0]) for t in info['tracks']],
