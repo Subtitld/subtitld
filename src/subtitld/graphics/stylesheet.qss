@@ -1938,6 +1938,7 @@ QMenu#subtitle_formatting_menu::separator {
 }
 
 #subtitles_panel_simplelist_properties_duration_timing_lock_button {
+    border: 0;
     border-bottom-right-radius: 3px;
     border-bottom-left-radius: 3px;
     border-top-right-radius: 0;
