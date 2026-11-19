@@ -7,10 +7,12 @@ palettes (PDS: up to 256 YCbCr colours with opacity) and objects (ODS: a
 run-length coded picture, in fragments when large). A composition without
 objects clears the screen; each composition holds until the next.
 
-`read(path)` gives picture_subtitles.Picture per composition, the objects
-it shows drawn into one picture (two objects, top and bottom lines, make
-one picture with the space between). `parse(data)` reads bytes, for the
-PGS tracks inside videos, which FFmpeg writes out as a .sup.
+`read(path)` gives picture_subtitles.Picture per window of a composition,
+the objects it shows in that window drawn into one picture: a sign at the
+top and a line at the bottom, in two windows, are two pictures, each where
+it is (and each read where it is, the sign kept at the top), at the same
+time. `parse(data)` reads bytes, for the PGS tracks inside videos, which
+FFmpeg writes out as a .sup.
 
 `save(path, pictures, size)` writes one: the subtitles drawn as pictures
 (interface.subtitle_pictures), one on screen at a time (disc_pictures).
@@ -22,7 +24,7 @@ one holds. A composition with no object clears it at its end, unless the
 next subtitle starts there and takes its place.
 """
 
-from subtitld.modules.picture_subtitles import Picture
+from subtitld.modules.picture_subtitles import Picture, reading_order
 
 PCS, WDS, PDS, ODS, END = 0x16, 0x17, 0x14, 0x15, 0x80
 DEFAULT_DURATION = 5.0
@@ -103,7 +105,7 @@ def segments(data):
 def parse(data):
     """The pictures in a PGS stream, in time order."""
     palettes = {}
-    objects = {}                        # id -> [width, height, bytearray]
+    objects = {}                        # id -> [width, height, bytearray, its whole length]
     pending = None                      # the display set's composition, drawn at END
     shown = []
     screen = (1920, 1080)
@@ -122,6 +124,7 @@ def parse(data):
                 if i + 8 > len(payload):
                     break
                 object_id = payload[i] << 8 | payload[i + 1]
+                window = payload[i + 2]
                 cropped = payload[i + 3] & 0x80
                 # Forced: shown even where a viewer asked for no subtitles,
                 # for the sign or the line of another language a film
@@ -133,7 +136,7 @@ def parse(data):
                 if cropped and i + 8 <= len(payload):
                     crop = tuple(payload[i + k] << 8 | payload[i + k + 1] for k in (0, 2, 4, 6))
                     i += 8
-                placed.append((object_id, x, y, crop, forced))
+                placed.append((object_id, x, y, crop, forced, window))
             pending = (pts, payload[9], placed)
         elif kind == PDS and len(payload) >= 2:
             palette = palettes.setdefault(payload[0], {})
@@ -146,30 +149,64 @@ def parse(data):
             sequence = payload[3]
             if sequence & 0x80 and len(payload) >= 11:
                 width, height = payload[7] << 8 | payload[8], payload[9] << 8 | payload[10]
-                objects[object_id] = [width, height, bytearray(payload[11:])]
+                # The first fragment says how long the whole is (with the
+                # four bytes of the size), to tell a whole object from one
+                # a file was cut short in.
+                length = int.from_bytes(payload[4:7], 'big') - 4
+                objects[object_id] = [width, height, bytearray(payload[11:]), length]
             elif object_id in objects:
                 objects[object_id][2] += payload[4:]
         elif kind == END and pending is not None:
             when, palette_id, placed = pending
             pending = None
-            if shown and shown[-1].end is None:
-                shown[-1].end = when
-            picture = _compose(placed, objects, palettes.get(palette_id, {}), screen, when)
-            if picture is not None:
-                shown.append(picture)
-    for current, following in zip(shown, shown[1:] + [None]):
+            for picture in shown[::-1]:
+                if picture.end is not None:
+                    break
+                picture.end = when
+            shown += _compose(placed, objects, palettes.get(palette_id, {}), screen, when)
+    if pending is not None:
+        # A last display set with no END, the file cut short after it (a
+        # sample, a clip): shown as well when all it places is whole, as
+        # Subtitle Edit reads one, ending the picture before it. FFmpeg
+        # leaves it out, and the picture before then holds on.
+        when, palette_id, placed = pending
+        if all(item[0] in objects and len(objects[item[0]][2]) >= objects[item[0]][3] for item in placed):
+            for picture in shown[::-1]:
+                if picture.end is not None:
+                    break
+                picture.end = when
+            shown += _compose(placed, objects, palettes.get(palette_id, {}), screen, when)
+    for number, current in enumerate(shown):
         if current.end is None:
+            # Until the next composition (not the composition's other windows).
+            following = next((p for p in shown[number + 1:] if p.start > current.start), None)
             current.end = following.start if following else current.start + DEFAULT_DURATION
     return [p for p in shown if p.end > p.start]
 
 
 def _compose(placed, objects, palette, screen, when):
+    """The pictures a composition shows: one per window, the objects in it
+    drawn into one (a window holds one or two), each forced when one of
+    its objects is."""
+    windows = {}
+    for item in placed:
+        windows.setdefault(item[5], []).append(item)
+    pictures = []
+    for window in windows.values():
+        picture = _draw(window, objects, palette, screen, when)
+        if picture is not None:
+            pictures.append(picture)
+    # In the order they read: top to bottom, side by side left to right.
+    return [picture for row in reading_order(pictures) for picture in row]
+
+
+def _draw(placed, objects, palette, screen, when):
     drawn = []
     forced = any(item[4] for item in placed)
-    for object_id, x, y, crop, _forced in placed:
+    for object_id, x, y, crop, _forced, _window in placed:
         if object_id not in objects:
             continue
-        width, height, data = objects[object_id]
+        width, height, data, _length = objects[object_id]
         if not width or not height:
             continue
         indices = decode_rle(bytes(data), width, height)

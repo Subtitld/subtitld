@@ -44,6 +44,19 @@ check('Windows-1252', cues('1\n00:00:01,000 --> 00:00:02,000\nAção, você é j
 check('Windows-1252 quotes and dashes',
       cues('1\n00:00:01,000 --> 00:00:02,000\n“Quoted” — dash …\n'.encode('cp1252')),
       [(1.0, 2.0, '“Quoted” — dash …')])
+# Central European text in Windows-1250, which would read as Windows-1252
+# ("poøádku"): Czech (FFmpeg's AQTitle sample, -sub_charenc cp1250),
+# Polish ("ł" is "³" in 1252), Slovak ("ť" has no 1252 letter); Western
+# text with the letters both read differently stays Windows-1252.
+for name, text in (('Czech', 'Zlato, jseš v pořádku?\nMěl jsi sny.'), ('Polish', 'Zażółć gęślą jaźń, był'),
+                   ('Slovak', 'Ťažko povedať, čo sa stalo. Ľudia sú unavení a ťažko pracujú.'),
+                   ('Croatian', 'Đino, dođavola. Gdje si bio cijelu noć? Čekali smo te.')):
+    check(f'Windows-1250, {name}', cues(f'1\n00:00:01,000 --> 00:00:02,000\n{text}\n'.encode('cp1250')),
+          [(1.0, 2.0, text)])
+for name, text in (('French', 'Très cœur, à l\'école, déjà vu'), ('Danish', 'Være så glad, øl og æbler'),
+                   ('Spanish', '¿Señor? ¡Año 1º!')):
+    check(f'Windows-1252, {name}', cues(f'1\n00:00:01,000 --> 00:00:02,000\n{text}\n'.encode('cp1252')),
+          [(1.0, 2.0, text)])
 check('an empty file', cues(b''), [])
 check('only a byte order mark', cues(b'\xef\xbb\xbf'), [])
 

@@ -19,8 +19,16 @@ default or a forced one, and its kind:
 - 'text' too: Japan's and Brazil's ISDB captions (ARIB STD-B24,
   FFmpeg's arib_caption), which FFmpeg here has no decoder for: the
   aribb24 module reads them (`read_arib`);
+- 'text' too: Matroska's USF tracks (S_TEXT/USF), a codec FFmpeg does not
+  know, told by their CodecPrivate (the USF file's header, its
+  <USFSubtitles> with its metadata and styles), which the probe gives
+  when asked for its data (`with_extradata`); `extract` puts the USF
+  file together again as mkvextract does (matroska.org's codec mapping:
+  the header in the CodecPrivate, each block a <subtitle>'s contents,
+  timed by the block) and the usf module reads it;
 - 'captions': closed captions in a track of their own (QuickTime's
-  CEA-608), which the closed_captions module reads;
+  CEA-608, and its c708 track of CEA-708 and CEA-608, which FFmpeg does
+  not know: codec 'eia_708'), which the closed_captions module reads;
 - 'teletext': a DVB teletext stream, whose subtitle pages the teletext
   module reads. One stream carries a page for each language (888, 777
   ...), so `with_teletext_pages` makes a track of each, from the stream's
@@ -50,10 +58,47 @@ TEXT_CODECS = frozenset({'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 't
 # a Blu-ray's TextST (textst).
 TEXTST_CODECS = frozenset({'hdmv_text_subtitle'})
 PICTURE_CODECS = frozenset({'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub', 'scte_27'})
-CAPTION_CODECS = frozenset({'eia_608'})
+CAPTION_CODECS = frozenset({'eia_608', 'eia_708'})
 TELETEXT_CODECS = frozenset({'dvb_teletext'})
 # Text Subtitld decodes itself rather than FFmpeg (modules.aribb24).
 ARIB_CODECS = frozenset({'arib_caption'})
+# Matroska's USF (S_TEXT/USF), which FFmpeg lists as a codec it does not
+# know: Subtitld's name for it, told by its CodecPrivate.
+USF_CODECS = frozenset({'usf'})
+
+
+def _is_usf(stream):
+    """Whether a subtitle stream FFmpeg does not know is a USF track: its
+    extradata (the CodecPrivate, given with -show_data) a USF header."""
+    if str(stream.get('codec_name') or '') not in ('', 'unknown') or not stream.get('extradata'):
+        return False
+    header = _hexdump(stream.get('extradata'))[:4096]
+    return b'<USFSubtitles' in header
+
+
+def with_extradata(metadata, path, ffprobe='ffprobe', startupinfo=None):
+    """`metadata` (ffprobe's -show_streams JSON) with the extradata of each
+    subtitle stream FFmpeg does not know, which carries what it is (a
+    Matroska USF track's header): read again with -show_data for those
+    alone, when there are any."""
+    unknown = [stream for stream in metadata.get('streams', []) if stream.get('codec_type') == 'subtitle'
+               and str(stream.get('codec_name') or '') in ('', 'unknown') and int(stream.get('extradata_size') or 0)
+               and 'extradata' not in stream]
+    if not unknown or not path:
+        return metadata
+    import json
+    try:
+        result = subprocess.run([str(ffprobe), '-v', 'error', '-select_streams', 's', '-show_streams', '-show_data',
+                                 '-show_entries', 'stream=index,extradata', '-of', 'json', str(path)],
+                                capture_output=True, startupinfo=startupinfo, check=False)
+        probed = json.loads(result.stdout.decode('utf-8', 'replace') or '{}')
+    except (OSError, ValueError):
+        return metadata
+    extradata = {stream.get('index'): stream.get('extradata') for stream in probed.get('streams', [])}
+    for stream in unknown:
+        if extradata.get(stream.get('index')):
+            stream['extradata'] = extradata[stream.get('index')]
+    return metadata
 
 
 def tracks(metadata, language_of=None):
@@ -69,7 +114,11 @@ def tracks(metadata, language_of=None):
         if stream.get('codec_type') != 'subtitle' and not scte27:
             continue
         codec = 'scte_27' if scte27 else str(stream.get('codec_name') or '')
-        kind = 'text' if codec in TEXT_CODECS | ARIB_CODECS else 'pictures' if codec in PICTURE_CODECS else \
+        if codec in ('', 'unknown') and str(stream.get('codec_tag_string')) == 'c708':
+            codec = 'eia_708'
+        if codec in ('', 'unknown') and _is_usf(stream):
+            codec = 'usf'
+        kind = 'text' if codec in TEXT_CODECS | ARIB_CODECS | USF_CODECS else 'pictures' if codec in PICTURE_CODECS else \
             'captions' if codec in CAPTION_CODECS else 'teletext' if codec in TELETEXT_CODECS else None
         if kind is None:
             continue
@@ -270,6 +319,8 @@ def extract(path, index, codec, ffmpeg='ffmpeg', folder=None, duration=0.0, star
     as SRT."""
     if codec in TEXTST_CODECS:
         return _extract_textst(path, index, ffprobe, folder, startupinfo, started)
+    if codec in USF_CODECS:
+        return _extract_usf(path, index, ffprobe, folder, startupinfo, started)
     extension, encoder = output_of(codec)
     handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix=extension, dir=folder)
     os.close(handle)
@@ -330,7 +381,62 @@ def _extract_textst(path, index, ffprobe, folder, startupinfo, started):
     return target
 
 
-_BARE_SIZE = re.compile(r'<font\s+size="?\d+"?\s*>', re.IGNORECASE)
+def usf_document(header, blocks, language=''):
+    """The USF file of a Matroska USF track, as mkvextract puts it
+    together: its CodecPrivate `header` (the file's start, its closing
+    </USFSubtitles> taken out), a <subtitles> block in the track's
+    `language` (ISO 639-2), a <subtitle> for each of `blocks`, [(start,
+    end, the block's contents)] in seconds, and the closing tag."""
+    from subtitld.modules import usf
+    header = header.decode('utf-8', 'replace') if isinstance(header, bytes) else str(header)
+    header = header.replace('</USFSubtitles>', '', 1).rstrip()
+    out = [header, '<subtitles>']
+    if language:
+        out.append(f'<language code="{language}"/>')
+    for start, end, contents in blocks:
+        contents = contents.decode('utf-8', 'replace') if isinstance(contents, bytes) else str(contents)
+        out.append(f'<subtitle start="{usf.format_time(start)}" stop="{usf.format_time(end)}">'
+                   f'{contents.strip()}</subtitle>')
+    out += ['</subtitles>', '</USFSubtitles>', '']
+    return '\n'.join(out)
+
+
+def _extract_usf(path, index, ffprobe, folder, startupinfo, started):
+    """A Matroska USF track (`usf_document`) as a .usf file in `folder`:
+    its header and blocks as ffprobe hands them over, each block at its
+    own time and for its duration (Matroska's, from the segment's start,
+    as FFmpeg keeps a subtitle track's times)."""
+    import json
+    command = [str(ffprobe), '-v', 'error', '-select_streams', str(int(index)), '-show_streams', '-show_packets',
+               '-show_data', '-of', 'json', str(path)]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               startupinfo=startupinfo)
+    if started:
+        started(process)
+    out, errors = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(errors.decode('utf-8', 'replace').strip() or 'ffprobe could not read the track')
+    probe = json.loads(out.decode('utf-8', 'replace') or '{}')
+    stream = next(iter(probe.get('streams') or []), {})
+    tag = str({str(key).lower(): value for key, value in (stream.get('tags') or {}).items()}.get('language') or '')
+    blocks = []
+    for packet in probe.get('packets') or []:
+        try:
+            start = float(packet.get('pts_time'))
+            end = start + float(packet.get('duration_time') or 0)
+        except (TypeError, ValueError):
+            continue
+        blocks.append((start, end, _hexdump(packet.get('data'))))
+    document = usf_document(_hexdump(stream.get('extradata')), blocks, '' if tag.lower() == 'und' else tag)
+    handle, target = tempfile.mkstemp(prefix='subtitld_track_', suffix='.usf', dir=folder)
+    with os.fdopen(handle, 'w', encoding='utf-8') as file:
+        file.write(document)
+    return target
+
+
+_SIZED = re.compile(r'<font\b[^>]*\bsize=', re.IGNORECASE)
+# The track's own font, which every cue starts with: <font face="Serif" size="18">.
+_TRACK_FONT = re.compile(r'<font\s+face="([^"]*)"\s+size=', re.IGNORECASE)
 
 
 def _without_sizes(path):
@@ -338,15 +444,23 @@ def _without_sizes(path):
     wraps each run in: a style record says a size in pixels, which FFmpeg
     writes as an HTML <font size="13"> at every change of style. Such a
     size says nothing about a proportion, so Subtitld would only carry it
-    along unread."""
+    along unread. A track whose sample description names a font gets that
+    font and its size around every cue (<font face="Serif" size="18">),
+    which is the track's look rather than a cue's, as FFmpeg's own ASS
+    puts it in its Default style: when every cue starts with the same, it
+    goes."""
     from subtitld.modules import markup, srt
     with open(path, encoding='utf-8', errors='replace') as track:
-        if not _BARE_SIZE.search(track.read()):
+        if not _SIZED.search(track.read()):
             return
     segments = srt.read(path)
-    for segment in segments:
-        lead, rest = markup.split_lead(text_of(segment))
-        segment['text'] = lead + markup.from_spans(markup.spans(rest))
+    parts = [markup.split_lead(text_of(segment)) for segment in segments]
+    faces = {match.group(1) if match else None for match in (_TRACK_FONT.match(rest) for _lead, rest in parts)}
+    track_font = faces.pop() if len(faces) == 1 else None
+    for segment, (lead, rest) in zip(segments, parts):
+        runs = [(text, style._replace(face='') if track_font and style.face == track_font else style)
+                for text, style in markup.spans(rest)]
+        segment['text'] = lead + markup.from_spans(runs)
     srt.save(path, segments)
 
 

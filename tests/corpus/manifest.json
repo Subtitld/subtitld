@@ -1,0 +1,1136 @@
+[
+ {
+  "path": "fate/sub/1ededcbd7b.ass",
+  "url": "https://fate-suite.ffmpeg.org/sub/1ededcbd7b.ass",
+  "sha256": "813defb6451f51cf7fbce7b7fa415f2af64ea9bfcd00742fa3ec025089fb11d2",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/AQTitle_capability_tester.aqt",
+  "url": "https://fate-suite.ffmpeg.org/sub/AQTitle_capability_tester.aqt",
+  "sha256": "855fe9f151493f8b6316839b5141f571db334d2ed53c7c1fe7a340e93f14591d",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/Closedcaption_rollup.m2v",
+  "url": "https://fate-suite.ffmpeg.org/sub/Closedcaption_rollup.m2v",
+  "sha256": "d03cfbc04957d8672ffb4910de0f3fcee22e2b204d76b848d1473f1ba9ae9afa",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/JACOsub_capability_tester.jss",
+  "url": "https://fate-suite.ffmpeg.org/sub/JACOsub_capability_tester.jss",
+  "sha256": "477e18e96df670139e9abf442eb5f4788b3909b2ba3e809372aedc2613206312",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/MPL2_capability_tester.txt",
+  "url": "https://fate-suite.ffmpeg.org/sub/MPL2_capability_tester.txt",
+  "sha256": "c50e90de0e4fd2aa8ddd129f6ffa5b1aa7b3b1e838853970c518b96c2aba8dde",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/MPSub_capability_tester.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/MPSub_capability_tester.sub",
+  "sha256": "530bed002c9b56e7e116c34f6d19473180c88b3cb0841bafeb97e36f5fbf7ebe",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/MPSub_capability_tester_frames.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/MPSub_capability_tester_frames.sub",
+  "sha256": "2f32b1f7d01f89ab906f2f392d81208d638ca1dcb78305bff0508203819e5a1d",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/MicroDVD_capability_tester.srt",
+  "url": "https://fate-suite.ffmpeg.org/sub/MicroDVD_capability_tester.srt",
+  "sha256": "8bdc210dd101166c4e2b5c03b5e4c313c28798712fabaef9c21422fbae57bec0",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/MicroDVD_capability_tester.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/MicroDVD_capability_tester.sub",
+  "sha256": "8bdc210dd101166c4e2b5c03b5e4c313c28798712fabaef9c21422fbae57bec0",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/MovText_capability_tester.mp4",
+  "url": "https://fate-suite.ffmpeg.org/sub/MovText_capability_tester.mp4",
+  "sha256": "636ba1bdf1ab65a3de6c3e99b097a6ce93a4f971d7eae90171e55ab848adf61f",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/PJS_capability_tester.pjs",
+  "url": "https://fate-suite.ffmpeg.org/sub/PJS_capability_tester.pjs",
+  "sha256": "f096a107dfccf849c183f005dcecb74bc842fcaa4772a1959b95dd36d5eaa524",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/RealText_capability_tester.rt",
+  "url": "https://fate-suite.ffmpeg.org/sub/RealText_capability_tester.rt",
+  "sha256": "ef9c06bc565940e9082da2678a25dccff050c34791bc5a93192a97deb5e54751",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/SAMI_capability_tester.smi",
+  "url": "https://fate-suite.ffmpeg.org/sub/SAMI_capability_tester.smi",
+  "sha256": "207a6b0d486f3586f9387084638ee54d5a0b4408bb843e4c320a0963a296e7f7",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/SAMI_multilang_tweak_tester.smi",
+  "url": "https://fate-suite.ffmpeg.org/sub/SAMI_multilang_tweak_tester.smi",
+  "sha256": "5592f12e9055eafb993aeffe61d5871abd46aec4bc5f1e227ad9e5bcc77777e2",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/STL_capability_tester.stl",
+  "url": "https://fate-suite.ffmpeg.org/sub/STL_capability_tester.stl",
+  "sha256": "8ea8ae9986d933003b1d77dfb0fe5d396faee4222854d672ab1c8fedd6a617cf",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/SubRip_capability_tester.srt",
+  "url": "https://fate-suite.ffmpeg.org/sub/SubRip_capability_tester.srt",
+  "sha256": "1f3b306a522433cffe504e176fb9a955020bcd3e342dc8aec75ff96fe17c5732",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/SubViewer1_capability_tester.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/SubViewer1_capability_tester.sub",
+  "sha256": "a25ffd6a2ef6ae6b51450814dd73ccbfe42281c5d326e41f33b807f407328b4c",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/SubViewer_capability_tester.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/SubViewer_capability_tester.sub",
+  "sha256": "1b0c206c9ebaaecf90193f3a1b359684ee49bbd716b5788fce124f945e0d1d89",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/VPlayer_capability_tester.txt",
+  "url": "https://fate-suite.ffmpeg.org/sub/VPlayer_capability_tester.txt",
+  "sha256": "449cdc995e7df85a3a6a5ecd7618e5ff8bbdf20d80000acb49784fa1c4efe74d",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_capability_tester.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_capability_tester.vtt",
+  "sha256": "ed5daa0f1397afbc202f3efd809bef605620d7fe359795221079f3625e71bbbc",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_extended_tester.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_extended_tester.vtt",
+  "sha256": "24e4c01a5a44f4ba70453ef7194ae4c3f8ff1a9e66430529857c223a7fd41e52",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_timestamp_map.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_timestamp_map.vtt",
+  "sha256": "774138a65a6926cc68ade4eca3d326fc773937b286d1311416786c9cb1408eca",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_timestamp_map_block.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_timestamp_map_block.vtt",
+  "sha256": "8e2e79ffd03e7d4ec91969a7fee13a75b003fece766e255166dac1a8739ac228",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_timestamp_map_invalid.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_timestamp_map_invalid.vtt",
+  "sha256": "a8bc313211407a17f57686986f5ad16a21de5e6863d9adcd46965b601618a173",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_timestamp_map_nolocal.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_timestamp_map_nolocal.vtt",
+  "sha256": "5cc97ebab4e0ddc74ee99142984ca8a78c3ae1075629c7695a8bfb67d48c65c7",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/WebVTT_timestamp_map_range.vtt",
+  "url": "https://fate-suite.ffmpeg.org/sub/WebVTT_timestamp_map_range.vtt",
+  "sha256": "e7bad02a5f614b40419432c2f7c06385eef426d93c74f433c1e96eda6b44d5ea",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/a9-misc.ssa",
+  "url": "https://fate-suite.ffmpeg.org/sub/a9-misc.ssa",
+  "sha256": "634c3d1e8a99d8049bbfe0a48326b3cd1884fef1688e3b086658748e0a3de1d8",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/aribcaption_clear.ts",
+  "url": "https://fate-suite.ffmpeg.org/sub/aribcaption_clear.ts",
+  "sha256": "a349fc7ade98e5e259ee1657aa8cb9db60e9b77b000376956482fd0270b358da",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/aribcaption_ruby.ts",
+  "url": "https://fate-suite.ffmpeg.org/sub/aribcaption_ruby.ts",
+  "sha256": "473eb6c9bf7bd6fc118bf65611c5ba8910155835c7645db83ed4186c320b9ae2",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/badsyntax.srt",
+  "url": "https://fate-suite.ffmpeg.org/sub/badsyntax.srt",
+  "sha256": "49d15287dc75d54bbb495c51eb10ecec0f1418b00cfce188d83b01dbdaf3c13e",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/cp1251-subtitles.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/cp1251-subtitles.sub",
+  "sha256": "4d68faf7cbd13775bf3c815ba455e0a73e9c7b2d2284c63ef86a227387b88442",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/dvbsubtest_filter.ts",
+  "url": "https://fate-suite.ffmpeg.org/sub/dvbsubtest_filter.ts",
+  "sha256": "93ad6d0be649bb29697275ff522a983d475a1e58ab070271f912b86799e04a86",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/empty-events-2167.srt",
+  "url": "https://fate-suite.ffmpeg.org/sub/empty-events-2167.srt",
+  "sha256": "743067ac7eb3444b0099a04b924c4558ab654b1b7c7eee07d9f38a15fbcbb955",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/madness.srt",
+  "url": "https://fate-suite.ffmpeg.org/sub/madness.srt",
+  "sha256": "16efc4e9ba05cd2308eac73b63b20cf272a9486e297c8b8ec6d9f50badc28b57",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/pgs_sub.sup",
+  "url": "https://fate-suite.ffmpeg.org/sub/pgs_sub.sup",
+  "sha256": "ce6d8ed89cf557e34b90d49c5ce955731935c485b93892f69ab276cfe0c36c27",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/scte20.ts",
+  "url": "https://fate-suite.ffmpeg.org/sub/scte20.ts",
+  "sha256": "18ad3b05ae0bffb9c014a2d0ce445d62670be020f42ea76336bebbac374886e6",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/test-lrc-ms.lrc",
+  "url": "https://fate-suite.ffmpeg.org/sub/test-lrc-ms.lrc",
+  "sha256": "3e5b01b2b57d27e5d34acec197185d3e20c9df6e4623ba2432c43b30bbe06cf4",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/test-lrc.lrc",
+  "url": "https://fate-suite.ffmpeg.org/sub/test-lrc.lrc",
+  "sha256": "32eabcb790e9cd9f1ddc8ac06d1a2dfd7e13877689d2366a51041c6f1dd9f018",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/ticket5032-rrn.srt",
+  "url": "https://fate-suite.ffmpeg.org/sub/ticket5032-rrn.srt",
+  "sha256": "782ab0c8be57ea41be5fc0e32a2b58ee563c6f295c0bdf385bb9ac8e9a834042",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/vobsub.idx",
+  "url": "https://fate-suite.ffmpeg.org/sub/vobsub.idx",
+  "sha256": "c4d073e2bbf515409e9ee8bf32114b81c1a11178d3bf0d52d88ebab0615525e2",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/vobsub.sub",
+  "url": "https://fate-suite.ffmpeg.org/sub/vobsub.sub",
+  "sha256": "5f6ac43324e5a35c6e525aa0c76bafa9dd965a17ce0880fd7eb69e19b6853c8b",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "fate/sub/witch.scc",
+  "url": "https://fate-suite.ffmpeg.org/sub/witch.scc",
+  "sha256": "4f924b6960a1b6ab986a495c1dcb7647ef79c4c8eed0a0ddd8b04cc34fc09758",
+  "licence": "FFmpeg FATE test suite"
+ },
+ {
+  "path": "subtitleedit/auto_detect_Danish.srt",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/auto_detect_Danish.srt",
+  "sha256": "90ad799a9e78fed186d91765e9506ab211565a20162ba951c788f4535b6f4f14",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/auto_detect_Russian.srt",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/auto_detect_Russian.srt",
+  "sha256": "0030cd8522c26c787bb630534179d4812fe2ceb16439fb6d9655def7871ff779",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/auto_detect_windows-1250.srt",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/auto_detect_windows-1250.srt",
+  "sha256": "4131f2378ef3ff5c98aa5428ca2c12eb14cbbbf54cb1f48eb0001e45a0ed56da",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/auto_detect_windows-1251.srt",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/auto_detect_windows-1251.srt",
+  "sha256": "9008151e59d05261a4120b317c60c0e5b3d444f55b5e7fce00709cd31f6bea96",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/auto_detect_windows-1254.srt",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/auto_detect_windows-1254.srt",
+  "sha256": "37b37314dd0b68d1dde257b2caeb4a70df691b9b9a7707078d7fe9ed5f3e9c74",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample.tar",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample.tar",
+  "sha256": "ad32bde070a543b557682fb8159a3b6fe1dcd1e4152653a4b029481551d15cc7",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_BDSUP_multi_image.sup",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_BDSUP_multi_image.sup",
+  "sha256": "96ffa4f947272f76bf60d0db0ae688b285aaa8e3d8191a988fd8d771ff6bda9c",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MKV_SRT.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MKV_SRT.mkv",
+  "sha256": "333e44d89e1855877debbcfa791d3213f316835a9e3392fddb57c3f50e92f794",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MKV_USF.mks",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MKV_USF.mks",
+  "sha256": "2aa8e7f316b1f086b5cee4c35f480d6dc7468bdab92c470d0b4248c636af07f9",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MKV_VobSub_PGS.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MKV_VobSub_PGS.mkv",
+  "sha256": "e34a1444fbb8c1961c24df31226193c4da69ea969a75289ce753f48da626b14b",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MKV_chapters.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MKV_chapters.mkv",
+  "sha256": "55c043252eb5737bfe33ebc4b7d38402e601d24d26df642257c5421f17bd9446",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MKV_delayed.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MKV_delayed.mkv",
+  "sha256": "a346c7af98704939dd5f1476080e95876614fbf8b90870ee1eae4bcf46298731",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MKV_ffmpeg_VobSub_no_duration.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MKV_ffmpeg_VobSub_no_duration.mkv",
+  "sha256": "159563f97101a21f49b6d7faccb28941e258de970acdd5fa4dfbb1a8f6e8cb30",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MOV_C608.mov",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MOV_C608.mov",
+  "sha256": "3c733e907e237acc841c4531ac774d331dd2bab2c0fa838aa877f2d808a70e3f",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MOV_C608_caption_change_in_sample.mov",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MOV_C608_caption_change_in_sample.mov",
+  "sha256": "b49f938564003539ccc5c682e43bee70862bbee15b99c2fbfd531af3d899a5e9",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MOV_C708.mov",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MOV_C708.mov",
+  "sha256": "a69847fe0c50a99b15636494be2ed61af44892196af70ce36f802145937157b7",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MP4.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MP4.mp4",
+  "sha256": "99afbc2f47be1383697e9215c644b4d5896d4248a3640437df7c65c2ef31f020",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MP4_SRT.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MP4_SRT.mp4",
+  "sha256": "142999fdc1afbbeb27694b316d3546e3d86eea561cf8275d8e698978d6ae80f7",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MP4_chapter_track.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MP4_chapter_track.mp4",
+  "sha256": "14f138eac563a5a601ed10e5e78979c26f403544df00f607df683dbe273b650f",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MP4_chapters.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MP4_chapters.mp4",
+  "sha256": "a599f242547d6dbf176ea30bc897ef7706985910e74d369e73eea24c1d009a9f",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_MP4_stz2_compact.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_MP4_stz2_compact.mp4",
+  "sha256": "3055fb779adfcf318b066f7b65c4ca57aa9a7b820a3448e4338fa06cad2bba55",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_SSTG1.sdb",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_SSTG1.sdb",
+  "sha256": "8c47cbbea4bf58e59960d0c33af138b6c119050ee030f4f7853f920d6546261a",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_cea608_h264.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_cea608_h264.ts",
+  "sha256": "c8ecc0cec43066f8dfbd14bb7045b3debd45d97128204aab79ae506de1c5e217",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_cea608_mpeg2.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_cea608_mpeg2.ts",
+  "sha256": "5f8f7c884c605b9ab4a38239bf5b597635e92de20ee753f95abba080651234d7",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_cea608_scte20.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_cea608_scte20.ts",
+  "sha256": "22056174196ed25e60ea7159f339fb26eadc3eedfdc68a7bdfb391aa84697b41",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_dvbsub_at_video_start.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_dvbsub_at_video_start.ts",
+  "sha256": "4801843d1f5c5f8400c293821bd4c319bd9c8a76e4112c68a1eb73e0bdb52b7b",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_dvbsub_rs204.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_dvbsub_rs204.ts",
+  "sha256": "1ed7fb3ed000b9f5903a5bb4f50cd5cc93d018a0a7b686e8899739dec2a96af0",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_with_graphics.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_with_graphics.ts",
+  "sha256": "d32811cf46256519cfdde107f6299ab0996126c7d2cb2b187b790e1c533aa31b",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_TS_with_teletext.ts",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_TS_with_teletext.ts",
+  "sha256": "e6bf5711306584788bb67ab58b5eb4ae52f27f7c47f702a12c60f222b3c523b5",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_VodSub_nonStandardLength.sub",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_VodSub_nonStandardLength.sub",
+  "sha256": "60227eb6051e2bf87645a8dcbd72355cf4324dae146205de7d6d73ba5f1a097b",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_VodSub_stuffingBytes.sub",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_VodSub_stuffingBytes.sub",
+  "sha256": "88ff21b703d28b3ec32ca7ebaadd2ec5a13d35cff03904da40694fb30d68488e",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_VodSub_windowStuffingWithoutPaddingStream.sub",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_VodSub_windowStuffingWithoutPaddingStream.sub",
+  "sha256": "037085da4f940ecb40ff98a804f5eede4e220b1c7580e1ac71ac4b4f82fa13e1",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_WebVTT_AppleTV.webvtt",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_WebVTT_AppleTV.webvtt",
+  "sha256": "4c8235e6d96fbf90b3fab70e887fa148fa31112e27d05630a88d07742df0412e",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_XSUB.avi",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_XSUB.avi",
+  "sha256": "89973160354d2e7b30aa79020e7949f10d3048e6a85799053fb91190bdc9d4a7",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_fragmented_mp4_cea608_708.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_fragmented_mp4_cea608_708.mp4",
+  "sha256": "4e9c97327e0b01b38c04ad65c9415a3375222cff2d8faf8592db21932333ac9b",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mcc_cea608_708.mcc",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mcc_cea608_708.mcc",
+  "sha256": "668b898ec3387cf31c1d1f13628ebc2b7e5c36c8a7affc4f56bfb2621a29947a",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mcc_cea608_only.mcc",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mcc_cea608_only.mcc",
+  "sha256": "4a705e021b07d22f55ed209492e5ed1da008ce12e918965a1b7295fff62d917d",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mkv_cea608_h264.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mkv_cea608_h264.mkv",
+  "sha256": "5cf930394cc00f66bad51c268b7d3616c62c4725d8d2f686808d9758fec09b1e",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mkv_cea608_mpeg2.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mkv_cea608_mpeg2.mkv",
+  "sha256": "6a80048267106c454f2b6ff47af88f5612185cd945baf5f739c2054433096439",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mkv_no_captions_4min.mkv",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mkv_no_captions_4min.mkv",
+  "sha256": "afbe40d96756d8e70bca158df5882266af722b0f648d2a3e2f07e15e1fd66305",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mp4_h264_no_captions.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mp4_h264_no_captions.mp4",
+  "sha256": "5e4a24ee5514417608199f2d5f5364185c4772d779d4ec0a0b1760811151e305",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mp4_hevc_no_captions.mp4",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mp4_hevc_no_captions.mp4",
+  "sha256": "bffa448ab303d0d9a6016c51371e6d5555184cd0dd310880c6820cfa5ad337ff",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mpg_dvd_captions.mpg",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mpg_dvd_captions.mpg",
+  "sha256": "ced3e35ed2faaeee5aeb62e77a72ef7de29b42237a5f44ab98fc222947ba6afc",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mpg_mpeg2_no_captions.mpg",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mpg_mpeg2_no_captions.mpg",
+  "sha256": "f034c5cc04d93cb0cde85c2e1b8413a1bfc22e5ae07f4f97a8b81b6a4a631dc1",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mxf_429-5_asdcplib.mxf",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mxf_429-5_asdcplib.mxf",
+  "sha256": "1b25ad5c0f47463210d4c51f9f9d7f6a9e821788eaf296133b4087debf767aa6",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mxf_429-5_asdcplib.xml",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mxf_429-5_asdcplib.xml",
+  "sha256": "2456dcb33cf8a2af05714b8ea4d00eac7a207c6345105fc7f38a96e981148813",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_mxf_436m_cea608_708.mxf",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_mxf_436m_cea608_708.mxf",
+  "sha256": "0978b6dfba04bd1edee7436016dba3f713385a26a5fb82066d9bbe6b78dcbccb",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_vob_dvd_captions.vob",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_vob_dvd_captions.vob",
+  "sha256": "ba79ba9afc3cd139a36b943ec351447f124bc07f93574cc3d785791f99317c63",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/sample_vob_dvd_captions_one_pts.vob",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/sample_vob_dvd_captions_one_pts.vob",
+  "sha256": "b1fde15ee3f9c92fd1f10e1172cdea362f2095236ffba4ad15af3d27f5dc3321",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/scc_16038_pop_on.scc",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/scc_16038_pop_on.scc",
+  "sha256": "c32d18f8a8b34e1455c481a6d3b0e7e50d1be49414f21496e6c97653f954d29b",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/teletext_x26_enhancements.dvbttx",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/teletext_x26_enhancements.dvbttx",
+  "sha256": "59bea07d0652c46fff854737c9abdafbcfb5b07e344e2a9efda2bbd50a028470",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/teletext_x28_colour_map.dvbttx",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/teletext_x28_colour_map.dvbttx",
+  "sha256": "60b724a6d44dec39c352fefcaa6169b94357a11b7a29926d6cb18c0e603fb87f",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "subtitleedit/teletext_x28_national_option.dvbttx",
+  "url": "https://raw.githubusercontent.com/SubtitleEdit/subtitleedit/80b7c034bcb813bbac03560787b33b45a3f5a555/tests/libse/Files/teletext_x28_national_option.dvbttx",
+  "sha256": "9d94ed2a7fb32acc50057deed126b4959b92dd5eec4610c71711bc89f5d9b6f4",
+  "licence": "MIT (SubtitleEdit/subtitleedit)"
+ },
+ {
+  "path": "praatio/all_tiers_have_the_same_name.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/all_tiers_have_the_same_name.TextGrid",
+  "sha256": "96cc6fa13e911d71640845f8ccbe3ea154f9e0473b8a57df9facf32815da39bf",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby.KlattGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby.KlattGrid",
+  "sha256": "ca63612e584b94a75e0c2e61ebdcc6f5a7776d4106346a8acd4efdb3dfabd062",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby.PointProcess",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby.PointProcess",
+  "sha256": "37fa92228277dd4f2d8f601b950b0e28bc03f406b0098a8ca47f729f5e1742b9",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby_longfile.PointProcess",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby_longfile.PointProcess",
+  "sha256": "e3ebc83a935e40e3cdd6b2250daa4751de9d098fb792ec912a50ffb84c1a0a9f",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby_phones_elan.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby_phones_elan.TextGrid",
+  "sha256": "0151c4fb9573594963998986b567e5f971ba78b2dbdd84711f7148113e0031cc",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby_words_with_newlines.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby_words_with_newlines.TextGrid",
+  "sha256": "2e2e9ee74674ae963ba37fda7f28450edcd181cf82c553fd68fc8c73e4447e54",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby_words_with_newlines_longfile.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby_words_with_newlines_longfile.TextGrid",
+  "sha256": "b5cab6d7e2585fed6df0d169452818e792eaa9cdb6f0e5d422bd0a916a919da2",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/bobby_words_with_newlines_longfile_elan.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/bobby_words_with_newlines_longfile_elan.TextGrid",
+  "sha256": "e8e28e978ebc97853bfd2ab5f6dff0d3152b3a809174ccb131bae9ea9b984e3c",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary.DurationTier",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary.DurationTier",
+  "sha256": "a934adfa335e1f054d057cd6ff3f198c47b5a45c40b797e2880535cefeec73e8",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary.PitchTier",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary.PitchTier",
+  "sha256": "290e915b8520ab808ace1b31b3a5c8632ac729d4179ec8d5859e2cbee7f3ace2",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary.TextGrid",
+  "sha256": "3b26aa7940fccc0534b50ada3c8a8c8d4bdd26d34b14c858b723f4eddb704493",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary_longfile.PitchTier",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary_longfile.PitchTier",
+  "sha256": "8b8a6e2cf48498f2672e8a7c297a4c70c0326269443ae6413d08047ba93e5747",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary_longfile.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary_longfile.TextGrid",
+  "sha256": "33bbdc2624eb0ac18db8427506ec121d4532d34cb5bc6658151abfcdc08a4646",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary_longfile_with_negative_zero.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary_longfile_with_negative_zero.TextGrid",
+  "sha256": "fddd899af63ea764af469830f2c72ffaa4a64da064473e0eff46c67921f3e8ba",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary_with_constrained_tier_times.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary_with_constrained_tier_times.TextGrid",
+  "sha256": "330ab13d0bfcf4e13ef77af279cd1fa173b8c2eba75b0d5aea08a58d91accecc",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/mary_with_negative_zero.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/mary_with_negative_zero.TextGrid",
+  "sha256": "2344280c34586d16cd53b7c7aba85b2d015ac8bfdab9888d554127fcd51d57a8",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/textgrid_to_merge.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/textgrid_to_merge.TextGrid",
+  "sha256": "c295b4d807d3d82b375e2e01eb880d19a7988a71eea39d70f9274ec521bd9d05",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "praatio/textgrid_to_merge_longfile.TextGrid",
+  "url": "https://raw.githubusercontent.com/timmahrt/praatIO/9043a52cb9f1cd5a4c9a92e7711d848c85dbb77c/tests/files/textgrid_to_merge_longfile.TextGrid",
+  "sha256": "95d2b5378b3e8672c76e40962c33e3b0c058209816bab2d985a0bd418e45021d",
+  "licence": "MIT (timmahrt/praatIO)"
+ },
+ {
+  "path": "pympi/sample_2.7.eaf",
+  "url": "https://raw.githubusercontent.com/dopefishh/pympi/e9eccc4ec37a142f1d0d643f74fa12d342a95c8f/test/sample_2.7.eaf",
+  "sha256": "91c3af27ae1044ad0519824939f3ecb0f5ac8b54ee087d1e40a548ac23e53ffa",
+  "licence": "MIT (dopefishh/pympi)"
+ },
+ {
+  "path": "pympi/sample_2.8.eaf",
+  "url": "https://raw.githubusercontent.com/dopefishh/pympi/e9eccc4ec37a142f1d0d643f74fa12d342a95c8f/test/sample_2.8.eaf",
+  "sha256": "6b57a949b461a2dcc455df3e1d83e26deaf576d0cf21237d261c944a040e5d69",
+  "licence": "MIT (dopefishh/pympi)"
+ },
+ {
+  "path": "pympi/sample_3.0.eaf",
+  "url": "https://raw.githubusercontent.com/dopefishh/pympi/e9eccc4ec37a142f1d0d643f74fa12d342a95c8f/test/sample_3.0.eaf",
+  "sha256": "05a396cd3c80f14ed091159bb24c49c3ad7f4860eb5581b10b1d29566466375e",
+  "licence": "MIT (dopefishh/pympi)"
+ },
+ {
+  "path": "pysubs2/EBGaramond08-Italic.ttf",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/EBGaramond08-Italic.ttf",
+  "sha256": "b4f42d9309fe56d1473de8b2bff5a34c2fbc0a741ee5f805314ed7598a2fcf53",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/EBGaramond08-Regular.ttf",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/EBGaramond08-Regular.ttf",
+  "sha256": "b5b4475224b9159e39f331a189ae7cf8b6ac1fb50ec3b850f41e8762378ad12b",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/LICENSE.txt",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/LICENSE.txt",
+  "sha256": "35ee6e3df954314de746a42715105039c6cab082efaece1f79bd496723b188cc",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/subtitle_with_attached_fonts_aegisub.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/subtitle_with_attached_fonts_aegisub.ass",
+  "sha256": "22cfd076dd62f41e98d1b35c83ca174ca4535252fb4e172fee0fb9ae8de62174",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/subtitle_with_attached_fonts_no_events.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/subtitle_with_attached_fonts_no_events.ass",
+  "sha256": "008616a2e9ad2669bffdf822dd0bcc30beaeec9b54d8b20f3c98ac65ed8e3c17",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/subtitle_with_attached_fonts_pysubs2_ref.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/subtitle_with_attached_fonts_pysubs2_ref.ass",
+  "sha256": "73dc07db592f588926689c636da61084c643f847ad9d36bebcc11b2ae235b541",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/subtitle_with_attached_images_aegisub.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/subtitle_with_attached_images_aegisub.ass",
+  "sha256": "dc6036f70bba522ac00c72fdc1106e85e81a7cf94425de58eafbc78bfd5fb878",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/subtitle_with_attached_images_pysubs2_ref.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/subtitle_with_attached_images_pysubs2_ref.ass",
+  "sha256": "0cde4d865fc697ec9b0aa2a9d3cc15d38e275bc49cf4106756264cad4e3f8fc9",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/ttml_example.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/ttml_example.ass",
+  "sha256": "c2d1e3dfa7951750d0545169dd10428aecb2962dabad50385f2b8fd7fe65a657",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/ttml_example.ttml",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/ttml_example.ttml",
+  "sha256": "05b72eade86a28e0a0fec12cc7908358e4eb12a6181a52aa65b0c9faa604f83f",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/ttml_example2.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/ttml_example2.ass",
+  "sha256": "2fb7fade524010033d7dde25ef9f9e7b86cb8dd7877794ea39c953b36fe0786d",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/ttml_example2.ttml",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/ttml_example2.ttml",
+  "sha256": "553e92715e941c22b4c5476c77a6a804573737eb0d42266d4cb4990036429841",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/ttml_example_apple.ass",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/ttml_example_apple.ass",
+  "sha256": "b028a3215117165a36cf2e81e6c00ce977958ad3fb4207d4a064079234843365",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "pysubs2/ttml_example_apple.ttml",
+  "url": "https://raw.githubusercontent.com/tkarabela/pysubs2/6371ae8bc2f9fed19aeb51a8e09d920e8bb86ce5/tests/data/ttml_example_apple.ttml",
+  "sha256": "1cafc6322a3146dd413454f6c6ec82106eb4550b050cefb493d2371b43da64d1",
+  "licence": "MIT (tkarabela/pysubs2)"
+ },
+ {
+  "path": "fate/ref/sub-aqtitle",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aqtitle",
+  "sha256": "cf77244390ba9bb69e0d379b5ec3c3258bd5131a44d1b37e70c7a2f87dae473b",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-clear",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-clear",
+  "sha256": "c06e37b8723edb3feea2276b9b40487669ad4ea6f26bfb10143b480e9e0c81bb",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-clear-ass",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-clear-ass",
+  "sha256": "35e67340522418f5bf31c839f66f9016d878ae6d709b0c9053a5554078a79039",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-clear-text",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-clear-text",
+  "sha256": "6669dc8e5a5efcd57d087664c3d02766ccaf0b2a8e18c2685e88063d8403bf4d",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-ruby-ass",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-ruby-ass",
+  "sha256": "7bd548ea4b809a33a234447704e0308ebf7f7db17799211c746ec90df4a9bdfa",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-ruby-ass-single",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-ruby-ass-single",
+  "sha256": "7bd548ea4b809a33a234447704e0308ebf7f7db17799211c746ec90df4a9bdfa",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-ruby-bitmap",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-ruby-bitmap",
+  "sha256": "eed7bbd6bea10d9def13734130a950ee37013c791737d4fb38a0d9418b3a93ce",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-aribcaption-ruby-text",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-aribcaption-ruby-text",
+  "sha256": "069c6352992a9902e2bd084bc56ff53f455bfe28a65c7bce48341ed3a6b6fafb",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-ass-to-ass-transcode",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-ass-to-ass-transcode",
+  "sha256": "c10d1cd4671b8fc0c9fcbdd8b8076e7e06de38c937b784c4ead13d4d7d137427",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-cc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-cc",
+  "sha256": "f25bce40a350ab0e362f0a590ff3d2dc5d5a18234f2ae56ea67440186b53b7f0",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-cc-realtime",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-cc-realtime",
+  "sha256": "d003a821c35089b25809b1cb646f56df472d395c1a4951fa95c2f0a8ac3715fc",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-cc-scte20",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-cc-scte20",
+  "sha256": "a53e31f5457475543a6050f1aca715978be7c3be1cbcefbfb27639c304371420",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-charenc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-charenc",
+  "sha256": "ac7ab9a33d0557977005de2e0018de0a60c9d44ea4522cddab47b77acf4fd42d",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-dvb",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-dvb",
+  "sha256": "d7eba86be3ec8d34998dd97583ffdaa06da438af061f4ff477e60fe050c1d7e9",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-jacosub",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-jacosub",
+  "sha256": "58f1cfe446a9839c15fe8cb4128887a66d9e54b3c6eec16417f38aa28b6f54eb",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-jacosub-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-jacosub-remux",
+  "sha256": "947c327a25d938ff1e9bda7de092df01186cdfa1d3674df6fc662cdf69c99917",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-karaoke-webvttenc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-karaoke-webvttenc",
+  "sha256": "00f23b41b1851d486095462ff950946093a5370f584af0c7eec6d13ca30d285c",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-karaoke-webvttenc-ss",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-karaoke-webvttenc-ss",
+  "sha256": "ded1baa216ababa9618820e51eed827e2cd4cacec81a6edc11915d730d2cc055",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-lrc-ms-ms-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-lrc-ms-ms-remux",
+  "sha256": "c3a8d88c7d89966ea126081b24678f087892def46e3c3246b196e57376e010f8",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-lrc-ms-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-lrc-ms-remux",
+  "sha256": "d6dd941779e8ed1f9acf43263eb7e8bb69a5178f1b97e693b9726a31b4e6c54b",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-lrc-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-lrc-remux",
+  "sha256": "bcff78b1f2f92e9183aa27d649d763c6ad28964106f83f84b512bb2cedfe79ea",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mcc-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mcc-remux",
+  "sha256": "8c53f4836aafce654005186cf2298e3ba94b0c3d3d574afa4a7c7f27aa4496a4",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mcc-remux-eia608",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mcc-remux-eia608",
+  "sha256": "dccfcfefce030d0a19ff87e62b3bbe75288f7559b7eb0c787b204332810cc963",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mcc-remux-eia608-bsf",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mcc-remux-eia608-bsf",
+  "sha256": "d58ed14360ae7654bd1ddb0988e2a7db3d0902f65bb82ae6b8264727c02748d8",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mcc-remux-eia608-recode",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mcc-remux-eia608-recode",
+  "sha256": "dccfcfefce030d0a19ff87e62b3bbe75288f7559b7eb0c787b204332810cc963",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-microdvd",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-microdvd",
+  "sha256": "d6f96c68c4ceb22fb7ab9b0e86e19e002e30dc7f99b571353f93e944eb4090cd",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-microdvd-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-microdvd-remux",
+  "sha256": "a0061e69de31406c04245a5887ae3e5fa9447f3a146672790262179d7b2727b2",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-movtext",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-movtext",
+  "sha256": "eaa0f880e0bc000455a0d91e8503831614514fda1bb4f109edf5a6696b90e945",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mpl2",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mpl2",
+  "sha256": "0434548437cebb778eae6f5321b24836e8cad81558e99a48a02f160913889f89",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mpsub",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mpsub",
+  "sha256": "ac1230e471c8908888d8993eb2f62a8af075cfb82340b466aa1230681aab7888",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-mpsub-frames",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-mpsub-frames",
+  "sha256": "a17ec252976dd5e901eb3d97cbd18cb1cd874dc28d42792c28235ff90655d170",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-pgs-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-pgs-remux",
+  "sha256": "73e8828da1b35fdf4dea40ab098e401bae94ded06afe9a5070a533a05daeabc1",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-pjs",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-pjs",
+  "sha256": "1611bf6ed66d7612e5917f1a17bdf969302fec08fced55ca120814d69d4bfdb7",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-realtext",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-realtext",
+  "sha256": "e143415cff90432c68320ff8ef99aca32a52a43cd08c7b7669fe8e13c609961a",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-sami",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-sami",
+  "sha256": "c57d8aaed7de1df6df103d76c006b6ed0dc5a937cda9fef573304e0d71bd3787",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-sami2",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-sami2",
+  "sha256": "43eab6d886654ed3a1a211990ae847030a963d399165fde5c6fbcbb71894f7c9",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-scc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-scc",
+  "sha256": "0a226f200d940d2212827e26e457d5c32309a114fc29bbd0c74ddba748dc823a",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-scc-extended",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-scc-extended",
+  "sha256": "1a07ca878e9a88780220a3e95dcb40848bc6a5bfc7909e2d7dc50d990db5b7e9",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-scc-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-scc-remux",
+  "sha256": "4db6410f919b9a5698d1d9b25ba5e6a4a0d4a0bb485148dbabaaf1d2dc182cfb",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-srt",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-srt",
+  "sha256": "e7fa40b447b62e6db266fa5e6313de0fac078e5969253a381e6dfaf83181bc4d",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-srt-badsyntax",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-srt-badsyntax",
+  "sha256": "370bd1e36548b9967d6bb113138467e26e9d4bc0f34fa3082d916c23ce8777e8",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-srt-empty-events",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-srt-empty-events",
+  "sha256": "814631e3dd104e26d5ef9d00a38c5f946613fa3f7608d961e97b8c445b33559f",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-srt-madness-timeshift",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-srt-madness-timeshift",
+  "sha256": "67c68f6ae79e8ac19572fef72ab3a151fe0e7f8b1955c04ce96513d419a1b956",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-srt-rrn-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-srt-rrn-remux",
+  "sha256": "8637c55593d522822479e9b74db87997bf12a78c413111f0692051a03bd04a42",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-ssa-to-ass-remux",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-ssa-to-ass-remux",
+  "sha256": "c2e920ec8292be46b6a2251059c9052843dcc37e06e6a05f77e33c1273dc6168",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-stl",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-stl",
+  "sha256": "660ad4dd0e3185de7f7d970e5ac9b0c56a386c64f5750005dae82464a2f853e6",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-subripenc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-subripenc",
+  "sha256": "3f62286acaa634a2754c84999208d02f0a15b4c6581199dbd5fb66425debe247",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-subviewer",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-subviewer",
+  "sha256": "ea605514c232924a46471e0e82e8b5af2d436477c2e7cd582c07cb63ebda1df0",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-subviewer1",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-subviewer1",
+  "sha256": "cd2f52c996103eff9751cb13423377b43beca6e242a860a2fcfbeb0b9f05a9ca",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-textenc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-textenc",
+  "sha256": "46ac633b219393492d0a085a3ed80dd1ec5a5982cf2e44ce372d2212a7983a21",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-ttmlenc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-ttmlenc",
+  "sha256": "b6f17a9067db53098bfb46fe36c02e553b5109c1d0ca9623d8efdbaed93d74f8",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-vplayer",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-vplayer",
+  "sha256": "e477dcc8248a676d0221fc0b2fa83f77b9ece6f500b58c9d9ee97f3c581ba153",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-webvtt",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-webvtt",
+  "sha256": "7ed6fae429cb022e8622981557426bf882ee5d5779d1637430830653d17a61ad",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-webvtt-timestamp-map",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-webvtt-timestamp-map",
+  "sha256": "5d20f4a270cf5bc3015d4d10aca8e1d5b46d63169240a240a909c1c8ca69a0c9",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-webvtt2",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-webvtt2",
+  "sha256": "3595e015c4d041ed216efa2ccf3787856d1d5509aec38c6dad4cc3ccc9d37a90",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub-webvttenc",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub-webvttenc",
+  "sha256": "014da7201d3b965ce16df06f0bafab1b9217ba24fc195c4ea339cfe417245de2",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub2video",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub2video",
+  "sha256": "a8afad24cb0dcf66146791369c6907237f1a1c061ac18b48664945cf82a1262d",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub2video_basic",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub2video_basic",
+  "sha256": "8b49cb3ab9996e546fc303aef4cddc7b58a8fab6f7729e88a24d01a1c0c56145",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ },
+ {
+  "path": "fate/ref/sub2video_time_limited",
+  "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/aa7c09781dd698d6cd775631198eefcc34a21fcd/tests/ref/fate/sub2video_time_limited",
+  "sha256": "f876bbdf371a5e90ef9bfdc78a16d4a0c1de6872ee7522d1b2a9efb338cc4952",
+  "licence": "LGPL-2.1+ (FFmpeg/FFmpeg)"
+ }
+]

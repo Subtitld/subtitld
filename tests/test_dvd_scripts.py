@@ -221,6 +221,10 @@ check('and read again as itself', (dvd_scripts.kind(written, 'txt'), cues(writte
       ('dvdproducer', (1.0, 3.48, 'First line\nsecond line')))
 check('single spaces are Encore\'s', dvd_scripts.kind('1 00:01:00:00 00:01:19:00 Subtitle line 1\nSubtitle line 2\n'
                                                      '2 00:01:20:00 00:01:29:00 Another subtitle\n', 'txt'), 'encore')
+# Subtitle Edit's Unknown 66: a number, the times, a length, the text on
+# the next line; nobody's script (modules.generic_text reads it).
+check('a length after the times is not DVD Producer\'s text',
+      dvd_scripts.kind('1  00:00:01:00  00:00:03:00  00:02\nHello\n2  00:00:04:00  00:00:06:00  00:02\nWorld\n', 'txt'), '')
 
 # --------------------------------------------------------------------------
 print('Avid DVD')

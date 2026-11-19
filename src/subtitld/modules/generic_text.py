@@ -32,7 +32,11 @@ The shapes (`detect` says which, and how sure it is):
   a header that names them, in milliseconds unless it says seconds or
   frames, as Csv, Tsv1 and Tsv2 write them. As Csv2 to Csv5, CsvNuendo,
   CsvExcel, Tsv1, Tsv2 and Adobe Audition's marker list (modules.csv_export)
-  write them.
+  write them. Quotes are read as Subtitle Edit reads its own (a line break
+  inside them, Csv2's quotes left undoubled, unquoted text with commas
+  the rest of the line), and in a .csv "hh:mm:ss.ff" with no header is
+  Csv5's frames after a dot. A .csv or .tsv file is read as this shape
+  (modules.file_io), unless it is EDIUS's or Premiere's markers.
 - **json**: an array of objects, at the top or under a key, each with a
   start (start, startTime, start_time, begin, from, in, startMs,
   tStartMs ...), an end or a duration (end, endTime, to, out, stop,
@@ -123,6 +127,8 @@ _DURATION_NAMES = ('duration', 'dur', 'length')
 _TEXT_NAMES = ('text', 'caption', 'subtitle', 'dialogue', 'dialog', 'content', 'transcript', 'line', 'sentence', 'name', 'translation')
 _SPEAKER_NAMES = ('speaker', 'actor', 'character', 'role', 'voice')
 _DELIMITERS = ('\t', ';', ',', '|')
+# Adobe Audition's marker list (modules.csv_export), its header's columns.
+_AUDITION = ['name', 'start', 'duration', 'timeformat', 'type', 'description']
 
 # JSON keys, compared lower case without "_", "-" and spaces.
 _JSON_START = ('start', 'starttime', 'startms', 'startmillis', 'startoffset', 'begin', 'from', 'in',
@@ -448,34 +454,100 @@ def _unit(header):
 
 
 def _rows(text, delimiter):
-    lines = [line for line in _lines(text) if line.strip()]
-    try:
-        return [row for row in csv.reader(lines, delimiter=delimiter, quotechar='"', skipinitialspace=True)]
-    except csv.Error:
-        return []
+    """The rows of a table, each a list of its cells as written (spaces
+    kept). Quoted as CSV quotes, and as forgivingly as Subtitle Edit reads
+    its own: two quotes in a quoted cell are one, a quote not followed by
+    the delimiter or the line's end is part of the text (Csv2 writes the
+    text's quotes as they are), and with commas or semicolons a line break
+    inside quotes is the cell's (Csv and Csv2 write a subtitle's lines so).
+    A quote that does not close is the text's own ('"Quoted", he said' in
+    Audition's tab-separated markers, which quote nothing)."""
+    text = '\n'.join(_lines(text))
+    if delimiter in ',;':
+        rows = _split_rows(text, delimiter, True)
+        if rows is not None:
+            return rows
+    return _split_rows(text, delimiter, False)
 
 
-def _read_table(text, fps):
-    """The table shape: a Detection, or None."""
+def _split_rows(text, delimiter, spanning):
+    """The rows `_rows` reads; None when spanning and a quote never closes."""
+    if not spanning:
+        text += '\n'                    # the last line ends as the others do
+    rows, row, cell = [], [], []
+    quoted = False
+    opened = -1                         # where the quoted cell's quote is
+    index, length = 0, len(text)
+    while index < length:
+        char = text[index]
+        if quoted:
+            if char == '"':
+                if text[index + 1:index + 2] == '"':
+                    cell.append('"')
+                    index += 2
+                    continue
+                after = index + 1
+                while after < length and text[after] in ' \t' and text[after] != delimiter:
+                    after += 1
+                if after >= length or text[after] in (delimiter, '\n'):
+                    quoted = False
+                    index = after
+                    continue
+                cell.append('"')
+            elif char == '\n' and (not spanning or cell.count('\n') >= 3):
+                if spanning:
+                    return None         # more lines than a subtitle has
+                # Not closed on its line: read the cell again, its quote
+                # a character like the others.
+                quoted, cell, index = False, ['"'], opened + 1
+                continue
+            else:
+                cell.append(char)
+            index += 1
+            continue
+        if char == '"' and not ''.join(cell).strip():
+            quoted, cell, opened = True, [], index
+        elif char == delimiter:
+            row.append(''.join(cell))
+            cell = []
+        elif char == '\n':
+            row.append(''.join(cell))
+            cell = []
+            if any(part.strip() for part in row):
+                rows.append(row)
+            row = []
+        else:
+            cell.append(char)
+        index += 1
+    if quoted:
+        return None
+    row.append(''.join(cell))
+    if any(part.strip() for part in row):
+        rows.append(row)
+    return rows
+
+
+def _read_table(text, fps, dot_frames=False):
+    """The table shape: a Detection, or None. The width is the most cells
+    four rows in five have; a row with more is one whose text holds the
+    delimiter, unquoted (Csv2's "the text is the rest of the line")."""
     best = None
     for delimiter in _DELIMITERS:
         rows = _rows(text, delimiter)
         if len(rows) < 2:
             continue
         widths = [len(row) for row in rows]
-        width = max(set(widths), key=widths.count)
+        width = max(width for width in set(widths) if sum(1 for count in widths if count >= width) >= len(widths) * 0.8)
         if width < 2:
             continue
         steady = sum(1 for count in widths if count == width) / len(widths)
-        if steady < 0.8:
-            continue
-        found = _table_columns(rows, width, fps)
+        found = _table_columns(rows, width, fps, delimiter, steady, dot_frames)
         if found and (best is None or found.confidence > best.confidence):
             best = found
     return best
 
 
-def _table_columns(rows, width, fps):
+def _table_columns(rows, width, fps, delimiter=',', steady=1.0, dot_frames=False):
     rows = [row + [''] * (width - len(row)) for row in rows if len(row) >= width - 1]
     header = None
     first = rows[0]
@@ -489,6 +561,12 @@ def _table_columns(rows, width, fps):
             clock = _clock_cell(cell, DEFAULT_FPS)
             if clock and clock[2] is not None:
                 frame_fields.append(clock[2])
+    # Subtitle Edit's Csv5: no header, "hh:mm:ss.ff" with frames after the
+    # dot, in a .csv (the same times elsewhere are hundredths).
+    csv5 = dot_frames and header is None and all(
+        all(re.fullmatch(r'\d\d:\d\d:\d\d\.\d\d', row[column].strip()) for row in rows) for column in (0, 1))
+    if csv5:
+        frame_fields = [int(row[column].strip()[-2:]) for row in rows for column in (0, 1)]
     fps = _fps_for(frame_fields, fps)
     names = header or [''] * width
     clocks, numbers = [], []
@@ -522,6 +600,8 @@ def _table_columns(rows, width, fps):
     used = {start, end, duration}
     speaker = next((column for column in range(width) if column not in used and header
                     and _named(names[column], _SPEAKER_NAMES)), None)
+    if header and [_key(name) for name in header] == _AUDITION:
+        speaker = 5                     # Subtitld's own export writes the speaker there
     used.add(speaker)
     text_columns = [column for column in range(width) if column not in used and header and _named(names[column], _TEXT_NAMES)]
     if not text_columns:
@@ -535,8 +615,18 @@ def _table_columns(rows, width, fps):
         if not letters(best):
             return None
         text_columns = [best]
+    # A row with more cells than the table: its text held the delimiter,
+    # which is the text again when the text is the last column; any other
+    # table is that wide throughout, or nearly.
+    if text_columns == [width - 1]:
+        rows = [row[:width - 1] + [delimiter.join(row[width - 1:])] for row in rows]
+    elif steady < 0.8:
+        return None
 
     def seconds(column, cell):
+        if csv5 and column in (start, end):
+            hours, minutes, rest = cell.strip().split(':')
+            return int(hours) * 3600 + int(minutes) * 60 + int(rest[:2]) + int(rest[3:]) / fps
         if column in clocks:
             clock = _clock_cell(cell, fps)
             return clock[0] if clock else None
@@ -717,10 +807,11 @@ def _named_shape(text, fps):
     return None
 
 
-def detect(text, fps=None):
+def detect(text, fps=None, extension=None):
     """Which shape `text` has, as a Detection with its confidence and the
     subtitles read, or None for text that is not subtitles in any of them
-    (or not surely enough: below `THRESHOLD`)."""
+    (or not surely enough: below `THRESHOLD`). The file's `extension`
+    ("csv") settles what only it can: Csv5's frames after a dot."""
     if not text or not text.strip():
         return None
     found = _named_shape(text, fps)
@@ -735,7 +826,7 @@ def detect(text, fps=None):
         if data is not None:
             found = from_json(data, fps)
             return found if found and found.confidence >= THRESHOLD else None
-    candidates = [shape for shape in (_read_lines(text, fps), _read_table(text, fps)) if shape]
+    candidates = [shape for shape in (_read_lines(text, fps), _read_table(text, fps, extension == 'csv')) if shape]
     if not candidates:
         return None
     best = max(candidates, key=lambda shape: (shape.confidence, len(shape.segments)))

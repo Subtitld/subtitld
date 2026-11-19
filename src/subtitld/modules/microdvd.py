@@ -12,13 +12,17 @@ Reading forgives:
 
 - the bytes are decoded as SRT's are (files from the DivX years are often
   in their language's Windows code page, Windows-1250 in Central Europe);
-- the frame rate a "{1}{1}25" or "{0}{0}25" line declares, else the
+- the frame rate a "{1}{1}25", "{0}{0}25" or "{0}{}25.000 FPS" line declares, else the
   video's, else 25; the declaring line is no subtitle;
 - an empty end ("{100}{}") lasts until the next subtitle;
 - a line that begins "/" is italic, as MPL2 writes it;
 - italic, bold, underline, struck and colour become formatting tags,
   lower-case codes to the end of their line, upper-case ones to the end of
   the subtitle; fonts, sizes, positions and charsets go;
+- a "{DEFAULT}{}" line is every subtitle's style, as FFmpeg makes it its
+  ASS Default style: its italic, bold ... and colour are each subtitle's
+  until a code says otherwise, its {F:font} and {S:size} each subtitle's
+  look (the size in FFmpeg's ASS lines, 288 to the picture's height);
 - the subtitles come sorted by start.
 
 Writing gives "{1}{1}" and the frame rate first, then a line a subtitle,
@@ -43,6 +47,10 @@ _CODE = re.compile(r'\{([a-zA-Z]):([^{}]*)\}')
 _SUBVIEWER = re.compile(r'^\s*\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}\s*,\s*\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}\s*$', re.M)
 _ANY_LINE = re.compile(r'^\s*\{\d+\}\{\d*\}', re.M)
 _FLAGS = {'i': 'italic', 'b': 'bold', 'u': 'underline', 's': 'strike'}
+_DEFAULT = re.compile(r'^\s*\{DEFAULT\}\{\}(.*)$', re.I)
+# FFmpeg's ASS for MicroDVD has no PlayResY, so ASS's 288 lines hold the
+# picture, and {S:30} is a 30-line font.
+_SIZE_LINES = 288.0
 
 
 def kind(data):
@@ -57,11 +65,12 @@ def kind(data):
 
 
 def _rate(text):
-    """The frame rate a subtitle's text declares, or None."""
-    try:
-        rate = float(text.strip().replace(',', '.'))
-    except ValueError:
+    """The frame rate a subtitle's text declares, or None: "23.976", and
+    "25.000 FPS" as FFmpeg's own sample writes it."""
+    found = re.fullmatch(r'\s*(\d+(?:[.,]\d+)?)\s*(?:fps)?\s*', text, re.I)
+    if not found:
         return None
+    rate = float(found.group(1).replace(',', '.'))
     return rate if 1 < rate < 200 else None
 
 
@@ -84,9 +93,24 @@ def _styled(style, letter, value):
     return style
 
 
-def _text(body):
-    """Text with tags for a subtitle's MicroDVD text."""
-    whole = markup.PLAIN
+def _default(body):
+    """(style, look) of a "{DEFAULT}{}" line's codes."""
+    style, look = markup.PLAIN, {}
+    for code in _CODE.finditer(body):
+        letter, value = code.group(1).lower(), code.group(2).strip()
+        if letter == 'f' and value:
+            look['font'] = value
+        elif letter == 's' and re.fullmatch(r'\d+(?:\.\d+)?', value) and float(value) > 0:
+            look['size'] = round(float(value) / _SIZE_LINES * 100, 3)
+        else:
+            style = _styled(style, letter, value)
+    return style, look
+
+
+def _text(body, default=markup.PLAIN):
+    """Text with tags for a subtitle's MicroDVD text, in the `default`
+    style where its codes say nothing."""
+    whole = default
     runs = []
     for index, line in enumerate(body.split('|')):
         if index:
@@ -104,7 +128,9 @@ def _text(body):
             if letter.isupper():
                 whole = _styled(whole, letter, value)
         runs.append((line[position:], style))
-    return markup.tidy(runs)
+    # Spaces are the text's own here, not markup's: "Т И Г Ъ Р   И" keeps
+    # its wide gaps, as players show them.
+    return markup.tidy(runs, spaces='\t\r')
 
 
 def parse(text, fps=None):
@@ -112,12 +138,17 @@ def parse(text, fps=None):
     counted at the rate it declares, else `fps`, else 25."""
     entries = []
     declared = None
+    default, look = markup.PLAIN, {}
     for line in text.split('\n'):
+        found = _DEFAULT.match(line)
+        if found:
+            default, look = _default(found.group(1))
+            continue
         match = _LINE.match(line)
         if not match:
             continue
         start, end, body = int(match.group(1)), match.group(2), match.group(3)
-        if declared is None and not entries and start <= 1 and (end or '0') in ('0', '1') and _rate(body):
+        if declared is None and not entries and start <= 1 and (end or '0') in ('0', '1', '') and _rate(body):
             declared = _rate(body)
             continue
         entries.append((start, int(end) if end else None, body))
@@ -127,10 +158,12 @@ def parse(text, fps=None):
     for index, (start, end, body) in enumerate(entries):
         if end is None:
             end = entries[index + 1][0] if index + 1 < len(entries) else start + round(LAST_DURATION * rate)
-        body_text = _text(body)
+        body_text = _text(body, default)
         if not markup.plain(body_text).strip():
             continue
         segments.append({'start': round(start / rate, 3), 'end': round(max(start, end) / rate, 3), 'text': body_text})
+        if look:
+            segments[-1]['look'] = dict(look)
     return segments, declared
 
 

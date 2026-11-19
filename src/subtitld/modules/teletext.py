@@ -63,6 +63,19 @@ the sets have nearest the one it takes, and Arabic and Hebrew put on the
 page from the right. `write_video` has FFmpeg copy that stream into a
 transport stream of the video, its picture and sound copied as well.
 
+A Manzanita dump of a teletext stream (.dvbttx, read only) is an XML
+preamble, <private_stream_1 type="dvb_teletext"> in Manzanita's namespace,
+listing the stream's pages (dvb_teletext_content: language, magazine, 8
+sent as 0, and page byte, its value in decimal, 136 for 0x88) and each PES
+packet's PTS, offset and length (data_index), then, after the line that
+closes it, the packets' data one after another: a data_identifier and its
+data units, no PES header. `read_manzanita` reads one; the layout is
+Subtitle Edit's reader's (libse ContainerFormats/TransportStream,
+ManzanitaTransportStreamParser), its X/26 and X/28 samples its tests'.
+Beyond Level 1, a page's X/28/0 (or its magazine's M/29/0) may redefine
+CLUTs 2 and 3 and choose its national option, and X/26 may give a run a
+foreground colour of those 32 (Level 2.5): both are read.
+
 The same teletext packets go in each frame's ancillary data as OP-47
 (SMPTE RDD 8), the way an MXF carries subtitles beside its captions (SMPTE
 ST 436) and an MCC file writes them: `op47_packet` and `op47_fields`
@@ -586,12 +599,15 @@ def units(payload):
     return found
 
 
-def scan(path, progress=None, stopped=None):
+def scan(path, progress=None, stopped=None, pid=None):
     """What the transport stream at `path` holds of teletext:
     ({pid: [page]}, {pid: [(pts, 44-byte field)]}, origin), the pages each
     teletext stream's descriptor lists, the teletext packets of each, and
     the earliest PTS of any of its streams (where FFmpeg counts its times
-    from), in 90 kHz ticks."""
+    from), in 90 kHz ticks. A stream cut out of its multiplex has no PMT to
+    list it: the stream `pid` (FFmpeg's, which tells teletext by its data)
+    is read as teletext then, its pages unlisted."""
+    wanted = pid
     streams, pmt_pids, sections = {}, set(), {}
     pending, packets, first = {}, {}, {}
     with open(path, 'rb') as stream:
@@ -610,10 +626,13 @@ def scan(path, progress=None, stopped=None):
                                 pmt_pids.add(((section[index + 2] & 0x1F) << 8) | section[index + 3])
                     elif section[0] == 0x02:
                         for found, info in _pmt_streams(bytes(section)).items():
-                            streams.setdefault(found, info)
+                            if streams.get(found) in (None, {'pages': []}):    # unlisted, or read before its PMT came
+                                streams[found] = info
                     del sections[pid]
                 continue
             info = streams.get(pid)
+            if info is None and pid == wanted:
+                info = streams.setdefault(pid, {'pages': []})
             if info is None:
                 continue
             if info['pages'] is None:
@@ -699,17 +718,47 @@ def _address(field):
 
 def _designation(data):
     """The 7 bits of triplet 1 of an X/28/0 Format 1 or M/29/0 packet that
-    designate the G0 set and national option sub-set (15.2), or None."""
+    designate the G0 set and national option sub-set (15.2), or None: the
+    group in its top 4 bits, the national option in its low 3 (table 32's
+    C12 C13 C14, C12 the highest: the other way round from the header's
+    bits, where C12 comes first)."""
     if ham84(data[0]) not in (0, 4):
         return None
     triplet = ham2418(data[1:4])
     return None if triplet is None else (triplet >> 7) & 0x7F
 
 
-def _x26(data, subset='english', g2='latin'):
+def _x28_cluts(data):
+    """CLUTs 2 and 3 as an X/28/0 Format 1 or M/29/0 packet redefines them
+    (9.4.2.2, table 4): {16 to 31: '#rrggbb'}, its 13 triplets' bits read
+    least significant first, the 16 entries' red, green and blue 4 bits
+    each after the designations and side panels (bit 29 on); None for a
+    packet whose triplets fail their Hamming code, or another packet."""
+    if ham84(data[0]) != 0:
+        return None
+    bits = []
+    for start in range(1, 40, 3):
+        triplet = ham2418(data[start:start + 3])
+        if triplet is None:
+            return None
+        bits.extend((triplet >> index) & 1 for index in range(18))
+
+    def value(at, count):
+        return sum(bits[at + index] << index for index in range(count))
+
+    cluts = {}
+    for entry in range(16):
+        red, green, blue = (value(28 + entry * 12 + 4 * k, 4) for k in range(3))
+        cluts[16 + entry] = '#' + ''.join(f'{level * 17:02x}' for level in (red, green, blue))
+    return cluts
+
+
+def _x26(data, subset='english', g2='latin', colours=None):
     """The characters packet X/26 places: {(row, column): char}, from the
     page's G0 set `subset` and G2 set `g2`, or those a triplet designates
-    for the ones after it (Table 34)."""
+    for the ones after it (Table 34). Its foreground colour triplets (mode
+    0, a colour of the 32 the CLUTs hold) go into `colours`, {(row,
+    column): entry}, when given."""
     placed = {}
     row = 0
     for start in range(1, 40, 3):
@@ -725,7 +774,9 @@ def _x26(data, subset='english', g2='latin'):
             elif mode == 0x07:                     # address display row 0
                 row = 0
             continue
-        if mode == 0x08:                           # modified G0 and G2 designation
+        if mode == 0x00 and colours is not None:  # foreground colour, from here on
+            colours[(row, address)] = value & 0x1F
+        elif mode == 0x08:                         # modified G0 and G2 designation
             subset, g2 = subset_of(value >> 3, value & 7), g2_of(value >> 3, value & 7)
         elif mode == 0x09 and value >= 0x20:       # a G0 character
             placed[(row, address)] = _plain_char(value, subset)
@@ -738,18 +789,24 @@ def _x26(data, subset='english', g2='latin'):
     return placed
 
 
-def _row_cells(data, subset, boxed_page):
+def _row_cells(data, subset, boxed_page, colours=None):
     """The cells of a row's 40 bytes: [(char, Style, boxed)] where char is
     '' for a cell that shows nothing (a spacing attribute, a mosaic, a
-    concealed character), and whether the row is double height."""
+    concealed character), and whether the row is double height. `colours`,
+    {column: '#rrggbb'}, are X/26's foreground colours: each from its
+    column on, until another, or a spacing attribute's colour."""
     cells = []
     color, background, flash = 7, 0, False
     boxed = mosaic = concealed = double = False
-    for byte in data:
+    forced = None
+    for column, byte in enumerate(data):
         code = parity(byte)
         if code is None:
             code = 0x20                             # a character that failed its parity
-        style = markup.Style(color=COLORS[color], background=BACKGROUNDS[background], flash=flash)
+        if colours and column in colours:
+            forced = colours[column]
+        style = markup.Style(color=COLORS[color] if forced is None else forced, background=BACKGROUNDS[background],
+                             flash=flash)
         if code >= 0x20:
             if concealed or (mosaic and not 0x40 <= code < 0x60):
                 cells.append(('', style, boxed or not boxed_page))
@@ -779,14 +836,15 @@ def _row_cells(data, subset, boxed_page):
             background = 0
         elif code == _NEW_BACKGROUND:
             background = color
-        style = markup.Style(color=COLORS[color], background=BACKGROUNDS[background], flash=flash)
+        style = markup.Style(color=COLORS[color] if forced is None else forced,
+                             background=BACKGROUNDS[background], flash=flash)
         cells.append(('', style, boxed or not boxed_page))
         if after:
             what, value = after
             if what == 'color':
-                color, mosaic, concealed = value, False, False
+                color, mosaic, concealed, forced = value, False, False, None
             elif what == 'mosaic':
-                color, mosaic, concealed = value, True, False
+                color, mosaic, concealed, forced = value, True, False, None
             elif what == 'flash':
                 flash = True
             elif what == 'box':
@@ -794,18 +852,21 @@ def _row_cells(data, subset, boxed_page):
     return cells, double
 
 
-def render(rows, subset='english', placed=None, subtitle=True):
+def render(rows, subset='english', placed=None, subtitle=True, colours=None):
     """A page's rows ({row: 40 bytes}) as a subtitle's text, with tags for
     its colours and the place it sits as an ASS code; '' for a page that
-    shows nothing. On a subtitle page only the boxed text shows."""
+    shows nothing. On a subtitle page only the boxed text shows. `colours`
+    ({(row, column): '#rrggbb'}) are X/26's foreground colours."""
     placed = placed or {}
+    colours = colours or {}
     lines, spans = [], []
     skip = None
     boxed_page = subtitle and _has_box(rows)
     for row in range(1, 25):
         if row == skip or row not in rows:
             continue
-        cells, double = _row_cells(rows[row], subset, boxed_page)
+        cells, double = _row_cells(rows[row], subset, boxed_page,
+                                   {column: colour for (at, column), colour in colours.items() if at == row})
         if double:
             skip = row + 1
         shown = []
@@ -888,6 +949,8 @@ class _Decoder:
         self.receiving = False
         self.rows, self.enhancements = {}, {}       # X/26 packets, by their number
         self.page_group = None                      # X/28/0's designation
+        self.page_option = None                     # and its national option
+        self.page_cluts, self.magazine_cluts = None, {}  # CLUTs 2 and 3, X/28/0's and M/29/0's
         self.option, self.subtitle = 0, True
         self.started = None                         # when this transmission's header came
         self.shown, self.since = '', None
@@ -898,7 +961,21 @@ class _Decoder:
         """The page's G0 set (or Latin sub-set) and G2 set."""
         group = self.page_group if self.page_group is not None else \
             self.magazine_group.get(self.magazine, self.group)
-        return subset_of(group, self.option), g2_of(group, self.option)
+        # X/28/0's national option where it names one, else the header's.
+        option = self.page_option if self.page_option else self.option
+        return subset_of(group, option), g2_of(group, option)
+
+    def _colours(self):
+        """The 32 colours a foreground colour triplet chooses from: CLUT 0
+        (Level 1's), 1 (its half-intensity colours), and 2 and 3 as the page
+        or its magazine redefines them, or their defaults (table 30)."""
+        table = {code: COLORS[code] or '#ffffff' for code in range(8)}
+        table.update({8 + code: '#' + ''.join(f'{level:02x}' for level in (
+            0x77 * (code & 1), 0x77 * (code >> 1 & 1), 0x77 * (code >> 2 & 1))) for code in range(8)})
+        table.update({16 + entry: '#' + ''.join(f'{level * 17:02x}' for level in rgb)
+                      for entry, rgb in enumerate(_CLUTS_2_AND_3)})
+        table.update(self.page_cluts or self.magazine_cluts.get(self.magazine) or {})
+        return table
 
     def _commit(self, until):
         """The transmission that began at self.started is complete: what it
@@ -906,10 +983,13 @@ class _Decoder:
         if self.started is None:
             return
         subset, g2 = self._sets()
-        placed = {}
+        placed, colours = {}, {}
         for number in sorted(self.enhancements):
-            placed.update(_x26(self.enhancements[number], subset, g2))
-        text = render(self.rows, subset, placed, self.subtitle)
+            placed.update(_x26(self.enhancements[number], subset, g2, colours))
+        table = self._colours()
+        # White, Level 1's own, is the default look: no colour said.
+        colours = {at: '' if table[entry] == '#ffffff' else table[entry] for at, entry in colours.items()}
+        text = render(self.rows, subset, placed, self.subtitle, colours)
         if text != self.shown:
             if self.shown and self.since is not None and self.started > self.since:
                 self.segments.append({'start': self.since, 'end': self.started, 'text': self.shown})
@@ -939,7 +1019,7 @@ class _Decoder:
                 self._commit(seconds)
                 if controls[1] & 0x08:              # C4, erase page
                     self.rows, self.enhancements = {}, {}
-                self.page_group = None
+                self.page_group = self.page_option = self.page_cluts = None
                 self.subtitle = bool(controls[3] & 0x08)
                 c12, c13, c14 = (controls[5] >> 1) & 1, (controls[5] >> 2) & 1, (controls[5] >> 3) & 1
                 self.option = c12 * 4 + c13 * 2 + c14
@@ -952,6 +1032,9 @@ class _Decoder:
             designation = _designation(data)
             if designation is not None:
                 self.magazine_group[magazine] = designation >> 3
+            cluts = _x28_cluts(data)
+            if cluts is not None:
+                self.magazine_cluts[magazine] = cluts
             return
         if not self.receiving or magazine != self.magazine or self.current.get(magazine) != self.number:
             return
@@ -963,7 +1046,10 @@ class _Decoder:
         elif row == 28:
             designation = _designation(data)
             if designation is not None:
-                self.page_group = designation >> 3
+                self.page_group, self.page_option = designation >> 3, designation & 0x07
+            cluts = _x28_cluts(data)
+            if cluts is not None:
+                self.page_cluts = cluts
 
     def finish(self):
         if self.started is not None:
@@ -1009,7 +1095,7 @@ def read(path, page=None, pid=None, progress=None, stopped=None):
     first subtitle page any descriptor lists. Times count from the earliest
     start of the file's streams, as FFmpeg counts them. Raises ValueError
     for a file with no teletext."""
-    pages, packets, origin = scan(path, progress=progress, stopped=stopped)
+    pages, packets, origin = scan(path, progress=progress, stopped=stopped, pid=pid)
     if pid is None or not packets.get(pid):
         # The stream that lists the page, else any that carries teletext.
         listing = [found for found, listed in pages.items() if page and any(p['page'] == str(page) for p in listed)]
@@ -1024,6 +1110,62 @@ def read(path, page=None, pid=None, progress=None, stopped=None):
     language = entry.get('language', '')
     segments = decode(packets[pid], page, language, origin)
     return segments, {'page': str(page), 'language': language, 'pid': pid}
+
+
+MANZANITA_NAMESPACE = 'http://www.manzanitasystems.com/schema/v1.03/private_stream_1'
+_MANZANITA_END = b'</private_stream_1>'
+
+
+def is_manzanita(head):
+    """Whether bytes from a file's start are a Manzanita dump's preamble."""
+    return b'<private_stream_1' in head[:2048] and b'manzanitasystems.com' in head[:4096]
+
+
+def read_manzanita(path, page=None):
+    """(subtitles, {'page', 'language'}) of a teletext page in the Manzanita
+    dump (.dvbttx) at `path`: `page` ('888'), else the first subtitle page
+    its preamble lists, else the one sent most. Times are its PTS, in
+    seconds. Raises ValueError for a file that is no teletext dump."""
+    import xml.etree.ElementTree as ElementTree
+    with open(path, 'rb') as dump:
+        data = dump.read()
+    end = data.find(_MANZANITA_END)
+    if end < 0 or not is_manzanita(data):
+        raise ValueError('Not a Manzanita teletext file: it has no <private_stream_1> preamble')
+    end += len(_MANZANITA_END)
+    # The data index's offsets count from the line after the closing tag.
+    start = end + 1 if data[end:end + 1] == b'\n' else end
+    try:
+        root = ElementTree.fromstring(data[:end].decode('utf-8', 'replace'))
+    except ElementTree.ParseError as error:
+        raise ValueError(f'Its preamble is not XML: {error}') from error
+    if root.get('type') not in (None, 'dvb_teletext'):
+        raise ValueError(f'This Manzanita file holds {root.get("type")}, not teletext')
+    name = f'{{{MANZANITA_NAMESPACE}}}'
+    listed = []
+    for entry in root.iter(name + 'dvb_teletext_content'):
+        try:
+            magazine, number = int(entry.get('teletext_magazine_number')), int(entry.get('teletext_page_number'))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= magazine <= 7 and 0 <= number <= 0x99:
+            listed.append({'page': f'{magazine or 8}{number:02x}', 'language': entry.get('ISO_639_language_code') or '',
+                           'subtitle': str(entry.get('teletext_type') or '').startswith('subtitle')})
+    packets = []
+    for packet in root.iter(name + 'packet'):
+        try:
+            pts, offset, length = (int(packet.get(key)) for key in ('pts', 'offset', 'length'))
+        except (TypeError, ValueError):
+            continue
+        payload = data[start + offset:start + offset + length]
+        if len(payload) < length:
+            break                                   # cut short at the file's end
+        packets += [(pts, field) for field in units(payload)]
+    if page is None:
+        chosen = next((entry for entry in listed if entry['subtitle']), listed[0] if listed else None)
+        page = chosen['page'] if chosen else busiest_subtitle_page(packets)
+    language = next((entry['language'] for entry in listed if entry['page'] == str(page)), '')
+    return decode(packets, page, language, origin=0), {'page': str(page), 'language': language}
 
 
 def busiest_subtitle_page(packets):

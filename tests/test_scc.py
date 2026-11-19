@@ -90,6 +90,14 @@ check('shown at EOC, cleared at EDM or by the next; italics by mid-row code, its
           (4.671, 5.672, '{\\an1}<i>Italic by PAC</i> plain'),
           (5.672, 6.673, '{\\an3}Right <font color="#ff0000"><u>red</u></font>'),
           (6.673, 7.007, '{\\an1}Lone')])
+# FFmpeg's witch.scc: "BURN HER !  BURN HER !", two spaces sent and two
+# shown (its sub-scc keeps them); a code's column beside a space is still
+# one space between the words.
+check('two spaces in a row are two; a code beside a space no second one', cues(doc(
+    ('00:00:00;00', f'{RCL} {ENM} {pac(15, 0)} {chars("BURN HER !  BURN")} {code(0x11, 0x2E)} {chars(" HER !")}'),
+    ('00:00:01;00', EOC), ('00:00:02;00', EDM)))[0][2], '{\\an1}BURN HER !  BURN <i>HER !</i>')
+written = scc.write([{'start': 1.0, 'end': 3.0, 'text': 'YES.  YES.'}])
+check('...written as two, and read back so', cues(written)[0][2], 'YES.  YES.')
 CHARACTERS = doc(
     ('00:00:00;00', f'{RCL} {ENM} {pac(15, 0)} {chars("A")} {code(0x11, 0x38)} {chars(" la caf")} '
                     f'{code(0x13, 0x22, twice=False)} {chars("e")} {code(0x12, 0x21)} {chars(" ")} '

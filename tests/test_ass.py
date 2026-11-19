@@ -274,6 +274,22 @@ check("a script Subtitld wrote brings no look of its own back, in either of its 
           ass.write([{'start': 1, 'end': 2, 'text': 'Plain'}], look=chosen)))] for chosen in ass.LOOKS],
       [[None], [None]])
 
+print('attachments')
+# SSA v4's Appendix B: three bytes as four characters, six bits each plus
+# 33; one byte left over as two characters, two as three; 80 a line.
+check('three bytes, four characters: 0x000000 is "!!!!"', ass.uuencode(b'\0\0\0'), ['!!!!'])
+check('one and two bytes left over: two and three characters', [len(''.join(ass.uuencode(bytes(n)))) for n in (1, 2, 4, 5)],
+      [2, 3, 6, 7])
+data = bytes(range(256)) * 3
+check('80 characters a line, decoded back to the bytes', ({len(line) for line in ass.uuencode(data)[:-1]},
+                                                         ass.uudecode(ass.uuencode(data)) == data), ({80}, True))
+attached = {'fonts': {'My Font.ttf': b'font bytes'}, 'graphics': {'logo.png': b'\x89PNG'}}
+for fmt in ('ass', 'ssa'):
+    script = pysubs2.SSAFile.from_string(ass.write([{'start': 1, 'end': 2, 'text': 'Hi'}], fmt=fmt, attachments=attached))
+    # A name is a word in the file: its space would end it.
+    check(f'{fmt.upper()}: written in [Fonts] and [Graphics] and read back',
+          ass.attachments_of(script), {'fonts': {'My_Font.ttf': b'font bytes'}, 'graphics': {'logo.png': b'\x89PNG'}})
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

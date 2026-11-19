@@ -245,6 +245,23 @@ for fmt in ('EAF', 'TRS', 'EXB'):
           (fmt in SUBTITLE_FORMATS, panel.text_options.isHidden(), panel.formatting_combo.isHidden(),
            'voice' in [combo.itemData(index) for index in range(combo.count())]), (True, False, True, True))
 
+# A top tier whose type takes a controlled vocabulary holds codes (gesture
+# phases), not speech: left out beside a tier of free text, read when it is
+# all there is.
+_TEXT_TIER = ('<TIER TIER_ID="text" LINGUISTIC_TYPE_REF="text"><ANNOTATION><ALIGNABLE_ANNOTATION ANNOTATION_ID="a1" '
+              'TIME_SLOT_REF1="t1" TIME_SLOT_REF2="t2"><ANNOTATION_VALUE>Hello</ANNOTATION_VALUE></ALIGNABLE_ANNOTATION>'
+              '</ANNOTATION></TIER>')
+_coded = ('<ANNOTATION_DOCUMENT><HEADER TIME_UNITS="milliseconds"/><TIME_ORDER><TIME_SLOT TIME_SLOT_ID="t1" TIME_VALUE="1000"/>'
+          '<TIME_SLOT TIME_SLOT_ID="t2" TIME_VALUE="2000"/></TIME_ORDER>' + _TEXT_TIER +
+          '<TIER TIER_ID="gestures" LINGUISTIC_TYPE_REF="gesture"><ANNOTATION><ALIGNABLE_ANNOTATION ANNOTATION_ID="a2" '
+          'TIME_SLOT_REF1="t1" TIME_SLOT_REF2="t2"><ANNOTATION_VALUE>stroke</ANNOTATION_VALUE></ALIGNABLE_ANNOTATION>'
+          '</ANNOTATION></TIER><LINGUISTIC_TYPE LINGUISTIC_TYPE_ID="text" TIME_ALIGNABLE="true"/>'
+          '<LINGUISTIC_TYPE LINGUISTIC_TYPE_ID="gesture" TIME_ALIGNABLE="true" CONTROLLED_VOCABULARY_REF="Gesture"/>'
+          '</ANNOTATION_DOCUMENT>')
+check('a tier of coded values left out beside one of text', annotation.parse_eaf(_coded)[0],
+      [{'start': 1.0, 'end': 2.0, 'text': 'Hello'}])
+check('read when it is all there is', [s['text'] for s in annotation.parse_eaf(_coded.replace(_TEXT_TIER, ''))[0]], ['stroke'])
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

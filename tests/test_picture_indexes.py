@@ -115,6 +115,9 @@ pictures, which = picture_indexes.read(str(folder / 'film.sst'))
 check('read at PAL\'s 25, the BG colour transparent: each bar where it is, frame-sized images at 0, 0',
       (which, shown(pictures), {(p.screen_width, p.screen_height) for p in pictures}),
       ('SCENARISTBMP', [(1.0, 3.48, 300, 500, 120, 30, False), (4.0, 6.0, 200, 40, 80, 20, False)], {(720, 576)}))
+used = {pictures[1].colours[index] for index in set(pictures[1].indices)}
+check('each key colour as a DVD player shows it: the E1 bar and BG both palette entry 3, at contrast 15 and 0',
+      used, {(153, 153, 153, 255), (153, 153, 153, 0)})
 
 print('SON')
 SON = ('st_format\t2\r\nDisplay_Start\tforced\r\nTV_Type\t\tNTSC\r\nTape_Type\tNON_DROP\r\nPixel_Area\t(0 477)\r\n'

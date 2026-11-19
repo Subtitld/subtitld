@@ -268,9 +268,9 @@ def load_productionscreen(self, collab=None):
                     return
                 session.SUBTITLE.segments, info = read
                 # Saved as text: TTML again for an IMSC file, DCP subtitles
-                # again (in text) for a DCP's, SRT for a disc's and a BDN's
+                # again (in text) for a DCP's, Kate (in text) for a Kate's, SRT for a disc's and a BDN's
                 # (saved as BDN, its own PNGs would be drawn over).
-                session.CONFIG['format_to_save'] = {'imsc': 'TTML', 'dcp': 'DCP'}.get(pictures.kind, 'SRT')
+                session.CONFIG['format_to_save'] = {'imsc': 'TTML', 'dcp': 'DCP', 'kate': 'KATE'}.get(pictures.kind, 'SRT')
                 if info.get('language'):
                     session.SUBTITLE.language = info['language']
         except file_io.CorruptedProjectFileError as exc:

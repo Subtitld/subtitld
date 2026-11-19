@@ -491,16 +491,13 @@ check('without formatting, no timing', ('<00:' in Path(path).read_text(encoding=
 session.FORMAT = {}
 session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
 opened, path = saved_and_opened('TTML', 'ttml')
-check('TTML: the words, as a timed span would hide them', ('begin="00:00:00.500"' in Path(path).read_text(encoding='utf-8'),
-                                                            text_of(opened[0])), (False, '{\\an8}<i>Hello</i> world'))
-session.FORMAT = {'options': {'timed': 'reveal'}}
-opened, path = saved_and_opened('TTML', 'ttml')
 written = Path(path).read_text(encoding='utf-8')
-check('revealed: a span a piece, begun when it is, to the paragraph\'s end',
-      ('<span begin="00:00:00.500">' in written, '<span begin="00:00:01.000">world</span>' in written,
-       'end="00:00:00.800"' in written), (True, True, False))
-check('read back as pieces', [(t, a, b) for t, a, b in spans(opened[0])],
-      [('{\\an8}<i>Hel</i>', 0.0, 0.5), ('<i>lo</i> ', 0.5, 1.0), ('world', 1.0, 2.0)])
+check('TTML: a span a word or syllable, timed from the paragraph\'s begin, as Apple Music\'s lyrics',
+      ('<span begin="00:00:00.500" end="00:00:00.800">lo</span>' in written, '<span begin="00:00:01.000" end="00:00:01.600">world</span>' in written),
+      (True, True))
+check('read back as pieces, their times as written', spans(opened[0]),
+      [('{\\an8}Hel', 0.0, 0.5), ('lo ', 0.5, 0.8), ('world', 1.0, 1.6)])
+session.FORMAT = {'options': {'timed': 'reveal'}}
 session.SUBTITLE.segments = copy.deepcopy(KARAOKE)
 opened, path = saved_and_opened('SRT', 'srt')
 check('SRT revealed: a subtitle a piece, the words up to it', [(s['start'], s['end'], s['text']) for s in opened],
@@ -523,7 +520,7 @@ for fmt in ('SRT', 'TTML', 'ASS', 'VTT', 'LRC'):
     panel._refresh_options()
     shown[fmt] = not panel.timed_combo.isHidden()
 check('offered where the format has no timing of its own', shown,
-      {'SRT': True, 'TTML': True, 'ASS': False, 'VTT': False, 'LRC': False})
+      {'SRT': True, 'TTML': False, 'ASS': False, 'VTT': False, 'LRC': False})
 panel.format_combo.setCurrentText('SRT')
 panel._refresh_options()
 panel.timed_combo.combobox.setCurrentIndex(1)

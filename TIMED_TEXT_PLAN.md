@@ -198,10 +198,10 @@ offscreen): split, retime, edit text, undo, save, reopen.
 
 **M6. Exporters.** *(Done on branch `timed-text`. WebVTT writes a
 timestamp before each piece and reads them back (each piece to the next:
-WebVTT has no pause). TTML shows a timed span only while it is active, so
-a span per piece would make words vanish: TTML gets the words, or, with
-"revealed word by word", a span a piece begun at its time and lasting to
-the paragraph's end; spans with times are read back as pieces. Other text
+WebVTT has no pause). TTML, after master's afab3e2e (merged here): a
+span a word or syllable with its begin and end, as Apple Music's lyrics
+are (the user chose these over a reveal, though a generic TTML player may
+show a word only while it is sung), read back as pieces. Other text
 formats: "revealed word by word" is a subtitle a piece with the words up
 to it (export_options.prepare, option `timed`). Removing formatting takes
 the timing with it, as export_options always said. Enhanced LRC was M4's.

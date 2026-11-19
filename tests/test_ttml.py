@@ -16,7 +16,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, markup, session, ttml
+from subtitld.modules import file_io, karaoke, markup, session, ttml
 
 fails = []
 
@@ -111,12 +111,14 @@ REGIONS = ('<layout>'
            '<region xml:id="cells"><style tts:origin="2c 1c" tts:extent="36c 6c"/></region>'
            '<region xml:id="pixels" tts:origin="96px 540px" tts:extent="400px 200px" tts:displayAlign="center"/>'
            '<region xml:id="bare" tts:displayAlign="before" tts:textAlign="right"/>'
-           '<region xml:id="pycaption" tts:displayAlign="after" tts:textAlign="start"/>'
+           '<region xml:id="start" tts:displayAlign="after" tts:textAlign="start"/>'
            '</layout>')
-places = ['bottom', 'top', 'topleft', 'middle', 'lowtop', 'cells', 'pixels', 'bare', 'pycaption']
+# "start" is the near edge of the writing, the left for left-to-right
+# text (TTML2 tts:textAlign): in a file pycaption did not write it is meant.
+places = ['bottom', 'top', 'topleft', 'middle', 'lowtop', 'cells', 'pixels', 'bare', 'start']
 check('regions: origin, extent, displayAlign, textAlign; %, cells, px', [markup.alignment(c[2]) for c in cues(doc(
     ''.join(f'<p begin="{i}s" end="{i + 1}s" region="{name}">{name}</p>' for i, name in enumerate(places)),
-    REGIONS, attrs=' tts:extent="1920px 1080px" ttp:cellResolution="40 20"'))], [2, 8, 7, 6, 2, 8, 4, 9, 2])
+    REGIONS, attrs=' tts:extent="1920px 1080px" ttp:cellResolution="40 20"'))], [2, 8, 7, 6, 2, 8, 4, 9, 1])
 check("the body's region, and the paragraph's textAlign over the region's", [markup.alignment(c[2]) for c in cues(doc(
     '<p begin="1s" end="2s">a</p><p begin="2s" end="3s" tts:textAlign="right">b</p>', REGIONS).replace(
     '<body>', '<body region="top">'))], [8, 9])
@@ -179,6 +181,15 @@ PYCAPTION = ('<?xml version="1.0" encoding="utf-8"?>\n'
              '</tt>\n')
 check('what pycaption wrote (and Subtitld with it): centred, not at the left',
       cues(PYCAPTION), [(1.0, 2.0, 'Plain <i>italic</i>\nsecond'), (3.0, 4.0, 'Top <b>bold</b>')])
+# pycaption's writer names regions r0, r1... beyond its "bottom" (its
+# _get_new_id): the same habit, still centred.
+check('pycaption\'s r0 region: centred too', cues(PYCAPTION.replace('"bottom"', '"r0"'))[0][2],
+      'Plain <i>italic</i>\nsecond')
+# Its base markup declares tts: alone; a file with ttp: (or another
+# profile's namespace) is someone else's, and its "start" is meant.
+check('a region named "bottom" in a file pycaption did not write: at the left',
+      markup.alignment(cues(PYCAPTION.replace('<tt xml:lang="en"', '<tt xmlns:ttp="http://www.w3.org/ns/ttml#parameter" '
+                                              'ttp:timeBase="media" xml:lang="en"'))[0][2]), 1)
 try:
     ttml.parse('<usf><subtitle/></usf>')
     check('not TTML: refused', False, True)
@@ -878,6 +889,43 @@ check('a subtitle placed down the middle keeps its place through a write',
 check('a mode other than none and all is named in IMSC 1.1',
       ttml.check(_written.replace('tts:textCombine="all"', 'tts:textCombine="digits 2"'), 'imsc1.1')[-1],
       'tts:textCombine="digits 2": IMSC 1.1 allows none and all')
+
+# Apple Music's lyrics: seconds with no unit, minutes and seconds with no
+# hours, and every time counted from the start of the song (itunes:timing),
+# not from the <div> that holds it.
+_apple = ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" '
+                    'itunes:timing="Word"><body dur="3:58.640"><div begin="19.764" end="1:05.5">'
+                    '<p begin="19.764" end="21.900"><span begin="19.764" end="20.105">When</span> '
+                    '<span begin="20.105" end="21.900">here</span></p>'
+                    '<p begin="1:01" end="1:02.79">But</p></div></body></tt>')
+check('Apple Music lyrics: times from the start of the song, in seconds or minutes and seconds',
+      [(round(s['start'], 3), round(s['end'], 3), s['text']) for s in _apple],
+      [(19.764, 21.9, '{\\k34}When {\\k180}here'), (61.0, 62.79, 'But')])
+# Apple Music's lyrics as Apple serves them, a paragraph on one line: a
+# space between two spans ends a word, none joins two syllables of one
+# ("an" "gel"), and each span's times are karaoke codes from the line's
+# start (modules.karaoke). The times are the file's.
+_sung = ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" '
+                   'itunes:timing="Syllable"><body><div><p begin="29.862" end="33.048"><span begin="29.862" end="30.249">'
+                   "You're</span> <span begin=\"30.886\" end=\"31.176\">an</span> <span begin=\"31.176\" end=\"31.723\">an</span>"
+                   '<span begin="31.723" end="33.048">gel</span></p>'
+                   '<p begin="34.0" end="36.0"><span begin="34.0" end="34.5">be</span><span begin="34.5" end="36.0">fore</span>'
+                   '</p></div></body></tt>')
+check('Apple Music lyrics: words joined by the spacing, timed as karaoke (hundredths from the line\'s start)',
+      [(markup.plain(s['text']), karaoke.syllables(s['text'])) for s in _sung],
+      [("You're an angel", [(39, "You're "), (63, ''), (29, 'an '), (55, 'an'), (133, 'gel')]),
+       ('before', [(50, 'be'), (150, 'fore')])])
+_back = ttml.parse(ttml.write(_sung))
+check('...written as a span a word or syllable, and read back so', [s['text'] for s in _back], [s['text'] for s in _sung])
+check('...in a profile that times paragraphs alone, the words', markup.plain(ttml.parse(ttml.write(_sung, profile='ebu-tt-d'))[0]['text']),
+      "You're an angel")
+check('timed spans with styled words are left as they are', ttml.parse(
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div><p begin="1s" end="3s">'
+    '<span begin="0s" end="1s" tts:fontStyle="italic">One</span> <span begin="1s" end="2s">two</span></p></div></body></tt>')[0]['text'],
+      '<i>One</i> two')
+check('elsewhere a time still counts from what holds it',
+      [round(s['start'], 3) for s in ttml.parse('<tt xmlns="http://www.w3.org/ns/ttml"><body><div begin="10s">'
+                                                 '<p begin="2s" end="3s">x</p></div></body></tt>')], [12.0])
 
 
 print()

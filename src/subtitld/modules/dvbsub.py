@@ -30,6 +30,11 @@ holds segments, each a sync byte (0x0F), a type, its page and its length:
 - 0x80, end of display set: what came since the page composition is
   complete, and shown.
 
+A display set may take several PES packets: its segments are read on
+until its end, across them, a segment cut at a packet's end finished by
+the next, and a packet with no PTS of its own taken at the time of the
+display set it goes on with.
+
 A subtitle is what a display set shows, the regions of its page drawn
 into one picture, from its PTS until the next display set of the page or
 its time-out, whichever comes first; a display set that shows nothing (no
@@ -283,28 +288,64 @@ def draw_field(block, region, x0, y0, field, non_modifying=False):
 
 # --- Reading segments ------------------------------------------------------------
 
-def segments_of(payload):
+def segments_of(payload, carried=b''):
     """[(type, page id, data)] of a PES packet's data: the data_identifier
     and subtitle_stream_id (left out by some demuxers) and the segments up
     to the end marker (0xFF)."""
+    return _segments(payload, carried)[0]
+
+
+def _segments(payload, carried=b''):
+    """(segments, rest) of a PES packet's data after the `carried` bytes
+    of a segment the packet before it began: rest, the bytes of a segment
+    whose length goes past the packet's end (b'' when none), for the
+    next packet of the stream to finish."""
     found = []
     i = 2 if payload[:2] == b'\x20\x00' else 0
+    payload = carried + payload[i:]
+    i = 0
     while i + 6 <= len(payload) and payload[i] == 0x0F:
         kind = payload[i + 1]
         page = payload[i + 2] << 8 | payload[i + 3]
         length = payload[i + 4] << 8 | payload[i + 5]
+        if i + 6 + length > len(payload):
+            return found, payload[i:]
         found.append((kind, page, payload[i + 6:i + 6 + length]))
         i += 6 + length
-    return found
+    if 0 < len(payload) - i < 6 and payload[i] == 0x0F:
+        return found, payload[i:]               # a segment's header cut short
+    return found, b''
+
+
+def display_set_segments(packets):
+    """(pts, type, page id, data) of each segment in `packets`, [(pts, PES
+    packet data)], a display set's segments put together across the PES
+    packets it takes (EN 300 743 has a display set end at its end of
+    display set segment, not with its PES packet): a segment cut at a
+    packet's end finished by the next, at the time of the packet it began
+    in. A packet at a time of its own that starts with a segment of its
+    own is not the rest of one: what was cut short there is let go (a
+    packet lost on the way)."""
+    carried, started = b'', None
+    for pts, payload in packets:
+        if carried and pts != started and payload[2 if payload[:2] == b'\x20\x00' else 0:][:1] == b'\x0f':
+            carried = b''
+        if not carried:
+            started = pts
+        found, carried = _segments(payload, carried)
+        for kind, page, data in found:
+            yield started, kind, page, data
+            started = pts
+        if carried and len(carried) > 0xFFFF + 6:
+            carried = b''                        # never finished: let it go
 
 
 def first_page(packets):
     """The page of the first page composition in `packets`, for a stream
     whose descriptor names none; None for none."""
-    for _pts, payload in packets:
-        for kind, page, _data in segments_of(payload):
-            if kind == PAGE_COMPOSITION:
-                return page
+    for _pts, kind, page, _data in display_set_segments(packets):
+        if kind == PAGE_COMPOSITION:
+            return page
     return None
 
 
@@ -499,16 +540,15 @@ def decode(packets, page=None, ancillary=None, origin=None):
     pages = {page, ancillary if ancillary is not None else page}
     decoder = _Decoder()
     base, previous, wraps = None, None, 0
-    for pts, payload in packets:
+    for pts, kind, segment_page, data in display_set_segments(packets):
         if previous is not None and pts < previous - _PTS_WRAP // 2:
             wraps += 1
         previous = pts
         if base is None:
             base = origin if origin is not None else pts
         seconds = round((pts + wraps * _PTS_WRAP - base) / 90000.0, 3)
-        for kind, segment_page, data in segments_of(payload):
-            if segment_page in pages:
-                decoder.feed(seconds, kind, data)
+        if segment_page in pages:
+            decoder.feed(seconds, kind, data)
     return decoder.finish()
 
 
@@ -596,18 +636,25 @@ def streams(path, limit=8 * 1024 * 1024):
     return found
 
 
-def scan(path, progress=None, stopped=None):
+def scan(path, progress=None, stopped=None, pid=None):
     """What the transport stream at `path` holds of DVB subtitles: ({pid:
     [service]}, {pid: [(pts, PES packet data)]}, origin), the services each
     stream's descriptor lists, the PES packets of each, and the earliest
     PTS of any of the file's streams (where FFmpeg counts its times from),
-    in 90 kHz ticks."""
+    in 90 kHz ticks. A stream cut out of its multiplex has no PMT to list
+    it: the stream `pid` (FFmpeg's, which tells DVB subtitles by their data)
+    is read as DVB subtitles then, its services unlisted."""
+    wanted = pid
     listed, pending, packets, first = {}, {}, {}, {}
 
     def take(pid, pes):
         pts = teletext._pes_pts(pes)
         if pts is None:
-            return
+            # A PES packet with no PTS goes on with the display set of the
+            # one before it, at its time.
+            if not packets.get(pid):
+                return
+            pts = packets[pid][-1][0]
         first.setdefault(pid, pts)
         packets.setdefault(pid, []).append((pts, teletext._pes_payload(pes)))
 
@@ -618,8 +665,11 @@ def scan(path, progress=None, stopped=None):
         for pid, start, payload in _pmt_sections(stream, layout, progress=progress, stopped=stopped):
             if pid is None:
                 for key, services in start.items():
-                    listed.setdefault(key, services)
+                    if listed.get(key, []) == []:          # unlisted, or read before its PMT came
+                        listed[key] = services
                 continue
+            if pid not in listed and pid == wanted:
+                listed[pid] = []
             if pid not in listed:
                 continue
             if listed[pid] is None:
@@ -648,7 +698,7 @@ def read(path, pid=None, page=None, progress=None, stopped=None):
     the stream `pid`, or the first service any descriptor lists. Times
     count from the earliest start of the file's streams, as FFmpeg counts
     them. Raises ValueError for a file with no DVB subtitles."""
-    listed, packets, origin = scan(path, progress=progress, stopped=stopped)
+    listed, packets, origin = scan(path, progress=progress, stopped=stopped, pid=pid)
     page = int(page) if page not in (None, '') else None
     if pid is None or not packets.get(pid):
         candidates = [found for found, services in listed.items()

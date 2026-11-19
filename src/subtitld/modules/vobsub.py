@@ -36,6 +36,11 @@ DEFAULT_PALETTE = [(0, 0, 0), (255, 255, 255), (128, 128, 128), (32, 32, 32)] + 
 # DVD's two frame sizes. A VobSub kept beside a video file may be as big
 # as the video instead.
 SIZES = {'pal': (720, 576), 'ntsc': (720, 480)}
+# The frames a .sub without its .idx may be on: DVD PAL's, as it is
+# taken for, unless its pictures reach beyond it (a Blu-ray's subtitles
+# rewrapped as VobSub), then the first of the usual video frames that
+# holds them all, as picture_indexes guesses one.
+GUESSED_FRAMES = (SIZES['pal'], (1280, 720), (1920, 1080), (3840, 2160))
 PACK = 2048                      # a program stream pack, a DVD sector
 MAX_SPU = 0xFFFF                 # an SPU says its size in 16 bits
 
@@ -160,8 +165,13 @@ def parse_program_stream(data):
         track = substream - 0x20
         payload = body[header + 1:]
         current = building.get(track)
-        if pts is not None:
-            current = None          # only a unit's first packet has a PTS: an unfinished one is lost
+        if pts is not None and current is not None and len(payload) > current[3] - len(current[2]):
+            # Only a unit's first packet has a PTS: an unfinished one is
+            # lost. But a muxer may put a PTS on the rest of one too
+            # (MPlayer's, FFmpeg's vobsub sample); a packet that holds no
+            # more than the unit still lacks finishes it, as FFmpeg's
+            # decoder takes it, the unit timed by its first.
+            current = None
         if current is None:
             if len(payload) < 2:
                 continue
@@ -244,7 +254,10 @@ def decode_spu(spu, palette):
             if command in (0x00, 0x01):
                 start = date
                 forced = forced or command == 0x00
-            elif command == 0x02:
+            elif command == 0x02 and date < 0xFFFF * SPU_TICK:
+                # The largest date (745.6 s) is no time: FFmpeg dates a
+                # subtitle with no duration of its own so, and it shows
+                # until the next one, as one without a stop does.
                 stop = date
             elif command == 0x03 and i + 2 <= len(spu):
                 colours = [spu[i] >> 4, spu[i] & 15, spu[i + 1] >> 4, spu[i + 1] & 15]
@@ -333,7 +346,8 @@ def read(path, track=None):
     .sub), and the track: (pictures, {'index', 'language'}). `track` is
     the track's index; by default the one the .idx names (langidx), else
     the first. Without an .idx the .sub's first track is read with DVD's
-    default palette and frame size, timed by its PTS."""
+    default palette, timed by its PTS, on DVD PAL's frame or, when its
+    pictures reach beyond that, the smallest usual frame that holds them."""
     idx_path, sub_path = paths(path)
     if not os.path.isfile(sub_path):
         raise VobSubError(f'{os.path.basename(sub_path)} is missing: a VobSub needs its .sub next to its .idx')
@@ -355,6 +369,13 @@ def read(path, track=None):
     if not found and chosen['entries']:
         # An .idx whose offsets miss the packs (edited by hand, or remuxed): the PTS then.
         found = pictures(units.get(chosen['index'], []), info)
+    if not os.path.isfile(idx_path) and found:
+        # No .idx to say how big the frame is: the one the pictures fit in.
+        right = max(p.x + p.width for p in found)
+        bottom = max(p.y + p.height for p in found)
+        size = next((frame for frame in GUESSED_FRAMES if frame[0] >= right and frame[1] >= bottom), (right, bottom))
+        for picture in found:
+            picture.screen_width, picture.screen_height = size
     return found, {'index': chosen['index'], 'language': chosen['language'],
                    'tracks': [{'index': t['index'], 'language': t['language']} for t in tracks]}
 

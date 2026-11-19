@@ -465,6 +465,8 @@ class Subtitle:
         metadata         what the file says about itself (title, ...)
         origin           where on subtitld.cc it came from
         translations     the languages of its translations
+        attachments      the fonts and pictures it carries (an ASS
+                         script's, a USFX's)
         current          the subtitle under the playhead
 
     It is also a mapping of the same names, for what edits a project as a
@@ -474,7 +476,8 @@ class Subtitle:
     that is None counting as not there. No other name can be set.
     """
 
-    FIELDS = ('position', 'language', 'source_language', 'filepath', 'metadata', 'origin', 'translations', 'current')
+    FIELDS = ('position', 'language', 'source_language', 'filepath', 'metadata', 'origin', 'translations', 'attachments',
+              'current')
     _NAMES = ('segments', 'selected') + FIELDS
 
     def __init__(self, fields=None, **more):

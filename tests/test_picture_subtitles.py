@@ -70,6 +70,9 @@ idx = (folder / 'film.idx').read_text()
 (folder / 'film.idx').rename(folder / 'film.idx.bak')
 alone, _track = vobsub.read(str(folder / 'film.sub'))
 check('a .sub without its .idx: timed by its PTS', [p.start for p in alone], [1.0, 4.0, 65.25])
+# Its pictures fit in DVD PAL's frame (they are on NTSC's), so it is taken
+# for that, as without an .idx it always was.
+check('and on DVD PAL\'s frame, which they fit in', {(p.screen_width, p.screen_height) for p in alone}, {(720, 576)})
 (folder / 'film.idx.bak').rename(folder / 'film.idx')
 info = vobsub.parse_idx(idx + 'id: en, index: 1\ndelay: 00:00:01:500\ntimestamp: 00:00:02:000, filepos: 000000800\n')
 check('an .idx: tracks, delay', [(t['index'], t['language'], t['entries'][-1][0]) for t in info['tracks']],
@@ -80,6 +83,21 @@ if FFPROBE:
     check('FFmpeg reads the sample at the same times', [float(t) for t in probed], [1.0, 4.0, 65.25])
 else:
     print('  (no ffprobe: the sample is not checked against FFmpeg)')
+
+# An SPU over two packs whose second carries a PTS too, as MPlayer wrote
+# FFmpeg's sample: one picture, timed by its first pack. A packet with a
+# PTS that holds more than the unit lacks starts the next.
+width, height, indices = picture_samples.draw('Hi')
+unit = picture_samples.spu(width, height, indices, 100, 300, 1.0)
+half = len(unit) // 2
+other = picture_samples.spu(width, height, indices, 100, 100, 1.0)
+stream = (picture_samples._pack(1.0, picture_samples._pes(unit[:half], 1.0)) +
+          picture_samples._pack(1.0, picture_samples._pes(unit[half:], 0.9)) +
+          picture_samples._pack(2.0, picture_samples._pes(unit[:half], 2.0)) +
+          picture_samples._pack(3.0, picture_samples._pes(other, 3.0)))
+units = vobsub.parse_program_stream(stream)[0]
+check('an SPU continued by a packet with a PTS: whole, at its first; one cut short: lost',
+      [(offset, pts / 90000, spu == unit or spu == other) for offset, pts, spu in units], [(0, 1.0, True), (6144, 3.0, True)])
 
 print('PGS')
 shown = pgs.read(str(folder / 'film.sup'))
@@ -133,6 +151,19 @@ fade = [picture_subtitles.Picture(1, 2, 0, 400, 1, 1, b'', [], screen_height=480
         picture_subtitles.Picture(2, 3, 0, 400, 1, 1, b'', [], screen_height=480)]
 check('a subtitle drawn twice in a row is one', picture_subtitles.segments(fade, ['Hi', 'Hi']),
       [{'start': 1, 'end': 3, 'text': 'Hi'}])
+# A PGS composition's windows (pgs.read: a picture each, at one time): a
+# sign at the top and two windows side by side over two lines at the bottom.
+windows = [picture_subtitles.Picture(1, 2, 300, 40, 200, 30, b'', [], screen_height=480),
+           picture_subtitles.Picture(1, 2, 40, 400, 30, 30, b'', [], screen_height=480),
+           picture_subtitles.Picture(1, 2, 100, 398, 300, 34, b'', [], screen_height=480),
+           picture_subtitles.Picture(1, 2, 100, 436, 300, 34, b'', [], screen_height=480)]
+check('windows shown together: the sign at the top its own, those at the bottom one subtitle in rows',
+      [s['text'] for s in picture_subtitles.segments(windows, ['SIGN', '♪', 'first line', 'second line'])],
+      ['{\\an8}SIGN', '♪ first line\nsecond line'])
+check('a window drawn again in the next composition, the other gone: joined',
+      picture_subtitles.segments(windows[:2] + [picture_subtitles.Picture(2, 3, 40, 400, 30, 30, b'', [],
+                                                                          screen_height=480)], ['SIGN', 'Hi', 'Hi']),
+      [{'start': 1, 'end': 2, 'text': '{\\an8}SIGN'}, {'start': 1, 'end': 3, 'text': 'Hi'}])
 
 print('opening one')
 for name, kind in (('film.idx', 'vobsub'), ('film.sub', 'vobsub'), ('film.sup', 'pgs')):

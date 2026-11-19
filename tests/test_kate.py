@@ -3,6 +3,12 @@ stream built packet by packet as libkate lays it out (regions, styles, a
 motion, simple markup), writing, round trips, telling a Kate .ogg from
 another, and the file and the export dialog. Where the system has libkate,
 what Subtitld writes is decoded by it, and what it encodes is read here.
+Bitmaps: a stream of them built as libkate's documentation lays one out
+(palettes and bitmaps headers, every kind of line a bitmap coded in runs
+has, packed and PNG bitmaps, events naming them or carrying their own),
+read as pictures and through an OCR job; and where libkate is installed,
+one it encodes (tests/libkate_samples.py), read here as its own decoder
+reads it.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
@@ -15,9 +21,10 @@ _xdg = tempfile.mkdtemp()
 for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
     os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, kate, session
+from subtitld.modules import file_io, kate, picture_subtitles, session
 
 fails = []
 
@@ -259,6 +266,209 @@ else:
           kate.parse(ogg), ([{'start': 1.0, 'end': 2.0, 'text': '{\\an8}<i>Hallo</i> Welt'},
                              {'start': 2.5, 'end': 4.0, 'text': 'unten ü'}], {'language': 'de', 'category': 'SUB'}))
 
+print('bitmaps, built as the format documents them')
+# doc/kate-format-palette.doc, -bitmap.doc, -rle-bitmap.doc and the 0x86,
+# 0x87 headers; the run lengths' sizes as kate_rle.c reads them.
+PALETTE = [(0, 0, 0, 0), (255, 255, 255, 255), (0, 0, 0, 255), (255, 255, 0, 255)]
+
+
+def palette_bits(out, colours):
+    out.write(len(colours) - 1, 8)
+    for colour in colours:
+        for value in colour:
+            out.write(value, 8)
+    meta = kate._Writer(); meta.write(0, 1); out.warp(meta)
+    out.warp()
+
+
+def bitmap_end(out):
+    offsets = kate._Writer(); offsets.write32v(0); offsets.write32v(0); out.warp(offsets)      # 0.4
+    meta = kate._Writer(); meta.write(0, 1); out.warp(meta)                                    # 0.6
+    out.warp()
+
+
+# Twelve pixels a row, two bits each, the zero colour 0; a row of each kind
+# of line the format has, and what each means.
+RLE_ROWS = [
+    (0, lambda o: None, [0] * 12),                                                     # empty
+    (1, lambda o: [(o.write(n - 1, 4), o.write(c, 2)) for n, c in ((3, 1), (9, 2))], [1] * 3 + [2] * 9),  # basic
+    (2, lambda o: [o.write(1, 1), o.write(3, 6), o.write(0, 1), o.write(7, 3), o.write(3, 2)],
+     [1] * 3 + [2] + [3] * 8),                                                         # delta: 4 copied, a run
+    (3, lambda o: [o.write(2, 8), o.write(4, 6), o.write(1, 2), o.write(0, 6)], [0, 0, 1, 1, 1, 1] + [0] * 6),  # stop
+    (4, lambda o: [o.write(1, 9), o.write(3, 8), o.write(4, 3), o.write(2, 2), o.write(2, 3), o.write(3, 2)],
+     [0] + [2] * 5 + [3] * 3 + [0] * 3),                                               # start/end
+    (5, lambda o: [o.write(1, 1), o.write(5, 5), o.write(0, 1), o.write(2, 3), o.write(1, 2), o.write(0, 1),
+                   o.write(0, 3)], [0] + [2] * 5 + [1, 1] + [0] * 4),                  # delta/stop
+    (6, lambda o: [o.write(0, 2), o.write(4, 8), o.write(3, 2), o.write(6, 3)], [0] * 5 + [3] * 7),  # zero
+]
+
+
+def rle_bitmap(out):
+    out.write32v(12); out.write32v(len(RLE_ROWS)); out.write(0, 8)
+    out.write(kate.PALETTED, 8); out.write(kate.RLE, 8); out.write32v(2); out.write32v(0)    # 2 bits, palette 0
+    out.write(0, 2)                                                                         # the zero colour
+    for kind, write, _row in RLE_ROWS:
+        out.write(kind, 3)
+        write(out)
+    bitmap_end(out)
+
+
+def bitmap_event(start, duration, region=None, palette=None, bitmap=None, text=b''):
+    """A text event (kate-format-text-data.doc) showing a bitmap: `region`
+    (metric, x, y, w, h) its own, `palette` and `bitmap` an index into the
+    headers or a function writing one of their own."""
+    out = kate._Writer()
+    out.write(0, 8)
+    for value in (start, duration, 0):
+        out.write(value, 64)
+    out.write(len(text), 32)
+    out.buffer(text)
+    out.write(0, 1); out.write(0, 1)                 # no id, no motions
+    out.write(1 if region else 0, 1)
+    if region:
+        for flag in (0, 0, 0, 0, 1):                 # encoding, direction, language, region index; a region
+            out.write(flag, 1)
+        out.write(region[0], 8)
+        for value in region[1:] + (0,):
+            out.write32v(value)
+        clip = kate._Writer(); clip.write(0, 1); out.warp(clip)
+        meta = kate._Writer(); meta.write(0, 1); out.warp(meta)
+        out.warp()
+        for _ in range(5):                           # styles and font mapping: none
+            out.write(0, 1)
+    extra = kate._Writer(); extra.write(1, 1)
+    for item in (palette, bitmap):
+        extra.write(1 if isinstance(item, int) else 0, 1)
+        if isinstance(item, int):
+            extra.write32v(item)
+        extra.write(1 if callable(item) else 0, 1)
+        if callable(item):
+            item(extra)
+    extra.write(0, 1)                                # markup
+    out.warp(extra)
+    none = kate._Writer(); none.write32v(0); out.warp(none)
+    meta = kate._Writer(); meta.write(0, 1); out.warp(meta)
+    out.warp()
+    return out.bytes()
+
+
+def packed_bitmap(out):
+    """Bitstream 0.1's: 8x2, a bit a pixel, packed."""
+    out.write32v(8); out.write32v(2); out.write(1, 8); out.write32v(-1)
+    for bit in (0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1):
+        out.write(bit, 1)
+    bitmap_end(out)
+
+
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+from PySide6.QtGui import QColor, QImage
+image = QImage(6, 3, QImage.Format_RGBA8888)
+image.fill(QColor(0, 0, 0, 0))
+for x in range(1, 5):
+    image.setPixelColor(x, 1, QColor(255, 255, 255, 255))
+png_bytes = QByteArray()
+png_device = QBuffer(png_bytes)
+png_device.open(QIODevice.WriteOnly)
+image.save(png_device, 'PNG')
+PNG_DATA = bytes(png_bytes)
+
+
+def png_bitmap(out):
+    out.write32v(6); out.write32v(3); out.write(0, 8); out.write(kate.PNG, 8)
+    out.write(len(PNG_DATA), 32); out.buffer(PNG_DATA)
+    bitmap_end(out)
+
+
+def palettes_header(out):
+    out.write32v(1); palette_bits(out, PALETTE); out.warp()
+
+
+def bitmaps_header(out):
+    out.write32v(1); rle_bitmap(out); out.warp()
+
+
+def bitmap_stream(serial=5, canvas=(720, 576)):
+    id_header = kate._id_header('fr', 'SUB', *canvas)
+    others = [kate._comment_header('test')] + [kate._list_header(kind) for kind in (0x82, 0x83, 0x84, 0x85)] + \
+        [header(0x86, palettes_header), header(0x87, bitmaps_header), kate._list_header(0x88)]
+    events = [bitmap_event(1000, 1500, region=(kate.PIXEL, 100, 450, 12, 7), palette=0, bitmap=0),
+              bitmap_event(3000, 1000, region=(kate.PERCENTAGE, 10, 5, 20, 5),
+                           palette=lambda o: palette_bits(o, [(0, 0, 0, 0), (255, 0, 0, 255)]), bitmap=packed_bitmap),
+              bitmap_event(5000, 1000, bitmap=png_bitmap),
+              text_event(7000, 1000, b'Words too', markup=kate.MARKUP_NONE)]
+    return (kate.page(serial, 0, 0, [id_header], 0x02) + kate.page(serial, 1, 0, others)
+            + b''.join(kate.page(serial, 2 + n, (1000 + 2000 * n) << 32, [event]) for n, event in enumerate(events))
+            + kate.page(serial, 6, 8000 << 32, [b'\x7f'], 0x04))
+
+
+built = bitmap_stream()
+check('a stream of bitmaps: told apart from one of text', (kate.has_bitmaps(built), kate.has_bitmaps(kate.write(trip))),
+      (True, False))
+shown, shown_info = kate.picture_list(built)
+check('a picture an event with a bitmap, the text event its words, in order',
+      [(p.start, p.end, p.text) for p in shown], [(1.0, 2.5, ''), (3.0, 4.0, ''), (5.0, 6.0, ''), (7.0, 8.0, 'Words too')])
+check('coded in runs, each kind of line as the format says', [list(shown[0].indices[12 * n:12 * n + 12])
+                                                              for n in range(len(RLE_ROWS))], [row for _k, _w, row in RLE_ROWS])
+check("in the headers' palette, where its pixel region puts it, on the ID header's canvas",
+      (shown[0].colours[:4], (shown[0].x, shown[0].y, shown[0].width, shown[0].height),
+       (shown[0].screen_width, shown[0].screen_height)), (PALETTE, (100, 450, 12, 7), (720, 576)))
+check('packed (bitstream 0.1), in its own palette, its region in percent of the canvas',
+      (shown[1].indices, shown[1].colours[:2], (shown[1].x, shown[1].y)),
+      (bytes([0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1]), [(0, 0, 0, 0), (255, 0, 0, 255)], (72, 29)))
+# Where a region does not place it (Subtitld's choice: the format leaves
+# it to the renderer): centred, a twentieth of the height above the foot.
+check('a PNG, no region: centred, low on the frame', ((shown[2].width, shown[2].height), (shown[2].x, shown[2].y),
+                                                      picture_subtitles.crop(shown[2]).width),
+      ((6, 3), ((720 - 6) // 2, 576 - 3 - 576 // 20), 4))
+check('the text event at the bottom, the language the ID header\'s', (shown[3].y, shown_info['language']), (575, 'fr'))
+check('read as text: the text event alone', kate.parse(built)[0], [{'start': 7.0, 'end': 8.0, 'text': 'Words too'}])
+no_canvas, _info = kate.picture_list(bitmap_stream(canvas=(0, 0)))
+check('no canvas: the smallest usual frame its pixel regions fit in', (no_canvas[0].screen_width, no_canvas[0].screen_height),
+      (720, 480))
+
+import libkate_samples
+print('bitmaps, made by libkate')
+if not libkate_samples.available():
+    print('  [SKIP] libkate is not installed')
+else:
+    import random
+    generator = random.Random(7)
+    # A sign drawn in two bits: rows empty, runs, rows like the one before.
+    sign = bytearray(40 * 12)
+    for y in range(2, 10):
+        for x in range(5, 35):
+            sign[y * 40 + x] = 1 if (x + y) % 7 else 2
+        sign[y * 40 + 4] = 3
+    noise = bytes(generator.randrange(1, 16) if generator.random() < 0.3 else 0 for _ in range(30 * 8))
+    lk_palette = libkate_samples.palette(PALETTE)
+    own = libkate_samples.palette([(n * 16, 255 - n * 16, n * 8, 255 if n else 0) for n in range(16)])
+    made = libkate_samples.encode(
+        [(1.0, 2.5, '', {'region': libkate_samples.region(kate.PIXEL, 100, 400, 40, 12), 'palette': 0, 'bitmap': 0}),
+         (3.0, 4.0, '', {'region': libkate_samples.region(kate.PERCENTAGE, 10, 10, 20, 5), 'palette': own,
+                         'bitmap': libkate_samples.bitmap(30, 8, 4, noise)}),
+         (5.0, 6.0, '', {'bitmap': libkate_samples.bitmap(6, 3, 0, png=PNG_DATA)}),
+         (6.5, 7.0, 'Plain words', {})],
+        palettes=[lk_palette], bitmaps=[libkate_samples.bitmap(40, 12, 2, sign, palette_index=0)])
+    theirs = libkate_samples.decode(made)
+    mine, _info = kate.picture_list(made)
+    check('libkate decodes four events, three with bitmaps', [(e['start'], e['bitmap'] is not None) for e in theirs],
+          [(1.0, True), (3.0, True), (5.0, True), (6.5, False)])
+    check('each read here as libkate decodes it: its pixels, palette and region',
+          [(p.indices if e['bitmap'][2] else None, p.colours[:len(e['colours'])] if e['colours'] else None,
+            (p.width, p.height)) for p, e in zip(mine, theirs[:3])],
+          [(e['bitmap'][3] if e['bitmap'][2] else None, e['colours'], e['bitmap'][:2]) for e in theirs[:3]])
+    check('placed where the regions put them on the 720x576 canvas (pixels; 10 % and 10 %)',
+          [(p.x, p.y) for p in mine[:2]], [(100, 400), (72, 58)])
+    check("the PNG libkate carried, the very bytes, read as a picture", (theirs[2]['bitmap'][3] == PNG_DATA,
+                                                                        picture_subtitles.crop(mine[2]).width), (True, 4))
+    # libkate's encoder, coding a line as runs with a leading run of the
+    # zero colour, counts that run from 1 whatever the first pixel is
+    # (kate_rle.c, get_run_length_zero), so its own decoder does not give
+    # back every pixel of the noise it was given: what libkate decodes is
+    # the expectation above, not what it was handed.
+    check('(the sign libkate gives back as it was given; the noise not quite)',
+          (theirs[0]['bitmap'][3] == bytes(sign), theirs[1]['bitmap'][3] == noise), (True, False))
+
 print('through file_io')
 folder = Path(tempfile.mkdtemp())
 (folder / 'in.ogg').write_bytes(stream(3, 'pt_BR'))
@@ -276,6 +486,46 @@ check("saved with the category it came with and the video's canvas, and read bac
       (back == trip, header_info['category'], kate._headers([p for p, _g in kate.packets(
           (folder / 'out.ogg').read_bytes()).popitem()[1]])['canvas']), (True, 'CC', (1280, 720)))
 check('the extension', session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS['KATE']['extensions'], ['ogg'])
+(folder / 'pictures.ogg').write_bytes(bitmap_stream())
+try:
+    file_io.process_subtitles_file(str(folder / 'pictures.ogg'))
+    check('a stream of bitmaps opens as pictures, for an OCR add-on', None, 'kate')
+except file_io.PictureSubtitlesError as error:
+    check('a stream of bitmaps opens as pictures, for an OCR add-on', error.kind, 'kate')
+
+# An OCR engine that reads each picture's file name back ("text 2"), as
+# tests/test_picture_subtitles.py's does.
+from PySide6.QtCore import QEventLoop, QTimer
+from subtitld.modules import picture_ocr
+from subtitld.modules.addons.provider import OCRProvider
+
+
+class FakeOCR(OCRProvider):
+    def __init__(self):
+        super().__init__()
+        self.read = []
+
+    @property
+    def id(self):
+        return 'fake-ocr'
+
+    def recognize(self, image_paths, language, options=None):
+        self.read.append((len(image_paths), language))
+        texts = [f'text {int(os.path.basename(p).split(".")[0].split("-")[-1])}' for p in image_paths]
+        QTimer.singleShot(0, lambda: self.finished.emit(texts, [0.95] * len(texts)))
+
+
+engine, loop, heard = FakeOCR(), QEventLoop(), {}
+job = picture_ocr.OCRJob.for_file(str(folder / 'pictures.ogg'), engine)
+job.finished.connect(lambda segments, info: (heard.update(segments=segments, info=info), loop.quit()))
+job.failed.connect(lambda message: (heard.update(failed=message), loop.quit()))
+job.start()
+QTimer.singleShot(20000, loop.quit)
+loop.exec()
+check('read by OCR: the three pictures, in the stream\'s language; the text event as its words',
+      (engine.read, [(s['start'], s['end'], s['text']) for s in heard.get('segments') or []], heard.get('failed')),
+      ([(3, 'fr')], [(1.0, 2.5, 'text 0'), (3.0, 4.0, '{\\an8}text 1'), (5.0, 6.0, 'text 2'), (7.0, 8.0, 'Words too')],
+       None))
 
 print('the dialog')
 from subtitld.interface.export_dialog import SUBTITLE_FORMATS, _SubtitlesPanel

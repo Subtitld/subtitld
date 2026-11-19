@@ -5,7 +5,7 @@ CMFT, DASH, ASS, DFXP, TTML, SAMI, SCC, MCC, STL, PAC, FPC, CAP, LAMBDACAP,
 CAVENA890, the subtitling houses' formats (EZTXML, AYATO, SOFTNI,
 SOFTNICOLON, the three Swift text layouts, XIF, SIF, CHEETAHASC, CAPMAKER),
 AVID, FCPXML, DCP, BDN, the DVD authoring scripts, SBV, SUB, BCC, XML, LRC,
-UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, ISMT, XMLDIALECT, JSONDIALECT,
+UltraStar, KAR, MIDI lyrics, KBP, TTXT, KATE, TEXTST, ISMT, XMLDIALECT, JSONDIALECT,
 the MXF track files (DCPMXF, IMSCMXF, STLMXF), EDL, EDIUS, PREMIERE, DETX,
 the player-era formats and the transcripts: TextGrid, EAF, TRS, EXB, CHAT,
 CTM, AUDACITY, AENEAS and TMX) and to VOBSUB, PGS, DVDSUP, CDG and the
@@ -36,9 +36,9 @@ with it, and CTM's words share out their subtitle's time instead.
     timed        a subtitle timed word by word (modules.segment), in a format
                  with no timing inside a subtitle: 'words', the subtitle
                  whole, or 'reveal', its words shown one after another, a
-                 subtitle a word (DFXP and TTML: a span a word, in one
-                 paragraph). Karaoke formats, and WebVTT's timestamps, keep
-                 the timing either way.
+                 subtitle a word. Karaoke formats (TTML's word spans
+                 among them) and WebVTT's timestamps keep the timing
+                 either way.
 
 And for a format of its own:
 
@@ -163,21 +163,21 @@ TEXT_FORMATS = ('SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ASS', 'DFXP', 'TTML', 'SAM
                 'AVID', 'FCPXML', 'DCP', 'BDN', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB', 'BCC', 'XML', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'TTXT', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'KATE',
                 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX',
                 'ISMT', 'XMLDIALECT', 'JSONDIALECT',
-                'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SPRUCE', 'REALTEXT',
+                'MPL2', 'PJS', 'MPSUB', 'VPLAYER', 'AQTITLE', 'SUBVIEWER1', 'SUBVIEWER2', 'SPRUCE', 'REALTEXT',
                 'TURBOTITLE', 'ZEROG', 'VIPLAY', 'SBT', 'CAPTIONS32', 'SUBSONIC', 'ORESME',
                 'JACOSUB', 'SASAMI', 'XOMBIE', 'MACSUB', 'SST', 'SSTS', 'DKS', 'POWERDIVX', 'DVDSS', 'QTTEXT', 'CAPTIONATE', 'CMML', 'SMILTEXT', 'SSF', 'TEXML',
-                'VOBSUB', 'PGS', 'DVDSUP', 'CDG',
+                'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'TEXTST',
                 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX', 'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET')
 _KARAOKE_CODE = re.compile(r'\{[^{}]*\\(?:kf|ko|k|K)\d')
 
 # The formats that read a subtitle's timing word by word as karaoke codes in
 # its text (modules.karaoke): their copies of a timed subtitle carry them.
-KARAOKE_FORMATS = ('ASS', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'CDG', 'TTXT', 'CTM')
+# TTML and DFXP write them as a span a word or syllable, timed from the
+# paragraph's begin, as Apple Music's lyrics are (modules.ttml).
+KARAOKE_FORMATS = ('ASS', 'LRC', 'ULTRASTAR', 'KAR', 'MIDI', 'KBP', 'CDG', 'TTXT', 'CTM', 'DFXP', 'TTML')
 # WebVTT writes the codes as its timestamps, which leave the words shown and
-# only say when each is sung; TTML shows a timed span only while it is
-# active, so its words are timed only to be revealed one after another.
+# only say when each is sung.
 INLINE_TIMED_FORMATS = ('VTT',)
-REVEALED_FORMATS = ('DFXP', 'TTML')
 
 
 def karaoke_codes_for(fmt, options=None):
@@ -186,9 +186,7 @@ def karaoke_codes_for(fmt, options=None):
     options = options or {}
     if options.get('formatting') == 'remove':
         return False
-    if fmt in KARAOKE_FORMATS or fmt in INLINE_TIMED_FORMATS:
-        return True
-    return fmt in REVEALED_FORMATS and options.get('timed') == 'reveal'
+    return fmt in KARAOKE_FORMATS or fmt in INLINE_TIMED_FORMATS
 ENCODINGS = ('utf-8', 'utf-8-sig', 'utf-16', 'cp1252', 'cp1250', 'cp1251', 'cp949')
 LINE_ENDS = {'lf': '\n', 'crlf': '\r\n'}
 FRAME_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)

@@ -17,7 +17,9 @@ component descriptor (0xFD, data_component_id 0x0008). Each PES packet
 0x80, a private_stream_id 0xFF, its own header length, then a data group:
 its id (0x00 or 0x20 caption management, 0x01 to 0x08 or 0x21 to 0x28
 the statements of language 1 to 8; group A or B), its size, its data and
-a CRC-16.
+a CRC-16 (ITU-T's polynomial, 1021h, from 0, over the whole group), which
+reading checks: a group damaged on the way is left out, as nothing in it
+can be trusted (libaribcaption, and so FFmpeg, does not check it).
 
 - Caption management data: the time control mode, then each language's
   tag, display mode, ISO 639-2 code, format (the writing format the
@@ -620,7 +622,10 @@ def _styled(items):
 
 def data_group(payload):
     """(data_group_id, data) of a PES packet's caption data; None when it
-    holds none."""
+    holds none, or when its CRC-16 shows it damaged on the way (the CRC
+    covers the whole group, from its id, so that a decoder's register is
+    zero after it: ARIB STD-B24 Volume 3, the data group). A group cut
+    short of its CRC is taken as it is, unchecked."""
     if len(payload) < 3 or payload[0] not in (0x80, 0x81) or payload[1] != 0xFF:
         return None
     begin = 3 + (payload[2] & 0x0F)
@@ -628,6 +633,8 @@ def data_group(payload):
         return None
     size = payload[begin + 3] << 8 | payload[begin + 4]
     if begin + 5 + size > len(payload):
+        return None
+    if begin + 7 + size <= len(payload) and crc16(payload[begin:begin + 7 + size]):
         return None
     return payload[begin] >> 2, bytes(payload[begin + 5:begin + 5 + size])
 

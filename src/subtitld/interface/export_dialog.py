@@ -46,7 +46,7 @@ from subtitld.modules.segment import text_of, timed_pieces
 
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
-                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
+                    'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'TEXTST', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
                     'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
@@ -444,6 +444,18 @@ class _SubtitlesPanel(QWidget):
         # file for what takes the captions and not the text (RP 2052-10).
         self.tunnel_608_check = QCheckBox(_('export_dialog.ttml_tunnel_608'))
         self.layout().addWidget(self.tunnel_608_check)
+        # DAPT: the dubs' recordings linked from the script, or held in it
+        # (Base64, so the one file carries them), or each as it came.
+        self.dapt_audio_options = QWidget()
+        row = QHBoxLayout(self.dapt_audio_options)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.dapt_audio_combo = utils.LabeledComboBox()
+        self.dapt_audio_combo.setLabel(_('export_dialog.dapt_audio'))
+        for choice in ttml.DAPT_AUDIO:
+            self.dapt_audio_combo.combobox.addItem(_(f'export_dialog.dapt_audio_{choice}'), choice)
+        row.addWidget(self.dapt_audio_combo, 1)
+        row.addStretch()
+        self.layout().addWidget(self.dapt_audio_options)
         self.profile_combo.combobox.currentIndexChanged.connect(self._show_tunnel)
         # What the file about to be written would break in the profile it
         # declares, as ttml.check finds it, while there is still time to
@@ -487,6 +499,7 @@ class _SubtitlesPanel(QWidget):
         _select(self.look_combo, remembered.get('look', 'clean'))
         _select(self.profile_combo, remembered.get('profile', 'ttml1'))
         self.tunnel_608_check.setChecked(bool(remembered.get('tunnel_608', False)))
+        _select(self.dapt_audio_combo, remembered.get('dapt_audio', 'kept'))
         _select(self.timecode_combo, remembered.get('timecode', 'drop'))
         # 30 (29.97) for a video at that rate or twice it; else the last used.
         if video_fps and (abs(video_fps - 30) < 0.1 or abs(video_fps - 60) < 0.1):
@@ -665,9 +678,11 @@ class _SubtitlesPanel(QWidget):
                 break
 
     def _show_tunnel(self, *_args):
-        """The CEA-608 tunnel is SMPTE-TT's alone."""
-        self.tunnel_608_check.setVisible(self.format_combo.currentText() in ('DFXP', 'TTML')
-                                         and self.profile_combo.combobox.currentData() == 'smpte-tt')
+        """The CEA-608 tunnel is SMPTE-TT's alone, the recordings' choice
+        DAPT's."""
+        ttml_like = self.format_combo.currentText() in ('DFXP', 'TTML')
+        self.tunnel_608_check.setVisible(ttml_like and self.profile_combo.combobox.currentData() == 'smpte-tt')
+        self.dapt_audio_options.setVisible(ttml_like and self.profile_combo.combobox.currentData() == 'dapt')
 
     def _run_check(self, *_args):
         """What the TTML this export writes would break in its profile:
@@ -734,6 +749,7 @@ class _SubtitlesPanel(QWidget):
             'look': self.look_combo.combobox.currentData(),
             'profile': self.profile_combo.combobox.currentData(),
             'tunnel_608': self.tunnel_608_check.isChecked(),
+            'dapt_audio': self.dapt_audio_combo.combobox.currentData(),
             'timecode': self.timecode_combo.combobox.currentData(),
             'stl_fps': self.stl_rate_combo.combobox.currentData(),
             'mcc_rate': self.mcc_rate_combo.combobox.currentData(),
@@ -800,6 +816,8 @@ class _SubtitlesPanel(QWidget):
             options['profile'] = choices['profile']
             if choices['profile'] == 'smpte-tt':
                 options['tunnel_608'] = choices['tunnel_608']
+            if choices['profile'] == 'dapt':
+                options['dapt_audio'] = choices['dapt_audio']
         if fmt in ('SCC', 'LAMBDACAP'):
             options['timecode'] = choices['timecode']
         if fmt in ('SCC', 'MCC'):

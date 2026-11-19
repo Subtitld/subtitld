@@ -471,6 +471,11 @@ def toppanel_export_button_clicked(self):
         info = session.LIST_OF_PICTURE_SUBTITLE_EXTENSIONS[fmt]
         extensions = info['extensions']
         description = info['description']
+    elif category == 'subtitles' and fmt in session.LIST_OF_WRITE_ONLY_SUBTITLE_EXTENSIONS:
+        # TextST, in a .m2ts: written by the export alone.
+        info = session.LIST_OF_WRITE_ONLY_SUBTITLE_EXTENSIONS[fmt]
+        extensions = info['extensions']
+        description = info['description']
     elif category == 'video' and fmt in session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS:
         info = session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS[fmt]
         extensions = info['extensions']

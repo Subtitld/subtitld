@@ -130,6 +130,12 @@ check('a word tier chosen: words grouped, punctuation attached', transcripts.par
 MFA = SHORT.replace('"words"', '"Ann - words"').replace('"sentence"', '"Ann - phones"').replace('"phones"', '"notes"')
 check("the Montreal Forced Aligner's tiers: the speaker's words", transcripts.parse_textgrid(MFA),
       [{'start': 0.0, 'end': 2.3, 'text': 'hello, world', 'speaker': 'Ann'}])
+# praatIO's bobby_words_with_newlines.TextGrid names its word tier
+# """word""" ("word" in quotes): the quotes do not make it a person's.
+for quoted in ('"""words"""', '"\'phones\'"'):
+    check(f'tier names in quotes classified without them: {quoted}',
+          transcripts._tier_kind(quoted.replace('""', '"')[1:-1]),
+          ('words', None) if 'words' in quoted else ('left out', None))
 refused('a binary TextGrid: refused, saying what to do', lambda: transcripts.parse_textgrid(b'ooBinaryFile\x08TextGrid'),
         'This is a binary TextGrid')
 refused('a file cut short: refused', lambda: transcripts.parse_textgrid(SHORT[:120]), 'This TextGrid ends')

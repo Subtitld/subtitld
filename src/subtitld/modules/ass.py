@@ -27,7 +27,10 @@ Reading:
 - \\N is a line break; \\n one only under "WrapStyle: 2", a space
   otherwise; \\h a no-break space;
 - the event's Name (the actor) is the subtitle's speaker;
-- the subtitles come sorted by start.
+- the subtitles come sorted by start;
+- the fonts and pictures a script carries ([Fonts], [Graphics]) are the
+  project's attachments: read_file gives them, decoded, as {'fonts':
+  {name: bytes}, 'graphics': {name: bytes}}.
 
 Writing gives a script sized to the video (PlayResX/PlayResY), with a
 style, Default, scaled to that height: white with a black outline, or the
@@ -38,7 +41,16 @@ words for (font, size, outline, shadow, a box and its padding) and nothing
 of what it has none for (line height, opacity, wrapping per line).
 The subtitles go in order of start, the speaker as the Name, formatting
 as override codes, line breaks as \\N. A file named .ssa is written as
-SubStation Alpha v4, with SSA's codes for the position.
+SubStation Alpha v4, with SSA's codes for the position. The project's
+attachments go back in [Fonts] and [Graphics], encoded again as they came,
+so a script opened and saved keeps its fonts byte for byte.
+
+The attachments' encoding is SSA v4's (its specification, "Appendix B -
+embedded font/picture encoding", which Aegisub's ass_attachment and libass
+follow): a group of three bytes as four characters, six bits each plus
+33, a last group of one or two bytes as two or three characters; lines of
+80 characters; under "fontname: <name>" in [Fonts] and "filename: <name>"
+in [Graphics]. pysubs2 keeps the lines as they stand.
 """
 
 import json
@@ -366,13 +378,57 @@ def _margin(value):
         return 0
 
 
-def read(path):
-    """The subtitles in the .ass or .ssa file at `path`."""
+def uudecode(lines):
+    """The bytes of an attachment's encoded lines (SSA v4, Appendix B)."""
+    text = ''.join(str(line).strip() for line in lines)
+    out = bytearray()
+    for at in range(0, len(text), 4):
+        group = [(ord(char) - 33) & 63 for char in text[at:at + 4]]
+        if len(group) < 2:
+            break
+        value = 0
+        for six in group + [0] * (4 - len(group)):
+            value = value << 6 | six
+        out += value.to_bytes(3, 'big')[:len(group) - 1]
+    return bytes(out)
+
+
+def uuencode(data):
+    """An attachment's encoded lines, 80 characters each (SSA v4, Appendix B)."""
+    chars = []
+    for at in range(0, len(data), 3):
+        chunk = data[at:at + 3]
+        value = int.from_bytes(chunk + b'\0' * (3 - len(chunk)), 'big')
+        sixes = ((value >> 18) & 63, (value >> 12) & 63, (value >> 6) & 63, value & 63)
+        chars.append(''.join(chr(six + 33) for six in sixes[:len(chunk) + 1]))
+    text = ''.join(chars)
+    return [text[at:at + 80] for at in range(0, len(text), 80)]
+
+
+def attachments_of(subfile):
+    """{'fonts': {name: bytes}, 'graphics': {name: bytes}} a script carries,
+    the kinds it has none of left out."""
+    found = {}
+    for kind, opaque in (('fonts', subfile.fonts_opaque), ('graphics', subfile.graphics_opaque)):
+        decoded = {str(name): uudecode(lines) for name, lines in opaque.items()}
+        if decoded:
+            found[kind] = decoded
+    return found
+
+
+def read_file(path):
+    """(subtitles, attachments) of the .ass or .ssa file at `path`."""
     with open(path, 'rb') as ass_file:
         text = decode(ass_file.read())
     if is_v4plusplus(text):
         text = _from_v4plusplus(text)
-    return segments_of(pysubs2.SSAFile.from_string(text))
+    subfile = pysubs2.SSAFile.from_string(text)
+    return segments_of(subfile), attachments_of(subfile)
+
+
+def read(path):
+    """The subtitles in the .ass or .ssa file at `path`."""
+    return read_file(path)[0]
 
 
 def _argb(value, default):
@@ -452,10 +508,18 @@ def _turn(degrees):
     return str(int(degrees)) if float(degrees).is_integer() else str(float(degrees))
 
 
-def write(segments, width=None, height=None, fmt='ass', look='clean', preview=None):
-    """ASS (or, with fmt 'ssa', SSA v4) text for `segments`."""
+def write(segments, width=None, height=None, fmt='ass', look='clean', preview=None, attachments=None):
+    """ASS (or, with fmt 'ssa', SSA v4) text for `segments`, with the
+    fonts and pictures in `attachments` (as attachments_of gives them)."""
     width, height = int(width or 1920), int(height or 1080)
     subfile = pysubs2.SSAFile()
+    for kind, opaque in (('fonts', subfile.fonts_opaque), ('graphics', subfile.graphics_opaque)):
+        for name, data in ((attachments or {}).get(kind) or {}).items():
+            # A name is one word in the file ("fontname: <name>"); what
+            # follows a space would not be read back.
+            name = re.sub(r'\s+', '_', str(name).strip())
+            if name and data:
+                opaque[name] = uuencode(bytes(data))
     subfile.info['PlayResX'] = str(width)
     subfile.info['PlayResY'] = str(height)
     subfile.info['ScaledBorderAndShadow'] = 'yes'
@@ -511,9 +575,9 @@ def write(segments, width=None, height=None, fmt='ass', look='clean', preview=No
     return subfile.to_string(fmt)
 
 
-def save(path, segments, width=None, height=None, look='clean', preview=None):
+def save(path, segments, width=None, height=None, look='clean', preview=None, attachments=None):
     """Write `segments` to `path`: SubStation Alpha v4 when it ends in .ssa,
     Advanced SubStation Alpha otherwise. UTF-8."""
     fmt = 'ssa' if str(path).lower().endswith('.ssa') else 'ass'
     with open(path, 'w', encoding='utf-8', newline='\n') as ass_file:
-        ass_file.write(write(segments, width, height, fmt, look, preview))
+        ass_file.write(write(segments, width, height, fmt, look, preview, attachments))

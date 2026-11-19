@@ -299,6 +299,37 @@ check('each read on its own, timed from the file\'s start', [[(p.start, p.end) f
       [[(0.0, 0.5)], [(1.0, 1.5)]])
 
 
+print('a display set across PES packets')
+# EN 300 743: a display set ends at its end of display set segment, which
+# may come in a later PES packet than its page composition. Here the
+# object's segment is cut in two at a packet's end, the rest in a packet
+# with no PTS of its own (that of the display set it goes on with).
+whole = pcs(1, 0, 0, 2, [(1, 0, 0)]) + rcs(1, 1, 0, 4, 1, 4, 0, [(1, 0, 0)]) + \
+    ods(1, 1, b'\x11' + bits('0001 0001 0001 0001' + '0000 0 000') + b'\xf0')
+cut = len(whole) - 5
+split = dvbsub.decode([(90000, b'\x20\x00' + whole[:cut]), (90000, b'\x20\x00' + whole[cut:] + END + b'\xff'),
+                       (90000 * 3, pes(pcs(1, 0, 1, 0, []), END))], origin=0)
+check('a segment cut at a packet\'s end, finished by the next: one subtitle, all of it', [
+    (p.start, p.end, p.width, row(p, 0)) for p in split], [(1.0, 3.0, 4, [dvbsub.DEFAULT_CLUTS[4][1]] * 4)])
+lost = dvbsub.decode([(90000, b'\x20\x00' + whole[:cut]), (90000 * 2, pes(pcs(1, 0, 1, 2, [(1, 0, 0)]),
+                      rcs(1, 1, 1, 4, 1, 4, 0, [(1, 0, 0)]), ods(1, 1, b'\x11' + bits('0010' * 4 + '0000 0 000') + b'\xf0'),
+                      END)), (90000 * 3, pes(pcs(1, 0, 2, 0, []), END))], origin=0)
+check('a packet of its own after one cut short (the rest lost): the cut segment let go, the next read', [
+    (p.start, p.end, row(p, 0)) for p in lost], [(2.0, 3.0, [dvbsub.DEFAULT_CLUTS[4][2]] * 4)])
+counters = {}
+header = b'\x84\x80\x05' + bytes((0x21, 0, 0x01 | ((90000 >> 14) & 0xFE), (90000 >> 7) & 0xFF, 0x01 | ((90000 << 1) & 0xFE)))
+first_part = b'\x20\x00' + whole[:cut]
+no_pts = b'\x20\x00' + whole[cut:] + END + b'\xff'
+stream = teletext._ts_packets(0, pat, counters) + teletext._ts_packets(0x1000, pmt, counters)
+stream += teletext._ts_packets(0x105, b'\x00\x00\x01\xbd' + (len(header) + len(first_part)).to_bytes(2, 'big') +
+                               header + first_part, counters)
+stream += teletext._ts_packets(0x105, b'\x00\x00\x01\xbd' + (3 + len(no_pts)).to_bytes(2, 'big') + b'\x84\x00\x00' +
+                               no_pts, counters)
+stream += teletext._ts_packets(0x105, dvbsub._pes([pcs(1, 0, 1, 0, []), END], 90000 * 3)[0], counters)
+(folder / 'split.ts').write_bytes(b''.join(stream))
+check('in a transport stream, the second PES packet with no PTS: one subtitle, at the first\'s time',
+      [(p.start, p.end, p.width) for p in dvbsub.read(folder / 'split.ts', page='1')[0]], [(0.0, 2.0, 4)])
+
 print('the OCR path')
 
 

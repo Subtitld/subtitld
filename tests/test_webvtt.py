@@ -163,6 +163,15 @@ again.format_combo.setCurrentText('VTT')
 again._refresh_options()
 check('remembered', again.speakers_combo.combobox.currentData(), 'voice')
 
+# A STYLE block's bold, italic and underline go with its colour, as Apple
+# TV+'s files style their classes.
+_styled = webvtt.parse('WEBVTT\n\nSTYLE\n::cue(.a) { color:#AB9216;font-weight:bold }\n'
+                       '::cue(.b) { color:#AB9216;font-weight:bold;font-style:italic }\n::cue(.u) { text-decoration: underline }\n'
+                       '::cue(.n) { font-weight: 400 }\n\n'
+                       '00:00:01.000 --> 00:00:02.000\n<c.a>One</c>\n\n00:00:03.000 --> 00:00:04.000\n<c.b>Two</c> <c.u.n>three</c>\n')
+check('classes bold, italic and underline as well as coloured', [s['text'] for s in _styled],
+      ['<font color="#ab9216"><b>One</b></font>', '<font color="#ab9216"><b><i>Two</i></b></font> <u>three</u>'])
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

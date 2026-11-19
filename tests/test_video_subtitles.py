@@ -78,6 +78,30 @@ check('subtitle streams only, those it can read and those it cannot say why; TTM
        (7, 'dvb_teletext', 'teletext', 'de-de', 'ger', '', False, False),
        (8, 'mov_text', 'text', 'pt-br', 'pt-BR', '', False, True)])
 check('a video with no streams: none', video_subtitles.tracks({}), [])
+# Matroska's S_TEXT/USF: a codec FFmpeg does not know, its CodecPrivate the
+# USF file's header (matroska.org's codec mapping), given with -show_data.
+header = b'<?xml version="1.0" encoding="UTF-8"?><USFSubtitles version="1.0"><styles/></USFSubtitles>'
+dump = '\n'.join(f'{offset:08x}: ' + ' '.join(header[offset:offset + 16][k:k + 2].hex()
+                                              for k in range(0, len(header[offset:offset + 16]), 2))
+                 for offset in range(0, len(header), 16))
+unknown = {'index': 0, 'codec_name': 'unknown', 'codec_type': 'subtitle', 'extradata_size': len(header),
+           'tags': {'language': 'eng'}}
+check('a subtitle stream FFmpeg does not know: left out, unless its extradata is a USF header',
+      [brief(video_subtitles.tracks({'streams': [dict(unknown, **extra)]}, language_of=file_io._known_language))
+       for extra in ({}, {'extradata': dump}, {'extradata': '00000000: 3c3f 786d 6c3e'})],
+      [[], [(0, 'usf', 'text', 'en-us', 'eng', '', False, False)], []])
+# mkvextract (xtr_usf_c): the CodecPrivate without its closing tag, a
+# <subtitles> block with the track's language, a <subtitle> for each block.
+document = video_subtitles.usf_document(header, [(1.0, 2.5, b'<text style="Default">One</text>'),
+                                                 (3.0, 4.0, '<text><i>Two</i></text>')], 'eng')
+check('a USF track put together again as mkvextract does', document.split('\n'), [
+    '<?xml version="1.0" encoding="UTF-8"?><USFSubtitles version="1.0"><styles/>', '<subtitles>',
+    '<language code="eng"/>', '<subtitle start="00:00:01.000" stop="00:00:02.500"><text style="Default">One</text>'
+    '</subtitle>', '<subtitle start="00:00:03.000" stop="00:00:04.000"><text><i>Two</i></text></subtitle>',
+    '</subtitles>', '</USFSubtitles>', ''])
+from subtitld.modules import usf
+check('and read by the usf module', [(s['start'], s['end'], s['text']) for s in usf.USFReader().read(document)],
+      [(1.0, 2.5, 'One'), (3.0, 4.0, '<i>Two</i>')])
 check('the file each is written as, copied when it is that already', [video_subtitles.output_of(codec) for codec in (
     'subrip', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'microdvd')],
       [('.srt', 'copy'), ('.ass', 'copy'), ('.ass', 'ass'), ('.vtt', 'copy'), ('.srt', 'srt'), ('.srt', 'srt'),

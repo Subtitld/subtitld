@@ -17,7 +17,10 @@ Reading:
   document's ttp:frameRate, ttp:frameRateMultiplier, ttp:subFrameRate and
   ttp:tickRate; a paragraph's times count from its <div>'s and <body>'s
   begin (from the end of the one before it, in a timeContainer="seq");
-  it ends at its end, after its dur, or with what holds it;
+  it ends at its end, after its dur, or with what holds it; Apple Music's
+  lyrics write seconds with no unit ("19.764") and minutes and seconds
+  ("3:58.640"), and time everything from the start of the song (its
+  itunes:timing), not from what holds it;
 - styles as TTML applies them: the region's, then inherited down body,
   div, p and span, each element's being the styles its style="..." names
   (and the ones they name) and then its own tts:* attributes. Italic (or
@@ -72,6 +75,12 @@ Reading:
   SCC or a video's captions are;
 - a DAPT script is read as the dubbing session it describes (see the
   'dapt' profile below, and _dapt_document);
+- a paragraph whose words are each a timed span, as Apple Music's lyrics
+  time them (itunes:timing "Word" and "Syllable"), keeps those times as
+  karaoke codes (modules.karaoke): whitespace between two spans ends a
+  word, none joins two syllables of one, as Apple writes a paragraph on
+  one line; a file laid out a span a line has whitespace between all of
+  them, and so a word a span;
 - the subtitles come sorted by start.
 
 Writing gives TTML 1 in the TTML namespace, ttp:timeBase="media", times as
@@ -81,7 +90,10 @@ tts:color, line breaks as <br/>, and, when asked, each speaker as a
 ttm:agent. Its one style is white with a black outline, or the look of
 Subtitld's preview: its font, colour and box. A subtitle written down the
 picture gets a region of its own, with tts:writingMode; every profile here
-has vertical writing, IMSC 1.0.1's and EBU-TT-D's included.
+has vertical writing, IMSC 1.0.1's and EBU-TT-D's included. Karaoke codes
+are written as a span a word or syllable, timed from the paragraph's
+begin, a space between words and none inside one, where the profile times
+spans (not EBU-TT's, which time paragraphs alone).
 
 `profile` says which of TTML's profiles the file declares itself to be, so
 a service that checks what it is given accepts it (PROFILES):
@@ -127,9 +139,12 @@ a service that checks what it is given accepts it (PROFILES):
                 by its alias, its talent a person agent); its text a <p>
                 in the subtitle's language and each translation a <p>
                 translated from it (xml:lang and daptm:langSrc); the dub
-                heard for it an <audio> for each clip of a file. Written
-                by _write_dapt, read by _dapt_document, which says what a
-                subtitle has no room for and keeps it
+                heard for it an <audio> for each clip of a file, linked,
+                or embedded in the script where it came embedded (a
+                <data> in /tt/head/resources, in Base64, that a <source>
+                points to). Written by _write_dapt, read by
+                _dapt_document, which says what a subtitle has no room
+                for and keeps it
 
 The Image Profiles of IMSC 1.0.1 and 1.1 carry each subtitle as a picture
 instead, a PNG beside the file drawn as Subtitld's preview draws it, with
@@ -154,6 +169,9 @@ from subtitld.modules.srt import decode
 _XML_NS = '{http://www.w3.org/XML/1998/namespace}'
 _CLOCK = re.compile(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+)|:(\d+)(?:\.(\d+))?)?$')
 _OFFSET = re.compile(r'^(\d+(?:\.\d+)?)(h|ms|m|s|f|t)$')
+# Apple Music's lyrics (itunes:timing="Word") write seconds with no unit,
+# "19.764", and clock times without their hours, "3:58.640".
+_LOOSE = re.compile(r'^(?:(\d+):)?(\d+(?:\.\d+)?)$')
 _SECONDS = {'h': 3600, 'm': 60, 's': 1, 'ms': 0.001}
 _STYLE_FIELDS = ('fontStyle', 'fontWeight', 'textDecoration', 'color', 'textAlign', 'displayAlign', 'origin', 'extent',
                  'position', 'direction', 'forcedDisplay', 'display', 'visibility', 'opacity', 'shear', 'ruby',
@@ -207,6 +225,9 @@ _ENTITY = re.compile(r'&(?:(#\d+|#x[0-9a-fA-F]+)|(\w+));|&')
 _LENGTH = re.compile(r'^(-?\d+(?:\.\d+)?)(%|px|c)$')
 
 LOOKS = ('clean', 'preview')
+# The profiles whose spans may be timed (EBU-TT-D times paragraphs alone):
+# karaoke is written in them as a span a word.
+_TIMED_SPANS = ('ttml1', 'imsc1', 'imsc1.1', 'smpte-tt')
 
 PROFILES = ('ttml1', 'imsc1', 'imsc1.1', 'ebu-tt-d', 'smpte-tt', 'ebu-tt', 'arib-ttml', 'dapt')
 # IMSC's profiles of subtitles that are pictures (`write_images`).
@@ -371,6 +392,9 @@ class _Clock:
         # frame it names comes at the real rate.
         self.smpte = (_attr(root, 'timeBase') or '').strip() == 'smpte'
         self.drop = (_attr(root, 'dropMode') or '').strip() if self.smpte else ''
+        # Apple Music's lyrics (itunes:timing on <tt>) time every element
+        # from the start of the song, not from the begin of what holds it.
+        self.absolute = any(_local(key) == 'timing' and 'music.apple.com' in key for key in root.attrib)
 
     def seconds(self, text):
         """Seconds for a time expression, or None for none."""
@@ -396,6 +420,9 @@ class _Clock:
             if unit in _SECONDS:
                 return amount * _SECONDS[unit]
             return amount / (self.fps if unit == 'f' else self.tick_rate)
+        loose = _LOOSE.match(text)
+        if loose:
+            return int(loose.group(1) or 0) * 60 + float(loose.group(2))
         return None
 
 
@@ -424,6 +451,8 @@ def _span_of(element, base, limit, clock):
     begin = clock.seconds(element.get('begin'))
     end = clock.seconds(element.get('end'))
     duration = clock.seconds(element.get('dur'))
+    if getattr(clock, 'absolute', False):
+        base, begin = 0.0, begin if begin is not None else base
     start = base + (begin or 0)
     stop = base + end if end is not None else start + duration if duration is not None else limit
     if limit is not None and stop is not None:
@@ -475,10 +504,35 @@ def _most_regions_at_once(shown):
     return most
 
 
+_PYCAPTION_REGION = re.compile(r'^(?:bottom|r\d+)$')
+
+
+def _pycaption_made(root):
+    """Whether a document looks written by pycaption's DFXPWriter (and so by
+    Subtitld when it wrote TTML with pycaption), whose regions all say
+    textAlign="start" whatever the subtitle meant. What it leaves: a region
+    of its own naming, "bottom" (DFXP_DEFAULT_REGION_ID) or r0, r1...
+    (its _get_new_id), that says textAlign="start" itself; and no attribute
+    outside the styling and xml namespaces, its base markup declaring only
+    tts: no ttp:, ttm: or a profile's own."""
+    named = False
+    for element in root.iter():
+        for key in element.attrib:
+            if key.startswith('{') and not key.startswith((_XML_NS, '{' + _TTS_NS + '}')):
+                return False
+        if _local(element.tag) == 'region' and _PYCAPTION_REGION.match(_xml_id(element) or '') \
+                and (_attr(element, 'textAlign') or '').strip() == 'start':
+            named = True
+    return named
+
+
 class _Frame:
     """Turns a region's lengths into percentages of the picture."""
 
     def __init__(self, root):
+        # Whether a region's textAlign="start" is pycaption's habit rather
+        # than the file's meaning (_keypad).
+        self.start_says_nothing = _pycaption_made(root)
         extent = [_LENGTH.match(part) for part in (_attr(root, 'extent') or '').split()]
         self.pixels = tuple(float(m.group(1)) for m in extent) \
             if len(extent) == 2 and all(m and m.group(2) == 'px' for m in extent) else None
@@ -880,15 +934,16 @@ def _keypad(props, frame, geometry=True):
     With no displayAlign the text goes to the bottom of the region, and
     with no textAlign to its middle, as players show them. In a region
     with no place of its own, "start", textAlign's default, is taken as
-    saying nothing too: pycaption writes it on every region, and so did
-    Subtitld when it wrote TTML with pycaption."""
+    saying nothing too in a document pycaption wrote (_pycaption_made): it
+    writes it on every region, and so did Subtitld when it wrote TTML with
+    pycaption. Any other file's "start" is the near edge it says."""
     origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
     writing = _WRITING.get((props.get('writingMode') or '').strip())
     if writing:
         return _keypad_down(props, frame, writing, origin, extent, geometry)
     display = props.get('displayAlign') or 'after'
     align = props.get('textAlign') or 'center'
-    if align == 'start' and not (origin and extent):
+    if align == 'start' and not (origin and extent) and frame.start_says_nothing:
         align = 'center'
     # "start" and "end" are the near and the far edge of the writing, which
     # right-to-left swaps; "left" and "right" are themselves either way.
@@ -919,7 +974,7 @@ def _keypad_down(props, frame, writing, origin, extent, geometry):
     a column has no such habit."""
     display = props.get('displayAlign') or 'before'
     align = props.get('textAlign') or 'center'
-    if align == 'start' and not (origin and extent):
+    if align == 'start' and not (origin and extent) and frame.start_says_nothing:
         align = 'center'
     first, last = (2, 0) if writing == 'vertical-rl' else (0, 2)
     column = {'before': first, 'center': 1}.get(display, last)
@@ -1126,12 +1181,9 @@ def _own_look(style, box, outline):
     return style if style.edge else style._replace(edge_color='')
 
 
-def _runs(element, styles, props, preserve, out, agent, timed=None):
+def _runs(element, styles, props, preserve, out, agent):
     """Collect `element`'s text into `out` as [(text, Style)]; the first
-    ttm:agent met goes in `agent`. With `timed`, (a list, a span's (start,
-    stop) for a span), a span with times of its own starts with
-    karaoke.MARK, its times added to the list: the paragraph is timed word
-    by word."""
+    ttm:agent met goes in `agent`."""
     if (props.get('ruby') or '').strip() == 'delimiter':
         # Brackets a player draws around a reading. They are not words of
         # the subtitle, and taking them for words would cut the ruby in two.
@@ -1151,12 +1203,9 @@ def _runs(element, styles, props, preserve, out, agent, timed=None):
         if name == 'br':
             out.append(('\n', _look(props)))
         elif name == 'span':
-            if timed is not None and child.get('begin') is not None:
-                out.append((karaoke.MARK, _look(props)))
-                timed[0].append(timed[1](child))
-            _runs(child, styles, styles.of(child, props), preserve, out, agent, timed)
+            _runs(child, styles, styles.of(child, props), preserve, out, agent)
         elif name and name not in ('metadata', 'set', 'animate', 'style', 'region', 'audio', 'source', 'data', 'desc'):
-            _runs(child, styles, props, preserve, out, agent, timed)
+            _runs(child, styles, props, preserve, out, agent)
         text(child.tail)
 
 
@@ -1237,6 +1286,51 @@ def _region_props(element, styles, clock, at):
         if start <= at + 0.0005 and (stop is None or at < stop - 0.0005):
             props.update(_properties(child))
     return props
+
+
+def _sung(element, start, stop, clock):
+    """[(start, end, text)] for a paragraph whose words are each timed, as
+    Apple Music's lyrics time them (itunes:timing "Word" or "Syllable"),
+    or None. A span with a begin and an end is a word or a syllable; the
+    text between two of them says which: whitespace (a space, a line
+    break) ends a word, nothing at all joins two syllables of one ("an" and
+    "gel" written <span>an</span><span>gel</span> are "angel"). Two timed
+    spans or more, and no words outside them; the times count as the
+    paragraph's do (from the song's start in Apple's)."""
+    pieces = []
+    loose = []
+
+    def text(value):
+        if not value:
+            return
+        if value.strip():
+            loose.append(value)
+        elif pieces and not pieces[-1][2].endswith(' '):
+            pieces[-1][2] += ' '
+
+    def visit(parent):
+        for child in parent:
+            if _local(child.tag) == 'span' and child.get('begin') is not None and \
+                    not any(inner.get('begin') is not None for inner in child.iter() if inner is not child):
+                begin, end = _span_of(child, start, stop, clock)
+                words = re.sub(r'[ \t\r\n]+', ' ', ''.join(child.itertext()))
+                if end is not None and words.strip():
+                    if pieces and words[:1] == ' ' and not pieces[-1][2].endswith(' '):
+                        pieces[-1][2] += ' '
+                    # To the millisecond, as the times are written.
+                    begin, end = round(begin, 3), round(max(begin, end), 3)
+                    pieces.append([begin, end, words.strip() + (' ' if words.endswith(' ') else '')])
+            elif _local(child.tag) in ('span', 'br'):
+                text(child.text)
+                visit(child)
+            text(child.tail)
+
+    text(element.text)
+    visit(element)
+    if len(pieces) < 2 or loose:
+        return None
+    pieces[-1][2] = pieces[-1][2].rstrip()
+    return [tuple(piece) for piece in pieces]
 
 
 def _plain_paragraph(element, styles, props):
@@ -1356,7 +1450,17 @@ _BCP47 = re.compile(r'^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$')
 _DESCRIPTOR = re.compile(r'^[^\s.]+(?:\.[^\s.]+)*$')
 _AUDIO_TYPES = {'.wav': 'audio/wave', '.wave': 'audio/wave', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
                 '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.flac': 'audio/flac', '.m4a': 'audio/mp4',
-                '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff'}
+                '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.webm': 'audio/webm',
+                '.weba': 'audio/webm', '.mka': 'audio/x-matroska', '.caf': 'audio/x-caf', '.au': 'audio/basic'}
+# How a recording's file begins, for one whose name says nothing of its
+# kind: RIFF/WAVE, an ID3 tag or an MPEG audio frame, Ogg, FLAC, an MP4's
+# ftyp box, AIFF, EBML (WebM, Matroska), Core Audio, Sun audio.
+_AUDIO_MAGIC = ((b'ID3', 'audio/mpeg'), (b'OggS', 'audio/ogg'), (b'fLaC', 'audio/flac'),
+                (b'\x1aE\xdf\xa3', 'audio/webm'), (b'caff', 'audio/x-caf'), (b'.snd', 'audio/basic'))
+# What a DAPT script does with the dubs' recordings (write(..., audio=)):
+# 'kept' embeds those that came embedded and links the rest, 'embed'
+# embeds every one, 'link' links every one.
+DAPT_AUDIO = ('kept', 'embed', 'link')
 
 
 def is_dapt(root_or_text):
@@ -1419,6 +1523,7 @@ def _dapt_document(root, clock, styles, folder=None):
     """
     characters, talents = _dapt_agents(root)
     language = (root.get(_XML_NS + 'lang') or '').strip()
+    resources = _dapt_resources(root)
     events = []
 
     def lang_of(element, inherited):
@@ -1439,7 +1544,8 @@ def _dapt_document(root, clock, styles, folder=None):
                 found.append({'sources': [source for source in sources if source], 'start': start, 'end': stop,
                               'type': child.get('type') or '',
                               'clip_begin': clock.seconds(child.get('clipBegin')),
-                              'clip_end': clock.seconds(child.get('clipEnd'))})
+                              'clip_end': clock.seconds(child.get('clipEnd')),
+                              'embedded': _embedded_recordings(child, resources)})
             elif name == 'animate':
                 said = {_local(key): value for key, value in child.attrib.items()
                         if _local(key) in ('begin', 'end', 'dur', 'fill', 'gain', 'pan')}
@@ -1533,15 +1639,28 @@ def _dapt_document(root, clock, styles, folder=None):
             kept['speak'] = chosen['speak']
         # The recordings of the subtitle's own text, as its dub, where the
         # files are there: each a clip of its file, placed where it plays.
-        clips, missing = [], []
+        # A recording the script holds itself is put in a file of its own,
+        # and the dub made of it is saved in a USFX (a uid) and embedded
+        # again when the script is (its 'dapt' says it came embedded).
+        clips, missing, embedded = [], [], False
         for audio in (chosen['audio'] if chosen else []):
-            path = _audio_path(audio['sources'], folder)
+            path = None
+            if audio['embedded']:
+                payload, kind = audio['embedded'][0]
+                path, embedded = _embedded_audio_file(payload, kind), True
+            path = path or _audio_path([source for source in audio['sources'] if not source.startswith('#')], folder)
             if path is None:
-                missing.append({key: value for key, value in audio.items() if value not in (None, '', [])})
+                missing.append({key: value for key, value in audio.items()
+                                if key != 'embedded' and value not in (None, '', [])})
                 continue
             clips.append((path, audio))
         if clips:
-            segment['dubbing'] = [_dub_of(clips)]
+            dub = _dub_of(clips)
+            if embedded:
+                import secrets
+                dub['uid'] = f'dapt_{secrets.token_hex(4)}'
+                kept['audio_embedded'] = True
+            segment['dubbing'] = [dub]
         if missing:
             kept['audio'] = missing
         segment['dapt'] = kept
@@ -1576,6 +1695,100 @@ def _audio_path(sources, folder):
         if os.path.isfile(path):
             return os.path.abspath(path)
     return None
+
+
+# TTML2's <data>: its content in one of these encodings (Base64 when it
+# names none), as text or as <chunk>s, each with an encoding of its own.
+_DATA_ENCODINGS = {'base16': base64.b16decode, 'base32': base64.b32decode, 'base32hex': base64.b32hexdecode,
+                   'base64': base64.b64decode, 'base64url': base64.urlsafe_b64decode}
+# The extension a recording is kept under, by the MIME type it says it is.
+_AUDIO_EXTENSIONS = {'audio/wave': '.wav', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/vnd.wave': '.wav',
+                     'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/flac': '.flac', 'audio/x-flac': '.flac',
+                     'audio/mp4': '.m4a', 'audio/aac': '.aac', 'audio/aiff': '.aiff', 'audio/x-aiff': '.aiff'}
+
+
+def _decode_data(element):
+    """The bytes of a TTML2 <data> element, or None: its text, or its
+    <chunk>s one after another, in the encoding each names."""
+    def decoded(text, encoding):
+        decoder = _DATA_ENCODINGS.get((encoding or 'base64').strip().lower())
+        if decoder is None:
+            return None
+        text = ''.join(str(text or '').split())
+        if decoder in (base64.b64decode, base64.urlsafe_b64decode):
+            text += '=' * (-len(text) % 4)
+        try:
+            return decoder(text.upper() if decoder is base64.b16decode else text)
+        except (binascii.Error, ValueError):
+            return None
+
+    chunks = [child for child in element if _local(child.tag) == 'chunk']
+    if not chunks:
+        return decoded(element.text, element.get('encoding')) or None
+    parts = [decoded(chunk.text, chunk.get('encoding')) for chunk in chunks]
+    return b''.join(parts) if all(part is not None for part in parts) and any(parts) else None
+
+
+def _dapt_resources(root):
+    """{xml:id: element} of the <data> and <audio> in /tt/head/resources,
+    which DAPT's embedded recordings point to."""
+    found = {}
+    for head in (child for child in root if _local(child.tag) == 'head'):
+        for resources in (child for child in head if _local(child.tag) == 'resources'):
+            for element in resources:
+                if _local(element.tag) in ('data', 'audio') and _xml_id(element):
+                    found[_xml_id(element)] = element
+    return found
+
+
+def _embedded_recordings(audio, resources):
+    """[(bytes, MIME type)] an <audio> embeds, in its sources' order, as DAPT
+    has it: src="#id" naming an <audio> in the resources (whose type it
+    has, its own <source> holding the data), or <source>s that hold a
+    <data> or point with src="#id" to one in the resources."""
+    def from_audio(element, kind, depth=0):
+        out = []
+        reference = (element.get('src') or '').strip()
+        if reference.startswith('#') and depth < 2:
+            target = resources.get(reference[1:])
+            if target is not None and _local(target.tag) == 'audio':
+                out += from_audio(target, target.get('type') or kind, depth + 1)
+            elif target is not None:
+                out += from_data(target, kind)
+        for source in (child for child in element if _local(child.tag) == 'source'):
+            pointed = (source.get('src') or '').strip()
+            if pointed.startswith('#') and resources.get(pointed[1:]) is not None \
+                    and _local(resources[pointed[1:]].tag) == 'data':
+                out += from_data(resources[pointed[1:]], source.get('type') or kind)
+            for data in (child for child in source if _local(child.tag) == 'data'):
+                out += from_data(data, source.get('type') or kind)
+        return out
+
+    def from_data(data, kind):
+        payload = _decode_data(data)
+        return [(payload, (data.get('type') or kind or '').strip())] if payload else []
+
+    return from_audio(audio, audio.get('type') or '')
+
+
+def _embedded_audio_file(payload, kind):
+    """A recording embedded in a script, as a file a dub can play: in the
+    cache's dubbing folder, where the dubs Subtitld makes are, named by
+    what is in it."""
+    import hashlib
+    import os
+    from subtitld.modules import session
+    extension = _AUDIO_EXTENSIONS.get(kind.split(';')[0].strip().lower()) or \
+        ('.wav' if payload[:4] == b'RIFF' else '.mp3' if payload[:3] == b'ID3' else
+         '.ogg' if payload[:4] == b'OggS' else '.flac' if payload[:4] == b'fLaC' else '.wav')
+    folder = os.path.join(str(session.PATH_SUBTITLD_USER_CACHE), 'dubbing')
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f'dapt_{hashlib.sha256(payload).hexdigest()[:20]}{extension}')
+    if not os.path.isfile(path) or os.path.getsize(path) != len(payload):
+        with open(path + '.part', 'wb') as out:
+            out.write(payload)
+        os.replace(path + '.part', path)
+    return path
 
 
 def _dub_of(clips):
@@ -1712,7 +1925,40 @@ def _dapt_problems(root, declared_profile, content_profiles):
                 untyped += 1
     if untyped:
         problems.append(f'{untyped} recording(s) linked with no type: DAPT asks for the audio\'s MIME type')
+    # An embedded one says its type on its <data>, or on the <audio> in the
+    # resources that holds it.
+    in_resources = set(id(element) for element in _dapt_resources(root).values())
+    untyped = sum(1 for element in _dapt_resources(root).values() if not element.get('type'))
+    for element in root.iter():
+        if _local(element.tag) == 'audio' and id(element) not in in_resources:
+            untyped += sum(1 for source in element if _local(source.tag) == 'source'
+                           for data in source if _local(data.tag) == 'data' and not data.get('type'))
+    if untyped:
+        problems.append(f'{untyped} recording(s) embedded with no type: DAPT asks for the audio\'s MIME type')
     return problems
+
+
+def _audio_type(path):
+    """The MIME type of a recording's file: by its extension, else by how
+    it begins (_AUDIO_MAGIC), else a WAV, which is what Subtitld's dubs are."""
+    import os
+    kind = _AUDIO_TYPES.get(os.path.splitext(str(path))[1].lower())
+    if kind:
+        return kind
+    try:
+        with open(path, 'rb') as audio_file:
+            head = audio_file.read(12)
+    except OSError:
+        return 'audio/wave'
+    if head[:4] == b'RIFF' and head[8:12] == b'WAVE':
+        return 'audio/wave'
+    if head[:4] == b'FORM' and head[8:12] in (b'AIFF', b'AIFC'):
+        return 'audio/aiff'
+    if head[4:8] == b'ftyp':
+        return 'audio/mp4'
+    if head[:2] in (b'\xff\xfb', b'\xff\xf3', b'\xff\xf2', b'\xff\xfa'):
+        return 'audio/mpeg'
+    return next((kind for magic, kind in _AUDIO_MAGIC if head.startswith(magic)), 'audio/wave')
 
 
 def _dapt_text(text):
@@ -1723,10 +1969,14 @@ def _dapt_text(text):
     return _content(rest) if markup.plain(rest).strip() else ''
 
 
-def _dapt_audio(segment, start, audio_base):
+def _dapt_audio(segment, start, audio_base, embedded=None, prefix='recording'):
     """<audio> elements for the dub of `segment` that is heard (its first
     un-muted take), each clip of a file placed where it plays, from the
-    text's start, and linked relative to `audio_base`."""
+    text's start, and linked relative to `audio_base`. With `embedded` (a
+    dict, {path: xml:id}, that fills as files are met) the recordings are
+    the script's own: each <audio> a <source> pointing to the <data> in
+    the resources that holds its file, as DAPT's embedded, referenced
+    source has it, its xml:id `prefix` and a number."""
     import os
     import urllib.parse
     dubs = segment.get('dubbing') or []
@@ -1740,14 +1990,19 @@ def _dapt_audio(segment, start, audio_base):
     out = []
     for clip in clips:
         path = str(clip['path'])
-        if audio_base:
-            try:
-                path = os.path.relpath(path, audio_base)
-            except ValueError:
-                pass
-        source = urllib.parse.quote(path.replace(os.sep, '/'))
-        kind = _AUDIO_TYPES.get(os.path.splitext(path)[1].lower(), 'audio/wave')
-        attrs = [f'src={quoteattr(source)}', f'type="{kind}"']
+        kind = _audio_type(path)
+        inside = None
+        if embedded is not None and os.path.isfile(path):
+            inside = embedded.setdefault(path, f'{prefix}{len(embedded) + 1}')
+            attrs = []
+        else:
+            if audio_base:
+                try:
+                    path = os.path.relpath(path, audio_base)
+                except ValueError:
+                    pass
+            source = urllib.parse.quote(path.replace(os.sep, '/'))
+            attrs = [f'src={quoteattr(source)}', f'type="{kind}"']
         at = begin + float(clip.get('offset') or 0) - start
         if at > 0.0005:
             attrs.append(f'begin="{format_time(at)}"')
@@ -1755,15 +2010,18 @@ def _dapt_audio(segment, start, audio_base):
             attrs.append(f'clipBegin="{format_time(float(clip["start"]))}"')
             if clip.get('end') is not None:
                 attrs.append(f'clipEnd="{format_time(float(clip["end"]))}"')
-        out.append(f'<audio {" ".join(attrs)}/>')
+        if inside:
+            out.append(f'<audio{"".join(" " + attr for attr in attrs)}><source src="#{inside}"/></audio>')
+        else:
+            out.append(f'<audio {" ".join(attrs)}/>')
     return out
 
 
-def _write_dapt(segments, language, metadata=None, audio_base=None):
+def _write_dapt(segments, language, metadata=None, audio_base=None, audio='kept'):
     """A DAPT script of `segments`: each subtitle a Script Event, its
     speaker its character, its text the original <p> in `language` and its
     translations a <p> each, translated from it; the dub heard for it, an
-    <audio> for each clip. What the script said of itself when it was read
+    <audio> for each clip, linked or embedded as `audio` says (DAPT_AUDIO). What the script said of itself when it was read
     (metadata['dapt']) and what each event said (its 'dapt') is written
     again; a new script is a dubbing script of dialogue, as recorded where
     there are dubs, translated where there are translations."""
@@ -1803,7 +2061,12 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                     f'</ttm:name>{actor}</ttm:agent>')
 
     used = set(characters.values()) | set(persons.values())
-    events, audio_used = [], False
+    events, audio_used, embedded = [], False, {}
+    # The embedded recordings' xml:ids, which no event's may begin as.
+    prefix = 'recording'
+    while any(str((segment.get('dapt') or {}).get('id') or '').startswith(prefix) for segment in ordered
+              if isinstance(segment.get('dapt'), dict)):
+        prefix += '_'
     for number, segment in enumerate(ordered, start=1):
         kept = segment.get('dapt') if isinstance(segment.get('dapt'), dict) else {}
         event_id = str(kept.get('id') or '')
@@ -1832,7 +2095,8 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                 said = ' '.join(f'{"tta:" if key in ("gain", "pan") else ""}{key}={quoteattr(str(value))}'
                                 for key, value in mix.items() if key in ('begin', 'end', 'dur', 'fill', 'gain', 'pan'))
                 inner.append(f'<animate {said}/>')
-        recordings = _dapt_audio(segment, start, audio_base)
+        embedding = audio == 'embed' or (audio not in ('embed', 'link') and kept.get('audio_embedded'))
+        recordings = _dapt_audio(segment, start, audio_base, embedded if embedding else None, prefix)
         audio_used = audio_used or bool(recordings or inner or kept.get('speak'))
         speak = f' tta:speak={quoteattr(str(kept["speak"]))}' if kept.get('speak') else ''
         own_source = kept.get('lang_src') if kept.get('lang_src') is not None else source
@@ -1858,9 +2122,19 @@ def _write_dapt(segments, language, metadata=None, audio_base=None):
                                   f'daptm:langSrc={quoteattr(str(source))}',
                                   f'daptm:scriptRepresents={quoteattr(script_represents)}',
                                   f'daptm:scriptType="{script_type}"'])
+    # The recordings the script holds itself, each file once, in Base64.
+    resources = []
+    for clip_path, data_id in embedded.items():
+        import os
+        with open(clip_path, 'rb') as clip_file:
+            payload = base64.b64encode(clip_file.read()).decode('ascii')
+        kind = _audio_type(clip_path)
+        resources.append(f'      <data type="{kind}" xml:id="{data_id}">{payload}</data>')
+    if resources:
+        resources = ['    <resources>', *resources, '    </resources>']
     return '\n'.join(['<?xml version="1.0" encoding="UTF-8"?>', f'<tt {root}>', '  <head>', '    <metadata>', *head,
-                      '    </metadata>', '  </head>', f'  <body daptm:represents={quoteattr(represents)}>', *events,
-                      '  </body>', '</tt>', ''])
+                      '    </metadata>', *resources, '  </head>', f'  <body daptm:represents={quoteattr(represents)}>',
+                      *events, '  </body>', '</tt>', ''])
 
 
 def _document(text, images=None, folder=None):
@@ -1930,14 +2204,18 @@ def _document(text, images=None, folder=None):
         # goes over them.
         p_props = styles.of(element, dict(region_props, **props))
         runs, agent = [], [None]
-        stamps = []
-        _runs(element, styles, p_props, preserve, runs, agent,
-              (stamps, lambda span: _span_of(span, start, stop, clock)))
+        _runs(element, styles, p_props, preserve, runs, agent)
         box, outline = _whole_look(element, styles, p_props)
         runs = [(run, _own_look(style, box, outline)) for run, style in runs]
         body = markup.tidy(runs)
         if stop is None or not markup.plain(body).strip():
             return
+        # Each word timed (Apple Music's lyrics, or a karaoke file): the
+        # times as karaoke codes, as modules.karaoke keeps them, where the
+        # words carry no styles of their own.
+        sung = _sung(element, start, stop, clock) if markup.plain(body) == body else None
+        if sung:
+            body = karaoke.text_from(round(start, 3), sung)
         # A file that states both alignments means them; one that leaves
         # them out is read by where its region sits, as before.
         stated = p_props.get('displayAlign') is not None and p_props.get('textAlign') is not None
@@ -1959,17 +2237,8 @@ def _document(text, images=None, folder=None):
             keypad = (_keypad(dict(p_props, textAlign='left'), frame) - 1) // 3 * 3 + 1 + column
         else:
             keypad = _keypad(p_props, frame, geometry=not stated)
-        text = (markup.with_alignment('', keypad) if keypad != 2 else '') + body
-        if stamps:
-            # Spans timed within it: the subtitle timed word by word, each
-            # piece the text from its span on, over by the next one's begin.
-            # Text before the first is shown from the paragraph's start.
-            begins = [begin for begin, _end in stamps] + [stop]
-            times = [(0.0, stamps[0][0] - start, {})] + [
-                (begin - start, min(end if end is not None else stop, begins[number + 1]) - start, {})
-                for number, (begin, end) in enumerate(stamps)]
-            text = karaoke.pieces_at(karaoke.MARK + text, times) or text.replace(karaoke.MARK, '')
-        segment = {'start': round(start, 3), 'end': round(max(start, stop), 3), 'text': text}
+        segment = {'start': round(start, 3), 'end': round(max(start, stop), 3),
+                   'text': (markup.with_alignment('', keypad) if keypad != 2 else '') + body}
         speaker = agent[0] or outer_agent
         if speaker:
             segment['speaker'] = agents.get(speaker, speaker)
@@ -2819,28 +3088,6 @@ def _content(text, shear=False, annotations='full', ruby_ids=None):
     return ''.join(out)
 
 
-def _timed_content(pieces, shear=False, annotations='full', ruby_ids=None):
-    """A subtitle revealed word by word as TTML: each piece a span that
-    begins when the piece does, from the paragraph's begin, and lasts to the
-    paragraph's end, so the words appear one after another and stay; its
-    formatting closed at its end and opened again in the next. TTML shows a
-    span only while it is active, so a span ending with its piece would make
-    the word vanish: this is a reveal, not a highlight. Words before the
-    first piece with a time are there from the start."""
-    texts = [piece['text'] for piece in pieces]
-    texts[0] = markup.split_lead(texts[0])[1]
-    for number in range(len(texts) - 1):
-        texts[number], texts[number + 1] = markup.rebalance(texts[number], texts[number + 1])
-    out = []
-    for piece, text in zip(pieces, texts):
-        inner = _content(text, shear, annotations, ruby_ids)
-        if float(piece['end']) > float(piece['start']) and float(piece['start']) > 0:
-            out.append(f'<span begin="{format_time(piece["start"])}">{inner}</span>')
-        else:
-            out.append(inner)
-    return ''.join(out)
-
-
 def _styles(look, preview, profile='ttml1'):
     """(<style> elements, the id of the box's or None) for `look`. The box
     goes on a span around each subtitle's text: a span's background is
@@ -3156,7 +3403,7 @@ def _tunnel_608(segments):
 
 
 def write(segments, language='en', agents=False, look='clean', preview=None, profile='ttml1', metadata=None,
-          *, fps=None, tunnel=False, start=None, drop_frame=False, audio_base=None):
+          *, fps=None, tunnel=False, start=None, drop_frame=False, audio_base=None, audio='kept'):
     """TTML text for `segments`: with `agents`, each speaker as a ttm:agent;
     in `look` ('clean' or 'preview', Subtitld's preview settings in
     `preview`, CONFIG['videoplayer']); declaring `profile` (PROFILES).
@@ -3165,14 +3412,15 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
     EBU-TT with a frame rate is timed in SMPTE timecode, from a programme
     start of `start` ("HH:MM:SS:FF", 00:00:00:00 without one), drop-frame
     at 29.97 with `drop_frame`. A DAPT script links its recordings relative
-    to `audio_base`, the folder it is written in.
+    to `audio_base`, the folder it is written in, or holds them itself, as
+    `audio` says (DAPT_AUDIO: by default, embedded those that came so).
 
     A Japanese file in an IMSC profile writes its italics as tts:shear:
     that is what IMSC 1.1 is for in Japanese, and Netflix's Japanese
     profile prohibits tts:fontStyle outright."""
     profile = profile if profile in PROFILES else 'ttml1'
     if profile == 'dapt':
-        return _write_dapt(segments, language, metadata, audio_base)
+        return _write_dapt(segments, language, metadata, audio_base, audio)
     tunnel = bool(tunnel) and profile == 'smpte-tt'
     shear = profile in ('imsc1', 'imsc1.1') and _japanese(language)
     annotations = _ANNOTATIONS[profile]
@@ -3238,9 +3486,15 @@ def write(segments, language='en', agents=False, look='clean', preview=None, pro
         looking = _look_attributes(styling, profile)
         if looking:
             attrs += f' style="{lookings.setdefault(looking, f"look{len(lookings) + 1}")}"'
-        timed = karaoke.pieces_of(raw) if smpte is None else None
-        if timed:
-            content = _timed_content(timed, shear, annotations, ruby_ids)
+        sung = karaoke.timed(raw, begin) if profile in _TIMED_SPANS and not smpte else None
+        if sung and '\n' not in markup.plain(rest):
+            # Karaoke: each word or syllable a span timed from the
+            # paragraph's begin, a space between words and none between
+            # the syllables of one, as Apple Music's lyrics write them.
+            content = ''.join(f'<span begin="{stamp(max(0.0, at - begin))}" '
+                              f'end="{stamp(min(end, max(at, until)) - begin)}">'
+                              f'{escape(piece.strip())}</span>' + (' ' if piece.endswith(' ') else '')
+                              for at, until, piece in sung if piece.strip()).rstrip()
         else:
             content = _content(rest, shear, annotations, ruby_ids)
         # A box the file brought stands in for the style's own, and goes on
