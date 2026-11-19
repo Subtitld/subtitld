@@ -149,15 +149,26 @@ def _render(memory, rows=None):
         first, last = filled[0], filled[-1]
         span = [cells[index] or _Cell(' ', markup.PLAIN, True) for index in range(first, last + 1)]
         out = []
-        for index, cell in enumerate(span):
+        index = 0
+        while index < len(span):
+            cell = span[index]
             if cell.char != ' ':
                 out.append((cell.char, cell.style))
+                index += 1
                 continue
+            # A run of blank columns: the text's own spaces as many as it
+            # has ("BURN HER !  BURN HER !"), the columns codes take one
+            # space between words at most.
+            stop = index
+            while stop < len(span) and span[stop].char == ' ':
+                stop += 1
+            literal = sum(1 for blank in span[index:stop] if not blank.attribute)
             before = next((c for c in reversed(span[:index]) if c.char != ' '), None)
-            after = next((c for c in span[index + 1:] if c.char != ' '), None)
+            after = next((c for c in span[stop:] if c.char != ' '), None)
+            index = stop
             # A code's space before punctuation, or after an opening one,
             # is no space of the text's.
-            if cell.attribute and ((after and after.char in _CLOSING) or (before and before.char in _OPENING)):
+            if not literal and ((after and after.char in _CLOSING) or (before and before.char in _OPENING)):
                 continue
             # A space between two styles has what both have.
             if before and after:
@@ -165,7 +176,7 @@ def _render(memory, rows=None):
                                        for a, b in zip(before.style, after.style)))
             else:
                 style = markup.PLAIN
-            out.append((' ', style))
+            out.extend([(' ', style)] * max(1, literal))
         lines.append(out)
         edges.append((first, last))
         used.append(row)
@@ -176,7 +187,9 @@ def _render(memory, rows=None):
         if index:
             runs.append(('\n', markup.PLAIN))
         runs.extend(line)
-    text = markup.tidy(runs)
+    # Spaces as the screen shows them: two in a row are two ("BURN HER !  BURN
+    # HER !", as FFmpeg keeps them).
+    text = markup.tidy(runs, spaces='\t\r')
     middle_row = (used[0] + used[-1]) / 2
     vertical = 2 if middle_row <= 5 else 0 if middle_row >= 10 else 1
     left = min(first for first, _last in edges)
@@ -680,8 +693,8 @@ def _row(row, line, column):
     current = first_look
     for shown, look, units in line:
         if shown == ' ':
-            if tokens[-1] != ('b', 0x20):
-                tokens.append(('b', 0x20))
+            # Each space a column, two in a row as two.
+            tokens.append(('b', 0x20))
             continue
         if look != current:
             changes = []

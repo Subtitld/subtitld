@@ -462,12 +462,15 @@ check('every caption shows at its End Of Caption',
       all(any(abs(s['start'] - at) < 0.002 for at in shown) for s in segments), True)
 check('...and nearly every End Of Caption is one', len(segments) >= len(shown) - 1, True)
 # The text, against FFmpeg's from 57 s on (it read from -ss 57): the same
-# captions in the same order. FFmpeg writes CEA-608's apostrophe as "’"
-# and keeps the spaces a row starts with; compared without either.
-want = [re.sub(r'\s+', ' ', text.replace('’', "'")).strip() for start, end, text in ffmpeg('sub-scc')]
+# captions in the same order, with the spaces inside a row as the screen
+# shows them ("QUIET.  QUIET."). FFmpeg writes CEA-608's apostrophe as "’"
+# and keeps the spaces a row starts with ("\h\h\h\hOH, YEAH."), which
+# Subtitld places by its column instead; compared without either.
+want = [lines_of(text.replace('’', "'")) for start, end, text in ffmpeg('sub-scc')]
 want = want[1:]                     # the first began before 57 s, and Subtitld has it whole
-got = [re.sub(r'\s+', ' ', text).strip() for start, end, text in cues(segments) if start >= 57]
-check('from 57 s: the same captions', got[:len(want)], want)
+got = [text for start, end, text in cues(segments) if start >= 57]
+check('from 57 s: the same captions, the same spaces', got[:len(want)], want)
+check('...two spaces where the row has two', sum('  ' in text for text in want) >= 10, True)
 # FFmpeg's places: row 15 and 14 at column 0 is {\pos(38,...)}, bottom left.
 check('a caption on the left', segments[[cue[2] for cue in cues(segments)].index('BRING HER FORWARD.')]['text'],
       '{\\an1}BRING HER FORWARD.')
