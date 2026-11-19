@@ -330,6 +330,18 @@ check('aribcaption_ruby: the geta mark at 1 s and 3 s', (base.get(1.0), base.get
 # FFmpeg's probe of the same file (sub-aribcaption-ruby-text) lists three
 # captions; the statement at 5 s (from the start, 4 s) is not among them.
 known('aribcaption_ruby: when captions start', sorted(base), [1.0, 2.0, 3.0])
+# Real broadcasts' data groups: each one's CRC-16, as Subtitld computes it,
+# is the one the stream carries (the check reading does would drop it).
+from subtitld.modules import aribb24
+for label, path in (('aribcaption_clear', ARIB_CLEAR), ('aribcaption_ruby', ARIB_RUBY)):
+    groups = [payload for items in aribb24.scan(str(path))[1].values() for _pts, payload in items]
+    carried = []
+    for payload in groups:
+        begin = 3 + (payload[2] & 0x0F)
+        end = begin + 5 + (payload[begin + 3] << 8 | payload[begin + 4])
+        carried.append(aribb24.crc16(payload[begin:end]) == int.from_bytes(payload[end:end + 2], 'big'))
+    check(f'{label}: every data group\'s CRC-16 the one the stream carries, none dropped',
+          (len(groups) > 3, all(carried), all(aribb24.data_group(payload) for payload in groups)), (True, True, True))
 
 print('closed captions in a caption track of their own')
 found = tracks(MOV_C608)
