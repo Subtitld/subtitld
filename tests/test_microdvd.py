@@ -17,7 +17,7 @@ for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from subtitld.modules import file_io, microdvd, session
+from subtitld.modules import file_io, markup, microdvd, session
 
 fails = []
 
@@ -66,6 +66,18 @@ check('none declared: the video\'s rate, else 25', (cues('{24}{48}Hi\n', fps=24)
       ([(1.0, 2.0, 'Hi')], [(1.0, 2.0, 'Hi')]))
 check('out of order, blank and stray lines, an empty subtitle', cues('\n{75}{100}Later\nnot a subtitle\n{25}{50}First\n{60}{70}  \n'),
       [(1.0, 2.0, 'First'), (3.0, 4.0, 'Later')])
+# FFmpeg's MicroDVD sample: "{DEFAULT}{}" is its ASS Default style (font,
+# size, colour), the codes of each subtitle over it; its size in ASS lines,
+# 288 to the picture (FFmpeg writes no PlayResY).
+default = microdvd.parse('{1}{1}25\n{DEFAULT}{}{F:Comic Sans MS}{S:30}{c:$123456}{Y:i}\n'
+                         '{25}{50}Plain|{c:$0000FF}red\n{75}{100}{y:b}Bold\n')[0]
+check('{DEFAULT}: every subtitle\'s style, under its own codes',
+      [[(run.strip(), style.color, style.italic, style.bold) for run, style in markup.spans(s['text']) if run.strip()]
+       for s in default],
+      [[('Plain', '#563412', True, False), ('red', '#ff0000', True, False)], [('Bold', '#563412', True, True)]])
+check('{DEFAULT}: its font and size the subtitles\' look', [s.get('look') for s in default],
+      [{'font': 'Comic Sans MS', 'size': 10.417}] * 2)
+check('no {DEFAULT}, no look', 'look' in microdvd.parse('{25}{50}Hi\n')[0][0], False)
 
 print('what a .sub is')
 check('VobSub, SubViewer 2 (with its header or without), MicroDVD', [microdvd.kind(data) for data in (

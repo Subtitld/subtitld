@@ -489,13 +489,22 @@ for name in ('MicroDVD_capability_tester.sub', 'MicroDVD_capability_tester.srt')
     # end, FFmpeg shows forever and Subtitld for four seconds.
     same(f'{name}: times and text', cues(segments)[:-1], want[:-1])
     check(f'{name}: the last one', cues(segments)[-1], (want[-1][0], want[-1][0] + 4, want[-1][2]))
-    # FFmpeg: {\c&H345678&}foo, ASS's BGR as MicroDVD's {c:$345678}.
-    check(f'{name}: colours', [run for run in markup.spans(segments[0]['text']) if run[0].strip()][:2],
-          [('foo', markup.PLAIN._replace(color='#785634')), ('bar', markup.PLAIN._replace(color='#efcdab'))])
+    # FFmpeg: {\c&H345678&}foo, ASS's BGR as MicroDVD's {c:$345678}; the
+    # third line, "{\c}" back to the Default style's &H123456, which the
+    # "{DEFAULT}{}" line gives with its font and size ("Style: Default,
+    # Comic Sans MS,30,&H123456" in FFmpeg's ASS, 288 lines high).
+    default = markup.PLAIN._replace(color='#563412')
+    check(f'{name}: colours', [(run[0].strip(), run[1]) for run in markup.spans(segments[0]['text']) if run[0].strip()],
+          [('foo', markup.PLAIN._replace(color='#785634')), ('bar', markup.PLAIN._replace(color='#efcdab')),
+           ('bla', default)])
+    check(f'{name}: {{DEFAULT}}: every subtitle in its colour, font and size',
+          ({markup.spans(s['text'])[-1][1].color for s in segments}, {str(s.get('look')) for s in segments}),
+          ({'#563412'}, {str({'font': 'Comic Sans MS', 'size': round(30 / 288 * 100, 3)})}))
     # FFmpeg: {\u1}{\s1}{\i1}{\b1} for the first line, {\s0}{\u0} after it:
     # {Y:ib} is the whole subtitle's, {y:us} the line's.
     check(f'{name}: {{Y:...}} and {{y:...}}', segments[1]['text'],
-          '<i><b><u><s>italic bold underline strike</s></u>\nitalic bold no-underline no-strike</b></i>')
+          '<font color="#563412"><i><b><u><s>italic bold underline strike</s></u>\n'
+          'italic bold no-underline no-strike</b></i></font>')
 round_trip('MicroDVD', opened('MicroDVD_capability_tester.sub')[0], 'SUB', 'sub', tolerance=0.041)
 
 segments, fmt = opened('cp1251-subtitles.sub')
