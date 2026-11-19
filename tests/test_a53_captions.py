@@ -2,17 +2,21 @@
 4): the user data ('GA94', type 3, the count, the entries), the SEI NAL unit
 of H.264 and HEVC (ITU-T T.35, USA, ATSC's provider code) with its
 emulation prevention, MPEG-2's user data; a picture's data with its
-captions put before its first slice and those it had taken out; and, with
-FFmpeg, H.264 (with B-frames), HEVC and MPEG-2 video written out as MP4 and
-as a transport stream with captions in every frame, the picture and sound
-copied and in step, read back by the closed captions engine (FFmpeg's
-decoders, through lavfi's subcc), a video captioned again keeping the new
-captions alone; the export path and the dialog.
+captions put before its first slice and those it had taken out; a
+frame's caption data split between its fields' pictures; and, with
+FFmpeg, H.264 (with B-frames), HEVC and MPEG-2 video written out as MP4
+and as a transport stream with captions in every frame, the picture and
+sound copied and in step, read back by the closed captions engine
+(FFmpeg's decoders, through lavfi's subcc), interlaced video coded a
+frame a picture (MPEG-2, H.264's MBAFF) and a field a picture (HEVC), a
+video captioned again keeping the new captions alone; the export path and
+the dialog.
 
 Standalone script, like the other suites here. It puts this checkout's src/
 on the path itself: the venv holds a NON-editable install, and importing that
 instead silently tests stale code.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -74,6 +78,14 @@ mpeg2_slice = b'\x00\x00\x01\x01\x12\x34'
 check('MPEG-2: after the picture\'s header and extension, its old captions out',
       a53.with_captions('mpeg2video', header + b'\x00\x00\x01\xb2GA94\x03\xc1\xff\xfc\x80\x80\xff' + mpeg2_slice,
                         triplets), header + a53.caption_unit('mpeg2video', triplets) + mpeg2_slice)
+# A frame's 20 entries at 29.97 (CEA-708's cc_count for 29.97i) split
+# between its fields' pictures: each its own CEA-608 pair (cc_type 0 in the
+# first field, 1 in the second), then half of CEA-708's, 10 entries each.
+frame = [(0xFC, 0x94, 0x2C), (0xFD, 0x80, 0x80)] + [(0xFF, n, n) for n in range(5)]
+check('a frame\'s caption data split between its fields: 608 pair of each field, 708 by halves, padded',
+      (a53.field_share(frame, 20, 0), a53.field_share(frame, 20, 1)),
+      ([(0xFC, 0x94, 0x2C)] + [(0xFF, n, n) for n in range(5)] + [(0xFA, 0, 0)] * 4,
+       [(0xFD, 0x80, 0x80)] + [(0xFA, 0, 0)] * 9))
 check('the kinds of file', (sorted(a53.CONTAINERS), sorted(a53.CODECS)),
       (['MP4 A53', 'TS A53'], ['h264', 'hevc', 'mpeg2video']))
 check('as the export lists them', [session.LIST_OF_SUPPORTED_VIDEO_EXPORT_EXTENSIONS[key]['extensions']
@@ -131,6 +143,59 @@ else:
             if output.suffix == source.suffix:
                 check(f'{label}: the picture copied, the sound with it, in step', streams(output), streams(source))
         check(f'{label}: every frame carries caption data', carried(output), 180)
+        check(f'{label}: the video decodes without a complaint', clean(output), '')
+    print('interlaced')
+    # MPEG-2 and H.264 code an interlaced frame a picture (FFmpeg's encoders
+    # here: interlaced DCT and motion, MBAFF): 20 entries a picture at
+    # 29.97i, both fields' CEA-608 pairs in it. x265 codes a field a
+    # picture, which FFmpeg decodes at 59.94 pictures a second: each carries
+    # its field's share, 10 entries.
+    interlaced = {
+        'MPEG-2, interlaced frames': make('mpeg2i.ts', '-vf', 'setfield=tff', '-c:v', 'mpeg2video', '-flags',
+                                          '+ilme+ildct', '-top', '1', '-bf', '2', '-c:a', 'mp2'),
+        'H.264, MBAFF': make('h264i.mp4', '-vf', 'setfield=tff', '-c:v', 'libx264', '-flags', '+ildct', '-bf', '3',
+                             '-c:a', 'aac')}
+    fields_source = folder / 'hevci.mp4'
+    subprocess.run([ffmpeg, '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=60000/1001:duration=6',
+                    '-vf', 'setfield=tff', '-c:v', 'libx265', '-x265-params', 'log-level=error:interlace=tff',
+                    str(fields_source)], check=True)
+    interlaced['HEVC, a field a picture'] = fields_source
+    check('which video is coded a field a picture', [a53.fields_of(path, ffprobe) for path in interlaced.values()],
+          [False, False, True])
+
+    def entries(path):
+        """The cc_type of the first entry and the count of entries of each
+        picture's caption data, as FFmpeg's decoder hands them over."""
+        out = subprocess.run([ffprobe, '-v', 'error', '-f', 'lavfi', '-i', f'movie={path}[out0+subcc]', '-select_streams',
+                              's', '-show_packets', '-show_data', '-show_entries', 'packet=data', '-of', 'json'],
+                             capture_output=True, text=True).stdout
+        found = []
+        for packet in json.loads(out or '{}').get('packets', []):
+            # ffprobe's hex dump: an offset, then 16 bytes in 40 columns.
+            data = bytes.fromhex(''.join(line[10:50].replace(' ', '')
+                                         for line in packet.get('data', '').splitlines() if ':' in line))
+            found.append((data[0] & 3, len(data) // 3))
+        return found
+
+    for label, source in interlaced.items():
+        fps = 60000 / 1001 if 'field' in label else RATE
+        output = folder / f'{source.stem}_ts.ts'
+        embedded_captions.write_video(source, output, segments, fps=fps, duration=6.0, container='TS A53',
+                                      ffmpeg=ffmpeg, ffprobe=ffprobe)
+        found = [[(s['start'], s['end'], s['text']) for s in closed_captions.from_video(output, track, ffprobe)[0]]
+                 for track in ('708-1', 'cc1')]
+        offset = a53.probe(output, ffprobe)[2]
+        check(f'{label}: CEA-708 and CEA-608 read back on their frames',
+              found, [[tuple(round(round((offset + round(t * RATE) / RATE) * RATE) / RATE, 3) for t in (a, b)) + (text,)
+                       for a, b, text in want]] * 2)
+        got = entries(output)
+        if 'field' in label:
+            check(f'{label}: every field\'s picture carries 10 entries, its own field\'s CEA-608 pair first',
+                  (len(got), {count for _kind, count in got}, [kind for kind, _count in got[:6]]),
+                  (360, {10}, [0, 1, 0, 1, 0, 1]))
+        else:
+            check(f'{label}: every frame\'s picture carries 20 entries', (len(got), {count for _k, count in got}),
+                  (180, {20}))
         check(f'{label}: the video decodes without a complaint', clean(output), '')
     again = folder / 'again.mp4'
     embedded_captions.write_video(folder / 'h264_mp.mp4', again, [{'start': 2.0, 'end': 3.0, 'text': 'Only this'}],

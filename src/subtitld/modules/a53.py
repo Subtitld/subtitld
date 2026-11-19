@@ -24,6 +24,17 @@ as broadcast has it), any the video carried before taken out; and FFmpeg
 copies the rewritten stream into the file asked for, with the sound of
 the video, at the time the picture started at.
 
+Interlaced video coded a frame a picture (MPEG-2's frame pictures, H.264's
+MBAFF) takes them as progressive video does: at 29.97 frames a second each
+picture carries 20 entries, CEA-608's pair for its first field and for its
+second, then CEA-708's (A/53 Part 4, 6.2.3, and CEA-708's 4.4 for 29.97i).
+Video coded a field a picture (HEVC's field sequences, which FFmpeg decodes
+as a picture each, at twice the frame rate) carries a frame's caption data
+split between its two fields: each field's picture its own CEA-608 pair,
+cc_type 0 in the first field and 1 in the second, and half the frame's
+CEA-708 entries, 10 entries a picture at 29.97i. `fields_of` tells such a
+video from its first pictures (interlaced, top and bottom fields by turns).
+
 `write_video` does all of it; `caption_unit`, `with_captions` and
 `rewrite` are its parts, which the tests read.
 """
@@ -240,6 +251,33 @@ def probe(path, ffprobe='ffprobe', startupinfo=None):
     return '', 0.0, 0.0
 
 
+def fields_of(path, ffprobe='ffprobe', startupinfo=None, pictures=8):
+    """Whether the video at `path` is coded a field a picture: its first
+    `pictures` pictures, as FFmpeg decodes them, interlaced and a top and a
+    bottom field by turns (a frame's fields come woven together in one
+    picture otherwise, its top field first or not the same throughout)."""
+    result = subprocess.run([str(ffprobe), '-v', 'error', '-select_streams', 'v:0', '-read_intervals', f'%+#{pictures}',
+                             '-show_entries', 'frame=interlaced_frame,top_field_first', '-of', 'csv=p=0', str(path)],
+                            capture_output=True, text=True, startupinfo=startupinfo, check=False)
+    found = [tuple(line.split(',')[:2]) for line in (result.stdout or '').split() if line.count(',') >= 1]
+    if len(found) < 2 or any(interlaced != '1' for interlaced, _top in found):
+        return False
+    return all(one[1] != other[1] for one, other in zip(found, found[1:]))
+
+
+def field_share(triplets, count, field):
+    """The caption data of field `field` (0, the first; 1, the second) of a
+    frame whose data is `triplets` (CEA-608's pair for each field, then
+    CEA-708's entries, as mcc.caption_frames gives them) and `count`
+    entries: its own field's CEA-608 pair, then its half of the CEA-708
+    entries, the first half in the first field, padded to half of
+    `count`."""
+    triplets = list(triplets) + [_PADDING] * (count - len(triplets))
+    half = (count - 2) // 2
+    rest = triplets[2:]
+    return [triplets[field]] + (rest[:half] if field == 0 else rest[half:half * 2])
+
+
 def _run(command, startupinfo=None):
     run = subprocess.run(command, capture_output=True, startupinfo=startupinfo, check=False)
     if run.returncode != 0:
@@ -248,13 +286,15 @@ def _run(command, startupinfo=None):
 
 
 def write_video(video, output, frames, count, fps, container='MP4 A53', ffmpeg='ffmpeg', ffprobe='ffprobe',
-                startupinfo=None):
+                startupinfo=None, fields=False):
     """Write `video` out as `output` with the caption data `frames` ({frame:
     [(marker, byte, byte)]} at `fps` frames a second, `count` entries a
     frame, as mcc.caption_frames gives them) in its pictures, its picture
-    and sound copied. Raises ValueError for a video whose codec takes no
-    A/53 captions, and RuntimeError with what FFmpeg said when it cannot
-    write the file."""
+    and sound copied; with `fields`, a video coded a field a picture (at
+    twice `fps` pictures a second), each frame's data split between its
+    fields' pictures (`field_share`). Raises ValueError for a video whose
+    codec takes no A/53 captions, and RuntimeError with what FFmpeg said
+    when it cannot write the file."""
     codec, _rate, offset = probe(video, ffprobe, startupinfo)
     if codec not in CODECS:
         raise ValueError(f'Captions go in the frames of H.264, HEVC or MPEG-2 video, not {codec or "this video"}')
@@ -272,6 +312,12 @@ def write_video(video, output, frames, count, fps, container='MP4 A53', ffmpeg='
         def transform(pts, payload):
             # The frame this picture is shown on, counted from the file's start.
             seconds = ((pts - earliest) % _WRAP) / 90000.0 + offset if pts is not None else 0.0
+            if fields:
+                # A field a picture: the frame it is in, and which of its two.
+                position = seconds * fps
+                frame = int(position + 0.25)
+                triplets = field_share(frames.get(frame, _NO_CAPTIONS), count, int(position - frame >= 0.25))
+                return with_captions(codec, payload, triplets)
             triplets = list(frames.get(int(round(seconds * fps)), _NO_CAPTIONS))
             return with_captions(codec, payload, triplets + [_PADDING] * (count - len(triplets)))
 
