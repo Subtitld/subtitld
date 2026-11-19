@@ -111,12 +111,14 @@ REGIONS = ('<layout>'
            '<region xml:id="cells"><style tts:origin="2c 1c" tts:extent="36c 6c"/></region>'
            '<region xml:id="pixels" tts:origin="96px 540px" tts:extent="400px 200px" tts:displayAlign="center"/>'
            '<region xml:id="bare" tts:displayAlign="before" tts:textAlign="right"/>'
-           '<region xml:id="pycaption" tts:displayAlign="after" tts:textAlign="start"/>'
+           '<region xml:id="start" tts:displayAlign="after" tts:textAlign="start"/>'
            '</layout>')
-places = ['bottom', 'top', 'topleft', 'middle', 'lowtop', 'cells', 'pixels', 'bare', 'pycaption']
+# "start" is the near edge of the writing, the left for left-to-right
+# text (TTML2 tts:textAlign): in a file pycaption did not write it is meant.
+places = ['bottom', 'top', 'topleft', 'middle', 'lowtop', 'cells', 'pixels', 'bare', 'start']
 check('regions: origin, extent, displayAlign, textAlign; %, cells, px', [markup.alignment(c[2]) for c in cues(doc(
     ''.join(f'<p begin="{i}s" end="{i + 1}s" region="{name}">{name}</p>' for i, name in enumerate(places)),
-    REGIONS, attrs=' tts:extent="1920px 1080px" ttp:cellResolution="40 20"'))], [2, 8, 7, 6, 2, 8, 4, 9, 2])
+    REGIONS, attrs=' tts:extent="1920px 1080px" ttp:cellResolution="40 20"'))], [2, 8, 7, 6, 2, 8, 4, 9, 1])
 check("the body's region, and the paragraph's textAlign over the region's", [markup.alignment(c[2]) for c in cues(doc(
     '<p begin="1s" end="2s">a</p><p begin="2s" end="3s" tts:textAlign="right">b</p>', REGIONS).replace(
     '<body>', '<body region="top">'))], [8, 9])
@@ -179,6 +181,15 @@ PYCAPTION = ('<?xml version="1.0" encoding="utf-8"?>\n'
              '</tt>\n')
 check('what pycaption wrote (and Subtitld with it): centred, not at the left',
       cues(PYCAPTION), [(1.0, 2.0, 'Plain <i>italic</i>\nsecond'), (3.0, 4.0, 'Top <b>bold</b>')])
+# pycaption's writer names regions r0, r1... beyond its "bottom" (its
+# _get_new_id): the same habit, still centred.
+check('pycaption\'s r0 region: centred too', cues(PYCAPTION.replace('"bottom"', '"r0"'))[0][2],
+      'Plain <i>italic</i>\nsecond')
+# Its base markup declares tts: alone; a file with ttp: (or another
+# profile's namespace) is someone else's, and its "start" is meant.
+check('a region named "bottom" in a file pycaption did not write: at the left',
+      markup.alignment(cues(PYCAPTION.replace('<tt xml:lang="en"', '<tt xmlns:ttp="http://www.w3.org/ns/ttml#parameter" '
+                                              'ttp:timeBase="media" xml:lang="en"'))[0][2]), 1)
 try:
     ttml.parse('<usf><subtitle/></usf>')
     check('not TTML: refused', False, True)

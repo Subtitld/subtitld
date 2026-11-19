@@ -489,10 +489,35 @@ def _most_regions_at_once(shown):
     return most
 
 
+_PYCAPTION_REGION = re.compile(r'^(?:bottom|r\d+)$')
+
+
+def _pycaption_made(root):
+    """Whether a document looks written by pycaption's DFXPWriter (and so by
+    Subtitld when it wrote TTML with pycaption), whose regions all say
+    textAlign="start" whatever the subtitle meant. What it leaves: a region
+    of its own naming, "bottom" (DFXP_DEFAULT_REGION_ID) or r0, r1...
+    (its _get_new_id), that says textAlign="start" itself; and no attribute
+    outside the styling and xml namespaces, its base markup declaring only
+    tts: no ttp:, ttm: or a profile's own."""
+    named = False
+    for element in root.iter():
+        for key in element.attrib:
+            if key.startswith('{') and not key.startswith((_XML_NS, '{' + _TTS_NS + '}')):
+                return False
+        if _local(element.tag) == 'region' and _PYCAPTION_REGION.match(_xml_id(element) or '') \
+                and (_attr(element, 'textAlign') or '').strip() == 'start':
+            named = True
+    return named
+
+
 class _Frame:
     """Turns a region's lengths into percentages of the picture."""
 
     def __init__(self, root):
+        # Whether a region's textAlign="start" is pycaption's habit rather
+        # than the file's meaning (_keypad).
+        self.start_says_nothing = _pycaption_made(root)
         extent = [_LENGTH.match(part) for part in (_attr(root, 'extent') or '').split()]
         self.pixels = tuple(float(m.group(1)) for m in extent) \
             if len(extent) == 2 and all(m and m.group(2) == 'px' for m in extent) else None
@@ -894,15 +919,16 @@ def _keypad(props, frame, geometry=True):
     With no displayAlign the text goes to the bottom of the region, and
     with no textAlign to its middle, as players show them. In a region
     with no place of its own, "start", textAlign's default, is taken as
-    saying nothing too: pycaption writes it on every region, and so did
-    Subtitld when it wrote TTML with pycaption."""
+    saying nothing too in a document pycaption wrote (_pycaption_made): it
+    writes it on every region, and so did Subtitld when it wrote TTML with
+    pycaption. Any other file's "start" is the near edge it says."""
     origin, extent = frame.percent(props.get('origin')), frame.percent(props.get('extent'))
     writing = _WRITING.get((props.get('writingMode') or '').strip())
     if writing:
         return _keypad_down(props, frame, writing, origin, extent, geometry)
     display = props.get('displayAlign') or 'after'
     align = props.get('textAlign') or 'center'
-    if align == 'start' and not (origin and extent):
+    if align == 'start' and not (origin and extent) and frame.start_says_nothing:
         align = 'center'
     # "start" and "end" are the near and the far edge of the writing, which
     # right-to-left swaps; "left" and "right" are themselves either way.
@@ -933,7 +959,7 @@ def _keypad_down(props, frame, writing, origin, extent, geometry):
     a column has no such habit."""
     display = props.get('displayAlign') or 'before'
     align = props.get('textAlign') or 'center'
-    if align == 'start' and not (origin and extent):
+    if align == 'start' and not (origin and extent) and frame.start_says_nothing:
         align = 'center'
     first, last = (2, 0) if writing == 'vertical-rl' else (0, 2)
     column = {'before': first, 'center': 1}.get(display, last)

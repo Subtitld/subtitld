@@ -125,6 +125,11 @@ check('ttml_example: s2 paragraphs yellow', [plain(s) for s in example if '<font
        'But how is it proved?', 'How truly delightful!'])
 check('ttml_example: s1Right ones bottom right', [plain(s) for s in example if s['text'].startswith('{\\an3}')],
       ['Thus: what we call', 'the vertex of the Brain\nis really its base', 'and what we call its base\nis really its vertex,'])
+# s2Left, "a style based on s2 but justified to the left" as the file's own
+# comment says, textAlign "start": bottom left. (pysubs2's .ass beside it
+# keeps no alignment at all, so it says nothing here.)
+check('ttml_example: the s2Left one bottom left', [plain(s) for s in example if s['text'].startswith('{\\an1}')],
+      ['But how is it proved?'])
 check('ttml_example: the region\'s black background', {s.get('look', {}).get('background') for s in example}, {'#ff000000'})
 example2, _fmt = opened(found['pysubs2/ttml_example2.ttml'])
 # The file: subtitles 1 and 3 in region "top" (displayAlign "before").
