@@ -2587,7 +2587,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
         elif subtitle_format == 'IMSCMXF':
             # IMF's timed text track file: an IMSC 1.1 document in an ST
             # 429-5 track file laid out as IMF's are, at the video's rate
-            # (else 24), to the last subtitle's end.
+            # (else 24), to the last subtitle's end. Its descriptor names the
+            # document's IMSC profile, not TTML's namespace: ST 2067-2 has it
+            # so, asdcplib writes it so and bmx refuses any other value.
             rate = _edit_rate(VIDEO.get('framerate') or options.get('fps') or 24)
             document = ttml.write(segments, language=options.get('language') if options.get('text') == 'translation'
                                   and options.get('language') else language,
@@ -2599,7 +2601,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
             with open(final_file, 'wb') as mxf_file:
                 mxf_file.write(mxf.write_timed_text(document.encode('utf-8'), [], rate,
                                                     int(math.ceil(last * rate[0] / rate[1])),
-                                                    'http://www.w3.org/ns/ttml', None, mxf.IMF))
+                                                    'http://www.w3.org/ns/ttml/profile/imsc1.1/text', None, mxf.IMF))
 
         elif subtitle_format == 'STLMXF':
             # EBU STL in MXF (SMPTE ST 2075): the STL written as a .stl is,
