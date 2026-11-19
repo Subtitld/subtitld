@@ -1,7 +1,9 @@
 """MXF checked by the reference tools: Subtitld's SMPTE DCP, IMF and EBU
 STL track files given to asdcplib (asdcp-info, asdcp-unwrap, as-02-unwrap),
-bmx (mxf2raw) and MXFDump, built by tests/corpus/build_tools.sh; and the
-DCP track file Subtitle Edit keeps, made by asdcplib, read by Subtitld.
+bmx (mxf2raw) and MXFDump, built by tests/corpus/build_tools.sh, among
+them a DCP track file of pictures and one carrying a font, whose
+resources asdcp-unwrap must give back byte for byte; and the DCP track
+file Subtitle Edit keeps, made by asdcplib, read by Subtitld.
 
 The tools are not packaged anywhere this runs, so the suite skips when they
 have not been built; the asdcplib-made file comes from the corpus
@@ -72,6 +74,59 @@ code, said = run('asdcp-unwrap', folder / 'DCPMXF.mxf', folder / 'dcp-out')
 check('asdcp-unwrap gives back the reel Subtitld wrapped', (code, (folder / 'dcp-out').read_bytes()
                                                             == mxf.read_timed_text(str(folder / 'DCPMXF.mxf'))['document']),
       (0, True))
+
+print('asdcplib: a DCP track file of pictures, and one with a font')
+# The export's pictures: each subtitle's PNG wrapped in a Generic Stream
+# partition, named by its UUID in the reel. asdcp-unwrap writes the XML
+# and every resource (a file named by its UUID, AS_DCP_TimedText.cpp's
+# reader), and lists each with its MIME type.
+session.FORMAT = {'options': {'dcp_content': 'pictures'}}
+file_io.save_file(str(folder / 'pictures.mxf'), 'DCPMXF')
+carried = mxf.read_timed_text(str(folder / 'pictures.mxf'))
+(folder / 'pictures-out').mkdir()
+code, said = run('asdcp-unwrap', '-v', folder / 'pictures.mxf', folder / 'pictures-out' / 'reel')
+given = {path.name: path.read_bytes() for path in (folder / 'pictures-out').iterdir() if path.name != 'reel'}
+check('asdcp-unwrap: two PNG resources listed, the reel and each PNG given back byte for byte',
+      (code, 'ResourceCount: 2' in said, said.count(': image/png'),
+       (folder / 'pictures-out' / 'reel').read_bytes() == carried['document'],
+       given == {str(resource['id']): resource['data'] for resource in carried['resources']}), (0, True, 2, True, True))
+check('each a PNG, each named in the reel by its UUID',
+      [(data[:8] == b'\x89PNG\r\n\x1a\n', f'urn:uuid:{name}'.encode() in carried['document']) for name, data in given.items()],
+      [(True, True)] * 2)
+# Subtitld names no font for its text (the projector's own draws it), so
+# the export wraps none; the track file takes one all the same, as
+# asdcplib does (MT_OPENTYPE, "application/x-font-opentype").
+import uuid
+font = (Path(__file__).resolve().parents[1] / 'src' / 'subtitld' / 'graphics' / 'UbuntuMono-R.ttf').read_bytes()
+png = next(iter(given.values()))
+font_id, png_id, reel_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+reel = (f'<?xml version="1.0" encoding="UTF-8"?>\n<SubtitleReel xmlns="http://www.smpte-ra.org/schemas/428-7/2010/DCST">'
+        f'<Id>urn:uuid:{reel_id}</Id><LoadFont ID="Font1">urn:uuid:{font_id}</LoadFont>'
+        f'<SubtitleList/></SubtitleReel>\n').encode()
+(folder / 'font.mxf').write_bytes(mxf.write_timed_text(reel, [(font_id, 'application/x-font-opentype', font),
+                                                              (png_id, 'image/png', png)], (24, 1), 24,
+                                                       'http://www.smpte-ra.org/schemas/428-7/2010/DCST', reel_id, mxf.DCP))
+(folder / 'font-out').mkdir()
+code, said = run('asdcp-unwrap', '-v', folder / 'font.mxf', folder / 'font-out' / 'reel')
+check('a font and a PNG: asdcp-unwrap lists each by its type and gives each back byte for byte',
+      (code, f'{font_id}: application/x-font-opentype' in said, f'{png_id}: image/png' in said,
+       (folder / 'font-out' / 'reel').read_bytes() == reel, (folder / 'font-out' / str(font_id)).read_bytes() == font,
+       (folder / 'font-out' / str(png_id)).read_bytes() == png), (0, True, True, True, True, True))
+
+def remap_warnings(said):
+    """MXFDump's warnings, but the one it gives asdcplib's own track files
+    too: MIMEMediaType under a dynamic local tag (asdcplib's MDD.cpp), not
+    the static 4e11 of MXFDump's AAF dictionary."""
+    return [line for line in said.splitlines() if ('error' in line.lower() or 'warning' in line.lower())
+            and 'property "MimeType" has local key 4e11' not in line and 'Encountered 1 warnings' not in line]
+
+
+_code, theirs = run('MXFDump', '-v', asdcplib_made)
+check("MXFDump on asdcplib's own track file with a PNG: the one warning, of MIMEMediaType's local tag",
+      ('property "MimeType" has local key 4e11' in theirs, remap_warnings(theirs)), (True, []))
+for name in ('pictures', 'font'):
+    code, said = run('MXFDump', '-v', folder / f'{name}.mxf')
+    check(f'MXFDump on {name}.mxf: no other error or warning', remap_warnings(said), [])
 
 print('asdcplib and bmx: the IMF track file')
 code, said = run('as-02-unwrap', '-v', folder / 'IMSCMXF.mxf', folder / 'imf-out')
