@@ -277,9 +277,15 @@ at_start = pictures(TS_DVB_AT_START, found[0])
 # later), and ends within the first 3 s.
 check('DVB a millisecond before the video: at the start, ending within 3 s',
       [(p.start, p.end < 3.0) for p in at_start], [(0.0, True)])
-# Subtitle Edit counts 2: the first display set is replaced a millisecond
-# (in PTS) before it was shown, which Subtitld keeps as no subtitle at all.
-known('DVB at the start: how many subtitles', len(at_start), 2)
+# Subtitle Edit counts 2; Subtitld and FFmpeg (ffmpeg -c:s dvbsub writes
+# one display set with something in it) count 1. The stream sends a display
+# set for PTS 144000, then a page with nothing on it for 143910 and a new
+# one for 143911: EN 300 743's decoder takes display sets in the order they
+# come, each page instance taking the place of the one before it, and a
+# decoder cannot show the page for 144000 once a later page instance came
+# for a time already before it, so the first is never shown (at most for
+# the millisecond between, not a frame).
+check('DVB at the start: one subtitle, the first display set replaced before its time', len(at_start), 1)
 rs204 = tracks(TS_DVB_RS204)
 check('204-byte packets (Reed-Solomon): read as the 188-byte form', times(pictures(TS_DVB_RS204, rs204[0])),
       times(at_start))
