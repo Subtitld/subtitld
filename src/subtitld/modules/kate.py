@@ -50,10 +50,24 @@ each text event naming the region of its place, its text in simple
 markup, the granule rate a thousand a second with a shift of 32, a page
 for each event, the end packet at the last end.
 
-What is lost on the way: motions beyond where a region starts, bitmaps,
-fonts, palettes, styles' sizes and colours, karaoke; on writing, the
-formatting simple markup has no tag for, rubies (their readings left
-out) and places beyond the nine.
+Bitmaps (doc/kate-format-bitmap.doc, -rle-bitmap.doc, -palette.doc and
+the headers 0x86 and 0x87; kate_decode.c and kate_rle.c where they leave
+a detail out): an event may show a picture, its own or one of the
+bitmaps header's, in the colours of a palette, its own, one of the
+palettes header's, or the one the bitmap names. A bitmap is paletted (its
+pixels packed, bitstream 0.1, or coded line by line in one of six kinds
+of runs) or a PNG. `pictures` gives a picture_subtitles.Picture for each
+event with one, where its region puts it on the canvas (the ID header's,
+else the smallest usual frame holding them all), for an OCR add-on; the
+stream's text events come with them as their words, as DCP's do
+(picture_ocr). A stream of pictures opens as such (`has_bitmaps`), as a
+DVD's subtitles do.
+
+What is lost on the way: motions beyond where a region starts, a
+region's size where a bitmap is drawn scaled to it, the bitmaps an event
+lays in its text, fonts, styles' sizes and colours, karaoke; on writing,
+the formatting simple markup has no tag for, rubies (their readings left
+out), places beyond the nine, and pictures.
 """
 
 import random
@@ -197,6 +211,12 @@ class _Reader:
         return -value if sign else value
 
     def buffer(self, count):
+        if not self.bit & 7:
+            start = self.bit >> 3
+            if start + count > len(self.data):
+                raise ValueError('Kate packet ends early')
+            self.bit += 8 * count
+            return bytes(self.data[start:start + count])
         return bytes(self.read(8) for _ in range(count))
 
     def warp(self):
@@ -368,36 +388,141 @@ def _motion(reader, info):
 
 
 def _palette(reader, version):
-    count = reader.read(8) + 1
-    reader.skip(32 * count)
+    """A palette: its colours, [(r, g, b, a)]."""
+    colours = [_color(reader) for _ in range(reader.read(8) + 1)]
     if version >= (0, 6):
         reader.read32v()
         _metadata(reader)
     reader.warp()
+    return colours
 
 
-def _skip_bitmap(reader, version):
+# Bitmaps: no larger than libkate takes one (kate_internal.h).
+BITMAP_LIMIT = 4096
+PALETTED, PNG = 0, 1
+RLE = 1
+# The six kinds of line in a bitmap coded in runs (kate_rle.c).
+_EMPTY, _BASIC, _DELTA, _BASIC_STOP, _BASIC_STARTEND, _DELTA_STOP, _BASIC_ZERO = range(7)
+
+
+def _rle_line(reader, kind, width, bits, zero, previous):
+    """One line of a bitmap coded in runs (doc/kate-format-rle-bitmap.doc,
+    the run lengths' sizes kate_rle.c's), a bytearray."""
+    line = bytearray([zero]) * width
+    if kind == _EMPTY:
+        return line
+    x = 0
+
+    def fill(count, value):
+        nonlocal x
+        if count <= 0 or x + count > width:
+            raise ValueError('Kate bitmap run goes past its line')
+        line[x:x + count] = bytes([value]) * count
+        x += count
+
+    def copy(count):
+        nonlocal x
+        if count <= 0 or x + count > width:
+            raise ValueError('Kate bitmap run goes past its line')
+        if previous is not None:
+            line[x:x + count] = previous[x:x + count]
+        x += count
+
+    if kind == _BASIC:
+        while x < width:
+            count = reader.read(4) + 1
+            fill(count, reader.read(bits))
+    elif kind == _DELTA:
+        while x < width:
+            if reader.read(1):
+                copy(reader.read(6) + 1)
+            else:
+                count = reader.read(3) + 1
+                fill(count, reader.read(bits))
+    elif kind == _BASIC_STOP:
+        start = reader.read(8)
+        if start:
+            fill(start, zero)
+        while x < width:
+            count = reader.read(6)
+            if not count:
+                break                                # the rest is the zero colour
+            fill(count, reader.read(bits))
+    elif kind == _BASIC_STARTEND:
+        start, end = reader.read(9), reader.read(8)
+        if start:
+            fill(start, zero)
+        if end > width - x:
+            raise ValueError('Kate bitmap run goes past its line')
+        stop = width - end
+        while x < stop:
+            count = reader.read(3) + 1
+            if x + count > stop:
+                raise ValueError('Kate bitmap run goes past its line')
+            fill(count, reader.read(bits))
+    elif kind == _DELTA_STOP:
+        while x < width:
+            if reader.read(1):
+                copy(reader.read(5) + 1)
+            else:
+                count = reader.read(3)
+                if not count:
+                    break
+                fill(count, reader.read(bits))
+    elif kind == _BASIC_ZERO:
+        while x < width:
+            value = reader.read(bits)
+            fill(reader.read(8 if value == zero else 3) + 1, value)
+    else:
+        raise ValueError('Kate bitmap line of an unknown kind')
+    return line
+
+
+def _rle(reader, width, height, bits):
+    """A bitmap coded in runs: its palette indices, row after row."""
+    zero = reader.read(bits)
+    rows, previous = [], None
+    for _ in range(height):
+        previous = _rle_line(reader, reader.read(3), width, bits, zero, previous)
+        rows.append(previous)
+    return b''.join(rows)
+
+
+def _bitmap(reader, version):
+    """A bitmap: {'width', 'height', 'palette' (the index of the palette it
+    names, -1 for none), 'indices' (a paletted one's pixels) or 'png'}."""
     width, height = reader.read32v(), reader.read32v()
     bpp = reader.read(8)
+    if not (0 < width <= BITMAP_LIMIT and 0 < height <= BITMAP_LIMIT) or bpp > 8:
+        raise ValueError('Kate bitmap of a size Subtitld does not read')
+    bitmap = {'width': width, 'height': height, 'palette': -1, 'indices': None, 'png': None}
     if bpp == 0:
         kind = reader.read(8)
-        if kind == 0:
-            # A paletted bitmap, coded in runs, is not read: the event's
-            # text, which comes before it, is kept, the rest of its
-            # overrides lost.
-            raise ValueError('Kate bitmaps coded in runs are not read')
-        reader.skip(8 * reader.read32())             # PNG
-        if version >= (0, 4):
-            reader.read32v()
-            reader.read32v()
-            reader.read32v()
-        if version >= (0, 6):
-            reader.read32v()
-            _metadata(reader)
+        if kind == PALETTED:
+            if reader.read(8) != RLE:
+                raise ValueError('Kate bitmap in an unknown encoding')
+            bits = reader.read32v()
+            bitmap['palette'] = reader.read32v()
+            if not 0 < bits <= 8:
+                raise ValueError('Kate bitmap of an unknown depth')
+            bitmap['indices'] = _rle(reader, width, height, bits)
+        elif kind == PNG:
+            bitmap['png'] = reader.buffer(reader.read32() & 0xFFFFFFFF)
+        else:
+            raise ValueError('Kate bitmap of an unknown type')
     else:
-        reader.read32v()                             # palette
-        reader.skip(width * height * bpp)
+        # Bitstream 0.1's: the pixels packed, `bpp` bits each.
+        bitmap['palette'] = reader.read32v()
+        bitmap['indices'] = bytes(reader.read(bpp) for _ in range(width * height))
+    if version >= (0, 4):
+        reader.read32v()
+        reader.read32v()                             # the offsets to its logical centre
+        reader.read32v()
+    if version >= (0, 6):
+        reader.read32v()
+        _metadata(reader)
     reader.warp()
+    return bitmap
 
 
 
@@ -405,7 +530,7 @@ def _headers(found):
     """The stream's ID header and what its other headers define."""
     info = {'version': (0, 0), 'curves': [], 'regions': [], 'styles': [], 'motions': [], 'language': '',
             'category': '', 'shift': GRANULE_SHIFT, 'rate': GRANULE_RATE, 'canvas': (0, 0), 'headers': 1,
-            'comments': []}
+            'comments': [], 'palettes': [], 'bitmaps': []}
     for packet in found:
         kind = packet[0]
         if not kind & 0x80 or packet[1:8] != MAGIC[1:]:
@@ -440,6 +565,10 @@ def _headers(found):
                 info['curves'] = [_curve(reader) for _ in range(reader.read32v())]
             elif kind == 0x85:
                 info['motions'] = [_motion(reader, info) for _ in range(reader.read32v())]
+            elif kind == 0x86:
+                info['palettes'] = [_palette(reader, info['version']) for _ in range(reader.read32v())]
+            elif kind == 0x87:
+                info['bitmaps'] = [_bitmap(reader, info['version']) for _ in range(reader.read32v())]
         except (ValueError, IndexError):
             continue                                 # a header Subtitld cannot read: what it defines is not used
     return info
@@ -447,14 +576,15 @@ def _headers(found):
 
 def _event(packet, info):
     """A text event: {'start', 'end', 'text', 'markup', 'region', 'style',
-    'motions'}; times in seconds."""
+    'motions', 'palette', 'bitmap'}; times in seconds."""
     reader = _Reader(packet, 1)
     start, duration = reader.read64(), reader.read64()
     reader.read64()                                  # backlink
     numerator, denominator = info['rate']
     text = reader.buffer(reader.read32() & 0xFFFFFFFF)
     event = {'start': start * denominator / numerator, 'end': (start + duration) * denominator / numerator,
-             'text': text, 'markup': MARKUP_NONE, 'region': None, 'style': None, 'motions': [], 'encoding': 0}
+             'text': text, 'markup': MARKUP_NONE, 'region': None, 'style': None, 'motions': [], 'encoding': 0,
+             'palette': None, 'bitmap': None}
     version = info['version']
     try:
         if reader.read(1):
@@ -496,13 +626,17 @@ def _event(packet, info):
             reader.read32v()
             if reader.read(1):
                 if reader.read(1):
-                    reader.read32v()
+                    index = reader.read32v()
+                    if 0 <= index < len(info['palettes']):
+                        event['palette'] = info['palettes'][index]
                 if reader.read(1):
-                    _palette(reader, version)
+                    event['palette'] = _palette(reader, version)
                 if reader.read(1):
-                    reader.read32v()
+                    index = reader.read32v()
+                    if 0 <= index < len(info['bitmaps']):
+                        event['bitmap'] = info['bitmaps'][index]
                 if reader.read(1):
-                    _skip_bitmap(reader, version)
+                    event['bitmap'] = _bitmap(reader, version)
                 if reader.read(1):
                     event['markup'] = reader.read(8)
     except (ValueError, IndexError):
@@ -633,10 +767,10 @@ def streams(data):
     return out
 
 
-def parse(data, serial=None):
-    """(subtitles, {'language', 'category'}) of the Kate stream `serial`
-    (the first one when None) of an Ogg file's bytes. Raises ValueError for
-    one with no Kate stream."""
+def _events(data, serial=None):
+    """(info, events) of the Kate stream `serial` (the first one when
+    None) of an Ogg file's bytes. Raises ValueError for one with no Kate
+    stream."""
     found = packets(bytes(data))
     serials = [key for key, value in found.items() if value and value[0][0].startswith(MAGIC)]
     if not serials:
@@ -644,25 +778,127 @@ def parse(data, serial=None):
     serial = serial if serial in serials else serials[0]
     stream = [packet for packet, _granule in found[serial]]
     info = _headers([packet for packet in stream if packet[:1] and packet[0] & 0x80])
-    segments = []
+    events = []
     for packet in stream:
         if not packet or packet[0] != 0x00:
             continue
         try:
-            event = _event(packet, info)
+            events.append(_event(packet, info))
         except ValueError:
             continue
-        if event['encoding'] != 0:
-            continue                                 # only UTF-8 is defined
-        text = event['text'].decode('utf-8', 'replace').replace('\r\n', '\n').rstrip('\x00')
-        text = from_simple(text) if event['markup'] == MARKUP_SIMPLE else text
-        if not markup.plain(text).strip():
-            continue
-        keypad = _keypad(event, info)
-        segments.append({'start': round(event['start'], 3), 'end': round(max(event['start'], event['end']), 3),
-                         'text': (markup.with_alignment('', keypad) if keypad else '') + text})
+    return info, events
+
+
+def _event_text(event, info):
+    """An event's words in Subtitld's markup, its place code first; '' for
+    none (or an encoding other than UTF-8, the only one defined)."""
+    if event['encoding'] != 0:
+        return ''
+    text = event['text'].decode('utf-8', 'replace').replace('\r\n', '\n').rstrip('\x00')
+    text = from_simple(text) if event['markup'] == MARKUP_SIMPLE else text
+    if not markup.plain(text).strip():
+        return ''
+    keypad = _keypad(event, info)
+    return (markup.with_alignment('', keypad) if keypad else '') + text
+
+
+def parse(data, serial=None):
+    """(subtitles, {'language', 'category'}) of the Kate stream `serial`
+    (the first one when None) of an Ogg file's bytes. Raises ValueError for
+    one with no Kate stream."""
+    info, events = _events(data, serial)
+    segments = []
+    for event in events:
+        text = _event_text(event, info)
+        if text:
+            segments.append({'start': round(event['start'], 3), 'end': round(max(event['start'], event['end']), 3),
+                             'text': text})
     segments.sort(key=lambda segment: (segment['start'], segment['end']))
     return segments, {'language': info['language'], 'category': info['category']}
+
+
+def has_bitmaps(data, serial=None):
+    """Whether a Kate stream of an Ogg file's bytes shows pictures."""
+    try:
+        return any(event['bitmap'] is not None for event in _events(data, serial)[1])
+    except ValueError:
+        return False
+
+
+# The frames a canvas the ID header leaves unsaid may be, smallest first.
+_FRAMES = ((720, 480), (720, 576), (1280, 720), (1920, 1080), (3840, 2160))
+_GRAYS = [(level * 255 // 15, level * 255 // 15, level * 255 // 15, 255) for level in range(16)]
+
+
+def _bitmap_picture(bitmap, palette):
+    """(width, height, indices, colours) of a bitmap, or None."""
+    if bitmap['png'] is not None:
+        from subtitld.modules import picture_ocr
+        return picture_ocr.png_picture(bitmap['png'])
+    colours = list(palette or _GRAYS)
+    return bitmap['width'], bitmap['height'], bitmap['indices'], colours + [(0, 0, 0, 0)] * (256 - len(colours))
+
+
+def picture_list(data, serial=None):
+    """(pictures, {'language', 'category'}) of the Kate stream `serial` of
+    an Ogg file's bytes: a picture_subtitles.Picture for each event with a
+    bitmap, in the colours of its palette (the event's, else the one the
+    bitmap names, else grays), where its region puts it on the canvas;
+    the other events' words as pictures of one clear pixel, at the top or
+    the bottom as their place is."""
+    from subtitld.modules.picture_subtitles import Picture
+    info, events = _events(data, serial)
+    width, height = info['canvas']
+    placed = []
+    for event in events:
+        if event['bitmap'] is None:
+            continue
+        bitmap = event['bitmap']
+        palette = event['palette']
+        if palette is None and 0 <= bitmap['palette'] < len(info['palettes']):
+            palette = info['palettes'][bitmap['palette']]
+        decoded = _bitmap_picture(bitmap, palette)
+        if decoded is None:
+            continue
+        region = event['region']
+        if region is not None and region['metric'] == PIXEL:
+            x, y = region['x'], region['y']
+        elif region is not None and width and height:
+            x = round(_fraction(region['x'], region['metric'], width) * width)
+            y = round(_fraction(region['y'], region['metric'], height) * height)
+        else:
+            x = y = None                             # placed once the frame is known
+        placed.append((event, decoded, x, y))
+    if not (width and height):
+        right = max([x + d[0] for _e, d, x, _y in placed if x is not None] + [0])
+        bottom = max([y + d[1] for _e, d, _x, y in placed if y is not None] + [0])
+        width, height = next((frame for frame in _FRAMES if frame[0] >= right and frame[1] >= bottom),
+                             (right, bottom))
+    found = []
+    for event, (across, down, indices, colours), x, y in placed:
+        if x is None:
+            # No region: centred, low on the frame, as a subtitle is.
+            x, y = max(0, (width - across) // 2), max(0, height - down - height // 20)
+        found.append(Picture(event['start'], max(event['start'], event['end']), x, y, across, down, indices, colours,
+                             False, width, height, ''))
+    for event in events:
+        if event['bitmap'] is not None:
+            continue
+        text = _event_text(event, info)
+        if not text:
+            continue
+        lead, words = markup.split_lead(text)
+        top = markup.alignment(lead) >= 7
+        found.append(Picture(event['start'], max(event['start'], event['end']), 0, 0 if top else height - 1, 1, 1,
+                             b'\x00', [(0, 0, 0, 0)], False, width, height, words))
+    found.sort(key=lambda picture: (picture.start, picture.end))
+    return found, {'language': info['language'], 'category': info['category']}
+
+
+def pictures(path, serial=None):
+    """(pictures, {'language', 'category'}) of the Kate file at `path` (picture_list)."""
+    with open(path, 'rb') as kate_file:
+        return picture_list(kate_file.read(), serial)
 
 
 def read(path, serial=None):

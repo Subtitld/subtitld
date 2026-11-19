@@ -1,11 +1,11 @@
 """Picture subtitles read as text by an OCR add-on.
 
-Opening a DVD VobSub (.idx/.sub) or SUP (.sup), a Blu-ray PGS (.sup), karaoke CD+G (.cdg), a
-BDN's PNGs, the images of a Scenarist, SON, DOST, spumux, Timed Images,
+Opening a DVD VobSub (.idx/.sub) or SUP (.sup), a Blu-ray PGS (.sup), karaoke CD+G (.cdg), an
+Ogg Kate stream's bitmaps, a BDN's PNGs, the images of a Scenarist, SON, DOST, spumux, Timed Images,
 Final Cut Pro or Rhozet index, a TTML file in IMSC's Image Profile or a
 DCP's subtitles with pictures in them, or reading a picture track of a
 video (DVB and XSUB streams among them), Subtitld decodes each subtitle
-into a picture (vobsub, dvdsup, pgs, cdg, dvbsub, xsub, picture_indexes,
+into a picture (vobsub, dvdsup, pgs, cdg, kate, dvbsub, xsub, picture_indexes,
 `bdn_pictures`, `imsc_pictures`, `dcp_pictures`), and an
 add-on serving `ocr.recognize` (Tesseract, PP-OCRv5) reads the text in it.
 A picture whose words the file gives (IMSC's alt text) is not read: the
@@ -38,6 +38,8 @@ from subtitld.modules.addons.provider import TASK_OCR_RECOGNIZE
 # Pictures read with less confidence than this are read again the other way.
 RETRY_BELOW = 0.6
 PICTURE_EXTENSIONS = ('.sup', '.idx', '.cdg')
+# Ogg files, whose Kate stream's bitmaps read_file reads.
+KATE_EXTENSIONS = ('.ogg', '.oga', '.ogv')
 # Transport streams, whose DVB subtitles read_file reads.
 TRANSPORT_STREAM_EXTENSIONS = ('.ts', '.m2ts', '.mts')
 
@@ -82,6 +84,11 @@ def read_file(path):
         return pgs.read(path), ''
     if str(path).lower().endswith('.cdg'):
         return cdg.read(path), ''
+    if str(path).lower().endswith(KATE_EXTENSIONS):
+        # An Ogg Kate stream's bitmaps, its text events as their words.
+        from subtitld.modules import kate
+        found, info = kate.pictures(path)
+        return found, info['language']
     if str(path).lower().endswith(TRANSPORT_STREAM_EXTENSIONS):
         # The first DVB subtitle service the PMT lists; without one, the
         # first SCTE 27 stream.

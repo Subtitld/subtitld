@@ -102,10 +102,10 @@ class PictureSubtitlesError(CorruptedProjectFileError):
     """Raised by `process_subtitles_file` for a file whose subtitles are
     pictures (a VobSub's .idx or .sub, a PGS .sup, a DVD's bare .sup, a CD+G .cdg, a BDN's
     PNGs, a picture index's images, a TTML file in IMSC's Image Profile with pictures it gives no
-    words for, DCP subtitles with <Image>s), not text: nothing is wrong
+    words for, DCP subtitles with <Image>s, an Ogg Kate stream's bitmaps), not text: nothing is wrong
     with it, but only an OCR add-on can make text of it (picture_ocr).
     `path` is the file,
-    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp', 'cdg', or a key
+    `kind` 'vobsub', 'pgs', 'dvdsup', 'bdn', 'imsc', 'dcp', 'cdg', 'kate', or a key
     of picture_indexes.FORMATS in lower case ('scenaristbmp', 'son', 'dost',
     'spumux', 'timedimages', 'fcpimage', 'rhozet')."""
 
@@ -1096,6 +1096,10 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE['language'] = _known_language(kate_info['language'])
             if kate_info['category']:
                 session.FORMAT['options'] = dict(session.FORMAT.get('options') or {}, kate_category=kate_info['category'])
+            # Pictures (as kateenc makes of a DVD's): for an OCR add-on.
+            with open(subtitle_file, 'rb') as kate_file:
+                if kate.has_bitmaps(kate_file.read()):
+                    raise PictureSubtitlesError(subtitle_file, 'kate')
 
         elif subtitle_file.lower().endswith(('.srv3', '.ytt', '.srv1')) or (
                 subtitle_file.lower().endswith('.xml') and _youtube_xml(subtitle_file)):
