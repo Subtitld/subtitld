@@ -861,19 +861,27 @@ def regenerate_dub_for_selected(self):
     # mode and bleed their training-set accent into the output (most
     # noticeably an English accent on Portuguese / Italian / Spanish
     # clones with the qwen3 model).
-    if clone_ref.voice_id_requires_ref_audio(provider, voice_id):
-        ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
-        if ref_path:
-            request['voice_ref_audio'] = ref_path
-            # `skip_ref_text` per-addon opt-out — same gate as the two
-            # call sites in `left_panel_dubbing.py`. Keep these three
-            # paths byte-for-byte aligned: a divergence here means the
-            # user's Configure setting only applies to *some* of the
-            # buttons they click, which would be a confusing bug.
-            if ref_text and not clone_ref.should_skip_ref_text(provider.id):
-                request['voice_ref_text'] = ref_text
-    provider.generate_speeches([request])
-    self.timeline_widget.update()
+    def send():
+        if needs_ref:
+            ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
+            if ref_path:
+                request['voice_ref_audio'] = ref_path
+                # `skip_ref_text` per-addon opt-out — same gate as the two
+                # call sites in `left_panel_dubbing.py`. Keep these three
+                # paths byte-for-byte aligned: a divergence here means the
+                # user's Configure setting only applies to *some* of the
+                # buttons they click, which would be a confusing bug.
+                if ref_text and not clone_ref.should_skip_ref_text(provider.id):
+                    request['voice_ref_text'] = ref_text
+        provider.generate_speeches([request])
+        self.timeline_widget.update()
+
+    needs_ref = clone_ref.voice_id_requires_ref_audio(provider, voice_id)
+    # The reference's words may have to be heard first (`clone_ref.when_ready`).
+    if needs_ref:
+        clone_ref.when_ready(speaker_name, send)
+    else:
+        send()
 
 
 def on_clicked(self):
