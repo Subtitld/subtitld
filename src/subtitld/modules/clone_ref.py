@@ -608,7 +608,8 @@ def extract_speaker_reference_with_text(
     if out_path.is_file() and out_path.stat().st_size > 0:
         try:
             cached = json.loads(sidecar.read_text(encoding='utf-8'))
-            if out_path.stat().st_mtime >= os.path.getmtime(src) and cached.get('pick') == picked:
+            if out_path.stat().st_mtime >= os.path.getmtime(src) and cached.get('pick') == picked \
+                    and 'ref_text' in cached:
                 return str(out_path), cached.get('ref_text')
         except (OSError, ValueError, AttributeError):
             pass  # fall through to re-extract
