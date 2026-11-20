@@ -480,10 +480,10 @@ def _words_heard(segments) -> list[dict]:
     for segment in segments if isinstance(segments, list) else []:
         if not isinstance(segment, dict):
             continue
-        for word in segment.get('words') or [segment]:
+        for piece in segment.get('words') or [segment]:
             try:
-                text = str(word.get('text') or word.get('word') or '').strip()
-                start, end = float(word['start']), float(word['end'])
+                text = str(piece.get('text') or piece.get('word') or '').strip()
+                start, end = float(piece['start']), float(piece['end'])
             except (AttributeError, KeyError, TypeError, ValueError):
                 continue
             if text and end >= start:
@@ -542,7 +542,7 @@ def _fit_span(keep: float, pieces: list) -> tuple[float, str]:
     last_end = float(kept[-1]['end'])
     after = timed[len(kept)] if len(kept) < len(timed) else None
     cut = (last_end + float(after.get('start', last_end))) / 2 if after else last_end + 0.1
-    words = markup.plain(''.join(str(p.get('text') or '') for p in kept)).strip()
+    words = markup.plain(''.join(str(piece.get('text') or '') for piece in kept)).strip()
     return min(keep, max(last_end, cut)), words
 
 
@@ -609,7 +609,7 @@ def extract_speaker_reference_with_text(
         try:
             cached = json.loads(sidecar.read_text(encoding='utf-8'))
             if out_path.stat().st_mtime >= os.path.getmtime(src) and cached.get('pick') == picked:
-                return str(out_path), cached.get('text')
+                return str(out_path), cached.get('ref_text')
         except (OSError, ValueError, AttributeError):
             pass  # fall through to re-extract
 
@@ -649,7 +649,7 @@ def extract_speaker_reference_with_text(
         return None, None
 
     try:
-        sidecar.write_text(json.dumps({'pick': picked, 'text': ref_text}), encoding='utf-8')
+        sidecar.write_text(json.dumps({'pick': picked, 'ref_text': ref_text}), encoding='utf-8')
     except OSError:
         pass  # only the next call's reuse is lost
     total = sum(e - s for s, e in spans)
