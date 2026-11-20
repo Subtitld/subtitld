@@ -459,18 +459,22 @@ def _written_tokens(text):
         yield ('text', text[position:]), text[position:]
 
 
-def spans(text):
-    """[(text, Style)]: the visible text in runs of one style, tags gone."""
+def spans(text, keep=None):
+    """[(text, Style)]: the visible text in runs of one style, tags gone.
+    The override codes `keep` (a pattern) finds stay in the text, as they
+    are written, with the text after them."""
     reader = _Reader()
     runs = []
     for token in _tokens(text):
-        if token[0] == 'text':
-            if runs and runs[-1][1] == reader.style:
-                runs[-1] = (runs[-1][0] + token[1], reader.style)
-            else:
-                runs.append((token[1], reader.style))
-        else:
+        if token[0] != 'text':
             reader.step(token)
+            if token[0] != 'override' or keep is None or not keep.search(token[1]):
+                continue
+            token = ('text', '{' + ''.join(match.group(0) for match in keep.finditer(token[1])) + '}')
+        if runs and runs[-1][1] == reader.style:
+            runs[-1] = (runs[-1][0] + token[1], reader.style)
+        else:
+            runs.append((token[1], reader.style))
     return runs
 
 

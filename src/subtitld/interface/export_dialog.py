@@ -31,6 +31,7 @@ from subtitld.modules import hls
 from subtitld.modules import isobmff_text
 from subtitld.modules import markup
 from subtitld.modules import json_dialects
+from subtitld.modules import legacy
 from subtitld.modules import lrc
 from subtitld.modules import mcc
 from subtitld.modules import pac
@@ -50,6 +51,14 @@ SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 
                     'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
                     'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
+# Karaoke's own formats, and the player era's, each group after a line in the
+# list: few look for them, and nobody looking for SRT should read past them.
+KARAOKE_FORMATS = ('ULTRASTAR', 'KAR', 'MIDI', 'KBP')
+PLAYER_ERA_FORMATS = tuple(legacy.SESSION_FORMATS)
+FORMAT_GROUPS = (tuple(SUBTITLE_FORMATS), KARAOKE_FORMATS, PLAYER_ERA_FORMATS)
+SUBTITLE_FORMATS = [fmt for group in FORMAT_GROUPS for fmt in group]
+# The player-era formats counted in frames, at the rate chosen.
+PLAYER_ERA_FRAMES = ('AQTITLE', 'SPRUCE', 'ORESME', 'SSTS', 'DVDSS')
 # The dialects of these two, one written at a time: which, an option.
 DIALECTS = {'XMLDIALECT': (xml_dialects, 'xml_dialect'), 'JSONDIALECT': (json_dialects, 'json_dialect')}
 # The formats an editor's timeline reads, frames counted at a rate.
@@ -86,7 +95,10 @@ class _SubtitlesPanel(QWidget):
 
         self.format_combo = utils.HeaderComboBox()
         self.format_combo.setLabel(_('export_dialog.format'))
-        self.format_combo.addItems(SUBTITLE_FORMATS)
+        for index, group in enumerate(FORMAT_GROUPS):
+            if index:
+                self.format_combo.addSeparator()
+            self.format_combo.addItems(group)
         self.format_combo.activated.connect(self._refresh_options)
         self.layout().addWidget(self.format_combo)
 
@@ -139,9 +151,9 @@ class _SubtitlesPanel(QWidget):
         grid.addWidget(self.offset_spin, 2, 0)
         self.layout().addWidget(self.text_options)
 
-        # SRT, SAMI, SUB, LRC, Avid SubCap and the DVD scripts: for players
-        # (and editors, and authoring tools) that need an older encoding or
-        # Windows line ends.
+        # SRT, SAMI, SUB, LRC, Avid SubCap, the DVD scripts and the player
+        # era's: for players (and editors, and authoring tools) that need an
+        # older encoding or Windows line ends.
         self.srt_options = QWidget()
         row = QHBoxLayout(self.srt_options)
         row.setContentsMargins(0, 0, 0, 0)
@@ -592,7 +604,7 @@ class _SubtitlesPanel(QWidget):
         fmt = self.format_combo.currentText()
         self._speaker_choices(fmt)
         self.text_options.setVisible(fmt in export_options.TEXT_FORMATS)
-        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS)
+        self.srt_options.setVisible(fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS + PLAYER_ERA_FORMATS)
         # SAMI and FCPXML write the original and the translation as two languages.
         names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
         combo = self.text_combo.combobox
@@ -602,7 +614,7 @@ class _SubtitlesPanel(QWidget):
                 combo.setItemText(index, _('export_dialog.text_both_sami' if fmt in ('SAMI', 'FCPXML') else 'export_dialog.text_both')
                                   .format(language=names.get(language, language)))
         self.sub_options.setVisible(fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS
-                                    + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS)
+                                    + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS + PLAYER_ERA_FRAMES)
         self._show_dialects(fmt)
         # SCC is always 29.97; the editors' formats count at the rate chosen.
         rate = float(self.fps_combo.combobox.currentData() or 0)
@@ -783,9 +795,9 @@ class _SubtitlesPanel(QWidget):
         if fmt in export_options.TEXT_FORMATS:
             options.update({key: choices[key] for key in ('text', 'language', 'speakers', 'formatting', 'timed')})
             options['offset'] = self.offset_spin.value()
-        if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS:
+        if fmt in ('SRT', 'SAMI', 'SUB', 'LRC', 'AVID') + DVD_SCRIPTS + PLAYER_ERA_FORMATS:
             options.update(encoding=choices['encoding'], line_ends=choices['line_ends'])
-        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS:
+        if fmt in ('SUB', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890', 'AVID', 'FCPXML') + DVD_SCRIPTS + VENDOR_FORMATS + tuple(DIALECTS) + EDITOR_LISTS + PLAYER_ERA_FRAMES:
             options['fps'] = choices['fps']
         if fmt in DIALECTS:
             options[DIALECTS[fmt][1]] = self.dialect_combo.combobox.currentData()
@@ -845,6 +857,12 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
+        if fmt in ('KAR', 'MIDI'):
+            # The MIDI file the song was opened from, whose music is written
+            # with its words.
+            opened = session.FORMAT.get('options') if isinstance(session.FORMAT, dict) else None
+            if (opened or {}).get('kar_source'):
+                options['kar_source'] = opened['kar_source']
         return fmt, choices, options
 
 
