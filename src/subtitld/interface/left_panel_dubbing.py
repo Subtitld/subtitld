@@ -832,27 +832,36 @@ class _GenericTTSDubbingPanel(QWidget):
         # with `bad_params` if the toggle was off, e.g. qwen3-clone or
         # xtts-clone). The per-subtitle override matches what the
         # speaker-level batch generator does.
-        if clone_ref.voice_id_requires_ref_audio(widget.provider, voice_id):
-            ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
-            if ref_path:
-                request['voice_ref_audio'] = ref_path
-                # Pair ref_text with ref_audio when available — clone-
-                # capable engines fall back to "x-vector only" when
-                # ref_text is missing, which leaks the model's training-
-                # set accent into the output (e.g. English accent on
-                # Portuguese clones). The subtitle text is exactly the
-                # transcript for the audio span, so forwarding it costs
-                # nothing and unlocks ICL mode in the addon.
-                #
-                # The `skip_ref_text` user opt-out (set per-addon in the
-                # Configure dialog) suppresses this — for users who
-                # prefer the addon's own auto-transcription path.
-                if ref_text and not clone_ref.should_skip_ref_text(widget.provider.id):
-                    request['voice_ref_text'] = ref_text
-        widget.provider.generate_speeches([request])
-        timeline_widget = getattr(widget.window(), 'timeline_widget', None)
-        if timeline_widget is not None:
-            timeline_widget.update()
+        def send():
+            if needs_ref:
+                ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
+                if ref_path:
+                    request['voice_ref_audio'] = ref_path
+                    # Pair ref_text with ref_audio when available — clone-
+                    # capable engines fall back to "x-vector only" when
+                    # ref_text is missing, which leaks the model's training-
+                    # set accent into the output (e.g. English accent on
+                    # Portuguese clones). The subtitle text is exactly the
+                    # transcript for the audio span, so forwarding it costs
+                    # nothing and unlocks ICL mode in the addon.
+                    #
+                    # The `skip_ref_text` user opt-out (set per-addon in the
+                    # Configure dialog) suppresses this — for users who
+                    # prefer the addon's own auto-transcription path.
+                    if ref_text and not clone_ref.should_skip_ref_text(widget.provider.id):
+                        request['voice_ref_text'] = ref_text
+            widget.provider.generate_speeches([request])
+            timeline_widget = getattr(widget.window(), 'timeline_widget', None)
+            if timeline_widget is not None:
+                timeline_widget.update()
+
+        needs_ref = clone_ref.voice_id_requires_ref_audio(widget.provider, voice_id)
+        # A reference cut short of its subtitle may need its words heard
+        # first, by a speech recognition add-on (`clone_ref.when_ready`).
+        if needs_ref:
+            clone_ref.when_ready(speaker_name, send)
+        else:
+            send()
 
     def update(widget):
         selected = session.SUBTITLE.selected
@@ -1053,21 +1062,12 @@ class _GenericTTSSpeakerPanel(QWidget):
         if speaker_voice and speaker_name in session.SPEAKERS and not speaker_dubbing.get('voice'):
             session.SPEAKERS[speaker_name].setdefault('dubbing', {})['voice'] = speaker_voice
             session.set_unsaved(True)
-        # Resolve the clone reference once for the whole batch — extraction
-        # is cached on the speaker_slug, so doing it here vs. per-subtitle
-        # is equivalent but skips the cache hash check on every iteration.
-        # Per-subtitle voice overrides could in theory point at a non-clone
-        # voice while the speaker default is a clone voice (or vice-versa),
-        # so we recompute the requirement per entry below — the extraction
-        # itself is still cached, no extra ffmpeg call.
-        cached_clone_ref: list[tuple[str | None, str | None]] = []  # 0/1-element holder
-        def _get_clone_ref():
-            if not cached_clone_ref:
-                cached_clone_ref.append(
-                    clone_ref.extract_speaker_reference_with_text(speaker_name)
-                )
-            return cached_clone_ref[0]
-
+        # The entries whose voice clones: the clone reference is resolved
+        # once for the whole batch, after the loop. Per-subtitle voice
+        # overrides could in theory point at a non-clone voice while the
+        # speaker default is a clone voice (or vice-versa), so the
+        # requirement is decided per entry.
+        needs_ref = []
         speeches_to_generate = []
         # Resolve rate/pitch once so we can write them onto each subtitle's
         # dubbing_options alongside engine+voice. Mirroring per-subtitle
@@ -1148,8 +1148,13 @@ class _GenericTTSSpeakerPanel(QWidget):
             # for the rationale — same policy applied across batch and
             # per-subtitle paths.
             if clone_ref.voice_id_requires_ref_audio(widget.provider, voice_id):
-                ref_path, ref_text = _get_clone_ref()
-                if ref_path:
+                needs_ref.append(entry)
+            speeches_to_generate.append(entry)
+
+        def send():
+            if needs_ref:
+                ref_path, ref_text = clone_ref.extract_speaker_reference_with_text(speaker_name)
+                for entry in needs_ref if ref_path else []:
                     entry['voice_ref_audio'] = ref_path
                     # Pair ref_text with ref_audio — see the same logic
                     # in `_GenericTTSDubbingPanel.generate_speech_button_clicked`
@@ -1160,12 +1165,16 @@ class _GenericTTSSpeakerPanel(QWidget):
                     # across single-click and batch generation.
                     if ref_text and not clone_ref.should_skip_ref_text(widget.provider.id):
                         entry['voice_ref_text'] = ref_text
-            speeches_to_generate.append(entry)
-        if speeches_to_generate:
             widget.provider.generate_speeches(speeches_to_generate)
             timeline_widget = getattr(widget.window(), 'timeline_widget', None)
             if timeline_widget is not None:
                 timeline_widget.update()
+
+        if needs_ref:
+            # The reference's words may have to be heard first (`clone_ref.when_ready`).
+            clone_ref.when_ready(speaker_name, send)
+        elif speeches_to_generate:
+            send()
 
     def update(widget):
         speaker_name = widget.property('speaker')

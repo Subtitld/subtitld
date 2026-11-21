@@ -17,8 +17,11 @@ Strategy
   is the safe middle ground: F5-TTS wants 6-15 s, XTTS wants 6+ s,
   Qwen3-TTS wants 3+ s.
 - If no subtitle is in the [3, 12] s sweet spot, take the longest
-  subtitle the speaker has and clamp it to 12 s; the addon's own
-  validation will surface an error if it's still too short.
+  subtitle the speaker has and clamp it to 12 s, audio and text cut to
+  the same words, by the subtitle's word times or else the words a
+  speech recognition add-on hears in it (`when_ready`, `_fit_clipped`);
+  the addon's own validation will surface an error if it's still too
+  short.
 - Output: mono 16 kHz WAV in
   `$SUBTITLD_USER_CACHE/clone-refs/<media_key>-<speaker_slug>.wav`.
   Re-extraction is skipped if the cache file already exists *and* the
@@ -34,6 +37,7 @@ config (or surfaces the addon's own error if neither is available).
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -44,7 +48,7 @@ from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import utils as modules_utils
 from subtitld.modules.addons import registry as addons_registry
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import text_of, timed_by_words, timed_pieces
 
 log = logging.getLogger(__name__)
 
@@ -176,29 +180,32 @@ def _cache_dir() -> Path:
 
 def _pick_spans_for_speaker(
     speaker_name: str,
-) -> tuple[list[tuple[float, float]], list[str]] | None:
+) -> tuple[list[tuple[float, float]], list[str], list[tuple[float, list] | None]] | None:
     """Pick a list of [start, end] spans of source audio for the speaker,
     paired with the subtitle text spoken in each span.
 
     Returns None if the speaker has no usable subtitles. Otherwise returns
-    `(spans, texts)` where the two lists are the same length and in
-    chronological order — `spans` is ready to feed an ffmpeg concat
-    filter, `texts` is ready to be joined into a `ref_text` for ICL-mode
-    voice cloning.
+    `(spans, texts, clipped)` where the three lists are the same length
+    and in chronological order — `spans` is ready to feed an ffmpeg
+    concat filter, `texts` is ready to be joined into a `ref_text` for
+    ICL-mode voice cloning. `clipped` is None for a span that is its
+    whole subtitle; for one cut short it is `(subtitle_duration,
+    pieces)`, its text still the whole subtitle's, for `_fit_clipped`
+    to cut down (`pieces` are the subtitle's timed pieces when the text
+    is theirs, else []).
 
     Strategy:
       1. **One in-band subtitle exists** — return a single span for the
          longest subtitle in [_TARGET_MIN_SEC, _TARGET_MAX_SEC]. This is
          the common case and gives the cleanest reference.
       2. **All subtitles are too LONG** — return a single span clamped
-         from the start of the longest one to _TARGET_MAX_SEC. The
-         paired text is the *full* subtitle text even though we only
-         use the first _TARGET_MAX_SEC of audio: clone-capable models
-         (Qwen3-TTS, F5-TTS, XTTS) handle a slight ref_text/audio
-         length mismatch better than they handle missing ref_text — and
-         we don't have word-level timing to truncate the text more
-         precisely. Worst case the model treats the trailing transcript
-         words as anchoring information, which still helps language ID.
+         from the start of the longest one to _TARGET_MAX_SEC. Its text
+         is still the whole subtitle's: the span is marked in `clipped`,
+         and `_fit_clipped` cuts text and audio down to the same words
+         before anything is extracted. Sending the whole text with the
+         clipped audio made Reverb (which paces the take by the
+         transcript and continues from it) speak a 25 s line in 3 s of
+         babble when the subtitle ran 72 s.
       3. **All subtitles are too SHORT** — concatenate same-speaker
          subtitles in chronological order until the cumulative duration
          reaches _TARGET_MIN_SEC, capped at _TARGET_MAX_SEC. This case
@@ -233,23 +240,25 @@ def _pick_spans_for_speaker(
         # current display language — see `_segment_text_for_source_language`
         # for why this matters when the user has translated + inverted.
         text = _segment_text_for_source_language(seg, source_lang)
-        candidates.append((idx, duration, start, end, text))
+        # Word times only fit the text they time, not a translation's.
+        pieces = timed_pieces(seg) if text and text == markup.plain(text_of(seg)).strip() else []
+        candidates.append((idx, duration, start, end, text, pieces))
 
     if not candidates:
         return None
 
     in_band = [c for c in candidates if _TARGET_MIN_SEC <= c[1] <= _TARGET_MAX_SEC]
     if in_band:
-        _idx, _dur, start, end, text = max(in_band, key=lambda c: c[1])
-        return [(start, end)], [text]
+        _idx, _dur, start, end, text, _pieces = max(in_band, key=lambda c: c[1])
+        return [(start, end)], [text], [None]
 
     longest_dur = max(c[1] for c in candidates)
     if longest_dur > _TARGET_MAX_SEC:
         # Case 2 — at least one subtitle exceeds the upper bound. Pick
         # it and clamp from the start (we want the speaker's leading
         # delivery, not the tail that often drifts into silence).
-        _idx, _dur, start, _end, text = max(candidates, key=lambda c: c[1])
-        return [(start, start + _TARGET_MAX_SEC)], [text]
+        _idx, dur, start, _end, text, pieces = max(candidates, key=lambda c: c[1])
+        return [(start, start + _TARGET_MAX_SEC)], [text], [(dur, pieces)]
 
     # Case 3 — all subtitles are shorter than _TARGET_MIN_SEC. Walk
     # chronologically, accumulating until we cross the min threshold or
@@ -257,8 +266,9 @@ def _pick_spans_for_speaker(
     candidates.sort(key=lambda c: c[0])  # by subtitle index
     selected_spans: list[tuple[float, float]] = []
     selected_texts: list[str] = []
+    selected_clipped: list[tuple[float, list] | None] = []
     total = 0.0
-    for _idx, dur, start, end, text in candidates:
+    for _idx, dur, start, end, text, pieces in candidates:
         if total + dur > _TARGET_MAX_SEC:
             # The next chunk would overshoot. Trim it to what fits, but
             # only if the trimmed remainder is meaningful (>0.5 s, below
@@ -267,20 +277,273 @@ def _pick_spans_for_speaker(
             remaining = _TARGET_MAX_SEC - total
             if remaining > 0.5:
                 selected_spans.append((start, start + remaining))
-                # Same trade-off as case 2 — keep the full text rather
-                # than character-cropping mid-word.
+                # Cut down to the same words by `_fit_clipped`, as in case 2.
                 selected_texts.append(text)
+                selected_clipped.append((dur, pieces))
                 total += remaining
             break
         selected_spans.append((start, end))
         selected_texts.append(text)
+        selected_clipped.append(None)
         total += dur
         if total >= _TARGET_MIN_SEC:
             break
 
     if not selected_spans:
         return None
-    return selected_spans, selected_texts
+    return selected_spans, selected_texts, selected_clipped
+
+
+# The speech recognition add-on hears this much of the subtitle past a
+# cut span's end: the words that end inside the span are then whole, and
+# the one after them has a start.
+_HEAR_PAST_SEC = 1.5
+# A recognition that has not answered by then is given up on.
+_HEAR_TIMEOUT_MS = 180_000
+
+# Cut spans being heard now, by `_span_key`: the add-on, its timer, and
+# the callbacks waiting for it.
+_hearing: dict[str, dict] = {}
+# Cut spans the add-on could not time this session (none installed for
+# the language, an error): not asked again until Subtitld restarts.
+_unheard: set[str] = set()
+
+
+def _media_key(src: str) -> str:
+    return modules_utils.get_cache_key(src) or hashlib.sha1(
+        src.encode('utf-8', errors='replace')
+    ).hexdigest()[:12]
+
+
+def _span_key(src: str, start: float, end: float) -> str:
+    return f'{_media_key(src)}@{start:.3f}-{end:.3f}'
+
+
+def _heard_path() -> Path:
+    return _cache_dir() / 'heard-words.json'
+
+
+def _heard_words() -> dict:
+    """The words the speech recognition add-on heard in cut spans, by
+    `_span_key`: [{'text', 'start', 'end'}], seconds from the span's start."""
+    try:
+        heard = json.loads(_heard_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return heard if isinstance(heard, dict) else {}
+
+
+def _keep_heard_words(key: str, words: list) -> None:
+    heard = _heard_words()
+    heard[key] = words
+    try:
+        _heard_path().write_text(json.dumps(heard), encoding='utf-8')
+    except OSError:
+        pass  # heard again next time
+
+
+def _untimed_cut(src: str, pick) -> tuple[float, float, float] | None:
+    """The span of `pick` that is cut short of a subtitle with no word
+    times and no words heard in it yet, as (start, end, subtitle
+    duration); None for none. Only the last span of a pick is ever cut."""
+    spans, texts, clipped = pick
+    (start, end), text, clip = spans[-1], texts[-1], clipped[-1]
+    if clip is None or not text or clip[1] or _span_key(src, start, end) in _heard_words():
+        return None
+    return start, end, clip[0]
+
+
+def when_ready(speaker_name: str, then) -> None:
+    """Call `then()` once the speaker's reference can be built with its
+    transcript: at once, unless its clip is cut short of a subtitle that
+    has no word times. Then the speech recognition add-on hears the cut
+    first (`_hear`), once per span (the words are kept on disk), and
+    `then` runs when it answers or fails — a cut no add-on could time is
+    sent without its text (see `_fit_clipped`)."""
+    key = None
+    try:
+        src = _audio_source_for_clone()
+        language = _resolve_source_language()
+        pick = _pick_spans_for_speaker(speaker_name) if src and language else None
+        cut = _untimed_cut(src, pick) if pick else None
+        key = _span_key(src, cut[0], cut[1]) if cut else None
+        if key is None or key in _unheard:
+            then()
+            return
+        if key in _hearing:
+            _hearing[key]['waiters'].append(then)
+            return
+        providers = _asr_providers(language)
+        if not providers:
+            log.info('clone_ref: no speech recognition add-on for %s to time the words of the cut clip', language)
+            _unheard.add(key)
+            then()
+            return
+        _hearing[key] = {'waiters': [then]}
+        _hear(src, key, cut, language, providers)
+    except Exception:
+        log.warning('clone_ref: could not time the words of the cut clip', exc_info=True)
+        if key is not None:
+            _unheard.add(key)
+        job = _hearing.pop(key, None) if key is not None else None
+        for waiting in (job or {}).get('waiters') or [then]:
+            waiting()
+
+
+def _asr_providers(language: str) -> list:
+    """The speech recognition add-ons that are usable now and hear
+    `language`, to be tried in turn: the one picked for transcription
+    first, then those on this computer, then remote ones."""
+    from subtitld.modules import addons
+    from subtitld.modules.addons.provider import SOURCE_ENGINES, TASK_ASR_TRANSCRIBE
+    manager = addons.get_manager()
+    wanted = language.lower().replace('_', '-').split('-')[0]
+
+    def usable(provider) -> bool:
+        if provider is None or provider.id in SOURCE_ENGINES or TASK_ASR_TRANSCRIBE not in provider.tasks:
+            return False
+        try:
+            if not provider.is_available():
+                return False
+            spoken = [str(code).lower().replace('_', '-').split('-')[0] for code in provider.languages or []]
+        except Exception:
+            return False
+        return not spoken or wanted in spoken
+
+    picked = (session.CONFIG.get('transcription') or {}).get('engine')
+    found = sorted(manager.providers_for_task(TASK_ASR_TRANSCRIBE),
+                   key=lambda p: (p.id != picked, p.compute == 'remote', p.id))
+    return [provider for provider in found if usable(provider)]
+
+
+def _hear(src: str, key: str, cut: tuple[float, float, float], language: str, providers: list,
+          wav: Path | None = None) -> None:
+    """Have the first of `providers` (a copy of it: the shared one belongs
+    to the Audio panel) transcribe the cut span and a little past it, the
+    next if it fails; keep the words heard under `key`, and call the
+    waiters."""
+    from PySide6.QtCore import QTimer
+    start, end, duration = cut
+    if wav is None:
+        length = min(duration, end - start + _HEAR_PAST_SEC)
+        wav = _cache_dir() / f'{_media_key(src)}-hearing.wav'
+        subprocess.run(_build_ffmpeg_cmd(src, [(start, start + length)], wav), startupinfo=session.STARTUPINFO,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=120)
+    provider, rest = providers[0], providers[1:]
+    asr = provider.clone()
+    timer = QTimer()
+    timer.setSingleShot(True)
+
+    def finish(segments) -> None:
+        job = _hearing.get(key)
+        if job is None or job.get('asr') is not asr:
+            return  # answered already, or timed out
+        timer.stop()
+        try:
+            asr.shutdown()
+        except Exception:
+            pass
+        words = _words_heard(segments) if segments is not None else []
+        if not words and rest:
+            _hear(src, key, cut, language, rest, wav)
+            return
+        del _hearing[key]
+        if words:
+            _keep_heard_words(key, words)
+        else:
+            _unheard.add(key)
+        log.info('clone_ref: %s heard %d word(s) in the cut clip', provider.id, len(words))
+        for then in job['waiters']:
+            try:
+                then()
+            except Exception:
+                log.warning('clone_ref: a dub waiting for the cut clip failed', exc_info=True)
+
+    def failed(message: str) -> None:
+        log.warning('clone_ref: %s could not hear the cut clip: %s', provider.id, message)
+        finish(None)
+
+    asr.transcript_finished.connect(finish)
+    asr.error.connect(failed)
+    timer.timeout.connect(lambda: failed('no answer'))
+    _hearing[key].update(asr=asr, timer=timer)
+    timer.start(_HEAR_TIMEOUT_MS)
+    options = (session.CONFIG.get('transcription') or {}).get('engine_options', {}).get(provider.id, {})
+    asr.transcribe(str(wav), language, dict(options) if isinstance(options, dict) else {})
+
+
+def _words_heard(segments) -> list[dict]:
+    """The words of an `asr.transcribe` answer, [{'text', 'start', 'end'}]:
+    each segment's `words`, or the segment itself from an add-on that
+    does not time words."""
+    words = []
+    for segment in segments if isinstance(segments, list) else []:
+        if not isinstance(segment, dict):
+            continue
+        for piece in segment.get('words') or [segment]:
+            try:
+                text = str(piece.get('text') or piece.get('word') or '').strip()
+                start, end = float(piece['start']), float(piece['end'])
+            except (AttributeError, KeyError, TypeError, ValueError):
+                continue
+            if text and end >= start:
+                words.append({'text': text, 'start': start, 'end': end})
+    return words
+
+
+def _fit_clipped(src: str, spans: list[tuple[float, float]], texts: list[str],
+                 clipped: list[tuple[float, list] | None]) -> tuple[list[tuple[float, float]], list[str]]:
+    """Cut each clipped span and its text down to the same words (see
+    `_fit_span`), timed by the subtitle's own pieces, else by the words
+    the speech recognition add-on heard in it (`when_ready`).
+
+    Without either the words in the span aren't known, and a guess does
+    not do: Reverb, given 1 s more audio than text, skipped the line's
+    first words; given words the audio stops short of, it spoke them
+    first, and pauses matched to sentence ends were right on fewer than
+    half of one project's subtitles. So such a span goes without text:
+    alone, it is sent as it is; after others (a short subtitle's
+    remainder), it is left out."""
+    heard = _heard_words() if any(clipped) else {}
+    fitted_spans: list[tuple[float, float]] = []
+    fitted_texts: list[str] = []
+    for (start, end), text, clip in zip(spans, texts, clipped):
+        if clip is not None:
+            _duration, pieces = clip
+            words = heard.get(_span_key(src, start, end)) if text and not pieces else None
+            if words:
+                # The heard words found in the subtitle's text time its
+                # pieces; the last found runs on to the text's end, so it
+                # is never kept.
+                pieces = (timed_by_words(text, words) or [])[:-1]
+            if not pieces:
+                if len(spans) == 1:
+                    return [(start, end)], ['']
+                continue
+            length, text = _fit_span(end - start, pieces)
+            if length <= 0.5:
+                continue
+            end = start + length
+        fitted_spans.append((start, end))
+        fitted_texts.append(text)
+    if not fitted_spans:
+        return spans[:1], ['']
+    return fitted_spans, fitted_texts
+
+
+def _fit_span(keep: float, pieces: list) -> tuple[float, str]:
+    """The length of audio and the words spoken in it for a span that may
+    last at most `keep` seconds, from the subtitle's timed `pieces`: the
+    pieces that end in `keep`, the audio cut halfway to the next one."""
+    timed = [p for p in pieces if isinstance(p, dict)]
+    kept = [p for p in timed if float(p.get('end', 0.0)) <= keep]
+    if not kept:
+        return 0.0, ''
+    last_end = float(kept[-1]['end'])
+    after = timed[len(kept)] if len(kept) < len(timed) else None
+    cut = (last_end + float(after.get('start', last_end))) / 2 if after else last_end + 0.1
+    words = markup.plain(''.join(str(piece.get('text') or '') for piece in kept)).strip()
+    return min(keep, max(last_end, cut)), words
 
 
 def extract_speaker_reference_with_text(
@@ -308,14 +571,18 @@ def extract_speaker_reference_with_text(
     Subtitld already has the transcription — it's literally the
     subtitle text on those spans — so we just pass it through.
 
-    Cache invalidation: the WAV is regenerated if the source media has
-    been modified after the cache file. We don't try to detect subtitle
-    boundary edits — those are common during editing and would thrash
-    the cache; a stale clip is rarely worse than re-extracting on every
-    `generate all speeches` click. The text is rebuilt on every call
-    (cheap) so it always reflects the *current* subtitle text even when
-    the cached WAV is reused — addons re-run inference per call anyway,
-    so a fresher text + slightly stale audio is a net win.
+    A span cut short of its subtitle (`_pick_spans_for_speaker`'s
+    `clipped`) gets its text and audio cut to the same words by
+    `_fit_clipped` first: a transcript that runs past the audio makes a
+    model pace and continue the take wrongly. Callers go through
+    `when_ready` first, so the words of such a cut have been heard.
+
+    Cache: the WAV is kept with a sidecar `.json` holding the pick it
+    was made from and the text that goes with it. It is reused while the
+    source media is older than it and the pick (spans and texts) is the
+    same; otherwise it is extracted again — a few tenths of a second for
+    a 12 s clip, and the clip and its transcript always agree. A clip
+    with no sidecar (from before it was kept) is extracted again too.
     """
     src = _audio_source_for_clone()
     if not src:
@@ -326,7 +593,29 @@ def extract_speaker_reference_with_text(
     if not pick:
         log.info('clone_ref: speaker %s has no usable subtitle segments', speaker_name)
         return None, None
-    spans, texts = pick
+    spans, texts, clipped = pick
+
+    media_key = _media_key(src)
+    speaker_slug = _slugify(speaker_name)
+    out_path = _cache_dir() / f'{media_key}-{speaker_slug}.wav'
+    sidecar = out_path.with_suffix('.json')
+    picked = {'spans': [list(span) for span in spans], 'texts': list(texts)}
+    if any(clipped):
+        # Words heard in the cut since the clip was made change its text.
+        start, end = spans[-1]
+        picked['heard'] = _heard_words().get(_span_key(src, start, end))
+
+    if out_path.is_file() and out_path.stat().st_size > 0:
+        try:
+            cached = json.loads(sidecar.read_text(encoding='utf-8'))
+            if out_path.stat().st_mtime >= os.path.getmtime(src) and cached.get('pick') == picked \
+                    and 'ref_text' in cached:
+                return str(out_path), cached.get('ref_text')
+        except (OSError, ValueError, AttributeError):
+            pass  # fall through to re-extract
+
+    if any(clipped):
+        spans, texts = _fit_clipped(src, spans, texts, clipped)
 
     # Join with a single space and collapse runs — most subtitle text
     # is already clean, but the editor allows multi-line strings and
@@ -335,19 +624,6 @@ def extract_speaker_reference_with_text(
     joined_text = ' '.join(t for t in texts if t)
     joined_text = re.sub(r'\s+', ' ', joined_text).strip()
     ref_text = joined_text or None
-
-    media_key = modules_utils.get_cache_key(src) or hashlib.sha1(
-        src.encode('utf-8', errors='replace')
-    ).hexdigest()[:12]
-    speaker_slug = _slugify(speaker_name)
-    out_path = _cache_dir() / f'{media_key}-{speaker_slug}.wav'
-
-    if out_path.is_file() and out_path.stat().st_size > 0:
-        try:
-            if out_path.stat().st_mtime >= os.path.getmtime(src):
-                return str(out_path), ref_text
-        except OSError:
-            pass  # fall through to re-extract
 
     cmd = _build_ffmpeg_cmd(src, spans, out_path)
     try:
@@ -373,6 +649,10 @@ def extract_speaker_reference_with_text(
             pass
         return None, None
 
+    try:
+        sidecar.write_text(json.dumps({'pick': picked, 'ref_text': ref_text}), encoding='utf-8')
+    except OSError:
+        pass  # only the next call's reuse is lost
     total = sum(e - s for s, e in spans)
     log.info('clone_ref: extracted %s %d span(s) total=%.2fs ref_text_len=%d -> %s',
              speaker_name, len(spans), total, len(ref_text or ''), out_path.name)

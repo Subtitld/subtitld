@@ -35,6 +35,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, 'src'))
 
+from PySide6.QtCore import QCoreApplication, QObject, Signal
+
 from subtitld.modules import session
 from subtitld.modules.segment import Subtitle
 from subtitld.modules import clone_ref
@@ -370,11 +372,143 @@ def case_extract_with_text():
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+class _FakeASR(QObject):
+    """A speech recognition add-on that hears `words` (or fails, without
+    them) the moment it is asked, and remembers what it was sent."""
+    transcript_finished = Signal(list)
+    error = Signal(str)
+    id = 'fake-asr'
+    sent: list = []
+
+    def __init__(self, words=None):
+        super().__init__()
+        self.words = words
+
+    def clone(self):
+        return _FakeASR(self.words)
+
+    def transcribe(self, audio_path, language, options=None):
+        with wave.open(audio_path, 'rb') as wf:
+            _FakeASR.sent.append((wf.getnframes() / wf.getframerate(), language))
+        if self.words is None:
+            self.error.emit('[engine] broken')
+        else:
+            self.transcript_finished.emit([{'start': 0.0, 'end': 13.5, 'text': '', 'words': self.words}])
+
+    def shutdown(self):
+        pass
+
+
+def case_clipped_text_fits_audio():
+    """A subtitle longer than the 12 s cap gives its first 12 s at most:
+    the transcript sent with it must be the words in that audio, not the
+    whole subtitle's. Reverb paces the take by the transcript and goes on
+    from it, so 12 s of audio with 72 s of text made it speak a 25 s line
+    in 3 s of babble.
+
+    Validates:
+      1. Untimed text with no words heard goes without text.
+      2. `when_ready` has the speech recognition add-on hear the cut and
+         a little past it, once, the next add-on if one fails; the text is then cut at the last word
+         ending in 12 s, the audio halfway to the next.
+      3. The fitted text comes back from the sidecar while the pick is
+         unchanged, and a changed text is fitted again.
+      4. A failing add-on, or none, still calls back, without text.
+      5. Timed text is cut exactly, at the last piece ending in 12 s."""
+    print('\n=== case 5: clipped subtitle, text cut to the audio ===')
+    if shutil.which(session.FFMPEG_EXECUTABLE) is None:
+        print(f'  SKIP — {session.FFMPEG_EXECUTABLE} not on PATH')
+        return
+    QCoreApplication.instance() or QCoreApplication([])
+
+    workdir = tempfile.mkdtemp(prefix='clone-ref-clip-')
+    src_wav = os.path.join(workdir, 'source.wav')
+    _make_sine_wav(src_wav, duration_sec=30.0)
+    sentence = 'Every word here is about as long as the others are.'
+    text = ' '.join([sentence] * 6)
+    # Each word heard 0.5 s long, one every 0.6 s: 'are.' of the second
+    # sentence (word 21) ends at 13.1 s, word 19 at 11.9 s.
+    heard = [{'text': w.strip('.'), 'start': i * 0.6, 'end': i * 0.6 + 0.5}
+             for i, w in enumerate(text.split()[:23])]
+    original_video = session.VIDEO
+    original_subtitle = session.SUBTITLE
+    original_cache = session.PATH_SUBTITLD_USER_CACHE
+    original_providers = clone_ref._asr_providers
+    try:
+        from pathlib import Path
+        session.PATH_SUBTITLD_USER_CACHE = Path(workdir)
+        session.VIDEO = {'filepath': src_wav}
+        session.SUBTITLE = Subtitle({
+            'language': 'en',
+            'segments': [{'speaker': 'A', 'start': 0.0, 'end': 30.0, 'text': text}],
+        })
+        path, got = clone_ref.extract_speaker_reference_with_text('A')
+        assert got is None, f'unheard cut should go without text, got {got!r}'
+        with wave.open(path, 'rb') as wf:
+            assert abs(wf.getnframes() / wf.getframerate() - 12.0) < 0.05
+        print('  PASS — untimed, nothing heard: 12 s, no text')
+
+        clone_ref._asr_providers = lambda language: [_FakeASR(None), _FakeASR(heard)]
+        called = []
+        clone_ref.when_ready('A', lambda: called.append(1))
+        assert called == [1], 'when_ready should call back once heard'
+        assert _FakeASR.sent == [(13.5, 'en')] * 2, f'expected 13.5 s heard in en, by both, got {_FakeASR.sent}'
+        path, got = clone_ref.extract_speaker_reference_with_text('A')
+        expected = ' '.join(text.split()[:20])
+        assert got == expected, f'expected the 20 words ending in 12 s, got {got!r}'
+        with wave.open(path, 'rb') as wf:
+            duration = wf.getnframes() / wf.getframerate()
+        assert 11.9 <= duration <= 12.0, f'expected the cut between 11.9 and 12.0 s, got {duration:.2f}'
+        print(f'  PASS — heard: 20 words, cut at {duration:.2f}s')
+
+        clone_ref.when_ready('A', lambda: called.append(2))
+        assert called == [1, 2] and len(_FakeASR.sent) == 2, 'heard words should be kept, not heard again'
+        again = clone_ref.extract_speaker_reference_with_text('A')
+        assert again == (path, got), 'cached clip should give the same pair'
+        print('  PASS — words kept; same pick reuses the clip and its text')
+
+        session.SUBTITLE.segments[0]['text'] = 'Changed words here. ' + text
+        _path, changed = clone_ref.extract_speaker_reference_with_text('A')
+        assert changed and changed.startswith('Changed words here. Every'), f'edited text not refitted: {changed!r}'
+        print('  PASS — an edited text is fitted again')
+
+        session.SUBTITLE.segments[0]['start'] = 1.0  # another span: not heard yet
+        clone_ref._asr_providers = lambda language: [_FakeASR(None)]
+        clone_ref.when_ready('A', lambda: called.append(3))
+        assert called[-1] == 3, 'a failing add-on should still call back'
+        clone_ref._asr_providers = lambda language: []
+        session.SUBTITLE.segments[0]['start'] = 2.0
+        clone_ref.when_ready('A', lambda: called.append(4))
+        assert called[-1] == 4, 'no add-on should still call back'
+        assert clone_ref.extract_speaker_reference_with_text('A')[1] is None
+        print('  PASS — failing or missing add-on: called back, no text')
+
+        # Timed text: a word a second, 20 of them; 12 fit.
+        words = [{'text': f'w{i} ', 'start': float(i), 'end': i + 0.8} for i in range(20)]
+        session.SUBTITLE = Subtitle({
+            'language': 'en',
+            'segments': [{'speaker': 'A', 'start': 0.0, 'end': 20.0, 'text': words}],
+        })
+        path, got = clone_ref.extract_speaker_reference_with_text('A')
+        assert got == ' '.join(f'w{i}' for i in range(12)), f'timed cut wrong: {got!r}'
+        with wave.open(path, 'rb') as wf:
+            duration = wf.getnframes() / wf.getframerate()
+        assert 11.7 <= duration <= 12.0, f'timed cut length wrong: {duration:.2f}'
+        print(f'  PASS — timed: 12 words, cut at {duration:.2f}s')
+    finally:
+        clone_ref._asr_providers = original_providers
+        session.VIDEO = original_video
+        session.SUBTITLE = Subtitle(original_subtitle)
+        session.PATH_SUBTITLD_USER_CACHE = original_cache
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def main():
     case_classification()
     case_extract()
     case_concat_short_speeches()
     case_extract_with_text()
+    case_clipped_text_fits_audio()
     print('\nAll clone_ref cases passed.')
     return 0
 
