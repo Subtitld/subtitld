@@ -526,6 +526,22 @@ check('sliced: the corner as drawn, the edge straight past it', (pixel(102, 70),
 check('the middle filled', pixel(200, 115), GREEN)
 timeline_style.reset()
 
+print('frames only where the timeline is painted')
+from PySide6.QtCore import QRect
+session.SUBTITLE = Subtitle({'segments': [{'start': i * 0.5, 'end': i * 0.5 + 0.4, 'text': '', 'speaker': 'A'}
+                                          for i in range(16)], 'selected': None, 'position': 15.0})
+apply(look(frame_svg=frame_name))
+framed = []
+original_paint = timeline_frames.paint
+timeline_frames.paint = lambda painter, frame, rect, *rest, **named: (framed.append(rect.left()), original_paint(painter, frame, rect, *rest, **named))
+widget.repaint()
+every = len(framed)
+framed.clear()
+widget.repaint(QRect(290, 0, 30, height))      # a playback strip, across one box
+timeline_frames.paint = original_paint
+check('a strip repainted: the frames of the boxes in it alone', (every, framed), (16, [300.0]))
+timeline_style.reset()
+
 print('frames, timed')
 import time
 session.SUBTITLE = Subtitle({'segments': [{'start': i * 0.08, 'end': i * 0.08 + 0.06, 'text': '', 'speaker': 'A'}

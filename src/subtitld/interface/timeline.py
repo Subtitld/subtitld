@@ -1331,6 +1331,7 @@ class Timeline(QWidget):
             speakers_count = len(speakers_keys)
             # Each kind of cue's box look, made when the first of its kind is drawn.
             box_paints = {}
+            dirty_rect = QRectF(ev_rect)
             painted_kind = None
             current_selected = session.SUBTITLE.selected
 
@@ -1444,11 +1445,15 @@ class Timeline(QWidget):
                     painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
                     painter.restore()
                 elif frame is not None:
-                    speaker_hex = QColor(speaker_color_str).name(QColor.HexRgb) \
-                        if widget.show_speaker_color and speaker_color_str else None
-                    box_color = selected_fill if is_current else unselected_fill
-                    timeline_frames.paint(painter, frame, box_rect, box_color.name(QColor.HexRgb),
-                                          widget.devicePixelRatioF(), frame_name, speaker_hex, box_color.alphaF())
+                    # Only where it is being painted: during playback, that
+                    # is a strip around the playhead, and a frame is several
+                    # calls from Python a box.
+                    if box_rect.intersects(dirty_rect):
+                        speaker_hex = QColor(speaker_color_str).name(QColor.HexRgb) \
+                            if widget.show_speaker_color and speaker_color_str else None
+                        box_color = selected_fill if is_current else unselected_fill
+                        timeline_frames.paint(painter, frame, box_rect, box_color.name(QColor.HexRgb),
+                                              widget.devicePixelRatioF(), frame_name, speaker_hex, box_color.alphaF())
                 else:
                     painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
 
