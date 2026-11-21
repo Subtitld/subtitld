@@ -557,6 +557,71 @@ check('a subtitle selected: the arrow steps it instead', (len(shortcut_hits), ne
       (1, near(7.5 + FRAME)))
 host.removeAction(down_action)
 
+print('the look\'s SVG frames and parts, as on the timeline turned')
+from subtitld.modules import timeline_style, timeline_svg
+shapes = Path(tempfile.mkdtemp())
+
+
+def svg_file(name, body, view='0 0 10 10'):
+    (shapes / name).write_bytes(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}">{body}</svg>'.encode())
+    return timeline_svg.import_file(shapes / name)
+
+
+FRAME = svg_file('frame.svg', '<g data-x="stretch"><rect width="100" height="40" fill="#00ff00"/></g>'
+                 '<g data-x="left" data-hit="start"><rect width="12" height="40" fill="#ff0000"/></g>'
+                 '<g data-x="right" data-hit="end"><rect x="88" width="12" height="40" fill="#0000ff"/></g>'
+                 '<g data-x="center" data-y="top" data-hit="body"><rect x="40" width="20" height="10" fill="currentColor"/></g>',
+                 '0 0 100 40')
+SPEAKER = svg_file('speaker.svg', '<g data-x="stretch"><rect width="100" height="40" fill="currentColor"/></g>'
+                   '<g data-x="stretch" data-y="top"><rect width="100" height="6" fill="speakerColor"/></g>', '0 0 100 40')
+SOLID = svg_file('solid.svg', '<rect width="10" height="10" fill="currentColor"/>')
+NARROW = svg_file('narrow.svg', '<rect width="4" height="10" fill="currentColor"/>', '0 0 4 10')
+TILE = svg_file('tile.svg', '<rect width="10" height="10" fill="#ff0000"/><rect x="10" width="10" height="10" fill="currentColor"/>',
+                '0 0 20 10')
+LOCK = svg_file('lock.svg', '<rect width="10" height="10" fill="#ff8800"/>')
+left, right = canvas.lanes()[2]
+
+
+def look(timeline=None, **box):
+    timeline_style.set_values({'timeline': timeline or {}, 'boxes': {'subtitle': box}})
+    canvas.update()
+
+
+look(frame_svg=FRAME, fill_color='#ff123456')
+check('a frame, its start cap at the block\'s top, its end at the bottom, stretched between',
+      (pixel(5.1, middle), pixel(6.0, middle), pixel(6.9, middle)), ((255, 0, 0), (0, 255, 0), (0, 0, 255)))
+check('the frame\'s top along the block\'s left: its currentColor part there', pixel(6.0, left + 5), (0x12, 0x34, 0x56))
+check('its click regions: the start', canvas.hit(point(5.1))[1], 'start')
+check('the body region', canvas.hit(QPoint(int(left + 5), int(canvas.y_at(6.0))))[1], 'body')
+check('outside them, nothing', canvas.hit(point(6.0)), (None, None))
+host.timeline_widget.show_speaker_color = True
+look(frame_svg=SPEAKER, fill_color='#ff123456')
+speaker_rgb = QColor(session.SPEAKERS['A']['color']).getRgb()[:3]
+check('speakerColor along the left, where the frame\'s top is', (pixel(6.0, left + 2), pixel(6.0, middle)),
+      (speaker_rgb, (0x12, 0x34, 0x56)))
+host.timeline_widget.show_speaker_color = False
+
+session.CONFIG['timeline'].update({'show_grid': True, 'grid_type': 'seconds'})
+look({'grid_line_svg': NARROW, 'grid_color': '#ff00ffff'})
+check('grid lines of a shape, across, centred on their second', (pixel(10.0, middle), pixel(10.0 + 4 / 40, middle) == (0, 255, 255)),
+      ((0, 255, 255), False))
+session.CONFIG['timeline'].update({'show_grid': False})
+
+session.SUBTITLE.position = 10.0
+edge = canvas.lanes()[0][1]
+look({'cursor_head': 'custom', 'cursor_head_svg': SOLID, 'cursor_head_size': 10, 'cursor_color': '#ffff00ff'})
+check('a head of a shape, pointing in from the ruler', pixel(10.0, edge - 5), (255, 0, 255))
+session.SUBTITLE.position = 0.0
+
+look({'background_svg': TILE, 'background_color': '#ff0000ff'})
+check('a background tile, repeated down', (pixel(0.3, 2), pixel(0.55, 2)), ((255, 0, 0), (0, 0, 255)))
+
+look(lock_svg=LOCK)
+check('a padlock of a shape, upright, at a locked block\'s top right', pixel(12.0 + 8 / 40, right - 9 - 1), (255, 0x88, 0))
+timeline_style.reset()
+canvas.update()
+check('without an error', canvas._last_paint_error, None)
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

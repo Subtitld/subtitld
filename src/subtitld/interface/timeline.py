@@ -26,6 +26,7 @@ from subtitld.interface import left_panel
 from subtitld.interface import playercontrols
 from subtitld.interface import timeline_edges
 from subtitld.interface import timeline_pieces
+from subtitld.interface import timeline_shapes
 from subtitld.interface.translation import _
 
 
@@ -793,9 +794,9 @@ class Timeline(QWidget):
             band_rect = QRectF(ev_rect.left(), top - 4, ev_rect.width(), widget.height() - top + 4) if bottom_side \
                 else QRectF(ev_rect.left(), 0, ev_rect.width(), top + text_height + 4)
             painter.fillRect(band_rect, band)
-            tile, tile_width = _natural_shape(widget, look['ruler_background_svg'], band, band_rect.height())
+            tile, tile_width = timeline_shapes.natural_shape(widget, look['ruler_background_svg'], band, band_rect.height())
             if tile is not None:
-                _tile(painter, tile, band_rect, tile_width)
+                timeline_shapes.tile(painter, tile, band_rect, tile_width)
 
         time_format = look['ruler_time_format']
         framerate = session.VIDEO.get('framerate') or 25
@@ -820,10 +821,10 @@ class Timeline(QWidget):
             major_shape = minor_shape = None
             if look['ruler_tick_svg']:
                 width = length * timeline_svg.aspect(look['ruler_tick_svg'])
-                major_shape = (_shape(widget, look['ruler_tick_svg'], width, length, tick_color), width)
+                major_shape = (timeline_shapes.shape(widget, look['ruler_tick_svg'], width, length, tick_color), width)
             if look['ruler_subtick_svg']:
                 width = length / 2.0 * timeline_svg.aspect(look['ruler_subtick_svg'])
-                minor_shape = (_shape(widget, look['ruler_subtick_svg'], width, length / 2.0, tick_color), width)
+                minor_shape = (timeline_shapes.shape(widget, look['ruler_subtick_svg'], width, length / 2.0, tick_color), width)
 
             def tick(x, shape, tick_length):
                 if shape is not None and shape[0] is not None:
@@ -831,7 +832,7 @@ class Timeline(QWidget):
                     painter.save()
                     painter.translate(x, edge)
                     painter.scale(1, direction)
-                    _draw_shape(painter, shape[0], -shape[1] / 2.0, 0.0)
+                    timeline_shapes.draw(painter, shape[0], -shape[1] / 2.0, 0.0)
                     painter.restore()
                 else:
                     painter.drawLine(QLineF(x, edge, x, edge + direction * tick_length))
@@ -867,9 +868,9 @@ class Timeline(QWidget):
             painter.drawLine(QLineF(x, 0.0, x, height))
         line = None
         if look['cursor_line_style'] == 'custom':
-            line = _shape(widget, look['cursor_line_svg'], width, height, color)
+            line = timeline_shapes.shape(widget, look['cursor_line_svg'], width, height, color)
         if line is not None:
-            _draw_shape(painter, line, x - width / 2.0, 0.0)
+            timeline_shapes.draw(painter, line, x - width / 2.0, 0.0)
         else:
             style = _LINE_STYLES.get(look['cursor_line_style'], Qt.SolidLine)
             painter.setPen(QPen(color, width, style, Qt.FlatCap))
@@ -898,9 +899,9 @@ class Timeline(QWidget):
             painter.drawRect(QRectF(x - width / 2.0, base - size if up else base, size * 1.6, size))
         elif head == 'custom':
             head_width = size * timeline_svg.aspect(look['cursor_head_svg'])
-            shape = _shape(widget, look['cursor_head_svg'], head_width, size, color)
+            shape = timeline_shapes.shape(widget, look['cursor_head_svg'], head_width, size, color)
             if shape is not None:
-                _draw_shape(painter, shape, x - head_width / 2.0, base - size if up else base)
+                timeline_shapes.draw(painter, shape, x - head_width / 2.0, base - size if up else base)
         beyond_head = size if head != 'none' else 0.0
 
         if look['cursor_show_time']:
@@ -1061,9 +1062,9 @@ class Timeline(QWidget):
         background = look.color('background_color')
         if background.alpha():
             painter.fillRect(event.rect(), background)
-        tile, tile_width = _natural_shape(widget, look['background_svg'], background, widget.height())
+        tile, tile_width = timeline_shapes.natural_shape(widget, look['background_svg'], background, widget.height())
         if tile is not None:
-            _tile(painter, tile, QRectF(event.rect().left(), 0, event.rect().width(), widget.height()), tile_width)
+            timeline_shapes.tile(painter, tile, QRectF(event.rect().left(), 0, event.rect().width(), widget.height()), tile_width)
         grid_pen = QPen(look.color('grid_color'), look['grid_width'], Qt.SolidLine)
         painter.setFont(look.ruler_font)
 
@@ -1102,12 +1103,12 @@ class Timeline(QWidget):
         grid_type = timeline_cfg.get('grid_type', False)
         widget._paint_ruler(painter, look, ev_rect, iter_left, iter_right, duration, wpp)
 
-        grid_line, grid_line_width = _natural_shape(widget, look['grid_line_svg'], look.color('grid_color'),
+        grid_line, grid_line_width = timeline_shapes.natural_shape(widget, look['grid_line_svg'], look.color('grid_color'),
                                                     widget.height()) if show_grid else (None, 0.0)
 
         def grid_at(xpos):
             if grid_line is not None:
-                _draw_shape(painter, grid_line, xpos - grid_line_width / 2.0, 0.0)
+                timeline_shapes.draw(painter, grid_line, xpos - grid_line_width / 2.0, 0.0)
             else:
                 painter.drawLine(xpos, 0, xpos, widget.height())
 
@@ -2130,11 +2131,11 @@ class Timeline(QWidget):
                         if timeline_edges.shown(edge_box, side == hovered_side):
                             timeline_edges.paint(painter, edge_box, box_rect, side, box_radius)
 
-                lock_shape, lock_width = _natural_shape(widget, box_look['lock_svg'], text_color_selected) \
+                lock_shape, lock_width = timeline_shapes.natural_shape(widget, box_look['lock_svg'], text_color_selected) \
                     if subtitle_locked else (None, 0.0)
                 if lock_shape is not None:
                     painter.restore()
-                    _draw_shape(painter, lock_shape, full_subtitle_rect.right() - lock_width - 4.0, full_subtitle_rect.top() + 4.0)
+                    timeline_shapes.draw(painter, lock_shape, full_subtitle_rect.right() - lock_width - 4.0, full_subtitle_rect.top() + 4.0)
                 elif subtitle_locked:
                     painter.restore()
                     badge_size = 10.0
@@ -2176,10 +2177,10 @@ class Timeline(QWidget):
                 import sys as _sys
                 traceback.print_exc(file=_sys.stderr)
 
-        push_shape, push_width = _natural_shape(widget, look['push_handle_svg'], look.color('selected_subtitle_arrow_color'),
+        push_shape, push_width = timeline_shapes.natural_shape(widget, look['push_handle_svg'], look.color('selected_subtitle_arrow_color'),
                                                 widget.subtitle_height) if widget.show_tug_of_war else (None, 0.0)
         if push_shape is not None:
-            _draw_shape(painter, push_shape, widget.show_tug_of_war * widget.width_proportion - push_width / 2.0,
+            timeline_shapes.draw(painter, push_shape, widget.show_tug_of_war * widget.width_proportion - push_width / 2.0,
                         widget.subtitle_y)
         elif bool(widget.show_tug_of_war):
             tug_of_war_pen = QPen(look.color('selected_subtitle_arrow_color'), 4, Qt.SolidLine, Qt.RoundCap)
@@ -2225,16 +2226,16 @@ class Timeline(QWidget):
             arrow_y = look['cursor_badge_top'] + 4.0
             painter.setPen(Qt.NoPen)
             painter.setBrush(arrow_color)
-            arrow_shape, arrow_width = _natural_shape(widget, look['offscreen_arrow_svg'], arrow_color)
+            arrow_shape, arrow_width = timeline_shapes.natural_shape(widget, look['offscreen_arrow_svg'], arrow_color)
             if arrow_shape is not None and cursor_pos < scroll_position:
                 # Drawn pointing right: mirrored for the left.
                 painter.save()
                 painter.translate(scroll_position + arrow_margin + arrow_width, arrow_y)
                 painter.scale(-1, 1)
-                _draw_shape(painter, arrow_shape, 0.0, 0.0)
+                timeline_shapes.draw(painter, arrow_shape, 0.0, 0.0)
                 painter.restore()
             elif arrow_shape is not None and cursor_pos > scroll_position + scroll_width:
-                _draw_shape(painter, arrow_shape, scroll_position + scroll_width - arrow_margin - arrow_width, arrow_y)
+                timeline_shapes.draw(painter, arrow_shape, scroll_position + scroll_width - arrow_margin - arrow_width, arrow_y)
             elif cursor_pos < scroll_position:
                 ax = scroll_position + arrow_margin
                 arrow = QPainterPath()
@@ -4041,7 +4042,7 @@ class Timeline(QWidget):
         if cache is not None and cache[1] == (h, look['onset_marker_svg']):
             return cache[0]
         base = look.color('onset_marker_color')
-        shape, _width = _natural_shape(widget, look['onset_marker_svg'], base, h)
+        shape, _width = timeline_shapes.natural_shape(widget, look['onset_marker_svg'], base, h)
         if shape is not None:
             # The look's own marker, as transparent as its colour, baked in.
             image, opacity = shape
@@ -4133,47 +4134,6 @@ _LIVE_BAND_RATIO = 0.25          # same band as a committed dub in _paint_body
 
 _VERTICAL_ALIGNMENT = {'top': Qt.AlignTop, 'center': Qt.AlignVCenter, 'bottom': Qt.AlignBottom}
 _LINE_STYLES = {'solid': Qt.SolidLine, 'dashed': Qt.DashLine, 'dotted': Qt.DotLine}
-
-
-def _shape(widget, name, width, height, color):
-    """A look's SVG shape (modules.timeline_svg) as an image this size in
-    `color`, made once, and how opaque to draw it; None without one that
-    can be drawn."""
-    if not name:
-        return None
-    image = timeline_svg.image(name, width, height, color.name(QColor.HexRgb), widget.devicePixelRatioF())
-    if image is None:
-        return None
-    # Its currentColor took the colour's red, green and blue: its alpha is
-    # the image's opacity. A shape in colours of its own is drawn as it is.
-    return image, color.alphaF() if timeline_svg.takes_color(name) else 1.0
-
-
-def _natural_shape(widget, name, color, height=None):
-    """A look's SVG shape at its own size (or this tall, its own width), and
-    that width; (None, 0) without one."""
-    width, natural_height = timeline_svg.natural_size(name) if name else (0.0, 0.0)
-    if width <= 0:
-        return None, 0.0
-    return _shape(widget, name, width, natural_height if height is None else height, color), width
-
-
-def _tile(painter, shape, rect, width):
-    """An SVG shape repeated along `rect`, each `width` wide, from the
-    timeline's start (so it scrolls with it)."""
-    image, opacity = shape
-    painter.save()
-    painter.setOpacity(painter.opacity() * opacity)
-    painter.drawTiledPixmap(rect, image, QPointF(rect.left() % width, 0))
-    painter.restore()
-
-
-def _draw_shape(painter, shape, x, y):
-    image, opacity = shape
-    painter.save()
-    painter.setOpacity(painter.opacity() * opacity)
-    painter.drawPixmap(QPointF(x, y), image)
-    painter.restore()
 
 
 def _box_paint(widget, box):
