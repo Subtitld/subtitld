@@ -1329,8 +1329,11 @@ class Timeline(QWidget):
             speakers_keys = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
             speakers_index = {name: i for i, name in enumerate(speakers_keys)}
             speakers_count = len(speakers_keys)
-            # Each kind of cue's box look, made when the first of its kind is drawn.
-            box_paints = {}
+            # Each kind of cue's box look, made when the first of its kind is
+            # drawn and kept until the look (or the text's alignment) changes.
+            if getattr(widget, '_box_paints_for', None) != (look, widget.subtitle_alignment):
+                widget._box_paints_for, widget._box_paints = (look, widget.subtitle_alignment), {}
+            box_paints = widget._box_paints
             dirty_rect = QRectF(ev_rect)
             painted_kind = None
             current_selected = session.SUBTITLE.selected
@@ -1396,6 +1399,13 @@ class Timeline(QWidget):
                     (subtitle['end'] - subtitle['start']) * widget.width_proportion,
                     lane_height / subtitle_track[1]
                 )
+
+                # Wholly outside what is being painted (while the video plays,
+                # a strip around the playhead): none of it shows, but for a
+                # dub clip, which can reach past it, and the live take's cue.
+                if not subtitle_rect.adjusted(-2, -2, 2, 2).intersects(dirty_rect) \
+                        and not (dubbing_enabled and subtitle.get('dubbing')) and subtitle is not _live_sub:
+                    continue
 
                 subtitle_locked = subtitle.get('locked', False)
                 full_subtitle_rect = QRectF(subtitle_rect)

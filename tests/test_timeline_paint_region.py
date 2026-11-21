@@ -251,9 +251,9 @@ check('the strip reaches into subtitles 402 and 403 alone', subtitles_within(str
 check('and the markers of 5 onsets', onsets_within(strip_left, strip_right), 5)
 got = paint(strip)
 check('  the event is the strip', event_spans, [(strip_left, strip_right)])
-# Not 402 and 403 alone: a dub band can reach past its subtitle's start and
-# end (see the comment above visible_start_sec in _paint_body).
-check('  still draws every subtitle in the viewport, and no more', subtitles_drawn(got), in_view)
+# 402 and 403 alone: the subtitles wholly outside the strip are left out,
+# all of them, box and text.
+check('  draws the subtitles in it alone', subtitles_drawn(got), [402, 403])
 secs = check_labels(got, strip_left, strip_right)
 check('  labels 805 and 806 alone', secs, [805, 806])
 waves = waveforms(got)
@@ -264,5 +264,15 @@ check('  across the strip alone, give or take a bucket', len(waves) == 1
 check('  marks only the onsets that reach into the strip', onset_markers(got), 5)
 
 print()
+print('a dub clip outside the strip')
+# A dub band can reach past its subtitle's start and end (see the comment
+# above visible_start_sec in _paint_body): a subtitle with one is still drawn.
+session.CONFIG['dubbing'] = {'enabled': True}
+session.SUBTITLE.segments[401]['dubbing'] = [{'path': '/nowhere/dub.wav'}]
+got = paint(strip)
+check('  the dubbed subtitle drawn too', sorted(set(subtitles_drawn(got))), [401, 402, 403])
+del session.SUBTITLE.segments[401]['dubbing']
+session.CONFIG['dubbing'] = {}
+
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

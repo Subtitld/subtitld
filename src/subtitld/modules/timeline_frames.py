@@ -235,14 +235,38 @@ def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None, op
         faded = 'current' in part.paint or ('speaker' in part.paint and not speaker)
         painter.setOpacity(base * opacity if faded else base)
         if part.slice and not part.fixed:
-            image = _image(frame, renderer, part, part.bounds.width(), part.bounds.height(), colors, scale, name)
-            _nine(painter, image, part.bounds.width(), part.bounds.height(), part.slice, target)
+            # Its top and bottom kept once for the box's height (a lane's,
+            # the same for every box), then its sides: three pieces a box.
+            image = _stretched(frame, renderer, part, target.height(), colors, scale, name)
+            _three(painter, image, part.bounds.width(), part.slice[3], part.slice[1], target)
         elif part.fixed:
             image = _image(frame, renderer, part, target.width(), target.height(), colors, scale, name)
             painter.drawPixmap(target.topLeft(), image)
         else:
             renderer.render(painter, part.id, target)
     painter.setOpacity(base)
+
+
+def _three(painter, image, width, left, right, target):
+    """`image` (a part `width` wide, already as tall as `target`) laid into
+    `target` in three pieces: its left and right insets kept, its middle
+    stretched. The nine pieces' one row, without their loop: a box drawn
+    with them is three calls."""
+    left, right = min(left, width / 2.0), min(right, width / 2.0)
+    fit = min(1.0, target.width() / (left + right)) if left + right else 1.0
+    t_left, t_right = left * fit, right * fit
+    ratio = image.devicePixelRatio()
+    pixels_high = image.height()
+    x, y, w, h = target.x(), target.y(), target.width(), target.height()
+    if t_left > 0:
+        painter.drawPixmap(QRectF(x, y, t_left, h), image, QRectF(0, 0, left * ratio, pixels_high))
+    middle = w - t_left - t_right
+    if middle > 0:
+        painter.drawPixmap(QRectF(x + t_left, y, middle, h), image,
+                           QRectF(left * ratio, 0, (width - left - right) * ratio, pixels_high))
+    if t_right > 0:
+        painter.drawPixmap(QRectF(x + w - t_right, y, t_right, h), image,
+                           QRectF((width - right) * ratio, 0, right * ratio, pixels_high))
 
 
 def _nine(painter, image, width, height, insets, target):
@@ -269,6 +293,27 @@ def _nine(painter, image, width, height, insets, target):
                             (source_y[row + 1] - source_y[row]) * ratio)
             if into.width() > 0 and into.height() > 0 and source.width() > 0 and source.height() > 0:
                 painter.drawPixmap(into, image, source)
+
+
+def _stretched(frame, renderer, part, height, colors, scale, name):
+    """A sliced part drawn at its own width and `height` tall: its top and
+    bottom insets kept, its middle stretched. Made once a height."""
+    key = (name, part.id, 'tall', round(height, 2), colors, scale)
+    image = _images.get(key)
+    if image is None:
+        width = part.bounds.width()
+        natural = _image(frame, renderer, part, width, part.bounds.height(), colors, scale, name)
+        image = QPixmap(max(1, int(round(width * scale))), max(1, int(round(height * scale))))
+        image.setDevicePixelRatio(scale)
+        image.fill(Qt.transparent)
+        p = QPainter(image)
+        top, _right, bottom, _left = part.slice
+        _nine(p, natural, width, part.bounds.height(), (top, 0.0, bottom, 0.0), QRectF(0, 0, width, height))
+        p.end()
+        if len(_images) >= _IMAGES_KEPT:
+            _images.pop(next(iter(_images)))
+        _images[key] = image
+    return image
 
 
 def _image(frame, renderer, part, width, height, color, scale, name):
