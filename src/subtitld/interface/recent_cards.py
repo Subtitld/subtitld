@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QEventLoop, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QFont, QFontMetrics, QImage, QLinearGradient
 from PySide6.QtWidgets import QWidget
 
+from subtitld.interface import theme
 from subtitld.interface import shapes
 from subtitld.interface import utils
 from subtitld.modules import session
@@ -209,7 +210,7 @@ class RecentCard(QWidget):
         outline = QPainterPath()
         outline.addRoundedRect(card, CARD_RADIUS, CARD_RADIUS)
 
-        painter.fillPath(outline, FACE)
+        painter.fillPath(outline, theme.color(FACE))
 
         # the frame fills the card's left side: round where the card is, square toward the name
         box = QRectF(card.left(), card.top(), card.height() * 16 / 9, card.height())
@@ -221,8 +222,8 @@ class RecentCard(QWidget):
             painter.restore()
         else:
             empty = QLinearGradient(0, box.top(), 0, box.bottom())
-            empty.setColorAt(0, QColor('#2a3743'))
-            empty.setColorAt(1, QColor('#141b21'))
+            empty.setColorAt(0, theme.color(QColor('#2a3743')))
+            empty.setColorAt(1, theme.color(QColor('#141b21')))
             painter.fillPath(clip, empty)
 
         # the name beside the frame, in up to two lines
@@ -234,7 +235,7 @@ class RecentCard(QWidget):
         name.setWeight(QFont.Bold)
         metrics = QFontMetrics(name)
         painter.setFont(name)
-        painter.setPen(QColor('#e3edf5'))
+        painter.setPen(theme.ink(QColor('#e3edf5')))
         for index, line in enumerate(self._wrap(self.title, metrics, right - left, 2)):
             painter.drawText(QRectF(left, top + index * 14, right - left, 14), Qt.AlignLeft | Qt.AlignVCenter, line)
 
@@ -245,17 +246,17 @@ class RecentCard(QWidget):
         age_w = QFontMetrics(small).horizontalAdvance(age)
         track = QRectF(left, card.bottom() - 13, right - left - (age_w + 8 if age else 0), 6)
         painter.setFont(small)
-        painter.setPen(QColor(184, 206, 224, 130))
+        painter.setPen(theme.ink(QColor(184, 206, 224, 130)))
         painter.drawText(QRectF(right - age_w, track.top() - 4, age_w, track.height() + 8), Qt.AlignRight | Qt.AlignVCenter, age)
 
         # the timeline: a flat strip, the subtitles on it, a thin red line where you stopped
-        painter.fillRect(track, TRACK)
+        painter.fillRect(track, theme.color(TRACK))
         cues = str(self.config.get('cues') or '')
         if cues:
             step = track.width() / len(cues)
             for index, digit in enumerate(cues):
                 if digit.isdigit() and digit != '0':
-                    color = QColor(CUE)
+                    color = theme.color(QColor(CUE))
                     color.setAlpha(60 + int(digit) * 15)
                     painter.fillRect(QRectF(track.left() + index * step, track.top(), step, track.height()), color)
         try:

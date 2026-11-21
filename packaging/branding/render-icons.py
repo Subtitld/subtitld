@@ -16,6 +16,10 @@ Writes:
                                               the start screen's outline mark
     src/subtitld/graphics/subtitld_mark.png   the mark alone, cropped, 11 px tall
                                               (and @2x): the title bar's label
+    src/subtitld/graphics/subtitld_mark_light.png
+                                              the same for the light look: the
+                                              bar in #3e5363, as subtitld.cc's
+                                              favicon draws it on light
     packaging/msix/tiles.svg                  the Store tiles, laid out for
     packaging/msix/assets/*.png               generate-assets.py, which this
                                               runs to render them
@@ -210,14 +214,20 @@ def write_small_mark(flat: str, box: tuple[float, float, float, float]) -> None:
     source.write_text(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.3f}" height="{height:.3f}" '
         f'viewBox="{x:.3f} {y:.3f} {width:.3f} {height:.3f}">{flat}</svg>\n')
+    # On the light look the pale bar would hardly show: subtitld.cc's favicon
+    # draws it in #3e5363 there.
+    light = HERE / '.mark-light.svg'
+    light.write_text(source.read_text().replace('#b8cee0', '#3e5363'))
     try:
-        for name, size in (('subtitld_mark.png', 11), ('subtitld_mark@2x.png', 22)):
-            subprocess.run(['inkscape', str(source), '--export-type=png', f'--export-height={size}',
+        for svg, name, size in ((source, 'subtitld_mark.png', 11), (source, 'subtitld_mark@2x.png', 22),
+                                (light, 'subtitld_mark_light.png', 11), (light, 'subtitld_mark_light@2x.png', 22)):
+            subprocess.run(['inkscape', str(svg), '--export-type=png', f'--export-height={size}',
                             f'--export-filename={GRAPHICS / name}'],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(name)
     finally:
         source.unlink()
+        light.unlink()
 
 
 # The installer's icons: (size, mark width, badge diameter), as shares of the

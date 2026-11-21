@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from subtitld.interface import theme
 from subtitld.interface.account_header import AccountHeader
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
@@ -178,13 +179,13 @@ class _MemberBadge(QWidget):
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor('#4a6376'))
+        painter.setBrush(theme.color(QColor('#4a6376')))
         painter.drawEllipse(0, 0, self.AVATAR, self.AVATAR)
         font = QFont('Montserrat')
         font.setPixelSize(9)
         font.setWeight(QFont.Bold)
         painter.setFont(font)
-        painter.setPen(QColor('#e3edf5'))
+        painter.setPen(theme.ink(QColor('#e3edf5')))
         painter.drawText(0, 0, self.AVATAR, self.AVATAR, Qt.AlignCenter, initial)
         painter.end()
         return pixmap
@@ -938,9 +939,8 @@ class _LinkButton(QPushButton):
         self.setIconSize(QSize(12, 12))
 
     def enterEvent(self, event):
-        from PySide6.QtGui import QIcon
         super().enterEvent(event)
-        self.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'live_bar_copy.svg')))
+        self.setIcon(theme.icon('live_bar_copy.svg'))
 
     def leaveEvent(self, event):
         from PySide6.QtGui import QIcon
@@ -996,7 +996,7 @@ class _Ripple(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         # it starts slowly and speeds up as it grows (ease-in); it fades fast at first, then slower (ease-out)
         grown = self._phase ** 3
-        colour = QColor(self.COLOUR)
+        colour = theme.color(QColor(self.COLOUR))
         colour.setAlphaF(0.85 * (1 - self._phase) ** 2)
         painter.setPen(QPen(colour, self.WIDTH))
         painter.setBrush(Qt.NoBrush)
@@ -1041,10 +1041,10 @@ class _Faces(QWidget):
         painter.setFont(font)
         for index, (initial, speaking) in reversed(list(enumerate(self._people))):
             rect = QRectF(self.MARGIN + index * self.STEP + 1, 1, self.SIZE - 2, self.SIZE - 2)
-            painter.setPen(QPen(QColor('#55d43f') if speaking else QColor('#1c252c'), 1.6))
-            painter.setBrush(QColor('#4a6376'))
+            painter.setPen(QPen(theme.ink(QColor('#55d43f')) if speaking else theme.ink(QColor('#1c252c')), 1.6))
+            painter.setBrush(theme.color(QColor('#4a6376')))
             painter.drawEllipse(rect)
-            painter.setPen(QColor('#e3edf5'))
+            painter.setPen(theme.ink(QColor('#e3edf5')))
             painter.drawText(rect, Qt.AlignCenter, initial)
 
 
@@ -1159,12 +1159,11 @@ class LiveBar(QWidget):
         # The chat: a slanted tab like the call's, bare until checked (then the call tab's blue, very faint);
         # checked, the chat shows in the drawer.
         from PySide6.QtCore import QSize as _QSize
-        from PySide6.QtGui import QIcon as _QIcon
         self.chat = QPushButton(self)                   # placed by hand (_place_chat), its slant on the call tab's
         self.chat.setObjectName('live_bar_chat')
         self.chat.setCheckable(True)
         self.chat.setCursor(Qt.PointingHandCursor)
-        self.chat.setIcon(_QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'live_bar_chat.svg')))
+        self.chat.setIcon(theme.icon('live_bar_chat.svg'))
         self.chat.setIconSize(_QSize(16, 16))
         self.chat.setFixedHeight(30)
         self.chat.toggled.connect(self.open_chat)
@@ -1219,11 +1218,11 @@ class LiveBar(QWidget):
         from PySide6.QtGui import QColor, QPainter
         painter = QPainter(self)
         # the header's shade, under the strip Share live rises into (the cards' ground continues there)
-        painter.fillRect(self.rect().adjusted(0, 0, 0, -(self.height() - self.RISE)), QColor(184, 206, 224, 15))
-        painter.fillRect(self.rect().adjusted(0, self.RISE, 0, 0), AccountHeader.SHADE)
+        painter.fillRect(self.rect().adjusted(0, 0, 0, -(self.height() - self.RISE)), theme.color(QColor(184, 206, 224, 15)))
+        painter.fillRect(self.rect().adjusted(0, self.RISE, 0, 0), theme.surface(AccountHeader.SHADE))
         if self.people_panel.isVisible():
             # open: the panel and the line under it in one lighter colour, as the dubbing range does
-            painter.fillRect(self.rect().adjusted(0, self.people_panel.y(), 0, 0), QColor('#2f404d'))
+            painter.fillRect(self.rect().adjusted(0, self.people_panel.y(), 0, 0), theme.color(QColor('#2f404d')))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1245,10 +1244,9 @@ class LiveBar(QWidget):
 
     def _icon(self, icon):
         from PySide6.QtCore import QSize
-        from PySide6.QtGui import QIcon
         button = QPushButton()
         button.setProperty('class', 'live_bar_icon')
-        button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+        button.setIcon(theme.icon(icon))
         button.setIconSize(QSize(16, 16))
         button.setFixedSize(30, 26)
         button.setCursor(Qt.PointingHandCursor)
@@ -1322,7 +1320,6 @@ class LiveBar(QWidget):
     # --- What it shows -----------------------------------------------------------------------------------
 
     def refresh(self):
-        from PySide6.QtGui import QIcon
         connected = service.is_connected()
         self.setVisible(connected)
         if not connected:
@@ -1375,11 +1372,10 @@ class LiveBar(QWidget):
         self.lock.blockSignals(True)
         self.lock.setChecked(on and voice['latched'])
         self.lock.blockSignals(False)
-        self.lock.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
-                                    ('live_bar_lock_on.svg' if on and voice['latched'] else 'live_bar_lock.svg'))))
+        self.lock.setIcon(theme.icon('live_bar_lock_on.svg' if on and voice['latched'] else 'live_bar_lock.svg'))
         self.call.setEnabled(available)
         self.call.setFixedWidth(56 if on else 46)        # in the call it holds the lock too
-        self.call.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_talk.svg' if on else 'live_bar_join.svg'))))
+        self.call.setIcon(theme.icon('live_bar_talk.svg' if on else 'live_bar_join.svg'))
         self.call.setToolTip(_('collab.voice_talk') if on else _('collab.voice_join'))
         state = 'off' if not on else ('talking' if voice['talking'] or voice['latched'] else 'call')
         if self.call.property('call') != state:
@@ -1389,10 +1385,8 @@ class LiveBar(QWidget):
         unread = collab_service.chat_unread() if shared else 0
         self.chat.setText(str(unread) if unread else '')
         if self.chat.property('unread') != bool(unread):  # something new: the icon and its count turn green
-            from PySide6.QtGui import QIcon
             self.chat.setProperty('unread', bool(unread))
-            self.chat.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS /
-                                        ('live_bar_chat_new.svg' if unread else 'live_bar_chat.svg'))))
+            self.chat.setIcon(theme.icon('live_bar_chat_new.svg' if unread else 'live_bar_chat.svg'))
             self.chat.style().unpolish(self.chat)
             self.chat.style().polish(self.chat)
         self.chat.setFixedWidth(62 if unread else 50)
@@ -1559,8 +1553,7 @@ class LiveBar(QWidget):
             QTimer.singleShot(0, self._fit_drawer)
 
     def open_drawer(self, opened):
-        from PySide6.QtGui import QIcon
-        self.toggle.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('live_bar_menu_open.svg' if opened else 'live_bar_menu.svg'))))
+        self.toggle.setIcon(theme.icon('live_bar_menu_open.svg' if opened else 'live_bar_menu.svg'))
         self._show_drawer()
         self._arrange(collab_state.shared())
         if opened:

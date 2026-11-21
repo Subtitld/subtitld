@@ -18,6 +18,7 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QKeySequenceEdit, QLineEdit, QPushButton,
                                QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
+from subtitld.interface import theme
 from subtitld.interface.subtitldcc_live import _button, _clear, _row, _text
 from subtitld.interface.translation import _
 from subtitld.modules import collab_service, collab_state, session
@@ -84,12 +85,11 @@ class _Bubble(QWidget):
 
     def add_button(self, icon, name, action):
         from PySide6.QtCore import QSize
-        from PySide6.QtGui import QIcon
         from PySide6.QtWidgets import QPushButton
         button = QPushButton(self)
         button.setObjectName('chat_bubble_button')
         button.setProperty('first', not self.buttons)    # the first one rounds its top-left corner
-        button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+        button.setIcon(theme.icon(icon))
         button.setIconSize(QSize(12, 12))
         button.setFixedSize(22, 20)
         button.setToolTip(name)
@@ -265,7 +265,12 @@ class ChatCard(QWidget):
         self._redraw.setInterval(100)
         self._redraw.timeout.connect(self.refresh)
         collab_service.listeners.append(self._news)
+        theme.notifier.changed.connect(self._look_changed)
         self.retranslate()
+
+    def _look_changed(self, _name):
+        self._shown_messages = None                     # the bubbles' words carry colours of the look
+        self.refresh()
 
     def retranslate(self):
         self.field.setPlaceholderText(_('collab.chat_placeholder'))
@@ -284,12 +289,10 @@ class ChatCard(QWidget):
         self.refresh()
 
     def _show_attach(self, on):
-        from PySide6.QtGui import QIcon
-        self.attach.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_point_on.svg' if on else 'chat_point.svg'))))
+        self.attach.setIcon(theme.icon('chat_point_on.svg' if on else 'chat_point.svg'))
 
     def _show_keep(self, kept):
-        from PySide6.QtGui import QIcon
-        self.keep.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / ('chat_keep_on.svg' if kept else 'chat_keep.svg'))))
+        self.keep.setIcon(theme.icon('chat_keep_on.svg' if kept else 'chat_keep.svg'))
 
     def eventFilter(self, watched, event):
         if watched in (getattr(self, 'keep', None), getattr(self, 'attach_button', None)) \
@@ -389,16 +392,16 @@ class ChatCard(QWidget):
         foot = [_('collab.chat_sending') if message.get('pending') else _clock(message['at'])]
         if message.get('cue_id') or message.get('at_ms') is not None:
             foot.insert(0, f'<a href="go:{message.get("cue_id") or ""}:{message.get("at_ms") or ""}" '
-                           f'style="color:#9fc4e4;">{self._place(message)}</a>')
+                           f'style="color:{theme.css("#9fc4e4")};">{self._place(message)}</a>')
         if message.get('edited'):
             foot.append(_('collab.chat_edited'))
         editable = mine and not message.get('pending') and not message.get('deleted')
         body = (f'<i>{_("collab.chat_deleted")}</i>' if message.get('deleted')
                 else html.escape(message.get('text') or '').replace('\n', '<br>'))
-        head = '' if mine or not first else f'<div style="color:#8fd19e; font-weight:700;">{html.escape(name)}</div>'
+        head = '' if mine or not first else f'<div style="color:{theme.css("#8fd19e")}; font-weight:700;">{html.escape(name)}</div>'
         # the foot's words on the right, in a line of their own: its own's Edit and Delete take that corner
         # while hovered, and the words then move to their left (_Bubble)
-        meta_html = f'<div align="right" style="font-size:9px; color:rgba(184,206,224,0.55);">{" · ".join(foot)}</div>'
+        meta_html = f'<div align="right" style="font-size:9px; color:{theme.css((184, 206, 224, 140))};">{" · ".join(foot)}</div>'
         label = _text('chat_bubble_text')
         meta = _text('chat_bubble_text')
         for text_label, text in ((label, head + f'<div>{body}</div>'), (meta, meta_html)):

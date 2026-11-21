@@ -18,6 +18,7 @@ from PySide6.QtGui import QColor, QPainter, QFont, QFontMetrics, QDesktopService
 
 import i18n
 
+from subtitld.interface import theme
 from subtitld.interface import left_panel
 from subtitld.interface import utils as interface_utils
 from subtitld.interface.translation import _
@@ -280,12 +281,12 @@ class _BackupDelegate(QStyledItemDelegate):
         info = index.data(_ROLE_INFO) or {}
         if index.data(_ROLE_KIND) == 'header':
             painter.setFont(self._font(9, bold=True))
-            painter.setPen(QColor('#b8cee0'))
+            painter.setPen(theme.ink(QColor('#b8cee0')))
             title = info.get('title', '').upper()
             metrics = QFontMetrics(painter.font())
             text_rect = QRectF(rect.left() + 10, rect.top() + 8, rect.width() - 20, rect.height() - 8)
             painter.drawText(text_rect, Qt.AlignLeft | Qt.AlignVCenter, title)
-            painter.setPen(QColor(184, 206, 224, 110))
+            painter.setPen(theme.ink(QColor(184, 206, 224, 110)))
             count_x = text_rect.left() + metrics.horizontalAdvance(title) + 8
             painter.drawText(QRectF(count_x, text_rect.top(), 40, text_rect.height()), Qt.AlignLeft | Qt.AlignVCenter,
                              str(info.get('count', '')))
@@ -296,20 +297,20 @@ class _BackupDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         if selected or hovered:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor('#304251') if selected else QColor('#212c36'))
+            painter.setBrush(theme.color(QColor('#304251')) if selected else theme.color(QColor('#212c36')))
             painter.drawRoundedRect(rect.adjusted(4, 1, -4, -1), 3, 3)
 
         when = info['when']
         left = rect.left() + 12
         right_edge = rect.right() - (72 if hovered else 12)
         painter.setFont(self._font(15, mono=True))
-        painter.setPen(QColor('#e8f1f8'))
+        painter.setPen(theme.ink(QColor('#e8f1f8')))
         time_text = when.strftime('%H:%M:%S')
         time_width = QFontMetrics(painter.font()).horizontalAdvance(time_text)
         painter.drawText(QRectF(left, rect.top() + 6, time_width + 2, 20), Qt.AlignLeft | Qt.AlignVCenter, time_text)
         if info.get('today'):
             painter.setFont(self._font(11))
-            painter.setPen(QColor(184, 206, 224, 150))
+            painter.setPen(theme.ink(QColor(184, 206, 224, 150)))
             painter.drawText(QRectF(left + time_width + 8, rect.top() + 6, right_edge - left - time_width - 8, 20),
                              Qt.AlignLeft | Qt.AlignVCenter, _ago(when))
 
@@ -317,7 +318,7 @@ class _BackupDelegate(QStyledItemDelegate):
         if self.show_project:
             second = f'{info["project"]}  ·  {second}'
         painter.setFont(self._font(11))
-        painter.setPen(QColor(184, 206, 224, 120))
+        painter.setPen(theme.ink(QColor(184, 206, 224, 120)))
         metrics = QFontMetrics(painter.font())
         width = right_edge - left
         painter.drawText(QRectF(left, rect.top() + 25, width, 16), Qt.AlignLeft | Qt.AlignVCenter,
@@ -326,18 +327,18 @@ class _BackupDelegate(QStyledItemDelegate):
         if hovered:
             button = self._open_rect(rect)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor('#c8dbe9'))
+            painter.setBrush(theme.surface(QColor('#c8dbe9')))
             painter.drawRoundedRect(button, 3, 3)
             painter.setFont(self._font(9, bold=True))
-            painter.setPen(QColor('#304251'))
+            painter.setPen(theme.ink(QColor('#304251')))
             painter.drawText(button, Qt.AlignCenter, _('autosave_panel.open').upper())
         elif info.get('latest'):
             badge = QRectF(rect.right() - 62, rect.top() + 9, 50, 16)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(95, 196, 138, 40))
+            painter.setBrush(theme.color(QColor(95, 196, 138, 40)))
             painter.drawRoundedRect(badge, 8, 8)
             painter.setFont(self._font(8, bold=True))
-            painter.setPen(QColor('#5fc48a'))
+            painter.setPen(theme.ink(QColor('#5fc48a')))
             painter.drawText(badge, Qt.AlignCenter, _('autosave_panel.latest').upper())
         painter.restore()
 

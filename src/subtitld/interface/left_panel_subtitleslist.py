@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QHBoxLayout, QSplitter, QPushButton, QListView, QStyledItemDelegate, QFrame, QLabel, QTextEdit, QSizePolicy, QLineEdit, QStyle, QDialog, QListWidget, QListWidgetItem, QAbstractScrollArea, QGraphicsOpacityEffect
 from PySide6.QtCore import Qt, QAbstractListModel, QRect, QMargins, QSize, Signal, QPoint, QPropertyAnimation, QEasingCurve, QObject, QEvent
-from PySide6.QtGui import QColor, QFontMetrics, QFont, QIcon, QPixmap
+from PySide6.QtGui import QColor, QFontMetrics, QFont, QPixmap
 
+from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
@@ -114,7 +115,7 @@ class subtitles_panel_qlistwidget(QListView):
 
                 if option.state & QStyle.State_Selected:
                     painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('background_color', '#802e3e4c')))
+                    painter.setBrush(theme.color(QColor(session.CONFIG.get('subtitle_list', {}).get('background_color', '#802e3e4c'))))
                     painter.drawRect(option.rect)
                     # painter.setBrush(QColor('#55d43f'))
                     # painter.drawRect(QRect(0, option.rect.y(), 20, option.rect.height()))
@@ -124,14 +125,14 @@ class subtitles_panel_qlistwidget(QListView):
                     sub_is_ok, _, _ = quality_check.check_subtitle(session.SUBTITLE.segments[index.row()])
 
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('number_background_color', '#aa2e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_background_warning_color', '#aa9e1a1a')))
+                painter.setBrush(theme.color(QColor(session.CONFIG.get('subtitle_list', {}).get('number_background_color', '#aa2e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_background_warning_color', '#aa9e1a1a'))))
 
                 number_rect = QRect(0, option.rect.y(), 10 + number_width + 10, option.rect.height())
                 text_rect = QRect(number_rect.right(), option.rect.y(), option.rect.width() - number_rect.right(), option.rect.height())
 
                 painter.drawRect(number_rect)
 
-                painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('number_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_warning_color', '#ffffff')))
+                painter.setPen(theme.ink(QColor(session.CONFIG.get('subtitle_list', {}).get('number_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_warning_color', '#ffffff'))))
 
                 number_rect = number_rect.marginsRemoved(QMargins(10, 10, 10, 10))
 
@@ -139,11 +140,11 @@ class subtitles_panel_qlistwidget(QListView):
                 painter.drawText(number_rect, 0, str(index.row() + 1))
 
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(session.CONFIG.get('subtitle_list', {}).get('text_background_color', '#102e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_background_warning_color', '#109e1a1a')))
+                painter.setBrush(theme.color(QColor(session.CONFIG.get('subtitle_list', {}).get('text_background_color', '#102e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_background_warning_color', '#109e1a1a'))))
 
                 painter.drawRect(text_rect)
 
-                painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
+                painter.setPen(theme.ink(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a'))))
                 painter.setFont(QFont('Montserrat', 10))
 
                 qalignment = TEXT_ALIGNMENTS[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
@@ -153,9 +154,9 @@ class subtitles_panel_qlistwidget(QListView):
                     original_rect = original_rect.marginsRemoved(QMargins(10, 10, 10, 10))
                     painter.drawText(original_rect, qalignment | Qt.AlignTop | Qt.TextWordWrap, row_text)
                     translated_rect = text_rect.marginsRemoved(QMargins(text_rect.width()*.5, 0, 0, 0))
-                    painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#0dffffff')))
+                    painter.setPen(theme.ink(QColor(session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#0dffffff'))))
                     painter.drawLine(translated_rect.topLeft(), translated_rect.bottomLeft())
-                    painter.setPen(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a')))
+                    painter.setPen(theme.ink(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a'))))
                     translated_rect = translated_rect.marginsRemoved(QMargins(10, 10, 10, 10))
                     translated_text = markup.plain(segment.get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
                     painter.drawText(translated_rect, qalignment | Qt.AlignTop | Qt.TextWordWrap, translated_text)   
@@ -233,7 +234,7 @@ def load(self):
     self.subtitles_panel_empty_state_button = QPushButton()
     self.subtitles_panel_empty_state_button.setObjectName('subtitles_panel_empty_state_button')
     self.subtitles_panel_empty_state_button.setProperty('class', 'primary')
-    self.subtitles_panel_empty_state_button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'add_subtitle_icon.svg')))
+    self.subtitles_panel_empty_state_button.setIcon(theme.icon('add_subtitle_icon.svg'))
     self.subtitles_panel_empty_state_button.setIconSize(QSize(20, 20))
     self.subtitles_panel_empty_state_button.setFixedSize(40, 40)
     self.subtitles_panel_empty_state_button.clicked.connect(lambda: subtitles_panel_empty_state_button_clicked(self))
@@ -676,18 +677,19 @@ def update(self):
             if quality_check_enabled:
                 _, reasons, issues = quality_check.check_subtitle(sel)
 
-                ok_solid = '#5a55d43f'
-                ok_soft = '#3355d43f'
-                bad_solid = '#a09e1a1a'
-                bad_soft = '#7a9e1a1a'
+                ok_solid = theme.css('#5a55d43f')
+                ok_soft = theme.css('#3355d43f')
+                bad_solid = theme.css('#a09e1a1a')
+                bad_soft = theme.css('#7a9e1a1a')
+                badge_text = theme.css('#ffffff')
 
-                self.properties_information_word_counter.setStyleSheet('QLabel#properties_information_word_counter { background-color: ' + (ok_solid if 'wpm' not in issues else bad_solid) + '; color: #ffffff; }')
-                self.properties_information_wpm.setStyleSheet('QLabel#properties_information_wpm { background-color: ' + (ok_soft if 'wpm' not in issues else bad_soft) + '; color: #ffffff; }')
-                self.properties_information_character_counter.setStyleSheet('QLabel#properties_information_character_counter { background-color: ' + (ok_solid if 'cps' not in issues else bad_solid) + '; color: #ffffff; }')
-                self.properties_information_cps.setStyleSheet('QLabel#properties_information_cps { background-color: ' + (ok_soft if 'cps' not in issues else bad_soft) + '; color: #ffffff; }')
-                self.properties_information_sub_duration.setStyleSheet('QLabel#properties_information_sub_duration { background-color: ' + (ok_solid if 'duration' not in issues else bad_solid) + '; color: #ffffff; }')
-                self.properties_information_number_of_lines.setStyleSheet('QLabel#properties_information_number_of_lines { background-color: ' + (ok_solid if 'number_of_lines' not in issues else bad_solid) + '; color: #ffffff; }')
-                self.properties_information_cpl.setStyleSheet('QLabel#properties_information_cpl { background-color: ' + (ok_soft if 'cpl' not in issues else bad_soft) + '; color: #ffffff; }')
+                self.properties_information_word_counter.setStyleSheet('QLabel#properties_information_word_counter { background-color: ' + (ok_solid if 'wpm' not in issues else bad_solid) + '; color: ' + badge_text + '; }')
+                self.properties_information_wpm.setStyleSheet('QLabel#properties_information_wpm { background-color: ' + (ok_soft if 'wpm' not in issues else bad_soft) + '; color: ' + badge_text + '; }')
+                self.properties_information_character_counter.setStyleSheet('QLabel#properties_information_character_counter { background-color: ' + (ok_solid if 'cps' not in issues else bad_solid) + '; color: ' + badge_text + '; }')
+                self.properties_information_cps.setStyleSheet('QLabel#properties_information_cps { background-color: ' + (ok_soft if 'cps' not in issues else bad_soft) + '; color: ' + badge_text + '; }')
+                self.properties_information_sub_duration.setStyleSheet('QLabel#properties_information_sub_duration { background-color: ' + (ok_solid if 'duration' not in issues else bad_solid) + '; color: ' + badge_text + '; }')
+                self.properties_information_number_of_lines.setStyleSheet('QLabel#properties_information_number_of_lines { background-color: ' + (ok_solid if 'number_of_lines' not in issues else bad_solid) + '; color: ' + badge_text + '; }')
+                self.properties_information_cpl.setStyleSheet('QLabel#properties_information_cpl { background-color: ' + (ok_soft if 'cpl' not in issues else bad_soft) + '; color: ' + badge_text + '; }')
 
                 self.properties_information.setToolTip('\n'.join(reasons))
             else:
@@ -939,7 +941,7 @@ class SpeakerSelector(QWidget):
         self.add_button = QPushButton()
         self.add_button.setObjectName('add_button')
         self.add_button.setFixedSize(20, 14)
-        self.add_button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'plus_icon.svg')))
+        self.add_button.setIcon(theme.icon('plus_icon.svg'))
         self.add_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
         self.add_button.clicked.connect(lambda: self.add_button_clicked())
         # self.add_button.opacity = QGraphicsOpacityEffect()
@@ -978,7 +980,8 @@ class SpeakerSelector(QWidget):
         self.selector_button_icon = QLabel()
         self.selector_button_icon.setObjectName('selector_button_icon')
         self.selector_button_icon.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
-        self.selector_button_icon.setPixmap(QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'combobox_down_arrow.svg')).scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.selector_button_icon.setPixmap(theme.pixmap('combobox_down_arrow.svg', 16, 16))
+        theme.notifier.changed.connect(self._look_changed)
         self.selector_button.layout().addWidget(self.selector_button_icon, 0)
 
         self.left_container.layout().addWidget(self.selector_button, 1)
@@ -1065,7 +1068,7 @@ class SpeakerSelector(QWidget):
                     if speaker_data.get('image', None):
                         icon_label.setPixmap(QPixmap.fromImage(speaker_data['image']).scaled(36, 36))
                     else:
-                        icon_label.setPixmap(QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'unknown_speaker.svg')).scaled(36, 36))
+                        icon_label.setPixmap(theme.pixmap('unknown_speaker.svg', 36, 36))
                         if not self.window().left_panel_speakers_image_test_thread.isRunning():
                             self.window().left_panel_speakers_image_test_thread.name = speaker_name
                             self.window().left_panel_speakers_image_test_thread.start()
@@ -1114,12 +1117,18 @@ class SpeakerSelector(QWidget):
         self.set_current_speaker(speaker)
         self.selector_list.hide()
 
+    def _look_changed(self, _name):
+        self.selector_button_icon.setPixmap(theme.pixmap('combobox_down_arrow.svg', 16, 16))
+        speaker_name = self.selector_button_label.text()
+        if not session.SPEAKERS.get(speaker_name, {}).get('image', None):
+            self.image.setPixmap(QPixmap(theme.graphic('unknown_speaker.svg')))
+
     def set_current_speaker(self, speaker_name):
         self.selector_button_label.setText(speaker_name)
         if session.SPEAKERS.get(speaker_name, {}).get('image', None):
             self.image.setPixmap(QPixmap.fromImage(session.SPEAKERS[speaker_name]['image']))
         else:
-            self.image.setPixmap(QPixmap(str(session.PATH_SUBTITLD_GRAPHICS / 'unknown_speaker.svg')))
+            self.image.setPixmap(QPixmap(theme.graphic('unknown_speaker.svg')))
             if not self.window().left_panel_speakers_image_test_thread.isRunning():
                 self.window().left_panel_speakers_image_test_thread.name = speaker_name
                 self.window().left_panel_speakers_image_test_thread.start()

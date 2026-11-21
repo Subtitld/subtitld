@@ -1,8 +1,7 @@
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QLabel, QScrollArea, QCheckBox, QComboBox, QHBoxLayout, QPushButton, QDoubleSpinBox, QFileDialog, QListWidget, QListWidgetItem, QTabWidget, QStyle
 from PySide6.QtCore import Qt, QMimeData, QSize
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 
-import os
 import json
 import copy
 
@@ -11,6 +10,7 @@ from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.addons_dialog import AddonsPanel
 from subtitld.interface.cloud_dashboard import CloudDashboardPanel
+from subtitld.interface import theme
 from subtitld.interface import translation
 from subtitld.interface.translation import _
 from subtitld.modules import appimage_integration
@@ -228,6 +228,13 @@ def load(self):
     self.global_panel_language_combobox.activated.connect(lambda: global_panel_language_combobox_activated(self))
     self.left_panel_global_tab_general.layout().addWidget(self.global_panel_language_combobox)
 
+    # The interface's look: the system's (the default), dark or light.
+    self.global_panel_theme_combobox = utils.LabeledComboBox()
+    for choice in theme.THEMES:
+        self.global_panel_theme_combobox.combobox.addItem('', choice)
+    self.global_panel_theme_combobox.activated.connect(lambda: global_panel_theme_combobox_activated(self))
+    self.left_panel_global_tab_general.layout().addWidget(self.global_panel_theme_combobox)
+
     # Run from an AppImage: its entry in the applications menu, which also opens subtitld.cc's links
     # (interface/appimage_prompt.py asks about it once).
     self.global_panel_general_appimage_menu = QCheckBox()
@@ -366,7 +373,7 @@ def load(self):
     # bar via QTabWidget's corner-widget slot.
     self.left_panel_global_panel_export_settings_button = QPushButton()
     self.left_panel_global_panel_export_settings_button.setObjectName('left_panel_global_panel_export_settings_button')
-    self.left_panel_global_panel_export_settings_button.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'left_panel_global_export_settings_icon.svg')))
+    self.left_panel_global_panel_export_settings_button.setIcon(theme.icon('left_panel_global_export_settings_icon.svg'))
     self.left_panel_global_panel_export_settings_button.setIconSize(QSize(14, 14))
     self.left_panel_global_panel_export_settings_button.setFlat(True)
     self.left_panel_global_panel_export_settings_button.setFixedSize(QSize(28, 28))
@@ -477,6 +484,11 @@ def global_panel_language_combobox_activated(self):
     apply_language(self)
 
 
+def global_panel_theme_combobox_activated(self):
+    session.CONFIG['interface_theme'] = self.global_panel_theme_combobox.combobox.currentData() or 'system'
+    theme.apply()
+
+
 def apply_language(self):
     """Switch the interface to the saved language (or the system's)."""
     translation.set_language(translation.pick_language(session.CONFIG.get('interface_language')))
@@ -486,6 +498,8 @@ def apply_language(self):
 def update(self):
     global_panel_audio_separator_combobox_populate(self)
     global_panel_language_combobox_populate(self)
+    theme_combobox = self.global_panel_theme_combobox.combobox
+    theme_combobox.setCurrentIndex(max(0, theme_combobox.findData(theme.setting())))
 
     for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
         if session.CONFIG['default_values'] and item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USFX')):
@@ -585,6 +599,12 @@ def translate(self):
     if hasattr(self, 'global_panel_audio_separator_combobox'):
         self.global_panel_audio_separator_combobox.setLabel(_('global_panel.audio_separator'))
     self.global_panel_language_combobox.setLabel(_('global_panel.language'))
+    self.global_panel_theme_combobox.setLabel(_('global_panel.theme'))
+    theme_combobox = self.global_panel_theme_combobox.combobox
+    system_name = _('global_panel.theme_light') if theme.system_theme() == 'light' else _('global_panel.theme_dark')
+    for choice, label in (('system', _('global_panel.theme_system').format(theme=system_name)),
+                          ('dark', _('global_panel.theme_dark')), ('light', _('global_panel.theme_light'))):
+        theme_combobox.setItemText(theme_combobox.findData(choice), label)
     global_panel_language_combobox_populate(self)
     if hasattr(self, 'global_panel_cloud_dashboard'):
         self.global_panel_cloud_dashboard.retranslate()

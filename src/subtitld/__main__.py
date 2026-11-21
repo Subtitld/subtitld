@@ -79,7 +79,7 @@ except Exception:
     pass
 
 from PySide6.QtWidgets import QApplication, QWidget, QStackedLayout, QHBoxLayout, QLabel, QDialog, QMenu, QAbstractItemView
-from PySide6.QtGui import QFont, QFontDatabase, QShortcut, QKeySequence, QIcon
+from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication, QShortcut, QKeySequence, QIcon
 from PySide6.QtCore import QDir, QEvent, QObject, QTimer, Qt
 # Haiku draws every window with its own native decorator (the yellow tab),
 # which already provides minimise/zoom/close. Using the frameless window
@@ -98,6 +98,7 @@ from subtitld.interface import appimage_prompt
 from subtitld.interface import productionscreen
 from subtitld.interface import actionmanager
 from subtitld.interface import utils
+from subtitld.interface import theme
 from subtitld.interface import translation
 from subtitld.interface.translation import _
 # Imported for the side-effect of registering its ``@shortcut`` handler
@@ -210,9 +211,14 @@ class Window(_MainWindowBase):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setWindowTitle("Subtitld")
-        self.setStyleSheet(open(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'stylesheet.qss')).read())
-        
         session.CONFIG = config.Config()
+
+        # The look picked in the global settings, or else the system's; a
+        # change of the system's is followed while it is the one picked.
+        theme.apply()
+        self.setStyleSheet(theme.stylesheet())
+        theme.notifier.changed.connect(lambda _name: self.setStyleSheet(theme.stylesheet()))
+        QGuiApplication.instance().styleHints().colorSchemeChanged.connect(theme.system_changed)
 
         # The language picked in the global settings, or else the system's.
         # Set before any widget is built: some take their texts as they are.

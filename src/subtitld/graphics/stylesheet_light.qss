@@ -1,0 +1,133 @@
+/* The light look is stylesheet.qss turned over (interface/theme.py); this
+   file is added after it, in the light look only, for what the turning over
+   doesn't get right. Its colours are written as they are drawn. */
+
+/* The dark vignette behind the file name keeps it readable over a dark
+   window; over a light one it is a smudge. */
+#titleBar_left_container {
+    border-image: none;
+}
+
+/* Progress reads in the palette's #566f84: a pale fill, as on the dark look,
+   would hardly show on a light ground. */
+QProgressBar::chunk,
+QProgressBar#addon_card_progress_bar::chunk,
+QProgressBar#videoproperties_progress::chunk {
+    background: #566f84;
+}
+
+#find_replace_field QPushButton[class="find_toggle"]:checked {
+    background: #c8dbe9;
+}
+
+#find_replace_field QPushButton[class="find_toggle"]:checked:hover {
+    background: #b8cee0;
+}
+
+/* The recording light at rest: a mark, grey, not a ground. */
+QLabel#audio_record_status_light {
+    background: #8a9aa8;
+}
+
+/* Scroll bars: a solid handle (the dark look's handle artwork turned over
+   reads as an odd bevel). */
+QScrollBar::handle:vertical,
+QScrollBar::handle:horizontal {
+    border-image: none;
+    border: 0;
+    border-radius: 3px;
+    background: #b3c1cd;
+}
+
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+    border-image: none;
+    background: #8fa1b1;
+}
+
+/* The main action of a dialog or a scope (on the slanted tab), and the
+   primary buttons: the dark look's own primary gradient (#627f97 → #4a5f71),
+   with light text. */
+#dialog_bottom QPushButton[class="accept_button"],
+#dialog_bottom QPushButton[class="accept_button"]:hover,
+QPushButton[class~="scope_action_tab"],
+#left_panel_speakers_panel_content_item QPushButton[class~="scope_action_tab"] {
+    color: #ffffff;
+}
+
+QPushButton[class="primary"] {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    color: #ffffff;
+}
+
+QPushButton[class="primary"]:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7892a8, stop:1 #59738a);
+}
+
+QPushButton[class="primary"]:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f71, stop:1 #566f84);
+}
+
+/* A speaker's card: a step lighter than the panel it sits on. */
+#left_panel_speakers_panel_content_item #speaker_card_body {
+    background-color: #e9eef2;
+}
+
+#left_panel_speakers_panel_content_item:hover #speaker_card_body {
+    background-color: #f0f4f7;
+}
+
+/* The title bar's export button in the primary buttons' blue (graphics/light/
+   draws its pieces), with white icons and text. */
+#titleBar_left_export_button #titleBar_left_export_button_icon {
+    background-image: url('graphics:titleBar_export_icon.svg');
+}
+
+#titleBar_left_export_button #titleBar_left_export_quick_button {
+    color: #ffffff;
+}
+
+/* The start screen's Open: the main action, as a primary button. */
+#start_screen_open_button {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
+    color: #ffffff;
+}
+
+#start_screen_open_button:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7892a8, stop:1 #59738a);
+}
+
+#start_screen_open_button:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f71, stop:1 #566f84);
+}
+
+/* A scope footer (translation, transcription, dubbing): the hairline over
+   its actions, and the faint band of its scope row, both as the dark look
+   has them but in light-look tones (turned over they vanish). */
+QWidget#scope_footer_divider {
+    background: #b9c5d0;
+}
+
+QWidget#scope_footer_row {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(48, 66, 81, 0.07), stop:1 rgba(48, 66, 81, 0));
+}
+
+QWidget#scope_footer[corner_tab="true"] QWidget#scope_footer_row {
+    background: transparent;
+}
+
+/* Find & Replace: ‹ | FIND › sits on the main action's tab (blue here), so it
+   is labelled as the dialogs' main button is: white. */
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"],
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"]:hover {
+    color: #ffffff;
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"]:disabled {
+    color: rgba(255, 255, 255, 128);
+}
+
+#find_replace_dialog #dialog_bottom QPushButton[class="find_replace_tab_button"][segment="last"] {
+    border-left: 1px solid rgba(255, 255, 255, 70);
+}

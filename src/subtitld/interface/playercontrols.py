@@ -7,7 +7,7 @@ import subprocess
 from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
-from PySide6.QtGui import QIcon, QPainter, QColor
+from PySide6.QtGui import QPainter, QColor
 
 # Follow-mode scrolls repaint the viewport, so ignore drift smaller than this
 # rather than scrolling on every tick.
@@ -32,6 +32,7 @@ class EnterAbsorbingDoubleSpinBox(QDoubleSpinBox):
         super().keyPressEvent(ev)
 
 import subtitld.modules.timecode as timecode
+from subtitld.interface import theme
 from subtitld.interface import timeline, left_panel, player_widgets, subtitle_text_editor
 from subtitld.interface.translation import _
 
@@ -95,10 +96,10 @@ class _ShotChangesGridButton(QPushButton):
         if self.progress is None:
             return
         painter = QPainter(self)
-        track = QColor(self.BAR_COLOR)
+        track = theme.color(QColor(self.BAR_COLOR))
         track.setAlpha(60)
         painter.fillRect(0, self.height() - 2, self.width(), 2, track)
-        painter.fillRect(0, self.height() - 2, round(self.width() * self.progress), 2, self.BAR_COLOR)
+        painter.fillRect(0, self.height() - 2, round(self.width() * self.progress), 2, theme.color(self.BAR_COLOR))
 
 
 class _SplitterHandleButton(QPushButton):
@@ -558,7 +559,7 @@ def load(self):
 
     self.change_playback_speed_decrease = QPushButton()
     self.change_playback_speed_decrease.setObjectName('change_playback_speed_decrease')
-    self.change_playback_speed_decrease.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playback_speed_decrease.svg')))
+    self.change_playback_speed_decrease.setIcon(theme.icon('playback_speed_decrease.svg'))
     self.change_playback_speed_decrease.setIconSize(QSize(10, 10))
     self.change_playback_speed_decrease.setFixedSize(24, 26)
     self.change_playback_speed_decrease.clicked.connect(lambda: change_playback_speed_decrease_clicked(self))
@@ -577,7 +578,7 @@ def load(self):
 
     self.change_playback_speed_increase = QPushButton()
     self.change_playback_speed_increase.setObjectName('change_playback_speed_increase')
-    self.change_playback_speed_increase.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'playback_speed_increase.svg')))
+    self.change_playback_speed_increase.setIcon(theme.icon('playback_speed_increase.svg'))
     self.change_playback_speed_increase.setIconSize(QSize(10, 10))
     self.change_playback_speed_increase.setFixedSize(24, 26)
     self.change_playback_speed_increase.clicked.connect(lambda: change_playback_speed_increase_clicked(self))

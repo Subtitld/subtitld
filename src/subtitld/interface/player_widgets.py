@@ -8,16 +8,13 @@ checked looks, so a group reads as one object.
 """
 
 import math
-import os
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (QColor, QFontMetricsF, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPainterPathStroker,
                            QPolygonF, QRegion, QTransform)
-from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QPushButton, QSizePolicy, QStyleOptionButton, QWidget
 
-from subtitld.interface import shapes
-from subtitld.modules import session
+from subtitld.interface import shapes, theme
 
 ICON_H = 20                           # the strips' subtitle icons are 20px tall
 CONTACT = QColor(0, 0, 0, 64)         # the player pieces' contact line: softer than the 45% of other buttons
@@ -28,8 +25,22 @@ EDGE = QColor('#3a4e5f')              # the player panel's 1px top edge line (st
 BAND = QColor('#161e24')              # the window behind the clear 2px band above the player panel
 
 
-def graphic(name):
-    return QSvgRenderer(os.path.join(session.PATH_SUBTITLD_GRAPHICS, name))
+def well(y0, y1):
+    """The sunken fields' gradient over y0..y1."""
+    g = QLinearGradient(0, y0, 0, y1)
+    g.setColorAt(0, theme.surface(WELL[0]))
+    g.setColorAt(1, theme.surface(WELL[1]))
+    return g
+
+
+class graphic:
+    """graphics/`name` as a renderer, drawn in the look current when it is used."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __getattr__(self, attr):
+        return getattr(theme.renderer(self.name), attr)
 
 
 class StripKey(QAbstractButton):
@@ -151,7 +162,7 @@ class ActionStrip(QWidget):
         rect = QRectF(self.rect())
         shape = self.shape()
         if not self.isEnabled():
-            painter.fillPath(shape, QColor('#25323d'))
+            painter.fillPath(shape, theme.color('#25323d'))
             painter.setOpacity(0.35)
         else:
             painter.fillPath(shape, shapes.gradient(0, rect.height(), PIECE))
@@ -166,17 +177,17 @@ class ActionStrip(QWidget):
                 shapes.fill_sunk(painter, zone, QRectF(key.geometry()))
                 line = line.subtracted(shapes.rect_path(QRectF(key.geometry()).adjusted(0, 0, 0, 1)))
             elif state == 'hover':
-                painter.fillPath(zone, shapes.HOVER)
+                painter.fillPath(zone, theme.color(shapes.HOVER))
         top = self.height() - self.sub_h if subs else 0
         for key in subs:                   # the sub-keys: a darker raised notch each, sinking when pressed
             zone = self.zones[key]
             if key.state() == 'sunk':
                 painter.fillPath(zone, shapes.gradient(top, self.height(), shapes.SUNK, 'sunken'))
-                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, top, self.width(), 1))), QColor(0, 0, 0, 46))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, top, self.width(), 1))), theme.color(QColor(0, 0, 0, 46)))
             else:
                 painter.fillPath(zone, shapes.gradient(top, self.height(), PIECE_NEST))
                 if key.state() == 'hover':
-                    painter.fillPath(zone, QColor(255, 255, 255, 14))
+                    painter.fillPath(zone, theme.color(QColor(255, 255, 255, 14)))
         painter.save()
         painter.setClipPath(shape)
         if self.picture:
@@ -185,7 +196,7 @@ class ActionStrip(QWidget):
             self._paint_icons(painter)
         painter.restore()
         if self.isEnabled():
-            painter.fillPath(line, CONTACT)
+            painter.fillPath(line, theme.color(CONTACT))
 
     def _paint_icons(self, painter):
         n = len(self.keys)
@@ -216,7 +227,7 @@ INK = QColor('#304251')
 
 def _chevrons(painter, x, y, count, direction):
     """Open chevrons like the icons' « and »: 1px dark strokes, 5px tall, 2px apart."""
-    pen = QPen(INK, 1)
+    pen = QPen(theme.ink(INK), 1)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     painter.setPen(pen)
@@ -257,12 +268,12 @@ def send_text_picture(painter, rect):
     c1, c2 = quarter + 16, 3 * quarter - 16            # the two slice cuts
     for x0, x1, rl, rr in ((-3, b1 - 0.5, False, True), (b1 + 0.5, c1 - 2, True, True), (c1 + 2, c2 - 2, True, True),
                            (c2 + 2, b2 - 0.5, True, True), (b2 + 0.5, w + 3, True, False)):
-        block(x0, x1, BLOCK, 2, 20, 2.5, rl, rr)
+        block(x0, x1, theme.surface(BLOCK), 2, 20, 2.5, rl, rr)
     for c in (c1, c2):
-        lp.fillRect(QRectF(c - 0.5, 0, 1, 20), BLOCK)
+        lp.fillRect(QRectF(c - 0.5, 0, 1, 20), theme.surface(BLOCK))
     for x0, x1, rl, rr in ((-3, b1 - 3, False, True), (b1 + 3, c1 - 4, True, True), (c1 + 4, c2 - 4, True, True),
                            (c2 + 4, b2 - 3, True, True), (b2 + 3, w + 3, True, False)):
-        block(x0, x1, TEXT, 7, 15, 4, rl, rr)
+        block(x0, x1, theme.surface(TEXT), 7, 15, 4, rl, rr)
     _chevrons(lp, b1 + 5, 0, 2, 'left')
     _chevrons(lp, c1 - 8, 0, 1, 'left')
     _chevrons(lp, c2 + 6.5, 0, 1, 'right')
@@ -325,7 +336,7 @@ class GapControl(QWidget):
         rect = QRectF(self.rect())
         shape, field = self.shape(), self.field()
         if not self.isEnabled():
-            painter.fillPath(shape, QColor('#25323d'))
+            painter.fillPath(shape, theme.color('#25323d'))
             painter.setOpacity(0.35)
         else:
             painter.fillPath(shape, shapes.gradient(0, rect.height(), PIECE))
@@ -337,7 +348,7 @@ class GapControl(QWidget):
                 shapes.fill_sunk(painter, zone, QRectF(key.geometry()))
                 line = line.subtracted(shapes.rect_path(QRectF(key.geometry()).adjusted(0, 0, 0, 1)))
             elif state == 'hover':
-                painter.fillPath(zone, shapes.HOVER)
+                painter.fillPath(zone, theme.color(shapes.HOVER))
         # icons: inner blocks run in to the field, outer blocks out to the piece's ends, fading in
         painter.save()
         painter.setClipPath(shape.subtracted(field))
@@ -351,12 +362,9 @@ class GapControl(QWidget):
                                    fade_right=(self.width() - rx - self.ICON + 3) / 2)
         painter.restore()
         # the field, sunken, as ADD's
-        g = QLinearGradient(0, self.field_rect.top(), 0, self.field_rect.bottom())
-        g.setColorAt(0, QColor(WELL[0]))
-        g.setColorAt(1, QColor(WELL[1]))
-        painter.fillPath(field, g)
+        painter.fillPath(field, well(self.field_rect.top(), self.field_rect.bottom()))
         if self.isEnabled():
-            painter.fillPath(line, CONTACT)
+            painter.fillPath(line, theme.color(CONTACT))
 
     def sizeHint(self):
         return self.size()
@@ -432,7 +440,7 @@ class BalanceSlider(QAbstractSlider):
         rect = QRectF(self.rect())
         shape = shapes.hanging_rect(0, 0, self.W, self.H)
         if not self.isEnabled():
-            painter.fillPath(shape, QColor('#25323d'))
+            painter.fillPath(shape, theme.color('#25323d'))
             painter.setOpacity(0.35)
         sx = self._split_x()
         music = shape.intersected(shapes.rect_path(QRectF(0, 0, sx, self.H)))
@@ -443,9 +451,9 @@ class BalanceSlider(QAbstractSlider):
         for key in (self.music_key, self.voice_key):
             zone = shape.intersected(shapes.rect_path(QRectF(key.geometry())))
             if key.state() == 'hover':
-                painter.fillPath(zone, shapes.HOVER)
+                painter.fillPath(zone, theme.color(shapes.HOVER))
             elif key.state() == 'sunk':
-                painter.fillPath(zone, QColor(0, 0, 0, 40))
+                painter.fillPath(zone, theme.color(QColor(0, 0, 0, 40)))
         cy = self.H / 2 - 1
         for which, cx in (('music', 14), ('voice', self.W - 14)):
             key = self.music_key if which == 'music' else self.voice_key
@@ -458,23 +466,23 @@ class BalanceSlider(QAbstractSlider):
         font.setBold(True)
         painter.setFont(font)
         value = self.value()
-        painter.setPen(QColor(255, 255, 255, 220))
+        painter.setPen(theme.ink(QColor(255, 255, 255, 220)))
         if sx - self.END > 18:
             painter.drawText(QRectF(self.END - 2, 0, sx - self.END - 4, self.H), Qt.AlignCenter, str(100 - value))
-        painter.setPen(QColor(26, 38, 50, 230))
+        painter.setPen(theme.ink(QColor(26, 38, 50, 230)))
         if self.W - self.END - sx > 18:
             painter.drawText(QRectF(sx + 6, 0, self.W - self.END - sx - 4, self.H), Qt.AlignCenter, str(value))
         # the handle: its left side touches the music zone; solid for the top quarter, then fading out
         g = QLinearGradient(0, 0, 0, self.H)
-        g.setColorAt(0, QColor('#eef4f8'))
-        g.setColorAt(0.25, QColor('#eef4f8'))
-        g.setColorAt(1, QColor(238, 244, 248, 0))
+        g.setColorAt(0, theme.color(QColor('#eef4f8')))
+        g.setColorAt(0.25, theme.color(QColor('#eef4f8')))
+        g.setColorAt(1, theme.color(QColor(238, 244, 248, 0)))
         painter.save()
         painter.setClipPath(shape)
         painter.fillRect(QRectF(sx, 0, 2, self.H), g)
         painter.restore()
         if self.isEnabled():
-            painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
+            painter.fillPath(shape.subtracted(shape.translated(0, -1)), theme.color(CONTACT))
 
     def sizeHint(self):
         return self.size()
@@ -624,7 +632,7 @@ class AddSubtitleButton(QAbstractButton):
         rect = QRectF(self.rect())
         shape, notch = self.shape(), self.notch()
         if not self.isEnabled():
-            painter.fillPath(shape, QColor('#25323d'))
+            painter.fillPath(shape, theme.color('#25323d'))
             painter.setOpacity(0.35)
         elif self.isDown():
             shapes.fill_sunk(painter, shape, rect)
@@ -632,7 +640,7 @@ class AddSubtitleButton(QAbstractButton):
             painter.fillPath(shape, shapes.gradient(0, self.H, PIECE))
             over_child = any(k.underMouse() for k in self.switches) or self.spinbox.underMouse()
             if self.underMouse() and not over_child:
-                painter.fillPath(shape, shapes.HOVER)
+                painter.fillPath(shape, theme.color(shapes.HOVER))
         # icon and label
         self._icon.render(painter, QRectF(12, (self.H - self.ICON) / 2, self.ICON, self.ICON))
         painter.setFont(self._label_font())
@@ -642,16 +650,16 @@ class AddSubtitleButton(QAbstractButton):
         # the switches: one raised group, then only the zones that differ are painted over
         painter.fillPath(notch, shapes.gradient(0, self.NOTCH_H, PIECE_NEST))
         painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.NOTCH_H - 1, self.width(), 1))),
-                         QColor(0, 0, 0, 30))
+                         theme.color(QColor(0, 0, 0, 30)))
         iy = (self.NOTCH_H - self.ICON) / 2 + 1
         for i, key in enumerate(self.switches):
             zone = notch.intersected(shapes.rect_path(QRectF(key.geometry()).adjusted(0, -1, 0, 1)))
             state = key.state()
             if state == 'sunk':
                 painter.fillPath(zone, shapes.gradient(0, self.NOTCH_H, shapes.SUNK, 'sunken'))
-                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), QColor(0, 0, 0, 46))
+                painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, 0, self.width(), 1))), theme.color(QColor(0, 0, 0, 46)))
             elif state == 'hover':
-                painter.fillPath(zone, QColor(255, 255, 255, 14))
+                painter.fillPath(zone, theme.color(QColor(255, 255, 255, 14)))
             normal, checked = self._switch_icons[key.objectName()]
             renderer = checked if key.isChecked() and checked is not None else normal
             ix = self.notch_x + self.run + i * self.ZONE
@@ -665,15 +673,12 @@ class AddSubtitleButton(QAbstractButton):
                         ext = QRectF(self.notch_x - 20, iy + top, ix - self.notch_x + 20.5, bottom - top)
                     else:
                         ext = QRectF(ix + self.ICON - 0.5, iy + top, 40, bottom - top)
-                    painter.fillRect(ext, QColor('#b8cee0'))
+                    painter.fillRect(ext, theme.color(QColor('#b8cee0')))
             painter.restore()
         # the duration field, sunken, against the notch's slant
-        field = QLinearGradient(0, self.field_box.top(), 0, self.field_box.bottom())
-        field.setColorAt(0, QColor(WELL[0]))
-        field.setColorAt(1, QColor(WELL[1]))
-        painter.fillPath(self.field_path(), field)
+        painter.fillPath(self.field_path(), well(self.field_box.top(), self.field_box.bottom()))
         if self.isEnabled() and not self.isDown():
-            painter.fillPath(shape.subtracted(shape.translated(0, -1)), CONTACT)
+            painter.fillPath(shape.subtracted(shape.translated(0, -1)), theme.color(CONTACT))
 
     def sizeHint(self):
         return QSize(self.width(), self.H)
@@ -712,7 +717,7 @@ class SlantFrameButton(QPushButton):
         self.lean = lean
         self.setAttribute(Qt.WA_Hover)
         self.setFixedHeight(self.H)
-        self.setIcon(QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, icon)))
+        self.setIcon(theme.icon(icon))
 
     def frame(self):
         w, h = self.width(), self.H
@@ -734,11 +739,11 @@ class SlantFrameButton(QPushButton):
         frame = self.frame()
         base = self.CHECKED if self.isChecked() else (self.HOVERED if self.underMouse() else self.NORMAL)
         shapes.fill_raised(painter, frame, QRectF(0, 0, self.width(), self.H), base, contact=False)
-        painter.fillPath(frame.subtracted(frame.translated(0, -1)), CONTACT)
+        painter.fillPath(frame.subtracted(frame.translated(0, -1)), theme.color(CONTACT))
         if self.isDown():
-            painter.fillPath(frame, QColor(0, 0, 0, 30))
+            painter.fillPath(frame, theme.color(QColor(0, 0, 0, 30)))
         elif self.underMouse() and self.isChecked():
-            painter.fillPath(frame, shapes.HOVER)
+            painter.fillPath(frame, theme.color(shapes.HOVER))
         if not self.icon().isNull():
             size = self.iconSize()
             pad = self.style().subElementRect(self.style().SubElement.SE_PushButtonContents, self._option(), self)
@@ -919,15 +924,15 @@ class Transport(QWidget):
         """A hanging group of keys: one raised fill, then the zones that differ."""
         painter.fillPath(notch, shapes.gradient(self.ny, self.ny + self.nh, bg))
         painter.fillPath(notch.intersected(shapes.rect_path(QRectF(0, self.ny + self.nh - 1, self.width(), 1))),
-                         QColor(0, 0, 0, 30))
+                         theme.color(QColor(0, 0, 0, 30)))
         for zone, key in zones:
             state = key.state()
             if state == 'sunk' or all_sunk:
                 painter.fillPath(zone, shapes.gradient(self.ny, self.ny + self.nh, on, 'sunken'))
                 painter.fillPath(zone.intersected(shapes.rect_path(QRectF(0, self.TAB, self.width(), 1))),
-                                 QColor(0, 0, 0, 45))
+                                 theme.color(QColor(0, 0, 0, 45)))
             if state == 'hover':
-                painter.fillPath(zone, QColor(255, 255, 255, hover_alpha))
+                painter.fillPath(zone, QColor(255, 255, 255, hover_alpha))     # pale keys: lighter in either look
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -937,10 +942,10 @@ class Transport(QWidget):
         stroker = QPainterPathStroker()
         stroker.setWidth(2)
         ring = stroker.createStroke(self.base).subtracted(self.outline)
-        painter.fillPath(ring.intersected(shapes.rect_path(QRectF(0, 1, self.width(), self.H))), EDGE)
+        painter.fillPath(ring.intersected(shapes.rect_path(QRectF(0, 1, self.width(), self.H))), theme.color(EDGE))
         # inside the outline, above the keys, the band is clear: cover the edge line running behind
         band = shapes.rect_path(QRectF(0, 0, self.width(), self.TAB))
-        painter.fillPath(self.outline.intersected(band).subtracted(self.visible), BAND)
+        painter.fillPath(self.outline.intersected(band).subtracted(self.visible), theme.color(BAND))
         painter.setClipPath(self.visible)
         y0, yb = self.PANEL_TOP, self.PANEL_BOTTOM
         h = yb - y0
@@ -953,11 +958,11 @@ class Transport(QWidget):
         enabled = self.isEnabled()
         for key, area in ((self.play_key, self.play_area), (self.record_key, self.record_area)):
             if key.state() == 'hover':
-                painter.fillPath(area, QColor(255, 255, 255, 50))
+                painter.fillPath(area, QColor(255, 255, 255, 50))              # pale keys: lighter in either look
         for on, area, base in ((playing, self.play_area, self.PLAYING), (recording, self.record_area, self.RECORDING)):
             if on:
                 painter.fillPath(area, shapes.gradient(y0, yb, base, 'sunken'))
-                painter.fillPath(area.intersected(shapes.rect_path(QRectF(0, y0, self.width(), 1))), QColor(0, 0, 0, 45))
+                painter.fillPath(area.intersected(shapes.rect_path(QRectF(0, y0, self.width(), 1))), theme.color(QColor(0, 0, 0, 45)))
         # under the ▶|▶ group, play blends into record where their colours differ
         play_c = shapes.bottom_colour(self.PLAYING, 'sunken') if playing else shapes.bottom_colour(self.LIGHT)
         rec_c = shapes.bottom_colour(self.RECORDING, 'sunken') if recording else shapes.bottom_colour(self.REC_LIGHT)
@@ -979,12 +984,12 @@ class Transport(QWidget):
         painter.save()
         painter.setClipPath(self.begin_notch)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(self.INK)
+        painter.setBrush(theme.ink(self.INK))
         painter.drawRect(QRectF(ix, iy, 1, 24))
         painter.drawPolygon(QPolygonF([QPointF(ix + 3, iy + 9), QPointF(ix + 13, iy + 14), QPointF(ix + 3, iy + 19)]))
         first = QPainterPath()
         first.addRoundedRect(QRectF(ix + 15, iy + 4, 60, 20), 2, 2)
-        painter.fillPath(first, self.INK)
+        painter.fillPath(first, theme.ink(self.INK))
         painter.restore()
 
         # play / pause
@@ -1001,14 +1006,14 @@ class Transport(QWidget):
         before.addRoundedRect(QRectF(self.pg_x - 30, top, gx - 1 - (self.pg_x - 30), bottom - top), 2, 2)
         after = shapes.rect_path(QRectF(gx + 48 - 3, top, self.rg + 23, bottom - top))
         for block in (before, after):
-            painter.fillPath(block.intersected(self.group_notch), self.INK)
+            painter.fillPath(block.intersected(self.group_notch), theme.ink(self.INK))
 
         # record: a muted red dot at rest, white while recording (dimmer on the pulse's off beat)
         painter.setPen(Qt.NoPen)
         if recording:
             dot = QColor('#ffffff') if not self.pulse else QColor(255, 255, 255, 150)
         else:
-            dot = QColor('#7a4651')
+            dot = theme.ink(QColor('#7a4651'))
         painter.setBrush(dot)
         painter.drawEllipse(QPointF(self.rec_dot_x, cy), 11, 11)
         # the mode key: one key, its icon pushed left, flush with the right slant; red while recording
@@ -1022,7 +1027,7 @@ class Transport(QWidget):
         else:
             renderer.render(painter, icon_rect)
         if not enabled:
-            painter.fillRect(self.rect(), QColor(48, 66, 81, 140))
+            painter.fillRect(self.rect(), theme.color(QColor(48, 66, 81, 140)))
 
     def sizeHint(self):
         return self.size()

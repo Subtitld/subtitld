@@ -24,10 +24,8 @@ names used here are styled in ``graphics/stylesheet.qss`` under the
 
 from __future__ import annotations
 
-import os
-
-from PySide6.QtCore import Qt, QSize, QThread, Signal, QRectF, QUrl, QTimer
-from PySide6.QtGui import QIcon, QPainter, QPen, QColor, QDesktopServices, QFont
+from PySide6.QtCore import Qt, QSize, QThread, Signal, QRect, QRectF, QPoint, QUrl, QTimer
+from PySide6.QtGui import QPainter, QPen, QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QScrollArea, QSizePolicy,
@@ -35,13 +33,8 @@ from PySide6.QtWidgets import (
 
 from subtitld.interface import utils
 from subtitld.interface.account_header import AccountHeader, HeaderShadow
+from subtitld.interface import theme
 from subtitld.interface.translation import _
-from subtitld.modules import session
-
-
-def _g(name: str) -> str:
-    """Absolute path to a bundled graphic."""
-    return os.path.join(session.PATH_SUBTITLD_GRAPHICS, name)
 
 
 # ---------------------------------------------------------------------------
@@ -96,15 +89,15 @@ class _BalanceRing(QWidget):
         self._fraction = 0.62
         self._value = '—'
         self._unit = ''
-        self._accent = QColor('#b8cee0')
-        self._value_color = QColor('#ffffff')
+        self._accent = '#b8cee0'
+        self._value_color = '#ffffff'
 
     def set_data(self, fraction, value, unit, accent='#b8cee0', value_color='#ffffff'):
         self._fraction = max(0.0, min(1.0, float(fraction)))
         self._value = value
         self._unit = unit
-        self._accent = QColor(accent)
-        self._value_color = QColor(value_color)
+        self._accent = accent
+        self._value_color = value_color
         self.update()
 
     def paintEvent(self, event):
@@ -115,21 +108,21 @@ class _BalanceRing(QWidget):
                       self._RADIUS * 2, self._RADIUS * 2)
 
         # Track.
-        track = QPen(QColor(0, 0, 0, 77), self._STROKE)  # rgba(0,0,0,.3)
+        track = QPen(theme.ink(QColor(0, 0, 0, 77)), self._STROKE)  # rgba(0,0,0,.3)
         track.setCapStyle(Qt.FlatCap)
         p.setPen(track)
         p.drawArc(rect, 0, 360 * 16)
 
         # Progress arc — start at 12 o'clock (90°), sweep clockwise.
         if self._fraction > 0:
-            arc = QPen(self._accent, self._STROKE)
+            arc = QPen(theme.ink(self._accent), self._STROKE)
             arc.setCapStyle(Qt.RoundCap)
             p.setPen(arc)
             span = int(-360 * self._fraction * 16)
             p.drawArc(rect, 90 * 16, span)
 
         # Center value.
-        p.setPen(self._value_color)
+        p.setPen(theme.ink(self._value_color))
         vf = QFont('Montserrat')
         vf.setPixelSize(15)
         vf.setWeight(QFont.Bold)
@@ -139,7 +132,7 @@ class _BalanceRing(QWidget):
 
         # Center unit.
         if self._unit:
-            p.setPen(QColor(184, 206, 224, 128))  # rgba(184,206,224,.5)
+            p.setPen(theme.ink(QColor(184, 206, 224, 128)))  # rgba(184,206,224,.5)
             uf = QFont('Montserrat')
             uf.setPixelSize(8)
             uf.setWeight(QFont.Bold)
@@ -153,9 +146,25 @@ class _BalanceRing(QWidget):
 # ---------------------------------------------------------------------------
 # Small builders
 # ---------------------------------------------------------------------------
+class _IconLabel(QLabel):
+    """A label showing graphics/`name` centred at `size`, in the look current when painted."""
+
+    def __init__(self, name, size):
+        super().__init__()
+        self._icon = theme.icon(name)
+        self._icon_size = size
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        r = QRect(QPoint(0, 0), self._icon_size)
+        r.moveCenter(self.rect().center())
+        self._icon.paint(p, r)
+        p.end()
+
+
 def _mark_label(svg_file):
-    lbl = QLabel()
-    lbl.setPixmap(QIcon(_g(svg_file)).pixmap(QSize(14, 14)))
+    lbl = _IconLabel(svg_file, QSize(14, 14))
     lbl.setFixedSize(QSize(16, 14))
     return lbl
 
@@ -513,11 +522,9 @@ class CloudDashboardPanel(QWidget):
         c.setSpacing(0)
         c.setAlignment(Qt.AlignHCenter)
 
-        tile = QLabel()
+        tile = _IconLabel('cloud_glyph_icon.svg', QSize(22, 22))
         tile.setObjectName('cloud_icon_tile')
         tile.setFixedSize(QSize(44, 44))
-        tile.setAlignment(Qt.AlignCenter)
-        tile.setPixmap(QIcon(_g('cloud_glyph_icon.svg')).pixmap(QSize(22, 22)))
         c.addWidget(tile, 0, Qt.AlignHCenter)
         c.addSpacing(16)
 
@@ -584,11 +591,9 @@ class CloudDashboardPanel(QWidget):
         c.setSpacing(0)
         c.setAlignment(Qt.AlignHCenter)
 
-        tile = QLabel()
+        tile = _IconLabel('cloud_glyph_icon.svg', QSize(22, 22))
         tile.setObjectName('cloud_icon_tile')
         tile.setFixedSize(QSize(44, 44))
-        tile.setAlignment(Qt.AlignCenter)
-        tile.setPixmap(QIcon(_g('cloud_glyph_icon.svg')).pixmap(QSize(22, 22)))
         c.addWidget(tile, 0, Qt.AlignHCenter)
         c.addSpacing(16)
 
@@ -609,11 +614,9 @@ class CloudDashboardPanel(QWidget):
         c.setSpacing(0)
         c.setAlignment(Qt.AlignHCenter)
 
-        tile = QLabel()
+        tile = _IconLabel('cloud_glyph_icon.svg', QSize(22, 22))
         tile.setObjectName('cloud_icon_tile')
         tile.setFixedSize(QSize(44, 44))
-        tile.setAlignment(Qt.AlignCenter)
-        tile.setPixmap(QIcon(_g('cloud_glyph_icon.svg')).pixmap(QSize(22, 22)))
         c.addWidget(tile, 0, Qt.AlignHCenter)
         c.addSpacing(16)
 

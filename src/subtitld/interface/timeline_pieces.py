@@ -20,6 +20,7 @@ from PySide6.QtCore import QEvent, QRectF, Qt
 from PySide6.QtGui import QColor, QCursor, QFontMetrics, QMouseEvent, QPen
 from PySide6.QtWidgets import QApplication
 
+from subtitld.interface import theme
 from subtitld.interface.timed_text_strip import CtrlWatch
 from subtitld.modules import history, markup, segment as segments, session
 
@@ -88,7 +89,7 @@ def paint(widget, painter, subtitle, box):
                                (text[hover[2]:], QRectF(x, rect.top(), rect.right() - x, rect.height()))):
                 if side.width() > 8:
                     _words(painter, side.adjusted(3, 3, -2, -2), markup.plain(part).strip())
-            painter.setPen(QPen(_EDGE_COLOR, 1))
+            painter.setPen(QPen(theme.ink(_EDGE_COLOR), 1))
             painter.drawLine(int(x), int(rect.top() + 2), int(x), int(rect.bottom() - 2))
             continue
         words = markup.plain(piece['text']).strip()
@@ -96,7 +97,7 @@ def paint(widget, painter, subtitle, box):
             _words(painter, rect.adjusted(3, 3, -2, -2), words)
     if hover and hover[0] == 'edge':
         x = _edge_x(widget, subtitle, hover[1], hover[2])
-        painter.setPen(QPen(_EDGE_COLOR, 2))
+        painter.setPen(QPen(theme.ink(_EDGE_COLOR), 2))
         painter.drawLine(int(x), int(box.top() - 2), int(x), int(box.bottom() + 2))
     painter.restore()
 

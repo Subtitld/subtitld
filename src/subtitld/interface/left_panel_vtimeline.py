@@ -24,6 +24,7 @@ from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics, QIcon, 
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from subtitld.interface import left_panel
+from subtitld.interface import theme
 from subtitld.interface.translation import _
 from subtitld.modules import markup, quality_check, session, subtitles, utils
 from subtitld.modules.segment import text_of
@@ -258,13 +259,13 @@ def _rounded_path(rect, radius=3.0, square_top_right=False, square_bottom_right=
     return path
 
 
-def _paint_padlock(painter, cx, cy):
+def _paint_padlock(painter, cx, cy, color=QColor(255, 255, 255, 230)):
     """The timeline's padlock glyph, centred on (cx, cy)."""
-    painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
+    painter.setPen(QPen(color, 1.2))
     painter.setBrush(Qt.NoBrush)
     painter.drawArc(QRectF(cx - 2.4, cy - 4.0, 4.8, 4.4), 0, 180 * 16)
     painter.setPen(Qt.NoPen)
-    painter.setBrush(QColor(255, 255, 255, 230))
+    painter.setBrush(color)
     painter.drawRoundedRect(QRectF(cx - 3.2, cy - 0.5, 6.4, 5.0), 1.0, 1.0)
 
 
@@ -455,8 +456,8 @@ class VerticalTimeline(QWidget):
         end_y = self.y_at(duration)
 
         # The lanes: the waveform's well and the subtitles' track.
-        painter.fillRect(QRectF(waveform[0], TOP, waveform[1] - waveform[0], end_y - TOP), QColor(0, 0, 0, 38))
-        painter.fillRect(QRectF(subs[0] - 2, TOP, subs[1] - subs[0] + 4, end_y - TOP), QColor(255, 255, 255, 6))
+        painter.fillRect(QRectF(waveform[0], TOP, waveform[1] - waveform[0], end_y - TOP), theme.color(QColor(0, 0, 0, 38)))
+        painter.fillRect(QRectF(subs[0] - 2, TOP, subs[1] - subs[0] + 4, end_y - TOP), theme.color(QColor(255, 255, 255, 6)))
 
         self._paint_ruler(painter, cfg, top_time, bottom_time, ruler, (waveform[0], subs[1]))
 
@@ -488,7 +489,7 @@ class VerticalTimeline(QWidget):
         return bool(cfg.get('show_onset_markers', False)) and not _is_playing(self.window_ref)
 
     def _paint_ruler(self, painter, cfg, top_time, bottom_time, ruler, grid_span):
-        text_color = QColor(cfg.get('time_text_color', '#b8b8cee0'))
+        text_color = theme.color(QColor(cfg.get('time_text_color', '#b8b8cee0')))
         tick_color = QColor(text_color)
         tick_color.setAlphaF(min(1.0, tick_color.alphaF() * 0.8))
         step = next((s for s in LABEL_STEPS if s * self.pps >= LABEL_SPACING), LABEL_STEPS[-1])
@@ -520,7 +521,7 @@ class VerticalTimeline(QWidget):
 
         if not cfg.get('show_grid', False):
             return
-        painter.setPen(QPen(QColor(cfg.get('grid_color', '#336a7483')), 1))
+        painter.setPen(QPen(theme.ink(QColor(cfg.get('grid_color', '#336a7483'))), 1))
         left, right = grid_span
         grid_type = cfg.get('grid_type', False)
         if grid_type == 'seconds':
@@ -565,8 +566,8 @@ class VerticalTimeline(QWidget):
         path = QPainterPath()
         path.addPolygon(QPolygonF(right_side + left_side))
         path.closeSubpath()
-        painter.setPen(QPen(QColor(cfg.get('waveform_border_color', '#ff153450')), 1))
-        painter.setBrush(QColor(cfg.get('waveform_fill_color', '#cc153450')))
+        painter.setPen(QPen(theme.configured(cfg.get('waveform_border_color', '#ff153450')), 1))
+        painter.setBrush(theme.configured(cfg.get('waveform_fill_color', '#cc153450')))
         painter.drawPath(path)
 
     def _onset_marker(self, cfg):
@@ -574,9 +575,9 @@ class VerticalTimeline(QWidget):
         canvas with a soft glow fading down from it. Kept per width."""
         width = max(1, self.width())
         color = cfg.get('onset_marker_color', '#ffd9a0')
-        if self._onset_pixmap is not None and self._onset_pixmap[1:] == (width, color):
+        if self._onset_pixmap is not None and self._onset_pixmap[1:] == (width, color, theme.current()):
             return self._onset_pixmap[0]
-        base = QColor(color)
+        base = theme.color(QColor(color))
         glow, fade, line = QColor(base), QColor(base), QColor(base)
         glow.setAlpha(28)
         fade.setAlpha(0)
@@ -596,7 +597,7 @@ class VerticalTimeline(QWidget):
         painter.restore()
         painter.fillRect(QRectF(0.0, 0.0, float(width), 1.0), line)
         painter.end()
-        self._onset_pixmap = (pixmap, width, color)
+        self._onset_pixmap = (pixmap, width, color, theme.current())
         return pixmap
 
     def _paint_onsets(self, painter, cfg, top_time, bottom_time):
@@ -641,7 +642,7 @@ class VerticalTimeline(QWidget):
         fill.setAlphaF(0.9)
         text_color = QColor(cfg.get('subtitle_text_color', '#304251'))
         selected_text_color = QColor(cfg.get('selected_subtitle_text_color', '#b8cee0'))
-        failed_color = QColor('#9e1a1a')
+        failed_color = theme.color(QColor('#9e1a1a'))
         separator = QPen(QColor(cfg.get('subtitle_text_color', '#40304251')), 1)
         quality = (session.CONFIG.get('quality_check') or {}).get('enabled', False)
         dubbing = (session.CONFIG.get('dubbing') or {}).get('enabled', False)
@@ -710,7 +711,7 @@ class VerticalTimeline(QWidget):
 
             if locked:      # the timeline's badge, at full strength over the faded block
                 painter.save()
-                _paint_padlock(painter, rect.right() - 9.0, rect.top() + 8.0)
+                _paint_padlock(painter, rect.right() - 9.0, rect.top() + 8.0, theme.color(QColor(255, 255, 255, 230)))
                 painter.restore()
 
     @staticmethod
@@ -751,8 +752,11 @@ class VerticalTimeline(QWidget):
             path.arcTo(right - 2 * r, bottom - 2 * r, 2 * r, 2 * r, 270, 90)
             path.lineTo(right, bottom - reach)
             gradient = QLinearGradient(0, bottom, 0, bottom - reach)
-        gradient.setColorAt(0, QColor(255, 255, 255, 255))
-        gradient.setColorAt(1, QColor(255, 255, 255, 0))
+        edge = theme.color(QColor(255, 255, 255, 255))
+        gradient.setColorAt(0, edge)
+        edge = QColor(edge)
+        edge.setAlpha(0)
+        gradient.setColorAt(1, edge)
         painter.setPen(QPen(QBrush(gradient), 2))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(path)
@@ -1011,7 +1015,7 @@ class VerticalTimeline(QWidget):
         span = self.block_rect(later, columns)
         y = self.y_at((earlier['end'] + later['start']) / 2)
         painter.save()
-        painter.setPen(QPen(QColor(cfg.get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(theme.ink(QColor(cfg.get('selected_subtitle_arrow_color', '#ff969696'))), 4, Qt.SolidLine, Qt.RoundCap))
         step = (span.width() - 8) / 6
         x = span.left() + 8
         for _bar in range(6):
@@ -1483,17 +1487,17 @@ class VerticalTimelinePanel(QWidget):
         zoom.layout().setSpacing(0)
         self.zoom_out_button = QPushButton(objectName='vtimeline_panel_zoom_button')
         self.zoom_out_button.setProperty('position', 'first')
-        self.zoom_out_button.setIcon(_icon('zoom_out_icon'))
         self.zoom_out_button.clicked.connect(lambda: self.scroll.set_zoom(self.canvas.pps / ZOOM_STEP))
         self.zoom_in_button = QPushButton(objectName='vtimeline_panel_zoom_button')
         self.zoom_in_button.setProperty('position', 'last')
-        self.zoom_in_button.setIcon(_icon('zoom_in_icon'))
         self.zoom_in_button.clicked.connect(lambda: self.scroll.set_zoom(self.canvas.pps * ZOOM_STEP))
         for button in (self.zoom_out_button, self.zoom_in_button):
             button.setCursor(Qt.PointingHandCursor)
             button.setIconSize(QSize(12, 12))
             zoom.layout().addWidget(button)
         status.layout().addWidget(zoom, 0, Qt.AlignVCenter)
+        self.set_icons()
+        theme.notifier.changed.connect(self.set_icons)
         self.layout().addWidget(status)
 
         self.label_timer = QTimer(self, interval=100)
@@ -1516,6 +1520,10 @@ class VerticalTimelinePanel(QWidget):
         pps = self.canvas.pps
         self.zoom_out_button.setEnabled(pps > ZOOM_RANGE[0] + 1e-6)
         self.zoom_in_button.setEnabled(pps < ZOOM_RANGE[1] - 1e-6)
+
+    def set_icons(self, _theme=None):
+        self.zoom_out_button.setIcon(_icon('zoom_out_icon'))
+        self.zoom_in_button.setIcon(_icon('zoom_in_icon'))
 
     def update_labels(self):
         position = float(session.SUBTITLE.position or 0.0)
@@ -1543,8 +1551,10 @@ def _clock(seconds):
 
 
 def _icon(name):
-    icon = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / f'{name}.svg'))
-    icon.addFile(str(session.PATH_SUBTITLD_GRAPHICS / f'{name}_disabled.svg'), QSize(), QIcon.Disabled)
+    """graphics/`name` in the current look, with its own disabled file
+    (set again on a change of look: see `set_icons`)."""
+    icon = QIcon(theme.graphic(f'{name}.svg'))
+    icon.addFile(theme.graphic(f'{name}_disabled.svg'), QSize(), QIcon.Disabled)
     return icon
 
 

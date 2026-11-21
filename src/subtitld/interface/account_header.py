@@ -6,9 +6,10 @@ mark on a slanted tab, and under it its icon buttons, shown while the
 pointer is over the header. HeaderShadow falls from it over the cards.
 """
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter
+from PySide6.QtGui import QColor, QLinearGradient, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
+from subtitld.interface import theme
 from subtitld.modules import session
 
 
@@ -69,7 +70,7 @@ class AccountHeader(QWidget):
         logo.setContentsMargins(18, 0, 12, 0)           # the slant
         logo.setSpacing(6)
         icon = QLabel()
-        icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / mark)).pixmap(16, 16))
+        icon.setPixmap(theme.pixmap(mark, 16))
         icon.setStyleSheet('background: transparent;')
         logo.addWidget(icon)
         self.word = _label('account_header_word')
@@ -96,7 +97,7 @@ class AccountHeader(QWidget):
         button = QPushButton(text or '')
         button.setObjectName('account_header_text_button' if text is not None else 'account_header_button')
         if icon:
-            button.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / icon)))
+            button.setIcon(theme.icon(icon))
             button.setIconSize(QSize(16, 16))
             button.setFixedSize(26, 22)
         else:
@@ -138,7 +139,7 @@ class AccountHeader(QWidget):
         self.badge.style().polish(self.badge)
 
     def paintEvent(self, event):
-        QPainter(self).fillRect(self.rect(), self.SHADE)
+        QPainter(self).fillRect(self.rect(), theme.surface(self.SHADE))
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -174,6 +175,6 @@ class HeaderShadow(QWidget):
 
     def paintEvent(self, event):
         shadow = QLinearGradient(0, self.height(), 0, 0) if self.up else QLinearGradient(0, 0, 0, self.height())
-        shadow.setColorAt(0, QColor(0, 0, 0, 70))
+        shadow.setColorAt(0, theme.surface(QColor(0, 0, 0, 70)))
         shadow.setColorAt(1, QColor(0, 0, 0, 0))
         QPainter(self).fillRect(self.rect(), shadow)

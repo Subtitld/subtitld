@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
+from subtitld.interface import theme
 from subtitld.modules import config
 from subtitld.modules import session
 from subtitld.modules import markup
@@ -846,7 +847,7 @@ class Timeline(QWidget):
 
         painter.setRenderHint(QPainter.Antialiasing)
 
-        grid_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483')), 1, Qt.SolidLine)
+        grid_pen = QPen(theme.ink(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483'))), 1, Qt.SolidLine)
         painter.setFont(QFont('Ubuntu Mono', 8))
 
         # Iterate only the visible range. Earlier we walked every second of
@@ -883,7 +884,7 @@ class Timeline(QWidget):
         timeline_cfg = session.CONFIG.get('timeline', {})
         show_grid = timeline_cfg.get('show_grid', False)
         grid_type = timeline_cfg.get('grid_type', False)
-        text_color = QColor(timeline_cfg.get('time_text_color', '#b8b8cee0'))
+        text_color = theme.color(QColor(timeline_cfg.get('time_text_color', '#b8b8cee0')))
 
         for sec in range(sec_start, sec_end):
             xpos = sec * wpp
@@ -979,8 +980,8 @@ class Timeline(QWidget):
                         for (xx, yy) in lower:
                             path.lineTo(xx, yy)
                         path.closeSubpath()
-                        painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('waveform_border_color', '#ff153450')), 1))
-                        painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('waveform_fill_color', '#cc153450')))
+                        painter.setPen(QPen(theme.configured(session.CONFIG.get('timeline', {}).get('waveform_border_color', '#ff153450')), 1))
+                        painter.setBrush(theme.configured(session.CONFIG.get('timeline', {}).get('waveform_fill_color', '#cc153450')))
                         painter.drawPath(path)
 
         # Onset markers (consonant-onset visual aid — see
@@ -1076,7 +1077,7 @@ class Timeline(QWidget):
         if session.SUBTITLE.segments:
             painter.setOpacity(1)
             painter.setFont(QFont('Montserrat', 10))
-            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#304251')))
+            painter.setPen(theme.ink(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#304251'))))
 
             ordered_segments = list(session.SUBTITLE.segments)
             selected_subtitle = session.SUBTITLE.selected
@@ -1127,10 +1128,10 @@ class Timeline(QWidget):
             text_color_selected = QColor(timeline_cfg.get('selected_subtitle_text_color', '#b8cee0'))
             qc_text_color_unselected = QColor(timeline_cfg.get('subtitle_text_color', '#ff304251'))
             qc_text_color_selected = QColor(timeline_cfg.get('selected_subtitle_text_color', '#ffffffff'))
-            qc_failed_color = QColor('#9e1a1a')
+            qc_failed_color = theme.color(QColor('#9e1a1a'))
             translation_separator_color = QPen(QColor(timeline_cfg.get('subtitle_text_color', '#40304251')), 1)
             smart_splice_line_color = QColor(timeline_cfg.get('subtitle_fill_color', '#ccb8cee0'))
-            smart_splice_divider_color = QColor("#1a000000")
+            smart_splice_divider_color = theme.color(QColor("#1a000000"))
             subtitle_font = QFont('Montserrat', 10)
             _rec_pending = getattr(widget, 'record_pending', None) or ()
             if _rec_pending:
@@ -1912,8 +1913,11 @@ class Timeline(QWidget):
                             edge_path.arcTo(left, ey + eh - 2 * er, 2 * er, 2 * er, 180, 90)
                             edge_path.lineTo(right, ey + eh)
                             grad = QLinearGradient(ex_outer, 0, ex_inner, 0)
-                        grad.setColorAt(0, QColor(255, 255, 255, 255))
-                        grad.setColorAt(1, QColor(255, 255, 255, 0))
+                        edge_color = theme.color(QColor(255, 255, 255, 255))
+                        grad.setColorAt(0, edge_color)
+                        edge_color = QColor(edge_color)
+                        edge_color.setAlpha(0)
+                        grad.setColorAt(1, edge_color)
                         edge_pen = QPen(QBrush(grad), 2)
                         painter.setPen(edge_pen)
                         painter.setBrush(Qt.NoBrush)
@@ -1930,7 +1934,7 @@ class Timeline(QWidget):
                         badge_size,
                     )
                     painter.save()
-                    painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
+                    painter.setPen(QPen(theme.ink(QColor(255, 255, 255, 230)), 1.2))
                     painter.setBrush(Qt.NoBrush)
                     shackle = QRectF(
                         badge_rect.center().x() - 2.2, badge_rect.top() + 1.6,
@@ -1938,7 +1942,7 @@ class Timeline(QWidget):
                     )
                     painter.drawArc(shackle, 0, 180 * 16)
                     painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(255, 255, 255, 230))
+                    painter.setBrush(theme.color(QColor(255, 255, 255, 230)))
                     body = QRectF(
                         badge_rect.center().x() - 3.0, badge_rect.top() + 4.2,
                         6.0, 4.6,
@@ -1961,7 +1965,7 @@ class Timeline(QWidget):
                 traceback.print_exc(file=_sys.stderr)
 
         if bool(widget.show_tug_of_war):
-            tug_of_war_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap)
+            tug_of_war_pen = QPen(theme.ink(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696'))), 4, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(tug_of_war_pen)
             xpos = int(widget.show_tug_of_war * widget.width_proportion) - 4
             y_tug_pos = 0
@@ -2055,7 +2059,7 @@ class Timeline(QWidget):
             phantom_y = widget.subtitle_y
             phantom_h = widget.subtitle_height
             phantom_rect = QRectF(phantom_x, phantom_y, phantom_w, phantom_h)
-            phantom_border = QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483'))
+            phantom_border = theme.color(QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483')))
             phantom_border.setAlphaF(0.35)
             painter.setPen(QPen(phantom_border, 1))
             painter.setBrush(Qt.NoBrush)
@@ -3747,10 +3751,10 @@ class Timeline(QWidget):
         a custom QImage / per-pixel fill."""
         h = max(1, widget.height())
         cache = getattr(widget, '_onset_marker_pm_cache', None)
-        if cache is not None and cache[1] == h:
+        if cache is not None and cache[1] == h and cache[2] == theme.current():
             return cache[0]
         base_str = session.CONFIG.get('timeline', {}).get('onset_marker_color', '#ffd9a0')
-        base = QColor(base_str)
+        base = theme.color(QColor(base_str))
         line_color = QColor(base); line_color.setAlpha(85)
         # Both the line and the halo are kept subtle so they read as a
         # background guide rather than competing with the waveform /
@@ -3783,7 +3787,7 @@ class Timeline(QWidget):
         # Vertical line on top of the gradient so the line stays sharp.
         p.fillRect(QRectF(0.0, 0.0, 1.0, float(h)), line_color)
         p.end()
-        widget._onset_marker_pm_cache = (pm, h)
+        widget._onset_marker_pm_cache = (pm, h, theme.current())
         return pm
 
     def _dub_onsets_cache_path(widget, path):
@@ -3838,7 +3842,7 @@ def _live_colors():
     wrong idea for something working exactly as intended.
     """
     cfg = session.CONFIG.get('timeline', {}) if isinstance(session.CONFIG, dict) else {}
-    border = QColor(cfg.get('subtitle_border_color', '#ff6a7483'))
+    border = theme.color(QColor(cfg.get('subtitle_border_color', '#ff6a7483')))
     fill = QColor(cfg.get('subtitle_fill_color', '#c8dbe9'))
     # Alphas chosen so the dashes stay legible over the track while the body
     # stays clearly lighter than a committed cue.

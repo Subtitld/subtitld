@@ -9,9 +9,10 @@ except Exception:  # optional, like MediaPipe: not packaged on some platforms (e
 import numpy as np
 
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget, QScrollArea, QHBoxLayout, QDialog, QPushButton, QLabel, QLineEdit, QSizePolicy, QColorDialog, QComboBox, QCheckBox, QStackedWidget, QStyle, QStyleOption, QGraphicsOpacityEffect
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QPen, QIcon
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath, QColor, QPolygonF, QCursor, QBrush, QPen
 from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize, QRect, QRectF, QLineF, QPoint, QEvent
 
+from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface.scope_selector import ScopeFooter
@@ -474,7 +475,7 @@ class _SectionBody(_BodyClippedPanel):
             if body is not None:
                 offset = self.mapTo(body, QPoint(0, 0))
                 painter.setClipPath(_card_body_outline(body).translated(-offset.x(), -offset.y()))
-            painter.fillRect(QRectF(0, self.height() - 1, self.width(), 1), self.CONTACT)
+            painter.fillRect(QRectF(0, self.height() - 1, self.width(), 1), theme.color(self.CONTACT))
         finally:
             painter.end()
 
@@ -506,7 +507,7 @@ class ShareBar(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         try:
-            painter.fillRect(self.rect(), QColor(255, 255, 255, 38))
+            painter.fillRect(self.rect(), theme.color(QColor(255, 255, 255, 38)))
             filled = int(round(self.width() * self._ratio))
             if filled > 0:
                 painter.fillRect(QRect(0, 0, filled, self.height()), self._color)
@@ -577,6 +578,7 @@ class SpeakerHeader(QWidget):
         self.setMouseTracking(True)
 
         self.setMinimumHeight(_HEADER_MIN_HEIGHT)
+        theme.notifier.changed.connect(self._look_changed)
         # Hug the content: the card should be no taller than it needs to be
         # when every option section is collapsed.
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -697,7 +699,7 @@ class SpeakerHeader(QWidget):
         # Built at the screen's device pixel ratio: a 1x pixmap on a 2x screen
         # is upscaled by the label, which blurs the rounded corners.
         dpr = max(1.0, float(self.devicePixelRatioF()))
-        key = (id(image) if image is not None else None, dpr)   # colour no longer affects it
+        key = (id(image) if image is not None else None, dpr, theme.current())   # colour no longer affects it
         if key == self._avatar_key:
             return
         self._avatar_key = key
@@ -730,7 +732,7 @@ class SpeakerHeader(QWidget):
                 # Neutral light chip, NOT the speaker colour — that colour
                 # identifies the mini timeline and nothing else. Light so the
                 # dark glyph reads, and so the chip separates from the card.
-                painter.setBrush(QColor(_AVATAR_PLACEHOLDER_BG))
+                painter.setBrush(theme.surface(_AVATAR_PLACEHOLDER_BG))
             painter.setPen(Qt.NoPen)
             painter.drawPath(path)
 
@@ -738,7 +740,7 @@ class SpeakerHeader(QWidget):
                 # No face yet: the speaker glyph, rendered from the SVG at the
                 # target size and DPR (not a 16px raster scaled up), at full
                 # ink so it reads against the light chip.
-                glyph = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'left_panel_speakers.svg')).pixmap(
+                glyph = theme.icon('left_panel_speakers.svg').pixmap(
                     QSize(_AVATAR_GLYPH_SIZE, _AVATAR_GLYPH_SIZE), dpr)
                 if not glyph.isNull():
                     pos = (size - _AVATAR_GLYPH_SIZE) / 2.0
@@ -750,6 +752,10 @@ class SpeakerHeader(QWidget):
         if self.avatar_label is not None:
             self.avatar_label.setPixmap(canvas)
         self.update()
+
+    def _look_changed(self, _name):
+        if self._avatar_key is not None:
+            self.set_avatar(self._avatar_image, None)
 
     def event(self, event):
         # Moving to a screen with another scale factor: rebuild the avatar at
