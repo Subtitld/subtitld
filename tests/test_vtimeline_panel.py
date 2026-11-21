@@ -599,6 +599,12 @@ look(frame_svg=SPEAKER, fill_color='#ff123456')
 speaker_rgb = QColor(session.SPEAKERS['A']['color']).getRgb()[:3]
 check('speakerColor along the left, where the frame\'s top is', (pixel(6.0, left + 2), pixel(6.0, middle)),
       (speaker_rgb, (0x12, 0x34, 0x56)))
+session.SUBTITLE.selected = next(segment for segment in session.SUBTITLE.segments if segment['start'] <= 6.0 <= segment['end'])
+look(frame_svg=SPEAKER, frame_selected_svg=FRAME, fill_color='#ff123456')
+check('selected, a frame with no speakerColor: no stripe of the timeline\'s', pixel(6.0, left + 1) != speaker_rgb, True)
+session.SUBTITLE.selected = None
+look(frame_svg=FRAME, fill_color='#ff123456')
+check('frames without it in any state: the stripe', pixel(6.0, left + 1), speaker_rgb)
 host.timeline_widget.show_speaker_color = False
 
 session.CONFIG['timeline'].update({'show_grid': True, 'grid_type': 'seconds'})

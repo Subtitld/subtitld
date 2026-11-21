@@ -602,9 +602,13 @@ check('speakerColor: the speaker\'s colour where the frame puts it, no strip of 
 widget.show_speaker_color = False
 widget.update()
 check('speaker colours off: the fill there', pixel(200, 58), '#ff123456')
+session.SUBTITLE.selected = session.SUBTITLE.segments[0]
 widget.show_speaker_color = True
+apply(look(frame_svg=SPEAKER, frame_selected_svg=frame_name, fill_color='#ff123456'))
+check('a state whose frame has no speakerColor, when another\'s has: no strip either', pixel(200, 56) != '#ffff2e93', True)
+session.SUBTITLE.selected = None
 apply(look(frame_svg=frame_name, fill_color='#ff123456'))
-check('a frame without it: the timeline\'s strip over it', pixel(200, 56), '#ffff2e93')
+check('frames without it in any state: the timeline\'s strip over them', pixel(200, 56), '#ffff2e93')
 widget.show_speaker_color = False
 timeline_style.reset()
 

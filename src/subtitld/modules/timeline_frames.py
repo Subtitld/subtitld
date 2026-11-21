@@ -23,7 +23,9 @@ laid out; a frame without one leaves the grab zone to the look's setting.
 `currentColor` is the colour the frame is drawn in (the box's fill for
 its state), `speakerColor` the colour of the cue's speaker (the fill when
 speaker colours are off): a frame with it draws the speaker's colour
-where it likes, in place of the timeline's strip along the top. A part pinned both ways keeps its size in every box: it is
+where it likes. When any of a kind's frames does, the theme places the
+speaker's colour: the timeline's strip along the top is left off all of
+that kind's boxes, whatever their state (places_speaker). A part pinned both ways keeps its size in every box: it is
 drawn into an image once (for each colour and screen scale) and copied
 after. A part that stretches or scales changes with every box, and is
 drawn from the SVG each time.
@@ -135,6 +137,13 @@ def get(name):
         except ElementTree.ParseError:
             _frames[name] = None
     return _frames[name]
+
+
+def places_speaker(box):
+    """Whether a kind's box look (timeline_style.BoxLook) has a frame, in
+    any state, that draws speakerColor."""
+    names = {box.frame_name(state) for state in ('normal', 'selected', 'hover', 'locked', 'failed')}
+    return any(frame is not None and frame.uses_speaker for frame in map(get, names))
 
 
 def _place(start, length, frame_length, box_start, box_length, anchor):

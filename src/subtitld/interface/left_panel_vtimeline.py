@@ -748,7 +748,6 @@ class VerticalTimeline(QWidget):
             # The state's frame, as the timeline draws it, mirrored; the plain block without one.
             box = look.box(kind)
             frame_name = box.frame_name(self.frame_state(subtitle))
-            frame = timeline_frames.get(frame_name)
             speaker_hex = QColor(speaker_color).name(QColor.HexRgb) if show_color and speaker_color else None
             if not timeline_shapes.frame(self, painter, frame_name, rect, selected_fill if is_selected else fill,
                                          speaker_hex, vertical=True):
@@ -758,7 +757,7 @@ class VerticalTimeline(QWidget):
             if subtitle.get('dubbing') and dubbing:
                 self._paint_clip(painter, cfg, subtitle, rect, speaker_color, locked, onsets)
 
-            if show_color and speaker_color and not (frame is not None and frame.uses_speaker):
+            if show_color and speaker_color and not timeline_frames.places_speaker(box):
                 # The timeline's stripe along a block's top, here along its
                 # left side: the side it starts from across the lane.
                 stripe = QPainterPath()

@@ -1374,6 +1374,8 @@ class Timeline(QWidget):
                      text_color_selected, qc_failed_color, translation_separator_color, smart_splice_line_color,
                      subtitle_font, text_flags, box_look) = (*widget.lane(kind), *box_paints[kind])
                     qc_text_color_unselected, qc_text_color_selected = text_color_unselected, text_color_selected
+                    # The kind's frames place the speaker's colour: no strip of the timeline's.
+                    kind_places_speaker = timeline_frames.places_speaker(box_look)
                     painter.setFont(subtitle_font)
 
                 subtitle_track = [0, 1]
@@ -2024,7 +2026,7 @@ class Timeline(QWidget):
                                                 traceback.print_exc(file=sys.stderr)
                                 painter.restore()
 
-                if widget.show_speaker_color and speaker_color_str and not (frame is not None and frame.uses_speaker):
+                if widget.show_speaker_color and speaker_color_str and not kind_places_speaker:
                     # The box's top edge in the speaker's colour, inside the
                     # box's own shape whatever its corners.
                     box_shape = QPainterPath()
