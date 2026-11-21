@@ -110,7 +110,7 @@ WAVEFORM_FILL = '#ff123456'
 SCROLL = 80175          # 801.75 s, between subtitles 400 and 401
 CURSOR = 806.25         # inside the viewport, between subtitles 402 and 403
 
-session.CONFIG = {'timeline': {'show_onset_markers': True, 'style': {'waveform_fill_color': WAVEFORM_FILL}},
+session.CONFIG = {'timeline': {'show_onset_markers': True, 'style': {'timeline': {'waveform_fill_color': WAVEFORM_FILL}}},
                   'default_values': {'minimum_subtitle_width': 0.5},
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
 session.VIDEO = {'duration': DURATION, 'shot_changes': [], 'samplerate': SAMPLERATE}

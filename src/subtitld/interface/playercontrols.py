@@ -1199,10 +1199,9 @@ def load(self):
         old_x = self._last_playhead_x
         self._last_playhead_x = new_x
         _apply_timeline_scrolling(self, new_x)
-        # Strip wide enough to catch the cursor (2 px) + the speed/repeat
-        # badge that extends ~80 px to the left of it, with safety pad.
-        pad_left = 96
-        pad_right = 8
+        # Strip wide enough to catch all the playhead paints: its line, and
+        # its head, time and speed/repeat badge as the timeline's look has them.
+        pad_left, pad_right = tl_widget.playhead_reach()
         h = tl_widget.height()
         if repeat_changed:
             tl_widget.update()

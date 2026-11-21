@@ -1,7 +1,9 @@
-"""The timeline's look: its settings, kept in CONFIG['timeline']['style'] with
-defaults left out; the loose colours of before moved in; the panel in the
-Interface panel's Timeline tab; and the timeline painted and laid out as
-they say.
+"""The timeline's look: the timeline's own settings and a box look per kind
+of cue, kept in CONFIG['timeline']['style'] with defaults and inherited
+values left out; the loose colours of before moved in; a kind other than
+subtitles inheriting their look and having its own lane; the ruler's
+formats and ticks; the playhead's line, head, time and badge; the panel
+in the Interface panel's Timeline tab.
 
 Standalone script, like the other suites here; puts this checkout's src/
 on the path itself.
@@ -21,7 +23,7 @@ app = QApplication([])
 from subtitld.modules import config, history, session, timeline_style
 from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
-from subtitld.interface.timeline_style_panel import TimelineStylePanel
+from subtitld.interface.timeline_style_panel import BOX, TIMELINE, TimelineStylePanel
 
 fails = []
 
@@ -33,41 +35,88 @@ def check(name, got, want):
         fails.append(name)
 
 
+def look(timeline=None, **box):
+    """A whole look: the timeline's settings, and the subtitles' boxes'."""
+    return {'timeline': timeline or {}, 'boxes': {'subtitle': box}}
+
+
 print('the settings')
 config_path = Path(tempfile.mkdtemp()) / 'subtitld.config'
 config_path.write_text(json.dumps({'timeline': {'snap': True, 'grid_color': '#ff112233', 'cursor_color': 'red',
-                                                'style': {'cursor_width': 4}}}))
+                                                'subtitle_fill_color': '#ff445566'}}))
 session.CONFIG = config.Config(config_path)
-check('loose colours of before move into the style; ones it cannot hold are dropped',
-      session.CONFIG['timeline'], {'snap': True, 'style': {'cursor_width': 4, 'grid_color': '#ff112233'}})
+check('loose colours of before move into the style; ones it cannot hold are dropped', session.CONFIG['timeline'],
+      {'snap': True, 'style': {'timeline': {'grid_color': '#ff112233'}, 'boxes': {'subtitle': {'fill_color': '#ff445566'}}}})
 values = timeline_style.values()
-check('every field has a value', sorted(values), sorted(f['key'] for f in timeline_style.FIELDS))
-check('what was set, and the defaults', (values['grid_color'], values['cursor_width'], values['subtitle_corner_radius']),
-      ('#ff112233', 4.0, 3.0))
-check('every field in a group the panel knows', all(f['group'] in timeline_style.GROUPS for f in timeline_style.FIELDS),
-      True)
-check('a colour without alpha is opaque', timeline_style.set_value('subtitle_fill_color', '#AABBCC'), '#ffaabbcc')
-check('a number past its range is held to it', timeline_style.set_value('subtitle_corner_radius', 500), 40)
-for key, value in (('subtitle_corner_radius', 'round'), ('subtitle_text_vertical_alignment', 'middle'),
-                   ('subtitle_fill_gradient', 1)):
+check('every timeline field has a value', sorted(values), sorted(f['key'] for f in timeline_style.TIMELINE_FIELDS))
+check('and every box field', sorted(timeline_style.values('subtitle')), sorted(f['key'] for f in timeline_style.BOX_FIELDS))
+check('what was set, and the defaults', (values['grid_color'], values['cursor_width'],
+                                         timeline_style.values('subtitle')['corner_radius']), ('#ff112233', 2.0, 3))
+check('every field in a group the panel knows',
+      (all(f['group'] in timeline_style.TIMELINE_GROUPS for f in timeline_style.TIMELINE_FIELDS),
+       all(f['group'] in timeline_style.BOX_GROUPS for f in timeline_style.BOX_FIELDS)), (True, True))
+check('a colour without alpha is opaque', timeline_style.set_value('fill_color', '#AABBCC', 'subtitle'), '#ffaabbcc')
+check('a number past its range is held to it', timeline_style.set_value('corner_radius', 500, 'subtitle'), 40)
+for key, value, kind in (('corner_radius', 'round', 'subtitle'), ('text_vertical_alignment', 'middle', 'subtitle'),
+                         ('fill_gradient', 1, 'subtitle'), ('cursor_width', 'wide', None)):
     try:
-        timeline_style.set_value(key, value)
+        timeline_style.set_value(key, value, kind)
         check(f'{key} = {value!r} refused', False, True)
     except ValueError:
         check(f'{key} = {value!r} refused', True, True)
-timeline_style.set_value('subtitle_corner_radius', 3)
-check('a default is not saved', 'subtitle_corner_radius' in session.CONFIG['timeline']['style'], False)
-check('changes: what differs from the defaults',
-      timeline_style.changes(), {'cursor_width': 4.0, 'grid_color': '#ff112233', 'subtitle_fill_color': '#ffaabbcc'})
-look = timeline_style.current()
-check('the look is made once', timeline_style.current() is look, True)
-look.color('cursor_color').setAlpha(0)
-check('its colours are copies', look.color('cursor_color').alpha(), 0xcc)
-timeline_style.set_values({'subtitle_gap': 4, 'unknown': 1, 'cursor_color': 'not a colour'})
-check('a whole look: only what its fields can hold', timeline_style.changes(), {'subtitle_gap': 4})
-check('a new look after a change', timeline_style.current() is look, False)
+try:
+    timeline_style.set_value('corner_radius', 3)
+    check('a box setting is not the timeline\'s', False, True)
+except KeyError:
+    check('a box setting is not the timeline\'s', True, True)
+timeline_style.set_value('corner_radius', 3, 'subtitle')
+check('a default is not saved', 'corner_radius' in session.CONFIG['timeline']['style']['boxes']['subtitle'], False)
+check('changes: what differs from the defaults', timeline_style.changes(),
+      look({'grid_color': '#ff112233'}, fill_color='#ffaabbcc'))
+current = timeline_style.current()
+check('the look is made once', timeline_style.current() is current, True)
+current.color('cursor_color').setAlpha(0)
+check('its colours are copies', current.color('cursor_color').alpha(), 0xcc)
+timeline_style.set_values({'timeline': {'cursor_color': 'not a colour', 'unknown': 1}, 'boxes': {'subtitle': {'gap': 4}}})
+check('a whole look: only what its fields can hold', timeline_style.changes(), look(gap=4))
+check('a new look after a change', timeline_style.current() is current, False)
 timeline_style.reset()
-check('reset: the defaults', timeline_style.changes(), {})
+check('reset: the defaults', timeline_style.changes(), {'timeline': {}, 'boxes': {}})
+
+print('kinds of cue')
+check('subtitles only, for now', list(timeline_style.KINDS), ['subtitle'])
+check('a cue of a kind not registered is a subtitle', timeline_style.kind_of({'kind': 'title', 'start': 0}), 'subtitle')
+timeline_style.set_values({'boxes': {'subtitle': {'corner_radius': 9, 'fill_color': '#ff112233'},
+                                     'credits': {'corner_radius': 0}}})
+check('a kind this Subtitld does not know is kept, for the one that will',
+      timeline_style.changes()['boxes']['credits'], {'corner_radius': 0})
+timeline_style.register_kind('title', {'fill_color': '#ff884400'})
+check('registered: its own', timeline_style.kind_of({'kind': 'title'}), 'title')
+title = timeline_style.values('title')
+check('a kind: its defaults, the subtitles\' look for the rest', (title['fill_color'], title['corner_radius']),
+      ('#ff884400', 9))
+timeline_style.set_value('corner_radius', 9, 'title')
+check('what it inherits is not saved for it', 'title' in timeline_style.changes()['boxes'], False)
+timeline_style.set_value('corner_radius', 20, 'title')
+timeline_style.set_value('corner_radius', 2, 'subtitle')
+check('what it sets stays when the subtitles change',
+      (timeline_style.values('title')['corner_radius'], timeline_style.values('subtitle')['corner_radius']), (20, 2))
+check('a look of its own', timeline_style.current().box('title')['corner_radius'], 20)
+timeline_style.reset()
+del timeline_style.KINDS['title']
+
+
+print('times as the ruler writes them')
+times = {fmt: (timeline_style.time_label(3725.48, fmt, 25), timeline_style.time_label(3725.48, fmt, 25, precise=True),
+               timeline_style.time_label(65, fmt, 30))
+         for fmt in timeline_style.TIME_FORMATS}
+check('each format, to the second and precise', times, {
+    'clock': ('01:02:05', '01:02:05.480', '01:05'),
+    'seconds': ('3725s', '3725.480s', '65s'),
+    'timecode': ('01:02:05:12', '01:02:05:12', '00:01:05:00'),
+    'frames': ('93137', '93137', '1950')})
+check('labels a step apart that leaves the room asked for',
+      [timeline_style.label_step(pps, 75) for pps in (100, 60, 20, 1, 0.01)], [1, 2, 5, 120, 3600])
 
 
 print('the panel')
@@ -76,40 +125,68 @@ panel = TimelineStylePanel()
 panel.changed.connect(lambda: changes.append(1))
 
 
-def control(key):
-    return panel.controls[key][1]
+def control(key, scope=BOX):
+    return panel.controls[(scope, key)][1]
 
 
-check('a control for each field', sorted(panel.controls), sorted(f['key'] for f in timeline_style.FIELDS))
+def cell(key, scope=BOX):
+    return panel.cells[(scope, key)]
+
+
+check('a control for each field', sorted(panel.controls),
+      sorted([(TIMELINE, f['key']) for f in timeline_style.TIMELINE_FIELDS] + [(BOX, f['key']) for f in timeline_style.BOX_FIELDS]))
 check('the kinds of control',
-      [type(control(k)).__name__ for k in ('grid_color', 'subtitle_font', 'subtitle_font_size', 'grid_width',
-                                            'subtitle_fill_gradient', 'subtitle_text_vertical_alignment')],
+      [type(control(k, s)).__name__ for k, s in (('grid_color', TIMELINE), ('font', BOX), ('font_size', BOX),
+                                                 ('grid_width', TIMELINE), ('fill_gradient', BOX),
+                                                 ('text_vertical_alignment', BOX))],
       ['QPushButton', 'QComboBox', 'QSpinBox', 'QDoubleSpinBox', 'QCheckBox', 'QComboBox'])
 groups = panel.fields_widget.findChildren(QGroupBox)
-check('a box a group, the ruler and the waveform ones switched on and off',
+check('a box a group, the boxes\' after the waveform; the ruler, its ticks and the waveform switched on and off',
       [(g.title(), g.isCheckable()) for g in groups],
-      [('Background', False), ('Time ruler', True), ('Grid', False), ('Waveform', True), ('Subtitle boxes', False),
-       ('Subtitle fill', False), ('Subtitle text', False), ('Playhead', False), ('Marks', False)])
-check('labels from the locale files', (control('subtitle_full_height').text(), panel.reset_button.text()),
+      [('Background', False), ('Time ruler', True), ('Ruler ticks', True), ('Grid', False), ('Waveform', True),
+       ('Boxes', False), ('Box fill', False), ('Box text', False), ('Playhead', False),
+       ('Repeat and speed badge', False), ('Marks', False)])
+check('one kind: no picking it', panel.kind_holder.isHidden(), True)
+check('labels from the locale files', (control('full_height').text(), panel.reset_button.text()),
       ('As tall as the timeline', 'Reset to defaults'))
-check('the gradient\'s colours hidden without it', panel.cells['subtitle_fill_gradient_color'].isHidden(), True)
-control('subtitle_fill_gradient').setChecked(True)
-check('shown with it', (panel.cells['subtitle_fill_gradient_color'].isHidden(), timeline_style.values()['subtitle_fill_gradient']),
+check('the gradient\'s colours hidden without it', cell('fill_gradient_color').isHidden(), True)
+control('fill_gradient').setChecked(True)
+check('shown with it', (cell('fill_gradient_color').isHidden(), timeline_style.values('subtitle')['fill_gradient']),
       (False, True))
-check('the band\'s distances shown', panel.cells['subtitle_top'].isHidden(), False)
-control('subtitle_full_height').setChecked(True)
-check('hidden when the boxes are as tall as the timeline', panel.cells['subtitle_top'].isHidden(), True)
-grid = panel.cells['subtitle_gap'].parentWidget().layout()
-check('the next field takes its place', grid.getItemPosition(grid.indexOf(panel.cells['subtitle_gap']))[:2], (0, 1))
-control('subtitle_corner_radius').setValue(12)
-check('a number saved', timeline_style.values()['subtitle_corner_radius'], 12.0)
-groups[3].setChecked(False)
+check('the band\'s distances shown', cell('top').isHidden(), False)
+control('full_height').setChecked(True)
+check('hidden when the boxes are as tall as the timeline', cell('top').isHidden(), True)
+check('a head\'s size hidden without a head', cell('cursor_head_size', TIMELINE).isHidden(), True)
+head = control('cursor_head', TIMELINE)
+head.activated.emit(head.findData('flag'))
+check('shown with one', (cell('cursor_head_size', TIMELINE).isHidden(), timeline_style.values()['cursor_head']),
+      (False, 'flag'))
+grid = cell('gap').parentWidget().layout()
+check('the next field takes its place', grid.getItemPosition(grid.indexOf(cell('gap')))[:2], (0, 1))
+control('corner_radius').setValue(12)
+check('a number saved, for the subtitles', timeline_style.values('subtitle')['corner_radius'], 12)
+groups[4].setChecked(False)
 check('a group\'s switch saved', timeline_style.values()['show_waveform'], False)
-check('each change said', len(changes), 4)
+check('each change said', len(changes), 5)
 panel.reset()
 check('reset: the defaults, and the controls on them',
-      (timeline_style.changes(), control('subtitle_corner_radius').value(), control('subtitle_full_height').isChecked()),
-      ({}, 3.0, False))
+      (timeline_style.changes(), control('corner_radius').value(), control('full_height').isChecked()),
+      ({'timeline': {}, 'boxes': {}}, 3, False))
+
+timeline_style.register_kind('title', {'fill_color': '#ff884400'})
+panel.build()
+check('more kinds: picked above the boxes', (panel.kind_holder.isHidden(),
+                                              [panel.kind_picker.itemData(i) for i in range(panel.kind_picker.count())]),
+      (False, ['subtitle', 'title']))
+panel.kind_picker.activated.emit(panel.kind_picker.findData('title'))
+check('the boxes\' settings: the kind\'s', (panel.kind, control('corner_radius').value()), ('title', 3))
+control('corner_radius').setValue(15)
+check('saved for that kind alone', (timeline_style.values('title')['corner_radius'],
+                                    timeline_style.values('subtitle')['corner_radius']), (15, 3))
+panel.reset()
+del timeline_style.KINDS['title']
+panel.build()
+check('a kind gone: back to subtitles', (panel.kind, panel.kind_holder.isHidden()), ('subtitle', True))
 
 
 print('the timeline')
@@ -157,34 +234,125 @@ def pixel(x, y):
     return widget.grab().toImage().pixelColor(x, y).name(QColor.HexArgb)
 
 
-timeline_style.set_values({'subtitle_fill_color': '#ff00ff00', 'subtitle_corner_radius': 0})
-widget.apply_style()
-check('a box in its fill colour', pixel(150, 100), '#ff00ff00')
-check('two boxes that touch, touch', pixel(300, 100), '#ff00ff00')
-timeline_style.set_values({'subtitle_fill_color': '#ff00ff00', 'subtitle_corner_radius': 0, 'subtitle_gap': 10,
-                           'subtitle_full_height': True})
-widget.apply_style()
+def apply(new_look):
+    timeline_style.set_values(new_look)
+    widget.apply_style()
+
+
+GREEN = '#ff00ff00'
+apply(look(fill_color=GREEN, corner_radius=0))
+check('a box in its fill colour', pixel(150, 100), GREEN)
+check('two boxes that touch, touch', pixel(300, 100), GREEN)
+apply(look(fill_color=GREEN, corner_radius=0, gap=10, full_height=True))
 check('as tall as the timeline', (widget.subtitle_y, widget.subtitle_height), (0, height))
-check('filled at its top', pixel(150, 1), '#ff00ff00')
-check('the gap between two', pixel(300, 100) != '#ff00ff00', True)
-check('half of it off each', [pixel(x, 100) == '#ff00ff00' for x in (293, 296, 304, 307)], [True, False, False, True])
-timeline_style.set_values({'subtitle_fill_color': '#ff00ff00', 'subtitle_corner_radius': 20})
-widget.apply_style()
-check('a rounded corner is not filled', pixel(101, 56) != '#ff00ff00', True)
-check('the middle is', pixel(200, 100), '#ff00ff00')
-timeline_style.set_values({'subtitle_top': 30, 'subtitle_bottom': 40, 'waveform_top': 10, 'waveform_bottom': 5})
-widget.apply_style()
+check('filled at its top', pixel(150, 1), GREEN)
+check('the gap between two', pixel(300, 100) != GREEN, True)
+check('half of it off each', [pixel(x, 100) == GREEN for x in (293, 296, 304, 307)], [True, False, False, True])
+apply(look(fill_color=GREEN, corner_radius=20))
+check('a rounded corner is not filled', pixel(101, 56) != GREEN, True)
+check('the middle is', pixel(200, 100), GREEN)
+apply(look({'waveform_top': 10, 'waveform_bottom': 5}, top=30, bottom=40))
 check('the band where the look says',
       (widget.subtitle_y, widget.subtitle_height, widget.waveform_y, widget.waveform_height),
       (30, height - 70, 10, height - 15))
-timeline_style.set_values({'background_color': '#ff0000ff'})
-widget.apply_style()
+apply(look({'background_color': '#ff0000ff'}))
 check('the background', pixel(700, 5), '#ff0000ff')
 session.SUBTITLE.position = 6.0
-timeline_style.set_values({'cursor_color': '#ffff00ff', 'cursor_width': 6})
-widget.apply_style()
+apply(look({'cursor_color': '#ffff00ff', 'cursor_width': 6}))
 check('the playhead in its colour, as wide as it is set', (pixel(598, 150), pixel(602, 150), pixel(606, 150) == '#ffff00ff'),
       ('#ffff00ff', '#ffff00ff', False))
+
+print('a kind of cue in a lane of its own')
+timeline_style.register_kind('title', {'fill_color': '#ffff8800', 'top': 30, 'bottom': 140})
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'},
+                                          {'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A', 'kind': 'title'}],
+                             'selected': None, 'position': 10.0})
+apply(look(fill_color=GREEN, corner_radius=0))
+check('its lane', widget.lane('title'), (30, height - 170))
+check('the subtitles\' where they were', widget.lane('subtitle'), (55, height - 80))
+check('a title in its colour, in its lane', pixel(150, 40), '#ffff8800')
+check('a subtitle in its own, in its own', pixel(150, 120), GREEN)
+del timeline_style.KINDS['title']
+timeline_style.reset()
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'},
+                                          {'start': 3.0, 'end': 5.0, 'text': '', 'speaker': 'A'}],
+                             'selected': None, 'position': 6.0})
+widget.apply_style()
+
+
+class Recorder:
+    """What the timeline paints: texts and lines, in its own QPainter."""
+    def __init__(self):
+        self.texts, self.lines = [], []
+        original = timeline.QPainter
+        recorder = self
+
+        class RecordingPainter(original):
+            def drawText(self, *args):
+                rect = next((a for a in args if hasattr(a, 'top')), None)
+                recorder.texts.append((next(a for a in args if isinstance(a, str)), rect.top() if rect is not None else None))
+                return super().drawText(*args)
+
+            def drawLine(self, *args):
+                line = args[0] if len(args) == 1 else None
+                if line is not None and hasattr(line, 'x1'):
+                    recorder.lines.append((round(line.x1(), 1), round(line.y1(), 1), round(line.y2(), 1)))
+                return super().drawLine(*args)
+
+        self.original = original
+        timeline.QPainter = RecordingPainter
+
+    def done(self):
+        timeline.QPainter = self.original
+
+
+def painted(timeline_values):
+    apply(look(timeline_values))
+    recorder = Recorder()
+    widget.repaint()
+    recorder.done()
+    return recorder
+
+
+print('the ruler')
+session.VIDEO['framerate'] = 25
+got = painted({})
+labels = [text for text, top in got.texts if ':' in text]
+check('labels a second apart at 100 px a second, mm:ss', labels[:3], ['00:00', '00:01', '00:02'])
+check('at their distance from the top', {top for text, top in got.texts if text in labels}, {27})
+got = painted({'ruler_time_format': 'timecode', 'ruler_font_size': 16})
+check('timecode labels, spaced so they do not touch', [t for t, _ in got.texts if t.count(':') == 3][:2],
+      ['00:00:00:00', '00:00:02:00'])
+got = painted({'ruler_time_format': 'frames', 'ruler_label_spacing': 300})
+check('frame numbers, the first step past 300 px apart (5 s)', [t for t, _ in got.texts if t.isdigit()][:3], ['0', '125'])
+got = painted({'ruler_position': 'bottom', 'ruler_offset': 5})
+bottom_tops = {top for text, top in got.texts if text.count(':') == 1}
+check('along the bottom, 5 px from it', bottom_tops,
+      {height - 5 - timeline.QFontMetrics(timeline_style.current().ruler_font).height()})
+got = painted({'show_ruler': False})
+check('no ruler, no labels', [t for t, _ in got.texts if t.count(':') == 1], [])
+got = painted({'ruler_ticks': True, 'ruler_tick_length': 10, 'ruler_subdivisions': 1, 'ruler_offset': 20})
+ticks = sorted({line for line in got.lines if line[1] == 20 and line[0] <= 200})
+check('a tick at each label and one between', ticks, [(0.0, 20, 30), (50.0, 20, 25), (100.0, 20, 30),
+                                                         (150.0, 20, 25), (200.0, 20, 30)])
+
+print('the playhead')
+reach = widget.playhead_reach()
+playhead = {'cursor_head': 'flag', 'cursor_head_size': 20, 'cursor_show_time': True,
+            'cursor_time_background_color': '#ff0000ff', 'cursor_color': GREEN}
+check('its time beside it, to the millisecond', any(t == '00:06.000' for t, _ in painted(playhead).texts), True)
+check('a flag at the ruler\'s top edge, as wide as 1.6 its size',
+      (pixel(625, 32), pixel(636, 32) == GREEN, pixel(625, 20) == GREEN), (GREEN, False, False))
+check('the repaint strip reaches past the flag and the time',
+      (widget.playhead_reach()[1] > reach[1] + 40, widget.playhead_reach()[0]), (True, 96))
+apply(look({'cursor_badge_side': 'right'}))
+check('a badge on the right: the strip reaches right', widget.playhead_reach()[1] >= 96, True)
+session.CONFIG['playback_speed'] = 1.5
+got = painted({'cursor_badge_side': 'right', 'cursor_badge_shape': 'rectangle', 'cursor_badge_color': '#ffff0000'})
+check('the speed in the badge', any(t == 'x1.5' for t, _ in got.texts), True)
+check('on the right of the playhead, as a rectangle', (pixel(604, 26), pixel(590, 26) == '#ffff0000'), ('#ffff0000', False))
+session.CONFIG['playback_speed'] = 1.0
+timeline_style.reset()
 
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

@@ -25,7 +25,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
-from subtitld.modules import markup, quality_check, session, subtitles, timeline_style, utils
+from subtitld.modules import markup, quality_check, session, subtitles, timeline_style
 from subtitld.modules.segment import text_of
 
 
@@ -314,10 +314,11 @@ class VerticalTimeline(QWidget):
 
     def ruler_width(self):
         """Wide enough for the longest label: an hour in, they gain a field."""
-        label = utils.get_timeline_time_str(int(_duration()))
-        if label != self._ruler_label:
-            self._ruler_label = label
-            self._ruler_width = max(RULER_WIDTH, QFontMetrics(QFont('Ubuntu Mono', 8)).horizontalAdvance(label) + 18)
+        look = timeline_style.current()
+        label = _time_label(int(_duration()))
+        if (label, look) != self._ruler_label:
+            self._ruler_label = (label, look)
+            self._ruler_width = max(RULER_WIDTH, QFontMetrics(look.ruler_font).horizontalAdvance(label) + 18)
         return self._ruler_width
 
     def lanes(self):
@@ -464,10 +465,11 @@ class VerticalTimeline(QWidget):
         if session.REPEAT_DURATION_BUFFER:
             start, stop = session.REPEAT_DURATION_BUFFER[0][0], session.REPEAT_DURATION_BUFFER[0][1]
             gradient = QLinearGradient(waveform[0], 0, subs[1], 0)
-            color = QColor(cfg.get('cursor_color', '#ccff0000'))
-            color.setAlpha(80)
+            look = timeline_style.current()
+            color = look.color('repeat_area_color')
             gradient.setColorAt(0, color)
-            color.setAlpha(0)
+            if look['repeat_area_gradient']:
+                color.setAlpha(0)
             gradient.setColorAt(1, color)
             painter.fillRect(QRectF(waveform[0], self.y_at(start), subs[1] - waveform[0], (stop - start) * self.pps), gradient)
 
@@ -514,7 +516,7 @@ class VerticalTimeline(QWidget):
             painter.setPen(QPen(tick_color, 1))
             painter.drawLine(QPointF(right - 7, y), QPointF(right, y))
             painter.setPen(text_color)
-            label = utils.get_timeline_time_str(seconds)
+            label = _time_label(seconds)
             painter.drawText(QRectF(0, y - metrics.height() / 2, right - 10, metrics.height()),
                              Qt.AlignRight | Qt.AlignVCenter, label)
             seconds += step
@@ -637,22 +639,24 @@ class VerticalTimeline(QWidget):
         if alignment is None:
             alignment = {'left': Qt.AlignLeft, 'center': Qt.AlignHCenter, 'right': Qt.AlignRight}.get(
                 (session.CONFIG.get('default_values') or {}).get('subtitle_alignment', 'left'), Qt.AlignLeft)
-        selected_fill = QColor(cfg.get('selected_subtitle_fill_color', '#cc3e5363'))
-        fill = QColor(cfg.get('subtitle_fill_color', '#e6c8dbe9'))
-        text_color = QColor(cfg.get('subtitle_text_color', '#304251'))
-        selected_text_color = QColor(cfg.get('selected_subtitle_text_color', '#b8cee0'))
-        failed_color = QColor(cfg.get('failed_check_text_color', '#ff9e1a1a'))
-        separator = QPen(QColor(cfg.get('subtitle_text_color', '#40304251')), 1)
+        look = timeline_style.current()
+        kinds = {}      # kind -> its box look's colours, font and corner
         quality = (session.CONFIG.get('quality_check') or {}).get('enabled', False)
         dubbing = (session.CONFIG.get('dubbing') or {}).get('enabled', False)
         translation = session.CONFIG.get('translation') or {}
         options = translation.get('engine_options', {}) if isinstance(translation, dict) else {}
         show_translations = options.get('show_translations', False)
         target_language = options.get('target_language', 'en-us')
-        font = timeline_style.current().subtitle_font
         columns = self.speaker_columns()
 
         for subtitle in segments:
+            kind = timeline_style.kind_of(subtitle)
+            if kind not in kinds:
+                box = look.box(kind)
+                kinds[kind] = (box.color('selected_fill_color'), box.color('fill_color'), box.color('text_color'),
+                               box.color('selected_text_color'), box.color('failed_check_text_color'),
+                               QPen(box.color('text_color'), 1), box.font, box['corner_radius'])
+            selected_fill, fill, text_color, selected_text_color, failed_color, separator, font, radius = kinds[kind]
             rect = self.block_rect(subtitle, columns)
             is_selected = subtitle is selected
             locked = subtitle.get('locked', False)
@@ -662,7 +666,7 @@ class VerticalTimeline(QWidget):
                 painter.setOpacity(0.18)
             painter.setPen(Qt.NoPen)
             painter.setBrush(selected_fill if is_selected else fill)
-            painter.drawRoundedRect(rect, 3.0, 3.0)
+            painter.drawRoundedRect(rect, radius, radius)
 
             if subtitle.get('dubbing') and dubbing:
                 self._paint_clip(painter, cfg, subtitle, rect, speaker_color, locked, onsets)
@@ -821,7 +825,7 @@ class VerticalTimeline(QWidget):
             reach_to = min(max(cy, rect.top()), rect.bottom())
             painter.save()
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(cfg.get('subtitle_border_color', '#ff6a7483')))
+            painter.setBrush(timeline_style.current().box(timeline_style.kind_of(subtitle)).color('border_color'))
             painter.drawRoundedRect(QRectF(cx - radius, min(cy, reach_to) - radius, 2 * radius,
                                            abs(cy - reach_to) + 2 * radius), radius, radius)
             _paint_padlock(painter, cx, cy)
@@ -1023,10 +1027,18 @@ class VerticalTimeline(QWidget):
         position = session.SUBTITLE.position
         if position is None:
             return
-        color = QColor(cfg.get('cursor_color', '#ccff0000'))
+        look = timeline_style.current()
+        color = look.color('cursor_color')
         y = self.y_at(float(position))
         edge = self.lanes()[0][1]
-        painter.setPen(QPen(color, 2))
+        width = look['cursor_width']
+        if look['cursor_glow']:
+            halo = QColor(color)
+            halo.setAlphaF(color.alphaF() * 0.25)
+            painter.setPen(QPen(halo, width + 2 * look['cursor_glow'], Qt.SolidLine, Qt.FlatCap))
+            painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
+        style = {'solid': Qt.SolidLine, 'dashed': Qt.DashLine, 'dotted': Qt.DotLine}[look['cursor_line_style']]
+        painter.setPen(QPen(color, width, style, Qt.FlatCap))
         painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
         painter.setPen(Qt.NoPen)
         painter.setBrush(color)
@@ -1035,7 +1047,9 @@ class VerticalTimeline(QWidget):
     def playhead_strip(self, position):
         """The rows the playhead at `position` covers."""
         y = self.y_at(position)
-        return QRectF(0, y - 7, self.width(), 14).toAlignedRect()
+        look = timeline_style.current()
+        reach = max(7.0, look['cursor_width'] / 2.0 + look['cursor_glow'] + 2)
+        return QRectF(0, y - reach, self.width(), 2 * reach).toAlignedRect()
 
     # -- mouse -----------------------------------------------------------------
 
@@ -1531,6 +1545,12 @@ class VerticalTimelinePanel(QWidget):
         self.zoom_out_button.setToolTip(_('vtimeline_panel.zoom_out'))
         self.zoom_in_button.setToolTip(_('vtimeline_panel.zoom_in'))
         self.update_labels()
+
+
+def _time_label(seconds):
+    """A ruler's label, in the format the timeline's look says."""
+    return timeline_style.time_label(seconds, timeline_style.current()['ruler_time_format'],
+                                     session.VIDEO.get('framerate') or 25)
 
 
 def _clock(seconds):
