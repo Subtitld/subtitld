@@ -7,7 +7,10 @@ kind's boxes have a look of their own).
 Each field gets the control subtitle styles' fields get. A group whose
 first field is a bool the rest are `visible_if` is a group that can be
 switched off; any other field with `visible_if` or `hidden_if` shows or
-hides as its bool is set (`hidden_if` may be a [key, value] pair too).
+hides as its bool is set (`hidden_if` may be a [key, value] pair too, and
+`visible_when` is one). A field naming a file (an SVG shape) gets a
+button to pick one, which is checked and kept (modules.timeline_svg), and
+one to take it off.
 
 Labels come from the locale files: `timeline_style.<key>` (a box's
 `timeline_style.box.<key>`), `timeline_style.<key>.<value>` for an
@@ -16,11 +19,12 @@ option, `timeline_style.group.<group>` for a group and
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitle_style_panel import _text, field_control
 from subtitld.interface.translation import _
-from subtitld.modules import timeline_style
+from subtitld.modules import timeline_style, timeline_svg
 
 COLUMNS = 2
 FONT_LIST_WIDTH = 180
@@ -151,9 +155,12 @@ class TimelineStylePanel(QWidget):
             self.controls[(scope, first['key'])] = (first, box)
             fields = fields[1:]
         for field in fields:
-            column, control = field_control(field, values[field['key']], field_label(field, scope),
-                                            lambda option, field=field: option_label(field, option, scope),
-                                            lambda key, value: self._set(scope, key, value), self)
+            if field.get('file'):
+                column, control = self._file_field(scope, field, values[field['key']])
+            else:
+                column, control = field_control(field, values[field['key']], field_label(field, scope),
+                                                lambda option, field=field: option_label(field, option, scope),
+                                                lambda key, value: self._set(scope, key, value), self)
             self.controls[(scope, field['key'])] = (field, control)
             if field['type'] == 'font':
                 control.setMaximumWidth(FONT_LIST_WIDTH)
@@ -164,12 +171,77 @@ class TimelineStylePanel(QWidget):
         self.grids.append((grid, scope, [f['key'] for f in fields]))
         return box
 
+    def _file_field(self, scope, field, value):
+        """A shape's file: its name, a button to pick one, one to take it off,
+        and why a file picked was refused."""
+        key = field['key']
+        title = QLabel(field_label(field, scope))
+        title.setProperty('class', 'widget_label')
+        choose = QPushButton(_('timeline_style.choose_svg'))
+        choose.setAccessibleName(f"{field_label(field, scope)}: {_('timeline_style.choose_svg')}")
+        clear = QPushButton(_('timeline_style.no_svg'))
+        name = QLabel()
+        name.setProperty('class', 'units_label')
+        problem = QLabel()
+        problem.setProperty('class', 'units_label')
+        problem.setWordWrap(True)
+        problem.hide()
+        line = QHBoxLayout()
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(5)
+        line.addWidget(choose, 0, Qt.AlignLeft)
+        line.addWidget(clear, 0, Qt.AlignLeft)
+        line.addWidget(name, 0, Qt.AlignLeft)
+        column = QVBoxLayout()
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(2)
+        column.addWidget(title, 0, Qt.AlignLeft)
+        column.addLayout(line)
+        column.addWidget(problem)
+
+        def show(current):
+            name.setText(current if current else _('timeline_style.no_svg_set'))
+            clear.setEnabled(bool(current))
+
+        def pick():
+            path, _filter = QFileDialog.getOpenFileName(self, field_label(field, scope), '', 'SVG (*.svg)')
+            if path:
+                self.import_shape(scope, key, path)
+
+        def take_off():
+            self._set(scope, key, '')
+            show('')
+
+        choose.clicked.connect(pick)
+        clear.clicked.connect(take_off)
+        choose.shape_name, choose.shape_problem, choose.show_shape = name, problem, show
+        show(value)
+        return column, choose
+
+    def import_shape(self, scope, key, path):
+        """Check and keep the SVG at `path` as the shape of `key`; say why
+        not when it is refused. The name it is kept by, or None."""
+        control = self.controls[(scope, key)][1]
+        try:
+            name = timeline_svg.import_file(path)
+        except (OSError, timeline_svg.ShapeError) as error:
+            control.shape_problem.setText(_('timeline_style.svg_refused').format(reason=str(error)))
+            control.shape_problem.show()
+            return None
+        control.shape_problem.hide()
+        self._set(scope, key, name)
+        control.show_shape(name)
+        return name
+
     def _shown(self, scope, field, values):
         """Whether a field shows: while its `visible_if` is on (unless that
         is its group's switch, which turns the group off instead) and its
         `hidden_if` off (or, a [key, value] pair, while that setting is
         not that value)."""
         if (scope, field.get('visible_if')) in self.cells and not values[field['visible_if']]:
+            return False
+        visible_when = field.get('visible_when')
+        if visible_when and values[visible_when[0]] != visible_when[1]:
             return False
         hidden_if = field.get('hidden_if')
         if isinstance(hidden_if, list):

@@ -309,7 +309,12 @@ plain = pixel(two['start'], middle)
 check('the hovered edge is drawn white', whiteness(lit) > whiteness(plain) + 40, True)
 QTest.mouseMove(canvas, QPoint(int(middle), int(rect.bottom() - 4)))
 check('near the bottom: the end', canvas.hover, (id(two), 'end'))
-check('grabbing 20 px of the edge, as the timeline', lpv.EDGE, 20)
+from PySide6.QtCore import QRectF as _QRectF
+check('grabbing 20 px of the edge, as the timeline', canvas.edge_zone(_QRectF(0, 0, 50, 300), two), 20)
+from subtitld.modules import timeline_style as _timeline_style
+_timeline_style.set_value('edge_grab_width', 35, 'subtitle')
+check('as wide as the look says', canvas.edge_zone(_QRectF(0, 0, 50, 300), two), 35)
+_timeline_style.reset()
 
 print('where two subtitles meet, a drag moves both (the tug of war)')
 meeting = canvas.y_at(7.25)

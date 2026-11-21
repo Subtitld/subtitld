@@ -5,7 +5,9 @@ Every setting is a field in the shape subtitle styles' manifests use
 color, font), a default and, for numbers, a range and a unit. `group`
 says which box of the settings it is shown in; `visible_if` names a bool
 it only matters with, `hidden_if` one it does not matter with (or a
-[key, value] pair: while that setting is that value).
+[key, value] pair: while that setting is that value), `visible_when` a
+[key, value] pair it only matters with. A text field with `file` names
+a file (an SVG, modules.timeline_svg) by the name it is kept under.
 
 The look has two parts: the timeline's own (its ruler, grid, waveform,
 playhead and marks) and a box look for each kind of cue (KINDS):
@@ -32,7 +34,7 @@ from subtitld.modules import session
 from subtitld.modules.subtitle_styles import _check_field, coerce
 
 TIMELINE_GROUPS = ('background', 'ruler', 'ruler_ticks', 'grid', 'waveform', 'cursor', 'cursor_badge', 'marks')
-BOX_GROUPS = ('box', 'fill', 'text')
+BOX_GROUPS = ('box', 'fill', 'text', 'edges')
 SUBTITLE = 'subtitle'
 TIME_FORMATS = ('clock', 'seconds', 'timecode', 'frames')
 # Seconds between two of the ruler's labels: the first of these far enough apart.
@@ -89,13 +91,19 @@ _TIMELINE_FIELDS = [
     {'key': 'cursor_color', 'type': 'color', 'default': '#ccff0000', 'group': 'cursor'},
     {'key': 'cursor_width', 'type': 'number', 'default': 2.0, 'min': 0.5, 'max': 8.0, 'step': 0.5, 'unit': 'px',
      'group': 'cursor'},
-    {'key': 'cursor_line_style', 'type': 'select', 'default': 'solid', 'options': ['solid', 'dashed', 'dotted'],
-     'group': 'cursor'},
+    # A line Subtitld draws, or an SVG stretched to the line's width and the timeline's height.
+    {'key': 'cursor_line_style', 'type': 'select', 'default': 'solid',
+     'options': ['solid', 'dashed', 'dotted', 'custom'], 'group': 'cursor'},
+    {'key': 'cursor_line_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'cursor',
+     'visible_when': ['cursor_line_style', 'custom']},
     # A wider, fainter line behind it, this much past it on each side.
     {'key': 'cursor_glow', 'type': 'int', 'default': 0, 'min': 0, 'max': 20, 'unit': 'px', 'group': 'cursor'},
     # A shape on the line where it crosses the ruler's edge.
-    {'key': 'cursor_head', 'type': 'select', 'default': 'none', 'options': ['none', 'triangle', 'circle', 'flag'],
-     'group': 'cursor'},
+    {'key': 'cursor_head', 'type': 'select', 'default': 'none',
+     'options': ['none', 'triangle', 'circle', 'flag', 'custom'], 'group': 'cursor'},
+    # An SVG as the head: as tall as the head's size, as wide as its shape, the line through its middle.
+    {'key': 'cursor_head_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'cursor',
+     'visible_when': ['cursor_head', 'custom']},
     {'key': 'cursor_head_size', 'type': 'int', 'default': 10, 'min': 4, 'max': 30, 'unit': 'px', 'group': 'cursor',
      'hidden_if': ['cursor_head', 'none']},
     # The playhead's time beside it, in the ruler's format, to the millisecond or frame.
@@ -123,8 +131,6 @@ _TIMELINE_FIELDS = [
     {'key': 'repeat_area_gradient', 'type': 'bool', 'default': True, 'group': 'marks'},
     # Where the playhead is, when it is out of view.
     {'key': 'offscreen_arrow_color', 'type': 'color', 'default': '#dcff0000', 'group': 'marks'},
-    # The glow on a subtitle's edge under the mouse.
-    {'key': 'edge_handle_color', 'type': 'color', 'default': '#ffffffff', 'group': 'marks'},
 ]
 
 
@@ -165,6 +171,23 @@ _BOX_FIELDS = [
      'group': 'text'},
     {'key': 'padding_x', 'type': 'int', 'default': 26, 'min': 0, 'max': 100, 'unit': 'px', 'group': 'text'},
     {'key': 'padding_y', 'type': 'int', 'default': 6, 'min': 0, 'max': 100, 'unit': 'px', 'group': 'text'},
+
+    # The start and end edges, dragged to retime a cue: a glow that fades
+    # inwards (the outline at the edge), a bar along it, or nothing; on
+    # the edge under the mouse, or on every box's both edges.
+    {'key': 'edge_style', 'type': 'select', 'default': 'glow', 'options': ['glow', 'bar', 'none'], 'group': 'edges'},
+    {'key': 'edge_show', 'type': 'select', 'default': 'hover', 'options': ['hover', 'always'], 'group': 'edges',
+     'hidden_if': ['edge_style', 'none']},
+    {'key': 'edge_handle_width', 'type': 'int', 'default': 20, 'min': 2, 'max': 80, 'unit': 'px', 'group': 'edges',
+     'visible_when': ['edge_style', 'glow']},
+    {'key': 'edge_handle_thickness', 'type': 'number', 'default': 2.0, 'min': 0.5, 'max': 12.0, 'step': 0.5,
+     'unit': 'px', 'group': 'edges', 'hidden_if': ['edge_style', 'none']},
+    {'key': 'edge_start_color', 'type': 'color', 'default': '#ffffffff', 'group': 'edges',
+     'hidden_if': ['edge_style', 'none']},
+    {'key': 'edge_end_color', 'type': 'color', 'default': '#ffffffff', 'group': 'edges',
+     'hidden_if': ['edge_style', 'none']},
+    # How near an edge the mouse grabs it, whatever is drawn there.
+    {'key': 'edge_grab_width', 'type': 'int', 'default': 20, 'min': 4, 'max': 80, 'unit': 'px', 'group': 'edges'},
 ]
 
 def _checked(raw_fields):

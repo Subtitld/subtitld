@@ -18,9 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import json
 from PySide6.QtWidgets import QApplication, QGroupBox, QWidget, QVBoxLayout
 from PySide6.QtGui import QColor
+from PySide6.QtCore import QPoint
 from PySide6.QtTest import QTest
 app = QApplication([])
-from subtitld.modules import config, history, session, timeline_style
+from subtitld.modules import config, history, session, timeline_style, timeline_svg
 from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 from subtitld.interface.timeline_style_panel import BOX, TIMELINE, TimelineStylePanel
@@ -119,6 +120,52 @@ check('labels a step apart that leaves the room asked for',
       [timeline_style.label_step(pps, 75) for pps in (100, 60, 20, 1, 0.01)], [1, 2, 5, 120, 3600])
 
 
+print('SVG shapes')
+GOOD = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><rect width="20" height="10" fill="currentColor"/></svg>'
+OWN = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#0000ff"/></svg>'
+refused = {
+    'a DOCTYPE': b'<!DOCTYPE svg [<!ENTITY a "b">]><svg xmlns="http://www.w3.org/2000/svg"/>',
+    'a script': b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    'an image': b'<svg xmlns="http://www.w3.org/2000/svg"><image href="file:///etc/passwd"/></svg>',
+    'a link outside': b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink"><use x:href="other.svg#a"/></svg>',
+    'a url() outside': b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(http://x/y)"/></svg>',
+    'an event handler': b'<svg xmlns="http://www.w3.org/2000/svg" onload="x()"/>',
+    'a style import': b'<svg xmlns="http://www.w3.org/2000/svg"><style>@import "x.css";</style></svg>',
+    'not an SVG': b'<html/>',
+    'not XML': b'<svg',
+    'too big': b'<svg xmlns="http://www.w3.org/2000/svg">' + b' ' * (300 * 1024) + b'</svg>',
+}
+outcomes = {}
+for why, data in refused.items():
+    try:
+        timeline_svg.check(data)
+        outcomes[why] = 'taken'
+    except timeline_svg.ShapeError:
+        outcomes[why] = 'refused'
+check('refused: anything reaching outside it, or too big', set(outcomes.values()), {'refused'})
+timeline_svg.check(GOOD)
+check('a plain one, and one with gradients of its own, taken', timeline_svg.check(
+    b'<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"/></defs><rect fill="url(#g)"/></svg>'), None)
+shapes = Path(tempfile.mkdtemp())
+(shapes / 'good.svg').write_bytes(GOOD)
+(shapes / 'own.svg').write_bytes(OWN)
+(shapes / 'bad.svg').write_bytes(refused['a script'])
+good_name = timeline_svg.import_file(shapes / 'good.svg')
+check('kept under a name made of its content', (len(good_name), good_name.endswith('.svg'),
+                                                (timeline_svg.folder() / good_name).read_bytes() == GOOD), (16, True, True))
+check('its width over its height', timeline_svg.aspect(good_name), 2.0)
+check('drawn in the colour given', timeline_svg.image(good_name, 4, 2, '#ff0000').toImage().pixelColor(1, 1).name(),
+      '#ff0000')
+own_name = timeline_svg.import_file(shapes / 'own.svg')
+check('one in colours of its own keeps them', (timeline_svg.takes_color(own_name),
+      timeline_svg.image(own_name, 4, 4, '#ff0000').toImage().pixelColor(1, 1).name()), (False, '#0000ff'))
+(timeline_svg.folder() / own_name).write_bytes(refused['a script'])
+timeline_svg.forget()
+check('a kept one changed into one refused: not drawn', timeline_svg.available(own_name), False)
+check('a name not of a kept shape: nothing', (timeline_svg.available('../../etc/passwd'), timeline_svg.image('x.svg', 4, 4)),
+      (False, None))
+
+
 print('the panel')
 changes = []
 panel = TimelineStylePanel()
@@ -144,7 +191,7 @@ groups = panel.fields_widget.findChildren(QGroupBox)
 check('a box a group, the boxes\' after the waveform; the ruler, its ticks and the waveform switched on and off',
       [(g.title(), g.isCheckable()) for g in groups],
       [('Background', False), ('Time ruler', True), ('Ruler ticks', True), ('Grid', False), ('Waveform', True),
-       ('Boxes', False), ('Box fill', False), ('Box text', False), ('Playhead', False),
+       ('Boxes', False), ('Box fill', False), ('Box text', False), ('Start and end edges', False), ('Playhead', False),
        ('Repeat and speed badge', False), ('Marks', False)])
 check('one kind: no picking it', panel.kind_holder.isHidden(), True)
 check('labels from the locale files', (control('full_height').text(), panel.reset_button.text()),
@@ -161,13 +208,23 @@ head = control('cursor_head', TIMELINE)
 head.activated.emit(head.findData('flag'))
 check('shown with one', (cell('cursor_head_size', TIMELINE).isHidden(), timeline_style.values()['cursor_head']),
       (False, 'flag'))
+check('a head\'s SVG hidden but for a custom head', cell('cursor_head_svg', TIMELINE).isHidden(), True)
+head.activated.emit(head.findData('custom'))
+check('shown for one', cell('cursor_head_svg', TIMELINE).isHidden(), False)
+check('refused, and why', (panel.import_shape(TIMELINE, 'cursor_head_svg', shapes / 'bad.svg'),
+                           control('cursor_head_svg', TIMELINE).shape_problem.isHidden()), (None, False))
+check('taken, and kept in the look', (panel.import_shape(TIMELINE, 'cursor_head_svg', shapes / 'good.svg'),
+                                      timeline_style.values()['cursor_head_svg']), (good_name, good_name))
+check('its name shown, the problem gone', (control('cursor_head_svg', TIMELINE).shape_name.text(),
+                                            control('cursor_head_svg', TIMELINE).shape_problem.isHidden()), (good_name, True))
+head.activated.emit(head.findData('flag'))
 grid = cell('gap').parentWidget().layout()
 check('the next field takes its place', grid.getItemPosition(grid.indexOf(cell('gap')))[:2], (0, 1))
 control('corner_radius').setValue(12)
 check('a number saved, for the subtitles', timeline_style.values('subtitle')['corner_radius'], 12)
 groups[4].setChecked(False)
 check('a group\'s switch saved', timeline_style.values()['show_waveform'], False)
-check('each change said', len(changes), 5)
+check('each change said', len(changes), 8)
 panel.reset()
 check('reset: the defaults, and the controls on them',
       (timeline_style.changes(), control('corner_radius').value(), control('full_height').isChecked()),
@@ -352,6 +409,48 @@ got = painted({'cursor_badge_side': 'right', 'cursor_badge_shape': 'rectangle', 
 check('the speed in the badge', any(t == 'x1.5' for t, _ in got.texts), True)
 check('on the right of the playhead, as a rectangle', (pixel(604, 26), pixel(590, 26) == '#ffff0000'), ('#ffff0000', False))
 session.CONFIG['playback_speed'] = 1.0
+
+print('a playhead of SVG shapes')
+PINK = '#ffff00aa'
+apply(look({'cursor_head': 'custom', 'cursor_head_svg': good_name, 'cursor_head_size': 10, 'cursor_color': PINK,
+            'cursor_line_style': 'custom', 'cursor_line_svg': good_name, 'cursor_width': 4}))
+check('the head: the shape in the playhead\'s colour, twice as wide as tall, on the ruler\'s edge',
+      (pixel(591, 30), pixel(609, 30), pixel(612, 30) == PINK, pixel(595, 25) == PINK), (PINK, PINK, False, False))
+check('the line: the shape stretched as wide as the line', (pixel(599, 150), pixel(601, 150), pixel(603, 150) == PINK),
+      (PINK, PINK, False))
+check('the repaint strip reaches the head\'s side', widget.playhead_reach()[0] >= 12, True)
+apply(look({'cursor_head': 'custom', 'cursor_head_svg': 'gone0000000.svg', 'cursor_line_style': 'custom',
+            'cursor_color': PINK, 'cursor_width': 4}))
+check('a shape that is not there: a line Subtitld draws', pixel(600, 150), PINK)
+
+print('the edges that retime')
+session.SUBTITLE.position = 15.0
+
+
+def hover(x, y=100):
+    QTest.mouseMove(widget, QPoint(x, y))
+    QTest.qWait(20)
+    return widget.subtitle_edge_hovered
+
+
+apply(look(fill_color=GREEN, corner_radius=0, edge_style='bar', edge_handle_thickness=4, edge_start_color='#ffff0000',
+           edge_end_color='#ff0000ff'))
+check('nothing on an edge the mouse is not on', pixel(101, 100), GREEN)
+check('the mouse near the start', hover(110), (id(session.SUBTITLE.segments[0]), 'start'))
+check('a bar in the start colour', (pixel(101, 100), pixel(106, 100)), ('#ffff0000', GREEN))
+hover(500, 190)
+apply(look(fill_color=GREEN, corner_radius=0, edge_style='bar', edge_show='always', edge_handle_thickness=4,
+           edge_start_color='#ffff0000', edge_end_color='#ff0000ff'))
+check('always: both edges of every box', (pixel(101, 100), pixel(298, 100), pixel(302, 100), pixel(498, 100)),
+      ('#ffff0000', '#ff0000ff', '#ffff0000', '#ff0000ff'))
+apply(look(fill_color=GREEN, corner_radius=0, edge_style='none', edge_show='always'))
+check('none: no edges', (pixel(101, 100), pixel(298, 100)), (GREEN, GREEN))
+apply(look(edge_grab_width=40))
+check('grabbed as far in as the look says', hover(135), (id(session.SUBTITLE.segments[0]), 'start'))
+apply(look())
+hover(500, 190)
+check('not as far by default', hover(135), None)
+hover(500, 190)
 timeline_style.reset()
 
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

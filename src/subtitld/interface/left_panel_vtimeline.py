@@ -23,7 +23,7 @@ from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics, QIcon, 
                            QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from subtitld.interface import left_panel
+from subtitld.interface import left_panel, timeline_edges
 from subtitld.interface.translation import _
 from subtitld.modules import markup, quality_check, session, subtitles, timeline_style
 from subtitld.modules.segment import text_of
@@ -35,7 +35,6 @@ RULER_WIDTH = 46
 WAVEFORM_WIDTH = 52
 LANE_GAP = 6
 RIGHT_MARGIN = 8
-EDGE = 20               # px from a block's top or bottom that grab that edge, as on the timeline
 EDGE_SHOWN = 40         # px a block needs before its edges light up, as on the timeline
 TUG_REACH = 5           # px either side of where two subtitles meet that grab both
 TEXT_PADDING = QMarginsF(16, 11, 14, 11)
@@ -375,10 +374,11 @@ class VerticalTimeline(QWidget):
             result.append(segment)
         return result
 
-    def edge_zone(self, rect):
+    def edge_zone(self, rect, subtitle=None):
         """px from a block's top or bottom that grab that edge: the
         timeline's, leaving the middle third of a short block to move it."""
-        return min(EDGE, rect.height() / 3)
+        kind = timeline_style.kind_of(subtitle) if subtitle is not None else timeline_style.SUBTITLE
+        return min(timeline_style.current().box(kind)['edge_grab_width'], rect.height() / 3)
 
     def hit(self, pos):
         """(subtitle, zone) under a point: zone 'start' or 'end' near the
@@ -399,7 +399,7 @@ class VerticalTimeline(QWidget):
             rect = self.block_rect(subtitle, columns)
             if not (rect.left() <= x <= rect.right() and rect.top() <= y <= rect.bottom()):
                 continue
-            edge = self.edge_zone(rect)
+            edge = self.edge_zone(rect, subtitle)
             if y - rect.top() < edge:
                 return subtitle, 'start'
             if rect.bottom() - y < edge:
@@ -709,7 +709,7 @@ class VerticalTimeline(QWidget):
                 painter.restore()
 
             if not locked:
-                self._paint_edge(painter, subtitle, rect)
+                self._paint_edge(painter, subtitle, rect, radius)
             painter.restore()
 
             if locked:      # the timeline's badge, at full strength over the faded block
@@ -721,9 +721,9 @@ class VerticalTimeline(QWidget):
     def clip_width(rect):
         return min(CLIP_WIDTH, rect.width() / 4)
 
-    def _paint_edge(self, painter, subtitle, rect):
-        """The timeline's edge handle on the hovered (or dragged) edge: the
-        block's outline there, white at the edge and fading inwards."""
+    def _paint_edge(self, painter, subtitle, rect, radius):
+        """The edges as the timeline draws them (interface.timeline_edges):
+        the hovered (or dragged) one, or both on every block."""
         if rect.height() <= EDGE_SHOWN:
             return
         side = None
@@ -731,35 +731,10 @@ class VerticalTimeline(QWidget):
             side = self.mode
         elif self.mode is None and self.hover is not None and self.hover[0] == id(subtitle):
             side = self.hover[1]
-        if side not in ('start', 'end'):
-            return
-        reach = float(EDGE)
-        r = 3.0
-        left, right = rect.left(), rect.right()
-        path = QPainterPath()
-        if side == 'start':
-            top = rect.top()
-            path.moveTo(left, top + reach)
-            path.lineTo(left, top + r)
-            path.arcTo(left, top, 2 * r, 2 * r, 180, -90)
-            path.lineTo(right - r, top)
-            path.arcTo(right - 2 * r, top, 2 * r, 2 * r, 90, -90)
-            path.lineTo(right, top + reach)
-            gradient = QLinearGradient(0, top, 0, top + reach)
-        else:
-            bottom = rect.bottom()
-            path.moveTo(left, bottom - reach)
-            path.lineTo(left, bottom - r)
-            path.arcTo(left, bottom - 2 * r, 2 * r, 2 * r, 180, 90)
-            path.lineTo(right - r, bottom)
-            path.arcTo(right - 2 * r, bottom - 2 * r, 2 * r, 2 * r, 270, 90)
-            path.lineTo(right, bottom - reach)
-            gradient = QLinearGradient(0, bottom, 0, bottom - reach)
-        gradient.setColorAt(0, QColor(255, 255, 255, 255))
-        gradient.setColorAt(1, QColor(255, 255, 255, 0))
-        painter.setPen(QPen(QBrush(gradient), 2))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPath(path)
+        box = timeline_style.current().box(timeline_style.kind_of(subtitle))
+        for edge in ('start', 'end'):
+            if timeline_edges.shown(box, edge == side):
+                timeline_edges.paint(painter, box, rect, edge, radius, vertical=True)
 
     def _paint_clip(self, painter, cfg, subtitle, rect, speaker_color, locked, onsets):
         """The subtitle's dub clip, as the timeline draws it along a
@@ -1037,7 +1012,8 @@ class VerticalTimeline(QWidget):
             halo.setAlphaF(color.alphaF() * 0.25)
             painter.setPen(QPen(halo, width + 2 * look['cursor_glow'], Qt.SolidLine, Qt.FlatCap))
             painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
-        style = {'solid': Qt.SolidLine, 'dashed': Qt.DashLine, 'dotted': Qt.DotLine}[look['cursor_line_style']]
+        # An SVG line is the timeline's alone: a solid one across this one.
+        style = {'dashed': Qt.DashLine, 'dotted': Qt.DotLine}.get(look['cursor_line_style'], Qt.SolidLine)
         painter.setPen(QPen(color, width, style, Qt.FlatCap))
         painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
         painter.setPen(Qt.NoPen)
