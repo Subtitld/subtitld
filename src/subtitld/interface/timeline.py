@@ -1,5 +1,6 @@
 import hashlib
 import math
+from collections import OrderedDict
 import os
 import time
 from bisect import bisect
@@ -7,7 +8,7 @@ import numpy as np
 import subprocess
 
 from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush, QPolygonF
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import config
@@ -647,6 +648,9 @@ class Timeline(QWidget):
         widget.audio_thread.finished.connect(widget.on_waveform_loaded)
 
         widget.waveform_manager = WaveformManager(filepath=session.VIDEO.get("filepath"))
+        # The waveform drawn, a tile at a time (_waveform_tile): oldest first.
+        widget._waveform_tiles = OrderedDict()
+        widget._waveform_tiles_bytes = 0
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
         widget.waveform_y = 45
         widget._apply_geometry()
@@ -773,6 +777,74 @@ class Timeline(QWidget):
         finally:
             painter.end()
         event.accept()
+
+    def _waveform_tile(widget, look, index):
+        """The waveform over timeline pixels [index, index + 1) × WAVEFORM_TILE
+        as an image the timeline's height, made once for everything it is
+        drawn from: the zoom, the waveform level used (a finer one when it is
+        ready) and its data, where the waveform is, its look, the screen's
+        scale. None while there is no level to draw."""
+        manager = widget.waveform_manager
+        wpp = widget.width_proportion
+        sr = session.VIDEO.get('samplerate', 48000)
+        left = index * WAVEFORM_TILE
+        samples_per_pixel = max(1, int(sr / wpp))
+        _mins, _maxs, spb, chosen = manager.get_level(samples_per_pixel, int(left / wpp * sr),
+                                                      int((left + WAVEFORM_TILE) / wpp * sr))
+        if chosen is None:
+            return None
+        # Its buckets, and two more past either end: the shape's ends, closed,
+        # fall outside the tile, and no seam shows where two tiles meet.
+        all_mins, all_maxs, spb = manager.levels[chosen]
+        first = max(0, int(left / wpp * sr) // spb - 2)
+        last = min(len(all_mins), int((left + WAVEFORM_TILE) / wpp * sr) // spb + 3)
+        if last - first < 2:
+            return None
+        mins, maxs = all_mins[first:last], all_maxs[first:last]
+        border = look['waveform_border_width']
+        scale = widget.devicePixelRatioF()
+        key = (index, wpp, sr, chosen, id(manager.levels[chosen][0]), widget.waveform_y, widget.waveform_height,
+               widget.height(), look['waveform_scale'], look['waveform_fill_color'], look['waveform_border_color'],
+               border, scale)
+        tiles = widget._waveform_tiles
+        tile = tiles.get(key)
+        if tile is not None:
+            tiles.move_to_end(key)
+            return tile
+
+        height = widget.height()
+        tile = QPixmap(int(math.ceil(WAVEFORM_TILE * scale)), int(math.ceil(height * scale)))
+        tile.setDevicePixelRatio(scale)
+        tile.fill(Qt.transparent)
+        center = widget.waveform_y + widget.waveform_height * 0.5
+        amplitude = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0
+        pixel_per_bucket = spb / sr * wpp
+        # A bucket's min and max at its middle: the time they stand for; at
+        # the audio's very start and end, its first and last reach the edge.
+        xs = (first + 0.5 + np.arange(len(mins))) * pixel_per_bucket - left
+        mins, maxs = np.asarray(mins, dtype=np.float64), np.asarray(maxs, dtype=np.float64)
+        if first == 0:
+            xs, mins, maxs = np.r_[-left, xs], np.r_[mins[0], mins], np.r_[maxs[0], maxs]
+        if last == len(all_mins):
+            end = len(all_mins) * pixel_per_bucket - left
+            xs, mins, maxs = np.r_[xs, end], np.r_[mins, mins[-1]], np.r_[maxs, maxs[-1]]
+        upper = center - maxs * amplitude
+        lower = center - mins * amplitude
+        polygon = QPolygonF([QPointF(x, y) for x, y in zip(xs.tolist(), upper.tolist())]
+                            + [QPointF(x, y) for x, y in zip(xs[::-1].tolist(), lower[::-1].tolist())])
+        p = QPainter(tile)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QPen(look.color('waveform_border_color'), border) if border > 0 else Qt.NoPen)
+        p.setBrush(look.color('waveform_fill_color'))
+        p.drawPolygon(polygon)
+        p.end()
+
+        tiles[key] = tile
+        widget._waveform_tiles_bytes += tile.width() * tile.height() * 4
+        while widget._waveform_tiles_bytes > WAVEFORM_TILES_BYTES and len(tiles) > 1:
+            _old_key, old = tiles.popitem(last=False)
+            widget._waveform_tiles_bytes -= old.width() * old.height() * 4
+        return tile
 
     def _ruler_geometry(widget, look):
         """The labels' top and height: `ruler_offset` from the top or the
@@ -1167,50 +1239,16 @@ class Timeline(QWidget):
                 painter.fillRect(rep_rect, repeat_color)
 
         if widget.waveform_manager.samples is not None and look['show_waveform']:
-            # iter_left/iter_right narrows the waveform bucket range to the
-            # dirty strip; outside the strip Qt keeps the previously-painted
-            # waveform from the backing store.
-            visible_start_sec = iter_left / widget.width_proportion
-            visible_end_sec = iter_right / widget.width_proportion
-            sr = session.VIDEO.get('samplerate', 48000)
-            start_sample = int(visible_start_sec * sr)
-            end_sample = int(visible_end_sec * sr)
-            samples_per_pixel = max(1, int(sr / widget.width_proportion))  # heuristic: how many samples map to one timeline pixel
-            mins, maxs, spb, chosen = widget.waveform_manager.get_level(samples_per_pixel, start_sample, end_sample)
-            if len(mins) > 0:
-                center = widget.waveform_y + (widget.waveform_height * 0.5)
-                scale = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0  # scale factor to map normalized -1..1 to pixels
-                buckets_count = len(mins)
-                if buckets_count > 0:
-                    pixel_per_bucket = (spb / sr) * widget.width_proportion
-                    path = QPainterPath()
-                    upper = []
-                    x = start_sample_to_x = (start_sample / sr) * widget.width_proportion
-                    for i in range(buckets_count):
-                        val = float(maxs[i])
-                        y = center - (val * scale)
-                        upper.append((x, y))
-                        x += pixel_per_bucket
-                    lower = []
-                    x = x - pixel_per_bucket  # last x
-                    for i in range(buckets_count - 1, -1, -1):
-                        val = float(mins[i])
-                        y = center - (val * scale)
-                        lower.append((x, y))
-                        x -= pixel_per_bucket
-                    if upper:
-                        path.moveTo(upper[0][0], upper[0][1])
-                        for (xx, yy) in upper[1:]:
-                            path.lineTo(xx, yy)
-                        for (xx, yy) in lower:
-                            path.lineTo(xx, yy)
-                        path.closeSubpath()
-                        if look['waveform_border_width'] > 0:
-                            painter.setPen(QPen(look.color('waveform_border_color'), look['waveform_border_width']))
-                        else:
-                            painter.setPen(Qt.NoPen)
-                        painter.setBrush(look.color('waveform_fill_color'))
-                        painter.drawPath(path)
+            # The waveform is drawn once a tile (WAVEFORM_TILE px of the
+            # timeline) and copied after: a full repaint used to fill a path
+            # of thousands of points, the most of its time. Only the tiles in
+            # the strip being painted are copied.
+            tile_first = int(iter_left // WAVEFORM_TILE)
+            tile_last = int((iter_right - 1) // WAVEFORM_TILE)
+            for index in range(tile_first, tile_last + 1):
+                tile = widget._waveform_tile(look, index)
+                if tile is not None:
+                    painter.drawPixmap(QPointF(index * WAVEFORM_TILE, 0.0), tile)
 
         # Onset markers (consonant-onset visual aid — see
         # `subtitld.modules.onset_detection`). Drawn AFTER the main
@@ -4155,6 +4193,10 @@ def update_subtitles_panel_subtitle_selected(self):
 
 _LIVE_BAND_RATIO = 0.25          # same band as a committed dub in _paint_body
 
+
+# The waveform is drawn in tiles this wide, kept up to this many bytes.
+WAVEFORM_TILE = 512
+WAVEFORM_TILES_BYTES = 32 * 1024 * 1024
 
 _VERTICAL_ALIGNMENT = {'top': Qt.AlignTop, 'center': Qt.AlignVCenter, 'bottom': Qt.AlignBottom}
 _LINE_STYLES = {'solid': Qt.SolidLine, 'dashed': Qt.DashLine, 'dotted': Qt.DotLine}

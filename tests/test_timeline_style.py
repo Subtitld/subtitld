@@ -552,12 +552,17 @@ session.SUBTITLE = Subtitle({'segments': [{'start': i * 0.08, 'end': i * 0.08 + 
 
 
 def full_repaint_ms(new_look, rounds=20):
+    """The fastest of `rounds` full repaints: what the code costs, not what
+    else the computer was doing."""
     apply(new_look)
     widget.repaint()
-    started = time.perf_counter()
+    fastest = None
     for _ in range(rounds):
+        started = time.perf_counter()
         widget.repaint()
-    return (time.perf_counter() - started) / rounds * 1000
+        took = (time.perf_counter() - started) * 1000
+        fastest = took if fastest is None else min(fastest, took)
+    return fastest
 
 
 plain_ms = full_repaint_ms(look())
@@ -648,6 +653,41 @@ session.SUBTITLE.selected = None
 apply(look(frame_svg=frame_name, fill_color='#ff123456'))
 check('frames without it in any state: the timeline\'s strip over them', pixel(200, 56), '#ffff2e93')
 widget.show_speaker_color = False
+timeline_style.reset()
+
+print('the waveform, drawn a tile at a time')
+session.SUBTITLE = Subtitle({'segments': [], 'selected': None, 'position': None})
+session.VIDEO['samplerate'] = 1000
+manager = widget.waveform_manager
+manager.levels = {}
+manager.samples = np.zeros(1, np.int16)
+quiet_then_loud = np.r_[np.full(1000, 0.05), np.full(19000, 0.9)].astype(np.float32)
+manager.levels[512] = (-quiet_then_loud[::512].copy(), quiet_then_loud[::512].copy(), 512)
+widget._waveform_tiles.clear()
+widget._waveform_tiles_bytes = 0
+apply(look({'waveform_fill_color': '#ff00ff00', 'waveform_border_width': 0}))
+widget.repaint()
+tiles_made = len(widget._waveform_tiles)
+check('a tile for each 512 px in view', tiles_made, 2)
+check('drawn: quiet at first, loud after', (pixel(5, 110) == '#ff00ff00', pixel(5, 70) == '#ff00ff00',
+                                           pixel(600, 70) == '#ff00ff00'), (True, False, True))
+widget.repaint()
+check('painted again: the same tiles, none made', len(widget._waveform_tiles), tiles_made)
+apply(look({'waveform_fill_color': '#ffff0000', 'waveform_border_width': 0}))
+check('another colour: tiles made anew in it', (pixel(600, 70), len(widget._waveform_tiles)), ('#ffff0000', 2 * tiles_made))
+manager.levels[128] = (-quiet_then_loud[::128].copy(), quiet_then_loud[::128].copy(), 128)
+widget.repaint()
+check('a finer level ready: drawn with it', len(widget._waveform_tiles), 3 * tiles_made)
+held = timeline.WAVEFORM_TILES_BYTES
+timeline.WAVEFORM_TILES_BYTES = next(iter(widget._waveform_tiles.values())).width() * height * 4 * 2
+apply(look({'waveform_fill_color': '#ff0000ff', 'waveform_border_width': 0}))
+widget.repaint()
+check('kept within its bytes, the oldest let go', len(widget._waveform_tiles), 2)
+timeline.WAVEFORM_TILES_BYTES = held
+manager.levels = {}
+manager.samples = None
+widget._waveform_tiles.clear()
+widget._waveform_tiles_bytes = 0
 timeline_style.reset()
 
 print('themes: one JSON file, its SVGs in it')
