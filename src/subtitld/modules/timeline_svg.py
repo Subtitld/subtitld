@@ -85,6 +85,12 @@ def import_file(path):
     by. ShapeError if it is refused, OSError if it cannot be read."""
     with open(path, 'rb') as source:
         data = source.read(MAX_BYTES + 1)
+    return keep(data)
+
+
+def keep(data):
+    """Check an SVG (bytes) and keep it: the name the look keeps it by.
+    ShapeError if it is refused. A theme's shapes come in this way."""
     check(data)
     name = hashlib.sha1(data).hexdigest()[:12] + '.svg'
     folder().mkdir(parents=True, exist_ok=True)

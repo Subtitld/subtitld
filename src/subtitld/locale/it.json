@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” è stato eliminato da subtitld.cc. I sottotitoli nell'editor sono ancora qui.",
     "interface_panel.subtitle_style": "Stile dei sottotitoli",
     "subtitle_styles.subtitld.classic.name": "Classico",
+    "timeline_themes.subtitld.classic.name": "Classico",
     "subtitle_styles.subtitld.classic.font_family": "Famiglia di caratteri",
     "subtitle_styles.subtitld.classic.font_size": "Dimensione",
     "subtitle_styles.subtitld.classic.color": "Colore",

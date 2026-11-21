@@ -38,6 +38,7 @@ datas_list = [
     ('src/subtitld/graphics', 'subtitld/graphics'),
     ('src/subtitld/locale', 'subtitld/locale'),
     ('src/subtitld/subtitle_styles', 'subtitld/subtitle_styles'),
+    ('src/subtitld/timeline_themes', 'subtitld/timeline_themes'),
     ('src/subtitld/ftfy', 'subtitld/ftfy'),
     ('src/subtitld/models', 'subtitld/models'),
 ]

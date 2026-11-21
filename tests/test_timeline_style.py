@@ -631,5 +631,122 @@ check('frames without it in any state: the timeline\'s strip over them', pixel(2
 widget.show_speaker_color = False
 timeline_style.reset()
 
+print('themes: one JSON file, its SVGs in it')
+import copy
+from subtitld.modules import timeline_themes
+themes = timeline_themes.available(reload=True)
+check('Classic, Subtitld\'s own', ([t for t in themes], themes['subtitld.classic'].builtin, timeline_themes.problems), (['subtitld.classic'], True, {}))
+classic_file = json.loads(themes['subtitld.classic'].path.read_text())
+
+
+def verdict(change):
+    theme = copy.deepcopy(classic_file)
+    change(theme)
+    try:
+        timeline_themes.parse(json.dumps(theme).encode())
+        return 'taken'
+    except timeline_themes.ThemeError as error:
+        return str(error).split(':')[0]
+
+
+check('refused: another format, a bad id, no name, a shape refused, a shape not carried',
+      [verdict(lambda t: t.update(format=2)), verdict(lambda t: t.update(id='Bad Id')), verdict(lambda t: t.update(name=' ')),
+       verdict(lambda t: t['shapes'].update(box='<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')),
+       verdict(lambda t: t['shapes'].pop('padlock'))],
+      ['format 2', 'id \'Bad Id\'', 'no name, or a name, author, version or description that is not text', 'shape "box"',
+       'names shapes it does not carry'])
+not_themes = []
+for data in (b'not json', b'[]', b'{}'):
+    try:
+        timeline_themes.parse(data)
+        not_themes.append('taken')
+    except timeline_themes.ThemeError:
+        not_themes.append('refused')
+check('and what is not a theme at all', not_themes, ['refused'] * 3)
+check('a setting it does not know, or cannot hold: left out, the theme taken',
+      verdict(lambda t: t['timeline'].update(sparkles=True, cursor_width='wide')), 'taken')
+
+timeline_style.reset()
+timeline_themes.forget_current()
+check('no theme: the look its own', (timeline_themes.current(), timeline_themes.changed()), (None, True))
+timeline_themes.apply('subtitld.classic')
+check('Classic applied: its settings, its shapes kept', (timeline_themes.current().id, timeline_themes.changed(),
+      bool(timeline_svg.read(timeline_style.values('subtitle')['frame_svg']))), ('subtitld.classic', False, True))
+timeline_style.set_value('gap', 4, 'subtitle')
+check('a setting changed after: still Classic, changed', (timeline_themes.current().id, timeline_themes.changed()),
+      ('subtitld.classic', True))
+
+exported = Path(tempfile.mkdtemp()) / 'mine.json'
+written = timeline_themes.export(exported, 'My Theme', author='Me')
+saved = json.loads(exported.read_text())
+check('exported: one file, the shapes in it by name', (saved['id'], saved['author'], saved['boxes']['subtitle']['frame_svg'],
+      saved['shapes'][saved['boxes']['subtitle']['frame_svg']].startswith('<svg')), ('user.my-theme', 'Me', 'subtitle_frame', True))
+before = timeline_style.changes()
+timeline_style.reset()
+imported = timeline_themes.import_file(exported)
+timeline_themes.apply(imported.id)
+check('imported back: the same look, kept among the user\'s', (timeline_style.changes() == before, imported.builtin,
+      sorted(timeline_themes.available())), (True, False, ['subtitld.classic', 'user.my-theme']))
+copy_of_classic = Path(tempfile.mkdtemp()) / 'classic.json'
+copy_of_classic.write_text(themes['subtitld.classic'].path.read_text())
+try:
+    timeline_themes.import_file(copy_of_classic)
+    check('a theme taking Subtitld\'s own id refused', False, True)
+except timeline_themes.ThemeError:
+    check('a theme taking Subtitld\'s own id refused', True, True)
+
+print('the panel\'s theme')
+timeline_style.reset()
+timeline_themes.forget_current()
+panel = TimelineStylePanel()
+check('no theme: Custom, then the themes', [panel.theme_picker.itemText(i) for i in range(panel.theme_picker.count())],
+      ['Custom', 'Classic', 'My Theme'])
+panel.theme_picker.activated.emit(panel.theme_picker.findData('subtitld.classic'))
+check('picked: set, shown, not changed', (timeline_themes.current().id, panel.theme_picker.currentText(),
+      panel.theme_changed_label.text(), panel.theme_picker.findData(None)), ('subtitld.classic', 'Classic', '', -1))
+control('corner_radius').setValue(9)
+check('a setting changed: said', panel.theme_changed_label.text(), '(changed)')
+check('a file that is no theme: refused, and why', (panel.import_theme(shapes / 'good.svg'), panel.theme_problem.isHidden()),
+      (None, False))
+panel.reset()
+check('reset: the defaults, no theme', (timeline_themes.current(), panel.theme_picker.currentText()), (None, 'Custom'))
+
+print('Classic draws the timeline as Subtitld always has')
+from PySide6.QtGui import QImage
+session.CONFIG['timeline'].update({'show_grid': True, 'grid_type': 'seconds', 'show_onset_markers': True})
+session.CONFIG['playback_speed'] = 1.5
+session.SPEAKERS = {'A': {'color': '#ff2e93'}, 'B': {'color': '#2e93ff'}}
+session.SUBTITLE = Subtitle({'segments': [
+    {'start': 0.5, 'end': 3.0, 'text': 'Normal', 'speaker': 'A'}, {'start': 3.0, 'end': 4.5, 'text': 'Touching', 'speaker': 'B'},
+    {'start': 5.2, 'end': 7.6, 'text': 'Selected', 'speaker': 'A'},
+    {'start': 8.0, 'end': 8.6, 'text': 'Locked', 'speaker': 'A', 'locked': True}], 'selected': None, 'position': 6.4})
+session.SUBTITLE.selected = session.SUBTITLE.segments[2]
+widget.show_speaker_color = True
+widget.background_onsets = np.array([1.2, 4.9, 7.9])
+widget.show_tug_of_war = 3.0
+
+
+def rendered():
+    widget.apply_style()
+    image = widget.grab().toImage().convertToFormat(QImage.Format_RGB32).copy(0, 0, 800, height)
+    bits = image.constBits()
+    return np.frombuffer(bits, np.uint8).reshape(image.height(), image.bytesPerLine() // 4, 4)[:, :800, :3].astype(int)
+
+
+timeline_style.reset()
+original = rendered()
+timeline_themes.apply('subtitld.classic')
+difference = np.abs(original - rendered()).max(axis=2)
+print(f'  {int((difference > 32).sum())} of {difference.size} pixels off by more than 32 levels, at most {int(difference.max())}')
+check('the same to the eye: under 0.1% of pixels off by more than 32 levels, none by more than 80',
+      ((difference > 32).sum() < difference.size / 1000, difference.max() <= 80), (True, True))
+widget.show_speaker_color = False
+widget.background_onsets = None
+widget.show_tug_of_war = False
+session.CONFIG['playback_speed'] = 1.0
+session.CONFIG['timeline'].update({'show_grid': False, 'show_onset_markers': False})
+timeline_style.reset()
+timeline_themes.forget_current()
+
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

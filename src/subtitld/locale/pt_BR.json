@@ -1266,6 +1266,7 @@
     "global_panel.import_settings": "Importar configurações",
     "interface_panel.subtitle_style": "Estilo da legenda",
     "subtitle_styles.subtitld.classic.name": "Clássico",
+    "timeline_themes.subtitld.classic.name": "Clássico",
     "subtitle_styles.subtitld.classic.font_family": "Família da fonte",
     "subtitle_styles.subtitld.classic.font_size": "Tamanho",
     "subtitle_styles.subtitld.classic.color": "Cor",

@@ -914,8 +914,9 @@ class Timeline(QWidget):
             box = QRectF(x + width / 2.0 + 2, box_top, metrics.horizontalAdvance(label) + 8, box_height)
             frame = timeline_frames.get(look['cursor_time_svg'])
             if frame is not None:
-                timeline_frames.paint(painter, frame, box, look.color('cursor_time_background_color').name(QColor.HexRgb),
-                                      widget.devicePixelRatioF(), look['cursor_time_svg'])
+                time_color = look.color('cursor_time_background_color')
+                timeline_frames.paint(painter, frame, box, time_color.name(QColor.HexRgb),
+                                      widget.devicePixelRatioF(), look['cursor_time_svg'], opacity=time_color.alphaF())
             else:
                 painter.setBrush(look.color('cursor_time_background_color'))
                 painter.drawRoundedRect(box, 2.0, 2.0, Qt.AbsoluteSize)
@@ -940,8 +941,14 @@ class Timeline(QWidget):
         frame = timeline_frames.get(look['cursor_badge_svg']) if shape == 'custom' else None
         if frame is not None:
             badge = QRectF(min(x, far), top, width, bottom - top)
-            timeline_frames.paint(painter, frame, badge, look.color('cursor_badge_color').name(QColor.HexRgb),
-                                  widget.devicePixelRatioF(), look['cursor_badge_svg'])
+            badge_color = look.color('cursor_badge_color')
+            painter.save()
+            if side > 0:    # drawn for the playhead's left: mirrored on its right
+                painter.translate(badge.center().x() * 2, 0)
+                painter.scale(-1, 1)
+            timeline_frames.paint(painter, frame, badge, badge_color.name(QColor.HexRgb),
+                                  widget.devicePixelRatioF(), look['cursor_badge_svg'], opacity=badge_color.alphaF())
+            painter.restore()
             path.addRect(badge)     # where the text goes
         elif shape == 'slanted':
             path.moveTo(x, top)
@@ -1439,9 +1446,9 @@ class Timeline(QWidget):
                 elif frame is not None:
                     speaker_hex = QColor(speaker_color_str).name(QColor.HexRgb) \
                         if widget.show_speaker_color and speaker_color_str else None
-                    timeline_frames.paint(painter, frame, box_rect,
-                                          (selected_fill if is_current else unselected_fill).name(QColor.HexRgb),
-                                          widget.devicePixelRatioF(), frame_name, speaker_hex)
+                    box_color = selected_fill if is_current else unselected_fill
+                    timeline_frames.paint(painter, frame, box_rect, box_color.name(QColor.HexRgb),
+                                          widget.devicePixelRatioF(), frame_name, speaker_hex, box_color.alphaF())
                 else:
                     painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
 

@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” telah dihapus dari subtitld.cc. Subtitle di editor masih ada.",
     "interface_panel.subtitle_style": "Gaya subtitle",
     "subtitle_styles.subtitld.classic.name": "Klasik",
+    "timeline_themes.subtitld.classic.name": "Klasik",
     "subtitle_styles.subtitld.classic.font_family": "Keluarga font",
     "subtitle_styles.subtitld.classic.font_size": "Ukuran",
     "subtitle_styles.subtitld.classic.color": "Warna",

@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” đã bị xóa khỏi subtitld.cc. Phụ đề trong trình biên tập vẫn còn ở đây.",
     "interface_panel.subtitle_style": "Kiểu phụ đề",
     "subtitle_styles.subtitld.classic.name": "Cổ điển",
+    "timeline_themes.subtitld.classic.name": "Cổ điển",
     "subtitle_styles.subtitld.classic.font_family": "Họ phông chữ",
     "subtitle_styles.subtitld.classic.font_size": "Kích thước",
     "subtitle_styles.subtitld.classic.color": "Màu",

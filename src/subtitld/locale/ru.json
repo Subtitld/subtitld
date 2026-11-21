@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "«{title}» удалены с subtitld.cc. Субтитры в редакторе остались на месте.",
     "interface_panel.subtitle_style": "Стиль субтитров",
     "subtitle_styles.subtitld.classic.name": "Классический",
+    "timeline_themes.subtitld.classic.name": "Классическая",
     "subtitle_styles.subtitld.classic.font_family": "Семейство шрифтов",
     "subtitle_styles.subtitld.classic.font_size": "Размер",
     "subtitle_styles.subtitld.classic.color": "Цвет",

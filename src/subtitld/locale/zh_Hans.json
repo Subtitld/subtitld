@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}”已从 subtitld.cc 删除。编辑器中的字幕仍然在这里。",
     "interface_panel.subtitle_style": "字幕样式",
     "subtitle_styles.subtitld.classic.name": "经典",
+    "timeline_themes.subtitld.classic.name": "经典",
     "subtitle_styles.subtitld.classic.font_family": "字体族",
     "subtitle_styles.subtitld.classic.font_size": "大小",
     "subtitle_styles.subtitld.classic.color": "颜色",

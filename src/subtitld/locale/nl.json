@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” is van subtitld.cc verwijderd. De ondertitels in de editor staan er nog.",
     "interface_panel.subtitle_style": "Ondertitelstijl",
     "subtitle_styles.subtitld.classic.name": "Klassiek",
+    "timeline_themes.subtitld.classic.name": "Klassiek",
     "subtitle_styles.subtitld.classic.font_family": "Letterfamilie",
     "subtitle_styles.subtitld.classic.font_size": "Grootte",
     "subtitle_styles.subtitld.classic.color": "Kleur",

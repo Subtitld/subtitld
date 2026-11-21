@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” 자막을 subtitld.cc에서 삭제했습니다. 편집기의 자막은 그대로 남아 있습니다.",
     "interface_panel.subtitle_style": "자막 스타일",
     "subtitle_styles.subtitld.classic.name": "클래식",
+    "timeline_themes.subtitld.classic.name": "클래식",
     "subtitle_styles.subtitld.classic.font_family": "글꼴 계열",
     "subtitle_styles.subtitld.classic.font_size": "크기",
     "subtitle_styles.subtitld.classic.color": "색상",

@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” を subtitld.cc から削除しました。エディターの字幕はそのまま残っています。",
     "interface_panel.subtitle_style": "字幕スタイル",
     "subtitle_styles.subtitld.classic.name": "クラシック",
+    "timeline_themes.subtitld.classic.name": "クラシック",
     "subtitle_styles.subtitld.classic.font_family": "フォントファミリー",
     "subtitle_styles.subtitld.classic.font_size": "サイズ",
     "subtitle_styles.subtitld.classic.color": "色",

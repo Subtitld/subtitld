@@ -59,10 +59,12 @@ ElementTree.register_namespace('xlink', 'http://www.w3.org/1999/xlink')
 
 
 class Part:
-    __slots__ = ('id', 'x', 'y', 'hit', 'bounds', 'slice')
+    __slots__ = ('id', 'x', 'y', 'hit', 'bounds', 'slice', 'paint')
 
-    def __init__(self, part_id, x, y, hit, bounds, slice_=None):
+    def __init__(self, part_id, x, y, hit, bounds, slice_=None, paint=frozenset()):
         self.id, self.x, self.y, self.hit, self.bounds, self.slice = part_id, x, y, hit, bounds, slice_
+        # The colours it names, of 'current' and 'speaker': it is drawn as transparent as they are.
+        self.paint = paint
 
     @property
     def fixed(self):
@@ -127,8 +129,11 @@ def _parse(data):
         x = element.get('data-x', 'stretch')
         y = VERTICAL_ANCHORS.get(element.get('data-y', 'stretch'), 'stretch')
         hit = element.get('data-hit')
+        source = ElementTree.tostring(element)
+        paint = frozenset(name for name, word in (('current', b'currentColor'), ('speaker', b'speakerColor'))
+                          if word in source)
         found.append((part_id, x if x in ANCHORS else 'stretch', y, hit if hit in HITS else None,
-                      _insets(element.get('data-slice'))))
+                      _insets(element.get('data-slice')), paint))
     if not found:
         return None
     data = ElementTree.tostring(root)
@@ -139,11 +144,11 @@ def _parse(data):
     if view.width() <= 0 or view.height() <= 0:
         return None
     parts = []
-    for part_id, x, y, hit, insets in found:
+    for part_id, x, y, hit, insets, paint in found:
         # Where it is, its own transform and stroke in; from the frame's top left.
         bounds = renderer.boundsOnElement(part_id).translated(-view.x(), -view.y())
         if bounds.width() > 0 and bounds.height() > 0:
-            parts.append(Part(part_id, x, y, hit, bounds, insets))
+            parts.append(Part(part_id, x, y, hit, bounds, insets, paint))
     return Frame(data, view.width(), view.height(), parts) if parts else None
 
 
@@ -217,12 +222,18 @@ def hit(frame, rect, point):
     return None
 
 
-def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None):
+def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None, opacity=1.0):
     """The frame drawn as a box in `rect`, its currentColor `color`, its
-    speakerColor `speaker` ("#rrggbb" both)."""
+    speakerColor `speaker` ("#rrggbb" both; SVG takes no alpha in them).
+    `opacity` is currentColor's: a part naming it is drawn that transparent,
+    and so is one naming speakerColor when there is no speaker's colour
+    (it is currentColor then)."""
     renderer = frame.renderer(color, speaker)
     colors = (color, speaker if frame.uses_speaker else None)
+    base = painter.opacity()
     for part, target in layout(frame, rect):
+        faded = 'current' in part.paint or ('speaker' in part.paint and not speaker)
+        painter.setOpacity(base * opacity if faded else base)
         if part.slice and not part.fixed:
             image = _image(frame, renderer, part, part.bounds.width(), part.bounds.height(), colors, scale, name)
             _nine(painter, image, part.bounds.width(), part.bounds.height(), part.slice, target)
@@ -231,6 +242,7 @@ def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None):
             painter.drawPixmap(target.topLeft(), image)
         else:
             renderer.render(painter, part.id, target)
+    painter.setOpacity(base)
 
 
 def _nine(painter, image, width, height, insets, target):

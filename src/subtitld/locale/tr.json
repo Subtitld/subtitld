@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "“{title}” subtitld.cc'den silindi. Düzenleyicideki altyazılar hâlâ burada.",
     "interface_panel.subtitle_style": "Altyazı stili",
     "subtitle_styles.subtitld.classic.name": "Klasik",
+    "timeline_themes.subtitld.classic.name": "Klasik",
     "subtitle_styles.subtitld.classic.font_family": "Yazı tipi ailesi",
     "subtitle_styles.subtitld.classic.font_size": "Boyut",
     "subtitle_styles.subtitld.classic.color": "Renk",

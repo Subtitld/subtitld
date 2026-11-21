@@ -86,7 +86,9 @@ def frame(widget, painter, look_name, rect, color, speaker=None, vertical=False)
     hex_color = color.name(QColor.HexRgb)
     if vertical:
         with mirrored(painter):
-            timeline_frames.paint(painter, found, swap(rect), hex_color, widget.devicePixelRatioF(), look_name, speaker)
+            timeline_frames.paint(painter, found, swap(rect), hex_color, widget.devicePixelRatioF(), look_name, speaker,
+                                  color.alphaF())
     else:
-        timeline_frames.paint(painter, found, rect, hex_color, widget.devicePixelRatioF(), look_name, speaker)
+        timeline_frames.paint(painter, found, rect, hex_color, widget.devicePixelRatioF(), look_name, speaker,
+                              color.alphaF())
     return True

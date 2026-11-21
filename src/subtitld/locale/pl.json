@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "„{title}” zostały usunięte z subtitld.cc. Napisy w edytorze nadal tu są.",
     "interface_panel.subtitle_style": "Styl napisów",
     "subtitle_styles.subtitld.classic.name": "Klasyczny",
+    "timeline_themes.subtitld.classic.name": "Klasyczny",
     "subtitle_styles.subtitld.classic.font_family": "Rodzina czcionek",
     "subtitle_styles.subtitld.classic.font_size": "Rozmiar",
     "subtitle_styles.subtitld.classic.color": "Kolor",

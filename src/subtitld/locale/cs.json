@@ -933,6 +933,7 @@
     "subtitldcc.deleted": "„{title}“ byly smazány ze subtitld.cc. Titulky v editoru tu zůstávají.",
     "interface_panel.subtitle_style": "Styl titulků",
     "subtitle_styles.subtitld.classic.name": "Klasický",
+    "timeline_themes.subtitld.classic.name": "Klasický",
     "subtitle_styles.subtitld.classic.font_family": "Rodina fontů",
     "subtitle_styles.subtitld.classic.font_size": "Velikost",
     "subtitle_styles.subtitld.classic.color": "Barva",

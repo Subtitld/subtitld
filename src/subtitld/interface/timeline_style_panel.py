@@ -1,4 +1,6 @@
-"""The timeline's look, a box of settings a group (modules.timeline_style).
+"""The timeline's look, a box of settings a group (modules.timeline_style),
+under the theme it was set from (modules.timeline_themes): picked from the
+themes there are, imported from a file, exported to one.
 
 The timeline's own settings first and last; between them, the boxes of a
 kind of cue, picked above them once there is more than one kind (each
@@ -12,19 +14,22 @@ hides as its bool is set (`hidden_if` may be a [key, value] pair too, and
 button to pick one, which is checked and kept (modules.timeline_svg), and
 one to take it off.
 
-Labels come from the locale files: `timeline_style.<key>` (a box's
+Labels come from the locale files: `timeline_themes.<id>.name` for one of
+Subtitld's themes, `timeline_style.<key>` (a box's
 `timeline_style.box.<key>`), `timeline_style.<key>.<value>` for an
 option, `timeline_style.group.<group>` for a group and
 `timeline_style.kind.<kind>` for a kind of cue.
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton,
-                               QVBoxLayout, QWidget)
+from pathlib import Path
+
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
+                               QPushButton, QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitle_style_panel import _text, field_control
 from subtitld.interface.translation import _
-from subtitld.modules import timeline_style, timeline_svg
+from subtitld.modules import timeline_style, timeline_svg, timeline_themes
 
 COLUMNS = 2
 FONT_LIST_WIDTH = 180
@@ -53,6 +58,11 @@ def group_label(group):
     return _text(f'timeline_style.group.{group}', _humane(group))
 
 
+def theme_label(theme):
+    """A theme's name: from the locale files for one of Subtitld's, its own otherwise."""
+    return _text(f'timeline_themes.{theme.id}.name', theme.name) if theme.builtin else theme.name
+
+
 def kind_label(kind):
     return _text(f'timeline_style.kind.{kind}', _humane(kind))
 
@@ -73,14 +83,45 @@ class TimelineStylePanel(QWidget):
         self.grids = []             # (grid, scope, its fields' keys in order)
         self.fields_widget = None
 
-        actions = QHBoxLayout()
-        actions.setContentsMargins(0, 0, 0, 0)
+        # The theme: picked, imported, exported; and why a file was refused.
+        themes = QVBoxLayout()
+        themes.setContentsMargins(0, 0, 0, 0)
+        themes.setSpacing(2)
+        self.theme_label = QLabel()
+        self.theme_label.setProperty('class', 'widget_label')
+        themes.addWidget(self.theme_label, 0, Qt.AlignLeft)
+        line = QHBoxLayout()
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(5)
+        self.theme_picker = QComboBox()
+        self.theme_picker.setObjectName('timeline_style_theme_picker')
+        self.theme_picker.activated.connect(self._theme_picked)
+        line.addWidget(self.theme_picker, 0, Qt.AlignLeft)
+        self.theme_changed_label = QLabel()
+        self.theme_changed_label.setProperty('class', 'units_label')
+        line.addWidget(self.theme_changed_label, 0, Qt.AlignLeft)
+        line.addStretch()
+        themes.addLayout(line)
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 4, 0, 0)
+        buttons.setSpacing(5)
+        self.import_button = QPushButton()
+        self.import_button.clicked.connect(self._import_clicked)
+        self.export_button = QPushButton()
+        self.export_button.clicked.connect(self._export_clicked)
         self.reset_button = QPushButton()
         self.reset_button.setObjectName('timeline_style_reset_button')
         self.reset_button.clicked.connect(self.reset)
-        actions.addWidget(self.reset_button, 0, Qt.AlignLeft)
-        actions.addStretch()
-        self.layout().addLayout(actions)
+        for button in (self.import_button, self.export_button, self.reset_button):
+            buttons.addWidget(button, 0, Qt.AlignLeft)
+        buttons.addStretch()
+        themes.addLayout(buttons)
+        self.theme_problem = QLabel()
+        self.theme_problem.setProperty('class', 'units_label')
+        self.theme_problem.setWordWrap(True)
+        self.theme_problem.hide()
+        themes.addWidget(self.theme_problem)
+        self.layout().addLayout(themes)
         self.build()
 
     # --- building ----------------------------------------------------------
@@ -88,6 +129,10 @@ class TimelineStylePanel(QWidget):
         """(Re)build the groups on the settings as they are, in the
         interface's language."""
         self.reset_button.setText(_('timeline_style.reset'))
+        self.theme_label.setText(_('timeline_style.theme'))
+        self.import_button.setText(_('timeline_style.import_theme'))
+        self.export_button.setText(_('timeline_style.export_theme'))
+        self._show_theme()
         if self.kind not in timeline_style.KINDS:
             self.kind = timeline_style.SUBTITLE
         if self.fields_widget is not None:
@@ -280,8 +325,62 @@ class TimelineStylePanel(QWidget):
         except (KeyError, ValueError):
             return None
         self._show_dependents()
+        self._show_theme()
         self.changed.emit()
         return value
+
+    # --- themes ------------------------------------------------------------
+    def _show_theme(self):
+        """The themes there are, the one the look was set from picked (none
+        but "Custom" without one), and whether it was changed since."""
+        current = timeline_themes.current()
+        self.theme_picker.clear()
+        if current is None:
+            self.theme_picker.addItem(_('timeline_style.custom_theme'), None)
+        for theme in timeline_themes.available().values():
+            self.theme_picker.addItem(theme_label(theme), theme.id)
+        self.theme_picker.setCurrentIndex(max(0, self.theme_picker.findData(current.id if current else None)))
+        self.theme_changed_label.setText(_('timeline_style.theme_changed') if current and timeline_themes.changed() else '')
+
+    def _theme_picked(self, index):
+        theme_id = self.theme_picker.itemData(index)
+        if theme_id:
+            self.apply_theme(theme_id)
+
+    def apply_theme(self, theme_id):
+        timeline_themes.apply(theme_id)
+        self.theme_problem.hide()
+        self.build()
+        self.changed.emit()
+
+    def import_theme(self, path):
+        """Import the theme file at `path` and set the look to it; say why
+        not when it is refused. The theme, or None."""
+        try:
+            theme = timeline_themes.import_file(Path(path))
+        except timeline_themes.ThemeError as error:
+            self.theme_problem.setText(_('timeline_style.theme_refused').format(reason=str(error)))
+            self.theme_problem.show()
+            return None
+        self.apply_theme(theme.id)
+        return theme
+
+    def _import_clicked(self):
+        path, _filter = QFileDialog.getOpenFileName(self, _('timeline_style.import_theme'), '',
+                                                    f"{_('timeline_style.theme_files')} (*.json)")
+        if path:
+            self.import_theme(path)
+
+    def _export_clicked(self):
+        current = timeline_themes.current()
+        name, ok = QInputDialog.getText(self, _('timeline_style.export_theme'), _('timeline_style.theme_name'),
+                                        text=current.name if current else '')
+        if not ok or not name.strip():
+            return
+        path, _filter = QFileDialog.getSaveFileName(self, _('timeline_style.export_theme'), f'{name.strip()}.json',
+                                                    f"{_('timeline_style.theme_files')} (*.json)")
+        if path:
+            timeline_themes.export(Path(path), name.strip())
 
     def _kind_picked(self, index):
         kind = self.kind_picker.itemData(index)
@@ -291,5 +390,6 @@ class TimelineStylePanel(QWidget):
 
     def reset(self):
         timeline_style.reset()
+        timeline_themes.forget_current()
         self.build()
         self.changed.emit()
